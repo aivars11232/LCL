@@ -33,7 +33,13 @@ tree is supporting source material and is not part of this bare-language package
 
 The historical artifacts are candidate builds; the workspace contains no evidence
 that either materially different 0.1.0 candidate was an established release. This
-repair therefore retains language version 0.1.0. This candidate is blocked by
-LCL-AUDIT-001, 005, 007, and 010 through 016, including K-003. It is not ready
-for release, no repair archive is produced, and it must not be represented as
-Final, Verified, Complete, Canonical Release, or release-ready.
+repair therefore retains language version 0.1.0. LCL-AUDIT-001, 005, and 012 are
+resolved by the accepted LIST/SET/ITEM, constructor/pattern, and PRIORITY
+contracts. The seven parent contradictions within LCL-AUDIT-010 are also removed.
+This candidate remains blocked by bare-language findings LCL-AUDIT-007,
+LCL-AUDIT-010/K-003 value-kind closure, 011, and 013 through 015.
+LCL-AUDIT-016 concerns parser/runtime/executable-semantic evidence, which is
+outside the bare-language package scope and is not a release blocker. The
+candidate is not ready for release, no repair archive is produced, and it must
+not be represented as Final, Verified, Complete, Canonical Release, or
+release-ready.

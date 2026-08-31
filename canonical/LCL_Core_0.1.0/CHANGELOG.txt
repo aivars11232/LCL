@@ -1,5 +1,26 @@
 LCL CORE CHANGELOG
 
+0.1.0 BLOCKED REPAIR CANDIDATE - LCL-TASK-0001
+
+- Replayed the five accepted Claude-web decisions against the actual extracted
+  local candidate; no web-session edit was assumed present.
+- Closed LIST/SET values on inline/multiline bracket syntax and reserved ITEM for
+  enum-member declarations only.
+- Defined all eleven typed constructors, RFC 3339 date/time profiles, resolved
+  WORKSPACE containment, absolute RFC 3986 URI behavior, and registered-unit
+  MEASURE behavior.
+- Closed conservative REGEX and workspace-relative GLOB profiles, made MATCHES a
+  semantic full-string operation, and added error.pattern.resource_limit.
+- Removed the seven accepted parent contradictions and defined optional PRIORITY
+  omission as strict integer 0 with no inheritance and explicit-value precedence.
+- Expanded the descriptive requirements index to 792 entries and strengthened the
+  static validator with data-sensitive D-001 through D-005 checks.
+- Classified parser/runtime/executable-semantic artifacts as OUT_OF_SCOPE for the
+  bare-language package; no such absence is reported as PASS or as a release
+  blocker.
+- Preserved unresolved bare-language blockers, stale integrity metadata, the
+  immutable historical tree/archive, and the no-release/no-archive status.
+
 0.1.0 BLOCKED REPAIR CANDIDATE - LCL-REPAIR-0001
 
 - Established one canonical candidate tree from the byte-verified 152-file

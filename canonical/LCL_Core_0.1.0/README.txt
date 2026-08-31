@@ -12,6 +12,8 @@ THIS PACKAGE CONTAINS
 
 - the vocabulary and machine-readable symbol inventory;
 - lexical, grammar, type, value, expression, and execution rules;
+- bracket-only LIST/SET values, enum-only ITEM, and closed typed-constructor and
+  GLOB/REGEX profiles;
 - block and field signatures, including unresolved value-kind combinators;
 - rule, permission, authority, conflict, state, memory, and evidence semantics;
 - core operation and pure-function contracts, with unresolved determinism and
@@ -22,11 +24,12 @@ THIS PACKAGE CONTAINS
 
 KNOWN CANDIDATE LIMITATIONS
 
-- constructor and pattern profiles are incomplete;
-- field value-kind templates and seven nested-parent relationships are unresolved;
-- division, SET sorting, PRIORITY omission, result binding, diagnostic selection,
-  and mixed-phase lifecycle behavior require owner decisions;
-- the 791-entry catalog is a requirements index, not an executed semantic suite;
+- field value-kind templates remain unresolved;
+- division, SET sorting, result binding, diagnostic selection, and mixed-phase
+  lifecycle behavior require owner decisions;
+- the 792-entry catalog is a descriptive requirements index, not an executed
+  semantic suite; executable semantic evidence is outside the bare-language
+  package scope and its absence is not a release blocker;
 - no repair archive is produced from this blocked candidate.
 
 THIS PACKAGE DOES NOT CONTAIN

@@ -7,9 +7,13 @@ NORMATIVE
 This tree is the canonical LCL Core 0.1.0 repair candidate identified by
 00_CANONICAL_SOURCE_AND_PROVENANCE.txt. It supersedes competing historical
 candidate metadata in this workspace but does not alter the immutable historical
-tree or archive. Release-blocking design decisions remain under LCL-AUDIT-001,
-005, 007, and 010 through 016, including K-003. This tree is not frozen,
-release-ready, Final, or Verified. No repair archive is produced.
+tree or archive. Accepted Task 0001 contracts resolve LCL-AUDIT-001, 005, and 012
+and remove the seven parent contradictions within LCL-AUDIT-010. Release-blocking
+bare-language decisions remain under LCL-AUDIT-007, LCL-AUDIT-010/K-003
+value-kind closure, 011, and 013 through 015. LCL-AUDIT-016 implementation
+evidence is outside the bare-language scope and is not a release blocker. This
+tree is not frozen, release-ready, Final, or Verified. No repair archive is
+produced.
 
 2. LANGUAGE BOUNDARY
 

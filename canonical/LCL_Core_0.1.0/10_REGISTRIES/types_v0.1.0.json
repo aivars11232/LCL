@@ -60,6 +60,44 @@
       "resource_limit_error": "error.pattern.resource_limit"
     }
   },
+  "numeric_profile": {
+    "INTEGER": {
+      "domain": "unbounded_signed_whole_number",
+      "overflow_values": false
+    },
+    "DECIMAL": {
+      "domain": "exact_finite_base_10_decimal",
+      "coefficient": "unbounded_integer",
+      "fractional_digits": "finite_nonnegative_count",
+      "special_values": []
+    },
+    "division": {
+      "contract": "operators_and_functions_v0.1.0.json#/operators/~1",
+      "scalar_result": "DECIMAL",
+      "implicit_rounding": false,
+      "overflow_behavior": "forbidden",
+      "underflow_to_zero": false,
+      "infinity_or_nan": false,
+      "host_capacity_error": "error.host.constraint"
+    }
+  },
+  "set_iteration_profile": {
+    "legal_member_requirement": "homogeneous T with strict equality",
+    "intrinsic_order": "none",
+    "source_or_insertion_order_has_semantic_meaning": false,
+    "duplicate_equal_source_members": "collapse_to_one_member",
+    "direct_for_each": {
+      "legal_when": "Every pair of actual members is mutually order-compatible under operators_and_functions_v0.1.0.json#/ordered_types.",
+      "order": "canonical_ascending",
+      "otherwise": "Pass the SET directly to core.sort and iterate the returned LIST[T].",
+      "error": "error.type.mismatch"
+    },
+    "core_sort": {
+      "accepts_set_directly": true,
+      "preconversion_to_list_required": false,
+      "result": "LIST[T]"
+    }
+  },
   "types": {
     "STRING": "Unicode text; no interpolation.",
     "INTEGER": "Unbounded signed whole number.",
@@ -67,7 +105,7 @@
     "BOOLEAN": "TRUE or FALSE; no truthy coercion.",
     "NULL": "Explicit known absence.",
     "LIST[T]": "Ordered collection using bracket value syntax; duplicates allowed.",
-    "SET[T]": "Unique unordered collection using bracket value syntax; iteration is canonical ascending only when T has a defined total order, otherwise iteration requires an explicit sort key.",
+    "SET[T]": "Homogeneous collection unique under strict equality and intrinsically unordered; source or insertion order has no semantic meaning and equal duplicates collapse. Direct FOR EACH uses canonical ascending order only when actual members are mutually order-compatible; otherwise pass the SET directly to core.sort and iterate its LIST[T] result.",
     "OBJECT": "Keyed value checked by an explicit schema when provided.",
     "ENUM": "Closed set of exact declared values.",
     "REFERENCE[T]": "Exact typed reference expressed with REF(identifier).",

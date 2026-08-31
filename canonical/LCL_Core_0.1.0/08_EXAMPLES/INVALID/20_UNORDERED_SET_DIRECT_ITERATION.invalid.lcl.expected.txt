@@ -1,0 +1,3 @@
+EXPECTED_ERROR: error.type.mismatch
+EXPECTED_TERMINAL_STATUS: status.invalid
+RULE: Direct FOR EACH over SET[BOOLEAN] is invalid because its members have no registered total order; pass the SET directly to core.sort and iterate the returned LIST instead.

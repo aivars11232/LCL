@@ -6,10 +6,16 @@ DATE: 2026-08-30
 
 
 LIST equality requires equal element type, length, order, and recursively equal
-members. SET equality ignores source order and compares unique members. OBJECT
-equality requires equal schema/field set and recursively equal values; field
-source order does not affect equality. ENUM values compare by exact identifier.
+members. SET is intrinsically unordered: source or insertion order has no semantic
+meaning, equal source members collapse under strict equality, and SET equality
+requires the same element type and the same unique members. OBJECT equality
+requires equal schema/field set and recursively equal values; field source order
+does not affect equality. ENUM values compare by exact identifier.
 
 STRING equality is code-point exact. Numeric equality allows INTEGER-to-DECIMAL
-promotion only. MEASURE comparison requires the same UNIT; no implicit unit
-conversion. REFERENCE equality compares resolved declaration identity.
+promotion only. DATE equality uses the same Gregorian date. TIME and DATETIME
+equality use the same offset-normalized chronological value, and DURATION equality
+uses the same exact normalized elapsed-time magnitude. Thus equal canonical order
+keys within one declared ordered type are strict-equal values and collapse as SET
+duplicates before ordering. MEASURE comparison requires the same UNIT; no implicit
+unit conversion. REFERENCE equality compares resolved declaration identity.

@@ -14,3 +14,16 @@ forbidden. A required parameter cannot be inferred. A default applies only to a
 MISSING optional parameter. An operation may cause only its listed side effects
 and effects explicitly required by its postconditions. Additional effects produce
 error.permission.denied or error.scope.violation.
+
+core.sort has exactly key and direction as named parameters. stable, comparator,
+and every other name are unregistered and produce error.operation.parameter. key
+may be omitted only for mutually order-compatible target members; otherwise it is
+one exact property_path STRING or one REF resolving to a deterministic,
+side-effect-free kind.operation with exactly one compatible member parameter and
+one concrete registered ordered result. Reference resolution uses
+error.reference.unresolved or error.reference.kind. A MISSING or UNKNOWN key uses
+error.required.missing or error.value.unknown. Omitted natural order, incompatible
+key results, or equal keys for distinct SET members use
+error.operation.precondition. direction defaults to ascending; descending reverses
+primary order but not original LIST source order among equal-key members. The
+result value and result.collection items are LIST[T].

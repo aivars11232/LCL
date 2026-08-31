@@ -9,10 +9,39 @@ Operators + - * / apply only to compatible numeric values. Precedence is unary,
 then multiplication/division, then addition/subtraction, then comparison, AND,
 OR. Parentheses override precedence.
 
-INTEGER division is exact only when the result is an INTEGER; otherwise it
-produces DECIMAL if finite. Non-terminating exact decimal division is an error
-unless ROUND(value, digits) or an explicit TOLERANCE governs the result.
-ROUND uses half-even. Division by zero is always an error.
+Every scalar division overload -- INTEGER/INTEGER, INTEGER/DECIMAL,
+DECIMAL/INTEGER, and DECIMAL/DECIMAL -- has static result type DECIMAL, including
+an integral quotient such as 4 / 2. Division evaluates the exact mathematical
+quotient with no fixed global precision and no implicit rounding. After reducing
+the quotient to lowest terms, it has a finite base-10 DECIMAL representation if
+and only if the denominator has no prime factors other than 2 and 5. Otherwise
+evaluation produces error.numeric.non_terminating.
+
+ROUND accepts DECIMAL or MEASURE followed by a non-negative INTEGER number of
+fractional digits and uses round-half-to-even. When its direct first argument is
+a division expression, ROUND evaluates the exact mathematical quotient and
+rounds it once; this is the only context in which an otherwise non-terminating
+quotient is materialized. Rounding a MEASURE rounds only its numeric component
+and preserves its exact UNIT. A non-terminating division in any other subexpression
+is invalid before an enclosing function can consume it. TOLERANCE is an absolute
+acceptance constraint and neither chooses a precision nor rounds or rescues a
+quotient.
+
+MEASURE divided by INTEGER or DECIMAL returns MEASURE with a DECIMAL numeric
+component and the numerator's exact UNIT. MEASURE divided by MEASURE is legal
+only when both exact UNIT identifiers are equal and returns a dimensionless
+DECIMAL; equal unit categories do not suffice. Different units produce
+error.numeric.unit_mismatch. Numeric divided by MEASURE and every other
+unregistered operand pairing produce error.operator.operand. No reciprocal or
+compound unit is inferred.
+
+Any mathematical-zero denominator, including a zero MEASURE numeric component
+and a quotient evaluated inside ROUND, produces error.numeric.division_by_zero.
+INTEGER and DECIMAL arithmetic never wraps, saturates, overflows, underflows to
+zero, or creates Infinity or NaN. Violation of an explicit declared bound
+produces error.value.out_of_range. If a host cannot perform the required exact
+computation within its declared capacity, it produces error.host.constraint and
+must not substitute a different mathematical result.
 
 DURATION is non-negative. Unary negation does not accept DURATION. Subtracting
 one DURATION from another is valid only when the result is non-negative;

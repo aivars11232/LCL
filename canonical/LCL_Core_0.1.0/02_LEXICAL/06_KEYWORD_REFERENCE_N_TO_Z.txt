@@ -142,7 +142,7 @@ RETRY
 
 ROUND
     Category: function
-    Meaning: Round a DECIMAL to explicit fractional digits using half-even rounding.
+    Meaning: Round a DECIMAL or MEASURE to non-negative fractional digits using half-even rounding; MEASURE preserves its UNIT.
     Context: Defined by grammar and block schemas.
 
 SCHEMA
@@ -162,7 +162,7 @@ SEQUENCE
 
 SET
     Category: type
-    Meaning: An unordered collection of unique values using bracket value syntax. Iteration uses canonical ascending order only when the element type has a defined total order; otherwise iteration requires an explicit sort key.
+    Meaning: An intrinsically unordered collection unique under strict equality using bracket value syntax; source or insertion order has no semantic meaning and equal duplicates collapse. Direct FOR EACH uses canonical ascending order only when actual members are mutually order-compatible; otherwise pass the SET directly to core.sort and iterate its LIST result.
     Context: Defined by the type and collection contracts.
 
 SIDE_EFFECT

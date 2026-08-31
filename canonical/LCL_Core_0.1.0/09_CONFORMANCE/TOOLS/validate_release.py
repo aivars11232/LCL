@@ -1273,6 +1273,15 @@ def constructor_pattern_contract_violations(
         "DURATION unit/range contract is not exact",
     )
     expect(
+        set(constructors.get("DURATION", {}).get("errors", []))
+        == {
+            "error.operator.operand",
+            "error.numeric.unit_mismatch",
+            "error.value.out_of_range",
+        },
+        "DURATION diagnostics do not preserve the required unit-category trigger",
+    )
+    expect(
         constructors.get("PERCENTAGE", {}).get("minimum") == 0
         and constructors.get("PERCENTAGE", {}).get("maximum") == 100,
         "PERCENTAGE bounds are not exact",
@@ -1361,6 +1370,1127 @@ def constructor_pattern_contract_violations(
         "typed-constructor overload" in all_errors.get("error.operator.operand", {}).get("meaning", ""),
         "error.operator.operand does not cover typed constructors",
     )
+    return violations
+
+
+def division_contract_violations(
+    root: Path,
+    types: dict[str, Any],
+    operator_functions: dict[str, Any],
+    statuses: dict[str, Any],
+    operations: dict[str, Any],
+    keywords: dict[str, Any],
+) -> list[str]:
+    violations: list[str] = []
+
+    def expect(condition: bool, message: str) -> None:
+        if not condition:
+            violations.append(message)
+
+    expected_division = {
+        "arity": 2,
+        "overloads": [
+            {"left": "INTEGER", "right": "INTEGER", "result": "DECIMAL"},
+            {"left": "INTEGER", "right": "DECIMAL", "result": "DECIMAL"},
+            {"left": "DECIMAL", "right": "INTEGER", "result": "DECIMAL"},
+            {"left": "DECIMAL", "right": "DECIMAL", "result": "DECIMAL"},
+            {
+                "left": "MEASURE",
+                "right": "INTEGER",
+                "result": "MEASURE",
+                "numeric_component": "DECIMAL",
+                "unit": "preserve_left_exact_unit",
+            },
+            {
+                "left": "MEASURE",
+                "right": "DECIMAL",
+                "result": "MEASURE",
+                "numeric_component": "DECIMAL",
+                "unit": "preserve_left_exact_unit",
+            },
+            {
+                "left": "MEASURE",
+                "right": "MEASURE",
+                "constraint": "same_exact_unit",
+                "result": "DECIMAL",
+                "unit": "cancel_identical_units",
+            },
+        ],
+        "exactness": {
+            "evaluation": "exact_mathematical_quotient",
+            "finite_decimal_rule": (
+                "After reducing the quotient to lowest terms, the denominator has no "
+                "prime factors other than 2 and 5."
+            ),
+            "implicit_rounding": False,
+            "non_terminating_error": "error.numeric.non_terminating",
+        },
+        "rounding_context": (
+            "A direct first argument of ROUND is evaluated as an exact quotient and "
+            "rounded once by that function."
+        ),
+        "tolerance_role": (
+            "TOLERANCE is an acceptance constraint and never selects or rounds a quotient."
+        ),
+        "zero_denominator_error": "error.numeric.division_by_zero",
+        "unsupported_operand_error": "error.operator.operand",
+        "different_measure_unit_error": "error.numeric.unit_mismatch",
+        "declared_bound_error": "error.value.out_of_range",
+        "host_capacity_error": "error.host.constraint",
+        "overflow_behavior": "No wrap, saturation, underflow-to-zero, Infinity, or NaN.",
+        "errors": [
+            "error.operator.operand",
+            "error.numeric.division_by_zero",
+            "error.numeric.non_terminating",
+            "error.numeric.unit_mismatch",
+            "error.value.out_of_range",
+            "error.host.constraint",
+        ],
+        "precedence": 60,
+        "associativity": "left",
+    }
+    division = operator_functions.get("operators", {}).get("/")
+    expect(division == expected_division, "division operator contract is not exact")
+
+    expected_round = {
+        "overloads": [
+            {"parameters": ["DECIMAL", "INTEGER"], "result": "DECIMAL"},
+            {
+                "parameters": ["MEASURE", "INTEGER"],
+                "result": "MEASURE",
+                "unit": "preserve_exact_unit",
+            },
+        ],
+        "digits": "nonnegative_fractional_digits",
+        "rounding": "round-half-to-even",
+        "quotient_context": (
+            "The first argument may be an otherwise non-terminating direct division "
+            "quotient; round the exact mathematical quotient once."
+        ),
+        "tolerance_role": "independent_acceptance_constraint_only",
+        "errors": [
+            "error.operator.operand",
+            "error.value.out_of_range",
+            "error.numeric.division_by_zero",
+            "error.numeric.unit_mismatch",
+            "error.host.constraint",
+        ],
+    }
+    round_contract = operator_functions.get("functions", {}).get("ROUND")
+    expect(round_contract == expected_round, "ROUND function contract is not exact")
+
+    expected_numeric_profile = {
+        "INTEGER": {
+            "domain": "unbounded_signed_whole_number",
+            "overflow_values": False,
+        },
+        "DECIMAL": {
+            "domain": "exact_finite_base_10_decimal",
+            "coefficient": "unbounded_integer",
+            "fractional_digits": "finite_nonnegative_count",
+            "special_values": [],
+        },
+        "division": {
+            "contract": "operators_and_functions_v0.1.0.json#/operators/~1",
+            "scalar_result": "DECIMAL",
+            "implicit_rounding": False,
+            "overflow_behavior": "forbidden",
+            "underflow_to_zero": False,
+            "infinity_or_nan": False,
+            "host_capacity_error": "error.host.constraint",
+        },
+    }
+    expect(
+        types.get("numeric_profile") == expected_numeric_profile,
+        "types.numeric_profile is not the exact division numeric profile",
+    )
+
+    expected_errors = {
+        "error.operator.operand": {
+            "meaning": (
+                "No registered operator, function, or typed-constructor overload accepts "
+                "the operand types or arity."
+            ),
+            "stage": "static_or_expression",
+            "recoverable_with_declared_handler": False,
+            "default_status": "status.invalid",
+        },
+        "error.numeric.division_by_zero": {
+            "meaning": (
+                "A division denominator is mathematical zero, including a zero MEASURE "
+                "numeric component and a quotient evaluated inside ROUND."
+            ),
+            "stage": "static_or_expression",
+            "recoverable_with_declared_handler": False,
+            "default_status": "status.invalid",
+        },
+        "error.numeric.non_terminating": {
+            "meaning": (
+                "An exact division quotient has no finite base-10 DECIMAL representation "
+                "outside the direct first-argument context of ROUND."
+            ),
+            "stage": "static_or_expression",
+            "recoverable_with_declared_handler": False,
+            "default_status": "status.invalid",
+        },
+        "error.numeric.unit_mismatch": {
+            "meaning": (
+                "A value supplies a unit outside its required unit category, or an operation "
+                "requiring identical MEASURE units receives different exact unit identifiers; "
+                "sharing a unit category is insufficient for exact-unit equality."
+            ),
+            "stage": "static_or_expression",
+            "recoverable_with_declared_handler": False,
+            "default_status": "status.invalid",
+        },
+        "error.value.out_of_range": {
+            "meaning": "A value violates an exact bound.",
+            "stage": "static_or_expression",
+            "recoverable_with_declared_handler": False,
+            "default_status": "status.invalid",
+        },
+        "error.host.constraint": {
+            "meaning": "A host/provider limitation outside portable LCL prevents execution.",
+            "stage": "execution",
+            "recoverable_with_declared_handler": True,
+            "default_status": "status.blocked",
+        },
+    }
+    for error_name, expected_error in expected_errors.items():
+        expect(
+            statuses.get("errors", {}).get(error_name) == expected_error,
+            f"{error_name} metadata is not exact",
+        )
+
+    expected_division_calculate_errors = {
+        "error.operator.operand",
+        "error.numeric.division_by_zero",
+        "error.numeric.non_terminating",
+        "error.numeric.unit_mismatch",
+        "error.value.out_of_range",
+        "error.host.constraint",
+    }
+    calculate_errors = operations.get("core.calculate", {}).get("errors", [])
+    expect(
+        len(calculate_errors) == len(set(calculate_errors))
+        and expected_division_calculate_errors <= set(calculate_errors),
+        "core.calculate does not contain the complete division error subset",
+    )
+
+    expected_round_keyword = (
+        "Round a DECIMAL or MEASURE to non-negative fractional digits using half-even "
+        "rounding; MEASURE preserves its UNIT."
+    )
+    expect(
+        keywords.get("ROUND", {}).get("meaning") == expected_round_keyword,
+        "ROUND keyword meaning does not expose the accepted numeric families",
+    )
+
+    prose_requirements = {
+        "03_TYPES_AND_VALUES/01_TYPE_SYSTEM_RULES.txt": [
+            "static result of INTEGER/DECIMAL division is DECIMAL",
+            "MEASURE divided by INTEGER or DECIMAL is\nMEASURE",
+            "same exact UNIT is DECIMAL",
+        ],
+        "03_TYPES_AND_VALUES/02_BUILT_IN_TYPE_REFERENCE.txt": [
+            "Unbounded signed whole number",
+            "Exact finite base-10 decimal",
+            "Infinity, NaN",
+        ],
+        "03_TYPES_AND_VALUES/06_NUMERIC_ARITHMETIC_COMPARISON_AND_ROUNDING.txt": [
+            "INTEGER/INTEGER, INTEGER/DECIMAL",
+            "no prime factors other than 2 and 5",
+            "direct first argument is\na division expression",
+            "TOLERANCE is an absolute\nacceptance constraint",
+            "Numeric divided by MEASURE",
+            "error.numeric.division_by_zero",
+            "error.numeric.non_terminating",
+            "error.host.constraint",
+        ],
+        "03_TYPES_AND_VALUES/07_FORMATS_ENCODINGS_UNITS_BOUNDS_AND_PATTERNS.txt": [
+            "TOLERANCE is\nabsolute and non-negative",
+            "validates a permitted numeric difference",
+            "selects arithmetic precision or rounds a quotient",
+        ],
+        "05_SEMANTICS/12_OPERATOR_FUNCTION_AND_SPECIAL_VALUE_SEMANTICS.txt": [
+            "every scalar division overload has static result type\nDECIMAL",
+            "direct first argument of ROUND",
+            "TOLERANCE does not establish a\nrounding context",
+            "no overflow, wrap, saturation, Infinity",
+        ],
+        "06_STANDARD_LIBRARY/04_BUILT_IN_FUNCTIONS.txt": [
+            "ROUND(decimal_or_measure, nonnegative_integer_fractional_digits)",
+            "rounded once from its exact mathematical quotient",
+        ],
+        "02_LEXICAL/06_KEYWORD_REFERENCE_N_TO_Z.txt": [expected_round_keyword],
+    }
+    for relative_path, required_text in prose_requirements.items():
+        prose = (root / relative_path).read_text(encoding="utf-8")
+        missing = [token for token in required_text if token not in prose]
+        expect(not missing, f"{relative_path} is missing division text: {missing}")
+        if relative_path.endswith("12_OPERATOR_FUNCTION_AND_SPECIAL_VALUE_SEMANTICS.txt"):
+            expect(
+                "mapping is unresolved" not in prose,
+                "division result mapping is still marked unresolved in semantic prose",
+            )
+
+    catalog = load_json_strict(
+        root / "09_CONFORMANCE/CASES/core_conformance_cases_v0.1.0.json"
+    )
+    cases = {case.get("id"): case for case in catalog.get("cases", [])}
+    case_requirements = {
+        "KEYWORD-VALID-0217": (
+            "keyword_valid",
+            "ROUND",
+            "keywords_v0.1.0.json",
+            ["DECIMAL or MEASURE", "half-even"],
+        ),
+        "TYPE-VALID-0327": (
+            "type_valid",
+            "INTEGER",
+            "types_v0.1.0.json",
+            ["unbounded", "without overflow"],
+        ),
+        "TYPE-VALID-0329": (
+            "type_valid",
+            "DECIMAL",
+            "types_v0.1.0.json",
+            ["exact finite base-10", "without Infinity"],
+        ),
+        "FUNCTION-VALID-0500": (
+            "function_valid",
+            "ROUND",
+            "operators_and_functions_v0.1.0.json",
+            ["DECIMAL and MEASURE", "direct exact division quotient"],
+        ),
+        "FUNCTION-INVALID-0501": (
+            "function_invalid",
+            "ROUND",
+            "operators_and_functions_v0.1.0.json",
+            ["negative fractional digits", "zero division inside ROUND"],
+        ),
+        "OPERATOR-VALID-0518": (
+            "operator_valid",
+            "/",
+            "operators_and_functions_v0.1.0.json",
+            ["all four INTEGER/DECIMAL pairs", "same-exact-unit MEASURE"],
+        ),
+        "OPERATOR-INVALID-0519": (
+            "operator_invalid",
+            "/",
+            "operators_and_functions_v0.1.0.json",
+            ["mathematical-zero denominators", "non-terminating unrounded quotients"],
+        ),
+        "OPERATION-ERRORS-0561": (
+            "operation_errors",
+            "core.calculate",
+            "operations_v0.1.0.json",
+            ["division operand", "host-capacity"],
+        ),
+        "ERROR-CONTRACT-0721": (
+            "error_contract",
+            "error.numeric.division_by_zero",
+            "statuses_and_errors_v0.1.0.json",
+            ["mathematical-zero", "direct ROUND context"],
+        ),
+        "ERROR-CONTRACT-0722": (
+            "error_contract",
+            "error.numeric.non_terminating",
+            "statuses_and_errors_v0.1.0.json",
+            ["non-finite base-10", "outside direct ROUND context"],
+        ),
+        "ERROR-CONTRACT-0723": (
+            "error_contract",
+            "error.numeric.unit_mismatch",
+            "statuses_and_errors_v0.1.0.json",
+            [
+                "outside a required unit category",
+                "exact MEASURE unit-identifier mismatch",
+            ],
+        ),
+    }
+    for case_id, (category, subject, source, required_text) in case_requirements.items():
+        case = cases.get(case_id)
+        expect(case is not None, f"missing division conformance case {case_id}")
+        if case is None:
+            continue
+        expect(
+            (
+                case.get("category") == category
+                and case.get("subject") == subject
+                and case.get("source") == source
+            ),
+            f"{case_id} identity metadata is not exact",
+        )
+        requirement = case.get("requirement", "")
+        missing = [token for token in required_text if token not in requirement]
+        expect(not missing, f"{case_id} is missing division evidence: {missing}")
+
+    expected_examples = {
+        "08_EXAMPLES/VALID/11_EXACT_DIVISION_AND_ROUNDING.lcl": """LCL:
+    VERSION: \"0.1.0\"
+
+SPECIFICATION:
+    ID: example.exact_division
+    NAME: \"Exact division and explicit rounding\"
+    VERSION: \"1.0.0\"
+    KIND: kind.data
+
+DATA:
+    ID: data.integral_decimal_quotient
+    TYPE: DECIMAL
+    VALUE: 4 / 2
+
+DATA:
+    ID: data.finite_decimal_quotient
+    TYPE: DECIMAL
+    VALUE: 1 / 8
+
+DATA:
+    ID: data.rounded_non_terminating_quotient
+    TYPE: DECIMAL
+    VALUE: ROUND(1 / 3, 2)
+
+DATA:
+    ID: data.scaled_distance
+    TYPE: MEASURE
+    VALUE: MEASURE(9, unit.meter) / 4
+
+DATA:
+    ID: data.dimensionless_ratio
+    TYPE: DECIMAL
+    VALUE: MEASURE(9, unit.meter) / MEASURE(4, unit.meter)
+
+DATA:
+    ID: data.rounded_distance
+    TYPE: MEASURE
+    VALUE: ROUND(MEASURE(1, unit.meter) / 3, 2)
+""",
+        "08_EXAMPLES/INVALID/18_NON_TERMINATING_DIVISION.invalid.lcl": """LCL:
+    VERSION: \"0.1.0\"
+
+SPECIFICATION:
+    ID: invalid.non_terminating_division
+    NAME: \"Non-terminating division requires direct ROUND\"
+    VERSION: \"1.0.0\"
+    KIND: kind.data
+
+DATA:
+    ID: data.invalid_quotient
+    TYPE: DECIMAL
+    VALUE: 1 / 3
+""",
+        "08_EXAMPLES/INVALID/18_NON_TERMINATING_DIVISION.invalid.lcl.expected.txt": (
+            "EXPECTED_ERROR: error.numeric.non_terminating\n"
+            "EXPECTED_TERMINAL_STATUS: status.invalid\n"
+            "RULE: Reject a non-terminating quotient outside the direct first-argument "
+            "context of ROUND.\n"
+        ),
+        "08_EXAMPLES/INVALID/19_DIVISION_BY_ZERO.invalid.lcl": """LCL:
+    VERSION: \"0.1.0\"
+
+SPECIFICATION:
+    ID: invalid.division_by_zero
+    NAME: \"ROUND does not rescue division by zero\"
+    VERSION: \"1.0.0\"
+    KIND: kind.data
+
+DATA:
+    ID: data.invalid_zero_divisor
+    TYPE: DECIMAL
+    VALUE: ROUND(1 / 0, 2)
+""",
+        "08_EXAMPLES/INVALID/19_DIVISION_BY_ZERO.invalid.lcl.expected.txt": (
+            "EXPECTED_ERROR: error.numeric.division_by_zero\n"
+            "EXPECTED_TERMINAL_STATUS: status.invalid\n"
+            "RULE: A mathematical-zero denominator is invalid even in the direct "
+            "first-argument context of ROUND.\n"
+        ),
+    }
+    for relative_path, expected_text in expected_examples.items():
+        path = root / relative_path
+        expect(path.is_file(), f"missing division example {relative_path}")
+        actual_text = path.read_text(encoding="utf-8") if path.is_file() else ""
+        expect(actual_text == expected_text, f"{relative_path} is not the exact static fixture")
+
+    index_text = (root / "INDEX.txt").read_text(encoding="utf-8")
+    for relative_path in expected_examples:
+        index_entry = f"    {relative_path.removeprefix('08_EXAMPLES/')}\n"
+        expect(
+            index_text.count(index_entry) == 1,
+            f"INDEX.txt must list the division example exactly once: {relative_path}",
+        )
+    return violations
+
+
+def set_sort_contract_violations(
+    root: Path,
+    types: dict[str, Any],
+    operator_functions: dict[str, Any],
+    formats_registry: dict[str, Any],
+    semantic_meta: dict[str, Any],
+    statuses: dict[str, Any],
+    operations: dict[str, Any],
+    results_schema: dict[str, Any],
+    keywords: dict[str, Any],
+) -> list[str]:
+    violations: list[str] = []
+
+    def expect(condition: bool, message: str) -> None:
+        if not condition:
+            violations.append(message)
+
+    expected_set_profile = {
+        "legal_member_requirement": "homogeneous T with strict equality",
+        "intrinsic_order": "none",
+        "source_or_insertion_order_has_semantic_meaning": False,
+        "duplicate_equal_source_members": "collapse_to_one_member",
+        "direct_for_each": {
+            "legal_when": (
+                "Every pair of actual members is mutually order-compatible under "
+                "operators_and_functions_v0.1.0.json#/ordered_types."
+            ),
+            "order": "canonical_ascending",
+            "otherwise": (
+                "Pass the SET directly to core.sort and iterate the returned LIST[T]."
+            ),
+            "error": "error.type.mismatch",
+        },
+        "core_sort": {
+            "accepts_set_directly": True,
+            "preconversion_to_list_required": False,
+            "result": "LIST[T]",
+        },
+    }
+    expect(
+        types.get("set_iteration_profile") == expected_set_profile,
+        "types.set_iteration_profile is not the exact approved SET contract",
+    )
+    expected_set_type = (
+        "Homogeneous collection unique under strict equality and intrinsically unordered; "
+        "source or insertion order has no semantic meaning and equal duplicates collapse. "
+        "Direct FOR EACH uses canonical ascending order only when actual members are mutually "
+        "order-compatible; otherwise pass the SET directly to core.sort and iterate its "
+        "LIST[T] result."
+    )
+    expect(
+        types.get("types", {}).get("SET[T]") == expected_set_type,
+        "types.SET[T] meaning is not exact",
+    )
+
+    expected_ordered_types = [
+        "INTEGER",
+        "DECIMAL",
+        "STRING",
+        "DATE",
+        "TIME",
+        "DATETIME",
+        "DURATION",
+        "PERCENTAGE",
+        "BYTES",
+        "MEASURE[same unit]",
+    ]
+    expected_ordered_rules = {
+        "INTEGER": "mathematical numeric value",
+        "DECIMAL": "mathematical numeric value",
+        "STRING": "lexicographic by Unicode scalar value",
+        "DATE": "chronological Gregorian value of the RFC 3339 full-date",
+        "TIME": (
+            "subtract the declared offset, or +00:00 when omitted, from the RFC 3339 "
+            "partial-time on a common nominal local date; retain signed previous-day or "
+            "next-day displacement without modulo-24-hour wrapping and compare the "
+            "resulting chronological value"
+        ),
+        "DATETIME": (
+            "exact UTC instant after applying the RFC 3339 declared offset, or +00:00 "
+            "when omitted"
+        ),
+        "DURATION": (
+            "normalized exact elapsed-time magnitude under "
+            "formats_encodings_units_v0.1.0.json#/duration_normalization"
+        ),
+        "PERCENTAGE": "exact numeric magnitude",
+        "BYTES": "exact byte-count magnitude",
+        "MEASURE[same unit]": (
+            "numeric component after requiring the same exact unit identifier"
+        ),
+    }
+    expect(
+        operator_functions.get("ordered_types") == expected_ordered_types,
+        "operator ordered_types membership changed or is incomplete",
+    )
+    expect(
+        operator_functions.get("ordered_type_rules") == expected_ordered_rules,
+        "operator ordered_type_rules are not exact",
+    )
+    expected_ordered_value_equality = (
+        "Within one declared ordered type, equal canonical order keys are strict-equal "
+        "semantic values; equal offset-normalized TIME or DATETIME values and equal "
+        "normalized DURATION magnitudes therefore collapse as SET duplicates before "
+        "ordering."
+    )
+    expect(
+        operator_functions.get("ordered_value_equality")
+        == expected_ordered_value_equality,
+        "ordered-value equality does not eliminate unordered SET ties",
+    )
+
+    expected_duration_normalization = {
+        "base_unit": "unit.nanosecond",
+        "factor_interpretation": "exact count of base units per source unit",
+        "factors": {
+            "unit.nanosecond": 1,
+            "unit.microsecond": 1000,
+            "unit.millisecond": 1000000,
+            "unit.second": 1000000000,
+            "unit.minute": 60000000000,
+            "unit.hour": 3600000000000,
+            "unit.day": 86400000000000,
+            "unit.week": 604800000000000,
+        },
+        "semantic_rule": (
+            "Multiply the exact DURATION numeric component by its factor; the normalized "
+            "exact magnitude defines DURATION equality, arithmetic, and order. This "
+            "profile does not authorize implicit MEASURE conversion."
+        ),
+    }
+    expect(
+        formats_registry.get("duration_normalization")
+        == expected_duration_normalization,
+        "DURATION normalization factors or semantics are not exact",
+    )
+    actual_duration_normalization = formats_registry.get("duration_normalization", {})
+    duration_factor_units = set(actual_duration_normalization.get("factors", {}))
+    registered_time_units = {
+        unit_name
+        for unit_name, category in formats_registry.get("units", {}).items()
+        if category == "Time"
+    }
+    expect(
+        duration_factor_units == registered_time_units,
+        "DURATION normalization factors do not cover exactly the registered Time units",
+    )
+    expect(
+        actual_duration_normalization.get("base_unit") in registered_time_units
+        and actual_duration_normalization.get("factors", {}).get(
+            actual_duration_normalization.get("base_unit")
+        )
+        == 1,
+        "DURATION normalization base is not a factor-one registered Time unit",
+    )
+    expect(
+        operator_functions.get("constructors", {}).get("DURATION", {}).get("normalization")
+        == "formats_encodings_units_v0.1.0.json#/duration_normalization",
+        "DURATION constructor does not link to the normalization profile",
+    )
+    expect(
+        operator_functions.get("cross_type_numeric_order")
+        == (
+            "INTEGER and DECIMAL compare by exact mathematical value after "
+            "INTEGER-to-DECIMAL promotion."
+        ),
+        "cross-type numeric ordering is not exact",
+    )
+    expect(
+        operator_functions.get("non_material_ordering")
+        == "MISSING and UNKNOWN are not orderable values.",
+        "MISSING/UNKNOWN ordering exclusion is not exact",
+    )
+    expect(
+        operator_functions.get("string_order") == expected_ordered_rules["STRING"],
+        "STRING order differs from the registered ordered-type rule",
+    )
+
+    expected_meta_ordered = (
+        "A material-value domain whose actual members are mutually order-compatible under "
+        "operators_and_functions_v0.1.0.json#/ordered_types and #/ordered_type_rules; "
+        "MISSING and UNKNOWN are excluded."
+    )
+    expect(
+        semantic_meta.get("meta_types", {}).get("meta.ordered") == expected_meta_ordered,
+        "meta.ordered does not point to the authoritative ordered-type registry",
+    )
+
+    expected_sort_fields = {
+        "meaning": (
+            "Return LIST[T] in one declared deterministic total order from LIST[T] or SET[T]."
+        ),
+        "category": "read_only",
+        "deterministic": "derived",
+        "determinism_derivation": {
+            "natural_order_membership": (
+                "operators_and_functions_v0.1.0.json#/ordered_types"
+            ),
+            "natural_order_rules": (
+                "operators_and_functions_v0.1.0.json#/ordered_type_rules"
+            ),
+            "property_path_projection": (
+                "operators_and_functions_v0.1.0.json#/operators/property access"
+            ),
+            "key_reference": "validated deterministic side-effect-free kind.operation",
+            "list_equal_key_tie_breaker": "original_LIST_source_position",
+            "set_equal_key_policy": "distinct_members_require_distinct_keys",
+        },
+        "target": {"type": "LIST[T]|SET[T]", "required": True},
+        "parameters": {
+            "key": {
+                "type": "STRING|REFERENCE",
+                "required": False,
+                "default": None,
+                "meaning": (
+                    "Optional total-order projection; STRING is one exact property_path "
+                    "and REFERENCE is one validated kind.operation extractor."
+                ),
+                "constraints": [
+                    (
+                        "Omission is legal only when every pair of target members is mutually "
+                        "order-compatible under operators_and_functions_v0.1.0.json#/ordered_types."
+                    ),
+                    "A STRING is exactly one property_path defined for every target member.",
+                    (
+                        "A REFERENCE resolves to a kind.operation with SIDE_EFFECT FALSE, "
+                        "DETERMINISTIC TRUE, exactly one PARAMETER accepting T, and exactly "
+                        "one RESULT of a concrete registered ordered type."
+                    ),
+                    (
+                        "Every key value is present, known, and mutually order-compatible; "
+                        "distinct SET members produce distinct keys."
+                    ),
+                ],
+            },
+            "direction": {
+                "type": "ENUM[ascending|descending]",
+                "required": False,
+                "default": "ascending",
+                "meaning": "Sort direction.",
+                "constraints": [
+                    (
+                        "descending reverses primary-key order without reversing original "
+                        "LIST source order among equal-key members"
+                    )
+                ],
+            },
+        },
+        "positional_parameters": False,
+        "result_schema": "result.collection",
+        "result_value_type": "LIST[T]",
+        "preconditions": [
+            "an omitted key requires mutually order-compatible target members",
+            (
+                "a declared key is defined for every member and produces present, known, "
+                "mutually order-compatible values"
+            ),
+            "distinct SET members produce distinct keys",
+        ],
+        "postconditions": [
+            "result.collection.items is LIST[T]",
+            (
+                "the result contains exactly the target members, preserving LIST "
+                "multiplicity and including each SET member once"
+            ),
+            "ordering follows the natural value or declared key and direction",
+            "equal-key LIST members retain original LIST source order",
+        ],
+        "errors": [
+            "error.operation.parameter",
+            "error.reference.unresolved",
+            "error.reference.kind",
+            "error.required.missing",
+            "error.value.unknown",
+            "error.operation.precondition",
+        ],
+        "diagnostic_triggers": {
+            "error.operation.parameter": (
+                "An unknown, duplicate, or mistyped parameter; stable or comparator; "
+                "invalid direction; malformed property_path; or invalid key-extractor signature."
+            ),
+            "error.reference.unresolved": (
+                "The key REFERENCE does not resolve exactly once."
+            ),
+            "error.reference.kind": (
+                "The key REFERENCE resolves to a declaration other than kind.operation."
+            ),
+            "error.required.missing": "A declared key value is MISSING for any member.",
+            "error.value.unknown": "A declared key value is UNKNOWN for any member.",
+            "error.operation.precondition": (
+                "An omitted key lacks natural total order, key values are not mutually "
+                "order-compatible, or distinct SET members produce equal keys."
+            ),
+        },
+        "side_effects": [],
+        "additional_undeclared_effects": "forbidden",
+    }
+    sort_contract = operations.get("core.sort", {})
+    for field, expected_value in expected_sort_fields.items():
+        expect(
+            sort_contract.get(field) == expected_value,
+            f"core.sort.{field} is not the exact approved contract",
+        )
+    expect(
+        "stable" not in sort_contract.get("parameters", {})
+        and "comparator" not in sort_contract.get("parameters", {}),
+        "core.sort exposes forbidden stable or comparator parameters",
+    )
+
+    collection_items = (
+        results_schema.get("result.collection", {}).get("fields", {}).get("items")
+    )
+    expect(
+        collection_items == "LIST[T]",
+        "result.collection.items does not preserve the required LIST[T] dependency",
+    )
+
+    expected_error_fields = {
+        "error.operation.parameter": {
+            "meaning": (
+                "An ACTION omits, duplicates, mistypes, or supplies an unregistered named "
+                "operation parameter."
+            ),
+            "stage": "static_or_expression",
+            "recoverable_with_declared_handler": False,
+            "default_status": "status.invalid",
+        },
+        "error.reference.unresolved": {
+            "meaning": "REF does not resolve to exactly one declaration/binding.",
+            "stage": "resolution",
+            "recoverable_with_declared_handler": False,
+            "default_status": "status.invalid",
+        },
+        "error.reference.kind": {
+            "meaning": "Reference resolves to a declaration kind illegal in that field.",
+            "stage": "resolution",
+            "recoverable_with_declared_handler": False,
+            "default_status": "status.invalid",
+        },
+        "error.required.missing": {
+            "meaning": (
+                "A required value, source, output, evidence item, or declaration is MISSING."
+            ),
+            "stage": "execution",
+            "recoverable_with_declared_handler": True,
+            "default_status": "status.blocked",
+        },
+        "error.value.unknown": {
+            "meaning": "A required value is UNKNOWN and no valid handler resolves it.",
+            "stage": "static_or_expression",
+            "recoverable_with_declared_handler": True,
+            "default_status": "status.blocked",
+        },
+        "error.operation.precondition": {
+            "meaning": "A core operation precondition is false, missing, or unknown.",
+            "stage": "execution",
+            "recoverable_with_declared_handler": False,
+            "default_status": "status.failed",
+        },
+        "error.type.mismatch": {
+            "meaning": (
+                "A value is incompatible with its declared type or with the type or "
+                "registered order domain required by its use context."
+            ),
+            "stage": "static_or_expression",
+            "recoverable_with_declared_handler": False,
+            "default_status": "status.invalid",
+        },
+    }
+    for error_name, expected_fields in expected_error_fields.items():
+        actual = statuses.get("errors", {}).get(error_name, {})
+        expect(
+            all(actual.get(field) == value for field, value in expected_fields.items()),
+            f"{error_name} does not preserve the required SET/sort trigger metadata",
+        )
+
+    expected_set_keyword = (
+        "An intrinsically unordered collection unique under strict equality using bracket "
+        "value syntax; source or insertion order has no semantic meaning and equal "
+        "duplicates collapse. Direct FOR EACH uses canonical ascending order only when "
+        "actual members are mutually order-compatible; otherwise pass the SET directly "
+        "to core.sort and iterate its LIST result."
+    )
+    expect(
+        keywords.get("SET", {}).get("meaning") == expected_set_keyword,
+        "SET keyword meaning is not exact",
+    )
+
+    prose_requirements = {
+        "02_LEXICAL/06_KEYWORD_REFERENCE_N_TO_Z.txt": [expected_set_keyword],
+        "02_LEXICAL/08_LIST_OBJECT_AND_DATA_LEXICAL_FORM.txt": [
+            "equal members collapse under strict equality",
+            "insertion order has no semantic meaning",
+        ],
+        "03_TYPES_AND_VALUES/01_TYPE_SYSTEM_RULES.txt": [
+            "An unordered SET remains a legal value",
+            "error.type.mismatch before iteration or side effects",
+            "core.sort may instead produce",
+        ],
+        "03_TYPES_AND_VALUES/02_BUILT_IN_TYPE_REFERENCE.txt": [
+            "intrinsically",
+            "registered total-order",
+            "returned LIST[T]",
+        ],
+        "03_TYPES_AND_VALUES/03_COLLECTIONS_OBJECTS_ENUMS_AND_EQUALITY.txt": [
+            "SET is intrinsically unordered",
+            "equal source members collapse under strict equality",
+            "equal canonical order",
+            "keys within one declared ordered type",
+            "DURATION equality",
+        ],
+        "03_TYPES_AND_VALUES/07_FORMATS_ENCODINGS_UNITS_BOUNDS_AND_PATTERNS.txt": [
+            "DURATION has one exact normalized elapsed-time magnitude",
+            "604,800,000,000,000 per week",
+            "does not authorize implicit conversion between MEASURE values",
+        ],
+        "03_TYPES_AND_VALUES/10_COLLECTION_OBJECT_ENUM_AND_SCHEMA_FORMS.txt": [
+            "source or insertion",
+            "returned LIST[T]",
+            "declaration order has no comparison, iteration, or sorting significance",
+            "approved key extractor",
+        ],
+        "04_GRAMMAR/04_CONDITIONS_BRANCHES_AND_BOUNDED_ITERATION.txt": [
+            "FOR EACH has no key or comparator syntax",
+            "returned LIST iterated",
+        ],
+        "05_SEMANTICS/08_PHASE_SEQUENCE_STEP_BRANCH_LOOP_RETRY_AND_CONCURRENCY.txt": [
+            "SET is intrinsically unordered",
+            "error.type.mismatch before any iteration or side effect",
+            "returned LIST instead",
+        ],
+        "05_SEMANTICS/12_OPERATOR_FUNCTION_AND_SPECIAL_VALUE_SEMANTICS.txt": [
+            "sole natural-order source for SET",
+            "Unicode-scalar lexicographic order",
+            "without modulo-24-hour wrapping",
+            "formats_encodings_units_v0.1.0.json#/duration_normalization",
+            "equal canonical order keys are strict-equal values",
+            "No locale, insertion",
+            "host collation, or inferred ENUM order",
+        ],
+        "06_STANDARD_LIBRARY/01_READ_ONLY_AND_ANALYTICAL_OPERATIONS.txt": [
+            "Accept LIST[T] or SET[T] directly",
+            "No comparator or stable parameter exists",
+            "Deterministic: DERIVED",
+            "registered property-access expression for a STRING key",
+        ],
+        "06_STANDARD_LIBRARY/10_CORE_OPERATION_PARAMETER_RULES.txt": [
+            "core.sort has exactly key and direction",
+            "error.operation.parameter",
+            "equal keys for distinct SET members",
+            "result.collection items are LIST[T]",
+        ],
+    }
+    for relative_path, required_text in prose_requirements.items():
+        prose = (root / relative_path).read_text(encoding="utf-8")
+        missing = [token for token in required_text if token not in prose]
+        expect(not missing, f"{relative_path} is missing SET/sort text: {missing}")
+
+    readme = (root / "README.txt").read_text(encoding="utf-8")
+    stale_readme_claims = [
+        "unresolved value-kind combinators",
+        "field value-kind templates remain unresolved",
+        "SET sorting",
+        "division, SET",
+    ]
+    present_stale_claims = [claim for claim in stale_readme_claims if claim in readme]
+    expect(
+        not present_stale_claims,
+        f"README still reports resolved Task-0002/0003 work: {present_stale_claims}",
+    )
+    expect(
+        "closed block, field-signature, value-kind, and parameterized-template contracts"
+        in readme,
+        "README does not report the closed Task-0002 value-kind contract",
+    )
+
+    release_status_requirements = {
+        "00_RELEASE/00_CANONICAL_SOURCE_AND_PROVENANCE.txt": [
+            "LCL-AUDIT-010/K-003, 011, and 012 are resolved",
+            "result-binding portion of LCL-AUDIT-007",
+            "LCL-AUDIT-013 through",
+            "LCL-AUDIT-016 is outside the bare-language package scope",
+        ],
+        "00_RELEASE/01_RELEASE_STATUS_AND_BOUNDARY.txt": [
+            "LCL-AUDIT-010/K-003, 011, and 012",
+            "result-binding portion of LCL-AUDIT-007",
+            "LCL-AUDIT-013 through",
+            "LCL-AUDIT-016 is outside the bare-language scope",
+        ],
+    }
+    for relative_path, required_text in release_status_requirements.items():
+        release_status = (root / relative_path).read_text(encoding="utf-8")
+        missing = [token for token in required_text if token not in release_status]
+        expect(not missing, f"{relative_path} has stale Task status: {missing}")
+        expect(
+            "value-kind closure, 011" not in release_status,
+            f"{relative_path} still lists resolved value-kind/division/SET work as blocked",
+        )
+
+    grammar = (root / "04_GRAMMAR/10_COMPLETE_EBNF.ebnf").read_text(encoding="utf-8")
+    for_each_segment = grammar[
+        grammar.index("FOR_EACH =") : grammar.index("EXECUTABLE_BODY =")
+    ].strip()
+    expected_for_each = (
+        'FOR_EACH = "FOR", SPACE, "EACH", SPACE, SIMPLE_IDENTIFIER, SPACE, "IN", SPACE,\n'
+        '    EXPRESSION, ":", NEWLINE, INDENT, EXECUTABLE_BODY, DEDENT ;'
+    )
+    expect(
+        for_each_segment == expected_for_each,
+        "FOR_EACH EBNF gained unapproved key/comparator/sort syntax",
+    )
+
+    catalog = load_json_strict(
+        root / "09_CONFORMANCE/CASES/core_conformance_cases_v0.1.0.json"
+    )
+    cases = {case.get("id"): case for case in catalog.get("cases", [])}
+    case_requirements = {
+        "KEYWORD-VALID-0225": (
+            "keyword_valid",
+            "SET",
+            "keywords_v0.1.0.json",
+            ["intrinsically unordered", "equal duplicates collapse", "conditional direct iteration"],
+        ),
+        "TYPE-VALID-0337": (
+            "type_valid",
+            "SET[T]",
+            "types_v0.1.0.json",
+            [
+                "any strict-equality T",
+                "collapse equal duplicates",
+                "canonical ascending",
+                "TIME day displacement",
+                "DURATION normalization",
+            ],
+        ),
+        "TYPE-INVALID-0338": (
+            "type_invalid",
+            "SET[T]",
+            "types_v0.1.0.json",
+            ["direct FOR EACH", "without rejecting the SET value itself"],
+        ),
+        "OPERATION-BINDING-0571": (
+            "operation_binding",
+            "core.sort",
+            "operations_v0.1.0.json",
+            ["LIST[T] or SET[T] directly", "reject stable, comparator"],
+        ),
+        "OPERATION-EFFECTS-0572": (
+            "operation_effects",
+            "core.sort",
+            "operations_v0.1.0.json",
+            [
+                "Derive determinism",
+                "ordered-type membership and rules",
+                "property-access projection",
+                "preserve LIST source position",
+                "require distinct keys",
+            ],
+        ),
+        "OPERATION-ERRORS-0573": (
+            "operation_errors",
+            "core.sort",
+            "operations_v0.1.0.json",
+            ["operation-parameter defects", "MISSING or UNKNOWN", "equal keys for distinct SET"],
+        ),
+        "ERROR-CONTRACT-0725": (
+            "error_contract",
+            "error.operation.parameter",
+            "statuses_and_errors_v0.1.0.json",
+            ["unregistered named", "core.sort stable or comparator"],
+        ),
+        "ERROR-CONTRACT-0747": (
+            "error_contract",
+            "error.type.mismatch",
+            "statuses_and_errors_v0.1.0.json",
+            [
+                "context-required registered order domain",
+                "direct FOR EACH",
+                "lack registered total order",
+            ],
+        ),
+        "RESULT-SCHEMAS-0775": (
+            "result_schemas",
+            "result.collection",
+            "built_in_groups_and_results_v0.1.0.json",
+            ["result.collection.items is LIST[T]", "without claiming", "cardinality"],
+        ),
+    }
+    for case_id, (category, subject, source, required_text) in case_requirements.items():
+        case = cases.get(case_id)
+        expect(case is not None, f"missing SET/sort conformance case {case_id}")
+        if case is None:
+            continue
+        expect(
+            (
+                case.get("category") == category
+                and case.get("subject") == subject
+                and case.get("source") == source
+            ),
+            f"{case_id} identity metadata is not exact",
+        )
+        requirement = case.get("requirement", "")
+        missing = [token for token in required_text if token not in requirement]
+        expect(not missing, f"{case_id} is missing SET/sort evidence: {missing}")
+
+    expected_example_hashes = {
+        "08_EXAMPLES/VALID/12_SET_SORTING.lcl": (
+            "cb83518d64624c1c062c5a078c8ffe1d2c853740708c4afe0bf22bded7476e78"
+        ),
+        "08_EXAMPLES/INVALID/20_UNORDERED_SET_DIRECT_ITERATION.invalid.lcl": (
+            "584b7132859896748958647f11e6777459512469e92b50cbd3044d27bfb93949"
+        ),
+        "08_EXAMPLES/INVALID/20_UNORDERED_SET_DIRECT_ITERATION.invalid.lcl.expected.txt": (
+            "29729b07d895640e6ea5e084368831c5822993f24b327dde60875dc5bd7eef68"
+        ),
+        "08_EXAMPLES/INVALID/21_SORT_STABLE_PARAMETER.invalid.lcl": (
+            "dd2fa6d9953c6a6b9e79032ff684dda6d214fdfa2fd321e426fe61e5ee43646c"
+        ),
+        "08_EXAMPLES/INVALID/21_SORT_STABLE_PARAMETER.invalid.lcl.expected.txt": (
+            "291763b7449d220675ea8b28920fd43c711dd0d4266cec1696e25aacf289b07e"
+        ),
+    }
+    example_requirements = {
+        "08_EXAMPLES/VALID/12_SET_SORTING.lcl": [
+            "TYPE: SET[INTEGER]",
+            "VALUE: [3, 1, 2, 2]",
+            "TYPE: LIST[INTEGER]",
+            "SIDE_EFFECT: FALSE",
+            "DETERMINISTIC: TRUE",
+            "VALUE: REF(sort.identity_key)",
+        ],
+        "08_EXAMPLES/INVALID/20_UNORDERED_SET_DIRECT_ITERATION.invalid.lcl": [
+            "TYPE: SET[BOOLEAN]",
+            "FOR EACH flag IN REF(input.flags):",
+        ],
+        "08_EXAMPLES/INVALID/20_UNORDERED_SET_DIRECT_ITERATION.invalid.lcl.expected.txt": [
+            "EXPECTED_ERROR: error.type.mismatch",
+            "EXPECTED_TERMINAL_STATUS: status.invalid",
+            "returned LIST instead",
+        ],
+        "08_EXAMPLES/INVALID/21_SORT_STABLE_PARAMETER.invalid.lcl": [
+            "OPERATION: core.sort",
+            "NAME: stable",
+        ],
+        "08_EXAMPLES/INVALID/21_SORT_STABLE_PARAMETER.invalid.lcl.expected.txt": [
+            "EXPECTED_ERROR: error.operation.parameter",
+            "EXPECTED_TERMINAL_STATUS: status.invalid",
+            "stable and comparator are unregistered",
+        ],
+    }
+    for relative_path, expected_hash in expected_example_hashes.items():
+        path = root / relative_path
+        expect(path.is_file(), f"missing SET/sort example {relative_path}")
+        actual_hash = sha256(path) if path.is_file() else ""
+        expect(actual_hash == expected_hash, f"{relative_path} is not the exact static fixture")
+        example = path.read_text(encoding="utf-8") if path.is_file() else ""
+        missing = [
+            token for token in example_requirements[relative_path] if token not in example
+        ]
+        expect(not missing, f"{relative_path} is missing SET/sort evidence: {missing}")
+
+    index_text = (root / "INDEX.txt").read_text(encoding="utf-8")
+    for relative_path in expected_example_hashes:
+        index_entry = f"    {relative_path.removeprefix('08_EXAMPLES/')}\n"
+        expect(
+            index_text.count(index_entry) == 1,
+            f"INDEX.txt must list the SET/sort example exactly once: {relative_path}",
+        )
     return violations
 
 
@@ -1660,25 +2790,35 @@ def check_registry(root: Path, results: Results) -> None:
         blocked_by=["LCL-AUDIT-013"],
     )
 
-    semantic_text = (
-        root / "05_SEMANTICS/12_OPERATOR_FUNCTION_AND_SPECIAL_VALUE_SEMANTICS.txt"
-    ).read_text(encoding="utf-8")
-    division_contract = operator_functions.get("operators", {}).get("/", {})
-    division_unresolved = (
-        "mapping is unresolved" in semantic_text
-        or division_contract.get("result") == "DECIMAL|MEASURE"
+    division_violations = division_contract_violations(
+        root, types, operator_functions, statuses, operations, keywords
     )
-    set_contract = types.get("types", {}).get("SET[T]", "")
-    set_iteration_unresolved = (
-        "explicit sort key" in set_contract and "set_iteration_profile" not in types
+    set_sort_violations = set_sort_contract_violations(
+        root,
+        types,
+        operator_functions,
+        formats_registry,
+        semantic_meta,
+        statuses,
+        operations,
+        results_schema,
+        keywords,
     )
     results.add(
         "registry",
-        "numeric_and_set_semantics",
-        "BLOCKED" if division_unresolved or set_iteration_unresolved else "PASS",
-        division_result_mapping_unresolved=division_unresolved,
-        set_iteration_sort_key_unresolved=set_iteration_unresolved,
-        blocked_by=["LCL-AUDIT-011"] if division_unresolved or set_iteration_unresolved else [],
+        "division_semantics",
+        "FAIL" if division_violations else "PASS",
+        division_result_mapping_unresolved=bool(division_violations),
+        division_contract_violations=division_violations,
+        blocked_by=[],
+    )
+    results.add(
+        "registry",
+        "set_and_sort_semantics",
+        "FAIL" if set_sort_violations else "PASS",
+        set_iteration_sort_key_unresolved=bool(set_sort_violations),
+        set_sort_contract_violations=set_sort_violations,
+        blocked_by=[],
     )
 
     constructor_violations = constructor_pattern_contract_violations(

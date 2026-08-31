@@ -1,0 +1,52 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: invalid.sort_stable_parameter
+    NAME: "core.sort has fixed tie behavior"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+INPUT:
+    ID: input.numbers
+    TYPE: SET[INTEGER]
+    VALUE: [3, 1, 2]
+
+OUTPUT:
+    ID: output.numbers
+    TYPE: LIST[INTEGER]
+    FORMAT: format.json
+
+GOAL:
+    ID: goal.sorted
+    ASSERT: REF(output.numbers) == [1, 2, 3]
+
+ACTION:
+    ID: action.sort
+    OPERATION: core.sort
+    TARGET: REF(input.numbers)
+    PARAMETER:
+        NAME: stable
+        TYPE: BOOLEAN
+        REQUIRED: FALSE
+        VALUE: TRUE
+    OUTPUT: REF(output.numbers)
+
+VERIFY:
+    ID: verify.unreachable
+    ASSERT: REF(output.numbers) == [1, 2, 3]
+
+SUCCESS:
+    ID: success.unreachable
+    ALL: [REF(verify.unreachable)]
+
+TASK:
+    ID: task.sorted
+    GOAL: REF(goal.sorted)
+    INPUT: REF(input.numbers)
+    ACTION: REF(action.sort)
+    OUTPUT: REF(output.numbers)
+    SUCCESS: REF(success.unreachable)
+
+EXECUTE:
+    REFERENCE: REF(task.sorted)

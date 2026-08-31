@@ -50,6 +50,21 @@
     "unit.frame_per_second": "Media rate",
     "unit.bit_per_second": "Data rate"
   },
+  "duration_normalization": {
+    "base_unit": "unit.nanosecond",
+    "factor_interpretation": "exact count of base units per source unit",
+    "factors": {
+      "unit.nanosecond": 1,
+      "unit.microsecond": 1000,
+      "unit.millisecond": 1000000,
+      "unit.second": 1000000000,
+      "unit.minute": 60000000000,
+      "unit.hour": 3600000000000,
+      "unit.day": 86400000000000,
+      "unit.week": 604800000000000
+    },
+    "semantic_rule": "Multiply the exact DURATION numeric component by its factor; the normalized exact magnitude defines DURATION equality, arithmetic, and order. This profile does not authorize implicit MEASURE conversion."
+  },
   "builtins": {
     "document_kinds": [
       "kind.task",

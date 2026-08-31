@@ -1,0 +1,38 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: example.exact_division
+    NAME: "Exact division and explicit rounding"
+    VERSION: "1.0.0"
+    KIND: kind.data
+
+DATA:
+    ID: data.integral_decimal_quotient
+    TYPE: DECIMAL
+    VALUE: 4 / 2
+
+DATA:
+    ID: data.finite_decimal_quotient
+    TYPE: DECIMAL
+    VALUE: 1 / 8
+
+DATA:
+    ID: data.rounded_non_terminating_quotient
+    TYPE: DECIMAL
+    VALUE: ROUND(1 / 3, 2)
+
+DATA:
+    ID: data.scaled_distance
+    TYPE: MEASURE
+    VALUE: MEASURE(9, unit.meter) / 4
+
+DATA:
+    ID: data.dimensionless_ratio
+    TYPE: DECIMAL
+    VALUE: MEASURE(9, unit.meter) / MEASURE(4, unit.meter)
+
+DATA:
+    ID: data.rounded_distance
+    TYPE: MEASURE
+    VALUE: ROUND(MEASURE(1, unit.meter) / 3, 2)

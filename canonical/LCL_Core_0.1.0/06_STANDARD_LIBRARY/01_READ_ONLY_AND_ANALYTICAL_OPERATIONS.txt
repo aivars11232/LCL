@@ -41,9 +41,20 @@ core.filter
     Deterministic: TRUE
 
 core.sort
-    Meaning: Return values in declared deterministic order.
+    Meaning: Accept LIST[T] or SET[T] directly and return LIST[T] in ascending or
+    descending deterministic total order; no prior SET-to-LIST conversion exists.
+    Key: Omit only for mutually order-compatible members. Otherwise use one exact
+    property_path STRING or REF to a deterministic, side-effect-free kind.operation
+    with exactly one compatible input and one concrete registered ordered result.
+    Ties: Equal-key LIST members retain source order. Distinct SET members must
+    produce distinct keys. No comparator or stable parameter exists.
+    Errors: Exact triggers are registered for operation parameters, key references,
+    MISSING/UNKNOWN keys, absent total order, incompatible keys, and SET key collision.
     Side effect: FALSE
-    Deterministic: TRUE
+    Deterministic: DERIVED from registered ordered-type membership and rules for
+    natural order, the registered property-access expression for a STRING key, or
+    the validated operation contract for a REF key; plus original LIST source
+    position for equal keys and the distinct-key requirement for SET members.
 
 core.group
     Meaning: Partition values by one declared key or predicate.

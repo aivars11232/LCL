@@ -11,8 +11,10 @@ Inline LIST and SET values use brackets and comma-space separation:
 
 Multiline LIST and SET values put one expression per line and a comma after every
 member except the last. LIST preserves order and duplicates. SET uses the same
-bracket forms, rejects duplicates, and defines canonical iteration order. ITEM is
-not a collection-value field; it is reserved for enum-member declarations.
+bracket forms; equal members collapse under strict equality, and member source or
+insertion order has no semantic meaning. Conditional SET iteration order is
+defined by the type and semantic contracts. ITEM is not a collection-value field;
+it is reserved for enum-member declarations.
 
 OBJECT uses an indented VALUE block with lowercase field names. Duplicate fields
 are invalid. Uppercase syntax tokens cannot act as unquoted object keys.

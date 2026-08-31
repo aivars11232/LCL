@@ -9,10 +9,13 @@ STRING
     Unicode text; no interpolation.
 
 INTEGER
-    Unbounded signed whole number.
+    Unbounded signed whole number. It never wraps, saturates, or overflows to a
+    different LCL value.
 
 DECIMAL
-    Exact finite base-10 decimal.
+    Exact finite base-10 decimal with an unbounded integer coefficient and a
+    finite non-negative count of fractional digits. Infinity, NaN, and
+    underflow-to-zero are not DECIMAL values.
 
 BOOLEAN
     TRUE or FALSE; no truthy coercion.
@@ -24,9 +27,12 @@ LIST[T]
     Ordered collection using bracket value syntax; duplicates allowed.
 
 SET[T]
-    Unique unordered collection using bracket value syntax. Iteration is canonical
-    ascending only when T has a defined total order; otherwise iteration requires
-    an explicit sort key.
+    Homogeneous collection unique under strict equality and intrinsically
+    unordered. Source or insertion order has no semantic meaning, and equal source
+    members collapse to one member. Direct FOR EACH is legal only when every pair
+    of actual members is mutually order-compatible under the registered total-order
+    profile and then uses canonical ascending order. Otherwise pass the SET directly
+    to core.sort and iterate the returned LIST[T].
 
 OBJECT
     Keyed value checked by an explicit schema when provided.

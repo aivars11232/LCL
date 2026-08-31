@@ -1,0 +1,85 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: example.set_sorting
+    NAME: "Deterministic SET sorting to LIST"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+DEFINE:
+    ID: sort.identity_key
+    KIND: kind.operation
+    MEANING: "Return the STRING member as its ordered key."
+    SIDE_EFFECT: FALSE
+    DETERMINISTIC: TRUE
+    PARAMETER:
+        NAME: member
+        TYPE: STRING
+        REQUIRED: TRUE
+    RESULT:
+        TYPE: STRING
+
+INPUT:
+    ID: input.numbers
+    TYPE: SET[INTEGER]
+    VALUE: [3, 1, 2, 2]
+
+INPUT:
+    ID: input.names
+    TYPE: SET[STRING]
+    VALUE: ["beta", "alpha"]
+
+OUTPUT:
+    ID: output.numbers
+    TYPE: LIST[INTEGER]
+    FORMAT: format.json
+
+OUTPUT:
+    ID: output.names
+    TYPE: LIST[STRING]
+    FORMAT: format.json
+
+GOAL:
+    ID: goal.sorted
+    ASSERT: REF(output.numbers) == [1, 2, 3] AND REF(output.names) == ["alpha", "beta"]
+
+ACTION:
+    ID: action.sort_numbers
+    OPERATION: core.sort
+    TARGET: REF(input.numbers)
+    OUTPUT: REF(output.numbers)
+
+ACTION:
+    ID: action.sort_names_by_key
+    OPERATION: core.sort
+    TARGET: REF(input.names)
+    PARAMETER:
+        NAME: key
+        TYPE: REFERENCE[REF(sort.identity_key)]
+        REQUIRED: FALSE
+        VALUE: REF(sort.identity_key)
+    OUTPUT: REF(output.names)
+
+VERIFY:
+    ID: verify.numbers
+    ASSERT: REF(output.numbers) == [1, 2, 3]
+
+VERIFY:
+    ID: verify.names
+    ASSERT: REF(output.names) == ["alpha", "beta"]
+
+SUCCESS:
+    ID: success.sorted
+    ALL: [REF(verify.numbers), REF(verify.names)]
+
+TASK:
+    ID: task.sorted
+    GOAL: REF(goal.sorted)
+    INPUT: [REF(input.numbers), REF(input.names)]
+    ACTION: [REF(action.sort_numbers), REF(action.sort_names_by_key)]
+    OUTPUT: [REF(output.numbers), REF(output.names)]
+    SUCCESS: REF(success.sorted)
+
+EXECUTE:
+    REFERENCE: REF(task.sorted)

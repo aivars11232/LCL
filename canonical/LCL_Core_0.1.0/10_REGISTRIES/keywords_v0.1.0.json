@@ -653,7 +653,7 @@
     },
     "ROUND": {
       "category": "function",
-      "meaning": "Round a DECIMAL to explicit fractional digits using half-even rounding.",
+      "meaning": "Round a DECIMAL or MEASURE to non-negative fractional digits using half-even rounding; MEASURE preserves its UNIT.",
       "contexts": "Defined by grammar and block schemas.",
       "case_sensitive": true
     },
@@ -677,7 +677,7 @@
     },
     "SET": {
       "category": "type",
-      "meaning": "An unordered collection of unique values using bracket value syntax. Iteration uses canonical ascending order only when the element type has a defined total order; otherwise iteration requires an explicit sort key.",
+      "meaning": "An intrinsically unordered collection unique under strict equality using bracket value syntax; source or insertion order has no semantic meaning and equal duplicates collapse. Direct FOR EACH uses canonical ascending order only when actual members are mutually order-compatible; otherwise pass the SET directly to core.sort and iterate its LIST result.",
       "contexts": "Defined by the type and collection contracts.",
       "case_sensitive": true
     },

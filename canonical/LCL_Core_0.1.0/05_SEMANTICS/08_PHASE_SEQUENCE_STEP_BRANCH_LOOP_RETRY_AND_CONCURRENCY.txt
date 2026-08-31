@@ -7,7 +7,13 @@ DATE: 2026-08-30
 
 SEQUENCE lexical STEP order is normative, refined by acyclic BEFORE/AFTER.
 PHASE groups execution units. IF evaluates once upon reachability. FOR EACH
-iterates a finite snapshot in list order or set canonical order.
+iterates a finite snapshot. LIST uses source order. SET is intrinsically unordered;
+equal members collapse under strict equality before the snapshot, and source or
+insertion order has no semantic meaning. Direct SET iteration is legal only when
+every pair of actual members is mutually order-compatible under the registered
+total-order profile and then uses canonical ascending order. Otherwise direct
+iteration produces error.type.mismatch before any iteration or side effect; pass
+the SET directly to core.sort and iterate its returned LIST instead.
 
 RETRY LIMIT is the number of additional attempts after the first; 0..100. DELAY
 occurs before each additional attempt. Retry does not expand permissions or

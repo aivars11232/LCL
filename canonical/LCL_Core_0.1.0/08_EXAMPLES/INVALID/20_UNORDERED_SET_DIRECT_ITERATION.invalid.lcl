@@ -1,0 +1,46 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: invalid.unordered_set_direct_iteration
+    NAME: "Unordered SET requires sorting before iteration"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+INPUT:
+    ID: input.flags
+    TYPE: SET[BOOLEAN]
+    VALUE: [TRUE, FALSE]
+
+GOAL:
+    ID: goal.inspect_flags
+    ASSERT: TRUE
+
+SEQUENCE:
+    ID: sequence.inspect_flags
+    MODE: mode.sequential
+    FOR EACH flag IN REF(input.flags):
+        STEP:
+            ID: step.return_flag
+            ACTION:
+                ID: action.return_flag
+                OPERATION: core.return
+                TARGET: REF(flag)
+
+VERIFY:
+    ID: verify.unreachable
+    ASSERT: TRUE
+
+SUCCESS:
+    ID: success.unreachable
+    ALL: [REF(verify.unreachable)]
+
+TASK:
+    ID: task.inspect_flags
+    GOAL: REF(goal.inspect_flags)
+    INPUT: REF(input.flags)
+    SEQUENCE: REF(sequence.inspect_flags)
+    SUCCESS: REF(success.unreachable)
+
+EXECUTE:
+    REFERENCE: REF(task.inspect_flags)

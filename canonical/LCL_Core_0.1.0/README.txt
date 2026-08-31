@@ -14,7 +14,7 @@ THIS PACKAGE CONTAINS
 - lexical, grammar, type, value, expression, and execution rules;
 - bracket-only LIST/SET values, enum-only ITEM, and closed typed-constructor and
   GLOB/REGEX profiles;
-- block and field signatures, including unresolved value-kind combinators;
+- closed block, field-signature, value-kind, and parameterized-template contracts;
 - rule, permission, authority, conflict, state, memory, and evidence semantics;
 - core operation and pure-function contracts, with unresolved determinism and
   result-binding decisions;
@@ -24,9 +24,8 @@ THIS PACKAGE CONTAINS
 
 KNOWN CANDIDATE LIMITATIONS
 
-- field value-kind templates remain unresolved;
-- division, SET sorting, result binding, diagnostic selection, and mixed-phase
-  lifecycle behavior require owner decisions;
+- result binding, diagnostic selection, and mixed-phase lifecycle behavior require
+  owner decisions;
 - the 792-entry catalog is a descriptive requirements index, not an executed
   semantic suite; executable semantic evidence is outside the bare-language
   package scope and its absence is not a release blocker;

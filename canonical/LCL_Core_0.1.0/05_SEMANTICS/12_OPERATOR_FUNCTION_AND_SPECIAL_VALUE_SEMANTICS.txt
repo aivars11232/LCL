@@ -12,6 +12,20 @@ That registry also closes the typed-constructor names, overloads, results,
 constraints, and diagnostics. A constructor call is pure. An unregistered name,
 arity, or operand family is invalid; implementations do not infer extra overloads.
 
+The registered total-order profile is also the sole natural-order source for SET
+iteration and core.sort. INTEGER and DECIMAL use exact mathematical value; STRING
+uses Unicode-scalar lexicographic order; and DATE uses chronological Gregorian
+full-date order. TIME subtracts its declared offset, or +00:00 when omitted, on a
+common nominal local date and retains signed previous-day or next-day displacement
+without modulo-24-hour wrapping. DATETIME uses its exact offset-normalized UTC
+instant. DURATION uses the normalized exact magnitude and nanosecond factors in
+formats_encodings_units_v0.1.0.json#/duration_normalization. PERCENTAGE and BYTES
+use exact magnitude, and MEASURE values are order-compatible only with the same
+exact UNIT and compare by numeric component. Within one declared ordered type,
+equal canonical order keys are strict-equal values and collapse as SET duplicates
+before ordering. MISSING and UNKNOWN are not orderable. No locale, insertion
+order, host collation, or inferred ENUM order may change these rules.
+
 MATCHES consumes STRING and REGEX, or PATH/STRING and GLOB. It compares the
 entire input under the selected closed pattern profile. A non-match returns FALSE.
 For REGEX, full-string behavior is a semantic boundary check and is not expressed
@@ -21,10 +35,19 @@ produces error.pattern.resource_limit.
 
 No implicit string-to-number, Boolean-to-number, path-to-string, enum-to-string,
 or unit conversion exists. INTEGER promotes to DECIMAL only when paired with
-DECIMAL. Ordered MEASURE comparison requires the same exact UNIT. Division by
-zero is an error. A quotient not representable as a finite exact DECIMAL produces
-error.numeric.non_terminating.
+DECIMAL outside division; every scalar division overload has static result type
+DECIMAL. MEASURE divided by INTEGER or DECIMAL preserves its exact UNIT and has
+a DECIMAL numeric component. MEASURE divided by a MEASURE with the same exact
+UNIT returns dimensionless DECIMAL; different units produce
+error.numeric.unit_mismatch, and numeric divided by MEASURE is not registered.
+Ordered MEASURE comparison continues to require the same exact UNIT.
 
-The registry still uses undeclared symbolic operand/result contracts, and the
-exact INTEGER/DECIMAL/MEASURE division-result mapping is unresolved. Those gaps
-block an exhaustive operator or function conformance claim.
+Division computes an exact mathematical quotient. A finite base-10 result is
+required unless the quotient is the direct first argument of ROUND, which rounds
+once using half-even to a declared non-negative number of fractional digits.
+ROUND also accepts MEASURE and preserves its UNIT. TOLERANCE does not establish a
+rounding context. Mathematical-zero denominators always produce
+error.numeric.division_by_zero. Other non-terminating quotients produce
+error.numeric.non_terminating. Host limitations produce error.host.constraint
+without changing the required value; no overflow, wrap, saturation, Infinity,
+NaN, or underflow-to-zero result exists in LCL.

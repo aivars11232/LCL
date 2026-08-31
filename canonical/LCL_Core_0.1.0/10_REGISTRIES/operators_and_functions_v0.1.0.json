@@ -20,6 +20,21 @@
     "BYTES",
     "MEASURE[same unit]"
   ],
+  "ordered_type_rules": {
+    "INTEGER": "mathematical numeric value",
+    "DECIMAL": "mathematical numeric value",
+    "STRING": "lexicographic by Unicode scalar value",
+    "DATE": "chronological Gregorian value of the RFC 3339 full-date",
+    "TIME": "subtract the declared offset, or +00:00 when omitted, from the RFC 3339 partial-time on a common nominal local date; retain signed previous-day or next-day displacement without modulo-24-hour wrapping and compare the resulting chronological value",
+    "DATETIME": "exact UTC instant after applying the RFC 3339 declared offset, or +00:00 when omitted",
+    "DURATION": "normalized exact elapsed-time magnitude under formats_encodings_units_v0.1.0.json#/duration_normalization",
+    "PERCENTAGE": "exact numeric magnitude",
+    "BYTES": "exact byte-count magnitude",
+    "MEASURE[same unit]": "numeric component after requiring the same exact unit identifier"
+  },
+  "ordered_value_equality": "Within one declared ordered type, equal canonical order keys are strict-equal semantic values; equal offset-normalized TIME or DATETIME values and equal normalized DURATION magnitudes therefore collapse as SET duplicates before ordering.",
+  "cross_type_numeric_order": "INTEGER and DECIMAL compare by exact mathematical value after INTEGER-to-DECIMAL promotion.",
+  "non_material_ordering": "MISSING and UNKNOWN are not orderable values.",
   "string_order": "lexicographic by Unicode scalar value",
   "unknown_logic": {
     "NOT UNKNOWN": "UNKNOWN",
@@ -169,6 +184,7 @@
       ],
       "result": "DURATION",
       "unit_category": "Time",
+      "normalization": "formats_encodings_units_v0.1.0.json#/duration_normalization",
       "minimum": 0,
       "errors": [
         "error.operator.operand",
@@ -256,12 +272,71 @@
     },
     "/": {
       "arity": 2,
-      "operands": [
-        "numeric,numeric",
-        "MEASURE,numeric",
-        "MEASURE,same_unit_MEASURE"
+      "overloads": [
+        {
+          "left": "INTEGER",
+          "right": "INTEGER",
+          "result": "DECIMAL"
+        },
+        {
+          "left": "INTEGER",
+          "right": "DECIMAL",
+          "result": "DECIMAL"
+        },
+        {
+          "left": "DECIMAL",
+          "right": "INTEGER",
+          "result": "DECIMAL"
+        },
+        {
+          "left": "DECIMAL",
+          "right": "DECIMAL",
+          "result": "DECIMAL"
+        },
+        {
+          "left": "MEASURE",
+          "right": "INTEGER",
+          "result": "MEASURE",
+          "numeric_component": "DECIMAL",
+          "unit": "preserve_left_exact_unit"
+        },
+        {
+          "left": "MEASURE",
+          "right": "DECIMAL",
+          "result": "MEASURE",
+          "numeric_component": "DECIMAL",
+          "unit": "preserve_left_exact_unit"
+        },
+        {
+          "left": "MEASURE",
+          "right": "MEASURE",
+          "constraint": "same_exact_unit",
+          "result": "DECIMAL",
+          "unit": "cancel_identical_units"
+        }
       ],
-      "result": "DECIMAL|MEASURE",
+      "exactness": {
+        "evaluation": "exact_mathematical_quotient",
+        "finite_decimal_rule": "After reducing the quotient to lowest terms, the denominator has no prime factors other than 2 and 5.",
+        "implicit_rounding": false,
+        "non_terminating_error": "error.numeric.non_terminating"
+      },
+      "rounding_context": "A direct first argument of ROUND is evaluated as an exact quotient and rounded once by that function.",
+      "tolerance_role": "TOLERANCE is an acceptance constraint and never selects or rounds a quotient.",
+      "zero_denominator_error": "error.numeric.division_by_zero",
+      "unsupported_operand_error": "error.operator.operand",
+      "different_measure_unit_error": "error.numeric.unit_mismatch",
+      "declared_bound_error": "error.value.out_of_range",
+      "host_capacity_error": "error.host.constraint",
+      "overflow_behavior": "No wrap, saturation, underflow-to-zero, Infinity, or NaN.",
+      "errors": [
+        "error.operator.operand",
+        "error.numeric.division_by_zero",
+        "error.numeric.non_terminating",
+        "error.numeric.unit_mismatch",
+        "error.value.out_of_range",
+        "error.host.constraint"
+      ],
       "precedence": 60,
       "associativity": "left"
     },
@@ -470,15 +545,33 @@
       ]
     },
     "ROUND": {
-      "parameters": [
-        "DECIMAL",
-        "INTEGER"
+      "overloads": [
+        {
+          "parameters": [
+            "DECIMAL",
+            "INTEGER"
+          ],
+          "result": "DECIMAL"
+        },
+        {
+          "parameters": [
+            "MEASURE",
+            "INTEGER"
+          ],
+          "result": "MEASURE",
+          "unit": "preserve_exact_unit"
+        }
       ],
-      "result": "DECIMAL",
+      "digits": "nonnegative_fractional_digits",
       "rounding": "round-half-to-even",
+      "quotient_context": "The first argument may be an otherwise non-terminating direct division quotient; round the exact mathematical quotient once.",
+      "tolerance_role": "independent_acceptance_constraint_only",
       "errors": [
         "error.operator.operand",
-        "error.value.out_of_range"
+        "error.value.out_of_range",
+        "error.numeric.division_by_zero",
+        "error.numeric.unit_mismatch",
+        "error.host.constraint"
       ]
     },
     "EXISTS": {

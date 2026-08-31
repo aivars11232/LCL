@@ -1759,7 +1759,7 @@
       "id": "KEYWORD-VALID-0217",
       "category": "keyword_valid",
       "subject": "ROUND",
-      "requirement": "Accept the keyword in every registered legal grammar/schema context.",
+      "requirement": "Accept ROUND for a DECIMAL or MEASURE and non-negative INTEGER fractional digits, using half-even while preserving a MEASURE UNIT.",
       "expected": "accept",
       "source": "keywords_v0.1.0.json"
     },
@@ -1823,7 +1823,7 @@
       "id": "KEYWORD-VALID-0225",
       "category": "keyword_valid",
       "subject": "SET",
-      "requirement": "Accept the keyword in every registered legal grammar/schema context.",
+      "requirement": "Accept SET as an intrinsically unordered strict-equality collection whose equal duplicates collapse, whose source order is non-semantic, and whose conditional direct iteration follows the registered SET profile.",
       "expected": "accept",
       "source": "keywords_v0.1.0.json"
     },
@@ -2639,7 +2639,7 @@
       "id": "TYPE-VALID-0327",
       "category": "type_valid",
       "subject": "INTEGER",
-      "requirement": "Round-trip every canonical value form.",
+      "requirement": "Round-trip every canonical unbounded whole-number value without overflow, wrap, or saturation.",
       "expected": "same typed value",
       "source": "types_v0.1.0.json"
     },
@@ -2655,7 +2655,7 @@
       "id": "TYPE-VALID-0329",
       "category": "type_valid",
       "subject": "DECIMAL",
-      "requirement": "Round-trip every canonical value form.",
+      "requirement": "Round-trip every exact finite base-10 value without Infinity, NaN, implicit rounding, or underflow-to-zero.",
       "expected": "same typed value",
       "source": "types_v0.1.0.json"
     },
@@ -2719,16 +2719,16 @@
       "id": "TYPE-VALID-0337",
       "category": "type_valid",
       "subject": "SET[T]",
-      "requirement": "Accept homogeneous inline and multiline bracket values under the registered SET contract.",
-      "expected": "same typed value",
+      "requirement": "Accept homogeneous inline and multiline bracket values for any strict-equality T; collapse equal duplicates, ignore source order, and permit direct FOR EACH in canonical ascending order only when actual members are mutually order-compatible under exact registered per-type order keys, including TIME day displacement and DURATION normalization.",
+      "expected": "same unordered unique typed value",
       "source": "types_v0.1.0.json"
     },
     {
       "id": "TYPE-INVALID-0338",
       "category": "type_invalid",
       "subject": "SET[T]",
-      "requirement": "Reject heterogeneous, malformed, or ITEM-block collection values.",
-      "expected": "type/value error",
+      "requirement": "Reject heterogeneous, malformed, or ITEM-block collection values; reject direct FOR EACH when actual SET members lack a registered total order without rejecting the SET value itself.",
+      "expected": "collection type/value error or error.type.mismatch for invalid direct iteration",
       "source": "types_v0.1.0.json"
     },
     {
@@ -4023,16 +4023,16 @@
       "id": "FUNCTION-VALID-0500",
       "category": "function_valid",
       "subject": "ROUND",
-      "requirement": "Evaluate every registered overload.",
-      "expected": "registered result",
+      "requirement": "Evaluate DECIMAL and MEASURE overloads with non-negative fractional digits, half-even ties, preserved MEASURE UNIT, and one rounding of a direct exact division quotient.",
+      "expected": "same-family rounded value",
       "source": "operators_and_functions_v0.1.0.json"
     },
     {
       "id": "FUNCTION-INVALID-0501",
       "category": "function_invalid",
       "subject": "ROUND",
-      "requirement": "Reject invalid arity/operand combination.",
-      "expected": "error.operator.operand",
+      "requirement": "Reject invalid arity or family, negative fractional digits, zero division inside ROUND, unit mismatch, and host-capacity failure with the exact registered diagnostic.",
+      "expected": "error.operator.operand, error.value.out_of_range, error.numeric.division_by_zero, error.numeric.unit_mismatch, or error.host.constraint",
       "source": "operators_and_functions_v0.1.0.json"
     },
     {
@@ -4167,16 +4167,16 @@
       "id": "OPERATOR-VALID-0518",
       "category": "operator_valid",
       "subject": "/",
-      "requirement": "Evaluate all registered operand families and special-value paths.",
-      "expected": "registered result",
+      "requirement": "Evaluate all four INTEGER/DECIMAL pairs as DECIMAL, MEASURE divided by INTEGER or DECIMAL as same-unit MEASURE with a DECIMAL component, and same-exact-unit MEASURE division as dimensionless DECIMAL; require an exact finite base-10 quotient unless directly rounded.",
+      "expected": "exact registered DECIMAL or MEASURE result",
       "source": "operators_and_functions_v0.1.0.json"
     },
     {
       "id": "OPERATOR-INVALID-0519",
       "category": "operator_invalid",
       "subject": "/",
-      "requirement": "Reject an unregistered operand combination.",
-      "expected": "error.operator.operand",
+      "requirement": "Reject unregistered operands, mathematical-zero denominators, non-terminating unrounded quotients, different exact MEASURE units, declared-bound violations, and host-capacity failures without wrap, saturation, Infinity, NaN, or underflow-to-zero.",
+      "expected": "one exact registered division diagnostic",
       "source": "operators_and_functions_v0.1.0.json"
     },
     {
@@ -4511,7 +4511,7 @@
       "id": "OPERATION-ERRORS-0561",
       "category": "operation_errors",
       "subject": "core.calculate",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Exercise every registered failure path, including division operand, zero, non-termination, exact-unit mismatch, declared-bound, host-capacity, and UNKNOWN diagnostics.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -4591,24 +4591,24 @@
       "id": "OPERATION-BINDING-0571",
       "category": "operation_binding",
       "subject": "core.sort",
-      "requirement": "Bind exact target and named parameters including defaults.",
-      "expected": "accept exact contract",
+      "requirement": "Accept LIST[T] or SET[T] directly; bind exactly optional key and direction, default direction to ascending, and reject stable, comparator, positional, or any other parameter name.",
+      "expected": "exact key/direction-only binding contract",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-EFFECTS-0572",
       "category": "operation_effects",
       "subject": "core.sort",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Derive determinism from registered ordered-type membership and rules, the registered property-access projection for a STRING key, or a validated key operation for a REF key; preserve LIST source position for equal keys, require distinct keys for distinct SET members, and return result.collection items and result value as LIST[T] without side effects.",
+      "expected": "deterministic ordered LIST[T] with fixed tie behavior and no effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0573",
       "category": "operation_errors",
       "subject": "core.sort",
-      "requirement": "Exercise every registered failure path.",
-      "expected": "exact registered error",
+      "requirement": "Cover operation-parameter defects; unresolved or wrong-kind key references; MISSING or UNKNOWN keys; omitted natural order; incompatible key results; and equal keys for distinct SET members.",
+      "expected": "error.operation.parameter, error.reference.unresolved, error.reference.kind, error.required.missing, error.value.unknown, or error.operation.precondition",
       "source": "operations_v0.1.0.json"
     },
     {
@@ -5791,7 +5791,7 @@
       "id": "ERROR-CONTRACT-0721",
       "category": "error_contract",
       "subject": "error.numeric.division_by_zero",
-      "requirement": "Verify stage, recoverability, and default status.",
+      "requirement": "Verify mathematical-zero detection for scalar and MEASURE denominators, including direct ROUND context, plus stage, recoverability, and default status.",
       "expected": "exact registered contract",
       "source": "statuses_and_errors_v0.1.0.json"
     },
@@ -5799,7 +5799,7 @@
       "id": "ERROR-CONTRACT-0722",
       "category": "error_contract",
       "subject": "error.numeric.non_terminating",
-      "requirement": "Verify stage, recoverability, and default status.",
+      "requirement": "Verify rejection of a non-finite base-10 exact quotient outside direct ROUND context, plus stage, recoverability, and default status.",
       "expected": "exact registered contract",
       "source": "statuses_and_errors_v0.1.0.json"
     },
@@ -5807,7 +5807,7 @@
       "id": "ERROR-CONTRACT-0723",
       "category": "error_contract",
       "subject": "error.numeric.unit_mismatch",
-      "requirement": "Verify stage, recoverability, and default status.",
+      "requirement": "Verify rejection of a unit outside a required unit category and exact MEASURE unit-identifier mismatch even within one category, plus stage, recoverability, and default status.",
       "expected": "exact registered contract",
       "source": "statuses_and_errors_v0.1.0.json"
     },
@@ -5823,7 +5823,7 @@
       "id": "ERROR-CONTRACT-0725",
       "category": "error_contract",
       "subject": "error.operation.parameter",
-      "requirement": "Verify stage, recoverability, and default status.",
+      "requirement": "Verify omitted, duplicate, mistyped, and unregistered named operation-parameter triggers, including forbidden core.sort stable or comparator names, plus stage, recoverability, and default status.",
       "expected": "exact registered contract",
       "source": "statuses_and_errors_v0.1.0.json"
     },
@@ -5999,7 +5999,7 @@
       "id": "ERROR-CONTRACT-0747",
       "category": "error_contract",
       "subject": "error.type.mismatch",
-      "requirement": "Verify stage, recoverability, and default status.",
+      "requirement": "Verify values incompatible with their declared type or a context-required registered order domain, including direct FOR EACH over a SET whose actual members lack registered total order, plus stage, recoverability, and default status.",
       "expected": "exact registered contract",
       "source": "statuses_and_errors_v0.1.0.json"
     },
@@ -6223,8 +6223,8 @@
       "id": "RESULT-SCHEMAS-0775",
       "category": "result_schemas",
       "subject": "result.collection",
-      "requirement": "Resolve and enforce the complete closed identifier contract.",
-      "expected": "exact registered behavior",
+      "requirement": "Verify result.collection.items is LIST[T] and core.sort result_value_type is LIST[T] without claiming that shared result cardinality, openness, or OUTPUT binding is closed.",
+      "expected": "exact LIST[T] items dependency with later result-contract work still open",
       "source": "built_in_groups_and_results_v0.1.0.json"
     },
     {

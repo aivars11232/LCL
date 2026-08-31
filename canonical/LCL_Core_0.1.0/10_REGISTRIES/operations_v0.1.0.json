@@ -166,6 +166,9 @@
         "error.operator.operand",
         "error.numeric.division_by_zero",
         "error.numeric.non_terminating",
+        "error.numeric.unit_mismatch",
+        "error.value.out_of_range",
+        "error.host.constraint",
         "error.value.unknown"
       ],
       "side_effects": [],
@@ -279,9 +282,17 @@
       "additional_undeclared_effects": "forbidden"
     },
     "core.sort": {
-      "meaning": "Return values in declared deterministic order.",
+      "meaning": "Return LIST[T] in one declared deterministic total order from LIST[T] or SET[T].",
       "category": "read_only",
-      "deterministic": true,
+      "deterministic": "derived",
+      "determinism_derivation": {
+        "natural_order_membership": "operators_and_functions_v0.1.0.json#/ordered_types",
+        "natural_order_rules": "operators_and_functions_v0.1.0.json#/ordered_type_rules",
+        "property_path_projection": "operators_and_functions_v0.1.0.json#/operators/property access",
+        "key_reference": "validated deterministic side-effect-free kind.operation",
+        "list_equal_key_tie_breaker": "original_LIST_source_position",
+        "set_equal_key_policy": "distinct_members_require_distinct_keys"
+      },
       "target": {
         "type": "LIST[T]|SET[T]",
         "required": true
@@ -291,37 +302,54 @@
           "type": "STRING|REFERENCE",
           "required": false,
           "default": null,
-          "meaning": "Exact total-order key.",
-          "constraints": []
+          "meaning": "Optional total-order projection; STRING is one exact property_path and REFERENCE is one validated kind.operation extractor.",
+          "constraints": [
+            "Omission is legal only when every pair of target members is mutually order-compatible under operators_and_functions_v0.1.0.json#/ordered_types.",
+            "A STRING is exactly one property_path defined for every target member.",
+            "A REFERENCE resolves to a kind.operation with SIDE_EFFECT FALSE, DETERMINISTIC TRUE, exactly one PARAMETER accepting T, and exactly one RESULT of a concrete registered ordered type.",
+            "Every key value is present, known, and mutually order-compatible; distinct SET members produce distinct keys."
+          ]
         },
         "direction": {
           "type": "ENUM[ascending|descending]",
           "required": false,
           "default": "ascending",
           "meaning": "Sort direction.",
-          "constraints": []
-        },
-        "stable": {
-          "type": "BOOLEAN",
-          "required": false,
-          "default": true,
-          "meaning": "Preserve input order for equal keys.",
-          "constraints": []
+          "constraints": [
+            "descending reverses primary-key order without reversing original LIST source order among equal-key members"
+          ]
         }
       },
       "positional_parameters": false,
       "result_schema": "result.collection",
+      "result_value_type": "LIST[T]",
       "preconditions": [
-        "members or key results have a total order"
+        "an omitted key requires mutually order-compatible target members",
+        "a declared key is defined for every member and produces present, known, mutually order-compatible values",
+        "distinct SET members produce distinct keys"
       ],
       "postconditions": [
-        "output contains exactly the input multiset",
-        "ordering follows key and direction"
+        "result.collection.items is LIST[T]",
+        "the result contains exactly the target members, preserving LIST multiplicity and including each SET member once",
+        "ordering follows the natural value or declared key and direction",
+        "equal-key LIST members retain original LIST source order"
       ],
       "errors": [
-        "error.operator.operand",
-        "error.collection.heterogeneous"
+        "error.operation.parameter",
+        "error.reference.unresolved",
+        "error.reference.kind",
+        "error.required.missing",
+        "error.value.unknown",
+        "error.operation.precondition"
       ],
+      "diagnostic_triggers": {
+        "error.operation.parameter": "An unknown, duplicate, or mistyped parameter; stable or comparator; invalid direction; malformed property_path; or invalid key-extractor signature.",
+        "error.reference.unresolved": "The key REFERENCE does not resolve exactly once.",
+        "error.reference.kind": "The key REFERENCE resolves to a declaration other than kind.operation.",
+        "error.required.missing": "A declared key value is MISSING for any member.",
+        "error.value.unknown": "A declared key value is UNKNOWN for any member.",
+        "error.operation.precondition": "An omitted key lacks natural total order, key values are not mutually order-compatible, or distinct SET members produce equal keys."
+      },
       "side_effects": [],
       "additional_undeclared_effects": "forbidden"
     },

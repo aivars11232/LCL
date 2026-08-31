@@ -8,7 +8,7 @@
     "meta.addressable": "PATH, URI, REFERENCE, or a host-bound addressable object.",
     "meta.mutable_target": "An addressable target whose applicable scope and permission allow mutation.",
     "meta.collection": "LIST[T] or SET[T].",
-    "meta.ordered": "A type with total ordering explicitly defined by operator contracts.",
+    "meta.ordered": "A material-value domain whose actual members are mutually order-compatible under operators_and_functions_v0.1.0.json#/ordered_types and #/ordered_type_rules; MISSING and UNKNOWN are excluded.",
     "meta.execution_unit": "TASK, PHASE, SEQUENCE, STEP, ACTION, or TEST reference.",
     "meta.rule_clause": "ALLOW, FORBID, REQUIRE, PREFER, PRESERVE, or OVERRIDE reference."
   },

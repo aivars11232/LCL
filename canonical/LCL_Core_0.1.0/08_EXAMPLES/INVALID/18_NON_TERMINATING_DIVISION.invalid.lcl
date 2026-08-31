@@ -1,0 +1,13 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: invalid.non_terminating_division
+    NAME: "Non-terminating division requires direct ROUND"
+    VERSION: "1.0.0"
+    KIND: kind.data
+
+DATA:
+    ID: data.invalid_quotient
+    TYPE: DECIMAL
+    VALUE: 1 / 3

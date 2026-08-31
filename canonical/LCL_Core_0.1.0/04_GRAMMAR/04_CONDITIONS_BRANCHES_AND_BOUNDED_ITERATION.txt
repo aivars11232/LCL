@@ -25,6 +25,11 @@ nested FOR EACH, or COMMENT.
                 OPERATION: core.inspect
                 TARGET: REF(item)
 
-The collection is finite before iteration. No WHILE, UNTIL, recursion, or
-unbounded repetition exists. Nested declaration IDs create runtime instances
-suffixed by deterministic iteration indexes while retaining one source ID.
+The collection is finite before iteration. LIST iterates in source order. Direct
+FOR EACH over SET is legal only when every pair of actual members is mutually
+order-compatible under the registered total-order profile and then iterates in
+canonical ascending order. Otherwise the SET must be passed directly to core.sort
+and the returned LIST iterated. FOR EACH has no key or comparator syntax; those
+rules belong only to core.sort. No WHILE, UNTIL, recursion, or unbounded repetition
+exists. Nested declaration IDs create runtime instances suffixed by deterministic
+iteration indexes while retaining one source ID.

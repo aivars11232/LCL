@@ -356,19 +356,19 @@
       "default_status": "status.invalid"
     },
     "error.numeric.division_by_zero": {
-      "meaning": "An expression divides by zero.",
+      "meaning": "A division denominator is mathematical zero, including a zero MEASURE numeric component and a quotient evaluated inside ROUND.",
       "stage": "static_or_expression",
       "recoverable_with_declared_handler": false,
       "default_status": "status.invalid"
     },
     "error.numeric.non_terminating": {
-      "meaning": "Exact DECIMAL division has no finite result and no ROUND/TOLERANCE rule.",
+      "meaning": "An exact division quotient has no finite base-10 DECIMAL representation outside the direct first-argument context of ROUND.",
       "stage": "static_or_expression",
       "recoverable_with_declared_handler": false,
       "default_status": "status.invalid"
     },
     "error.numeric.unit_mismatch": {
-      "meaning": "An operation combines MEASURE values with different units.",
+      "meaning": "A value supplies a unit outside its required unit category, or an operation requiring identical MEASURE units receives different exact unit identifiers; sharing a unit category is insufficient for exact-unit equality.",
       "stage": "static_or_expression",
       "recoverable_with_declared_handler": false,
       "default_status": "status.invalid"
@@ -380,7 +380,7 @@
       "default_status": "status.invalid"
     },
     "error.operation.parameter": {
-      "meaning": "An ACTION omits, duplicates, or mistypes an operation parameter.",
+      "meaning": "An ACTION omits, duplicates, mistypes, or supplies an unregistered named operation parameter.",
       "stage": "static_or_expression",
       "recoverable_with_declared_handler": false,
       "default_status": "status.invalid"
@@ -518,7 +518,7 @@
       "default_status": "status.invalid"
     },
     "error.type.mismatch": {
-      "meaning": "A value is incompatible with its declared type.",
+      "meaning": "A value is incompatible with its declared type or with the type or registered order domain required by its use context.",
       "stage": "static_or_expression",
       "recoverable_with_declared_handler": false,
       "default_status": "status.invalid"

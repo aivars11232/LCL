@@ -9,6 +9,13 @@ Every value has exactly one static type. Assignment does not exist. DEFINE value
 and parsed source are immutable. No implicit coercion occurs except exact
 INTEGER-to-DECIMAL promotion in mixed numeric arithmetic/comparison.
 
+The static result of INTEGER/DECIMAL division is DECIMAL for every scalar operand
+pair, independent of operand values. MEASURE divided by INTEGER or DECIMAL is
+MEASURE; MEASURE divided by a MEASURE with the same exact UNIT is DECIMAL.
+
 BOOLEAN accepts only TRUE/FALSE. NULL, MISSING, and UNKNOWN are distinct special
 states and are not false. Collection element types are invariant. OBJECT field
-legality follows its schema. A type mismatch invalidates before side effects.
+legality follows its schema. An unordered SET remains a legal value even when its
+members are not order-compatible. Direct FOR EACH over such a SET produces
+error.type.mismatch before iteration or side effects; core.sort may instead produce
+the LIST required for iteration. A type mismatch invalidates before side effects.

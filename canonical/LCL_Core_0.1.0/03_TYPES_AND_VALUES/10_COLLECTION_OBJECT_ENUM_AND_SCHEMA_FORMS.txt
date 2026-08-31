@@ -9,8 +9,11 @@ LIST[T]
 SET[T]
     Homogeneous and unique under strict equality. Inline and multiline values use
     bracket syntax; ITEM is not a collection-value field. Duplicate source members
-    collapse to one value. Iteration uses canonical ascending order only when T has
-    a defined total order; otherwise SET iteration requires an explicit SORT key.
+    collapse to one value. SET is intrinsically unordered, and source or insertion
+    order has no semantic meaning. Direct FOR EACH is legal only when every pair of
+    actual members is mutually order-compatible under the registered total-order
+    profile and then uses canonical ascending order. Otherwise pass the SET directly
+    to core.sort and iterate the returned LIST[T].
 
 OBJECT
     An object uses an indented VALUE block containing unique lowercase property
@@ -21,8 +24,10 @@ OBJECT
 ENUM
     A user enum is defined by DEFINE with KIND kind.type, BASE ENUM, and one or more
     ITEM identifiers. Its member set and declaration order are closed. Equality is
-    exact identifier equality. Ordered comparison of enum members is forbidden;
-    declaration order is available only to explicit sorting rules.
+    exact identifier equality. Ordered comparison of enum members is forbidden, and
+    declaration order has no comparison, iteration, or sorting significance. Sorting
+    enum values requires an approved key extractor returning a registered ordered
+    type.
 
 SCHEMA
     A schema is either REF(identifier) to a defined OBJECT type or a local SCHEMA

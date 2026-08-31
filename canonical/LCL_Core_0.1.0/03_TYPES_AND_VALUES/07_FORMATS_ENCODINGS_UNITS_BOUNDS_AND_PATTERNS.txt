@@ -7,8 +7,9 @@ DATE: 2026-08-30
 
 FORMAT selects an exact core format or kind.format definition. ENCODING selects
 one core registered encoding. MINIMUM and MAXIMUM are inclusive. TOLERANCE is
-absolute and non-negative. PATTERN is GLOB or REGEX and does not silently coerce
-the target to STRING.
+absolute and non-negative; it validates a permitted numeric difference and never
+selects arithmetic precision or rounds a quotient. PATTERN is GLOB or REGEX and
+does not silently coerce the target to STRING.
 
 GLOB is a workspace-relative minimatch/gitignore-style subset. Patterns use "/"
 as the path separator and may contain `*` for zero or more non-separator
@@ -34,3 +35,11 @@ non-negative INTEGER. MEASURE pairs a number with any registered unit, including
 a Time-category unit, unless a more specific normative contract narrows it.
 PERCENTAGE is 0 through 100 inclusive. Core 0.1.0 admits only units in the closed
 unit registry; extensions cannot add units.
+
+DURATION has one exact normalized elapsed-time magnitude. The base is
+unit.nanosecond; exact base-unit factors are 1 nanosecond, 1,000 per microsecond,
+1,000,000 per millisecond, 1,000,000,000 per second, 60,000,000,000 per minute,
+3,600,000,000,000 per hour, 86,400,000,000,000 per day, and
+604,800,000,000,000 per week. Multiply the exact numeric component by its factor;
+the result defines DURATION equality, arithmetic, and order. This normalization
+does not authorize implicit conversion between MEASURE values.

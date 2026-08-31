@@ -9,7 +9,9 @@ ABS(number) -> same numeric family
 COUNT(value) -> INTEGER
 SUM(collection) -> compatible numeric
 MIN(collection) / MAX(collection) -> member type
-ROUND(decimal, integer_digits) -> DECIMAL using half-even
+ROUND(decimal_or_measure, nonnegative_integer_fractional_digits) -> same family
+    using half-even; a MEASURE keeps its exact UNIT. A direct division first
+    argument is rounded once from its exact mathematical quotient.
 EXISTS(value_or_reference) -> BOOLEAN
 EMPTY(string_or_collection) -> BOOLEAN
 ALL(list_boolean) / ANY(list_boolean) / NONE(list_boolean) -> BOOLEAN

@@ -318,11 +318,7 @@
     },
     "DATA": {
       "contexts": [
-        "top_level",
-        "INPUT",
-        "OUTPUT",
-        "EVIDENCE",
-        "TEST"
+        "top_level"
       ],
       "occurrence": "zero_or_more",
       "required": [
@@ -700,8 +696,7 @@
     "RETRY": {
       "contexts": [
         "ACTION",
-        "STEP",
-        "HANDLER"
+        "STEP"
       ],
       "occurrence": "zero_or_one",
       "required": [
@@ -945,7 +940,9 @@
     "COMMENT": {
       "contexts": [
         "top_level",
-        "any_block"
+        "IF",
+        "FOR_EACH",
+        "ELSE"
       ],
       "occurrence": "zero_or_more",
       "required": [

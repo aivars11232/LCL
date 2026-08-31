@@ -118,7 +118,7 @@ STATE
     Rule: Read is a snapshot at declared execution point.
 
 DATA
-    Contexts: top_level, INPUT, OUTPUT, EVIDENCE, TEST
+    Contexts: top_level
     Occurrence: zero_or_more
     Required: ID, TYPE, VALUE
     Optional: FORMAT, ENCODING, SCHEMA, CHECKSUM, PROVENANCE, DESCRIPTION

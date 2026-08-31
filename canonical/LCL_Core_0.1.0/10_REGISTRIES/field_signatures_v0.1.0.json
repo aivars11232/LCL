@@ -14,7 +14,136 @@
     "selector_expression": "REFERENCE, PATH, URI, GLOB, or homogeneous LIST/SET of selectors.",
     "boolean_expression": "Expression statically producing BOOLEAN or UNKNOWN under special-value rules.",
     "source_expression": "PATH, URI, or REFERENCE to declared source data.",
-    "ordered_value": "INTEGER, DECIMAL, STRING, DATE, TIME, DATETIME, DURATION, BYTES, PERCENTAGE, or same-unit MEASURE."
+    "ordered_value": "INTEGER, DECIMAL, STRING, DATE, TIME, DATETIME, DURATION, BYTES, PERCENTAGE, or same-unit MEASURE.",
+    "boolean": "One exact BOOLEAN value: TRUE or FALSE.",
+    "boolean_or_reference_list": "A boolean_expression or a possibly empty LIST containing only REF values whose targets evaluate to BOOLEAN or UNKNOWN.",
+    "duration": "One DURATION value.",
+    "nonnegative_numeric_or_measure": "An INTEGER or DECIMAL greater than or equal to zero, or a MEASURE whose numeric component is greater than or equal to zero.",
+    "operation_identifier": "A core_operation_ids member or the identifier of a DEFINE declaration whose KIND is kind.operation.",
+    "operation_identifier_or_handler_reference": "An operation_identifier or one REF resolving to HANDLER.",
+    "path": "One PATH value.",
+    "property_path": "One property path made of one or more SIMPLE_IDENTIFIER segments separated by '.'.",
+    "regex_or_glob": "One REGEX or GLOB value.",
+    "schema_reference_or_nested_schema": "One REF resolving to a defined OBJECT type, or a local nested sequence of one or more FIELD blocks.",
+    "sha256_string": "A STRING containing 'sha256:' followed by exactly 64 lowercase hexadecimal digits.",
+    "string": "One single-line STRING value.",
+    "string_or_multiline_string": "One STRING or MULTILINE_STRING value.",
+    "string_or_qualified_identifier": "One STRING or QUALIFIED_IDENTIFIER value.",
+    "string_uri_or_evidence_reference": "One STRING, URI, or REF resolving to EVIDENCE.",
+    "type_or_format_base": "For DEFINE kind.type, one TYPE_EXPRESSION or one REF resolving to DEFINE kind.type; for DEFINE kind.format, one qualified_identifier(format)."
+  },
+  "value_kind_templates": {
+    "exact_string": {
+      "syntax": "exact_string(JSON_STRING)",
+      "argument_kind": "json_string_literal",
+      "accepted_forms": [
+        "STRING"
+      ]
+    },
+    "integer": {
+      "syntax": "integer[MINIMUM..MAXIMUM]",
+      "argument_kind": "closed_integer_range",
+      "accepted_forms": [
+        "INTEGER"
+      ]
+    },
+    "qualified_identifier": {
+      "syntax": "qualified_identifier(DOMAIN)",
+      "argument_kind": "qualified_identifier_domain",
+      "accepted_forms": [
+        "QUALIFIED_IDENTIFIER"
+      ]
+    },
+    "reference": {
+      "syntax": "reference(TARGET[|TARGET...])",
+      "argument_kind": "reference_target_union",
+      "accepted_forms": [
+        "single_reference"
+      ]
+    },
+    "reference_or_list": {
+      "syntax": "reference_or_list(TARGET[|TARGET...])",
+      "argument_kind": "reference_target_union",
+      "accepted_forms": [
+        "single_reference",
+        "reference_list"
+      ]
+    },
+    "reference_or_list_or_nested": {
+      "syntax": "reference_or_list_or_nested(BLOCK)",
+      "argument_kind": "block_name",
+      "accepted_forms": [
+        "single_reference",
+        "reference_list",
+        "nested_block"
+      ]
+    },
+    "reference_or_nested": {
+      "syntax": "reference_or_nested(BLOCK)",
+      "argument_kind": "block_name",
+      "accepted_forms": [
+        "single_reference",
+        "nested_block"
+      ]
+    },
+    "nested_block": {
+      "syntax": "nested_block(BLOCK)",
+      "argument_kind": "block_name",
+      "accepted_forms": [
+        "nested_block"
+      ]
+    }
+  },
+  "qualified_identifier_domains": {
+    "definition_kind": {
+      "source": "10_REGISTRIES/built_in_groups_and_results_v0.1.0.json",
+      "pointer": "/enum_groups/definition_kinds",
+      "selection": "array_values"
+    },
+    "document_kind": {
+      "source": "10_REGISTRIES/built_in_groups_and_results_v0.1.0.json",
+      "pointer": "/enum_groups/document_kinds",
+      "selection": "array_values"
+    },
+    "encoding": {
+      "source": "10_REGISTRIES/formats_encodings_units_v0.1.0.json",
+      "pointer": "/encodings",
+      "selection": "object_keys"
+    },
+    "error": {
+      "source": "10_REGISTRIES/statuses_and_errors_v0.1.0.json",
+      "pointer": "/errors",
+      "selection": "object_keys",
+      "defined_kind": "kind.error"
+    },
+    "event": {
+      "source": "10_REGISTRIES/built_in_groups_and_results_v0.1.0.json",
+      "pointer": "/enum_groups/events",
+      "selection": "array_values",
+      "defined_kind": "kind.event"
+    },
+    "format": {
+      "source": "10_REGISTRIES/formats_encodings_units_v0.1.0.json",
+      "pointer": "/formats",
+      "selection": "object_keys",
+      "defined_kind": "kind.format"
+    },
+    "mode": {
+      "source": "10_REGISTRIES/built_in_groups_and_results_v0.1.0.json",
+      "pointer": "/enum_groups/modes",
+      "selection": "array_values"
+    },
+    "terminal_non_success_status": {
+      "source": "10_REGISTRIES/statuses_and_errors_v0.1.0.json",
+      "pointer": "/statuses",
+      "selection": "object_keys_where",
+      "where": {
+        "terminal": true
+      },
+      "exclude": [
+        "status.succeeded"
+      ]
+    }
   },
   "field_policies": {
     "PRIORITY": {
@@ -287,7 +416,7 @@
           "required": false,
           "minimum_occurrences": 0,
           "maximum_occurrences": 1,
-          "value_kind": "type_expression_or_type_reference",
+          "value_kind": "type_or_format_base",
           "default": null
         },
         "ITEM": {
@@ -350,7 +479,7 @@
           "required": false,
           "minimum_occurrences": 0,
           "maximum_occurrences": null,
-          "value_kind": "nested_block_or_reference(EXAMPLE)",
+          "value_kind": "reference_or_nested(EXAMPLE)",
           "default": null
         },
         "DESCRIPTION": {
@@ -1026,11 +1155,7 @@
     },
     "DATA": {
       "legal_parents": [
-        "top_level",
-        "INPUT",
-        "OUTPUT",
-        "EVIDENCE",
-        "TEST"
+        "top_level"
       ],
       "block_occurrence": "zero_or_more",
       "fields": {
@@ -1210,7 +1335,8 @@
       },
       "conditional_requirements": [
         "At least ASSERT or RESULT.",
-        "REQUIRED defaults TRUE."
+        "REQUIRED defaults TRUE.",
+        "Optional PRIORITY defaults to 0, never inherits, and an explicit declaration overrides the default."
       ],
       "unknown_fields": "forbidden",
       "field_order": "not_semantic_except_where_explicitly_declared"
@@ -1314,7 +1440,8 @@
         }
       },
       "conditional_requirements": [
-        "At least PHASE, SEQUENCE, or ACTION."
+        "At least PHASE, SEQUENCE, or ACTION.",
+        "PHASE, SEQUENCE, and ACTION fields are reference/list-only; inline child blocks are forbidden."
       ],
       "unknown_fields": "forbidden",
       "field_order": "not_semantic_except_where_explicitly_declared"
@@ -1545,7 +1672,8 @@
       },
       "conditional_requirements": [
         "Permission only; does not require execution.",
-        "Never defeats FORBID by itself."
+        "Never defeats FORBID by itself.",
+        "Optional PRIORITY defaults to 0, never inherits, and an explicit declaration overrides the default."
       ],
       "unknown_fields": "forbidden",
       "field_order": "not_semantic_except_where_explicitly_declared"
@@ -1621,7 +1749,8 @@
         }
       },
       "conditional_requirements": [
-        "Hard prohibition."
+        "Hard prohibition.",
+        "Optional PRIORITY defaults to 0, never inherits, and an explicit declaration overrides the default."
       ],
       "unknown_fields": "forbidden",
       "field_order": "not_semantic_except_where_explicitly_declared"
@@ -1698,7 +1827,9 @@
       },
       "conditional_requirements": [
         "Exactly one ASSERT or ACTION.",
-        "Hard rule."
+        "Hard rule.",
+        "ACTION is reference/list-only; an inline ACTION block is forbidden.",
+        "Optional PRIORITY defaults to 0, never inherits, and an explicit declaration overrides the default."
       ],
       "unknown_fields": "forbidden",
       "field_order": "not_semantic_except_where_explicitly_declared"
@@ -1768,7 +1899,9 @@
       },
       "conditional_requirements": [
         "Exactly one ASSERT or ACTION.",
-        "Soft and does not authorize action."
+        "Soft and does not authorize action.",
+        "ACTION is reference/list-only; an inline ACTION block is forbidden.",
+        "Optional PRIORITY defaults to 0, never inherits, and an explicit declaration overrides the default."
       ],
       "unknown_fields": "forbidden",
       "field_order": "not_semantic_except_where_explicitly_declared"
@@ -1797,7 +1930,7 @@
           "required": false,
           "minimum_occurrences": 0,
           "maximum_occurrences": null,
-          "value_kind": "property_path_or_list",
+          "value_kind": "property_path",
           "default": null
         },
         "WHEN": {
@@ -1845,7 +1978,8 @@
       },
       "conditional_requirements": [
         "No PROPERTY means complete target.",
-        "Hard pre-state equals post-state rule."
+        "Hard pre-state equals post-state rule.",
+        "Optional PRIORITY defaults to 0, never inherits, and an explicit declaration overrides the default."
       ],
       "unknown_fields": "forbidden",
       "field_order": "not_semantic_except_where_explicitly_declared"
@@ -2129,7 +2263,8 @@
         }
       },
       "conditional_requirements": [
-        "Exactly one ACTION, SEQUENCE, PHASE, or TASK."
+        "Exactly one ACTION, SEQUENCE, PHASE, or TASK.",
+        "SEQUENCE and PHASE fields are reference/list-only; inline SEQUENCE or PHASE blocks are forbidden."
       ],
       "unknown_fields": "forbidden",
       "field_order": "not_semantic_except_where_explicitly_declared"
@@ -2137,8 +2272,7 @@
     "RETRY": {
       "legal_parents": [
         "ACTION",
-        "STEP",
-        "HANDLER"
+        "STEP"
       ],
       "block_occurrence": "zero_or_one",
       "fields": {
@@ -2324,7 +2458,7 @@
           "required": false,
           "minimum_occurrences": 0,
           "maximum_occurrences": null,
-          "value_kind": "property_path_or_list",
+          "value_kind": "property_path",
           "default": null
         },
         "DESCRIPTION": {
@@ -2865,7 +2999,9 @@
     "COMMENT": {
       "legal_parents": [
         "top_level",
-        "any_block"
+        "IF",
+        "FOR_EACH",
+        "ELSE"
       ],
       "block_occurrence": "zero_or_more",
       "fields": {
@@ -2899,7 +3035,7 @@
           "required": true,
           "minimum_occurrences": 1,
           "maximum_occurrences": 1,
-          "value_kind": "string_multiline_string_or_data_value",
+          "value_kind": "value_or_object_expression",
           "default": null
         },
         "EXPECTED": {

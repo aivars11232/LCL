@@ -23,7 +23,7 @@
     },
     "AFTER": {
       "category": "field/operator",
-      "meaning": "Require one execution unit or event to occur after named predecessors.",
+      "meaning": "Require one execution unit to occur after named predecessors.",
       "contexts": "Defined by grammar and block schemas.",
       "case_sensitive": true
     },
@@ -77,7 +77,7 @@
     },
     "BEFORE": {
       "category": "field/operator",
-      "meaning": "Require one execution unit or event to occur before named successors.",
+      "meaning": "Require one execution unit to occur before named successors.",
       "contexts": "Defined by grammar and block schemas.",
       "case_sensitive": true
     },

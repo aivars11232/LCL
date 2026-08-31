@@ -6,8 +6,8 @@ DATE: 2026-08-30
 
 
 An extension is kind.extension and may contain IMPORT, DEFINE, DATA, COMMENT,
-and EXAMPLE only. It may define lowercase namespaced terms, types, operations,
-formats, events, statuses, errors, and units. It cannot add uppercase reserved
-keywords, alter grammar/precedence/core meanings, add hidden rules/tasks, replace
-built-ins, or execute. Domain operations require exact parameter/result/effect/
-determinism definitions.
+and EXAMPLE only. It may define lowercase namespaced terms, constants, types,
+operations, formats, events, statuses, and errors. The Core 0.1.0 unit registry
+is closed. An extension cannot add uppercase reserved keywords, alter grammar/
+precedence/core meanings, add hidden rules/tasks, replace built-ins, or execute.
+Domain operations require exact parameter/result/effect/determinism definitions.

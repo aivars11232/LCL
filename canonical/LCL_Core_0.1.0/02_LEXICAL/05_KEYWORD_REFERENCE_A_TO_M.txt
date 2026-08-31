@@ -22,7 +22,7 @@ ACTUAL
 
 AFTER
     Category: field/operator
-    Meaning: Require one execution unit or event to occur after named predecessors.
+    Meaning: Require one execution unit to occur after named predecessors.
     Context: Defined by grammar and block schemas.
 
 ALL
@@ -67,7 +67,7 @@ BASE
 
 BEFORE
     Category: field/operator
-    Meaning: Require one execution unit or event to occur before named successors.
+    Meaning: Require one execution unit to occur before named successors.
     Context: Defined by grammar and block schemas.
 
 BOOLEAN

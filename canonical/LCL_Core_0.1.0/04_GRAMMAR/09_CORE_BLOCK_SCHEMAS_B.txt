@@ -74,7 +74,7 @@ STEP
     Rule: SEQUENCE and PHASE fields are reference/list-only; inline SEQUENCE or PHASE blocks are forbidden.
 
 RETRY
-    Contexts: ACTION, STEP, HANDLER
+    Contexts: ACTION, STEP
     Occurrence: zero_or_one
     Required: LIMIT
     Optional: WHEN, DELAY, HANDLER, DESCRIPTION
@@ -165,7 +165,7 @@ EXECUTE
     Rule: task/test documents require exactly one.
 
 COMMENT
-    Contexts: top_level, any_block
+    Contexts: top_level, IF, FOR_EACH, ELSE
     Occurrence: zero_or_more
     Required: CONTENT
     Optional: none

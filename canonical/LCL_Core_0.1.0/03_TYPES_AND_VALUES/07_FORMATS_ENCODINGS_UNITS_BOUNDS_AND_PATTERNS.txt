@@ -5,9 +5,10 @@ STATUS: NORMATIVE
 DATE: 2026-08-30
 
 
-FORMAT and ENCODING select exact built-in/extension identifiers. MINIMUM and
-MAXIMUM are inclusive. TOLERANCE is absolute and non-negative. PATTERN is GLOB
-or REGEX and does not silently coerce the target to STRING.
+FORMAT selects an exact core format or kind.format definition. ENCODING selects
+one core registered encoding. MINIMUM and MAXIMUM are inclusive. TOLERANCE is
+absolute and non-negative. PATTERN is GLOB or REGEX and does not silently coerce
+the target to STRING.
 
 GLOB is a workspace-relative minimatch/gitignore-style subset. Patterns use "/"
 as the path separator and may contain `*` for zero or more non-separator
@@ -31,4 +32,5 @@ produces error.pattern.resource_limit.
 DURATION requires a registered Time-category unit. BYTES accepts only a
 non-negative INTEGER. MEASURE pairs a number with any registered unit, including
 a Time-category unit, unless a more specific normative contract narrows it.
-PERCENTAGE is 0 through 100 inclusive. Custom units require a versioned extension.
+PERCENTAGE is 0 through 100 inclusive. Core 0.1.0 admits only units in the closed
+unit registry; extensions cannot add units.

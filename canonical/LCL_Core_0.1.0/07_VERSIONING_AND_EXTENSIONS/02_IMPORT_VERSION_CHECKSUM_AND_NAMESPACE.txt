@@ -7,6 +7,7 @@ DATE: 2026-08-30
 
 IMPORT VERSION must equal imported SPECIFICATION.VERSION. LCL version must be
 supported independently. SOURCE PATH resolves relative only to importing file or
-explicit WORKSPACE. URI requires CHECKSUM. Checksum form is algorithm:hex; Core
-recognizes sha256. Namespace is mandatory, unique, lowercase, and not reserved.
+explicit WORKSPACE. URI requires CHECKSUM. Checksum form is
+algorithm:lowercase_hex; Core 0.1.0 recognizes only sha256. Namespace is
+mandatory, unique, lowercase, and not reserved.
 Import cycles fail. Imported IDs are referenced namespace.id.

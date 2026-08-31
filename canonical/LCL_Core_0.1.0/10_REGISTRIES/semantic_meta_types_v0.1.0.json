@@ -12,6 +12,30 @@
     "meta.execution_unit": "TASK, PHASE, SEQUENCE, STEP, ACTION, or TEST reference.",
     "meta.rule_clause": "ALLOW, FORBID, REQUIRE, PREFER, PRESERVE, or OVERRIDE reference."
   },
+  "reference_domains": {
+    "execution_unit": {
+      "meta_type": "meta.execution_unit",
+      "members": [
+        "TASK",
+        "PHASE",
+        "SEQUENCE",
+        "STEP",
+        "ACTION",
+        "TEST"
+      ]
+    },
+    "rule_clause": {
+      "meta_type": "meta.rule_clause",
+      "members": [
+        "ALLOW",
+        "FORBID",
+        "REQUIRE",
+        "PREFER",
+        "PRESERVE",
+        "OVERRIDE"
+      ]
+    }
+  },
   "persistence": {
     "MISSING": false,
     "UNKNOWN": false,

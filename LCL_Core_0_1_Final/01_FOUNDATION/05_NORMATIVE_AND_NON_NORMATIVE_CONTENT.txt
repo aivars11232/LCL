@@ -1,0 +1,14 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Normative and Non-Normative Content
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+Normative content consists of grammar-recognized blocks/fields, exact imported
+rules, active extension definitions, typed values, and expressions.
+
+DESCRIPTION, COMMENT, and ordinary prose inside strings are non-normative unless
+a normative field explicitly treats the string as data/meaning. EXAMPLE is
+non-normative unless an explicit TEST evaluates it. A requirement hidden only
+in prose is absent.

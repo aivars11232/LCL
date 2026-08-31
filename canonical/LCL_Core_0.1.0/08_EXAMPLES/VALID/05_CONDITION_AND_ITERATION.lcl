@@ -1,0 +1,46 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: example.iteration
+    NAME: "Inspect selected files"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+INPUT:
+    ID: input.files
+    TYPE: LIST[PATH]
+    VALUE: [PATH("/tmp/a.txt"), PATH("/tmp/b.txt")]
+
+GOAL:
+    ID: goal.inspect
+    ASSERT: COUNT(REF(input.files)) == 2
+
+SEQUENCE:
+    ID: sequence.inspect
+    MODE: mode.sequential
+    FOR EACH file IN REF(input.files):
+        STEP:
+            ID: step.inspect_file
+            ACTION:
+                ID: action.inspect_file
+                OPERATION: core.inspect
+                TARGET: REF(file)
+
+VERIFY:
+    ID: verify.count
+    ASSERT: COUNT(REF(input.files)) == 2
+
+SUCCESS:
+    ID: success.inspect
+    ALL: [REF(verify.count)]
+
+TASK:
+    ID: task.inspect
+    GOAL: REF(goal.inspect)
+    INPUT: REF(input.files)
+    SEQUENCE: REF(sequence.inspect)
+    SUCCESS: REF(success.inspect)
+
+EXECUTE:
+    REFERENCE: REF(task.inspect)

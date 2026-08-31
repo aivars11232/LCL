@@ -1,0 +1,46 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Typed Constructors and References
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+    REF(identifier)
+    PATH("/absolute/path")
+    PATH(REF(workspace.id), "relative/path")
+    URI("https://example.invalid/resource")
+    GLOB("src/**/*.py")
+    REGEX("^[a-z]+$")
+    REGEX("^[a-z]+$", "ims")
+    DATE("2026-08-30")
+    TIME("14:30:00")
+    TIME("14:30:00+02:00")
+    DATETIME("2026-08-30T14:30:00")
+    DATETIME("2026-08-30T14:30:00+02:00")
+    DURATION(5, unit.second)
+    PERCENTAGE(90)
+    BYTES(1024)
+    MEASURE(1920, unit.pixel)
+
+The constructor registry defines the exact accepted overloads; calls are never
+variadic. PATH accepts one STRING, or one WORKSPACE reference followed by one
+relative STRING. A one-STRING relative PATH is legal only as IMPORT.SOURCE or
+EXTENSION.SOURCE and resolves from the importing document; otherwise that form
+requires an absolute path. The WORKSPACE form must resolve to the workspace root
+or one of its descendants. Containment is checked on the resolved target, not by
+textual prefix, so parent traversal, links, or equivalent indirection cannot
+escape the root. Escape produces error.value.out_of_range.
+
+URI accepts one STRING matching the RFC 3986 absolute-URI profile with a scheme;
+a relative URI reference is invalid. DATE is RFC 3339 full-date. TIME is RFC 3339
+partial-time and DATETIME is RFC 3339 full-date, "T", and partial-time. TIME and
+DATETIME accept an optional offset; omission means UTC.
+
+REGEX accepts either a pattern STRING or a pattern STRING and canonical flags
+STRING as defined by the closed REGEX profile. DURATION accepts a non-negative
+number and a registered Time-category unit. PERCENTAGE accepts a number from 0
+through 100 inclusive. BYTES accepts a non-negative INTEGER. MEASURE accepts a
+number and any registered unit, including a Time-category unit, unless a more
+specific normative field or operation contract narrows it.
+
+REF accepts an identifier, not a quoted string, and resolves exactly once.

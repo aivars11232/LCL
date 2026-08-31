@@ -1,0 +1,13 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Intentionally Excluded from Core
+LANGUAGE VERSION: 0.1.0
+STATUS: INFORMATIVE
+DATE: 2026-08-30
+
+
+No grammar macros, operator overloading, assignment, mutable local variables,
+user executable functions, classes, recursion, WHILE/UNTIL, unbounded retry,
+exception jumps, transactions, implicit unit conversion, version ranges,
+wildcard imports, interpolation, symbolic comments, provider channels, hidden
+reasoning directives, mandatory app/database/layout/runtime, or complete domain
+catalogs. Future support requires an exact new version.

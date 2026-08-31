@@ -1,0 +1,16 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Verify, Test, Evidence, Success, Failure, and Status
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+VALIDATE observes preconditions. VERIFY observes postconditions. TEST compares
+EXPECTED/ACTUAL or ASSERT. Required failed checks prevent success. EVIDENCE must
+be observable, typed, and traceable; declared required provenance/checksum must
+resolve.
+
+SUCCESS evaluates ALL, ANY, or NONE after execution/checks. status.succeeded is
+legal only when SUCCESS is TRUE, all required outputs exist, all hard rules hold,
+and all required evidence exists. status.partial is explicitly non-success.
+FAILURE blocks may map exact WHEN conditions to terminal non-success statuses.

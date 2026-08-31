@@ -1,0 +1,189 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Core Block Schemas A
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+LCL
+    Contexts: top_level_first
+    Occurrence: exactly_one
+    Required: VERSION
+    Optional: none
+    Repeatable: none
+    Rule: First non-blank statement.
+    Rule: VERSION is one exact supported LCL semantic version.
+
+SPECIFICATION
+    Contexts: top_level_second
+    Occurrence: exactly_one
+    Required: ID, NAME, VERSION, KIND
+    Optional: DOMAIN, AUTHORITY, DESCRIPTION
+    Repeatable: none
+    Rule: Second top-level block.
+    Rule: AUTHORITY defaults to 500.
+
+IMPORT
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, SOURCE, NAMESPACE, VERSION
+    Optional: CHECKSUM, AUTHORITY, REQUIRED, DESCRIPTION
+    Repeatable: none
+    Rule: Namespace is mandatory; no merge into local namespace.
+    Rule: URI source requires CHECKSUM.
+
+EXTENSION
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, SOURCE, NAMESPACE, VERSION
+    Optional: CHECKSUM, REQUIRED, DESCRIPTION
+    Repeatable: none
+    Rule: Loaded KIND is kind.extension.
+    Rule: May add definitions only.
+
+DEFINE
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, KIND
+    Optional: MEANING, TYPE, VALUE, BASE, ITEM, FIELD, PARAMETER, RESULT, FORMAT, ENCODING, SIDE_EFFECT, DETERMINISTIC, EXAMPLE, DESCRIPTION
+    Repeatable: ITEM, FIELD, PARAMETER, EXAMPLE
+    Rule: Immutable.
+    Rule: Kind-specific required fields are normative.
+    Rule: ITEM is legal only for KIND kind.type with BASE ENUM and occurs one or more times there.
+
+FIELD
+    Contexts: DEFINE, SCHEMA
+    Occurrence: zero_or_more
+    Required: NAME, TYPE, REQUIRED
+    Optional: DEFAULT, MINIMUM, MAXIMUM, TOLERANCE, PATTERN, DESCRIPTION
+    Repeatable: none
+
+PARAMETER
+    Contexts: DEFINE, ACTION, ALLOW, FORBID, HANDLER
+    Occurrence: zero_or_more
+    Required: NAME, TYPE, REQUIRED
+    Optional: VALUE, DEFAULT, MINIMUM, MAXIMUM, TOLERANCE, PATTERN, DESCRIPTION
+    Repeatable: none
+
+RESULT
+    Contexts: DEFINE, GOAL
+    Occurrence: zero_or_more
+    Required: TYPE
+    Optional: FORMAT, SCHEMA, DESCRIPTION
+    Repeatable: none
+
+WORKSPACE
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, PATH, MODE
+    Optional: SCOPE, DESCRIPTION
+    Repeatable: none
+    Rule: PATH is absolute.
+    Rule: Relative PATH explicitly references a WORKSPACE.
+
+INPUT
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, TYPE
+    Optional: VALUE, SOURCE, FORMAT, ENCODING, SCHEMA, REQUIRED, DEFAULT, CHECKSUM, PROVENANCE, DESCRIPTION
+    Repeatable: none
+    Rule: Exactly one VALUE or SOURCE unless optional with DEFAULT.
+    Rule: REQUIRED defaults TRUE.
+
+CONTEXT
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, TYPE, SCOPE
+    Optional: VALUE, SOURCE, FORMAT, ENCODING, VERSION, CHECKSUM, REQUIRED, PROVENANCE, DESCRIPTION
+    Repeatable: none
+    Rule: Exactly one VALUE or SOURCE.
+    Rule: Non-authoritative and cannot add rules.
+
+MEMORY
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, TYPE, SCOPE, MODE
+    Optional: VALUE, SOURCE, FORMAT, ENCODING, VERSION, CHECKSUM, REQUIRED, PROVENANCE, DESCRIPTION
+    Repeatable: none
+    Rule: Exactly one VALUE or SOURCE.
+    Rule: Writes require core.memory_write.
+
+STATE
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, TYPE, SCOPE, MODE
+    Optional: VALUE, SOURCE, FORMAT, ENCODING, VERSION, CHECKSUM, REQUIRED, PROVENANCE, DESCRIPTION
+    Repeatable: none
+    Rule: Exactly one VALUE or SOURCE.
+    Rule: Read is a snapshot at declared execution point.
+
+DATA
+    Contexts: top_level, INPUT, OUTPUT, EVIDENCE, TEST
+    Occurrence: zero_or_more
+    Required: ID, TYPE, VALUE
+    Optional: FORMAT, ENCODING, SCHEMA, CHECKSUM, PROVENANCE, DESCRIPTION
+    Repeatable: none
+    Rule: VALUE is data, not executable syntax.
+
+SCOPE
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, INCLUDE
+    Optional: EXCLUDE, OPERATION, WHEN, DESCRIPTION
+    Repeatable: none
+    Rule: EXCLUDE wins inside the same scope.
+
+GOAL
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID
+    Optional: ASSERT, RESULT, PRIORITY, REQUIRED, DESCRIPTION
+    Repeatable: RESULT
+    Rule: At least ASSERT or RESULT.
+    Rule: REQUIRED defaults TRUE.
+    Rule: Optional PRIORITY defaults to 0, never inherits, and an explicit declaration overrides the default.
+
+TASK
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, GOAL, SUCCESS
+    Optional: INPUT, WORKSPACE, SCOPE, DEPENDENCY, PHASE, SEQUENCE, ACTION, OUTPUT, HANDLER, DESCRIPTION
+    Repeatable: none
+    Rule: At least PHASE, SEQUENCE, or ACTION.
+    Rule: PHASE, SEQUENCE, and ACTION fields are reference/list-only; inline child blocks are forbidden.
+
+DEPENDENCY
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, REFERENCE
+    Optional: ASSERT, REQUIRED, WHEN, HANDLER, DESCRIPTION
+    Repeatable: none
+    Rule: REQUIRED defaults TRUE.
+    Rule: Unresolved required dependency blocks before effects.
+
+ACTION
+    Contexts: top_level, STEP
+    Occurrence: zero_or_more
+    Required: ID, OPERATION
+    Optional: TARGET, PARAMETER, OUTPUT, SCOPE, WHEN, REQUIRED, RETRY, EVIDENCE, DESCRIPTION
+    Repeatable: PARAMETER
+    Rule: Reachable ACTION authorizes only its exact operation, target, and parameters unless FORBID applies.
+
+ALLOW
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, OPERATION, TARGET
+    Optional: PARAMETER, SCOPE, WHEN, AUTHORITY, PRIORITY, DESCRIPTION
+    Repeatable: PARAMETER
+    Rule: Permission only; does not require execution.
+    Rule: Never defeats FORBID by itself.
+    Rule: Optional PRIORITY defaults to 0, never inherits, and an explicit declaration overrides the default.
+
+FORBID
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, OPERATION, TARGET
+    Optional: PARAMETER, SCOPE, WHEN, AUTHORITY, PRIORITY, DESCRIPTION
+    Repeatable: PARAMETER
+    Rule: Hard prohibition.
+    Rule: Optional PRIORITY defaults to 0, never inherits, and an explicit declaration overrides the default.

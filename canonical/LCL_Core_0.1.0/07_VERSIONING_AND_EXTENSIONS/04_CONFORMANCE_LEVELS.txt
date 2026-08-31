@@ -1,0 +1,24 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Interpreter Conformance Levels
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+VALIDATOR
+    Decodes, parses, resolves, type-checks, and reports exact errors.
+
+EVALUATOR
+    VALIDATOR plus pure expressions, scope/rule/conflict/dependency/check/status
+    evaluation without external effects.
+
+EXECUTOR
+    EVALUATOR plus core operations supported by host, action authorization,
+    evidence, and declared outputs.
+
+PORTABLE LC CONFORMANT
+    Passes required cross-model test protocol for claimed level/version and does
+    not use hidden ordinary-language requirements.
+
+A host may report unsupported operations but cannot claim executor conformance
+for them.

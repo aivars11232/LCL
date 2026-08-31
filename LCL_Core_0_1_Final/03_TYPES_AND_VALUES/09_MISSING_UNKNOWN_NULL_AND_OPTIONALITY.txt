@@ -1,0 +1,42 @@
+LCL CORE 0.1 FINAL
+MISSING, UNKNOWN, NULL, AND OPTIONALITY
+NORMATIVE
+
+NULL
+    NULL is a material value of type NULL. It means a known, explicit absence. It
+    may be stored, returned, and placed in a collection only where the declared
+    type is NULL or a schema explicitly permits NULL.
+
+MISSING
+    MISSING is a non-material evaluation sentinel meaning that no binding or field
+    value exists. It has no storable user type. It may appear literally only in an
+    equality/inequality test, DEFAULT, ASSUME condition, handler condition, or
+    conformance case. It cannot be written to output, memory, state, evidence, or
+    material collection data.
+
+UNKNOWN
+    UNKNOWN is a non-material evaluation sentinel meaning that a binding exists
+    but its value cannot presently be determined. It has no storable user type.
+    It may appear literally only in equality/inequality tests, conditions,
+    handlers, assumptions, or conformance cases. It cannot be persisted.
+
+DEFAULT
+    DEFAULT replaces MISSING only. DEFAULT never replaces NULL or UNKNOWN.
+
+COMPARISON
+    MISSING and UNKNOWN may be operands of == and !=. Each is a singleton sentinel:
+    MISSING == MISSING and UNKNOWN == UNKNOWN are TRUE; cross-sentinel and
+    sentinel-to-material equality is FALSE. Other operators reject MISSING with
+    error.required.missing and propagate UNKNOWN according to operator rules.
+
+BOOLEAN LOGIC WITH UNKNOWN
+    NOT UNKNOWN = UNKNOWN
+    FALSE AND UNKNOWN = FALSE
+    TRUE AND UNKNOWN = UNKNOWN
+    FALSE OR UNKNOWN = UNKNOWN
+    TRUE OR UNKNOWN = TRUE
+
+A required condition evaluating UNKNOWN invokes its declared handler or produces
+error.value.unknown. A required condition evaluating MISSING produces
+error.required.missing. Optionality is declared by REQUIRED: FALSE; it is never
+inferred from NULL, MISSING, UNKNOWN, or punctuation.

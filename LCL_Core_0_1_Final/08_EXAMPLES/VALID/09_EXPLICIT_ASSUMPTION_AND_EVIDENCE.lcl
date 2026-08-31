@@ -1,0 +1,62 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: example.assumption
+    NAME: "Explicit bounded assumption"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+INPUT:
+    ID: input.tax_rate
+    TYPE: PERCENTAGE
+    REQUIRED: FALSE
+    DEFAULT: MISSING
+
+EVIDENCE:
+    ID: evidence.assumption
+    TYPE: STRING
+    VALUE: "Applied assumption assumption.tax_rate with PERCENTAGE(20)."
+    PROVENANCE: "Declared directly in this specification."
+
+ASSUME:
+    ID: assumption.tax_rate
+    TARGET: REF(input.tax_rate)
+    VALUE: PERCENTAGE(20)
+    WHEN: REF(input.tax_rate) == MISSING
+    EVIDENCE: REF(evidence.assumption)
+
+OUTPUT:
+    ID: output.tax_rate
+    TYPE: PERCENTAGE
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.tax
+    ASSERT: REF(output.tax_rate) == PERCENTAGE(20)
+
+ACTION:
+    ID: action.return
+    OPERATION: core.return
+    TARGET: REF(input.tax_rate)
+    OUTPUT: REF(output.tax_rate)
+
+VERIFY:
+    ID: verify.tax
+    ASSERT: REF(output.tax_rate) == PERCENTAGE(20)
+    EVIDENCE: REF(evidence.assumption)
+
+SUCCESS:
+    ID: success.tax
+    ALL: [REF(verify.tax)]
+
+TASK:
+    ID: task.tax
+    GOAL: REF(goal.tax)
+    INPUT: REF(input.tax_rate)
+    ACTION: REF(action.return)
+    OUTPUT: REF(output.tax_rate)
+    SUCCESS: REF(success.tax)
+
+EXECUTE:
+    REFERENCE: REF(task.tax)

@@ -1,0 +1,18 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Task, Action, Phase, Sequence, and Step Form
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+TASK references its GOAL and SUCCESS plus one or more PHASE, SEQUENCE, or ACTION
+declarations. Those TASK fields accept references/lists only and do not open
+inline child blocks. ACTION names one OPERATION and exact target/parameters/output.
+SEQUENCE orders STEP lexically. PHASE groups steps and may contain nested SEQUENCE
+blocks under its declared legal-parent contract; it may also add BEFORE/AFTER.
+
+A STEP selects exactly one execution structure. ACTION accepts a reference/list
+or one inline nested ACTION. SEQUENCE and PHASE accept references/lists only;
+TASK accepts one exact reference. mode.parallel is legal only when all included
+actions have disjoint side effects or explicit conflict-free output targets;
+otherwise validation fails.

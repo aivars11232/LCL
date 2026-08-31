@@ -1,0 +1,853 @@
+{
+  "language": "LCL",
+  "version": "0.1.0",
+  "closed": true,
+  "keywords": {
+    "ABS": {
+      "category": "function",
+      "meaning": "Return the absolute value of one compatible numeric value.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "ACTION": {
+      "category": "block/field",
+      "meaning": "Declare an executable operation or reference one ACTION declaration.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "ACTUAL": {
+      "category": "field",
+      "meaning": "Record the value observed by a TEST.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "AFTER": {
+      "category": "field/operator",
+      "meaning": "Require one execution unit or event to occur after named predecessors.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "ALL": {
+      "category": "field/function",
+      "meaning": "Require every listed Boolean condition to be TRUE.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "ALLOW": {
+      "category": "block",
+      "meaning": "Grant permission for exact operations and targets without requiring execution.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "AND": {
+      "category": "operator",
+      "meaning": "Logical conjunction.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "ANY": {
+      "category": "field/function",
+      "meaning": "Require at least one listed Boolean condition to be TRUE.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "ASSERT": {
+      "category": "field",
+      "meaning": "Contain the Boolean expression evaluated by a rule, check, goal, or test.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "ASSUME": {
+      "category": "block",
+      "meaning": "Declare an explicit conditional temporary value for otherwise unresolved data.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "AUTHORITY": {
+      "category": "field",
+      "meaning": "Assign source strength as an INTEGER from 0 through 1000; higher is stronger.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "BASE": {
+      "category": "field",
+      "meaning": "Name the exact base type or parent definition from which a definition derives.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "BEFORE": {
+      "category": "field/operator",
+      "meaning": "Require one execution unit or event to occur before named successors.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "BOOLEAN": {
+      "category": "type",
+      "meaning": "The scalar type containing TRUE and FALSE.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "BYTES": {
+      "category": "type/constructor",
+      "meaning": "Represent or construct a non-negative exact byte count.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "CHECKSUM": {
+      "category": "field",
+      "meaning": "Declare an exact integrity digest in algorithm:lowercase_hex form.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "COMMENT": {
+      "category": "block/field",
+      "meaning": "Contain non-normative text ignored by execution semantics.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "CONTAINS": {
+      "category": "operator",
+      "meaning": "Test exact membership in a string, collection, or object-key set.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "CONTENT": {
+      "category": "field",
+      "meaning": "Contain exact text or data content.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "CONTEXT": {
+      "category": "block",
+      "meaning": "Activate explicit supporting non-authoritative information for a scope.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "COUNT": {
+      "category": "function",
+      "meaning": "Return the number of members, fields, or Unicode code points in a value.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "DATA": {
+      "category": "block",
+      "meaning": "Declare typed task material that is not interpreted as instructions.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "DATE": {
+      "category": "type/constructor",
+      "meaning": "Represent or construct an ISO 8601 calendar date.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "DATETIME": {
+      "category": "type/constructor",
+      "meaning": "Represent or construct an ISO 8601 date-time with offset or Z.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "DECIMAL": {
+      "category": "type",
+      "meaning": "An exact finite base-10 decimal scalar.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "DEFAULT": {
+      "category": "field/block",
+      "meaning": "Supply a value only when the target is MISSING and no stronger value exists.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "DEFINE": {
+      "category": "block",
+      "meaning": "Create an immutable term, constant, type, operation, format, event, status, or error.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "DELAY": {
+      "category": "field",
+      "meaning": "Specify a bounded DURATION before a retry or follow-up action.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "DEPENDENCY": {
+      "category": "block/field",
+      "meaning": "Declare or reference a prerequisite that must be satisfied before execution.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "DESCRIPTION": {
+      "category": "field",
+      "meaning": "Contain non-normative human-readable explanation.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "DETERMINISTIC": {
+      "category": "field",
+      "meaning": "Declare whether equal valid inputs require semantically equivalent outputs.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "DOMAIN": {
+      "category": "field",
+      "meaning": "Name the technical subject area whose extension definitions apply.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "DURATION": {
+      "category": "type/constructor",
+      "meaning": "Represent or construct a non-negative elapsed time.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "EACH": {
+      "category": "control",
+      "meaning": "Bind one loop-local identifier to each member of a finite collection.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "ELSE": {
+      "category": "control",
+      "meaning": "Open the branch used when the directly associated IF condition is FALSE.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "EMPTY": {
+      "category": "function",
+      "meaning": "Return TRUE when a string or collection contains zero members.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "ENCODING": {
+      "category": "field",
+      "meaning": "Declare exact character or binary encoding.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "ENUM": {
+      "category": "type",
+      "meaning": "A closed type containing exactly its declared values.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "ERROR": {
+      "category": "field/block",
+      "meaning": "Declare or reference an exact failure classification.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "EVENT": {
+      "category": "field",
+      "meaning": "Name the exact event that activates a handler.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "EVIDENCE": {
+      "category": "block/field",
+      "meaning": "Declare or reference observable material supporting a check or result.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "EXAMPLE": {
+      "category": "block/field",
+      "meaning": "Contain a non-normative illustration unless a TEST explicitly evaluates it.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "EXCLUDE": {
+      "category": "field",
+      "meaning": "Remove exact entities from a SCOPE after INCLUDE selection.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "EXECUTE": {
+      "category": "block/field",
+      "meaning": "Select the single root task, phase, sequence, action, or test to perform.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "EXISTS": {
+      "category": "function",
+      "meaning": "Return TRUE when a value is not MISSING or UNKNOWN and its reference resolves.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "EXPECTED": {
+      "category": "field",
+      "meaning": "Declare the exact value or condition expected by a TEST.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "EXTENSION": {
+      "category": "block",
+      "meaning": "Load a versioned vocabulary extension that adds definitions only.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "FAILURE": {
+      "category": "block/field",
+      "meaning": "Declare a terminal non-success condition or reference its result.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "FALLBACK": {
+      "category": "field",
+      "meaning": "Name behavior used only when a primary handler operation cannot execute.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "FALSE": {
+      "category": "literal",
+      "meaning": "The false BOOLEAN literal.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "FIELD": {
+      "category": "block",
+      "meaning": "Declare one member of an OBJECT schema.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "FOR": {
+      "category": "control",
+      "meaning": "Begin the bounded FOR EACH iteration form.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "FORBID": {
+      "category": "block",
+      "meaning": "Prohibit exact operations and targets as a hard rule.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "FORMAT": {
+      "category": "field",
+      "meaning": "Declare exact representation of input, output, evidence, or content.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "GLOB": {
+      "category": "type/constructor",
+      "meaning": "Represent or construct a file-selection pattern using the LCL glob profile.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "GOAL": {
+      "category": "block/field",
+      "meaning": "Declare a required intended result or reference one GOAL declaration.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "HANDLER": {
+      "category": "block/field",
+      "meaning": "Declare or reference deterministic behavior for one named event.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "ID": {
+      "category": "field",
+      "meaning": "Assign a unique lowercase namespaced identifier used for references.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "IF": {
+      "category": "control",
+      "meaning": "Begin a Boolean conditional.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "IMPORT": {
+      "category": "block",
+      "meaning": "Load one exact LCL document under a mandatory namespace.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "IN": {
+      "category": "operator/control",
+      "meaning": "Test membership or introduce the collection of FOR EACH.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "INCLUDE": {
+      "category": "field",
+      "meaning": "Select exact entities into a SCOPE before exclusions.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "INPUT": {
+      "category": "block/field",
+      "meaning": "Declare task input or reference one INPUT declaration.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "INTEGER": {
+      "category": "type",
+      "meaning": "An unbounded signed whole-number scalar.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "ITEM": {
+      "category": "field/block",
+      "meaning": "Represent one member of a block-form list, set, or enum.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "ITEM_TYPE": {
+      "category": "field",
+      "meaning": "Declare the element type of a LIST or SET.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "KIND": {
+      "category": "field",
+      "meaning": "Select one defined document or declaration kind.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "LCL": {
+      "category": "block",
+      "meaning": "Open the mandatory language header of every document.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "LIMIT": {
+      "category": "field",
+      "meaning": "Set an exact non-negative bound.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "LIST": {
+      "category": "type",
+      "meaning": "An ordered collection that permits duplicate values.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "LOSER": {
+      "category": "field",
+      "meaning": "Reference the exact clause displaced by an OVERRIDE.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "MATCHES": {
+      "category": "operator",
+      "meaning": "Test a STRING against a REGEX using the LCL regex profile.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "MAX": {
+      "category": "function",
+      "meaning": "Return the greatest comparable member of a non-empty collection.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "MAXIMUM": {
+      "category": "field",
+      "meaning": "Declare an inclusive upper bound.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "MEANING": {
+      "category": "field",
+      "meaning": "State the exact normative meaning of a DEFINE declaration.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "MEASURE": {
+      "category": "type/constructor",
+      "meaning": "Represent or construct a numeric value paired with one exact unit.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "MEMORY": {
+      "category": "block",
+      "meaning": "Activate explicit retained data for a scope without importing hidden rules.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "MIN": {
+      "category": "function",
+      "meaning": "Return the least comparable member of a non-empty collection.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "MINIMUM": {
+      "category": "field",
+      "meaning": "Declare an inclusive lower bound.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "MISSING": {
+      "category": "literal",
+      "meaning": "Mark an absent required value or unresolved required source.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "MODE": {
+      "category": "field",
+      "meaning": "Select one exact behavior mode defined for the surrounding construct.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "NAME": {
+      "category": "field",
+      "meaning": "Assign a human-readable label that is never used for reference resolution.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "NAMESPACE": {
+      "category": "field",
+      "meaning": "Assign the lowercase prefix for imported or extension definitions.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "NONE": {
+      "category": "field/function",
+      "meaning": "Require every listed Boolean condition to be FALSE.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "NOT": {
+      "category": "operator",
+      "meaning": "Logical negation of the immediately following grouped or atomic expression.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "NULL": {
+      "category": "literal/type",
+      "meaning": "Represent an explicit known absence, distinct from MISSING and UNKNOWN.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "OBJECT": {
+      "category": "type",
+      "meaning": "A keyed value whose fields are declared by a schema or explicit data block.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "OPERATION": {
+      "category": "field",
+      "meaning": "Name the exact built-in or extension operation performed by an ACTION.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "OR": {
+      "category": "operator",
+      "meaning": "Logical disjunction.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "OUTPUT": {
+      "category": "block/field",
+      "meaning": "Declare a produced result or reference one OUTPUT declaration.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "OVERRIDE": {
+      "category": "block",
+      "meaning": "Resolve one exact conflict by naming a WINNER and LOSER.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "PARAMETER": {
+      "category": "block",
+      "meaning": "Declare one named typed operation input.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "PATH": {
+      "category": "type/constructor/field",
+      "meaning": "Represent or construct an absolute path or workspace-relative path.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "PATTERN": {
+      "category": "field",
+      "meaning": "Declare a GLOB or REGEX constraint.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "PERCENTAGE": {
+      "category": "type/constructor",
+      "meaning": "Represent or construct a DECIMAL percentage from 0 through 100.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "PHASE": {
+      "category": "block/field",
+      "meaning": "Declare or reference a major ordered execution group.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "PREFER": {
+      "category": "block",
+      "meaning": "Declare a soft objective that cannot defeat a hard rule.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "PRESERVE": {
+      "category": "block",
+      "meaning": "Require a target or properties to compare equal before and after execution.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "PRIORITY": {
+      "category": "field",
+      "meaning": "Order equally authoritative applicable clauses from -1000 through 1000.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "PROPERTY": {
+      "category": "field/block",
+      "meaning": "Name one exact property of a target or object.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "PROVENANCE": {
+      "category": "field",
+      "meaning": "Record exact origin and production method of data or evidence.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "REF": {
+      "category": "constructor",
+      "meaning": "Resolve a declaration or loop-local binding by exact identifier.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "REFERENCE": {
+      "category": "field/type",
+      "meaning": "Declare a typed pointer to another declaration.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "REGEX": {
+      "category": "type/constructor",
+      "meaning": "Represent or construct an ECMAScript-compatible regular expression.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "REQUIRED": {
+      "category": "field",
+      "meaning": "Declare whether an item is mandatory.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "REQUIRE": {
+      "category": "block",
+      "meaning": "Declare a hard Boolean assertion or required ACTION.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "RESULT": {
+      "category": "field/block",
+      "meaning": "Declare or reference the value produced by a goal, operation, or test.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "RETRY": {
+      "category": "block",
+      "meaning": "Declare a bounded number of additional attempts after qualifying failure.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "ROUND": {
+      "category": "function",
+      "meaning": "Round a DECIMAL to explicit fractional digits using half-even rounding.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "SCHEMA": {
+      "category": "field/block",
+      "meaning": "Declare or reference the exact structure of an OBJECT value.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "SCOPE": {
+      "category": "block/field",
+      "meaning": "Declare or reference the exact set of entities to which a clause may apply.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "SEQUENCE": {
+      "category": "block/field",
+      "meaning": "Declare or reference an ordered collection of steps.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "SET": {
+      "category": "type",
+      "meaning": "An unordered collection of unique values with canonical iteration order.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "SIDE_EFFECT": {
+      "category": "field",
+      "meaning": "Declare whether an operation may change external state.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "SOURCE": {
+      "category": "field",
+      "meaning": "Identify exact origin of data, import, context, memory, state, or evidence.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "SPECIFICATION": {
+      "category": "block",
+      "meaning": "Declare mandatory identity and metadata of one LCL document.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "STATE": {
+      "category": "block",
+      "meaning": "Declare explicit mutable external or project data read at a defined point.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "STATUS": {
+      "category": "field",
+      "meaning": "Record one exact core or extension status identifier.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "STEP": {
+      "category": "block",
+      "meaning": "Declare one ordered execution unit inside a phase or sequence.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "STRING": {
+      "category": "type",
+      "meaning": "A Unicode text sequence represented by an exact string literal.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "SUCCESS": {
+      "category": "block/field",
+      "meaning": "Declare the exact Boolean completion contract or reference it.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "SUM": {
+      "category": "function",
+      "meaning": "Return the arithmetic sum of compatible numeric members.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "TASK": {
+      "category": "block/field",
+      "meaning": "Declare an executable task or reference one TASK declaration.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "TARGET": {
+      "category": "field",
+      "meaning": "Identify the exact entity affected, inspected, produced, or constrained.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "TERM": {
+      "category": "kind",
+      "meaning": "The DEFINE kind for one exact domain term.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "TEST": {
+      "category": "block/field",
+      "meaning": "Declare an executable comparison between expected and actual behavior.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "THEN": {
+      "category": "control",
+      "meaning": "Open the TRUE branch of the directly preceding IF.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "TIME": {
+      "category": "type/constructor",
+      "meaning": "Represent or construct an ISO 8601 clock time.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "TOLERANCE": {
+      "category": "field",
+      "meaning": "Declare an exact absolute permitted numeric difference.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "TRUE": {
+      "category": "literal",
+      "meaning": "The true BOOLEAN literal.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "TYPE": {
+      "category": "field/kind",
+      "meaning": "Declare the data type of a value, member, parameter, input, or result.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "UNIT": {
+      "category": "field/type",
+      "meaning": "Declare one exact unit identifier associated with a MEASURE.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "UNKNOWN": {
+      "category": "literal",
+      "meaning": "Mark a value known to exist but not currently determinable.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "URI": {
+      "category": "type/constructor",
+      "meaning": "Represent or construct an absolute RFC 3986 URI.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "VALIDATE": {
+      "category": "block/field",
+      "meaning": "Check syntax, types, references, dependencies, and preconditions before effects.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "VALUE": {
+      "category": "field/block",
+      "meaning": "Contain one exact scalar, collection, object, expression, or reference.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "VERIFY": {
+      "category": "block/field",
+      "meaning": "Check observable postconditions after execution.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "VERSION": {
+      "category": "field",
+      "meaning": "Declare one exact semantic version; ranges and latest are invalid.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "WHEN": {
+      "category": "field",
+      "meaning": "Limit applicability to one explicit Boolean expression.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "WINNER": {
+      "category": "field",
+      "meaning": "Reference the exact clause retained by an OVERRIDE.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    },
+    "WORKSPACE": {
+      "category": "block/field",
+      "meaning": "Declare or reference an explicit base location for relative paths.",
+      "contexts": "Defined by grammar and block schemas.",
+      "case_sensitive": true
+    }
+  }
+}

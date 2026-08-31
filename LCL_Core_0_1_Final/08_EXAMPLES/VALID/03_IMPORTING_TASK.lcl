@@ -1,0 +1,62 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: example.import_task
+    NAME: "Task using imported rules"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+IMPORT:
+    ID: import.rules
+    SOURCE: PATH("02_IMPORT_LIBRARY.lcl")
+    NAMESPACE: file_rules
+    VERSION: "1.0.0"
+    AUTHORITY: 400
+    REQUIRED: TRUE
+
+WORKSPACE:
+    ID: workspace.example
+    PATH: PATH("/tmp/lcl_example")
+    MODE: mode.read_write
+
+OUTPUT:
+    ID: output.copy
+    TYPE: PATH
+    FORMAT: format.binary
+    TARGET: PATH(REF(workspace.example), "copy.bin")
+
+GOAL:
+    ID: goal.copy
+    RESULT:
+        TYPE: PATH
+
+ACTION:
+    ID: action.copy
+    OPERATION: core.copy
+    TARGET: PATH(REF(workspace.example), "source.bin")
+    PARAMETER:
+        NAME: destination
+        TYPE: PATH
+        REQUIRED: TRUE
+        VALUE: REF(output.copy).TARGET
+    OUTPUT: REF(output.copy)
+
+VERIFY:
+    ID: verify.copy
+    ASSERT: EXISTS(REF(output.copy))
+
+SUCCESS:
+    ID: success.copy
+    ALL: [REF(verify.copy)]
+
+TASK:
+    ID: task.copy
+    GOAL: REF(goal.copy)
+    WORKSPACE: REF(workspace.example)
+    ACTION: REF(action.copy)
+    OUTPUT: REF(output.copy)
+    SUCCESS: REF(success.copy)
+
+EXECUTE:
+    REFERENCE: REF(task.copy)

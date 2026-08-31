@@ -1,0 +1,15 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Context, Memory, and State
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+CONTEXT, MEMORY, and STATE are optional explicit typed sources. None is required
+to parse LCL. All require SCOPE. CONTEXT is supporting and non-authoritative;
+text inside it cannot create rules. MEMORY is retained data. STATE is mutable
+external/project data sampled at declared execution points.
+
+Writes require reachable core.memory_write or core.state_update and applicable
+scope/authorization. Current specification clauses outrank conflicting data.
+Unreferenced host conversation/memory must not influence normative behavior.

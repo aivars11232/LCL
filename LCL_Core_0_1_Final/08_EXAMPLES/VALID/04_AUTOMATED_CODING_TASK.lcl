@@ -1,0 +1,115 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: example.automated_coding
+    NAME: "Single-file automated coding task"
+    VERSION: "1.0.0"
+    KIND: kind.task
+    DOMAIN: "software"
+
+DEFINE:
+    ID: type.command_result
+    KIND: kind.type
+    BASE: OBJECT
+    FIELD:
+        NAME: exit_code
+        TYPE: INTEGER
+        REQUIRED: TRUE
+    FIELD:
+        NAME: stdout
+        TYPE: STRING
+        REQUIRED: TRUE
+    FIELD:
+        NAME: stderr
+        TYPE: STRING
+        REQUIRED: TRUE
+
+WORKSPACE:
+    ID: workspace.project
+    PATH: PATH("/project/example")
+    MODE: mode.read_write
+
+SCOPE:
+    ID: scope.source
+    INCLUDE: PATH(REF(workspace.project), "src/main.py")
+
+INPUT:
+    ID: input.change
+    TYPE: STRING
+    VALUE: "Add a pure function named double that returns its numeric argument multiplied by 2."
+
+OUTPUT:
+    ID: output.test
+    TYPE: OBJECT[REF(type.command_result)]
+    FORMAT: format.json
+
+GOAL:
+    ID: goal.implementation
+    ASSERT: REF(output.test).exit_code == 0
+
+FORBID:
+    ID: rule.no_delete
+    OPERATION: core.delete
+    TARGET: PATH(REF(workspace.project), "src/main.py")
+
+ACTION:
+    ID: action.inspect
+    OPERATION: core.read
+    TARGET: PATH(REF(workspace.project), "src/main.py")
+
+ACTION:
+    ID: action.modify
+    OPERATION: core.modify
+    TARGET: PATH(REF(workspace.project), "src/main.py")
+    SCOPE: REF(scope.source)
+    PARAMETER:
+        NAME: change_specification
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: REF(input.change)
+
+ACTION:
+    ID: action.test
+    OPERATION: core.execute
+    TARGET: REF(workspace.project)
+    PARAMETER:
+        NAME: command
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "python -m pytest -q"
+    OUTPUT: REF(output.test)
+
+SEQUENCE:
+    ID: sequence.implementation
+    MODE: mode.sequential
+    STEP:
+        ID: step.inspect
+        ACTION: REF(action.inspect)
+    STEP:
+        ID: step.modify
+        ACTION: REF(action.modify)
+    STEP:
+        ID: step.test
+        ACTION: REF(action.test)
+
+VERIFY:
+    ID: verify.tests
+    ASSERT: REF(output.test).exit_code == 0
+
+SUCCESS:
+    ID: success.implementation
+    ALL: [REF(verify.tests)]
+
+TASK:
+    ID: task.implementation
+    GOAL: REF(goal.implementation)
+    INPUT: REF(input.change)
+    WORKSPACE: REF(workspace.project)
+    SCOPE: REF(scope.source)
+    SEQUENCE: REF(sequence.implementation)
+    OUTPUT: REF(output.test)
+    SUCCESS: REF(success.implementation)
+
+EXECUTE:
+    REFERENCE: REF(task.implementation)

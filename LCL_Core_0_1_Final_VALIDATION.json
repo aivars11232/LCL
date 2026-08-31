@@ -1,0 +1,48 @@
+{
+  "package": "LCL Core 0.1 Final",
+  "formal_version": "0.1.0",
+  "status": "PASS",
+  "generated_utc": "2026-08-30T18:55:31+00:00",
+  "root_directory": "/mnt/data/LCL_Core_0_1_Final",
+  "zip_path": "/mnt/data/LCL_Core_0_1_Final.zip",
+  "zip_bytes": 135664,
+  "zip_sha256": "f4c7ad6c97ce361c5cc303e4c9d48cd3decb25944fc365121400e08316c70d54",
+  "tar_path": "/mnt/data/LCL_Core_0_1_Final.tar.gz",
+  "tar_bytes": 92633,
+  "tar_sha256": "e54ce474e702fe7f7dc4d59df93342cb2b2854bfc649ae4375e12f54989a8e3e",
+  "package_files": 126,
+  "manifest_records": 124,
+  "source_hygiene": {
+    "files_checked": 85,
+    "failures": 0
+  },
+  "reference_validation": {
+    "status": "PASS",
+    "keywords": 141,
+    "symbols": 21,
+    "types": 21,
+    "blocks": 45,
+    "operations": 39,
+    "functions": 11,
+    "statuses": 12,
+    "errors": 95,
+    "valid_examples": 9,
+    "invalid_examples": 19,
+    "manifest_checked": true
+  },
+  "extracted_zip_validation": {
+    "status": "PASS",
+    "keywords": 141,
+    "symbols": 21,
+    "types": 21,
+    "blocks": 45,
+    "operations": 39,
+    "functions": 11,
+    "statuses": 12,
+    "errors": 95,
+    "valid_examples": 9,
+    "invalid_examples": 19,
+    "manifest_checked": true
+  },
+  "conformance_case_count": 1090
+}

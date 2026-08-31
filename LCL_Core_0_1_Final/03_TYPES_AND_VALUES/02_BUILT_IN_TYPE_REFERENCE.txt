@@ -1,0 +1,69 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Built-in Type Reference
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+STRING
+    Unicode text; no interpolation.
+
+INTEGER
+    Unbounded signed whole number.
+
+DECIMAL
+    Exact finite base-10 decimal.
+
+BOOLEAN
+    TRUE or FALSE; no truthy coercion.
+
+NULL
+    Explicit known absence.
+
+LIST[T]
+    Ordered collection; duplicates allowed.
+
+SET[T]
+    Unique collection; canonical ascending iteration order.
+
+OBJECT
+    Keyed value checked by an explicit schema when provided.
+
+ENUM
+    Closed set of exact declared values.
+
+REFERENCE[T]
+    Exact typed reference expressed with REF(identifier).
+
+PATH
+    Absolute path or path relative to an explicit WORKSPACE.
+
+URI
+    Absolute RFC 3986 URI.
+
+GLOB
+    File selection pattern under the LCL glob profile.
+
+REGEX
+    ECMAScript-compatible regular-expression pattern.
+
+DATE
+    ISO 8601 calendar date.
+
+TIME
+    ISO 8601 time; explicit offset or Z when material.
+
+DATETIME
+    ISO 8601 date-time with offset or Z.
+
+DURATION
+    Non-negative amount of elapsed time.
+
+PERCENTAGE
+    DECIMAL from 0 through 100 inclusive.
+
+BYTES
+    Non-negative exact byte count.
+
+MEASURE
+    Number paired with one exact unit identifier.

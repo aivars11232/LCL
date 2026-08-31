@@ -1,0 +1,14 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Type System Rules
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+Every value has exactly one static type. Assignment does not exist. DEFINE values
+and parsed source are immutable. No implicit coercion occurs except exact
+INTEGER-to-DECIMAL promotion in mixed numeric arithmetic/comparison.
+
+BOOLEAN accepts only TRUE/FALSE. NULL, MISSING, and UNKNOWN are distinct special
+states and are not false. Collection element types are invariant. OBJECT field
+legality follows its schema. A type mismatch invalidates before side effects.

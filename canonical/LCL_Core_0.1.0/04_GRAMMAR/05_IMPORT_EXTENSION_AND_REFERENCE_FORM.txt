@@ -1,0 +1,11 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Import, Extension, and Reference Form
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+IMPORT/EXTENSION require ID, SOURCE, NAMESPACE, and exact VERSION. URI sources
+also require CHECKSUM. Imported declarations resolve as namespace.local_id.
+Unqualified REF resolves local namespace only. Wildcard imports and implicit
+namespace merging are invalid. Cycles are invalid.

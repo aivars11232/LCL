@@ -1,0 +1,69 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Adopted and Restricted Symbols
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+:
+    Separate a key from an inline value or open an indented block.
+
+"
+    Open and close an exact single-line STRING literal.
+
+"""
+    Open and close an exact multiline STRING literal.
+
+\
+    Introduce an escape inside a string only.
+
+(
+    Open expression grouping, a call, or typed constructor.
+
+)
+    Close expression grouping, a call, or typed constructor.
+
+[
+    Open a list literal, index expression, or collection type argument.
+
+]
+    Close a list literal, index expression, or collection type argument.
+
+,
+    Separate list members and call arguments.
+
+.
+    Separate identifier namespaces, access properties, or mark decimal fractions.
+
+_
+    Separate words inside one identifier segment.
+
++
+    Numeric addition only.
+
+-
+    Numeric sign or subtraction only; never a bullet.
+
+*
+    Numeric multiplication only.
+
+/
+    Numeric division outside strings; path separators occur inside PATH strings.
+
+==
+    Strict equality without implicit type coercion.
+
+!=
+    Strict inequality without implicit type coercion.
+
+<
+    Strict less-than comparison of compatible ordered values.
+
+<=
+    Less-than-or-equal comparison.
+
+>
+    Strict greater-than comparison.
+
+>=
+    Greater-than-or-equal comparison.

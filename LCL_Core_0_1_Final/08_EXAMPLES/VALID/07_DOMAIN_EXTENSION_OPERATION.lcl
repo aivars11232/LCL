@@ -1,0 +1,112 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: example.image
+    NAME: "Typed image generation"
+    VERSION: "1.0.0"
+    KIND: kind.task
+    DOMAIN: "image"
+
+DEFINE:
+    ID: type.image_result
+    KIND: kind.type
+    BASE: OBJECT
+    FIELD:
+        NAME: content
+        TYPE: BYTES
+        REQUIRED: TRUE
+    FIELD:
+        NAME: width
+        TYPE: MEASURE
+        REQUIRED: TRUE
+    FIELD:
+        NAME: height
+        TYPE: MEASURE
+        REQUIRED: TRUE
+
+DEFINE:
+    ID: image.generate
+    KIND: kind.operation
+    MEANING: "Generate one image following exact prompt and dimensions."
+    SIDE_EFFECT: TRUE
+    DETERMINISTIC: FALSE
+    PARAMETER:
+        NAME: prompt
+        TYPE: STRING
+        REQUIRED: TRUE
+    PARAMETER:
+        NAME: width
+        TYPE: MEASURE
+        REQUIRED: TRUE
+    PARAMETER:
+        NAME: height
+        TYPE: MEASURE
+        REQUIRED: TRUE
+    RESULT:
+        TYPE: OBJECT[REF(type.image_result)]
+        FORMAT: format.image
+
+INPUT:
+    ID: input.prompt
+    TYPE: STRING
+    VALUE: "A plain geometric blue square on a white background."
+
+OUTPUT:
+    ID: output.image
+    TYPE: OBJECT[REF(type.image_result)]
+    FORMAT: format.image
+
+GOAL:
+    ID: goal.image
+    RESULT:
+        TYPE: OBJECT[REF(type.image_result)]
+        FORMAT: format.image
+
+ACTION:
+    ID: action.image
+    OPERATION: image.generate
+    TARGET: REF(output.image)
+    PARAMETER:
+        NAME: prompt
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: REF(input.prompt)
+    PARAMETER:
+        NAME: width
+        TYPE: MEASURE
+        REQUIRED: TRUE
+        VALUE: MEASURE(1024, unit.pixel)
+    PARAMETER:
+        NAME: height
+        TYPE: MEASURE
+        REQUIRED: TRUE
+        VALUE: MEASURE(1024, unit.pixel)
+    OUTPUT: REF(output.image)
+
+VERIFY:
+    ID: verify.width
+    ASSERT: REF(output.image).width == MEASURE(1024, unit.pixel)
+
+VERIFY:
+    ID: verify.height
+    ASSERT: REF(output.image).height == MEASURE(1024, unit.pixel)
+
+VERIFY:
+    ID: verify.content
+    ASSERT: EXISTS(REF(output.image).content)
+
+SUCCESS:
+    ID: success.image
+    ALL: [REF(verify.width), REF(verify.height), REF(verify.content)]
+
+TASK:
+    ID: task.image
+    GOAL: REF(goal.image)
+    INPUT: REF(input.prompt)
+    ACTION: REF(action.image)
+    OUTPUT: REF(output.image)
+    SUCCESS: REF(success.image)
+
+EXECUTE:
+    REFERENCE: REF(task.image)

@@ -1,0 +1,24 @@
+LCL CORE 0.1.0 RELEASE CANDIDATE
+FIELD SIGNATURE REGISTRY STATUS
+NORMATIVE
+
+The candidate legal-parent, block-occurrence, required/optional status, minimum
+and maximum cardinality, accepted value-kind expression, default, and conditional
+requirement records are stored in:
+
+    10_REGISTRIES/field_signatures_v0.1.0.json
+
+Its 334 fields use 66 distinct value-kind expressions. 54 expressions,
+with 24 distinct unregistered heads, have no exact declaration in the closed
+value-kind registry. The seven accepted nested-parent contradictions have been
+removed; the current contradiction set is empty. LCL-AUDIT-010/K-003 still blocks
+completeness on value-kind closure. Definitions must not be inferred from names.
+
+No field absent from a block signature is accepted. A null maximum means
+unbounded source repetition within the containing block; execution remains
+bounded by the separate execution rules. A declared default is applied only when
+the field is MISSING, never when it is NULL or UNKNOWN. Optional PRIORITY is a
+strict INTEGER and defaults to 0 when MISSING. It never inherits from an enclosing
+or referenced clause, and an explicitly declared value overrides the default. If
+a specific schema makes PRIORITY mandatory, omission produces
+error.field.required instead of applying the optional default.

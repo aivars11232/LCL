@@ -1,0 +1,411 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Keyword Reference A to M
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+ABS
+    Category: function
+    Meaning: Return the absolute value of one compatible numeric value.
+    Context: Defined by grammar and block schemas.
+
+ACTION
+    Category: block/field
+    Meaning: Declare an executable operation or reference one ACTION declaration.
+    Context: Defined by grammar and block schemas.
+
+ACTUAL
+    Category: field
+    Meaning: Record the value observed by a TEST.
+    Context: Defined by grammar and block schemas.
+
+AFTER
+    Category: field/operator
+    Meaning: Require one execution unit or event to occur after named predecessors.
+    Context: Defined by grammar and block schemas.
+
+ALL
+    Category: field/function
+    Meaning: Require every listed Boolean condition to be TRUE.
+    Context: Defined by grammar and block schemas.
+
+ALLOW
+    Category: block
+    Meaning: Grant permission for exact operations and targets without requiring execution.
+    Context: Defined by grammar and block schemas.
+
+AND
+    Category: operator
+    Meaning: Logical conjunction.
+    Context: Defined by grammar and block schemas.
+
+ANY
+    Category: field/function
+    Meaning: Require at least one listed Boolean condition to be TRUE.
+    Context: Defined by grammar and block schemas.
+
+ASSERT
+    Category: field
+    Meaning: Contain the Boolean expression evaluated by a rule, check, goal, or test.
+    Context: Defined by grammar and block schemas.
+
+ASSUME
+    Category: block
+    Meaning: Declare an explicit conditional temporary value for otherwise unresolved data.
+    Context: Defined by grammar and block schemas.
+
+AUTHORITY
+    Category: field
+    Meaning: Assign source strength as an INTEGER from 0 through 1000; higher is stronger.
+    Context: Defined by grammar and block schemas.
+
+BASE
+    Category: field
+    Meaning: Name the exact base type or parent definition from which a definition derives.
+    Context: Defined by grammar and block schemas.
+
+BEFORE
+    Category: field/operator
+    Meaning: Require one execution unit or event to occur before named successors.
+    Context: Defined by grammar and block schemas.
+
+BOOLEAN
+    Category: type
+    Meaning: The scalar type containing TRUE and FALSE.
+    Context: Defined by grammar and block schemas.
+
+BYTES
+    Category: type/constructor
+    Meaning: Represent or construct a non-negative exact byte count.
+    Context: Defined by grammar and block schemas.
+
+CHECKSUM
+    Category: field
+    Meaning: Declare an exact integrity digest in algorithm:lowercase_hex form.
+    Context: Defined by grammar and block schemas.
+
+COMMENT
+    Category: block/field
+    Meaning: Contain non-normative text ignored by execution semantics.
+    Context: Defined by grammar and block schemas.
+
+CONTAINS
+    Category: operator
+    Meaning: Test exact membership in a string, collection, or object-key set.
+    Context: Defined by grammar and block schemas.
+
+CONTENT
+    Category: field
+    Meaning: Contain exact text or data content.
+    Context: Defined by grammar and block schemas.
+
+CONTEXT
+    Category: block
+    Meaning: Activate explicit supporting non-authoritative information for a scope.
+    Context: Defined by grammar and block schemas.
+
+COUNT
+    Category: function
+    Meaning: Return the number of members, fields, or Unicode code points in a value.
+    Context: Defined by grammar and block schemas.
+
+DATA
+    Category: block
+    Meaning: Declare typed task material that is not interpreted as instructions.
+    Context: Defined by grammar and block schemas.
+
+DATE
+    Category: type/constructor
+    Meaning: Represent or construct an RFC 3339 full-date value.
+    Context: Defined by grammar and block schemas.
+
+DATETIME
+    Category: type/constructor
+    Meaning: Represent or construct an RFC 3339 date-time with an optional offset; omission means UTC.
+    Context: Defined by grammar and block schemas.
+
+DECIMAL
+    Category: type
+    Meaning: An exact finite base-10 decimal scalar.
+    Context: Defined by grammar and block schemas.
+
+DEFAULT
+    Category: field/block
+    Meaning: Supply a value only when the target is MISSING and no stronger value exists.
+    Context: Defined by grammar and block schemas.
+
+DEFINE
+    Category: block
+    Meaning: Create an immutable term, constant, type, operation, format, event, status, or error.
+    Context: Defined by grammar and block schemas.
+
+DELAY
+    Category: field
+    Meaning: Specify a bounded DURATION before a retry or follow-up action.
+    Context: Defined by grammar and block schemas.
+
+DEPENDENCY
+    Category: block/field
+    Meaning: Declare or reference a prerequisite that must be satisfied before execution.
+    Context: Defined by grammar and block schemas.
+
+DESCRIPTION
+    Category: field
+    Meaning: Contain non-normative human-readable explanation.
+    Context: Defined by grammar and block schemas.
+
+DETERMINISTIC
+    Category: field
+    Meaning: Declare whether equal valid inputs require semantically equivalent outputs.
+    Context: Defined by grammar and block schemas.
+
+DOMAIN
+    Category: field
+    Meaning: Name the technical subject area whose extension definitions apply.
+    Context: Defined by grammar and block schemas.
+
+DURATION
+    Category: type/constructor
+    Meaning: Represent or construct a non-negative elapsed time.
+    Context: Defined by grammar and block schemas.
+
+EACH
+    Category: control
+    Meaning: Bind one loop-local identifier to each member of a finite collection.
+    Context: Defined by grammar and block schemas.
+
+ELSE
+    Category: control
+    Meaning: Open the branch used when the directly associated IF condition is FALSE.
+    Context: Defined by grammar and block schemas.
+
+EMPTY
+    Category: function
+    Meaning: Return TRUE when a string or collection contains zero members.
+    Context: Defined by grammar and block schemas.
+
+ENCODING
+    Category: field
+    Meaning: Declare exact character or binary encoding.
+    Context: Defined by grammar and block schemas.
+
+ENUM
+    Category: type
+    Meaning: A closed type containing exactly its declared values.
+    Context: Defined by grammar and block schemas.
+
+ERROR
+    Category: field/block
+    Meaning: Declare or reference an exact failure classification.
+    Context: Defined by grammar and block schemas.
+
+EVENT
+    Category: field
+    Meaning: Name the exact event that activates a handler.
+    Context: Defined by grammar and block schemas.
+
+EVIDENCE
+    Category: block/field
+    Meaning: Declare or reference observable material supporting a check or result.
+    Context: Defined by grammar and block schemas.
+
+EXAMPLE
+    Category: block/field
+    Meaning: Contain a non-normative illustration unless a TEST explicitly evaluates it.
+    Context: Defined by grammar and block schemas.
+
+EXCLUDE
+    Category: field
+    Meaning: Remove exact entities from a SCOPE after INCLUDE selection.
+    Context: Defined by grammar and block schemas.
+
+EXECUTE
+    Category: block/field
+    Meaning: Select the single root task, phase, sequence, action, or test to perform.
+    Context: Defined by grammar and block schemas.
+
+EXISTS
+    Category: function
+    Meaning: Return FALSE only for MISSING or an unresolved optional binding; UNKNOWN exists and returns TRUE.
+    Context: Defined by the function registry and special-value semantics.
+
+EXPECTED
+    Category: field
+    Meaning: Declare the exact value or condition expected by a TEST.
+    Context: Defined by grammar and block schemas.
+
+EXTENSION
+    Category: block
+    Meaning: Load a versioned vocabulary extension that adds definitions only.
+    Context: Defined by grammar and block schemas.
+
+FAILURE
+    Category: block/field
+    Meaning: Declare a terminal non-success condition or reference its result.
+    Context: Defined by grammar and block schemas.
+
+FALLBACK
+    Category: field
+    Meaning: Name behavior used only when a primary handler operation cannot execute.
+    Context: Defined by grammar and block schemas.
+
+FALSE
+    Category: literal
+    Meaning: The false BOOLEAN literal.
+    Context: Defined by grammar and block schemas.
+
+FIELD
+    Category: block
+    Meaning: Declare one member of an OBJECT schema.
+    Context: Defined by grammar and block schemas.
+
+FOR
+    Category: control
+    Meaning: Begin the bounded FOR EACH iteration form.
+    Context: Defined by grammar and block schemas.
+
+FORBID
+    Category: block
+    Meaning: Prohibit exact operations and targets as a hard rule.
+    Context: Defined by grammar and block schemas.
+
+FORMAT
+    Category: field
+    Meaning: Declare exact representation of input, output, evidence, or content.
+    Context: Defined by grammar and block schemas.
+
+GLOB
+    Category: type/constructor
+    Meaning: Represent or construct a workspace-relative file-selection pattern using the closed LCL GLOB profile.
+    Context: Defined by grammar and block schemas.
+
+GOAL
+    Category: block/field
+    Meaning: Declare a required intended result or reference one GOAL declaration.
+    Context: Defined by grammar and block schemas.
+
+HANDLER
+    Category: block/field
+    Meaning: Declare or reference deterministic behavior for one named event.
+    Context: Defined by grammar and block schemas.
+
+ID
+    Category: field
+    Meaning: Assign a unique lowercase namespaced identifier used for references.
+    Context: Defined by grammar and block schemas.
+
+IF
+    Category: control
+    Meaning: Begin a Boolean conditional.
+    Context: Defined by grammar and block schemas.
+
+IMPORT
+    Category: block
+    Meaning: Load one exact LCL document under a mandatory namespace.
+    Context: Defined by grammar and block schemas.
+
+IN
+    Category: operator/control
+    Meaning: Test membership or introduce the collection of FOR EACH.
+    Context: Defined by grammar and block schemas.
+
+INCLUDE
+    Category: field
+    Meaning: Select exact entities into a SCOPE before exclusions.
+    Context: Defined by grammar and block schemas.
+
+INPUT
+    Category: block/field
+    Meaning: Declare task input or reference one INPUT declaration.
+    Context: Defined by grammar and block schemas.
+
+INTEGER
+    Category: type
+    Meaning: An unbounded signed whole-number scalar.
+    Context: Defined by grammar and block schemas.
+
+ITEM
+    Category: field
+    Meaning: Declare one member identifier of a user-defined ENUM.
+    Context: Repeatable only in DEFINE with BASE ENUM; never a LIST or SET value field and never an independent block.
+
+ITEM_TYPE
+    Category: field
+    Meaning: Declare the element type of a LIST or SET.
+    Context: Defined by grammar and block schemas.
+
+KIND
+    Category: field
+    Meaning: Select one defined document or declaration kind.
+    Context: Defined by grammar and block schemas.
+
+LCL
+    Category: block
+    Meaning: Open the mandatory language header of every document.
+    Context: Defined by grammar and block schemas.
+
+LIMIT
+    Category: field
+    Meaning: Set an exact non-negative bound.
+    Context: Defined by grammar and block schemas.
+
+LIST
+    Category: type
+    Meaning: An ordered collection that permits duplicate values and uses bracket value syntax.
+    Context: Defined by grammar and block schemas.
+
+LOSER
+    Category: field
+    Meaning: Reference the exact clause displaced by an OVERRIDE.
+    Context: Defined by grammar and block schemas.
+
+MATCHES
+    Category: operator
+    Meaning: Test an entire STRING against a REGEX or an entire PATH/STRING against a GLOB.
+    Context: Defined by grammar and block schemas.
+
+MAX
+    Category: function
+    Meaning: Return the greatest comparable member of a non-empty collection.
+    Context: Defined by grammar and block schemas.
+
+MAXIMUM
+    Category: field
+    Meaning: Declare an inclusive upper bound.
+    Context: Defined by grammar and block schemas.
+
+MEANING
+    Category: field
+    Meaning: State the exact normative meaning of a DEFINE declaration.
+    Context: Defined by grammar and block schemas.
+
+MEASURE
+    Category: type/constructor
+    Meaning: Represent or construct a numeric value paired with one registered unit, including a time-category unit.
+    Context: Defined by grammar and block schemas.
+
+MEMORY
+    Category: block
+    Meaning: Activate explicit retained data for a scope without importing hidden rules.
+    Context: Defined by grammar and block schemas.
+
+MIN
+    Category: function
+    Meaning: Return the least comparable member of a non-empty collection.
+    Context: Defined by grammar and block schemas.
+
+MINIMUM
+    Category: field
+    Meaning: Declare an inclusive lower bound.
+    Context: Defined by grammar and block schemas.
+
+MISSING
+    Category: literal
+    Meaning: Mark an absent required value or unresolved required source.
+    Context: Defined by grammar and block schemas.
+
+MODE
+    Category: field
+    Meaning: Select one exact behavior mode defined for the surrounding construct.
+    Context: Defined by grammar and block schemas.

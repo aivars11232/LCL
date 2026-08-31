@@ -1,0 +1,8 @@
+LCL CORE 0.1 FINAL
+CORE STATUS IDENTIFIERS
+NORMATIVE
+
+Every status meaning, terminality, legal successor, and scope is closed in
+10_REGISTRIES/statuses_and_errors_v0.1.0.json. A transition absent from
+allowed_next is invalid. status.skipped applies to a declaration, not as the
+successful root status of an EXECUTE document.

@@ -1,0 +1,34 @@
+LCL CORE 0.1.0 RELEASE CANDIDATE
+COLLECTION, OBJECT, ENUM, AND SCHEMA FORMS
+NORMATIVE
+
+LIST[T]
+    Ordered and homogeneous. Duplicates are permitted. Inline and multiline values
+    use bracket syntax. Iteration preserves source order.
+
+SET[T]
+    Homogeneous and unique under strict equality. Inline and multiline values use
+    bracket syntax; ITEM is not a collection-value field. Duplicate source members
+    collapse to one value. Iteration uses canonical ascending order only when T has
+    a defined total order; otherwise SET iteration requires an explicit SORT key.
+
+OBJECT
+    An object uses an indented VALUE block containing unique lowercase property
+    names. Property order has no semantic effect. When SCHEMA is present, every
+    required schema field must occur exactly once and no undeclared field is legal
+    unless that schema explicitly declares openness.
+
+ENUM
+    A user enum is defined by DEFINE with KIND kind.type, BASE ENUM, and one or more
+    ITEM identifiers. Its member set and declaration order are closed. Equality is
+    exact identifier equality. Ordered comparison of enum members is forbidden;
+    declaration order is available only to explicit sorting rules.
+
+SCHEMA
+    A schema is either REF(identifier) to a defined OBJECT type or a local SCHEMA
+    block containing FIELD blocks. FIELD.NAME is unique. FIELD.TYPE is exact.
+    REQUIRED defaults only where its block signature says so. Recursive value
+    schemas are forbidden in Core 0.1.0.
+
+MISSING and UNKNOWN are never material collection members. NULL is permitted only
+when the declared member/field type permits NULL.

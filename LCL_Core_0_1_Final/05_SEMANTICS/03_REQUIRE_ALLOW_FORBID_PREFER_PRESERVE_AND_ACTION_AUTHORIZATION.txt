@@ -1,0 +1,17 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Requirement, Permission, Prohibition, Preference, Preservation, and Authorization
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+REQUIRE is hard. ALLOW grants optional capability. FORBID is hard prohibition.
+PREFER is soft and cannot authorize an action or defeat hard rules. PRESERVE is
+hard pre-state equals post-state for selected target/properties.
+
+A reachable required ACTION authorizes exactly its declared OPERATION, TARGET,
+PARAMETER values, OUTPUT, and necessary direct effects. An LC-selected extra
+side effect requires matching ALLOW. FORBID blocks matching action even when an
+ACTION requires it unless a valid OVERRIDE resolves the exact conflict.
+
+ALLOW never causes execution. A goal or preference never implies permission.

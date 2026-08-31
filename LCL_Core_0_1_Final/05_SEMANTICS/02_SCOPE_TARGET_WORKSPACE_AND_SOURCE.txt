@@ -1,0 +1,16 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Scope, Target, Workspace, and Source
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+SCOPE is computed as INCLUDE minus EXCLUDE. Exact references/paths identify one
+entity. GLOB/REGEX select a finite set resolved before affected execution.
+EXCLUDE wins within the same SCOPE. Nested scopes intersect unless a higher-
+authority rule explicitly replaces a referenced scope.
+
+WORKSPACE supplies an explicit base path and access MODE; it grants no operation
+by itself. TARGET identifies the primary entity of a clause/action. SOURCE
+identifies origin. Ambient current directory and implied nearby files do not
+exist in portable LCL.

@@ -1,0 +1,21 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Normative Source Precedence
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+The global authority order is defined only by
+00_RELEASE/02_NORMATIVE_AUTHORITY_ORDER.txt. This document does not reorder its
+tiers.
+
+Within one tier, the entry that governs the exact subject is more specific than a
+summary entry in that same artifact class. For example, an operation's exact
+contract governs that operation within the registry tier, and an exact block
+signature governs that block within the block-signature registry. Specificity
+never permits a lower global tier to override a higher one.
+
+Two incompatible exact entries at the same global tier are a specification defect
+to be repaired in a patch. An interpreter must report the contradiction rather
+than invent behavior. Examples and research basis are informative unless
+explicitly marked normative.

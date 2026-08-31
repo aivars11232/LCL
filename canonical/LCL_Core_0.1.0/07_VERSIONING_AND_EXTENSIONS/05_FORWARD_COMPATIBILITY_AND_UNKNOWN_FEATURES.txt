@@ -1,0 +1,12 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Forward Compatibility and Unknown Features
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+An interpreter validates only exact supported language versions. Unknown
+keywords, fields, symbols, types, operations, or extensions are errors. No
+ignore-unknown mode exists for normative content. A newer interpreter may parse
+older exact versions using their original semantics; it must not reinterpret
+old source under new defaults.

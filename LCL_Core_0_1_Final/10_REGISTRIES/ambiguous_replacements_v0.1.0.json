@@ -1,0 +1,22 @@
+{
+  "language": "LCL",
+  "version": "0.1.0",
+  "replacements": {
+    "objective / aim / purpose / intention": "GOAL",
+    "must / shall / ensure": "REQUIRE",
+    "may / can / permitted": "ALLOW",
+    "must not / never / do not": "FORBID",
+    "should / ideally / preferably": "PREFER",
+    "done / finished / complete": "SUCCESS",
+    "check": "VALIDATE before effects or VERIFY after effects",
+    "proof / confirmation": "EVIDENCE",
+    "problem / issue": "exact error.*, event.*, FAILURE, MISSING, or UNKNOWN",
+    "try / attempt": "ACTION; bounded RETRY for additional attempts",
+    "maybe / perhaps / possibly / probably": "PREFER, conditional ASSUME, or typed probability data",
+    "about / around / roughly / approximately": "MINIMUM/MAXIMUM comparisons or TOLERANCE",
+    "soon / later / recently / latest": "exact VERSION, DATE, DATETIME, ID, SOURCE, or CHECKSUM",
+    "relevant / related / necessary files": "SCOPE with INCLUDE and EXCLUDE",
+    "as before / same as last time": "explicit REF, IMPORT, CONTEXT, MEMORY, or STATE",
+    "carefully / properly / safely": "specific REQUIRE, FORBID, PRESERVE, VALIDATE, and VERIFY clauses"
+  }
+}

@@ -1,0 +1,13 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: invalid.while
+    NAME: "Unbounded loop"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+WHILE (TRUE):
+    STEP:
+        ID: step.forever
+        ACTION: REF(action.forever)

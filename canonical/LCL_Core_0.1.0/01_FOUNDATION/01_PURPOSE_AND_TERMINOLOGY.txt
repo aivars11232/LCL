@@ -1,0 +1,29 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Purpose and Terminology
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+LC
+    Learned Computing: trained computational systems commonly called AI.
+
+LCL
+    Learned Computing Language: this declarative specification language.
+
+LCP
+    Learned Computing Programming: programming at goal, constraint, operation,
+    output, and verification level rather than manually writing implementation.
+
+AUTOMATED CODING
+    The software-development branch of LCP in which an LC generates or modifies
+    implementation code from LCL specifications.
+
+SPECIFICATION
+    One versioned LCL document and its exact imported documents/extensions.
+
+INTERPRETER
+    An LC system or deterministic implementation that validates and acts on LCL.
+
+HOST
+    The product/runtime providing files, tools, permissions, and execution.

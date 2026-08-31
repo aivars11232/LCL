@@ -1,0 +1,25 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Custom Types, Schemas, and Definitions
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+DEFINE KIND rules:
+
+kind.term
+    MEANING required.
+kind.constant
+    TYPE and VALUE required.
+kind.type
+    BASE required; OBJECT base requires one or more FIELD.
+kind.operation
+    MEANING, SIDE_EFFECT, DETERMINISTIC required; zero or more PARAMETER and at
+    most one RESULT.
+kind.format
+    MEANING required; optional BASE/ENCODING.
+kind.event, kind.status, kind.error
+    MEANING required.
+
+Definitions are immutable and may reference earlier or later definitions so long
+as resolution is acyclic. Anonymous SCHEMA is local to its containing value.

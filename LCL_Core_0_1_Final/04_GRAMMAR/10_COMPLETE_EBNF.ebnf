@@ -1,0 +1,268 @@
+(* LCL Core 0.1.0 Final. Self-contained normative concrete grammar. *)
+
+DOCUMENT = LCL_HEADER, SPECIFICATION_HEADER, { TOP_LEVEL_BLOCK }, EOF ;
+LCL_HEADER = "LCL", ":", NEWLINE, INDENT, "VERSION", ":", SPACE, STRING, NEWLINE, DEDENT ;
+SPECIFICATION_HEADER = "SPECIFICATION", ":", NEWLINE, INDENT, FIELD_LINE, { FIELD_LINE | NESTED_FIELD }, DEDENT ;
+TOP_LEVEL_BLOCK = CORE_BLOCK | CONDITIONAL | FOR_EACH ;
+CORE_BLOCK = BLOCK_WORD, ":", NEWLINE, INDENT, BLOCK_BODY, DEDENT ;
+BLOCK_BODY = BLOCK_STATEMENT, { BLOCK_STATEMENT } ;
+BLOCK_STATEMENT = FIELD_LINE | NESTED_FIELD | CONDITIONAL | FOR_EACH ;
+FIELD_LINE = FIELD_KEY, ":", SPACE, INLINE_VALUE, NEWLINE ;
+NESTED_FIELD = FIELD_KEY, ":", NEWLINE, INDENT, NESTED_BODY, DEDENT ;
+NESTED_BODY = BLOCK_STATEMENT | OBJECT_PROPERTY, { BLOCK_STATEMENT | OBJECT_PROPERTY } ;
+OBJECT_PROPERTY = SIMPLE_IDENTIFIER, ":", (SPACE, INLINE_VALUE, NEWLINE | NEWLINE, INDENT, NESTED_BODY, DEDENT) ;
+
+CONDITIONAL = "IF", SPACE, "(", EXPRESSION, ")", SPACE, "THEN", ":", NEWLINE,
+    INDENT, EXECUTABLE_BODY, DEDENT,
+    [ "ELSE", ":", NEWLINE, INDENT, EXECUTABLE_BODY, DEDENT ] ;
+FOR_EACH = "FOR", SPACE, "EACH", SPACE, SIMPLE_IDENTIFIER, SPACE, "IN", SPACE,
+    EXPRESSION, ":", NEWLINE, INDENT, EXECUTABLE_BODY, DEDENT ;
+EXECUTABLE_BODY = EXECUTABLE_STATEMENT, { EXECUTABLE_STATEMENT } ;
+EXECUTABLE_STATEMENT = STEP_BLOCK | CONDITIONAL | FOR_EACH ;
+STEP_BLOCK = "STEP", ":", NEWLINE, INDENT, BLOCK_BODY, DEDENT ;
+
+INLINE_VALUE = EXPRESSION | MULTILINE_LIST | MULTILINE_STRING ;
+EXPRESSION = OR_EXPRESSION ;
+OR_EXPRESSION = AND_EXPRESSION, { SPACE, "OR", SPACE, AND_EXPRESSION } ;
+AND_EXPRESSION = COMPARISON, { SPACE, "AND", SPACE, COMPARISON } ;
+COMPARISON = ADDITIVE, [ SPACE, COMPARE_OPERATOR, SPACE, ADDITIVE ] ;
+COMPARE_OPERATOR = "==" | "!=" | "<" | "<=" | ">" | ">=" | "IN" | "CONTAINS" | "MATCHES" ;
+ADDITIVE = MULTIPLICATIVE, { SPACE, ADD_OPERATOR, SPACE, MULTIPLICATIVE } ;
+ADD_OPERATOR = "+" | "-" ;
+MULTIPLICATIVE = UNARY, { SPACE, MULTIPLY_OPERATOR, SPACE, UNARY } ;
+MULTIPLY_OPERATOR = "*" | "/" ;
+UNARY = [ "NOT", SPACE | "-" ], POSTFIX ;
+POSTFIX = PRIMARY, { PROPERTY_ACCESS | INDEX_ACCESS } ;
+PROPERTY_ACCESS = ".", (SIMPLE_IDENTIFIER | RESERVED_WORD) ;
+INDEX_ACCESS = "[", EXPRESSION, "]" ;
+PRIMARY = LITERAL | QUALIFIED_IDENTIFIER | CALL | LIST_LITERAL | "(", EXPRESSION, ")" | TYPE_EXPRESSION ;
+
+CALL = CALLABLE, "(", [ ARGUMENT, { ",", SPACE, ARGUMENT } ], ")" ;
+ARGUMENT = [ SIMPLE_IDENTIFIER, ":", SPACE ], EXPRESSION ;
+CALLABLE = "REF" | "PATH" | "URI" | "GLOB" | "REGEX" | "DATE" | "TIME" |
+    "DATETIME" | "DURATION" | "PERCENTAGE" | "BYTES" | "MEASURE" | "ABS" |
+    "COUNT" | "SUM" | "MIN" | "MAX" | "ROUND" | "EXISTS" | "EMPTY" |
+    "ALL" | "ANY" | "NONE" ;
+TYPE_EXPRESSION = TYPE_NAME, [ "[", (TYPE_EXPRESSION | REFERENCE_CALL), "]" ] ;
+TYPE_NAME = "STRING" | "INTEGER" | "DECIMAL" | "BOOLEAN" | "NULL" | "LIST" |
+    "SET" | "OBJECT" | "ENUM" | "REFERENCE" | "PATH" | "URI" | "GLOB" |
+    "REGEX" | "DATE" | "TIME" | "DATETIME" | "DURATION" | "PERCENTAGE" |
+    "BYTES" | "MEASURE" ;
+REFERENCE_CALL = "REF", "(", QUALIFIED_IDENTIFIER, ")" ;
+
+LIST_LITERAL = "[", [ EXPRESSION, { ",", SPACE, EXPRESSION } ], "]" ;
+MULTILINE_LIST = "[", NEWLINE, INDENT, EXPRESSION,
+    { ",", NEWLINE, EXPRESSION }, NEWLINE, DEDENT, "]" ;
+LITERAL = STRING | MULTILINE_STRING | INTEGER_LITERAL | DECIMAL_LITERAL |
+    "TRUE" | "FALSE" | "NULL" | "MISSING" | "UNKNOWN" ;
+STRING = '"', { STRING_CHARACTER | ESCAPE }, '"' ;
+MULTILINE_STRING = '"""', NEWLINE, { MULTILINE_CHARACTER | ESCAPE | NEWLINE }, '"""' ;
+ESCAPE = "\", ( '"' | "\" | "n" | "r" | "t" | "u", HEX, HEX, HEX, HEX ) ;
+INTEGER_LITERAL = [ "-" ], ( "0" | NONZERO_DIGIT, { DIGIT } ) ;
+DECIMAL_LITERAL = [ "-" ], ( "0" | NONZERO_DIGIT, { DIGIT } ), ".", DIGIT, { DIGIT } ;
+
+FIELD_KEY = RESERVED_WORD | SIMPLE_IDENTIFIER ;
+BLOCK_WORD =
+    "LCL" |
+    "SPECIFICATION" |
+    "IMPORT" |
+    "EXTENSION" |
+    "DEFINE" |
+    "FIELD" |
+    "PARAMETER" |
+    "RESULT" |
+    "WORKSPACE" |
+    "INPUT" |
+    "CONTEXT" |
+    "MEMORY" |
+    "STATE" |
+    "DATA" |
+    "SCOPE" |
+    "GOAL" |
+    "TASK" |
+    "DEPENDENCY" |
+    "ACTION" |
+    "ALLOW" |
+    "FORBID" |
+    "REQUIRE" |
+    "PREFER" |
+    "PRESERVE" |
+    "OVERRIDE" |
+    "PHASE" |
+    "SEQUENCE" |
+    "STEP" |
+    "RETRY" |
+    "HANDLER" |
+    "OUTPUT" |
+    "VALIDATE" |
+    "VERIFY" |
+    "TEST" |
+    "EVIDENCE" |
+    "SUCCESS" |
+    "FAILURE" |
+    "ASSUME" |
+    "EXECUTE" |
+    "COMMENT" |
+    "EXAMPLE" |
+    "VALUE" |
+    "ITEM" |
+    "PROPERTY" |
+    "SCHEMA" ;
+QUALIFIED_IDENTIFIER = SIMPLE_IDENTIFIER, { ".", SIMPLE_IDENTIFIER } ;
+SIMPLE_IDENTIFIER = LOWER, { LOWER | DIGIT | "_" } ;
+RESERVED_WORD =
+    "ABS" |
+    "ACTION" |
+    "ACTUAL" |
+    "AFTER" |
+    "ALL" |
+    "ALLOW" |
+    "AND" |
+    "ANY" |
+    "ASSERT" |
+    "ASSUME" |
+    "AUTHORITY" |
+    "BASE" |
+    "BEFORE" |
+    "BOOLEAN" |
+    "BYTES" |
+    "CHECKSUM" |
+    "COMMENT" |
+    "CONTAINS" |
+    "CONTENT" |
+    "CONTEXT" |
+    "COUNT" |
+    "DATA" |
+    "DATE" |
+    "DATETIME" |
+    "DECIMAL" |
+    "DEFAULT" |
+    "DEFINE" |
+    "DELAY" |
+    "DEPENDENCY" |
+    "DESCRIPTION" |
+    "DETERMINISTIC" |
+    "DOMAIN" |
+    "DURATION" |
+    "EACH" |
+    "ELSE" |
+    "EMPTY" |
+    "ENCODING" |
+    "ENUM" |
+    "ERROR" |
+    "EVENT" |
+    "EVIDENCE" |
+    "EXAMPLE" |
+    "EXCLUDE" |
+    "EXECUTE" |
+    "EXISTS" |
+    "EXPECTED" |
+    "EXTENSION" |
+    "FAILURE" |
+    "FALLBACK" |
+    "FALSE" |
+    "FIELD" |
+    "FOR" |
+    "FORBID" |
+    "FORMAT" |
+    "GLOB" |
+    "GOAL" |
+    "HANDLER" |
+    "ID" |
+    "IF" |
+    "IMPORT" |
+    "IN" |
+    "INCLUDE" |
+    "INPUT" |
+    "INTEGER" |
+    "ITEM" |
+    "ITEM_TYPE" |
+    "KIND" |
+    "LCL" |
+    "LIMIT" |
+    "LIST" |
+    "LOSER" |
+    "MATCHES" |
+    "MAX" |
+    "MAXIMUM" |
+    "MEANING" |
+    "MEASURE" |
+    "MEMORY" |
+    "MIN" |
+    "MINIMUM" |
+    "MISSING" |
+    "MODE" |
+    "NAME" |
+    "NAMESPACE" |
+    "NONE" |
+    "NOT" |
+    "NULL" |
+    "OBJECT" |
+    "OPERATION" |
+    "OR" |
+    "OUTPUT" |
+    "OVERRIDE" |
+    "PARAMETER" |
+    "PATH" |
+    "PATTERN" |
+    "PERCENTAGE" |
+    "PHASE" |
+    "PREFER" |
+    "PRESERVE" |
+    "PRIORITY" |
+    "PROPERTY" |
+    "PROVENANCE" |
+    "REF" |
+    "REFERENCE" |
+    "REGEX" |
+    "REQUIRED" |
+    "REQUIRE" |
+    "RESULT" |
+    "RETRY" |
+    "ROUND" |
+    "SCHEMA" |
+    "SCOPE" |
+    "SEQUENCE" |
+    "SET" |
+    "SIDE_EFFECT" |
+    "SOURCE" |
+    "SPECIFICATION" |
+    "STATE" |
+    "STATUS" |
+    "STEP" |
+    "STRING" |
+    "SUCCESS" |
+    "SUM" |
+    "TASK" |
+    "TARGET" |
+    "TERM" |
+    "TEST" |
+    "THEN" |
+    "TIME" |
+    "TOLERANCE" |
+    "TRUE" |
+    "TYPE" |
+    "UNIT" |
+    "UNKNOWN" |
+    "URI" |
+    "VALIDATE" |
+    "VALUE" |
+    "VERIFY" |
+    "VERSION" |
+    "WHEN" |
+    "WINNER" |
+    "WORKSPACE" ;
+
+SPACE = " " ;
+NEWLINE = ? U+000A LINE FEED ? ;
+INDENT = ? lexer token emitted only when indentation increases by exactly four ASCII spaces ? ;
+DEDENT = ? lexer token emitted for each closed four-space indentation level ? ;
+STRING_CHARACTER = ? Unicode scalar except LF, CR, double quote, backslash, and prohibited controls ? ;
+MULTILINE_CHARACTER = ? Unicode scalar except prohibited controls and unescaped closing triple quote ? ;
+LOWER = "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" |
+    "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" |
+    "u" | "v" | "w" | "x" | "y" | "z" ;
+DIGIT = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+NONZERO_DIGIT = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+HEX = DIGIT | "a" | "b" | "c" | "d" | "e" | "f" | "A" | "B" | "C" | "D" | "E" | "F" ;
+EOF = ? end of the final LINE FEED with no remaining bytes ? ;

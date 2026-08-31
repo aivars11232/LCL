@@ -1,0 +1,9 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: invalid.field
+    NAME: "Duplicate field"
+    VERSION: "1.0.0"
+    VERSION: "2.0.0"
+    KIND: kind.data

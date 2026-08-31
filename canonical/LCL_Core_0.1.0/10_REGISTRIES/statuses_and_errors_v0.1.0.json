@@ -1,0 +1,564 @@
+{
+  "language": "LCL",
+  "version": "0.1.0",
+  "closed": true,
+  "statuses": {
+    "status.not_started": {
+      "meaning": "The executable root has not begun validation.",
+      "terminal": false,
+      "allowed_next": [
+        "status.validating",
+        "status.cancelled"
+      ],
+      "scope": "execution_root_or_declaration"
+    },
+    "status.validating": {
+      "meaning": "Syntax, types, references, rules, inputs, and dependencies are being checked.",
+      "terminal": false,
+      "allowed_next": [
+        "status.invalid",
+        "status.ready",
+        "status.blocked",
+        "status.cancelled"
+      ],
+      "scope": "execution_root_or_declaration"
+    },
+    "status.invalid": {
+      "meaning": "The document cannot execute because language validation failed.",
+      "terminal": true,
+      "allowed_next": [],
+      "scope": "execution_root_or_declaration"
+    },
+    "status.ready": {
+      "meaning": "Validation passed and required inputs/dependencies are available.",
+      "terminal": false,
+      "allowed_next": [
+        "status.running",
+        "status.succeeded",
+        "status.blocked",
+        "status.stopped",
+        "status.cancelled"
+      ],
+      "scope": "execution_root_or_declaration"
+    },
+    "status.running": {
+      "meaning": "At least one required action began and no terminal status exists.",
+      "terminal": false,
+      "allowed_next": [
+        "status.succeeded",
+        "status.failed",
+        "status.partial",
+        "status.blocked",
+        "status.stopped",
+        "status.cancelled"
+      ],
+      "scope": "execution_root_or_declaration"
+    },
+    "status.blocked": {
+      "meaning": "Execution cannot proceed because required external data, permission, dependency, or host capability is unavailable.",
+      "terminal": false,
+      "allowed_next": [
+        "status.ready",
+        "status.failed",
+        "status.stopped",
+        "status.cancelled"
+      ],
+      "scope": "execution_root_or_declaration"
+    },
+    "status.stopped": {
+      "meaning": "Execution halted on a declared stop path without satisfying SUCCESS.",
+      "terminal": true,
+      "allowed_next": [],
+      "scope": "execution_root_or_declaration"
+    },
+    "status.cancelled": {
+      "meaning": "The invoking authority or host cancelled execution.",
+      "terminal": true,
+      "allowed_next": [],
+      "scope": "execution_root_or_declaration"
+    },
+    "status.failed": {
+      "meaning": "A required action, check, or hard rule failed after execution began.",
+      "terminal": true,
+      "allowed_next": [],
+      "scope": "execution_root_or_declaration"
+    },
+    "status.partial": {
+      "meaning": "Some outputs exist but SUCCESS is FALSE; this is not success.",
+      "terminal": true,
+      "allowed_next": [],
+      "scope": "execution_root_or_declaration"
+    },
+    "status.succeeded": {
+      "meaning": "Every required SUCCESS condition is TRUE and required evidence exists.",
+      "terminal": true,
+      "allowed_next": [],
+      "scope": "execution_root_or_declaration"
+    },
+    "status.skipped": {
+      "meaning": "A non-root declaration did not apply because WHEN was FALSE or it was optional and omitted.",
+      "terminal": true,
+      "allowed_next": [],
+      "scope": "declaration"
+    }
+  },
+  "errors": {
+    "error.block.conditional_requirement": {
+      "meaning": "A block-specific conditional requirement is unsatisfied.",
+      "stage": "grammar_or_schema",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.block.context": {
+      "meaning": "A block occurs under an illegal parent or document position.",
+      "stage": "grammar_or_schema",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.block.duplicate": {
+      "meaning": "A non-repeatable field occurs more than once in one parent.",
+      "stage": "grammar_or_schema",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.block.field": {
+      "meaning": "A block contains a field or child not permitted by its schema.",
+      "stage": "grammar_or_schema",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.block.occurrence": {
+      "meaning": "A block violates its document or parent occurrence limit.",
+      "stage": "grammar_or_schema",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.block.required": {
+      "meaning": "A block omits a required field or child.",
+      "stage": "grammar_or_schema",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.cancelled": {
+      "meaning": "Invoking authority cancelled execution.",
+      "stage": "execution",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.cancelled"
+    },
+    "error.collection.heterogeneous": {
+      "meaning": "A LIST or SET contains a member incompatible with its declared item type.",
+      "stage": "static_or_expression",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.conflict.hard": {
+      "meaning": "Applicable hard clauses cannot all be satisfied after resolution.",
+      "stage": "resolution",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.delimiter.mismatch": {
+      "meaning": "A closing delimiter does not match the active opening delimiter.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.delimiter.unclosed": {
+      "meaning": "A paired delimiter reaches end of input without closure.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.dependency.unsatisfied": {
+      "meaning": "A required dependency is FALSE, MISSING, or UNKNOWN.",
+      "stage": "execution",
+      "recoverable_with_declared_handler": true,
+      "default_status": "status.blocked"
+    },
+    "error.encoding.invalid": {
+      "meaning": "Source is not valid UTF-8 or contains a prohibited BOM.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.evidence.missing": {
+      "meaning": "Required EVIDENCE is absent, unresolved, or lacks required provenance.",
+      "stage": "verification_or_completion",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.failed"
+    },
+    "error.execution.action": {
+      "meaning": "A required ACTION failed to produce its declared result/output.",
+      "stage": "execution",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.failed"
+    },
+    "error.execution.order": {
+      "meaning": "Ordering constraints form a cycle or are violated.",
+      "stage": "execution",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.failed"
+    },
+    "error.extension.invalid": {
+      "meaning": "An extension violates the definition-only extension contract.",
+      "stage": "resolution",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.field.cardinality": {
+      "meaning": "A field occurs fewer or more times than its exact signature allows.",
+      "stage": "grammar_or_schema",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.field.duplicate": {
+      "meaning": "A non-repeatable field occurs more than once.",
+      "stage": "grammar_or_schema",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.field.forbidden": {
+      "meaning": "A field is absent from the exact parent block signature.",
+      "stage": "grammar_or_schema",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.field.required": {
+      "meaning": "A required field is absent.",
+      "stage": "grammar_or_schema",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.field.type": {
+      "meaning": "A field value does not match its exact value kind.",
+      "stage": "grammar_or_schema",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.grammar.invalid": {
+      "meaning": "Token sequence or block shape violates grammar.",
+      "stage": "grammar_or_schema",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.host.constraint": {
+      "meaning": "A host/provider limitation outside portable LCL prevents execution.",
+      "stage": "execution",
+      "recoverable_with_declared_handler": true,
+      "default_status": "status.blocked"
+    },
+    "error.id.duplicate": {
+      "meaning": "Two declarations define the same ID in one namespace.",
+      "stage": "resolution",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.identifier.invalid": {
+      "meaning": "An identifier violates lowercase namespaced grammar.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.import.checksum": {
+      "meaning": "Imported content does not match CHECKSUM.",
+      "stage": "resolution",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.import.cycle": {
+      "meaning": "Import graph contains a cycle.",
+      "stage": "resolution",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.import.not_found": {
+      "meaning": "IMPORT or EXTENSION source cannot be resolved.",
+      "stage": "resolution",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.indentation.empty_block": {
+      "meaning": "A block-opening declaration has no child statement.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.indentation.invalid": {
+      "meaning": "Indentation uses tabs, non-multiple-of-four spaces, or an invalid level change.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.indentation.jump": {
+      "meaning": "Indentation increases by more than one level.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.indentation.width": {
+      "meaning": "Leading spaces are not an exact multiple of four.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.keyword.case": {
+      "meaning": "A reserved keyword or literal uses incorrect case.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.keyword.unknown": {
+      "meaning": "An uppercase syntax word is absent from the closed registry.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.lexical.malformed_token": {
+      "meaning": "Characters cannot form any registered token.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.lexical.unknown_symbol": {
+      "meaning": "Punctuation outside strings is absent from the adopted-symbol registry.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.literal.escape": {
+      "meaning": "A string escape is malformed or unsupported.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.literal.invalid": {
+      "meaning": "A scalar, list, constructor, or multiline string is malformed.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.literal.unclosed": {
+      "meaning": "A string or multiline string is not closed.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.namespace.invalid": {
+      "meaning": "Namespace is absent, reserved, malformed, or duplicated.",
+      "stage": "resolution",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.newline.invalid": {
+      "meaning": "Source contains a non-LF line ending.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.numeric.division_by_zero": {
+      "meaning": "An expression divides by zero.",
+      "stage": "static_or_expression",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.numeric.non_terminating": {
+      "meaning": "Exact DECIMAL division has no finite result and no ROUND/TOLERANCE rule.",
+      "stage": "static_or_expression",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.numeric.unit_mismatch": {
+      "meaning": "An operation combines MEASURE values with different units.",
+      "stage": "static_or_expression",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.object.schema": {
+      "meaning": "An OBJECT violates required, forbidden, duplicate, or typed schema fields.",
+      "stage": "static_or_expression",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.operation.parameter": {
+      "meaning": "An ACTION omits, duplicates, or mistypes an operation parameter.",
+      "stage": "static_or_expression",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.operation.postcondition": {
+      "meaning": "A core operation completed without satisfying its exact postcondition.",
+      "stage": "execution",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.failed"
+    },
+    "error.operation.precondition": {
+      "meaning": "A core operation precondition is false, missing, or unknown.",
+      "stage": "execution",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.failed"
+    },
+    "error.operation.undefined": {
+      "meaning": "An ACTION names an operation absent from core and active extensions.",
+      "stage": "resolution",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.operator.operand": {
+      "meaning": "No registered operator, function, or typed-constructor overload accepts the operand types or arity.",
+      "stage": "static_or_expression",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.override.invalid": {
+      "meaning": "An override is unresolved, circular, or lets lower authority defeat higher authority.",
+      "stage": "resolution",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.pattern.mismatch": {
+      "meaning": "A value fails its declared GLOB or REGEX pattern.",
+      "stage": "static_or_expression",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.pattern.resource_limit": {
+      "meaning": "Compiling or matching a GLOB or REGEX exhausts the implementation's declared finite pattern-resource limit.",
+      "stage": "static_or_expression",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.permission.denied": {
+      "meaning": "A side effect is undeclared/unallowed or prohibited.",
+      "stage": "execution",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.failed"
+    },
+    "error.reference.cycle": {
+      "meaning": "Immutable definitions contain a prohibited dependency cycle.",
+      "stage": "resolution",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.reference.kind": {
+      "meaning": "Reference resolves to a declaration kind illegal in that field.",
+      "stage": "resolution",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.reference.unresolved": {
+      "meaning": "REF does not resolve to exactly one declaration/binding.",
+      "stage": "resolution",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.required.missing": {
+      "meaning": "A required value, source, output, evidence item, or declaration is MISSING.",
+      "stage": "execution",
+      "recoverable_with_declared_handler": true,
+      "default_status": "status.blocked"
+    },
+    "error.retry.exhausted": {
+      "meaning": "Initial attempt and all allowed retries failed.",
+      "stage": "execution",
+      "recoverable_with_declared_handler": true,
+      "default_status": "status.failed"
+    },
+    "error.scope.violation": {
+      "meaning": "An action targets an entity outside applicable SCOPE.",
+      "stage": "execution",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.failed"
+    },
+    "error.source.bom": {
+      "meaning": "A UTF-8 byte-order mark occurs at source start.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.source.control_character": {
+      "meaning": "A prohibited control character occurs in source.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.source.final_line_feed": {
+      "meaning": "A non-empty source lacks its required final LINE FEED.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.source.non_ascii_outside_string": {
+      "meaning": "A non-ASCII character occurs outside a string literal.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.source.tab": {
+      "meaning": "A TAB occurs outside a string or is used for indentation.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.source.trailing_space": {
+      "meaning": "A source line ends with ASCII SPACE.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.success.unsatisfied": {
+      "meaning": "Execution ended without satisfying SUCCESS.",
+      "stage": "verification_or_completion",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.failed"
+    },
+    "error.symbol.invalid": {
+      "meaning": "An excluded symbol occurs outside string/data content.",
+      "stage": "lexical",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.type.mismatch": {
+      "meaning": "A value is incompatible with its declared type.",
+      "stage": "static_or_expression",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.validation.failed": {
+      "meaning": "A required VALIDATE assertion is FALSE.",
+      "stage": "validation",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.value.out_of_range": {
+      "meaning": "A value violates an exact bound.",
+      "stage": "static_or_expression",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.value.unknown": {
+      "meaning": "A required value is UNKNOWN and no valid handler resolves it.",
+      "stage": "static_or_expression",
+      "recoverable_with_declared_handler": true,
+      "default_status": "status.blocked"
+    },
+    "error.verification.failed": {
+      "meaning": "A required VERIFY assertion is FALSE.",
+      "stage": "verification_or_completion",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.failed"
+    },
+    "error.version.mismatch": {
+      "meaning": "Imported/extended specification version differs from requested version.",
+      "stage": "resolution",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
+    "error.version.unsupported": {
+      "meaning": "Declared exact LCL version is unsupported.",
+      "stage": "resolution",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    }
+  },
+  "compatibility_note": "The original 46 error identifiers remain exact and 30 precise subcategory identifiers are present in this repair candidate; same-stage selection precedence remains undefined and blocks release."
+}

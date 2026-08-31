@@ -1,0 +1,30 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Conditions, Branches, and Bounded Iteration
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+    IF (condition) THEN:
+        STEP:
+            ID: step.true_branch
+            ACTION: REF(action.one)
+    ELSE:
+        STEP:
+            ID: step.false_branch
+            ACTION: REF(action.two)
+
+ELSE is optional and aligned with IF. Branch bodies contain STEP, nested IF,
+nested FOR EACH, or COMMENT.
+
+    FOR EACH item IN REF(input.items):
+        STEP:
+            ID: step.process_item
+            ACTION:
+                ID: action.process_item
+                OPERATION: core.inspect
+                TARGET: REF(item)
+
+The collection is finite before iteration. No WHILE, UNTIL, recursion, or
+unbounded repetition exists. Nested declaration IDs create runtime instances
+suffixed by deterministic iteration indexes while retaining one source ID.

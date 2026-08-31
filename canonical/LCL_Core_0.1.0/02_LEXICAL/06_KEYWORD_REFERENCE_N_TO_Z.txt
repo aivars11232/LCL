@@ -1,0 +1,306 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Keyword Reference N to Z
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+NAME
+    Category: field
+    Meaning: Assign a human-readable label that is never used for reference resolution.
+    Context: Defined by grammar and block schemas.
+
+NAMESPACE
+    Category: field
+    Meaning: Assign the lowercase prefix for imported or extension definitions.
+    Context: Defined by grammar and block schemas.
+
+NONE
+    Category: field/function
+    Meaning: Require every listed Boolean condition to be FALSE.
+    Context: Defined by grammar and block schemas.
+
+NOT
+    Category: operator
+    Meaning: Logical negation of the immediately following grouped or atomic expression.
+    Context: Defined by grammar and block schemas.
+
+NULL
+    Category: literal/type
+    Meaning: Represent an explicit known absence, distinct from MISSING and UNKNOWN.
+    Context: Defined by grammar and block schemas.
+
+OBJECT
+    Category: type
+    Meaning: A keyed value whose fields are declared by a schema or explicit data block.
+    Context: Defined by grammar and block schemas.
+
+OPERATION
+    Category: field
+    Meaning: Name the exact built-in or extension operation performed by an ACTION.
+    Context: Defined by grammar and block schemas.
+
+OR
+    Category: operator
+    Meaning: Logical disjunction.
+    Context: Defined by grammar and block schemas.
+
+OUTPUT
+    Category: block/field
+    Meaning: Declare a produced result or reference one OUTPUT declaration.
+    Context: Defined by grammar and block schemas.
+
+OVERRIDE
+    Category: block
+    Meaning: Resolve one exact conflict by naming a WINNER and LOSER.
+    Context: Defined by grammar and block schemas.
+
+PARAMETER
+    Category: block
+    Meaning: Declare one named typed operation input.
+    Context: Defined by grammar and block schemas.
+
+PATH
+    Category: type/constructor/field
+    Meaning: Represent or construct an absolute path or a contained workspace-relative path.
+    Context: Defined by grammar and block schemas.
+
+PATTERN
+    Category: field
+    Meaning: Declare a GLOB or REGEX constraint.
+    Context: Defined by grammar and block schemas.
+
+PERCENTAGE
+    Category: type/constructor
+    Meaning: Represent or construct a DECIMAL percentage from 0 through 100.
+    Context: Defined by grammar and block schemas.
+
+PHASE
+    Category: block/field
+    Meaning: Declare or reference a major ordered execution group.
+    Context: Defined by grammar and block schemas.
+
+PREFER
+    Category: block
+    Meaning: Declare a soft objective that cannot defeat a hard rule.
+    Context: Defined by grammar and block schemas.
+
+PRESERVE
+    Category: block
+    Meaning: Require a target or properties to compare equal before and after execution.
+    Context: Defined by grammar and block schemas.
+
+PRIORITY
+    Category: field
+    Meaning: Order equally authoritative applicable clauses from -1000 through 1000; optional omission defaults to integer 0.
+    Context: Defined by grammar and block schemas.
+
+PROPERTY
+    Category: field
+    Meaning: Name one exact property of a target or object.
+    Context: Legal only where an enclosing block schema admits PROPERTY; never an independent block.
+
+PROVENANCE
+    Category: field
+    Meaning: Record exact origin and production method of data or evidence.
+    Context: Defined by grammar and block schemas.
+
+REF
+    Category: constructor
+    Meaning: Resolve a declaration or loop-local binding by exact identifier.
+    Context: Defined by grammar and block schemas.
+
+REFERENCE
+    Category: field/type
+    Meaning: Declare a typed pointer to another declaration.
+    Context: Defined by grammar and block schemas.
+
+REGEX
+    Category: type/constructor
+    Meaning: Represent or construct a conservative ECMAScript-compatible regular expression with optional canonical i, m, and s flags.
+    Context: Defined by grammar and block schemas.
+
+REQUIRED
+    Category: field
+    Meaning: Declare whether an item is mandatory.
+    Context: Defined by grammar and block schemas.
+
+REQUIRE
+    Category: block
+    Meaning: Declare a hard Boolean assertion or required ACTION.
+    Context: Defined by grammar and block schemas.
+
+RESULT
+    Category: field/block
+    Meaning: Declare or reference the value produced by a goal, operation, or test.
+    Context: Defined by grammar and block schemas.
+
+RETRY
+    Category: block
+    Meaning: Declare a bounded number of additional attempts after qualifying failure.
+    Context: Defined by grammar and block schemas.
+
+ROUND
+    Category: function
+    Meaning: Round a DECIMAL to explicit fractional digits using half-even rounding.
+    Context: Defined by grammar and block schemas.
+
+SCHEMA
+    Category: field
+    Meaning: Declare or reference the exact structure of an OBJECT value.
+    Context: Legal only where an enclosing block schema admits SCHEMA; never an independent block.
+
+SCOPE
+    Category: block/field
+    Meaning: Declare or reference the exact set of entities to which a clause may apply.
+    Context: Defined by grammar and block schemas.
+
+SEQUENCE
+    Category: block/field
+    Meaning: Declare or reference an ordered collection of steps.
+    Context: Defined by grammar and block schemas.
+
+SET
+    Category: type
+    Meaning: An unordered collection of unique values using bracket value syntax. Iteration uses canonical ascending order only when the element type has a defined total order; otherwise iteration requires an explicit sort key.
+    Context: Defined by the type and collection contracts.
+
+SIDE_EFFECT
+    Category: field
+    Meaning: Declare whether an operation may change external state.
+    Context: Defined by grammar and block schemas.
+
+SOURCE
+    Category: field
+    Meaning: Identify exact origin of data, import, context, memory, state, or evidence.
+    Context: Defined by grammar and block schemas.
+
+SPECIFICATION
+    Category: block
+    Meaning: Declare mandatory identity and metadata of one LCL document.
+    Context: Defined by grammar and block schemas.
+
+STATE
+    Category: block
+    Meaning: Declare explicit mutable external or project data read at a defined point.
+    Context: Defined by grammar and block schemas.
+
+STATUS
+    Category: field
+    Meaning: Record one exact core or extension status identifier.
+    Context: Defined by grammar and block schemas.
+
+STEP
+    Category: block
+    Meaning: Declare one ordered execution unit inside a phase or sequence.
+    Context: Defined by grammar and block schemas.
+
+STRING
+    Category: type
+    Meaning: A Unicode text sequence represented by an exact string literal.
+    Context: Defined by grammar and block schemas.
+
+SUCCESS
+    Category: block/field
+    Meaning: Declare the exact Boolean completion contract or reference it.
+    Context: Defined by grammar and block schemas.
+
+SUM
+    Category: function
+    Meaning: Return the arithmetic sum of compatible numeric members.
+    Context: Defined by grammar and block schemas.
+
+TASK
+    Category: block/field
+    Meaning: Declare an executable task or reference one TASK declaration.
+    Context: Defined by grammar and block schemas.
+
+TARGET
+    Category: field
+    Meaning: Identify the exact entity affected, inspected, produced, or constrained.
+    Context: Defined by grammar and block schemas.
+
+TERM
+    Category: kind
+    Meaning: The DEFINE kind for one exact domain term.
+    Context: Defined by grammar and block schemas.
+
+TEST
+    Category: block/field
+    Meaning: Declare an executable comparison between expected and actual behavior.
+    Context: Defined by grammar and block schemas.
+
+THEN
+    Category: control
+    Meaning: Open the TRUE branch of the directly preceding IF.
+    Context: Defined by grammar and block schemas.
+
+TIME
+    Category: type/constructor
+    Meaning: Represent or construct an RFC 3339 clock time with an optional offset; omission means UTC.
+    Context: Defined by grammar and block schemas.
+
+TOLERANCE
+    Category: field
+    Meaning: Declare an exact absolute permitted numeric difference.
+    Context: Defined by grammar and block schemas.
+
+TRUE
+    Category: literal
+    Meaning: The true BOOLEAN literal.
+    Context: Defined by grammar and block schemas.
+
+TYPE
+    Category: field/kind
+    Meaning: Declare the data type of a value, member, parameter, input, or result.
+    Context: Defined by grammar and block schemas.
+
+UNIT
+    Category: field/type
+    Meaning: Declare one exact unit identifier associated with a MEASURE.
+    Context: Defined by grammar and block schemas.
+
+UNKNOWN
+    Category: literal
+    Meaning: Mark a value known to exist but not currently determinable.
+    Context: Defined by grammar and block schemas.
+
+URI
+    Category: type/constructor
+    Meaning: Represent or construct an RFC 3986 absolute URI with a scheme.
+    Context: Defined by grammar and block schemas.
+
+VALIDATE
+    Category: block/field
+    Meaning: Check syntax, types, references, dependencies, and preconditions before effects.
+    Context: Defined by grammar and block schemas.
+
+VALUE
+    Category: field
+    Meaning: Contain one exact scalar, collection, object, expression, or reference.
+    Context: Legal only where an enclosing block schema admits VALUE; never an independent block.
+
+VERIFY
+    Category: block/field
+    Meaning: Check observable postconditions after execution.
+    Context: Defined by grammar and block schemas.
+
+VERSION
+    Category: field
+    Meaning: Declare one exact semantic version; ranges and latest are invalid.
+    Context: Defined by grammar and block schemas.
+
+WHEN
+    Category: field
+    Meaning: Limit applicability to one explicit Boolean expression.
+    Context: Defined by grammar and block schemas.
+
+WINNER
+    Category: field
+    Meaning: Reference the exact clause retained by an OVERRIDE.
+    Context: Defined by grammar and block schemas.
+
+WORKSPACE
+    Category: block/field
+    Meaning: Declare or reference an explicit base location for relative paths.
+    Context: Defined by grammar and block schemas.

@@ -1,0 +1,13 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Official Documentation Basis
+LANGUAGE VERSION: 0.1.0
+STATUS: INFORMATIVE
+DATE: 2026-08-30
+
+
+Reviewed on 2026-08-30: official OpenAI prompt-engineering/structured-output guides,
+official Anthropic prompting/tool-use guidance, and official DeepSeek JSON/tool-
+calling guidance. Common substrate used: explicit named sections, clear
+boundaries, exact typed fields/schemas, direct wording, exact output contracts,
+and explicit handling of missing information. Provider transport tokens were
+excluded from the portable language.

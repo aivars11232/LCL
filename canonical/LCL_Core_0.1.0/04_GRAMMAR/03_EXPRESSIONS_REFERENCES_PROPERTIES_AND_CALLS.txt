@@ -1,0 +1,15 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Expressions, References, Properties, and Calls
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+Expressions contain literals, identifiers, REF/typed constructors, pure
+functions, LIST and SET bracket literals, property/index access, arithmetic,
+comparisons, and Boolean operators. Function arguments are positional unless a
+function defines named arguments. Property access requires a statically known
+property.
+
+Every expression is side-effect free. ACTION is the only construct that invokes
+an operation with effects.

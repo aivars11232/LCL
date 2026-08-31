@@ -1,0 +1,20 @@
+{
+  "language": "LCL",
+  "version": "0.1.0",
+  "closed": true,
+  "meta_types": {
+    "meta.material_value": "Any value of a declared LCL type excluding MISSING and UNKNOWN.",
+    "meta.special_sentinel": "MISSING or UNKNOWN; non-material and non-persistable.",
+    "meta.addressable": "PATH, URI, REFERENCE, or a host-bound addressable object.",
+    "meta.mutable_target": "An addressable target whose applicable scope and permission allow mutation.",
+    "meta.collection": "LIST[T] or SET[T].",
+    "meta.ordered": "A type with total ordering explicitly defined by operator contracts.",
+    "meta.execution_unit": "TASK, PHASE, SEQUENCE, STEP, ACTION, or TEST reference.",
+    "meta.rule_clause": "ALLOW, FORBID, REQUIRE, PREFER, PRESERVE, or OVERRIDE reference."
+  },
+  "persistence": {
+    "MISSING": false,
+    "UNKNOWN": false,
+    "NULL": true
+  }
+}

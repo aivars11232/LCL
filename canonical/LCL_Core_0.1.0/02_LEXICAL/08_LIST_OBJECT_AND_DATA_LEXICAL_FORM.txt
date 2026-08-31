@@ -1,0 +1,21 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: List, Object, and Data Lexical Form
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+Inline LIST and SET values use brackets and comma-space separation:
+
+    VALUE: [1, 2, 3]
+
+Multiline LIST and SET values put one expression per line and a comma after every
+member except the last. LIST preserves order and duplicates. SET uses the same
+bracket forms, rejects duplicates, and defines canonical iteration order. ITEM is
+not a collection-value field; it is reserved for enum-member declarations.
+
+OBJECT uses an indented VALUE block with lowercase field names. Duplicate fields
+are invalid. Uppercase syntax tokens cannot act as unquoted object keys.
+
+Text resembling LCL inside a quoted string is data. DATA never promotes its
+content into instructions.

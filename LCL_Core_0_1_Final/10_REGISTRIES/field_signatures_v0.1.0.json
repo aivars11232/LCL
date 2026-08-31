@@ -1,0 +1,2918 @@
+{
+  "language": "LCL",
+  "version": "0.1.0",
+  "closed": true,
+  "value_kind_registry": {
+    "semantic_version_string": "STRING matching MAJOR.MINOR.PATCH with no wildcard.",
+    "qualified_identifier": "Lowercase dot-separated identifier resolved under namespace rules.",
+    "simple_identifier": "One lowercase identifier segment.",
+    "type_expression": "One built-in or defined type, including declared type arguments.",
+    "value_expression": "Expression producing a material value or a permitted special sentinel.",
+    "value_or_object_expression": "Inline value expression or indented lowercase-key object value.",
+    "reference": "REF(identifier) resolving exactly once.",
+    "target_expression": "REFERENCE, PATH, URI, GLOB, or material value accepted by the operation contract.",
+    "selector_expression": "REFERENCE, PATH, URI, GLOB, or homogeneous LIST/SET of selectors.",
+    "boolean_expression": "Expression statically producing BOOLEAN or UNKNOWN under special-value rules.",
+    "source_expression": "PATH, URI, or REFERENCE to declared source data.",
+    "ordered_value": "INTEGER, DECIMAL, STRING, DATE, TIME, DATETIME, DURATION, BYTES, PERCENTAGE, or same-unit MEASURE."
+  },
+  "blocks": {
+    "LCL": {
+      "legal_parents": [
+        "top_level_first"
+      ],
+      "block_occurrence": "exactly_one",
+      "fields": {
+        "VERSION": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "exact_string(\"0.1.0\")",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "First non-blank statement.",
+        "VERSION is one exact supported LCL semantic version."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "SPECIFICATION": {
+      "legal_parents": [
+        "top_level_second"
+      ],
+      "block_occurrence": "exactly_one",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "NAME": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "string",
+          "default": null
+        },
+        "VERSION": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "semantic_version_string",
+          "default": null
+        },
+        "KIND": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(document_kind)",
+          "default": null
+        },
+        "DOMAIN": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_qualified_identifier",
+          "default": null
+        },
+        "AUTHORITY": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "integer[0..1000]",
+          "default": 500
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "Second top-level block.",
+        "AUTHORITY defaults to 500."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "IMPORT": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "SOURCE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "source_expression",
+          "default": null
+        },
+        "NAMESPACE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "simple_identifier",
+          "default": null
+        },
+        "VERSION": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "semantic_version_string",
+          "default": null
+        },
+        "CHECKSUM": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "sha256_string",
+          "default": null
+        },
+        "AUTHORITY": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "integer[0..1000]",
+          "default": null
+        },
+        "REQUIRED": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "Namespace is mandatory; no merge into local namespace.",
+        "URI source requires CHECKSUM."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "EXTENSION": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "SOURCE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "source_expression",
+          "default": null
+        },
+        "NAMESPACE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "simple_identifier",
+          "default": null
+        },
+        "VERSION": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "semantic_version_string",
+          "default": null
+        },
+        "CHECKSUM": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "sha256_string",
+          "default": null
+        },
+        "REQUIRED": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "Loaded KIND is kind.extension.",
+        "May add definitions only."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "DEFINE": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "KIND": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(definition_kind)",
+          "default": null
+        },
+        "MEANING": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        },
+        "TYPE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "type_expression",
+          "default": null
+        },
+        "VALUE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "value_or_object_expression",
+          "default": null
+        },
+        "BASE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "type_expression_or_type_reference",
+          "default": null
+        },
+        "FIELD": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": null,
+          "value_kind": "nested_block(FIELD)",
+          "default": null
+        },
+        "PARAMETER": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": null,
+          "value_kind": "nested_block(PARAMETER)",
+          "default": null
+        },
+        "RESULT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "nested_block(RESULT)",
+          "default": null
+        },
+        "FORMAT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(format)",
+          "default": null
+        },
+        "ENCODING": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(encoding)",
+          "default": null
+        },
+        "SIDE_EFFECT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": null
+        },
+        "DETERMINISTIC": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": null
+        },
+        "EXAMPLE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": null,
+          "value_kind": "nested_block_or_reference(EXAMPLE)",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "Immutable.",
+        "Kind-specific required fields are normative."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "FIELD": {
+      "legal_parents": [
+        "DEFINE",
+        "SCHEMA"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "NAME": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "simple_identifier",
+          "default": null
+        },
+        "TYPE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "type_expression",
+          "default": null
+        },
+        "REQUIRED": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": null
+        },
+        "DEFAULT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "value_expression",
+          "default": null
+        },
+        "MINIMUM": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "ordered_value",
+          "default": null
+        },
+        "MAXIMUM": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "ordered_value",
+          "default": null
+        },
+        "TOLERANCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "nonnegative_numeric_or_measure",
+          "default": null
+        },
+        "PATTERN": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "regex_or_glob",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "PARAMETER": {
+      "legal_parents": [
+        "DEFINE",
+        "ACTION",
+        "ALLOW",
+        "FORBID",
+        "HANDLER"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "NAME": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "simple_identifier",
+          "default": null
+        },
+        "TYPE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "type_expression",
+          "default": null
+        },
+        "REQUIRED": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": null
+        },
+        "VALUE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "value_or_object_expression",
+          "default": null
+        },
+        "DEFAULT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "value_expression",
+          "default": null
+        },
+        "MINIMUM": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "ordered_value",
+          "default": null
+        },
+        "MAXIMUM": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "ordered_value",
+          "default": null
+        },
+        "TOLERANCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "nonnegative_numeric_or_measure",
+          "default": null
+        },
+        "PATTERN": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "regex_or_glob",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "RESULT": {
+      "legal_parents": [
+        "DEFINE",
+        "GOAL"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "TYPE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "type_expression",
+          "default": null
+        },
+        "FORMAT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(format)",
+          "default": null
+        },
+        "SCHEMA": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "schema_reference_or_nested_schema",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "WORKSPACE": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "PATH": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "path",
+          "default": null
+        },
+        "MODE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(mode)",
+          "default": null
+        },
+        "SCOPE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference(SCOPE)",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "PATH is absolute.",
+        "Relative PATH explicitly references a WORKSPACE."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "INPUT": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "TYPE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "type_expression",
+          "default": null
+        },
+        "VALUE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "value_or_object_expression",
+          "default": null
+        },
+        "SOURCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "source_expression",
+          "default": null
+        },
+        "FORMAT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(format)",
+          "default": null
+        },
+        "ENCODING": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(encoding)",
+          "default": null
+        },
+        "SCHEMA": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "schema_reference_or_nested_schema",
+          "default": null
+        },
+        "REQUIRED": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": true
+        },
+        "DEFAULT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "value_expression",
+          "default": null
+        },
+        "CHECKSUM": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "sha256_string",
+          "default": null
+        },
+        "PROVENANCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_uri_or_evidence_reference",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "Exactly one VALUE or SOURCE unless optional with DEFAULT.",
+        "REQUIRED defaults TRUE."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "CONTEXT": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "TYPE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "type_expression",
+          "default": null
+        },
+        "SCOPE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "reference(SCOPE)",
+          "default": null
+        },
+        "VALUE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "value_or_object_expression",
+          "default": null
+        },
+        "SOURCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "source_expression",
+          "default": null
+        },
+        "FORMAT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(format)",
+          "default": null
+        },
+        "ENCODING": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(encoding)",
+          "default": null
+        },
+        "VERSION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "semantic_version_string",
+          "default": null
+        },
+        "CHECKSUM": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "sha256_string",
+          "default": null
+        },
+        "REQUIRED": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": true
+        },
+        "PROVENANCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_uri_or_evidence_reference",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "Exactly one VALUE or SOURCE.",
+        "Non-authoritative and cannot add rules."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "MEMORY": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "TYPE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "type_expression",
+          "default": null
+        },
+        "SCOPE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "reference(SCOPE)",
+          "default": null
+        },
+        "MODE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(mode)",
+          "default": null
+        },
+        "VALUE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "value_or_object_expression",
+          "default": null
+        },
+        "SOURCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "source_expression",
+          "default": null
+        },
+        "FORMAT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(format)",
+          "default": null
+        },
+        "ENCODING": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(encoding)",
+          "default": null
+        },
+        "VERSION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "semantic_version_string",
+          "default": null
+        },
+        "CHECKSUM": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "sha256_string",
+          "default": null
+        },
+        "REQUIRED": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": true
+        },
+        "PROVENANCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_uri_or_evidence_reference",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "Exactly one VALUE or SOURCE.",
+        "Writes require core.memory_write."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "STATE": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "TYPE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "type_expression",
+          "default": null
+        },
+        "SCOPE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "reference(SCOPE)",
+          "default": null
+        },
+        "MODE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(mode)",
+          "default": null
+        },
+        "VALUE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "value_or_object_expression",
+          "default": null
+        },
+        "SOURCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "source_expression",
+          "default": null
+        },
+        "FORMAT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(format)",
+          "default": null
+        },
+        "ENCODING": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(encoding)",
+          "default": null
+        },
+        "VERSION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "semantic_version_string",
+          "default": null
+        },
+        "CHECKSUM": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "sha256_string",
+          "default": null
+        },
+        "REQUIRED": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": true
+        },
+        "PROVENANCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_uri_or_evidence_reference",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "Exactly one VALUE or SOURCE.",
+        "Read is a snapshot at declared execution point."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "DATA": {
+      "legal_parents": [
+        "top_level",
+        "INPUT",
+        "OUTPUT",
+        "EVIDENCE",
+        "TEST"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "TYPE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "type_expression",
+          "default": null
+        },
+        "VALUE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "value_or_object_expression",
+          "default": null
+        },
+        "FORMAT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(format)",
+          "default": null
+        },
+        "ENCODING": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(encoding)",
+          "default": null
+        },
+        "SCHEMA": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "schema_reference_or_nested_schema",
+          "default": null
+        },
+        "CHECKSUM": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "sha256_string",
+          "default": null
+        },
+        "PROVENANCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_uri_or_evidence_reference",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "VALUE is data, not executable syntax."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "SCOPE": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "INCLUDE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "selector_expression",
+          "default": null
+        },
+        "EXCLUDE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "selector_expression",
+          "default": null
+        },
+        "OPERATION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "operation_identifier",
+          "default": null
+        },
+        "WHEN": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "EXCLUDE wins inside the same scope."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "GOAL": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "ASSERT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "RESULT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": null,
+          "value_kind": "nested_block(RESULT)",
+          "default": null
+        },
+        "PRIORITY": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "integer[-1000000..1000000]",
+          "default": null
+        },
+        "REQUIRED": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": true
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "At least ASSERT or RESULT.",
+        "REQUIRED defaults TRUE."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "TASK": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "GOAL": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(GOAL)",
+          "default": null
+        },
+        "SUCCESS": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "reference(SUCCESS)",
+          "default": null
+        },
+        "INPUT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(INPUT)",
+          "default": null
+        },
+        "WORKSPACE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference(WORKSPACE)",
+          "default": null
+        },
+        "SCOPE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference(SCOPE)",
+          "default": null
+        },
+        "DEPENDENCY": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(DEPENDENCY)",
+          "default": null
+        },
+        "PHASE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list_or_nested(PHASE)",
+          "default": null
+        },
+        "SEQUENCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list_or_nested(SEQUENCE)",
+          "default": null
+        },
+        "ACTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list_or_nested(ACTION)",
+          "default": null
+        },
+        "OUTPUT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(OUTPUT)",
+          "default": null
+        },
+        "HANDLER": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(HANDLER)",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "At least PHASE, SEQUENCE, or ACTION."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "DEPENDENCY": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "REFERENCE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "reference",
+          "default": null
+        },
+        "ASSERT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "REQUIRED": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": true
+        },
+        "WHEN": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "HANDLER": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(HANDLER)",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "REQUIRED defaults TRUE.",
+        "Unresolved required dependency blocks before effects."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "ACTION": {
+      "legal_parents": [
+        "top_level",
+        "STEP"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "OPERATION": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "operation_identifier",
+          "default": null
+        },
+        "TARGET": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "target_expression",
+          "default": null
+        },
+        "PARAMETER": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": null,
+          "value_kind": "nested_block(PARAMETER)",
+          "default": null
+        },
+        "OUTPUT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(OUTPUT)",
+          "default": null
+        },
+        "SCOPE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference(SCOPE)",
+          "default": null
+        },
+        "WHEN": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "REQUIRED": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": true
+        },
+        "RETRY": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_nested(RETRY)",
+          "default": null
+        },
+        "EVIDENCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(EVIDENCE)",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "Reachable ACTION authorizes only its exact operation, target, and parameters unless FORBID applies."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "ALLOW": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "OPERATION": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "operation_identifier",
+          "default": null
+        },
+        "TARGET": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "target_expression",
+          "default": null
+        },
+        "PARAMETER": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": null,
+          "value_kind": "nested_block(PARAMETER)",
+          "default": null
+        },
+        "SCOPE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference(SCOPE)",
+          "default": null
+        },
+        "WHEN": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "AUTHORITY": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "integer[0..1000]",
+          "default": null
+        },
+        "PRIORITY": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "integer[-1000000..1000000]",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "Permission only; does not require execution.",
+        "Never defeats FORBID by itself."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "FORBID": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "OPERATION": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "operation_identifier",
+          "default": null
+        },
+        "TARGET": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "target_expression",
+          "default": null
+        },
+        "PARAMETER": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": null,
+          "value_kind": "nested_block(PARAMETER)",
+          "default": null
+        },
+        "SCOPE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference(SCOPE)",
+          "default": null
+        },
+        "WHEN": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "AUTHORITY": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "integer[0..1000]",
+          "default": null
+        },
+        "PRIORITY": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "integer[-1000000..1000000]",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "Hard prohibition."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "REQUIRE": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "ASSERT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "ACTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list_or_nested(ACTION)",
+          "default": null
+        },
+        "WHEN": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "SCOPE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference(SCOPE)",
+          "default": null
+        },
+        "AUTHORITY": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "integer[0..1000]",
+          "default": null
+        },
+        "PRIORITY": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "integer[-1000000..1000000]",
+          "default": null
+        },
+        "EVIDENCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(EVIDENCE)",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "Exactly one ASSERT or ACTION.",
+        "Hard rule."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "PREFER": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "ASSERT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "ACTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list_or_nested(ACTION)",
+          "default": null
+        },
+        "WHEN": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "SCOPE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference(SCOPE)",
+          "default": null
+        },
+        "AUTHORITY": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "integer[0..1000]",
+          "default": null
+        },
+        "PRIORITY": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "integer[-1000000..1000000]",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "Exactly one ASSERT or ACTION.",
+        "Soft and does not authorize action."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "PRESERVE": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "TARGET": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "target_expression",
+          "default": null
+        },
+        "PROPERTY": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": null,
+          "value_kind": "property_path_or_list",
+          "default": null
+        },
+        "WHEN": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "SCOPE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference(SCOPE)",
+          "default": null
+        },
+        "AUTHORITY": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "integer[0..1000]",
+          "default": null
+        },
+        "PRIORITY": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "integer[-1000000..1000000]",
+          "default": null
+        },
+        "EVIDENCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(EVIDENCE)",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "No PROPERTY means complete target.",
+        "Hard pre-state equals post-state rule."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "OVERRIDE": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "WINNER": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "reference(rule_clause)",
+          "default": null
+        },
+        "LOSER": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "reference(rule_clause)",
+          "default": null
+        },
+        "WHEN": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "Exact conflicting clauses only.",
+        "Lower authority cannot win."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "PHASE": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "MODE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(mode)",
+          "default": "mode.sequential"
+        },
+        "STEP": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": null,
+          "value_kind": "nested_block(STEP)",
+          "default": null
+        },
+        "SEQUENCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list_or_nested(SEQUENCE)",
+          "default": null
+        },
+        "BEFORE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(execution_unit)",
+          "default": null
+        },
+        "AFTER": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(execution_unit)",
+          "default": null
+        },
+        "WHEN": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "REQUIRED": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": true
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "At least STEP, SEQUENCE, IF, or FOR EACH.",
+        "MODE defaults mode.sequential."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "SEQUENCE": {
+      "legal_parents": [
+        "top_level",
+        "PHASE"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "MODE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(mode)",
+          "default": "mode.sequential"
+        },
+        "STEP": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": null,
+          "value_kind": "nested_block(STEP)",
+          "default": null
+        },
+        "WHEN": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "REQUIRED": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": true
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "At least STEP, IF, or FOR EACH.",
+        "Lexical order is normative."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "STEP": {
+      "legal_parents": [
+        "SEQUENCE",
+        "PHASE",
+        "IF",
+        "FOR_EACH",
+        "ELSE"
+      ],
+      "block_occurrence": "one_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "ACTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list_or_nested(ACTION)",
+          "default": null
+        },
+        "SEQUENCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list_or_nested(SEQUENCE)",
+          "default": null
+        },
+        "PHASE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list_or_nested(PHASE)",
+          "default": null
+        },
+        "TASK": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference(TASK)",
+          "default": null
+        },
+        "BEFORE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(execution_unit)",
+          "default": null
+        },
+        "AFTER": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(execution_unit)",
+          "default": null
+        },
+        "WHEN": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "REQUIRED": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": true
+        },
+        "RETRY": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_nested(RETRY)",
+          "default": null
+        },
+        "HANDLER": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(HANDLER)",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "Exactly one ACTION, SEQUENCE, PHASE, or TASK."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "RETRY": {
+      "legal_parents": [
+        "ACTION",
+        "STEP",
+        "HANDLER"
+      ],
+      "block_occurrence": "zero_or_one",
+      "fields": {
+        "LIMIT": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "integer[0..100]",
+          "default": null
+        },
+        "WHEN": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "DELAY": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "duration",
+          "default": null
+        },
+        "HANDLER": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(HANDLER)",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "LIMIT counts additional attempts and is 0 through 100."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "HANDLER": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "EVENT": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(event)",
+          "default": null
+        },
+        "OPERATION": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "operation_identifier",
+          "default": null
+        },
+        "TARGET": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "target_expression",
+          "default": null
+        },
+        "PARAMETER": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": null,
+          "value_kind": "nested_block(PARAMETER)",
+          "default": null
+        },
+        "WHEN": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "FALLBACK": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "operation_identifier_or_handler_reference",
+          "default": null
+        },
+        "LIMIT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "integer[0..100]",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "OUTPUT": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "TYPE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "type_expression",
+          "default": null
+        },
+        "FORMAT": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(format)",
+          "default": null
+        },
+        "TARGET": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "target_expression",
+          "default": null
+        },
+        "SCHEMA": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "schema_reference_or_nested_schema",
+          "default": null
+        },
+        "ENCODING": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(encoding)",
+          "default": null
+        },
+        "REQUIRED": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": true
+        },
+        "DEFAULT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "value_expression",
+          "default": null
+        },
+        "PROPERTY": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": null,
+          "value_kind": "property_path_or_list",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "TARGET is destination, not produced VALUE."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "VALIDATE": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "ASSERT": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "TARGET": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "target_expression",
+          "default": null
+        },
+        "ERROR": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(error)",
+          "default": null
+        },
+        "WHEN": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "REQUIRED": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": true
+        },
+        "EVIDENCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(EVIDENCE)",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "Runs before first side effect."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "VERIFY": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "ASSERT": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "TARGET": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "target_expression",
+          "default": null
+        },
+        "ERROR": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(error)",
+          "default": null
+        },
+        "WHEN": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "REQUIRED": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": true
+        },
+        "EVIDENCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(EVIDENCE)",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "Runs after observed target exists.",
+        "Required failure prevents success."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "TEST": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "TASK": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference(TASK)",
+          "default": null
+        },
+        "ACTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference(ACTION)",
+          "default": null
+        },
+        "INPUT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(INPUT)",
+          "default": null
+        },
+        "EXPECTED": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "value_expression",
+          "default": null
+        },
+        "ACTUAL": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "value_expression",
+          "default": null
+        },
+        "ASSERT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "EVIDENCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(EVIDENCE)",
+          "default": null
+        },
+        "REQUIRED": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": true
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "At least ASSERT or EXPECTED+ACTUAL.",
+        "At most one TASK/ACTION."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "EVIDENCE": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "TYPE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "type_expression",
+          "default": null
+        },
+        "SOURCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "source_expression",
+          "default": null
+        },
+        "VALUE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "value_or_object_expression",
+          "default": null
+        },
+        "FORMAT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(format)",
+          "default": null
+        },
+        "ENCODING": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(encoding)",
+          "default": null
+        },
+        "CHECKSUM": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "sha256_string",
+          "default": null
+        },
+        "PROVENANCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_uri_or_evidence_reference",
+          "default": null
+        },
+        "REQUIRED": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": true
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "Exactly one SOURCE or VALUE when evaluated."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "SUCCESS": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "ALL": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_or_reference_list",
+          "default": null
+        },
+        "ANY": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_or_reference_list",
+          "default": null
+        },
+        "NONE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_or_reference_list",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "Exactly one ALL, ANY, or NONE."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "FAILURE": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "WHEN": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "STATUS": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(terminal_non_success_status)",
+          "default": null
+        },
+        "ERROR": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(error)",
+          "default": null
+        },
+        "HANDLER": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(HANDLER)",
+          "default": null
+        },
+        "EVIDENCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(EVIDENCE)",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "STATUS is terminal non-success."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "ASSUME": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "TARGET": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "target_expression",
+          "default": null
+        },
+        "VALUE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "value_or_object_expression",
+          "default": null
+        },
+        "WHEN": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean_expression",
+          "default": null
+        },
+        "SCOPE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference(SCOPE)",
+          "default": null
+        },
+        "EVIDENCE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(EVIDENCE)",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "Never overrides explicit data.",
+        "Applied assumption appears in evidence."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "EXECUTE": {
+      "legal_parents": [
+        "top_level"
+      ],
+      "block_occurrence": "zero_or_one",
+      "fields": {
+        "REFERENCE": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "reference(TASK|PHASE|SEQUENCE|ACTION|TEST)",
+          "default": null
+        },
+        "MODE": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier(mode)",
+          "default": null
+        },
+        "OUTPUT": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "reference_or_list(OUTPUT)",
+          "default": null
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "Reference is TASK, PHASE, SEQUENCE, ACTION, or TEST.",
+        "task/test documents require exactly one."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "COMMENT": {
+      "legal_parents": [
+        "top_level",
+        "any_block"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "CONTENT": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    },
+    "EXAMPLE": {
+      "legal_parents": [
+        "top_level",
+        "DEFINE"
+      ],
+      "block_occurrence": "zero_or_more",
+      "fields": {
+        "ID": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "qualified_identifier",
+          "default": null
+        },
+        "CONTENT": {
+          "required": true,
+          "minimum_occurrences": 1,
+          "maximum_occurrences": 1,
+          "value_kind": "string_multiline_string_or_data_value",
+          "default": null
+        },
+        "EXPECTED": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "value_expression",
+          "default": null
+        },
+        "REQUIRED": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "boolean",
+          "default": false
+        },
+        "DESCRIPTION": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "string_or_multiline_string",
+          "default": null
+        }
+      },
+      "conditional_requirements": [
+        "REQUIRED defaults FALSE."
+      ],
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic_except_where_explicitly_declared"
+    }
+  }
+}

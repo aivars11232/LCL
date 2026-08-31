@@ -1,0 +1,17 @@
+{
+  "valid_minimum.lcl": "accept",
+  "valid_unicode_string.lcl": "accept",
+  "invalid_bom.lcl": "error.source.bom",
+  "invalid_crlf.lcl": "error.newline.invalid",
+  "invalid_tab.lcl": "error.source.tab",
+  "invalid_indent_width.lcl": "error.indentation.width",
+  "invalid_indent_jump.lcl": "error.indentation.jump",
+  "invalid_trailing_space.lcl": "error.source.trailing_space",
+  "invalid_no_final_lf.lcl": "error.source.final_line_feed",
+  "invalid_semicolon.lcl": "error.lexical.unknown_symbol",
+  "invalid_hash.lcl": "error.lexical.unknown_symbol",
+  "invalid_single_quote.lcl": "error.symbol.invalid",
+  "invalid_unclosed_string.lcl": "error.literal.unclosed",
+  "invalid_typographic_quote.lcl": "error.source.non_ascii_outside_string",
+  "invalid_control.lcl": "error.source.control_character"
+}

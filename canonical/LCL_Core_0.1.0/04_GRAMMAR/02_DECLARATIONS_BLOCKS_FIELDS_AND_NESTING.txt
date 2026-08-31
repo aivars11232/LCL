@@ -1,0 +1,21 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Declarations, Blocks, Fields, and Nesting
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+Inline declaration:
+
+    KEY: expression
+
+Block declaration:
+
+    BLOCK:
+        FIELD: expression
+        CHILD:
+            FIELD: expression
+
+A colon followed by NEWLINE opens one indented block. A colon followed by one
+space and value is inline. Every block permits only fields/children in its
+schema. Non-repeatable duplicates are invalid. Unknown fields are invalid.

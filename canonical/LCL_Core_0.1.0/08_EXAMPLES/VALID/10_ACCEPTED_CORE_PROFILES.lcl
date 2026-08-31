@@ -1,0 +1,60 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: example.accepted_profiles
+    NAME: "Accepted Core 0.1.0 value profiles"
+    VERSION: "1.0.0"
+    KIND: kind.data
+
+DEFINE:
+    ID: type.delivery_state
+    KIND: kind.type
+    BASE: ENUM
+    ITEM: queued
+    ITEM: delivered
+
+DATA:
+    ID: data.ordered_names
+    TYPE: LIST[STRING]
+    VALUE: ["alpha", "beta"]
+
+DATA:
+    ID: data.unique_names
+    TYPE: SET[STRING]
+    VALUE: ["alpha", "beta"]
+
+DATA:
+    ID: data.endpoint
+    TYPE: URI
+    VALUE: URI("https://example.invalid/resource")
+
+DATA:
+    ID: data.day
+    TYPE: DATE
+    VALUE: DATE("2026-08-30")
+
+DATA:
+    ID: data.time_utc
+    TYPE: TIME
+    VALUE: TIME("14:30:00")
+
+DATA:
+    ID: data.datetime_utc
+    TYPE: DATETIME
+    VALUE: DATETIME("2026-08-30T14:30:00")
+
+DATA:
+    ID: data.time_measure
+    TYPE: MEASURE
+    VALUE: MEASURE(5, unit.second)
+
+DATA:
+    ID: data.regex_full_match
+    TYPE: BOOLEAN
+    VALUE: "Alpha" MATCHES REGEX("[A-Za-z]+", "i")
+
+DATA:
+    ID: data.glob_full_match
+    TYPE: BOOLEAN
+    VALUE: "src/main.py" MATCHES GLOB("src/**/*.py")

@@ -1,0 +1,13 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: invalid.context
+    NAME: "Context no scope"
+    VERSION: "1.0.0"
+    KIND: kind.data
+
+CONTEXT:
+    ID: context.hidden
+    TYPE: STRING
+    VALUE: "Use everywhere."

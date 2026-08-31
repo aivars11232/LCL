@@ -1,0 +1,14 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Comment, Description, Example, and Data Boundaries
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+COMMENT requires CONTENT and has no operational effect. DESCRIPTION is a label
+for humans and cannot create a rule. EXAMPLE illustrates syntax/behavior and is
+operational only when a TEST references and evaluates it. DATA contains typed
+input material. MEANING is normative only inside DEFINE.
+
+There are no line-comment symbols. A conforming interpreter must not search
+prose for hidden instructions.

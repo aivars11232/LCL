@@ -1,0 +1,20 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Normative Source Precedence
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+For accidental wording overlap, specificity order is:
+
+1. exact machine-readable registry entry;
+2. exact block schema;
+3. exact standard-library entry;
+4. EBNF plus grammar semantic constraints;
+5. subject-specific semantic rule;
+6. lexical rule;
+7. foundation overview.
+
+A genuine contradiction is a specification defect to be repaired in a patch;
+an interpreter must report it rather than invent behavior. Examples and research
+basis are informative unless explicitly marked normative.

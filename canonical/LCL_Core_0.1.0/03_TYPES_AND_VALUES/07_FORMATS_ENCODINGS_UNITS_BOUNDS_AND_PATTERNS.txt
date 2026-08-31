@@ -1,0 +1,34 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Formats, Encodings, Units, Bounds, and Patterns
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+FORMAT and ENCODING select exact built-in/extension identifiers. MINIMUM and
+MAXIMUM are inclusive. TOLERANCE is absolute and non-negative. PATTERN is GLOB
+or REGEX and does not silently coerce the target to STRING.
+
+GLOB is a workspace-relative minimatch/gitignore-style subset. Patterns use "/"
+as the path separator and may contain `*` for zero or more non-separator
+characters, `**` for zero or more complete path segments, `?` for one
+non-separator character, and `[...]` for one non-separator character selected by
+a character class. Absolute patterns, parent escape, and brace expansion are not
+legal. Matching covers the entire workspace-relative path.
+
+REGEX is a conservative ECMAScript-compatible subset. Lookbehind and Unicode
+property escapes such as `\p{...}` are not legal. Its optional flags STRING may
+contain `i`, `m`, and `s`, each at most once and only in canonical `ims` order;
+the default is the empty STRING. Unknown, duplicate, stateful, and other
+unsupported flags are invalid. Unicode text handling is always enabled
+independently, and `u` is not a user flag. REGEX matching covers the entire
+STRING through a semantic boundary check, not by adding multiline anchors.
+
+Invalid pattern syntax or flags produce error.literal.invalid. Exhausting a
+declared finite resource limit while compiling or matching either profile
+produces error.pattern.resource_limit.
+
+DURATION requires a registered Time-category unit. BYTES accepts only a
+non-negative INTEGER. MEASURE pairs a number with any registered unit, including
+a Time-category unit, unless a more specific normative contract narrows it.
+PERCENTAGE is 0 through 100 inclusive. Custom units require a versioned extension.

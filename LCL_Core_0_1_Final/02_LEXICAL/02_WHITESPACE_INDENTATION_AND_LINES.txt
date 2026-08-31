@@ -1,0 +1,15 @@
+LCL CORE 0.1 FINAL
+WHITESPACE, INDENTATION, AND LINES
+NORMATIVE
+
+- One indentation level is exactly four ASCII spaces.
+- A non-blank line begins with a number of spaces divisible by four.
+- Indentation may increase by exactly one level after a block-opening colon.
+- Dedentation closes all deeper blocks before processing the new line.
+- Empty blocks are invalid.
+- LINE FEED terminates inline declarations and expression statements.
+- Semicolons do not terminate statements and are forbidden outside strings.
+- A colon followed by one SPACE and a value creates an inline field.
+- A colon followed immediately by LINE FEED opens an indented block.
+- Exactly one SPACE follows a comma in an inline sequence.
+- There is no ignorable comment syntax. COMMENT is an explicit data block.

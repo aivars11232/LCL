@@ -1,0 +1,79 @@
+LCL CORE 0.1.0 REPAIR CANDIDATE - VALIDATION SNAPSHOT
+
+TASK: LCL-REPAIR-0001
+IMPLEMENTATION STATUS: IMPLEMENTATION_PARTIAL
+RELEASE STATUS: NOT_READY_FOR_RELEASE
+RESULT: BLOCKED
+FORMAL VERSION: 0.1.0
+SNAPSHOT UTC: 2026-08-30T21:00:31Z
+MANIFEST SHA-256: bee3d2f71a1668b7e5794b54be9fe08687ca42b3da4e5b7dd03ef9632a2a8685
+
+GATE 1 - FILESYSTEM AND PATH HYGIENE: PASS
+    157 files; zero symlinks, case collisions, cache/temp artifacts, or
+    non-canonical file modes.
+
+GATE 2 - TEXT AND CONCRETE SOURCE FIXTURES: PASS
+    UTF-8/LF hygiene passed outside 13 intentional invalid fixtures.
+    validate_source_fixtures.py matched 15 of 15 expected outcomes.
+    This is lexical/document-boundary evidence, not semantic execution.
+
+GATE 3 - STRUCTURED FORMATS AND TOOLS: PASS
+    All 15 JSON files parsed with duplicate-key rejection.
+    Four Python validation/generation tools compiled without bytecode output.
+
+GATE 4 - GRAMMAR: BLOCKED
+    Static EBNF graph check passed: 65 productions, 211 terminals, zero
+    undefined, unreachable, unproductive, nullable, or left-recursive entries.
+    A complete parser/example matrix is absent and language choices under
+    LCL-AUDIT-001 and LCL-AUDIT-005 remain unresolved.
+
+GATE 5 - REGISTRY AND TYPE CLOSURE: BLOCKED
+    Keyword/grammar parity, block/field schema parity, and operation reference
+    closure passed. Field signatures contain 334 fields and 64 distinct
+    value-kind strings; only 12 exact strings are registered, leaving 52
+    unregistered strings, 24 unregistered heads, and seven nested-parent
+    contradictions. Constructor/pattern, PRIORITY-default, operation result,
+    diagnostic-selection, and mixed-lifecycle contracts remain unresolved.
+
+GATE 6 - SEMANTICS: BLOCKED
+    Division result mapping, unordered-SET sorting, PRIORITY omission,
+    determinism/effect declarations, result binding/cardinality, same-stage
+    diagnostic selection, and mixed pre/post-effect lifecycle behavior require
+    owner design decisions. No semantic execution was claimed.
+
+GATE 7 - EXAMPLES: BLOCKED
+    Objective fixture and operation-parameter defects were repaired. Full valid
+    example status cannot be established until operation result-to-OUTPUT
+    binding and result schema cardinality are defined and a complete parser and
+    semantic validator execute the examples.
+
+GATE 8 - CONFORMANCE: BLOCKED
+    The 791-entry catalog has unique IDs and consistent category counts, but its
+    entries are descriptive requirements without concrete inputs/results. The
+    15 concrete source fixtures passed; semantic conformance remains UNVERIFIED.
+
+GATE 9 - PACKAGE INTEGRITY: NOT RUN IN THIS SNAPSHOT
+    SHA256SUMS.txt is generated after this report. External validation reports
+    record the final Gate 9 result without creating an integrity cycle.
+
+UNRESOLVED RELEASE-BLOCKING FINDINGS
+    LCL-AUDIT-001
+    LCL-AUDIT-005
+    LCL-AUDIT-007
+    LCL-AUDIT-010 / K-003
+    LCL-AUDIT-011
+    LCL-AUDIT-012
+    LCL-AUDIT-013
+    LCL-AUDIT-014
+    LCL-AUDIT-015
+    LCL-AUDIT-016
+
+ARCHIVE
+    Repair ZIP: NOT CREATED.
+    Reason: Gates 1 through 9 did not all pass and release-blocking design
+    decisions remain. The immutable historical tree and verified archive are
+    preserved outside this candidate.
+
+The package contains no interpreter, evaluator, executor, UI, environment, or
+database. Static build/registry evidence cannot substitute for runtime or
+semantic conformance evidence.

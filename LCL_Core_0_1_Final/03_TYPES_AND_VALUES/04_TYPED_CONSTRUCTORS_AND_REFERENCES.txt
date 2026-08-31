@@ -1,0 +1,24 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Typed Constructors and References
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+    REF(identifier)
+    PATH("/absolute/path")
+    PATH(REF(workspace.id), "relative/path")
+    URI("https://example.invalid/resource")
+    GLOB("src/**/*.py")
+    REGEX("^[a-z]+$")
+    DATE("2026-08-30")
+    TIME("14:30:00+02:00")
+    DATETIME("2026-08-30T14:30:00+02:00")
+    DURATION(5, unit.second)
+    PERCENTAGE(90)
+    BYTES(1024)
+    MEASURE(1920, unit.pixel)
+
+PATH with one relative string is legal only as IMPORT/EXTENSION SOURCE, resolved
+relative to the importing document. Other relative paths require WORKSPACE.
+REF accepts an identifier, not a quoted string, and resolves exactly once.

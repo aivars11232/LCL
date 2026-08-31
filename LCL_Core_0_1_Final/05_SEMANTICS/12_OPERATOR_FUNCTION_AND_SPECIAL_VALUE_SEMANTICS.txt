@@ -1,0 +1,15 @@
+LCL CORE 0.1 FINAL
+OPERATOR, FUNCTION, AND SPECIAL-VALUE SEMANTICS
+NORMATIVE
+
+The exhaustive operator arity, accepted operand families, result family,
+precedence, associativity, numeric promotion, ordered types, string ordering, and
+UNKNOWN truth table are defined in:
+
+    10_REGISTRIES/operators_and_functions_v0.1.0.json
+
+No implicit string-to-number, Boolean-to-number, path-to-string, enum-to-string,
+or unit conversion exists. INTEGER promotes to DECIMAL only when paired with
+DECIMAL. Ordered MEASURE comparison requires the same exact UNIT. Division by zero
+is an error. A quotient not representable as a finite exact DECIMAL produces
+error.numeric.non_terminating. Function arity and overload matching are exact.

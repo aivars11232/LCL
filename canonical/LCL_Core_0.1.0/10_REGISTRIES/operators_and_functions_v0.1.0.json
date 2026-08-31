@@ -1,0 +1,532 @@
+{
+  "language": "LCL",
+  "version": "0.1.0",
+  "closed": true,
+  "numeric_promotion": {
+    "INTEGER+INTEGER": "INTEGER",
+    "INTEGER+DECIMAL": "DECIMAL",
+    "DECIMAL+INTEGER": "DECIMAL",
+    "DECIMAL+DECIMAL": "DECIMAL"
+  },
+  "ordered_types": [
+    "INTEGER",
+    "DECIMAL",
+    "STRING",
+    "DATE",
+    "TIME",
+    "DATETIME",
+    "DURATION",
+    "PERCENTAGE",
+    "BYTES",
+    "MEASURE[same unit]"
+  ],
+  "string_order": "lexicographic by Unicode scalar value",
+  "unknown_logic": {
+    "NOT UNKNOWN": "UNKNOWN",
+    "FALSE AND UNKNOWN": "FALSE",
+    "TRUE AND UNKNOWN": "UNKNOWN",
+    "FALSE OR UNKNOWN": "UNKNOWN",
+    "TRUE OR UNKNOWN": "TRUE"
+  },
+  "constructors": {
+    "PATH": {
+      "overloads": [
+        {
+          "parameters": [
+            "STRING"
+          ],
+          "constraint": "The string is absolute, except that one relative string is legal only as IMPORT.SOURCE or EXTENSION.SOURCE and resolves from the importing document."
+        },
+        {
+          "parameters": [
+            "REFERENCE[WORKSPACE]",
+            "STRING"
+          ],
+          "constraint": "The string is relative and the resolved path is the WORKSPACE root or one of its descendants."
+        }
+      ],
+      "result": "PATH",
+      "variadic": false,
+      "workspace_escape_error": "error.value.out_of_range",
+      "errors": [
+        "error.operator.operand",
+        "error.literal.invalid",
+        "error.reference.kind",
+        "error.reference.unresolved",
+        "error.value.out_of_range"
+      ]
+    },
+    "URI": {
+      "overloads": [
+        {
+          "parameters": [
+            "STRING"
+          ]
+        }
+      ],
+      "result": "URI",
+      "profile": "RFC 3986 absolute-URI with a scheme",
+      "relative_references_allowed": false,
+      "errors": [
+        "error.operator.operand",
+        "error.literal.invalid"
+      ]
+    },
+    "GLOB": {
+      "overloads": [
+        {
+          "parameters": [
+            "STRING"
+          ]
+        }
+      ],
+      "result": "GLOB",
+      "profile": "types.pattern_profiles.GLOB",
+      "errors": [
+        "error.operator.operand",
+        "error.literal.invalid",
+        "error.pattern.resource_limit"
+      ]
+    },
+    "REGEX": {
+      "overloads": [
+        {
+          "parameters": [
+            "STRING"
+          ]
+        },
+        {
+          "parameters": [
+            "STRING",
+            "STRING"
+          ]
+        }
+      ],
+      "result": "REGEX",
+      "profile": "types.pattern_profiles.REGEX",
+      "second_parameter": "canonical flags string",
+      "errors": [
+        "error.operator.operand",
+        "error.literal.invalid",
+        "error.pattern.resource_limit"
+      ]
+    },
+    "DATE": {
+      "overloads": [
+        {
+          "parameters": [
+            "STRING"
+          ]
+        }
+      ],
+      "result": "DATE",
+      "profile": "RFC 3339 full-date",
+      "errors": [
+        "error.operator.operand",
+        "error.literal.invalid"
+      ]
+    },
+    "TIME": {
+      "overloads": [
+        {
+          "parameters": [
+            "STRING"
+          ]
+        }
+      ],
+      "result": "TIME",
+      "profile": "RFC 3339 partial-time with optional time-offset",
+      "omitted_timezone": "UTC",
+      "errors": [
+        "error.operator.operand",
+        "error.literal.invalid"
+      ]
+    },
+    "DATETIME": {
+      "overloads": [
+        {
+          "parameters": [
+            "STRING"
+          ]
+        }
+      ],
+      "result": "DATETIME",
+      "profile": "RFC 3339 full-date T partial-time with optional time-offset",
+      "omitted_timezone": "UTC",
+      "errors": [
+        "error.operator.operand",
+        "error.literal.invalid"
+      ]
+    },
+    "DURATION": {
+      "overloads": [
+        {
+          "parameters": [
+            "INTEGER|DECIMAL",
+            "qualified_identifier(unit)"
+          ]
+        }
+      ],
+      "result": "DURATION",
+      "unit_category": "Time",
+      "minimum": 0,
+      "errors": [
+        "error.operator.operand",
+        "error.numeric.unit_mismatch",
+        "error.value.out_of_range"
+      ]
+    },
+    "PERCENTAGE": {
+      "overloads": [
+        {
+          "parameters": [
+            "INTEGER|DECIMAL"
+          ]
+        }
+      ],
+      "result": "PERCENTAGE",
+      "minimum": 0,
+      "maximum": 100,
+      "errors": [
+        "error.operator.operand",
+        "error.value.out_of_range"
+      ]
+    },
+    "BYTES": {
+      "overloads": [
+        {
+          "parameters": [
+            "INTEGER"
+          ]
+        }
+      ],
+      "result": "BYTES",
+      "minimum": 0,
+      "errors": [
+        "error.operator.operand",
+        "error.value.out_of_range"
+      ]
+    },
+    "MEASURE": {
+      "overloads": [
+        {
+          "parameters": [
+            "INTEGER|DECIMAL",
+            "qualified_identifier(unit)"
+          ]
+        }
+      ],
+      "result": "MEASURE",
+      "unit_rule": "Any registered unit is accepted, including Time-category units, unless a more specific normative field or operation contract narrows it.",
+      "errors": [
+        "error.operator.operand",
+        "error.reference.unresolved"
+      ]
+    }
+  },
+  "operators": {
+    "NOT": {
+      "arity": 1,
+      "operands": [
+        "BOOLEAN|UNKNOWN"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "precedence": 70,
+      "associativity": "right"
+    },
+    "unary -": {
+      "arity": 1,
+      "operands": [
+        "INTEGER|DECIMAL|MEASURE"
+      ],
+      "result": "same_numeric_family",
+      "precedence": 70,
+      "associativity": "right"
+    },
+    "*": {
+      "arity": 2,
+      "operands": [
+        "numeric,numeric",
+        "MEASURE,numeric",
+        "numeric,MEASURE"
+      ],
+      "result": "promoted_numeric_or_measure",
+      "precedence": 60,
+      "associativity": "left"
+    },
+    "/": {
+      "arity": 2,
+      "operands": [
+        "numeric,numeric",
+        "MEASURE,numeric",
+        "MEASURE,same_unit_MEASURE"
+      ],
+      "result": "DECIMAL|MEASURE",
+      "precedence": 60,
+      "associativity": "left"
+    },
+    "+": {
+      "arity": 2,
+      "operands": [
+        "numeric,numeric",
+        "DURATION,DURATION",
+        "same_unit_MEASURE,same_unit_MEASURE"
+      ],
+      "result": "promoted_family",
+      "precedence": 50,
+      "associativity": "left"
+    },
+    "-": {
+      "arity": 2,
+      "operands": [
+        "numeric,numeric",
+        "DURATION,DURATION",
+        "same_unit_MEASURE,same_unit_MEASURE"
+      ],
+      "result": "promoted_family",
+      "constraints": [
+        "DURATION subtraction must produce a non-negative DURATION; a negative result is invalid."
+      ],
+      "errors": [
+        "error.value.out_of_range"
+      ],
+      "precedence": 50,
+      "associativity": "left"
+    },
+    "==": {
+      "arity": 2,
+      "operands": [
+        "equality_compatible"
+      ],
+      "result": "BOOLEAN",
+      "precedence": 40,
+      "associativity": "none"
+    },
+    "!=": {
+      "arity": 2,
+      "operands": [
+        "equality_compatible"
+      ],
+      "result": "BOOLEAN",
+      "precedence": 40,
+      "associativity": "none"
+    },
+    "<": {
+      "arity": 2,
+      "operands": [
+        "order_compatible"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "precedence": 40,
+      "associativity": "none"
+    },
+    "<=": {
+      "arity": 2,
+      "operands": [
+        "order_compatible"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "precedence": 40,
+      "associativity": "none"
+    },
+    ">": {
+      "arity": 2,
+      "operands": [
+        "order_compatible"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "precedence": 40,
+      "associativity": "none"
+    },
+    ">=": {
+      "arity": 2,
+      "operands": [
+        "order_compatible"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "precedence": 40,
+      "associativity": "none"
+    },
+    "IN": {
+      "arity": 2,
+      "operands": [
+        "T,LIST[T]|SET[T]"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "precedence": 40,
+      "associativity": "none"
+    },
+    "CONTAINS": {
+      "arity": 2,
+      "operands": [
+        "STRING,STRING",
+        "LIST[T]|SET[T],T",
+        "OBJECT,STRING"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "precedence": 40,
+      "associativity": "none"
+    },
+    "MATCHES": {
+      "arity": 2,
+      "operands": [
+        "STRING,REGEX",
+        "PATH|STRING,GLOB"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "non_match_result": "FALSE",
+      "match_semantics": "full_string",
+      "full_match_implementation": "semantic_boundary_check_not_multiline_anchors",
+      "errors": [
+        "error.operator.operand",
+        "error.pattern.resource_limit"
+      ],
+      "precedence": 40,
+      "associativity": "none"
+    },
+    "AND": {
+      "arity": 2,
+      "operands": [
+        "BOOLEAN|UNKNOWN,BOOLEAN|UNKNOWN"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "precedence": 30,
+      "associativity": "left"
+    },
+    "OR": {
+      "arity": 2,
+      "operands": [
+        "BOOLEAN|UNKNOWN,BOOLEAN|UNKNOWN"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "precedence": 20,
+      "associativity": "left"
+    },
+    "property access": {
+      "arity": 2,
+      "operands": [
+        "OBJECT|REFERENCE,property_name"
+      ],
+      "result": "declared_property_type|MISSING",
+      "precedence": 90,
+      "associativity": "left"
+    },
+    "index access": {
+      "arity": 2,
+      "operands": [
+        "LIST,INTEGER",
+        "OBJECT,STRING"
+      ],
+      "result": "member_type|MISSING",
+      "precedence": 90,
+      "associativity": "left"
+    }
+  },
+  "functions": {
+    "ABS": {
+      "parameters": [
+        "INTEGER|DECIMAL|DURATION|MEASURE"
+      ],
+      "result": "same_family_nonnegative",
+      "errors": [
+        "error.operator.operand"
+      ]
+    },
+    "COUNT": {
+      "parameters": [
+        "STRING|LIST|SET|OBJECT|BYTES"
+      ],
+      "result": "INTEGER",
+      "errors": [
+        "error.operator.operand"
+      ]
+    },
+    "SUM": {
+      "parameters": [
+        "LIST[numeric]|SET[numeric]|LIST[DURATION]|SET[DURATION]|same_unit_MEASURE_collection"
+      ],
+      "result": "promoted_member_family",
+      "errors": [
+        "error.operator.operand",
+        "error.numeric.unit_mismatch"
+      ]
+    },
+    "MIN": {
+      "parameters": [
+        "nonempty_collection[ordered]"
+      ],
+      "result": "member_type",
+      "errors": [
+        "error.operator.operand"
+      ]
+    },
+    "MAX": {
+      "parameters": [
+        "nonempty_collection[ordered]"
+      ],
+      "result": "member_type",
+      "errors": [
+        "error.operator.operand"
+      ]
+    },
+    "ROUND": {
+      "parameters": [
+        "DECIMAL",
+        "INTEGER"
+      ],
+      "result": "DECIMAL",
+      "rounding": "round-half-to-even",
+      "errors": [
+        "error.operator.operand",
+        "error.value.out_of_range"
+      ]
+    },
+    "EXISTS": {
+      "parameters": [
+        "any_expression_or_reference"
+      ],
+      "result": "BOOLEAN",
+      "special": "FALSE only for MISSING or unresolved optional binding; UNKNOWN exists and returns TRUE",
+      "errors": []
+    },
+    "EMPTY": {
+      "parameters": [
+        "STRING|LIST|SET|OBJECT|BYTES"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "errors": [
+        "error.operator.operand"
+      ]
+    },
+    "ALL": {
+      "parameters": [
+        "LIST[BOOLEAN|UNKNOWN]"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "logic": "strong Kleene conjunction",
+      "errors": [
+        "error.operator.operand"
+      ]
+    },
+    "ANY": {
+      "parameters": [
+        "LIST[BOOLEAN|UNKNOWN]"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "logic": "strong Kleene disjunction",
+      "errors": [
+        "error.operator.operand"
+      ]
+    },
+    "NONE": {
+      "parameters": [
+        "LIST[BOOLEAN|UNKNOWN]"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "logic": "NOT ANY(values)",
+      "errors": [
+        "error.operator.operand"
+      ]
+    }
+  }
+}

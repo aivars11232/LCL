@@ -1,0 +1,12 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Rule, Check, Output, and Completion Form
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+REQUIRE/PREFER contain exactly ASSERT or ACTION. ALLOW/FORBID name OPERATION and
+TARGET. PRESERVE names TARGET and optional repeated PROPERTY. VALIDATE/VERIFY
+contain ASSERT. SUCCESS contains exactly ALL, ANY, or NONE. FAILURE contains
+WHEN and one terminal non-success STATUS. EVIDENCE contains exact typed SOURCE
+or VALUE plus provenance when required.

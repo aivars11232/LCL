@@ -1,0 +1,16 @@
+LCL CORE 0.1.0 RELEASE CANDIDATE
+CORE OPERATION CONTRACT RULES
+NORMATIVE
+
+Every core operation's candidate target, named-parameter, precondition,
+postcondition, error, side-effect, determinism, and result-schema records are
+stored in 10_REGISTRIES/operations_v0.1.0.json. Named-parameter membership and
+required/default status are closed. The candidate is not contract-complete:
+25 operations have no determinism declaration, result schemas do not declare
+field cardinality/openness, and result-to-OUTPUT binding is unresolved.
+
+No positional parameters exist. A parameter absent from an operation contract is
+forbidden. A required parameter cannot be inferred. A default applies only to a
+MISSING optional parameter. An operation may cause only its listed side effects
+and effects explicitly required by its postconditions. Additional effects produce
+error.permission.denied or error.scope.violation.

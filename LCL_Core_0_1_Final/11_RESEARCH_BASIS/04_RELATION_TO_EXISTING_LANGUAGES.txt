@@ -1,0 +1,13 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Relation to Existing Languages
+LANGUAGE VERSION: 0.1.0
+STATUS: INFORMATIVE
+DATE: 2026-08-30
+
+
+From programming languages: vocabulary, syntax, grammar, types, references,
+expressions, scope, flow, ordering, imports, errors, versioning. From creative
+control systems: target, operation, parameters, properties, timing, format,
+verification. LC-specific emphasis: explicit hard/soft intent, authorization,
+authority/conflict, missing/unknown handling, context/memory boundaries, evidence,
+and success. LCL programs the specification; LC selects implementation.

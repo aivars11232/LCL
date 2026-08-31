@@ -1,0 +1,22 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Identifiers, Namespaces, and Reserved Names
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+Simple identifier:
+
+    [a-z][a-z0-9_]*
+
+Qualified identifier:
+
+    simple_identifier ("." simple_identifier)+
+
+IDs are unique within one namespace. NAME is a quoted label and never resolves a
+reference. IMPORT and EXTENSION assign a mandatory namespace. The built-in
+namespaces core, encoding, error, event, format, kind, mode, status, and unit are
+reserved. User identifiers cannot begin with those namespaces.
+
+Loop-local identifiers exist only in their FOR EACH body and may be referenced
+with REF(local_id). They cannot shadow a document ID or reserved namespace.

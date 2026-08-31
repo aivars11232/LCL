@@ -1,0 +1,14 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Value, Item, Property, Schema, and Object Blocks
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+VALUE is inline expression or an indented OBJECT. ITEM is a block-form member of
+LIST, SET, or ENUM. PROPERTY names one exact schema/target property. SCHEMA is an
+exact REF to a defined object type or a locally nested field declaration.
+
+These structural containers are never independent top-level declarations.
+OBJECT fields are lowercase, unique, typed where a schema exists, and data-only.
+Executable/rule blocks inside object data produce error.block.field.

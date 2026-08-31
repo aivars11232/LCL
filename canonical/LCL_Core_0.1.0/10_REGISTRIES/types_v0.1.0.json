@@ -1,0 +1,86 @@
+{
+  "language": "LCL",
+  "version": "0.1.0",
+  "collection_value_syntax": {
+    "LIST": {
+      "forms": [
+        "inline_bracket",
+        "multiline_bracket"
+      ],
+      "item_field_allowed": false
+    },
+    "SET": {
+      "forms": [
+        "inline_bracket",
+        "multiline_bracket"
+      ],
+      "item_field_allowed": false
+    },
+    "ITEM": {
+      "legal_use": "enum_member_declaration_only"
+    }
+  },
+  "pattern_profiles": {
+    "GLOB": {
+      "style": "workspace-relative minimatch/gitignore-style subset",
+      "workspace_relative": true,
+      "path_separator": "/",
+      "tokens": {
+        "*": "zero_or_more_non_separator_characters",
+        "**": "zero_or_more_complete_path_segments",
+        "?": "one_non_separator_character",
+        "[...]": "one_non_separator_character_from_class"
+      },
+      "absolute_patterns_allowed": false,
+      "parent_escape_allowed": false,
+      "brace_expansion": false,
+      "match_semantics": "full_workspace_relative_path",
+      "resource_limit_error": "error.pattern.resource_limit"
+    },
+    "REGEX": {
+      "syntax": "conservative_ecmascript_compatible_subset",
+      "allowed_flags": [
+        "i",
+        "m",
+        "s"
+      ],
+      "canonical_flag_order": "ims",
+      "default_flags": "",
+      "duplicate_flags_allowed": false,
+      "unknown_flags_allowed": false,
+      "stateful_flags_allowed": false,
+      "unicode_text_handling": "always_enabled_independently_of_user_flags",
+      "user_unicode_flag_allowed": false,
+      "forbidden_features": [
+        "lookbehind",
+        "unicode_property_escapes"
+      ],
+      "match_semantics": "full_string",
+      "full_match_implementation": "semantic_boundary_check_not_multiline_anchors",
+      "resource_limit_error": "error.pattern.resource_limit"
+    }
+  },
+  "types": {
+    "STRING": "Unicode text; no interpolation.",
+    "INTEGER": "Unbounded signed whole number.",
+    "DECIMAL": "Exact finite base-10 decimal.",
+    "BOOLEAN": "TRUE or FALSE; no truthy coercion.",
+    "NULL": "Explicit known absence.",
+    "LIST[T]": "Ordered collection using bracket value syntax; duplicates allowed.",
+    "SET[T]": "Unique unordered collection using bracket value syntax; iteration is canonical ascending only when T has a defined total order, otherwise iteration requires an explicit sort key.",
+    "OBJECT": "Keyed value checked by an explicit schema when provided.",
+    "ENUM": "Closed set of exact declared values.",
+    "REFERENCE[T]": "Exact typed reference expressed with REF(identifier).",
+    "PATH": "Absolute path or path relative to an explicit WORKSPACE; a resolved workspace-relative path cannot escape its WORKSPACE root.",
+    "URI": "Absolute URI with a scheme under the RFC 3986 absolute-URI profile; relative references are invalid.",
+    "GLOB": "Workspace-relative file-selection pattern under the closed LCL GLOB profile.",
+    "REGEX": "Regular-expression pattern under the conservative ECMAScript-compatible LCL REGEX profile.",
+    "DATE": "RFC 3339 full-date value.",
+    "TIME": "RFC 3339 partial-time with an optional offset; an omitted offset means UTC.",
+    "DATETIME": "RFC 3339 full-date and partial-time with an optional offset; an omitted offset means UTC.",
+    "DURATION": "Non-negative amount of elapsed time.",
+    "PERCENTAGE": "DECIMAL from 0 through 100 inclusive.",
+    "BYTES": "Non-negative exact byte count.",
+    "MEASURE": "Number paired with one registered unit identifier; registered time-category units are permitted."
+  }
+}

@@ -1,0 +1,30 @@
+Project/
+├── lcl/
+│   ├── project.lcl
+│   ├── language.lcl
+│   │
+│   ├── definitions/
+│   │   └── terms.lcl
+│   │
+│   ├── rules/
+│   │   ├── global.lcl
+│   │   ├── project.lcl
+│   │   └── workflow.lcl
+│   │
+│   ├── tasks/
+│   │   └── TASK-0001.lcl
+│   │
+│   ├── state/
+│   │   └── project-state.lcl
+│   │
+│   ├── memory/
+│   │   ├── decisions.lcl
+│   │   └── known-issues.lcl
+│   │
+│   ├── verification/
+│   │   └── acceptance.lcl
+│   │
+│   └── evidence/
+│       └── TASK-0001-result.lcl
+│
+└── project-files/

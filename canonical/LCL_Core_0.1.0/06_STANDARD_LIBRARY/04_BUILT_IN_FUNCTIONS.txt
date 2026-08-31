@@ -1,0 +1,18 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Built-in Pure Functions
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+ABS(number) -> same numeric family
+COUNT(value) -> INTEGER
+SUM(collection) -> compatible numeric
+MIN(collection) / MAX(collection) -> member type
+ROUND(decimal, integer_digits) -> DECIMAL using half-even
+EXISTS(value_or_reference) -> BOOLEAN
+EMPTY(string_or_collection) -> BOOLEAN
+ALL(list_boolean) / ANY(list_boolean) / NONE(list_boolean) -> BOOLEAN
+
+Functions are pure, validate arity/types, and never perform I/O or side effects.
+COUNT(STRING) counts Unicode code points. MIN/MAX on empty collection is invalid.

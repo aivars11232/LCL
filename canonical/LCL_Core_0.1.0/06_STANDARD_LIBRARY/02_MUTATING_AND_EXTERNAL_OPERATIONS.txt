@@ -1,0 +1,106 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Mutating and External Operations
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+core.create
+    Meaning: Create a new target that does not already exist.
+    Side effect: TRUE
+    Deterministic: DECLARATION REQUIRED
+
+core.write
+    Meaning: Establish or replace complete content of an authorized target.
+    Side effect: TRUE
+    Deterministic: DECLARATION REQUIRED
+
+core.append
+    Meaning: Add content at the declared end of an authorized target.
+    Side effect: TRUE
+    Deterministic: DECLARATION REQUIRED
+
+core.modify
+    Meaning: Change selected content or properties of an existing target.
+    Side effect: TRUE
+    Deterministic: DECLARATION REQUIRED
+
+core.copy
+    Meaning: Create a new target containing an exact copy of a source.
+    Side effect: TRUE
+    Deterministic: DECLARATION REQUIRED
+
+core.move
+    Meaning: Relocate a target without changing declared content.
+    Side effect: TRUE
+    Deterministic: DECLARATION REQUIRED
+
+core.rename
+    Meaning: Change a target identifier/path name without changing content.
+    Side effect: TRUE
+    Deterministic: DECLARATION REQUIRED
+
+core.delete
+    Meaning: Remove an existing target.
+    Side effect: TRUE
+    Deterministic: DECLARATION REQUIRED
+
+core.generate
+    Meaning: Produce a new artifact from declared input and constraints.
+    Side effect: TRUE
+    Deterministic: DECLARATION REQUIRED
+
+core.convert
+    Meaning: Produce an artifact in a declared target type or format.
+    Side effect: TRUE
+    Deterministic: DECLARATION REQUIRED
+
+core.execute
+    Meaning: Run an exact command, program, task, phase, sequence, or action.
+    Side effect: TRUE
+    Deterministic: DECLARATION REQUIRED
+
+core.install
+    Meaning: Add declared software or resources to an external environment.
+    Side effect: TRUE
+    Deterministic: DECLARATION REQUIRED
+
+core.uninstall
+    Meaning: Remove declared software or resources.
+    Side effect: TRUE
+    Deterministic: DECLARATION REQUIRED
+
+core.start
+    Meaning: Put a process or service into running state.
+    Side effect: TRUE
+    Deterministic: DECLARATION REQUIRED
+
+core.send
+    Meaning: Transmit declared content to an external recipient or endpoint.
+    Side effect: TRUE
+    Deterministic: DECLARATION REQUIRED
+
+core.publish
+    Meaning: Make declared content externally available.
+    Side effect: TRUE
+    Deterministic: DECLARATION REQUIRED
+
+core.upload
+    Meaning: Transfer declared content to an external destination.
+    Side effect: TRUE
+    Deterministic: DECLARATION REQUIRED
+
+core.download
+    Meaning: Transfer declared content from an external source into scope.
+    Side effect: TRUE
+    Deterministic: DECLARATION REQUIRED
+
+core.memory_write
+    Meaning: Create or update explicitly authorized persistent memory data.
+    Side effect: TRUE
+    Deterministic: DECLARATION REQUIRED
+
+core.state_update
+    Meaning: Update explicitly authorized STATE data.
+    Side effect: TRUE
+    Deterministic: DECLARATION REQUIRED

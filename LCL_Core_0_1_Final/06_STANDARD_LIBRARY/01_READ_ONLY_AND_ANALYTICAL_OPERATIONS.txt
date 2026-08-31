@@ -1,0 +1,76 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Read-only and Analytical Operations
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+core.inspect
+    Meaning: Observe metadata or structure without changing the target.
+    Side effect: FALSE
+    Deterministic: TRUE
+
+core.read
+    Meaning: Retrieve accessible exact content without changing its source.
+    Side effect: FALSE
+    Deterministic: TRUE
+
+core.analyze
+    Meaning: Derive stated findings from declared input.
+    Side effect: FALSE
+    Deterministic: DECLARATION REQUIRED
+
+core.calculate
+    Meaning: Compute a result from declared values and rules.
+    Side effect: FALSE
+    Deterministic: TRUE
+
+core.compare
+    Meaning: Compare artifacts or values against exact criteria.
+    Side effect: FALSE
+    Deterministic: TRUE
+
+core.select
+    Meaning: Choose members satisfying a predicate.
+    Side effect: FALSE
+    Deterministic: TRUE
+
+core.filter
+    Meaning: Return members satisfying a predicate while preserving order.
+    Side effect: FALSE
+    Deterministic: TRUE
+
+core.sort
+    Meaning: Return values in declared deterministic order.
+    Side effect: FALSE
+    Deterministic: TRUE
+
+core.group
+    Meaning: Partition values by one declared key or predicate.
+    Side effect: FALSE
+    Deterministic: TRUE
+
+core.validate
+    Meaning: Check syntax, type, reference, dependency, and constraints before effects.
+    Side effect: FALSE
+    Deterministic: TRUE
+
+core.verify
+    Meaning: Check observable postconditions.
+    Side effect: FALSE
+    Deterministic: TRUE
+
+core.test
+    Meaning: Execute one declared test and compare ACTUAL with EXPECTED.
+    Side effect: FALSE
+    Deterministic: DECLARATION REQUIRED
+
+core.report
+    Meaning: Produce a factual report from declared results and evidence.
+    Side effect: FALSE
+    Deterministic: DECLARATION REQUIRED
+
+core.return
+    Meaning: Return declared OUTPUT values to the invoking channel.
+    Side effect: FALSE
+    Deterministic: TRUE

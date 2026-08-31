@@ -1,0 +1,2272 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+DOCUMENTATION-DERIVED WORD AND SYMBOL AUDIT
+Version: 0.1
+Date: 2026-08-30
+Status: Experimental research baseline; not a final language specification
+
+======================================================================
+1. PURPOSE
+======================================================================
+
+This document identifies words, structures, punctuation, and symbols that
+should be adopted, restricted, tested, reserved, or excluded while building
+the first experimental Learned Computing Language (LCL).
+
+The audit is derived from current official documentation for OpenAI,
+Anthropic, and DeepSeek systems. It also applies established formal-language
+principles where the provider documentation converges on the same need:
+explicit structure, stable terminology, exact values, typed data, constraints,
+examples, output contracts, and verification.
+
+This document does NOT claim that provider documentation reveals a complete
+hidden language. It identifies the strongest common substrate already handled
+by current LC systems. Controlled tests across ChatGPT, Claude, and DeepSeek
+must determine which candidates become final LCL syntax.
+
+Primary design target:
+
+    Technical English with formal structure and restrained punctuation.
+
+Not the target:
+
+    - unrestricted conversational English
+    - dense symbolic shorthand
+    - a copy of Python, JSON, XML, Markdown, or any provider protocol
+    - provider-specific prompt tricks
+    - hidden chain-of-thought instructions
+
+======================================================================
+2. SCOPE OF THIS AUDIT
+======================================================================
+
+Included:
+
+    - canonical structural words
+    - canonical control words
+    - condition and logic words
+    - validation and verification words
+    - state, memory, source, and workspace words
+    - type and value vocabulary
+    - general action-verb candidates
+    - vague or overloaded words to avoid
+    - punctuation and symbol policy
+    - naming, whitespace, literal, and identifier policy
+    - a minimal candidate LCL substrate for testing
+
+Not yet included:
+
+    - complete grammar
+    - complete domain vocabularies
+    - compiler/parser design
+    - media-specific commands
+    - software-specific implementation commands
+    - formal operational semantics
+    - final precedence model
+    - model compatibility claims
+
+======================================================================
+3. EVIDENCE AND DECISION LABELS
+======================================================================
+
+Evidence levels:
+
+    A = Supported by official documentation from all three provider families.
+    B = Supported by at least two provider families.
+    C = Strong formal-language convention consistent with provider guidance.
+    T = Requires controlled cross-model testing.
+
+Decision labels:
+
+    ADOPT
+        Use in the first experimental substrate.
+
+    ADOPT WITH RESTRICTION
+        Use in the first experimental substrate only under the stated limits.
+
+    RESTRICT
+        Use only with one defined meaning and in a defined position.
+
+    TEST
+        Include in controlled comparisons, but do not standardize yet.
+
+    RESERVE
+        Keep available for a future language version or domain extension.
+
+    EXCLUDE
+        Do not use in v0.1 normative syntax.
+
+Normative clause:
+
+    A statement that directs, permits, forbids, defines, conditions, verifies,
+    or otherwise controls LC behavior.
+
+Non-normative text:
+
+    DESCRIPTION, COMMENT, quoted source material, and user data. Excluded words
+    may occur inside non-normative text without changing language semantics.
+
+======================================================================
+4. CROSS-PROVIDER DOCUMENTATION FINDINGS
+======================================================================
+
+4.1 Findings supported across the provider families
+
+ADOPT [A]: Clear, direct, explicit technical wording.
+
+ADOPT [A]: Named sections that separate instructions, data, examples, and
+output requirements.
+
+ADOPT [A]: Visible hierarchy through headings, indentation, nesting, or schema
+structure.
+
+ADOPT [A]: Exact literals, explicit parameters, and explicit types when output
+or tool behavior must be constrained.
+
+ADOPT [A]: Examples for formats or behaviors that cannot be specified reliably
+with a brief rule alone.
+
+ADOPT [A]: Explicit output format and success conditions.
+
+ADOPT [A]: Exact tool/action boundaries and required parameters.
+
+ADOPT [A]: Explicit handling for missing information instead of silent guessing.
+
+RESTRICT [A]: Negative rules. Use them for true prohibitions, but state desired
+behavior positively whenever possible.
+
+EXCLUDE [B]: Repeated copies of the same rule. State one rule once, then use
+formal priority or references.
+
+EXCLUDE [B]: Emotional emphasis such as repeated MUST, CRITICAL, ABSOLUTELY,
+or excessive capitalization. Formal structure must carry authority.
+
+EXCLUDE [B]: Requests for hidden reasoning such as "think step by step" or
+"show your chain of thought." Specify the task, evidence, and verification
+instead.
+
+4.2 Structures recognized well but not automatically suitable for LCL core
+
+TEST [A]: Markdown headings and lists.
+
+TEST [A]: XML-like tags and nested wrappers.
+
+ADOPT [A]: JSON-Schema-compatible primitive types and explicit required fields.
+
+TEST [B]: JSON as an entire instruction language. It is precise but verbose,
+escaping-heavy, and less natural for technical English.
+
+TEST [B]: Code-like punctuation. Models recognize it, but every overloaded
+symbol can create an additional interpretation.
+
+4.3 Provider protocol elements that must NOT become portable LCL syntax
+
+EXCLUDE:
+
+    system
+    developer
+    user
+    assistant
+    tool
+    analysis
+    commentary
+    final
+    function_call
+    tool_call
+    provider-specific channel names
+    provider-specific special tokens
+    provider-specific role markers
+    hidden reasoning markers
+
+Reason:
+
+    These are transport or product protocol concepts. They differ between
+    providers and may change independently of LCL. LCL can define its own
+    portable AUTHORITY and SOURCE rules without copying a provider protocol.
+
+======================================================================
+5. CORE LEXICAL POLICY
+======================================================================
+
+5.1 One concept, one canonical word
+
+ADOPT [B/C]: Each normative concept receives one canonical term.
+
+Do not alternate synonyms merely for writing variety. Natural prose rewards
+variation; formal languages require stability.
+
+Example:
+
+    Canonical: GOAL
+    Avoid as equivalents: objective, aim, purpose, intention, desired result
+
+5.2 Canonical spelling
+
+TEST:
+
+    - Reserved LCL words are written in ASCII UPPERCASE in canonical examples.
+    - User-defined identifiers use lowercase_snake_case.
+    - Exact external names, paths, IDs, labels, and natural-language values use
+      double-quoted strings.
+    - Whether keyword matching is formally case-sensitive remains undecided.
+    - v0.1 tests must use the canonical case consistently.
+
+Uppercase keywords are structural tokens, not emotional emphasis. Avoid prose
+such as "THIS IS EXTREMELY CRITICAL" even when keywords are uppercase.
+
+5.3 Normative sentence policy
+
+ADOPT:
+
+    - Begin an action clause with a concrete action verb.
+    - Name the target explicitly.
+    - State measurable values explicitly.
+    - State scope explicitly.
+    - State the output contract explicitly.
+    - State success through observable conditions.
+
+EXCLUDE:
+
+    - conversational filler
+    - implied targets
+    - implied scope
+    - hidden assumptions
+    - undefined quality words
+    - open-ended catch-all phrases
+    - reliance on earlier conversation for operational meaning
+
+5.4 Positive behavior and true prohibitions
+
+ADOPT:
+
+    REQUIRE for behavior or conditions that must hold.
+    ALLOW for explicitly permitted behavior.
+    FORBID for behavior that must not occur.
+    PREFER for a soft choice that may yield to stronger requirements.
+
+Do not express every desired behavior as a negative rule. For example:
+
+    Weak:
+        FORBID: Do not return prose
+
+    Stronger:
+        OUTPUT:
+            FORMAT: "json"
+
+Use FORBID only when the prohibited action itself matters, for example:
+
+    FORBID:
+        DELETE files
+
+======================================================================
+6. CANDIDATE CANONICAL RESERVED WORDS
+======================================================================
+
+The following words are candidates, not the final complete vocabulary.
+
+----------------------------------------------------------------------
+6.1 Document and identity words
+----------------------------------------------------------------------
+
+ADOPT: SPECIFICATION
+Meaning:
+    The complete formal instruction unit.
+Avoid as synonyms:
+    prompt, request, command document, instruction package
+
+ADOPT: VERSION
+Meaning:
+    Exact language or specification version.
+
+ADOPT: ID
+Meaning:
+    Stable exact identifier.
+Rule:
+    Use a quoted string in v0.1.
+Example:
+    ID: "TASK-0026"
+
+ADOPT: NAME
+Meaning:
+    Human-readable exact name.
+
+RESTRICT: DESCRIPTION
+Meaning:
+    Non-normative explanatory text.
+Rule:
+    DESCRIPTION must not silently add requirements.
+
+ADOPT: DEFINE
+Meaning:
+    Assign one exact local meaning to a term.
+Avoid:
+    means, refers to, stands for, in this case
+
+ADOPT: EXAMPLE
+Meaning:
+    An illustrative case that does not create an additional rule unless the
+    specification explicitly declares it normative.
+Avoid:
+    e.g., for instance, such as
+
+ADOPT: COMMENT
+Meaning:
+    Text ignored for execution semantics.
+Reason:
+    Avoid overloaded comment symbols in the initial core.
+
+ADOPT: DOMAIN
+Meaning:
+    Names the applicable vocabulary or task domain.
+Examples:
+    "software", "image", "video", "audio", "document"
+
+----------------------------------------------------------------------
+6.2 Project, source, and location words
+----------------------------------------------------------------------
+
+ADOPT: WORKSPACE
+Meaning:
+    Root location within which the specification operates.
+Avoid as synonyms:
+    project folder, working directory, repo location, place to work
+
+ADOPT: SCOPE
+Meaning:
+    Exact boundary of applicable objects, actions, or rules.
+Avoid:
+    only, relevant, related, within reason, necessary files
+
+ADOPT: SOURCE
+Meaning:
+    Authoritative origin of input data, rules, state, or evidence.
+
+ADOPT: REFERENCE
+Meaning:
+    Explicit pointer to another named object or source.
+Avoid:
+    this, that, above, below, same as before
+
+ADOPT: IMPORT
+Meaning:
+    Load the referenced specification content into the active specification.
+Restriction:
+    Import precedence must be defined separately.
+
+ADOPT: PATH
+Meaning:
+    A file-system location.
+Rule:
+    Always quote paths.
+Example:
+    PATH: "/mnt/F/Arch Dock"
+
+ADOPT: STATE
+Meaning:
+    Explicit current operational or project status.
+Avoid:
+    where we are now, current situation, latest status
+
+ADOPT WITH RESTRICTION: MEMORY
+Meaning:
+    Explicitly referenced retained information from earlier operations.
+Rule:
+    Memory is optional enhancement, never an implicit dependency for parsing
+    or understanding valid LCL.
+
+ADOPT WITH RESTRICTION: CONTEXT
+Meaning:
+    Explicit supporting information for the present specification.
+Rule:
+    Context may improve execution but must not repair missing language
+    semantics silently.
+
+ADOPT: AUTHORITY
+Meaning:
+    Formal strength assigned to a rule source.
+Restriction:
+    Do not inherit provider role hierarchies implicitly.
+
+ADOPT: PRIORITY
+Meaning:
+    Deterministic ordering between rules, goals, or sources.
+Preferred form:
+    Ordered entries, not symbolic greater-than chains.
+
+ADOPT: DEPENDENCY
+Meaning:
+    A named prerequisite that must be satisfied before execution.
+
+----------------------------------------------------------------------
+6.3 Task and data words
+----------------------------------------------------------------------
+
+ADOPT: TASK
+Meaning:
+    A bounded unit of requested work.
+Avoid:
+    job, thing to do, work item, request
+
+ADOPT: ACTION
+Meaning:
+    One exact operation applied to a named TARGET.
+Restriction:
+    Use a concrete action verb and explicit parameters; do not use ACTION to
+    hide an unspecified operation.
+
+ADOPT: GOAL
+Meaning:
+    The intended outcome.
+Avoid as equivalents:
+    objective, aim, purpose, intention, desired result
+
+ADOPT: TARGET
+Meaning:
+    The exact entity affected by an action.
+Avoid:
+    it, this, that, item, thing, relevant object
+
+ADOPT: INPUT
+Meaning:
+    Data provided to the task.
+Avoid as equivalents:
+    material, supplied stuff, source content, information to use
+
+ADOPT: OUTPUT
+Meaning:
+    Required produced result.
+Avoid as equivalents:
+    answer, response, result, deliverable, return value
+
+ADOPT: FORMAT
+Meaning:
+    Exact representation required for INPUT or OUTPUT.
+
+ADOPT: TYPE
+Meaning:
+    Declared data category.
+
+ADOPT: VALUE
+Meaning:
+    Exact data assigned to a field or parameter.
+
+ADOPT: PARAMETER
+Meaning:
+    Named configurable value that changes an action or result.
+Avoid:
+    option, setting, detail, variable, argument unless a domain grammar gives
+    one of those words a different exact meaning.
+
+ADOPT: DEFAULT
+Meaning:
+    Value or behavior used only when no stronger explicit value exists.
+
+ADOPT: DATA
+Meaning:
+    A contained block of task material rather than an instruction.
+Restriction:
+    DATA must be visibly separated from normative clauses.
+
+----------------------------------------------------------------------
+6.4 Rule and permission words
+----------------------------------------------------------------------
+
+ADOPT: RULE
+Meaning:
+    A formally binding relation or behavior declaration.
+Restriction:
+    Prefer a more specific keyword when possible.
+
+ADOPT: REQUIRE
+Meaning:
+    A hard requirement that must hold for SUCCESS.
+Replace:
+    must, shall, need to, has to, required to, ensure, make sure
+
+ADOPT: ALLOW
+Meaning:
+    Explicit permission.
+Replace:
+    may, can, permitted to, is able to
+
+ADOPT: FORBID
+Meaning:
+    Explicit prohibition.
+Replace:
+    do not, don't, must not, never, deny, prohibit, avoid
+
+ADOPT: PREFER
+Meaning:
+    A soft objective that loses to REQUIRE, FORBID, or higher PRIORITY.
+Replace:
+    should, ideally, preferably, if possible, try to
+
+ADOPT: OVERRIDES
+Meaning:
+    Declares that one named rule or source wins a direct conflict.
+Restriction:
+    Prefer an ordered PRIORITY block for more than two sources.
+
+ADOPT: PRESERVE
+Meaning:
+    Keep a named property or object unchanged.
+Replace:
+    leave alone, keep intact, do not touch
+
+ADOPT: ASSUME
+Meaning:
+    Declare an assumption explicitly.
+Restriction:
+    Never create an assumption silently. Every assumption must be named and
+    testable or reportable.
+
+----------------------------------------------------------------------
+6.5 Condition and logic words
+----------------------------------------------------------------------
+
+ADOPT: IF
+Meaning:
+    Begin a conditional expression.
+
+ADOPT: THEN
+Meaning:
+    Introduce the consequence of IF.
+Reason:
+    Prefer this readable word over an untested arrow symbol.
+
+ADOPT: ELSE
+Meaning:
+    Define the alternative consequence when IF is false.
+
+ADOPT: AND
+Meaning:
+    Logical conjunction.
+Replace:
+    &, &&, plus, as well as
+
+ADOPT: OR
+Meaning:
+    Logical disjunction.
+Replace:
+    |, ||, and/or
+
+ADOPT: NOT
+Meaning:
+    Logical negation.
+Replace:
+    !
+Restriction:
+    Avoid double negation.
+
+ADOPT: BEFORE
+Meaning:
+    Exact ordering relation between two named events or steps.
+
+ADOPT: AFTER
+Meaning:
+    Exact ordering relation between two named events or steps.
+
+TEST: EACH
+Meaning:
+    Universal iteration over an explicitly bounded collection.
+Reason for testing:
+    Iteration semantics have not yet been defined.
+
+RESERVE: WHILE
+RESERVE: UNTIL
+RESERVE: REPEAT
+Reason:
+    These require an execution and termination model before safe adoption.
+
+EXCLUDE: UNLESS
+Replacement:
+    Use IF and ELSE explicitly.
+
+EXCLUDE: EXCEPT
+Replacement:
+    Define the exception as a separate higher-priority rule.
+
+EXCLUDE: AND/OR
+Replacement:
+    Use AND or OR with grouping parentheses.
+
+----------------------------------------------------------------------
+6.6 Sequence and execution words
+----------------------------------------------------------------------
+
+ADOPT: PHASE
+Meaning:
+    A named major execution stage.
+
+ADOPT: STEP
+Meaning:
+    One ordered action within a PHASE or SEQUENCE.
+
+ADOPT: SEQUENCE
+Meaning:
+    An ordered collection of actions.
+
+ADOPT: EXECUTE
+Meaning:
+    Perform the named task, action, command, or specification.
+Avoid as synonyms:
+    run, do, carry out, perform, start working on
+
+ADOPT: ASK
+Meaning:
+    Request a named missing value or decision from the human operator.
+Restriction:
+    ASK must state exactly what information is missing.
+
+ADOPT: STOP
+Meaning:
+    End execution immediately under a named condition.
+
+ADOPT: CONTINUE
+Meaning:
+    Resume or proceed after a named condition is satisfied.
+
+ADOPT: RETRY
+Meaning:
+    Repeat a named failed operation.
+Restriction:
+    RETRY must specify a finite maximum count and a stop condition.
+
+ADOPT: RETURN
+Meaning:
+    End the current bounded operation and provide its OUTPUT.
+
+ADOPT: REPORT
+Meaning:
+    Produce explicit information about status, evidence, conflict, or failure.
+
+RESERVE: PAUSE
+Reason:
+    Requires a persistent runtime model.
+
+RESERVE: CANCEL
+Reason:
+    Requires a persistent runtime and authority model.
+
+----------------------------------------------------------------------
+6.7 Validation, evidence, and completion words
+----------------------------------------------------------------------
+
+ADOPT: VALIDATE
+Meaning:
+    Check syntax, schema, type, structure, allowed values, or input shape.
+Do not use as a synonym for VERIFY.
+
+ADOPT: VERIFY
+Meaning:
+    Check that behavior, result, or postconditions satisfy the specification.
+Do not use as a synonym for VALIDATE.
+
+ADOPT: TEST
+Meaning:
+    Execute a defined procedure that produces evidence for a condition.
+
+ADOPT: EVIDENCE
+Meaning:
+    Observable data supporting a verification claim.
+Avoid:
+    proof, looks correct, seems to work, probably passed
+
+ADOPT: SUCCESS
+Meaning:
+    State reached only when all required success conditions hold.
+Avoid as equivalents:
+    done, complete, finished, ready, good
+
+ADOPT: FAILURE
+Meaning:
+    State reached when a required condition cannot be satisfied.
+
+ADOPT: ERROR
+Meaning:
+    A specific invalid condition or execution fault.
+
+ADOPT: CONFLICT
+Meaning:
+    Two or more applicable rules cannot all be satisfied simultaneously.
+
+ADOPT: MISSING
+Meaning:
+    A required value, source, reference, or dependency is absent.
+
+ADOPT: STATUS
+Meaning:
+    One exact declared state from an allowed set.
+Recommended values for early testing:
+    "pending"
+    "active"
+    "blocked"
+    "success"
+    "failure"
+
+======================================================================
+7. CANONICAL TYPE AND VALUE VOCABULARY
+======================================================================
+
+These candidates follow the common JSON-Schema vocabulary exposed across the
+three provider families.
+
+ADOPT:
+
+    string
+    number
+    integer
+    boolean
+    array
+    object
+    null
+
+ADOPT WITH RESTRICTION:
+
+    enum
+        Defines a closed set of allowed values.
+
+    true
+    false
+    null
+        Lowercase literal spelling is canonical for compatibility with
+        JSON-like schemas.
+
+Avoid type synonyms in normative typed clauses:
+
+    text            -> string
+    str             -> string
+    float           -> number
+    double          -> number
+    int             -> integer
+    bool            -> boolean
+    list            -> array
+    sequence        -> do not use as a data type; use array. SEQUENCE remains
+                       an execution block keyword.
+    dict            -> object
+    map             -> object
+    record          -> object
+    none            -> null
+    nil             -> null
+
+TEST AS SEMANTIC SUBTYPES OR FORMATS:
+
+    date
+    time
+    datetime
+    duration
+    path
+    url
+    file
+    directory
+
+Until formal subtype syntax is designed, represent these as quoted strings and
+state their FORMAT explicitly.
+
+Examples:
+
+    TYPE: string
+    FORMAT: "date:YYYY-MM-DD"
+    VALUE: "2026-08-30"
+
+    TYPE: string
+    FORMAT: "path:absolute"
+    VALUE: "/mnt/F/Arch Dock"
+
+Numeric policy candidates:
+
+    - Use base-10 digits.
+    - Use a period as the decimal separator.
+    - Do not use commas as thousands separators.
+    - Include units explicitly.
+    - Replace approximate values with exact tolerances or bounds.
+
+Examples:
+
+    timeout_seconds <= 30
+    width_pixels == 1920
+    confidence_ratio >= 0.90
+
+======================================================================
+8. GENERAL ACTION-VERB CANDIDATES
+======================================================================
+
+These are candidates for a general operation vocabulary. They are not all
+reserved grammar words yet. Domain research must determine whether some need
+more exact separation.
+
+----------------------------------------------------------------------
+8.1 File and object actions
+----------------------------------------------------------------------
+
+    CREATE
+    READ
+    WRITE
+    APPEND
+    REPLACE
+    MODIFY
+    COPY
+    MOVE
+    RENAME
+    DELETE
+    OPEN
+    CLOSE
+    PRESERVE
+
+Do not interchange:
+
+    DELETE = destroy the named target.
+    REMOVE = detach an element from a collection or structure.
+    CLEAR  = remove contents while retaining the container.
+
+REMOVE and CLEAR are therefore RESERVE candidates until exact semantics are
+specified.
+
+----------------------------------------------------------------------
+8.2 Selection and organization actions
+----------------------------------------------------------------------
+
+    SELECT
+    INCLUDE
+    EXCLUDE
+    FILTER
+    SORT
+    GROUP
+    MERGE
+    SPLIT
+
+Required precision:
+
+    SORT must name the key and direction.
+    FILTER must name the predicate.
+    GROUP must name the grouping key.
+    MERGE must define conflict behavior.
+    SPLIT must define the boundary rule.
+
+----------------------------------------------------------------------
+8.3 Transformation and analysis actions
+----------------------------------------------------------------------
+
+    TRANSFORM
+    CONVERT
+    EXTRACT
+    INSERT
+    SEARCH
+    INSPECT
+    ANALYZE
+    COMPARE
+    CALCULATE
+    SUMMARIZE
+
+Potential distinctions requiring tests:
+
+    SEARCH = locate candidates across a defined scope.
+    INSPECT = examine a named target without modifying it.
+    ANALYZE = derive stated properties or conclusions from INPUT.
+    EXTRACT = return existing content without inventing new content.
+    SUMMARIZE = produce a shorter representation under an explicit limit.
+
+----------------------------------------------------------------------
+8.4 Software-development action candidates
+----------------------------------------------------------------------
+
+    CONFIGURE
+    BUILD
+    COMPILE
+    TEST
+    DEBUG
+    PATCH
+    INSTALL
+    PACKAGE
+    DEPLOY
+    REVERT
+
+These belong to an Automated Coding domain vocabulary, not necessarily the
+universal LCL core.
+
+----------------------------------------------------------------------
+8.5 Creative-production action candidates
+----------------------------------------------------------------------
+
+    GENERATE
+    EDIT
+    CROP
+    RESIZE
+    ROTATE
+    MASK
+    BLEND
+    ANIMATE
+    RENDER
+    ENCODE
+    EXPORT
+
+These require image, video, audio, and 3D domain audits before standardization.
+
+======================================================================
+9. WORDS AND PHRASES TO EXCLUDE FROM NORMATIVE CLAUSES
+======================================================================
+
+The following words are not banned from strings, comments, examples, source
+material, or ordinary LC conversation. They are excluded from v0.1 normative
+clauses unless DEFINE gives them an exact local meaning.
+
+----------------------------------------------------------------------
+9.1 Politeness and conversational filler
+----------------------------------------------------------------------
+
+EXCLUDE:
+
+    please
+    kindly
+    thanks
+    thank you
+    I want
+    I would like
+    could you
+    can you
+    would you
+    you know
+    basically
+    simply
+    just
+
+Reason:
+    They do not add operational meaning. "Just" and "simply" can also hide
+    complexity or scope.
+
+----------------------------------------------------------------------
+9.2 Weak or ambiguous modality
+----------------------------------------------------------------------
+
+EXCLUDE:
+
+    should
+    could
+    would
+    may
+    might
+    can
+    try
+    attempt
+    hope
+    aim to
+    ideally
+    preferably
+    if possible
+    best effort
+
+Use instead:
+
+    REQUIRE
+    ALLOW
+    FORBID
+    PREFER
+
+----------------------------------------------------------------------
+9.3 Emotional or force-based emphasis
+----------------------------------------------------------------------
+
+EXCLUDE AS EMPHASIS:
+
+    critical
+    extremely important
+    absolutely
+    definitely
+    very
+    urgent
+    seriously
+    under no circumstances
+    at all costs
+    MUST MUST MUST
+    repeated copies of the same requirement
+
+Use instead:
+
+    REQUIRE
+    FORBID
+    PRIORITY
+    AUTHORITY
+    STOP
+    SUCCESS
+
+----------------------------------------------------------------------
+9.4 Undefined probability and uncertainty words
+----------------------------------------------------------------------
+
+EXCLUDE:
+
+    maybe
+    perhaps
+    possibly
+    probably
+    likely
+    unlikely
+    generally
+    usually
+    normally
+    often
+    sometimes
+    rarely
+    mostly
+    almost
+    roughly
+    approximately
+    around
+    about
+
+Use instead:
+
+    - an exact value
+    - a numeric interval
+    - a tolerance
+    - a probability threshold
+    - an explicit DEFAULT
+    - an explicit MISSING or ASK condition
+
+Examples:
+
+    Avoid: approximately 100 pixels
+    Use:   width_pixels >= 95 AND width_pixels <= 105
+
+    Avoid: probably correct
+    Use:   VERIFY: required_checks_passed == true
+
+----------------------------------------------------------------------
+9.5 Undefined quality words
+----------------------------------------------------------------------
+
+EXCLUDE unless locally defined:
+
+    good
+    better
+    best
+    high-quality
+    professional
+    polished
+    clean
+    elegant
+    beautiful
+    realistic
+    robust
+    reliable
+    secure
+    safe
+    efficient
+    optimized
+    optimal
+    fast
+    slow
+    simple
+    complex
+    clear
+    concise
+    detailed
+    thorough
+    comprehensive
+    user-friendly
+    maintainable
+    scalable
+    modern
+    futuristic
+
+Replacement method:
+
+    Convert each quality into observable properties, thresholds, examples, or
+    verification checks.
+
+Example:
+
+    Avoid: Produce a concise report.
+
+    Use:
+        OUTPUT:
+            FORMAT: "plain_text"
+            maximum_words: 300
+            section_count: 4
+
+----------------------------------------------------------------------
+9.6 Undefined relevance, necessity, or judgment words
+----------------------------------------------------------------------
+
+EXCLUDE unless defined:
+
+    relevant
+    related
+    important
+    necessary
+    appropriate
+    reasonable
+    useful
+    suitable
+    correct way
+    proper
+    properly
+    carefully
+    safely
+    intelligently
+    as needed
+    if necessary
+    where necessary
+    when appropriate
+    where possible
+    reasonable effort
+
+Use instead:
+
+    SCOPE
+    TARGET
+    REQUIRE
+    FORBID
+    PREFER
+    explicit selection criteria
+    explicit risk criteria
+
+----------------------------------------------------------------------
+9.7 Open-ended catch-all words and phrases
+----------------------------------------------------------------------
+
+EXCLUDE:
+
+    etc.
+    et cetera
+    and so on
+    or similar
+    similar things
+    something
+    anything
+    everything relevant
+    stuff
+    things
+    whatever
+    and related work
+    including but not limited to
+    such as
+
+Reason:
+    These create an undefined set.
+
+Use instead:
+
+    - a closed array
+    - an explicit enum
+    - an explicit predicate
+    - EXAMPLE for a non-exhaustive illustration
+    - DEFINE for set membership
+
+----------------------------------------------------------------------
+9.8 Ambiguous pronouns and positional references
+----------------------------------------------------------------------
+
+EXCLUDE from normative clauses when more than one referent is possible:
+
+    it
+    this
+    that
+    these
+    those
+    they
+    them
+    former
+    latter
+    above
+    below
+    here
+    there
+    same
+    same one
+    previous one
+    next one
+    as before
+    again
+    as discussed
+    as usual
+    the other
+
+Use instead:
+
+    ID
+    NAME
+    TARGET
+    REFERENCE
+    SOURCE
+    PATH
+
+----------------------------------------------------------------------
+9.9 Relative or unstable time words
+----------------------------------------------------------------------
+
+EXCLUDE unless bound to a declared runtime clock:
+
+    now
+    today
+    tomorrow
+    yesterday
+    soon
+    later
+    recent
+    recently
+    latest
+    newest
+    current
+    currently
+    old
+    new
+    eventually
+    immediately
+
+Use instead:
+
+    - ISO 8601 date/time
+    - explicit duration
+    - explicit timestamp field
+    - explicit STATE or VERSION reference
+
+Examples:
+
+    Avoid: Use the latest task file.
+    Use:   SOURCE: "planning/TASK-0026.md"
+
+    Avoid: Finish tomorrow.
+    Use:   deadline: "2026-08-31T17:00:00+02:00"
+
+----------------------------------------------------------------------
+9.10 Relative quantity and scale words
+----------------------------------------------------------------------
+
+EXCLUDE unless defined:
+
+    few
+    a few
+    several
+    many
+    most
+    some
+    more
+    less
+    enough
+    minimal
+    maximum effort
+    small
+    large
+    short
+    long
+    near
+    far
+    high
+    low
+
+Use instead:
+
+    ==
+    !=
+    <
+    <=
+    >
+    >=
+    an explicit count, range, ratio, or unit
+
+----------------------------------------------------------------------
+9.11 Umbrella action verbs
+----------------------------------------------------------------------
+
+EXCLUDE as standalone instructions:
+
+    help
+    handle
+    manage
+    deal with
+    work on
+    take care of
+    look into
+    consider
+    improve
+    enhance
+    optimize
+    fix
+    finish
+    complete
+    clean up
+    make better
+    sort out
+    resolve everything
+
+Reason:
+    They hide the actual operation and success condition.
+
+Use instead:
+
+    One or more concrete action verbs plus TARGET, SCOPE, REQUIRE, VERIFY, and
+    SUCCESS.
+
+----------------------------------------------------------------------
+9.12 Ambiguous completion claims
+----------------------------------------------------------------------
+
+EXCLUDE as proof of completion:
+
+    done
+    complete
+    finished
+    ready
+    solved
+    fixed
+    works
+    looks good
+    seems correct
+    should work
+
+Use instead:
+
+    STATUS: "success"
+
+only after every declared VERIFY condition passes and required EVIDENCE is
+present.
+
+----------------------------------------------------------------------
+9.13 Logic traps
+----------------------------------------------------------------------
+
+EXCLUDE:
+
+    and/or
+    unless
+    except
+    except when appropriate
+    only if needed
+    not uncommon
+    do not fail to
+    not unless
+    respectively
+    either ... and
+    both ... or
+
+Use instead:
+
+    IF
+    THEN
+    ELSE
+    AND
+    OR
+    NOT
+    parentheses
+    separate PRIORITY rules
+    explicit mapping entries
+
+----------------------------------------------------------------------
+9.14 Hidden-reasoning prompts
+----------------------------------------------------------------------
+
+EXCLUDE:
+
+    think step by step
+    show your chain of thought
+    reveal your reasoning
+    write every thought
+    explain your internal reasoning
+
+Use instead:
+
+    REPORT:
+        assumptions
+        decisions
+        evidence
+        verification_results
+        unresolved_conflicts
+
+The language should request observable work products, not private internal
+reasoning.
+
+----------------------------------------------------------------------
+9.15 Provider-specific words and tokens
+----------------------------------------------------------------------
+
+EXCLUDE from portable LCL core:
+
+    system prompt
+    developer message
+    assistant message
+    tool role
+    ChatGPT-only channel labels
+    Claude-only protocol fields
+    DeepSeek special role tokens
+    Harmony tokens
+    DSML transport tokens
+    hidden <think> blocks
+    provider function-call wrappers
+
+LCL may map to these internally inside an implementation, but they must not be
+part of the portable source language.
+
+======================================================================
+10. SYMBOL AND PUNCTUATION POLICY
+======================================================================
+
+----------------------------------------------------------------------
+10.1 ADOPT for the first experimental substrate
+----------------------------------------------------------------------
+
+SYMBOL: :
+DECISION: ADOPT [A/C]
+MEANING:
+    Separates a declaration name from its value or opens an indented block.
+EXAMPLES:
+    GOAL: Build the project
+
+    REQUIRE:
+        build_exit_code == 0
+RESTRICTION:
+    A colon inside a URL, path, timestamp, or literal must be inside quotes.
+
+SYMBOL: newline
+DECISION: ADOPT [A/C]
+MEANING:
+    Ends a declaration line or separates block entries.
+
+SYMBOL: four ASCII spaces
+DECISION: ADOPT [B/C], TEST exact width
+MEANING:
+    One nesting level.
+RESTRICTION:
+    Tabs are forbidden.
+
+SYMBOL: "
+DECISION: ADOPT [A]
+MEANING:
+    Opens or closes an exact string literal.
+EXAMPLES:
+    ID: "TASK-0026"
+    PATH: "/mnt/F/Arch Dock"
+RESTRICTION:
+    Use ASCII double quotes only.
+
+SYMBOLS: ( )
+DECISION: ADOPT [A/C]
+MEANING:
+    Group a logical or arithmetic expression.
+EXAMPLE:
+    IF (build_exit_code == 0 AND test_failure_count == 0) THEN:
+RESTRICTION:
+    Do not also use parentheses for informal side comments.
+
+SYMBOLS: [ ]
+DECISION: ADOPT [A/C]
+MEANING:
+    Delimit an ordered array literal.
+EXAMPLE:
+    writable_paths: ["src/main.cpp", "src/panel.qml"]
+RESTRICTION:
+    Do not use brackets for optional prose.
+
+SYMBOL: ,
+DECISION: ADOPT [A/C]
+MEANING:
+    Separates array items or named values on the same level.
+RESTRICTION:
+    Do not use commas as thousands separators.
+
+SYMBOL: _
+DECISION: ADOPT [A/C]
+MEANING:
+    Separates words in an unquoted identifier.
+EXAMPLES:
+    build_exit_code
+    test_failure_count
+
+SYMBOLS: == != < <= > >=
+DECISION: ADOPT [A/C]
+MEANING:
+    Exact comparison operators.
+RESTRICTION:
+    Do not combine these symbols with XML tags in core LCL.
+
+SYMBOLS: + - * /
+DECISION: ADOPT WITH RESTRICTION [C]
+MEANING:
+    Arithmetic operators inside explicit expressions.
+RESTRICTIONS:
+    - Use / as division only outside strings.
+    - Quote every path and URL.
+    - Use * as multiplication only, not Markdown emphasis or a wildcard.
+    - Exponent syntax is not yet defined.
+
+SYMBOL: - at the beginning of a line
+DECISION: ADOPT WITH RESTRICTION [A]
+MEANING:
+    A list entry in a non-expression block.
+RESTRICTION:
+    Position determines meaning. Inside expressions, - is subtraction or a
+    negative-number sign.
+
+SYMBOL: .
+DECISION: RESTRICT [C]
+MEANING:
+    Decimal separator inside numbers.
+RESERVE:
+    Qualified-name or namespace separator.
+EXCLUDE:
+    Do not rely on a period as the formal statement terminator in v0.1.
+
+----------------------------------------------------------------------
+10.2 TEST before adoption
+----------------------------------------------------------------------
+
+SYMBOLS: ``` ... ```
+DECISION: TEST [A]
+POSSIBLE MEANING:
+    Raw embedded code, data, or literal block after an explicit RAW or EXAMPLE
+    declaration.
+RISK:
+    Markdown language labels and nested fences can alter interpretation.
+
+SYMBOL: @
+DECISION: TEST
+POSSIBLE MEANING:
+    Explicit named reference.
+RISK:
+    Already means annotation, decorator, handle, email component, or mention in
+    different systems.
+CURRENT PREFERENCE:
+    Use REFERENCE: with a quoted ID.
+
+SYMBOL: %
+DECISION: TEST
+POSSIBLE MEANING:
+    Percentage unit.
+RISK:
+    Also means modulo or string formatting.
+CURRENT PREFERENCE:
+    Use a ratio such as 0.90, or declare an explicit percent FORMAT.
+
+SYMBOLS: -> and =>
+DECISION: TEST
+POSSIBLE MEANING:
+    Consequence, mapping, transition, or return type.
+RISK:
+    Too many established meanings.
+CURRENT PREFERENCE:
+    Use THEN or an explicit mapping block.
+
+SYMBOLS: <tag> ... </tag>
+DECISION: TEST [A]
+POSSIBLE MEANING:
+    External wrapper or strong content boundary.
+RISK:
+    Conflicts with < and > comparison operators, adds closing-tag verbosity,
+    and pushes LCL away from technical English.
+CURRENT PREFERENCE:
+    Keep XML-like tags outside the initial core and compare them experimentally
+    against colon-plus-indentation syntax.
+
+SYMBOL: ?
+DECISION: TEST
+POSSIBLE MEANING:
+    Optional value, nullable type, or explicit question.
+RISK:
+    Three different meanings.
+CURRENT PREFERENCE:
+    Use ASK, null, or an explicit optional-field rule.
+
+SYMBOL: |
+DECISION: TEST only for raw multiline text
+RISK:
+    OR, pipe, table separator, and YAML block scalar are conflicting meanings.
+CURRENT PREFERENCE:
+    Use OR for logic and RAW blocks for multiline content.
+
+KEYWORD: END
+DECISION: TEST
+POSSIBLE MEANING:
+    Explicit block terminator.
+RISK:
+    Adds noise if indentation is already reliable.
+TEST QUESTION:
+    Does END reduce cross-model block-boundary errors in long specifications?
+
+----------------------------------------------------------------------
+10.3 RESERVE for later language versions or domains
+----------------------------------------------------------------------
+
+RESERVE:
+
+    ::      possible namespace or type relation
+    :=      possible definition/assignment operator
+    ..      possible closed range
+    ...     never as omission; possible future variadic operator only
+    ^       possible exponent or logical operator
+    ~       possible approximation or pattern match
+    $       possible variable interpolation or currency literal
+    \\       escape character inside strings
+    **      possible exponent; conflicts with Markdown emphasis
+    ---     possible document boundary; conflicts with Markdown/YAML
+    /name/  possible pattern literal
+
+No reserved symbol receives meaning until controlled tests and grammar design
+assign exactly one role.
+
+----------------------------------------------------------------------
+10.4 EXCLUDE from v0.1 normative syntax
+----------------------------------------------------------------------
+
+SYMBOL: =
+DECISION: EXCLUDE
+REASON:
+    Ambiguous between assignment, equality, definition, and named arguments.
+USE:
+    : for declaration
+    == for equality
+
+SYMBOLS: { }
+DECISION: EXCLUDE
+REASON:
+    Ambiguous among object literal, set, scoped block, interpolation, template,
+    and JSON structure.
+USE:
+    indentation for blocks
+    object type plus named fields for objects
+
+SYMBOL: ;
+DECISION: EXCLUDE
+REASON:
+    Unnecessary when newline ends a declaration; adds visual noise.
+
+SYMBOL: '
+DECISION: EXCLUDE as a string delimiter
+REASON:
+    Duplicate string syntax and conflict with apostrophes.
+USE:
+    ASCII double quotes only
+
+SYMBOL: #
+DECISION: EXCLUDE
+REASON:
+    Heading, comment, ID, issue number, color value, and preprocessor directive
+    are all common meanings.
+USE:
+    COMMENT:, ID:, or named section declarations
+
+SYMBOLS: & &&
+DECISION: EXCLUDE
+REASON:
+    AND, address/reference, entity escaping, background execution, and string
+    concatenation are conflicting meanings.
+USE:
+    AND
+
+SYMBOLS: | ||
+DECISION: EXCLUDE from logic
+REASON:
+    OR, pipe, table separator, and block scalar conflict.
+USE:
+    OR
+
+SYMBOL: !
+DECISION: EXCLUDE
+REASON:
+    NOT, shell history, force, assertion, and emphasis conflict.
+USE:
+    NOT or FORBID
+
+SYMBOL: $
+DECISION: EXCLUDE from v0.1 core
+REASON:
+    Variable, interpolation, shell prompt, regex boundary, and currency conflict.
+
+SYMBOL: ~
+DECISION: EXCLUDE from v0.1 core
+REASON:
+    Approximation, negation, home path, destructor, and pattern matching conflict.
+
+SYMBOL: ^
+DECISION: EXCLUDE from v0.1 core
+REASON:
+    Exponent, XOR, regex boundary, and control-character notation conflict.
+
+SYMBOL: ...
+DECISION: EXCLUDE
+REASON:
+    Usually means omitted, unspecified, incomplete, continuation, or variadic.
+    LCL must not encode unspecified normative content.
+
+SYMBOLS: // and /* */
+DECISION: EXCLUDE as comments
+REASON:
+    Conflict with URLs, division, paths, and embedded programming languages.
+USE:
+    COMMENT:
+
+SYMBOLS: smart quotes and typographic apostrophes
+DECISION: EXCLUDE
+EXAMPLES:
+    left/right curly double quotes
+    left/right curly single quotes
+USE:
+    ASCII " and plain text
+
+SYMBOLS: en dash and em dash
+DECISION: EXCLUDE from syntax
+USE:
+    ASCII hyphen-minus - with a declared role
+
+SYMBOLS: fancy arrows and Unicode math lookalikes
+DECISION: EXCLUDE
+EXAMPLES:
+    right arrow, double arrow, Unicode less-than-or-equal, Unicode not-equal
+USE:
+    THEN, -> only if later adopted, <=, !=
+
+CHARACTER: tab
+DECISION: EXCLUDE
+USE:
+    four ASCII spaces per indentation level
+
+CHARACTERS: invisible formatting controls
+DECISION: EXCLUDE
+EXAMPLES:
+    zero-width space, directional override, non-breaking formatting controls
+REASON:
+    They can change display or parsing invisibly.
+
+PROVIDER SPECIAL TOKENS
+DECISION: EXCLUDE
+REASON:
+    They are transport-layer implementation details, not portable language.
+
+======================================================================
+11. WHITESPACE, IDENTIFIER, AND LITERAL RULES
+======================================================================
+
+11.1 Whitespace candidates
+
+ADOPT:
+
+    - UTF-8 text encoding.
+    - ASCII syntax characters.
+    - LF newline as canonical storage form.
+    - Four ASCII spaces for each nesting level.
+    - Blank lines may separate major sections.
+    - Trailing spaces carry no meaning and should be removed.
+
+EXCLUDE:
+
+    - tabs
+    - indentation mixtures
+    - indentation that changes within one block
+    - invisible formatting characters
+
+11.2 Identifier candidates
+
+Canonical unquoted identifier pattern for testing:
+
+    [a-z][a-z0-9_]*
+
+Examples:
+
+    build_exit_code
+    active_task
+    writable_paths
+
+Rules:
+
+    - Use lowercase ASCII letters, digits, and underscore.
+    - Begin with a letter.
+    - Do not include spaces.
+    - Do not use reserved keywords as identifiers.
+    - Do not encode multiple concepts in one vague identifier.
+
+Avoid:
+
+    x
+    thing
+    item
+    data1
+    temp
+    misc
+    result_final_new
+
+Prefer:
+
+    source_file_count
+    build_exit_code
+    selected_theme_id
+
+11.3 Exact literals
+
+Use double-quoted strings for:
+
+    - paths
+    - URLs
+    - task IDs
+    - model names
+    - provider names
+    - external labels
+    - filenames
+    - natural-language source text
+    - values containing punctuation or spaces
+
+Examples:
+
+    ID: "TASK-0026"
+    PATH: "/mnt/F/Arch Dock"
+    model_name: "GPT-5.6 Pro"
+
+11.4 Embedded data versus instructions
+
+ADOPT:
+
+    Separate task DATA from instruction blocks explicitly.
+
+Candidate:
+
+    DATA:
+        source_text: "..."
+
+or, after raw-block testing:
+
+    DATA:
+        RAW:
+            ```
+            embedded content
+            ```
+
+The LC must not interpret text inside DATA as a new rule unless an explicit
+rule says to parse it as LCL.
+
+======================================================================
+12. CANONICAL REPLACEMENT TABLE
+======================================================================
+
+Use this table to normalize early specifications.
+
+    objective / aim / purpose              -> GOAL
+    subject / thing being changed          -> TARGET
+    project directory / repo location      -> WORKSPACE
+    relevant area                          -> SCOPE with explicit boundaries
+    rules file                             -> SOURCE or IMPORT
+    use previous information               -> MEMORY with explicit REFERENCE
+    use supporting information             -> CONTEXT with explicit SOURCE
+    must / shall / ensure                   -> REQUIRE
+    may / can / permitted                   -> ALLOW
+    must not / never / do not               -> FORBID
+    should / ideally / preferably           -> PREFER
+    outcome / answer / response             -> OUTPUT
+    output style                            -> FORMAT
+    check structure / schema                -> VALIDATE
+    check actual result                     -> VERIFY
+    proof / confirmation                    -> EVIDENCE
+    done / finished / complete              -> SUCCESS conditions
+    problem / issue                         -> ERROR, FAILURE, CONFLICT, or MISSING
+    ask me if unsure                        -> IF (...) THEN: ASK on one line,
+                                                  followed by STOP on the next line
+    use latest                              -> explicit VERSION, ID, PATH, or timestamp
+    as before                               -> explicit REFERENCE
+    all relevant files                      -> explicit SCOPE or predicate
+    etc.                                    -> explicit array or DEFINE set
+    try again                               -> RETRY with maximum count
+    no guessing                             -> IF (required_value == MISSING) THEN: ASK ...
+    work sequentially                       -> SEQUENCE or ordered STEP block
+    this rule is more important             -> PRIORITY or OVERRIDES
+
+======================================================================
+13. INITIAL MINIMAL LCL SUBSTRATE FOR TESTING
+======================================================================
+
+This is a candidate test format, not the final LCL grammar.
+
+SPECIFICATION:
+    VERSION: "0.1"
+    ID: "LCL_TEST_001"
+
+DOMAIN: "software"
+
+WORKSPACE:
+    PATH: "/absolute/workspace/path"
+
+IMPORT:
+    REFERENCE: ["/absolute/workspace/path/rules.lcl",
+                "/absolute/workspace/path/state.lcl"]
+
+TASK:
+    ID: "TASK-0001"
+    GOAL: Produce the declared OUTPUT from the declared INPUT
+    TARGET: "named_target"
+
+INPUT:
+    SOURCE: "/absolute/workspace/path/input.file"
+
+SCOPE:
+    writable_paths: ["src/file_a", "src/file_b"]
+
+REQUIRE:
+    PRESERVE content outside writable_paths
+    EXECUTE STEP entries in declared order
+
+ALLOW:
+    READ workspace files
+    MODIFY writable_paths
+
+FORBID:
+    DELETE files
+    MODIFY paths outside writable_paths
+    REPORT STATUS: "success" before VERIFY passes
+
+SEQUENCE:
+    STEP:
+        ID: "inspect"
+        ACTION: INSPECT TARGET
+    STEP:
+        ID: "modify"
+        ACTION: MODIFY TARGET
+    STEP:
+        ID: "verify"
+        ACTION: VERIFY TASK
+
+IF (required_information == MISSING) THEN:
+    ASK: required_information
+    STOP: true
+
+OUTPUT:
+    FORMAT: "plain_text"
+    REQUIRE:
+        INCLUDE changed_paths
+        INCLUDE verification_results
+        INCLUDE unresolved_conflicts
+
+VERIFY:
+    build_exit_code == 0
+    test_failure_count == 0
+
+EVIDENCE:
+    required_fields: ["build_command", "build_exit_code", "test_command",
+                      "test_failure_count"]
+
+SUCCESS:
+    VERIFY == true
+    unresolved_conflict_count == 0
+
+Observations about this candidate:
+
+    - It uses technical English rather than conversational prose.
+    - It uses colon plus indentation as the primary structure.
+    - It uses words for logic rather than dense symbols.
+    - It uses exact strings, identifiers, values, and comparisons.
+    - It separates INPUT, rules, execution, OUTPUT, verification, and evidence.
+    - It references a workspace rather than requiring a large repeated prompt.
+    - It does not require prior conversation for operational meaning.
+    - It may use MEMORY or CONTEXT only through explicit references.
+
+Unresolved items visible in the example:
+
+    - Whether STEP blocks need an explicit END.
+    - Whether natural-language action clauses are precise enough.
+    - Whether arrays should be inline or indented.
+    - Whether IMPORT paths should be relative to WORKSPACE.
+    - Whether VERIFY == true is redundant when conditions are nested below
+      VERIFY.
+    - Whether keyword case should be formally significant.
+    - Whether XML wrappers or raw code fences outperform indentation in some
+      tasks.
+
+======================================================================
+14. FIRST SYMBOL AND WORD TEST MATRIX
+======================================================================
+
+The next controlled tests should isolate one variable at a time.
+
+TEST 1: Block structure
+
+    A: colon + four-space indentation
+    B: colon + indentation + END
+    C: braces
+    D: XML tags
+
+Measure:
+
+    - missed block boundaries
+    - rule leakage between sections
+    - cross-model agreement
+
+TEST 2: Consequence syntax
+
+    A: IF (...) THEN:
+    B: IF (...) ->
+    C: WHEN (...):
+    D: XML condition/action fields
+
+Measure:
+
+    - condition inversion
+    - skipped consequence
+    - ELSE attachment errors
+
+TEST 3: Logic syntax
+
+    A: AND, OR, NOT
+    B: &&, ||, !
+    C: &, |, !
+    D: nested named conditions
+
+Measure:
+
+    - precedence errors
+    - grouping errors
+    - negation errors
+
+TEST 4: Requirement vocabulary
+
+    A: REQUIRE / ALLOW / FORBID / PREFER
+    B: MUST / MAY / MUST NOT / SHOULD
+    C: required / optional / prohibited / preferred fields
+    D: JSON-Schema constraints
+
+Measure:
+
+    - hard-rule violations
+    - soft-rule priority
+    - permission confusion
+
+TEST 5: Exact references
+
+    A: REFERENCE: "ID"
+    B: @identifier
+    C: plain pronouns
+    D: XML reference tags
+
+Measure:
+
+    - wrong-target actions
+    - stale-reference use
+    - implicit-context dependence
+
+TEST 6: Completion vocabulary
+
+    A: VERIFY + EVIDENCE + SUCCESS
+    B: test and finish
+    C: done when it works
+    D: exact JSON result schema
+
+Measure:
+
+    - false completion claims
+    - omitted evidence
+    - unverified success
+
+TEST 7: Vague versus quantified quality
+
+    A: "concise"
+    B: maximum_words: 300
+    C: example output only
+    D: maximum_words plus example
+
+Measure:
+
+    - output-length variance
+    - format compliance
+
+TEST 8: Missing information behavior
+
+    A: "ask if unsure"
+    B: IF (required_field == MISSING) THEN: ASK on one line and STOP on the
+       next line
+    C: infer reasonable defaults
+    D: explicit DEFAULT plus ASK boundary
+
+Measure:
+
+    - silent assumptions
+    - unnecessary questions
+    - incorrect default use
+
+Each test must be run in a fresh conversation on ChatGPT, Claude, and DeepSeek,
+with exact model name, date, prompt, response, score, and failure classification
+recorded.
+
+======================================================================
+15. INITIAL DECISION SUMMARY
+======================================================================
+
+ADOPT NOW FOR EXPERIMENTS:
+
+    - controlled technical English
+    - one canonical word per concept
+    - named uppercase section keywords
+    - lowercase_snake_case identifiers
+    - colon declarations
+    - four-space indentation
+    - double-quoted exact strings
+    - explicit INPUT and OUTPUT
+    - REQUIRE, ALLOW, FORBID, PREFER
+    - IF, THEN, ELSE, AND, OR, NOT
+    - explicit SCOPE, TARGET, SOURCE, and REFERENCE
+    - exact comparison operators
+    - JSON-Schema-compatible primitive type words
+    - VALIDATE versus VERIFY distinction
+    - EVIDENCE and observable SUCCESS conditions
+    - explicit behavior for MISSING information
+
+RESTRICT:
+
+    - MEMORY and CONTEXT: explicit references only
+    - negative rules: true prohibitions only
+    - arithmetic symbols: expressions only
+    - hyphen: line-start list item or arithmetic minus only
+    - period: decimal separator, not formal statement terminator
+    - examples: illustrative unless explicitly declared normative
+    - DESCRIPTION and COMMENT: non-normative only
+
+TEST BEFORE STANDARDIZING:
+
+    - XML tags
+    - Markdown headings
+    - raw triple-backtick blocks
+    - END block terminator
+    - @ references
+    - % percentages
+    - arrows
+    - question mark optionality
+    - keyword case sensitivity
+    - namespace notation
+
+EXCLUDE FROM V0.1 CORE:
+
+    - vague conversational wording
+    - undefined quality words
+    - weak modal verbs
+    - catch-all phrases
+    - ambiguous pronouns
+    - relative dates and quantities
+    - umbrella action verbs without success criteria
+    - repeated and emotionally emphasized rules
+    - hidden chain-of-thought requests
+    - bare =
+    - braces
+    - semicolons
+    - single-quote strings
+    - # comments/headings
+    - symbolic AND/OR/NOT
+    - ellipsis
+    - tabs
+    - Unicode punctuation lookalikes
+    - provider-specific roles, channels, and special tokens
+
+Core conclusion:
+
+    The strongest documentation-derived starting point is not a dense symbolic
+    language. It is controlled technical English with formal declarations,
+    explicit hierarchy, exact literals, typed values, bounded actions, precise
+    constraints, and observable verification. Symbols should reduce ambiguity,
+    not reduce word count merely for compactness.
+
+======================================================================
+16. OFFICIAL SOURCE REGISTER
+======================================================================
+
+Access date for all sources: 2026-08-30
+
+OPENAI-1
+Prompt engineering guide
+https://developers.openai.com/api/docs/guides/prompt-engineering
+Relevant themes:
+    Markdown sections, XML boundaries, hierarchy, examples, context separation,
+    explicit instructions and output formats.
+
+OPENAI-2
+Reasoning model best practices
+https://developers.openai.com/api/docs/guides/reasoning-best-practices
+Relevant themes:
+    simple and direct prompts, delimiters, exact constraints, success criteria,
+    no chain-of-thought prompting.
+
+OPENAI-3
+Latest-model prompting guidance
+https://developers.openai.com/api/docs/guides/latest-model
+Relevant themes:
+    lean prompts, state instructions once, explicit autonomy boundaries,
+    concrete writing choices, required evidence, success criteria, output
+    schemas, retry and stopping limits.
+
+OPENAI-4
+Structured outputs
+https://developers.openai.com/api/docs/guides/structured-outputs
+Relevant themes:
+    JSON Schema, required keys, enums, types, deterministic output shape.
+
+OPENAI-5
+OpenAI Model Spec
+https://model-spec.openai.com/
+Relevant themes:
+    authority levels, instruction hierarchy, conflicts, role separation.
+
+ANTHROPIC-1
+Claude prompting best practices
+https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices
+Relevant themes:
+    clear and explicit instructions, numbered steps, examples, XML tags,
+    positive directions, explicit action verbs, success criteria, no guessing.
+
+ANTHROPIC-2
+Tool definition documentation
+https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools
+Relevant themes:
+    exact names, detailed descriptions, input schemas, parameter meaning,
+    limitations, and examples.
+
+ANTHROPIC-3
+Structured outputs
+https://platform.claude.com/docs/en/build-with-claude/structured-outputs
+Relevant themes:
+    schema-constrained JSON and tool calls, required fields, consistent types.
+
+ANTHROPIC-4
+Agent Skills best practices
+https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices
+Relevant themes:
+    concise structure, progressive detail, exact guardrails, consistent
+    terminology, real-use testing.
+
+DEEPSEEK-1
+JSON Output guide
+https://api-docs.deepseek.com/guides/json_mode/
+Relevant themes:
+    explicit JSON instruction, examples, strict format caveats.
+
+DEEPSEEK-2
+Tool calls and strict mode
+https://api-docs.deepseek.com/guides/tool_calls/
+Relevant themes:
+    JSON Schema adherence, supported primitive types, required properties,
+    additionalProperties control.
+
+DEEPSEEK-3
+Chat Completions API
+https://api-docs.deepseek.com/api/create-chat-completion/
+Relevant themes:
+    structured roles, content fields, tools, stop sequences, explicit output
+    formatting.
+
+DEEPSEEK-4
+DeepSeek-V4 encoding and DSML format
+https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/blob/main/encoding/README.md
+Relevant themes:
+    Markdown tool sections, XML-like tool structures, named parameters, typed
+    values, schemas, and provider-specific special tokens that must remain
+    outside portable LCL.
+
+======================================================================
+17. RESEARCH LIMITATION
+======================================================================
+
+Official documentation can show which structures providers intentionally
+support. It cannot establish the final optimal LCL vocabulary or syntax.
+
+A word or symbol should become final only when:
+
+    1. its semantics are defined exactly;
+    2. it has one role in the relevant grammar position;
+    3. it reduces errors relative to alternatives;
+    4. ChatGPT, Claude, and DeepSeek interpret it consistently;
+    5. repeated fresh-conversation tests reproduce the result;
+    6. it remains understandable to a human learner;
+    7. it does not depend on hidden conversation context;
+    8. it does not depend on provider-specific transport syntax.
+
+Therefore, this audit is the candidate word-and-symbol inventory from which the
+first empirical LCL grammar tests should be built.

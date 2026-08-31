@@ -1,0 +1,14 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Input, Data, Output, Result, and Format
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+INPUT resolves VALUE or SOURCE under its TYPE/schema. DATA is immutable material.
+OUTPUT declares produced type/format and optional destination. RESULT declares a
+semantic returned value contract. An ACTION OUTPUT reference binds operation
+result to that OUTPUT after type/format validation.
+
+Required outputs that are MISSING or invalid prevent success. Output existence
+alone does not prove correctness; required VERIFY and EVIDENCE also apply.

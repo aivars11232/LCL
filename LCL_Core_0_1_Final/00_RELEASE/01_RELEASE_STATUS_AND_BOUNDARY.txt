@@ -1,0 +1,29 @@
+LCL CORE 0.1 FINAL
+RELEASE STATUS AND BOUNDARY
+NORMATIVE
+
+1. STATUS
+
+LCL Core 0.1.0 is a frozen bare-language version. Its lexical, syntactic,
+static-semantic, and operational contracts are closed for this version.
+
+2. LANGUAGE BOUNDARY
+
+The language consists of the source notation, vocabulary, types, grammar,
+semantics, core contracts, versioning rules, and conformance requirements in this
+archive. An implementation is not part of the language.
+
+A UI, IDE, workspace manager, provider connector, database, parser executable,
+compiler, runtime, agent framework, and domain extension are separate products or
+implementations. Their absence does not make the language archive incomplete.
+
+3. INTERPRETATION INPUT
+
+A conforming LC may use only the LCL source and sources explicitly referenced by
+that source as normative task input. Unreferenced chat history, hidden memory, or
+provider defaults cannot alter LCL meaning.
+
+4. UNKNOWN FEATURES
+
+Syntax, keywords, symbols, identifiers, fields, operations, or types absent from
+this version's closed registries are rejected. They are not guessed.

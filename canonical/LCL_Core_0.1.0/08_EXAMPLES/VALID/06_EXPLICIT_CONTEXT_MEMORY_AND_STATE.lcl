@@ -1,0 +1,77 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: example.memory
+    NAME: "Explicit context memory and state"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+SCOPE:
+    ID: scope.task
+    INCLUDE: REF(task.draft)
+
+CONTEXT:
+    ID: context.audience
+    TYPE: OBJECT
+    SCOPE: REF(scope.task)
+    VALUE:
+        reading_level: "general"
+        maximum_characters: 300
+
+MEMORY:
+    ID: memory.preferences
+    TYPE: OBJECT
+    SCOPE: REF(scope.task)
+    MODE: mode.read_only
+    VALUE:
+        spelling: "British English"
+
+STATE:
+    ID: state.revision
+    TYPE: INTEGER
+    SCOPE: REF(scope.task)
+    MODE: mode.read_only
+    VALUE: 2
+
+OUTPUT:
+    ID: output.draft
+    TYPE: STRING
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.draft
+    RESULT:
+        TYPE: STRING
+
+ACTION:
+    ID: action.draft
+    OPERATION: core.generate
+    TARGET: REF(output.draft)
+    PARAMETER:
+        NAME: specification
+        TYPE: OBJECT
+        REQUIRED: TRUE
+        VALUE:
+            audience: REF(context.audience)
+            preferences: REF(memory.preferences)
+            revision: REF(state.revision)
+    OUTPUT: REF(output.draft)
+
+VERIFY:
+    ID: verify.length
+    ASSERT: COUNT(REF(output.draft)) <= 300
+
+SUCCESS:
+    ID: success.draft
+    ALL: [REF(verify.length)]
+
+TASK:
+    ID: task.draft
+    GOAL: REF(goal.draft)
+    ACTION: REF(action.draft)
+    OUTPUT: REF(output.draft)
+    SUCCESS: REF(success.draft)
+
+EXECUTE:
+    REFERENCE: REF(task.draft)

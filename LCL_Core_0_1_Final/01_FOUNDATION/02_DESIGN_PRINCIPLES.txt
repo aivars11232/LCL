@@ -1,0 +1,20 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Design Principles
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+1. Explicit source controls; conversational context does not.
+2. Technical English remains readable but has constrained syntax.
+3. One keyword has one core meaning.
+4. Exact identifiers replace vague references.
+5. Hard rules and soft preferences are distinct.
+6. Permission is distinct from requirement.
+7. Missing, unknown, and null are distinct.
+8. Every repetition and retry is bounded.
+9. Side effects, scope, and success are observable.
+10. Domain vocabulary extends the core without changing core grammar.
+11. Unsupported syntax fails closed.
+12. Equal valid input under deterministic declarations has equivalent meaning
+    across conforming interpreters.

@@ -1,0 +1,22 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Missing, Unknown, Null, Default, Assume, and Handler Resolution
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+MISSING: no value/source exists. UNKNOWN: value exists but cannot be determined.
+NULL: known explicit absence.
+
+Resolution order:
+
+1. explicit VALUE;
+2. resolved SOURCE/INPUT/STATE/MEMORY/CONTEXT;
+3. DEFAULT only for MISSING;
+4. applicable explicit ASSUME;
+5. matching HANDLER;
+6. required item blocks/fails; optional item remains absent.
+
+DEFAULT never replaces NULL/UNKNOWN unless a rule explicitly maps them first.
+ASSUME is conditional, cannot override explicit data, and must be recorded as
+evidence. No silent guessing is permitted.

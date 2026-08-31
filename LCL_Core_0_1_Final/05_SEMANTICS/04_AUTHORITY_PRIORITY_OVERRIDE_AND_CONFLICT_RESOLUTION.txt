@@ -1,0 +1,17 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Authority, Priority, Override, and Conflict Resolution
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+Effective AUTHORITY is 0..1000; local default 500. Imported declarations cannot
+exceed the lower of their source authority and IMPORT authority. PRIORITY is
+-1000..1000 and compares only clauses of equal authority.
+
+For applicable clauses: higher authority wins only where clauses conflict;
+otherwise all remain. Equal-authority higher PRIORITY wins only when the lower
+clause is not an independently required hard rule. Equal hard contradictory
+clauses produce error.conflict.hard unless one exact OVERRIDE names WINNER and
+LOSER. A lower-authority winner is invalid. OVERRIDE never applies by similarity
+or broad category.

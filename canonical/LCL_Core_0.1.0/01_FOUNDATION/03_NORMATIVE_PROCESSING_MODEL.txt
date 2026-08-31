@@ -1,0 +1,24 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Normative Processing Model
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+A conforming interpreter processes one specification in this order:
+
+1. Decode UTF-8 and validate line/indentation rules.
+2. Tokenize under the closed lexicon and symbol inventory.
+3. Parse the complete grammar and block schemas.
+4. Resolve exact LCL version, imports, extensions, namespaces, IDs, and REF.
+5. Type-check values, expressions, constructors, parameters, and schemas.
+6. Compute effective authority, priority, scope, conditions, and conflicts.
+7. Resolve input, state, memory, context, default, assumption, and dependencies.
+8. Run all applicable required VALIDATE checks before side effects.
+9. Build the reachable execution graph from EXECUTE.
+10. Execute only reachable actions in declared order and authorization bounds.
+11. Run applicable VERIFY and TEST checks.
+12. Collect required evidence and evaluate SUCCESS/FAILURE.
+13. Return one terminal STATUS and declared outputs.
+
+No later stage repairs an earlier invalid stage by guessing intent.

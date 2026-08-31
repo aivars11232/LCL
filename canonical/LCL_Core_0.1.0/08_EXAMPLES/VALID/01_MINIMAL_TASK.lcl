@@ -1,0 +1,53 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: example.double
+    NAME: "Double one integer"
+    VERSION: "1.0.0"
+    KIND: kind.task
+    DOMAIN: "mathematics"
+
+INPUT:
+    ID: input.value
+    TYPE: INTEGER
+    VALUE: 4
+
+OUTPUT:
+    ID: output.value
+    TYPE: INTEGER
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.double
+    ASSERT: REF(output.value) == 8
+
+ACTION:
+    ID: action.calculate
+    OPERATION: core.calculate
+    TARGET: REF(input.value)
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "input.value * 2"
+    OUTPUT: REF(output.value)
+
+VERIFY:
+    ID: verify.value
+    ASSERT: REF(output.value) == 8
+
+SUCCESS:
+    ID: success.double
+    ALL: [REF(verify.value)]
+
+TASK:
+    ID: task.double
+    GOAL: REF(goal.double)
+    INPUT: REF(input.value)
+    ACTION: REF(action.calculate)
+    OUTPUT: REF(output.value)
+    SUCCESS: REF(success.double)
+
+EXECUTE:
+    REFERENCE: REF(task.double)

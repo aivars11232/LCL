@@ -1,0 +1,30 @@
+LCL CORE 0.1.0 RELEASE CANDIDATE
+OPERATOR, FUNCTION, AND SPECIAL-VALUE SEMANTICS
+NORMATIVE
+
+Candidate operator arity, operand-family, result-family, precedence,
+associativity, numeric-promotion, ordered-type, string-ordering, and UNKNOWN
+truth-table records are stored in:
+
+    10_REGISTRIES/operators_and_functions_v0.1.0.json
+
+That registry also closes the typed-constructor names, overloads, results,
+constraints, and diagnostics. A constructor call is pure. An unregistered name,
+arity, or operand family is invalid; implementations do not infer extra overloads.
+
+MATCHES consumes STRING and REGEX, or PATH/STRING and GLOB. It compares the
+entire input under the selected closed pattern profile. A non-match returns FALSE.
+For REGEX, full-string behavior is a semantic boundary check and is not expressed
+by adding start/end anchors, because multiline mode would weaken that substitution.
+Pattern compilation or matching that exhausts the declared finite resource limit
+produces error.pattern.resource_limit.
+
+No implicit string-to-number, Boolean-to-number, path-to-string, enum-to-string,
+or unit conversion exists. INTEGER promotes to DECIMAL only when paired with
+DECIMAL. Ordered MEASURE comparison requires the same exact UNIT. Division by
+zero is an error. A quotient not representable as a finite exact DECIMAL produces
+error.numeric.non_terminating.
+
+The registry still uses undeclared symbolic operand/result contracts, and the
+exact INTEGER/DECIMAL/MEASURE division-result mapping is unresolved. Those gaps
+block an exhaustive operator or function conformance claim.

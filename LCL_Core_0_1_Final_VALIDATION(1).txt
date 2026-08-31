@@ -1,0 +1,25 @@
+LCL CORE 0.1 FINAL - VALIDATION REPORT
+
+RESULT: PASS
+FORMAL VERSION: 0.1.0
+ZIP: LCL_Core_0_1_Final.zip
+ZIP BYTES: 135664
+ZIP SHA-256: f4c7ad6c97ce361c5cc303e4c9d48cd3decb25944fc365121400e08316c70d54
+TAR.GZ: LCL_Core_0_1_Final.tar.gz
+TAR.GZ BYTES: 92633
+TAR.GZ SHA-256: e54ce474e702fe7f7dc4d59df93342cb2b2854bfc649ae4375e12f54989a8e3e
+PACKAGE FILES: 126
+KEYWORDS: 141
+SYMBOLS: 21
+TYPES: 21
+BLOCKS: 45
+OPERATIONS: 39
+FUNCTIONS: 11
+STATUSES: 12
+ERRORS: 95
+VALID EXAMPLES: 9
+INVALID FIXTURES: 19
+
+The package contains the bare LCL Core language and non-normative conformance
+support only. It contains no UI, environment, database, provider integration,
+agent framework, or domain extension.

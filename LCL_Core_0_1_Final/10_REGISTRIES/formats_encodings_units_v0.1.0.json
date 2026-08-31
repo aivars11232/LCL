@@ -1,0 +1,101 @@
+{
+  "language": "LCL",
+  "version": "0.1.0",
+  "formats": {
+    "format.plain_text": "Unicode plain text.",
+    "format.lcl": "A document conforming to an exact LCL version.",
+    "format.json": "JSON conforming to the declared schema.",
+    "format.yaml": "YAML conforming to the declared schema.",
+    "format.xml": "XML conforming to the declared schema.",
+    "format.markdown": "Markdown text.",
+    "format.csv": "CSV with an explicit header/column contract.",
+    "format.tsv": "TSV with an explicit header/column contract.",
+    "format.source_code": "Source code with exact language declared by DOMAIN/property.",
+    "format.binary": "Opaque bytes with declared media/application type.",
+    "format.image": "Image content with declared technical properties.",
+    "format.video": "Video content with declared technical properties.",
+    "format.audio": "Audio content with declared technical properties.",
+    "format.document": "Document artifact with declared subtype."
+  },
+  "encodings": {
+    "encoding.utf_8": "UTF-8 without BOM.",
+    "encoding.ascii": "7-bit ASCII.",
+    "encoding.binary": "Opaque bytes."
+  },
+  "units": {
+    "unit.nanosecond": "Time",
+    "unit.microsecond": "Time",
+    "unit.millisecond": "Time",
+    "unit.second": "Time",
+    "unit.minute": "Time",
+    "unit.hour": "Time",
+    "unit.day": "Time",
+    "unit.week": "Time",
+    "unit.byte": "Storage",
+    "unit.kibibyte": "Storage",
+    "unit.mebibyte": "Storage",
+    "unit.gibibyte": "Storage",
+    "unit.pixel": "Display/image length",
+    "unit.point": "Typography length",
+    "unit.millimeter": "Physical length",
+    "unit.centimeter": "Physical length",
+    "unit.meter": "Physical length",
+    "unit.kilometer": "Physical length",
+    "unit.degree": "Angle",
+    "unit.radian": "Angle",
+    "unit.hertz": "Frequency",
+    "unit.kilohertz": "Frequency",
+    "unit.megahertz": "Frequency",
+    "unit.frame": "Media count",
+    "unit.frame_per_second": "Media rate",
+    "unit.bit_per_second": "Data rate"
+  },
+  "builtins": {
+    "document_kinds": [
+      "kind.task",
+      "kind.library",
+      "kind.extension",
+      "kind.data",
+      "kind.test"
+    ],
+    "definition_kinds": [
+      "kind.term",
+      "kind.constant",
+      "kind.type",
+      "kind.operation",
+      "kind.format",
+      "kind.event",
+      "kind.status",
+      "kind.error"
+    ],
+    "modes": [
+      "mode.read_only",
+      "mode.read_write",
+      "mode.create",
+      "mode.sequential",
+      "mode.parallel"
+    ],
+    "events": [
+      "event.missing",
+      "event.unknown",
+      "event.conflict",
+      "event.validation_error",
+      "event.dependency_failure",
+      "event.execution_error",
+      "event.verification_failure",
+      "event.host_constraint",
+      "event.cancelled"
+    ],
+    "reserved_namespaces": [
+      "core",
+      "encoding",
+      "error",
+      "event",
+      "format",
+      "kind",
+      "mode",
+      "status",
+      "unit"
+    ]
+  }
+}

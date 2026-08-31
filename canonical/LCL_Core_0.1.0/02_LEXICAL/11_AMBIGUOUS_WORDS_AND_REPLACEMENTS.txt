@@ -1,0 +1,56 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Ambiguous Words and Canonical Replacements
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+The following may occur in prose strings but are not normative syntax.
+
+objective / aim / purpose / intention
+    Use: GOAL
+
+must / shall / ensure
+    Use: REQUIRE
+
+may / can / permitted
+    Use: ALLOW
+
+must not / never / do not
+    Use: FORBID
+
+should / ideally / preferably
+    Use: PREFER
+
+done / finished / complete
+    Use: SUCCESS
+
+check
+    Use: VALIDATE before effects or VERIFY after effects
+
+proof / confirmation
+    Use: EVIDENCE
+
+problem / issue
+    Use: exact error.*, event.*, FAILURE, MISSING, or UNKNOWN
+
+try / attempt
+    Use: ACTION; bounded RETRY for additional attempts
+
+maybe / perhaps / possibly / probably
+    Use: PREFER, conditional ASSUME, or typed probability data
+
+about / around / roughly / approximately
+    Use: MINIMUM/MAXIMUM comparisons or TOLERANCE
+
+soon / later / recently / latest
+    Use: exact VERSION, DATE, DATETIME, ID, SOURCE, or CHECKSUM
+
+relevant / related / necessary files
+    Use: SCOPE with INCLUDE and EXCLUDE
+
+as before / same as last time
+    Use: explicit REF, IMPORT, CONTEXT, MEMORY, or STATE
+
+carefully / properly / safely
+    Use: specific REQUIRE, FORBID, PRESERVE, VALIDATE, and VERIFY clauses

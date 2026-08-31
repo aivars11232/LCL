@@ -1,0 +1,33 @@
+LCL CORE 0.1.0 RELEASE CANDIDATE
+RELEASE STATUS AND BOUNDARY
+NORMATIVE
+
+1. STATUS
+
+This tree is the canonical LCL Core 0.1.0 repair candidate identified by
+00_CANONICAL_SOURCE_AND_PROVENANCE.txt. It supersedes competing historical
+candidate metadata in this workspace but does not alter the immutable historical
+tree or archive. Release-blocking design decisions remain under LCL-AUDIT-001,
+005, 007, and 010 through 016, including K-003. This tree is not frozen,
+release-ready, Final, or Verified. No repair archive is produced.
+
+2. LANGUAGE BOUNDARY
+
+The language consists of the source notation, vocabulary, types, grammar,
+semantics, core contracts, versioning rules, and conformance requirements in this
+package. An implementation is not part of the language.
+
+A UI, IDE, workspace manager, provider connector, database, parser executable,
+compiler, runtime, agent framework, and domain extension are separate products or
+implementations. Their absence does not make the language archive incomplete.
+
+3. INTERPRETATION INPUT
+
+A conforming LC may use only the LCL source and sources explicitly referenced by
+that source as normative task input. Unreferenced chat history, hidden memory, or
+provider defaults cannot alter LCL meaning.
+
+4. UNKNOWN FEATURES
+
+Syntax, keywords, symbols, identifiers, fields, operations, or types absent from
+this version's closed registries are rejected. They are not guessed.

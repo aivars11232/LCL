@@ -1,0 +1,20 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Grammar Semantic Constraints
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+1. Top-level blocks must be legal for SPECIFICATION.KIND.
+2. Every block follows its exact schema, occurrence count, and required fields.
+3. Lowercase keys are legal only in OBJECT VALUE/DATA content.
+4. IF and FOR EACH are legal only inside PHASE, SEQUENCE, or branch bodies.
+5. Branch bodies contain STEP, IF, FOR EACH, or COMMENT.
+6. ELSE immediately follows and aligns with its IF.
+7. Multiline delimiters align with their declaration.
+8. TYPE parameterization is only LIST[type], SET[type], OBJECT[REF(type)], and
+   REFERENCE[REF(kind_or_type)].
+9. Function/constructor arity follows standard library.
+10. REF argument is an identifier, not a string.
+11. Expressions are side-effect free.
+12. Any syntax not defined here is invalid rather than implementation-defined.

@@ -1,0 +1,6 @@
+LCL Core 0.1.0 Blocked Repair Candidate
+Formal version: 0.1.0
+Status: implementation partial; not ready for release
+Canonical base build UTC: 2026-08-30T18:52:24+00:00
+Repair task: LCL-REPAIR-0001
+Repair archive: not created

@@ -1,0 +1,8 @@
+LCL:
+    VERSION: "latest"
+
+SPECIFICATION:
+    ID: invalid.version
+    NAME: "Floating version"
+    VERSION: "1.0.0"
+    KIND: kind.data

@@ -1,0 +1,1775 @@
+{
+  "language": "LCL",
+  "version": "0.1.0",
+  "closed": true,
+  "parameter_binding": "named_only",
+  "contracts": {
+    "core.inspect": {
+      "meaning": "Observe metadata or structure without changing the target.",
+      "category": "read_only",
+      "deterministic": true,
+      "target": {
+        "type": "meta.addressable",
+        "required": true
+      },
+      "parameters": {
+        "depth": {
+          "type": "INTEGER",
+          "required": false,
+          "default": 1,
+          "meaning": "Maximum structural depth.",
+          "constraints": [
+            "0..100"
+          ]
+        },
+        "properties": {
+          "type": "LIST[STRING]",
+          "required": false,
+          "default": null,
+          "meaning": "Exact properties to inspect.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.value",
+      "preconditions": [
+        "target exists or optional target handling is declared"
+      ],
+      "postconditions": [
+        "target bytes/state unchanged"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint"
+      ],
+      "side_effects": [],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.read": {
+      "meaning": "Retrieve accessible exact content without changing its source.",
+      "category": "read_only",
+      "deterministic": true,
+      "target": {
+        "type": "meta.addressable",
+        "required": true
+      },
+      "parameters": {
+        "format": {
+          "type": "qualified_identifier(format)",
+          "required": false,
+          "default": null,
+          "meaning": "Requested returned representation.",
+          "constraints": []
+        },
+        "range": {
+          "type": "OBJECT",
+          "required": false,
+          "default": null,
+          "meaning": "Exact bounded byte/line/item range.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.value",
+      "preconditions": [
+        "target exists and is readable"
+      ],
+      "postconditions": [
+        "target bytes/state unchanged",
+        "result is exact requested range"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint"
+      ],
+      "side_effects": [],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.analyze": {
+      "meaning": "Derive stated findings from declared input.",
+      "category": "read_only",
+      "deterministic": null,
+      "target": {
+        "type": "meta.material_value|meta.addressable",
+        "required": true
+      },
+      "parameters": {
+        "criteria": {
+          "type": "STRING|OBJECT|REFERENCE",
+          "required": true,
+          "default": null,
+          "meaning": "Declared analytical criteria.",
+          "constraints": []
+        },
+        "method": {
+          "type": "STRING|REFERENCE",
+          "required": false,
+          "default": null,
+          "meaning": "Declared analysis method.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.value",
+      "preconditions": [
+        "all evidence sources are declared"
+      ],
+      "postconditions": [
+        "findings distinguish observed facts from inference"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint"
+      ],
+      "side_effects": [],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.calculate": {
+      "meaning": "Compute a result from declared values and rules.",
+      "category": "read_only",
+      "deterministic": true,
+      "target": {
+        "type": "meta.material_value",
+        "required": false
+      },
+      "parameters": {
+        "expression": {
+          "type": "STRING|REFERENCE",
+          "required": true,
+          "default": null,
+          "meaning": "Exact expression or defined calculation.",
+          "constraints": []
+        },
+        "bindings": {
+          "type": "OBJECT",
+          "required": false,
+          "default": {},
+          "meaning": "Named expression bindings.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.value",
+      "preconditions": [
+        "expression and bindings type-check"
+      ],
+      "postconditions": [
+        "result equals exact expression semantics"
+      ],
+      "errors": [
+        "error.operator.operand",
+        "error.numeric.division_by_zero",
+        "error.numeric.non_terminating",
+        "error.value.unknown"
+      ],
+      "side_effects": [],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.compare": {
+      "meaning": "Compare artifacts or values against exact criteria.",
+      "category": "read_only",
+      "deterministic": true,
+      "target": {
+        "type": "meta.material_value|meta.addressable",
+        "required": true
+      },
+      "parameters": {
+        "against": {
+          "type": "meta.material_value|meta.addressable",
+          "required": true,
+          "default": null,
+          "meaning": "Comparison counterpart.",
+          "constraints": []
+        },
+        "criteria": {
+          "type": "STRING|OBJECT|REFERENCE",
+          "required": false,
+          "default": null,
+          "meaning": "Exact comparison criteria.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.value",
+      "preconditions": [
+        "both operands are accessible and criteria are type-valid"
+      ],
+      "postconditions": [
+        "result records every requested criterion"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.type.mismatch"
+      ],
+      "side_effects": [],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.select": {
+      "meaning": "Choose members satisfying a predicate.",
+      "category": "read_only",
+      "deterministic": true,
+      "target": {
+        "type": "meta.collection",
+        "required": true
+      },
+      "parameters": {
+        "predicate": {
+          "type": "STRING|REFERENCE",
+          "required": true,
+          "default": null,
+          "meaning": "Boolean member predicate.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.collection",
+      "preconditions": [
+        "predicate accepts the member type"
+      ],
+      "postconditions": [
+        "every returned member satisfies predicate"
+      ],
+      "errors": [
+        "error.operator.operand",
+        "error.value.unknown"
+      ],
+      "side_effects": [],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.filter": {
+      "meaning": "Return members satisfying a predicate while preserving order.",
+      "category": "read_only",
+      "deterministic": true,
+      "target": {
+        "type": "meta.collection",
+        "required": true
+      },
+      "parameters": {
+        "predicate": {
+          "type": "STRING|REFERENCE",
+          "required": true,
+          "default": null,
+          "meaning": "Boolean member predicate.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.collection",
+      "preconditions": [
+        "predicate accepts the member type"
+      ],
+      "postconditions": [
+        "source order is preserved for LIST",
+        "all and only TRUE members are returned"
+      ],
+      "errors": [
+        "error.operator.operand",
+        "error.value.unknown"
+      ],
+      "side_effects": [],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.sort": {
+      "meaning": "Return values in declared deterministic order.",
+      "category": "read_only",
+      "deterministic": true,
+      "target": {
+        "type": "LIST[T]|SET[T]",
+        "required": true
+      },
+      "parameters": {
+        "key": {
+          "type": "STRING|REFERENCE",
+          "required": false,
+          "default": null,
+          "meaning": "Exact total-order key.",
+          "constraints": []
+        },
+        "direction": {
+          "type": "ENUM[ascending|descending]",
+          "required": false,
+          "default": "ascending",
+          "meaning": "Sort direction.",
+          "constraints": []
+        },
+        "stable": {
+          "type": "BOOLEAN",
+          "required": false,
+          "default": true,
+          "meaning": "Preserve input order for equal keys.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.collection",
+      "preconditions": [
+        "members or key results have a total order"
+      ],
+      "postconditions": [
+        "output contains exactly the input multiset",
+        "ordering follows key and direction"
+      ],
+      "errors": [
+        "error.operator.operand",
+        "error.collection.heterogeneous"
+      ],
+      "side_effects": [],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.group": {
+      "meaning": "Partition values by one declared key or predicate.",
+      "category": "read_only",
+      "deterministic": true,
+      "target": {
+        "type": "meta.collection",
+        "required": true
+      },
+      "parameters": {
+        "key": {
+          "type": "STRING|REFERENCE",
+          "required": true,
+          "default": null,
+          "meaning": "Exact grouping key.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.value",
+      "preconditions": [
+        "key is defined for every member"
+      ],
+      "postconditions": [
+        "every input member occurs in exactly one group"
+      ],
+      "errors": [
+        "error.operator.operand",
+        "error.value.unknown"
+      ],
+      "side_effects": [],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.validate": {
+      "meaning": "Check syntax, type, reference, dependency, and constraints before effects.",
+      "category": "read_only",
+      "deterministic": true,
+      "target": {
+        "type": "meta.material_value|meta.addressable|REFERENCE",
+        "required": true
+      },
+      "parameters": {
+        "schema": {
+          "type": "REFERENCE|OBJECT",
+          "required": false,
+          "default": null,
+          "meaning": "Schema to validate against.",
+          "constraints": []
+        },
+        "rules": {
+          "type": "LIST[REFERENCE]",
+          "required": false,
+          "default": [],
+          "meaning": "Additional VALIDATE declarations.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.validation",
+      "preconditions": [
+        "validation has no external side effect"
+      ],
+      "postconditions": [
+        "all detected failures use registered error identifiers"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.validation.failed"
+      ],
+      "side_effects": [],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.verify": {
+      "meaning": "Check observable postconditions.",
+      "category": "read_only",
+      "deterministic": true,
+      "target": {
+        "type": "meta.material_value|meta.addressable|REFERENCE",
+        "required": true
+      },
+      "parameters": {
+        "assertion": {
+          "type": "BOOLEAN_EXPRESSION|REFERENCE",
+          "required": true,
+          "default": null,
+          "meaning": "Observable postcondition.",
+          "constraints": []
+        },
+        "evidence": {
+          "type": "LIST[REFERENCE[EVIDENCE]]",
+          "required": false,
+          "default": [],
+          "meaning": "Required evidence declarations.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.verification",
+      "preconditions": [
+        "target is observable"
+      ],
+      "postconditions": [
+        "result records TRUE, FALSE, or UNKNOWN and evidence"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.verification.failed",
+        "error.evidence.missing"
+      ],
+      "side_effects": [],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.test": {
+      "meaning": "Execute one declared test and compare ACTUAL with EXPECTED.",
+      "category": "read_only",
+      "deterministic": null,
+      "target": {
+        "type": "REFERENCE[TASK|ACTION]|meta.material_value",
+        "required": false
+      },
+      "parameters": {
+        "assertion": {
+          "type": "BOOLEAN_EXPRESSION|REFERENCE",
+          "required": false,
+          "default": null,
+          "meaning": "Direct pass condition.",
+          "constraints": []
+        },
+        "expected": {
+          "type": "meta.material_value",
+          "required": false,
+          "default": null,
+          "meaning": "Expected value.",
+          "constraints": []
+        },
+        "actual": {
+          "type": "meta.material_value|REFERENCE",
+          "required": false,
+          "default": null,
+          "meaning": "Actual value.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.test",
+      "preconditions": [
+        "exactly assertion or expected+actual mode is supplied"
+      ],
+      "postconditions": [
+        "passed reflects strict comparison/assertion"
+      ],
+      "errors": [
+        "error.block.conditional_requirement",
+        "error.verification.failed"
+      ],
+      "side_effects": [],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.report": {
+      "meaning": "Produce a factual report from declared results and evidence.",
+      "category": "read_only",
+      "deterministic": null,
+      "target": {
+        "type": "meta.material_value|REFERENCE",
+        "required": true
+      },
+      "parameters": {
+        "format": {
+          "type": "qualified_identifier(format)",
+          "required": false,
+          "default": "format.plain_text",
+          "meaning": "Report format.",
+          "constraints": []
+        },
+        "include_evidence": {
+          "type": "BOOLEAN",
+          "required": false,
+          "default": true,
+          "meaning": "Include evidence references.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.value",
+      "preconditions": [
+        "all report sources are declared"
+      ],
+      "postconditions": [
+        "report distinguishes facts, inference, missing, and unknown"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint"
+      ],
+      "side_effects": [],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.return": {
+      "meaning": "Return declared OUTPUT values to the invoking channel.",
+      "category": "read_only",
+      "deterministic": true,
+      "target": {
+        "type": "meta.material_value|REFERENCE",
+        "required": true
+      },
+      "parameters": {},
+      "positional_parameters": false,
+      "result_schema": "result.value",
+      "preconditions": [
+        "target resolves"
+      ],
+      "postconditions": [
+        "returned value equals resolved target value"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.value.unknown"
+      ],
+      "side_effects": [],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.create": {
+      "meaning": "Create a new target that does not already exist.",
+      "category": "mutating",
+      "deterministic": null,
+      "target": {
+        "type": "meta.mutable_target",
+        "required": true
+      },
+      "parameters": {
+        "content": {
+          "type": "meta.material_value",
+          "required": false,
+          "default": null,
+          "meaning": "Initial content.",
+          "constraints": []
+        },
+        "target_type": {
+          "type": "STRING|qualified_identifier(format)",
+          "required": false,
+          "default": null,
+          "meaning": "Created artifact kind.",
+          "constraints": []
+        },
+        "fail_if_exists": {
+          "type": "BOOLEAN",
+          "required": false,
+          "default": true,
+          "meaning": "Reject existing target.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.operation",
+      "preconditions": [
+        "target does not exist when fail_if_exists is TRUE",
+        "at least content or target_type is supplied"
+      ],
+      "postconditions": [
+        "target exists",
+        "content/type matches parameters"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.operation.precondition",
+        "error.operation.postcondition",
+        "error.execution.action"
+      ],
+      "side_effects": [
+        "local_mutation"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.write": {
+      "meaning": "Establish or replace complete content of an authorized target.",
+      "category": "mutating",
+      "deterministic": null,
+      "target": {
+        "type": "meta.mutable_target",
+        "required": true
+      },
+      "parameters": {
+        "content": {
+          "type": "meta.material_value",
+          "required": true,
+          "default": null,
+          "meaning": "Complete replacement content.",
+          "constraints": []
+        },
+        "create_if_missing": {
+          "type": "BOOLEAN",
+          "required": false,
+          "default": false,
+          "meaning": "Permit creation if absent.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.operation",
+      "preconditions": [
+        "target exists unless create_if_missing is TRUE"
+      ],
+      "postconditions": [
+        "complete target content equals content parameter"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.operation.precondition",
+        "error.operation.postcondition",
+        "error.execution.action"
+      ],
+      "side_effects": [
+        "local_mutation"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.append": {
+      "meaning": "Add content at the declared end of an authorized target.",
+      "category": "mutating",
+      "deterministic": null,
+      "target": {
+        "type": "meta.mutable_target",
+        "required": true
+      },
+      "parameters": {
+        "content": {
+          "type": "STRING|BYTES|LIST[T]",
+          "required": true,
+          "default": null,
+          "meaning": "Content appended at exact end.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.operation",
+      "preconditions": [
+        "target exists and supports append"
+      ],
+      "postconditions": [
+        "pre-state is unchanged prefix and content is exact suffix"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.operation.precondition",
+        "error.operation.postcondition",
+        "error.execution.action"
+      ],
+      "side_effects": [
+        "local_mutation"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.modify": {
+      "meaning": "Change selected content or properties of an existing target.",
+      "category": "mutating",
+      "deterministic": null,
+      "target": {
+        "type": "meta.mutable_target",
+        "required": true
+      },
+      "parameters": {
+        "change": {
+          "type": "STRING|OBJECT|REFERENCE",
+          "required": true,
+          "default": null,
+          "meaning": "Exact change specification.",
+          "constraints": []
+        },
+        "selection": {
+          "type": "OBJECT|STRING|REFERENCE",
+          "required": false,
+          "default": null,
+          "meaning": "Exact bounded selection.",
+          "constraints": []
+        },
+        "expected_before": {
+          "type": "meta.material_value",
+          "required": false,
+          "default": null,
+          "meaning": "Required pre-state guard.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.operation",
+      "preconditions": [
+        "target exists",
+        "expected_before matches when supplied"
+      ],
+      "postconditions": [
+        "only declared selection/properties change"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.operation.precondition",
+        "error.operation.postcondition",
+        "error.execution.action"
+      ],
+      "side_effects": [
+        "local_mutation"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.copy": {
+      "meaning": "Create a new target containing an exact copy of a source.",
+      "category": "mutating",
+      "deterministic": null,
+      "target": {
+        "type": "meta.addressable",
+        "required": true
+      },
+      "parameters": {
+        "destination": {
+          "type": "PATH|URI",
+          "required": true,
+          "default": null,
+          "meaning": "Exact destination.",
+          "constraints": []
+        },
+        "overwrite": {
+          "type": "BOOLEAN",
+          "required": false,
+          "default": false,
+          "meaning": "Permit replacement of destination.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.transfer",
+      "preconditions": [
+        "source exists",
+        "destination absent unless overwrite is TRUE"
+      ],
+      "postconditions": [
+        "destination content equals source pre-state",
+        "source remains unchanged"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.operation.precondition",
+        "error.operation.postcondition",
+        "error.execution.action"
+      ],
+      "side_effects": [
+        "local_mutation"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.move": {
+      "meaning": "Relocate a target without changing declared content.",
+      "category": "mutating",
+      "deterministic": null,
+      "target": {
+        "type": "meta.addressable",
+        "required": true
+      },
+      "parameters": {
+        "destination": {
+          "type": "PATH|URI",
+          "required": true,
+          "default": null,
+          "meaning": "Exact destination.",
+          "constraints": []
+        },
+        "overwrite": {
+          "type": "BOOLEAN",
+          "required": false,
+          "default": false,
+          "meaning": "Permit replacement of destination.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.transfer",
+      "preconditions": [
+        "source exists",
+        "destination absent unless overwrite is TRUE"
+      ],
+      "postconditions": [
+        "destination content equals source pre-state",
+        "source no longer exists at original address"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.operation.precondition",
+        "error.operation.postcondition",
+        "error.execution.action"
+      ],
+      "side_effects": [
+        "local_mutation"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.rename": {
+      "meaning": "Change a target identifier/path name without changing content.",
+      "category": "mutating",
+      "deterministic": null,
+      "target": {
+        "type": "meta.mutable_target",
+        "required": true
+      },
+      "parameters": {
+        "new_name": {
+          "type": "STRING",
+          "required": true,
+          "default": null,
+          "meaning": "One exact destination name.",
+          "constraints": [
+            "not empty",
+            "contains no path separator"
+          ]
+        },
+        "overwrite": {
+          "type": "BOOLEAN",
+          "required": false,
+          "default": false,
+          "meaning": "Permit existing destination replacement.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.operation",
+      "preconditions": [
+        "target exists",
+        "new_name is legal"
+      ],
+      "postconditions": [
+        "content and non-name properties are preserved"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.operation.precondition",
+        "error.operation.postcondition",
+        "error.execution.action"
+      ],
+      "side_effects": [
+        "local_mutation"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.delete": {
+      "meaning": "Remove an existing target.",
+      "category": "mutating",
+      "deterministic": null,
+      "target": {
+        "type": "meta.mutable_target",
+        "required": true
+      },
+      "parameters": {
+        "recursive": {
+          "type": "BOOLEAN",
+          "required": false,
+          "default": false,
+          "meaning": "Permit recursive child deletion.",
+          "constraints": []
+        },
+        "require_exists": {
+          "type": "BOOLEAN",
+          "required": false,
+          "default": true,
+          "meaning": "Fail when target is absent.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.operation",
+      "preconditions": [
+        "target exists unless require_exists is FALSE",
+        "recursive deletion is explicitly authorized when needed"
+      ],
+      "postconditions": [
+        "target is absent",
+        "no out-of-scope target changed"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.operation.precondition",
+        "error.operation.postcondition",
+        "error.execution.action"
+      ],
+      "side_effects": [
+        "local_mutation"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.generate": {
+      "meaning": "Produce a new artifact from declared input and constraints.",
+      "category": "mutating",
+      "deterministic": null,
+      "target": {
+        "type": "meta.mutable_target|REFERENCE[OUTPUT]",
+        "required": true
+      },
+      "parameters": {
+        "specification": {
+          "type": "STRING|OBJECT|REFERENCE",
+          "required": true,
+          "default": null,
+          "meaning": "Complete generation specification.",
+          "constraints": []
+        },
+        "format": {
+          "type": "qualified_identifier(format)",
+          "required": false,
+          "default": null,
+          "meaning": "Required artifact format.",
+          "constraints": []
+        },
+        "variation": {
+          "type": "OBJECT",
+          "required": false,
+          "default": {},
+          "meaning": "Explicit acceptable-variation bounds.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.operation",
+      "preconditions": [
+        "required generation capability exists"
+      ],
+      "postconditions": [
+        "artifact satisfies specification and declared verification"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.operation.precondition",
+        "error.operation.postcondition",
+        "error.execution.action"
+      ],
+      "side_effects": [
+        "local_mutation"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.convert": {
+      "meaning": "Produce an artifact in a declared target type or format.",
+      "category": "mutating",
+      "deterministic": null,
+      "target": {
+        "type": "meta.addressable|meta.material_value",
+        "required": true
+      },
+      "parameters": {
+        "target_format": {
+          "type": "qualified_identifier(format)|TYPE_EXPRESSION",
+          "required": true,
+          "default": null,
+          "meaning": "Required destination representation.",
+          "constraints": []
+        },
+        "destination": {
+          "type": "PATH|URI|REFERENCE[OUTPUT]",
+          "required": false,
+          "default": null,
+          "meaning": "Exact destination.",
+          "constraints": []
+        },
+        "preserve": {
+          "type": "LIST[STRING]",
+          "required": false,
+          "default": [],
+          "meaning": "Properties required unchanged.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.operation",
+      "preconditions": [
+        "source format/type is known"
+      ],
+      "postconditions": [
+        "output has target_format and preserved properties"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.operation.precondition",
+        "error.operation.postcondition",
+        "error.execution.action"
+      ],
+      "side_effects": [
+        "local_mutation"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.execute": {
+      "meaning": "Run an exact command, program, task, phase, sequence, or action.",
+      "category": "mutating",
+      "deterministic": null,
+      "target": {
+        "type": "PATH|URI|REFERENCE[TASK|PHASE|SEQUENCE|ACTION|TEST]|STRING",
+        "required": true
+      },
+      "parameters": {
+        "arguments": {
+          "type": "LIST[STRING]",
+          "required": false,
+          "default": [],
+          "meaning": "Ordered exact arguments.",
+          "constraints": []
+        },
+        "working_directory": {
+          "type": "PATH",
+          "required": false,
+          "default": null,
+          "meaning": "Execution directory.",
+          "constraints": []
+        },
+        "environment": {
+          "type": "OBJECT",
+          "required": false,
+          "default": {},
+          "meaning": "Explicit environment additions/overrides.",
+          "constraints": []
+        },
+        "timeout": {
+          "type": "DURATION",
+          "required": false,
+          "default": null,
+          "meaning": "Finite execution limit.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.command",
+      "preconditions": [
+        "target is executable and authorized",
+        "effects are within declared scope"
+      ],
+      "postconditions": [
+        "exit code/stdout/stderr/status are recorded"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.operation.precondition",
+        "error.operation.postcondition",
+        "error.execution.action",
+        "error.retry.exhausted"
+      ],
+      "side_effects": [
+        "control",
+        "declared_external_effects"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.install": {
+      "meaning": "Add declared software or resources to an external environment.",
+      "category": "mutating",
+      "deterministic": null,
+      "target": {
+        "type": "STRING|PATH|URI|REFERENCE",
+        "required": true
+      },
+      "parameters": {
+        "version": {
+          "type": "STRING",
+          "required": false,
+          "default": null,
+          "meaning": "Exact package/resource version.",
+          "constraints": []
+        },
+        "source": {
+          "type": "PATH|URI",
+          "required": false,
+          "default": null,
+          "meaning": "Exact installation source.",
+          "constraints": []
+        },
+        "scope": {
+          "type": "STRING|PATH",
+          "required": false,
+          "default": null,
+          "meaning": "Installation scope.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.operation",
+      "preconditions": [
+        "package identity and source are unambiguous"
+      ],
+      "postconditions": [
+        "declared package/resource is installed at requested version"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.operation.precondition",
+        "error.operation.postcondition",
+        "error.execution.action"
+      ],
+      "side_effects": [
+        "external_mutation"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.uninstall": {
+      "meaning": "Remove declared software or resources.",
+      "category": "mutating",
+      "deterministic": null,
+      "target": {
+        "type": "STRING|REFERENCE",
+        "required": true
+      },
+      "parameters": {
+        "purge_data": {
+          "type": "BOOLEAN",
+          "required": false,
+          "default": false,
+          "meaning": "Also delete associated declared data.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.operation",
+      "preconditions": [
+        "target installation exists"
+      ],
+      "postconditions": [
+        "target installation is absent",
+        "data preserved unless purge_data TRUE"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.operation.precondition",
+        "error.operation.postcondition",
+        "error.execution.action"
+      ],
+      "side_effects": [
+        "external_mutation"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.start": {
+      "meaning": "Put a process or service into running state.",
+      "category": "mutating",
+      "deterministic": null,
+      "target": {
+        "type": "PATH|STRING|REFERENCE",
+        "required": true
+      },
+      "parameters": {
+        "arguments": {
+          "type": "LIST[STRING]",
+          "required": false,
+          "default": [],
+          "meaning": "Ordered start arguments.",
+          "constraints": []
+        },
+        "environment": {
+          "type": "OBJECT",
+          "required": false,
+          "default": {},
+          "meaning": "Explicit environment.",
+          "constraints": []
+        },
+        "timeout": {
+          "type": "DURATION",
+          "required": false,
+          "default": null,
+          "meaning": "Readiness timeout.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.operation",
+      "preconditions": [
+        "target is startable"
+      ],
+      "postconditions": [
+        "target reaches running/ready state or fails explicitly"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.operation.precondition",
+        "error.operation.postcondition",
+        "error.execution.action"
+      ],
+      "side_effects": [
+        "control"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.stop": {
+      "meaning": "Terminate the selected path, process, or service.",
+      "category": "control",
+      "deterministic": true,
+      "target": {
+        "type": "PATH|STRING|REFERENCE[meta.execution_unit]",
+        "required": true
+      },
+      "parameters": {
+        "force": {
+          "type": "BOOLEAN",
+          "required": false,
+          "default": false,
+          "meaning": "Permit forced termination.",
+          "constraints": []
+        },
+        "timeout": {
+          "type": "DURATION",
+          "required": false,
+          "default": null,
+          "meaning": "Graceful stop limit.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.operation",
+      "preconditions": [
+        "target is running or active"
+      ],
+      "postconditions": [
+        "target is stopped",
+        "force used only when TRUE"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.operation.precondition",
+        "error.operation.postcondition",
+        "error.execution.action"
+      ],
+      "side_effects": [
+        "control"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.send": {
+      "meaning": "Transmit declared content to an external recipient or endpoint.",
+      "category": "mutating",
+      "deterministic": null,
+      "target": {
+        "type": "PATH|URI|STRING|BYTES|REFERENCE",
+        "required": true
+      },
+      "parameters": {
+        "recipient": {
+          "type": "STRING|URI|REFERENCE",
+          "required": true,
+          "default": null,
+          "meaning": "Exact recipient/endpoint.",
+          "constraints": []
+        },
+        "subject": {
+          "type": "STRING",
+          "required": false,
+          "default": null,
+          "meaning": "Message subject.",
+          "constraints": []
+        },
+        "format": {
+          "type": "qualified_identifier(format)",
+          "required": false,
+          "default": null,
+          "meaning": "Message representation.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.message",
+      "preconditions": [
+        "recipient and content are authorized"
+      ],
+      "postconditions": [
+        "delivery result and recipient are recorded"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.operation.precondition",
+        "error.operation.postcondition",
+        "error.execution.action"
+      ],
+      "side_effects": [
+        "communication"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.publish": {
+      "meaning": "Make declared content externally available.",
+      "category": "mutating",
+      "deterministic": null,
+      "target": {
+        "type": "PATH|URI|STRING|BYTES|REFERENCE",
+        "required": true
+      },
+      "parameters": {
+        "destination": {
+          "type": "URI|PATH|REFERENCE",
+          "required": true,
+          "default": null,
+          "meaning": "Exact publication destination.",
+          "constraints": []
+        },
+        "visibility": {
+          "type": "ENUM[private|restricted|public]",
+          "required": true,
+          "default": null,
+          "meaning": "Publication visibility.",
+          "constraints": []
+        },
+        "replace": {
+          "type": "BOOLEAN",
+          "required": false,
+          "default": false,
+          "meaning": "Permit replacing existing publication.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.operation",
+      "preconditions": [
+        "content and visibility are authorized"
+      ],
+      "postconditions": [
+        "only declared content is available at destination with exact visibility"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.operation.precondition",
+        "error.operation.postcondition",
+        "error.execution.action"
+      ],
+      "side_effects": [
+        "external_mutation"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.upload": {
+      "meaning": "Transfer declared content to an external destination.",
+      "category": "mutating",
+      "deterministic": null,
+      "target": {
+        "type": "PATH|BYTES|REFERENCE",
+        "required": true
+      },
+      "parameters": {
+        "destination": {
+          "type": "URI|PATH",
+          "required": true,
+          "default": null,
+          "meaning": "Exact remote/external destination.",
+          "constraints": []
+        },
+        "overwrite": {
+          "type": "BOOLEAN",
+          "required": false,
+          "default": false,
+          "meaning": "Permit replacement.",
+          "constraints": []
+        },
+        "checksum": {
+          "type": "STRING",
+          "required": false,
+          "default": null,
+          "meaning": "Expected source checksum.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.transfer",
+      "preconditions": [
+        "source exists",
+        "checksum matches when supplied"
+      ],
+      "postconditions": [
+        "destination bytes equal source bytes"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.operation.precondition",
+        "error.operation.postcondition",
+        "error.execution.action"
+      ],
+      "side_effects": [
+        "external_mutation"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.download": {
+      "meaning": "Transfer declared content from an external source into scope.",
+      "category": "mutating",
+      "deterministic": null,
+      "target": {
+        "type": "URI|PATH|REFERENCE",
+        "required": true
+      },
+      "parameters": {
+        "destination": {
+          "type": "PATH",
+          "required": true,
+          "default": null,
+          "meaning": "Exact local/in-scope destination.",
+          "constraints": []
+        },
+        "overwrite": {
+          "type": "BOOLEAN",
+          "required": false,
+          "default": false,
+          "meaning": "Permit replacement.",
+          "constraints": []
+        },
+        "checksum": {
+          "type": "STRING",
+          "required": false,
+          "default": null,
+          "meaning": "Expected received checksum.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.transfer",
+      "preconditions": [
+        "source is accessible",
+        "destination is in scope"
+      ],
+      "postconditions": [
+        "destination bytes equal received source",
+        "checksum matches when supplied"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.operation.precondition",
+        "error.operation.postcondition",
+        "error.execution.action"
+      ],
+      "side_effects": [
+        "local_mutation"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.memory_write": {
+      "meaning": "Create or update explicitly authorized persistent memory data.",
+      "category": "memory_state",
+      "deterministic": null,
+      "target": {
+        "type": "REFERENCE[MEMORY]",
+        "required": true
+      },
+      "parameters": {
+        "value": {
+          "type": "meta.material_value",
+          "required": true,
+          "default": null,
+          "meaning": "New persistent memory value.",
+          "constraints": []
+        },
+        "merge": {
+          "type": "BOOLEAN",
+          "required": false,
+          "default": false,
+          "meaning": "Merge object fields instead of replace.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.operation",
+      "preconditions": [
+        "MEMORY mode permits write",
+        "value matches declared MEMORY type"
+      ],
+      "postconditions": [
+        "persistent value equals requested replacement/merge"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.operation.precondition",
+        "error.operation.postcondition",
+        "error.execution.action"
+      ],
+      "side_effects": [
+        "persistent_state"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.state_update": {
+      "meaning": "Update explicitly authorized STATE data.",
+      "category": "memory_state",
+      "deterministic": null,
+      "target": {
+        "type": "REFERENCE[STATE]",
+        "required": true
+      },
+      "parameters": {
+        "value": {
+          "type": "meta.material_value",
+          "required": true,
+          "default": null,
+          "meaning": "New state value.",
+          "constraints": []
+        },
+        "expected_before": {
+          "type": "meta.material_value",
+          "required": false,
+          "default": null,
+          "meaning": "Compare-and-set guard.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.operation",
+      "preconditions": [
+        "STATE mode permits write",
+        "value type matches",
+        "expected_before matches when supplied"
+      ],
+      "postconditions": [
+        "state equals requested value"
+      ],
+      "errors": [
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.scope.violation",
+        "error.host.constraint",
+        "error.operation.precondition",
+        "error.operation.postcondition",
+        "error.execution.action"
+      ],
+      "side_effects": [
+        "persistent_state"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.ask": {
+      "meaning": "Request one exact missing value from an available authoritative source.",
+      "category": "control",
+      "deterministic": null,
+      "target": {
+        "type": "REFERENCE|qualified_identifier",
+        "required": true
+      },
+      "parameters": {
+        "question": {
+          "type": "STRING",
+          "required": true,
+          "default": null,
+          "meaning": "One exact question.",
+          "constraints": []
+        },
+        "expected_type": {
+          "type": "TYPE_EXPRESSION",
+          "required": true,
+          "default": null,
+          "meaning": "Required answer type.",
+          "constraints": []
+        },
+        "options": {
+          "type": "LIST[meta.material_value]",
+          "required": false,
+          "default": null,
+          "meaning": "Closed answer choices.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.value",
+      "preconditions": [
+        "authoritative responder is available"
+      ],
+      "postconditions": [
+        "answer is recorded and type-valid or remains MISSING"
+      ],
+      "errors": [
+        "error.required.missing",
+        "error.host.constraint"
+      ],
+      "side_effects": [
+        "communication"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.retry": {
+      "meaning": "Repeat the associated action under RETRY LIMIT and WHEN.",
+      "category": "control",
+      "deterministic": null,
+      "target": {
+        "type": "REFERENCE[ACTION]",
+        "required": true
+      },
+      "parameters": {
+        "limit": {
+          "type": "INTEGER",
+          "required": true,
+          "default": null,
+          "meaning": "Additional attempts.",
+          "constraints": [
+            "0..100"
+          ]
+        },
+        "delay": {
+          "type": "DURATION",
+          "required": false,
+          "default": "DURATION(0, unit.second)",
+          "meaning": "Delay between attempts.",
+          "constraints": []
+        },
+        "when": {
+          "type": "BOOLEAN_EXPRESSION",
+          "required": false,
+          "default": true,
+          "meaning": "Retry condition.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.operation",
+      "preconditions": [
+        "associated action is retryable"
+      ],
+      "postconditions": [
+        "attempt count never exceeds 1+limit",
+        "every attempt is evidenced"
+      ],
+      "errors": [
+        "error.retry.exhausted",
+        "error.execution.action"
+      ],
+      "side_effects": [
+        "control"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.continue": {
+      "meaning": "Continue a bounded path after a handled event.",
+      "category": "control",
+      "deterministic": true,
+      "target": {
+        "type": "REFERENCE[meta.execution_unit]",
+        "required": true
+      },
+      "parameters": {},
+      "positional_parameters": false,
+      "result_schema": "result.operation",
+      "preconditions": [
+        "current event is handled and continuation path exists"
+      ],
+      "postconditions": [
+        "execution resumes at exact declared successor"
+      ],
+      "errors": [
+        "error.execution.order"
+      ],
+      "side_effects": [
+        "control"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    },
+    "core.cancel": {
+      "meaning": "Terminate because the invoking authority cancelled execution.",
+      "category": "control",
+      "deterministic": true,
+      "target": {
+        "type": "REFERENCE[meta.execution_unit]",
+        "required": true
+      },
+      "parameters": {
+        "reason": {
+          "type": "STRING",
+          "required": true,
+          "default": null,
+          "meaning": "Recorded cancellation reason.",
+          "constraints": []
+        }
+      },
+      "positional_parameters": false,
+      "result_schema": "result.operation",
+      "preconditions": [
+        "invoking authority may cancel target"
+      ],
+      "postconditions": [
+        "target reaches status.cancelled",
+        "reason is evidenced"
+      ],
+      "errors": [
+        "error.cancelled"
+      ],
+      "side_effects": [
+        "control"
+      ],
+      "additional_undeclared_effects": "forbidden"
+    }
+  }
+}

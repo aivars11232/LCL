@@ -1,0 +1,9 @@
+LCL CORE 0.1 FINAL
+CHANGE CONTROL
+NORMATIVE
+
+No file in this release may be edited while retaining version 0.1.0 and the same
+checksum. Any semantic change requires a new language version. Corrections that
+change no meaning require a patch release. Added backward-compatible features
+require a minor release. Breaking lexical, grammar, type, or semantic changes
+require a major release.

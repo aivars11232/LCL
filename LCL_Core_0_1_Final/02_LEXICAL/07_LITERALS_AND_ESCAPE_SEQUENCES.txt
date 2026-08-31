@@ -1,0 +1,29 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Literals and Escape Sequences
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+STRING
+    "exact text"
+
+MULTILINE STRING
+    triple double quote on the value line, content on following lines, and
+    closing triple double quote aligned with the declaration.
+
+Escapes
+    \" quote; \\ backslash; \n LF; \r carriage return; \t tab;
+    \u followed by four hexadecimal digits.
+
+INTEGER
+    -?(0|[1-9][0-9]*)
+
+DECIMAL
+    -?(0|[1-9][0-9]*)\.[0-9]+
+
+Boolean/special
+    TRUE FALSE NULL MISSING UNKNOWN
+
+Leading plus signs, numeric separators, exponent notation, NaN, and infinity
+are invalid in Core 0.1.0.

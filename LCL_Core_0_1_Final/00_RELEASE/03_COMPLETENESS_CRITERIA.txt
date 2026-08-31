@@ -1,0 +1,20 @@
+LCL CORE 0.1 FINAL
+COMPLETENESS CRITERIA
+NORMATIVE
+
+This version is complete at the bare-language level because it provides:
+
+- a closed character, token, keyword, symbol, identifier, and literal system;
+- a closed grammar with no external token-list placeholders;
+- a closed type system and special-value model;
+- exact legal parents, occurrence, field type, cardinality, default, and
+  conditional requirements for every core block;
+- deterministic expression, operator, order, conflict, error, and status rules;
+- exact named-parameter contracts for every core operation and pure function;
+- closed import, namespace, reference, version, and extension behavior;
+- required conformance cases covering every closed registry entry;
+- valid and deliberately invalid examples;
+- a cryptographic manifest for every distributed file.
+
+Empirical agreement by ChatGPT, Claude, DeepSeek, or another LC is a conformance
+experiment. It is not part of defining the language.

@@ -1,0 +1,4 @@
+LCL Core 0.1 Final
+Formal version: 0.1.0
+Status: frozen normative bare-language release
+Build UTC: 2026-08-30T18:52:24+00:00

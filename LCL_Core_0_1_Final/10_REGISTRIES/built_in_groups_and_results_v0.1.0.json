@@ -1,0 +1,384 @@
+{
+  "language": "LCL",
+  "version": "0.1.0",
+  "closed": true,
+  "enum_groups": {
+    "document_kinds": [
+      "kind.task",
+      "kind.library",
+      "kind.extension",
+      "kind.data",
+      "kind.test"
+    ],
+    "definition_kinds": [
+      "kind.term",
+      "kind.constant",
+      "kind.type",
+      "kind.operation",
+      "kind.format",
+      "kind.event",
+      "kind.status",
+      "kind.error"
+    ],
+    "modes": [
+      "mode.read_only",
+      "mode.read_write",
+      "mode.create",
+      "mode.sequential",
+      "mode.parallel"
+    ],
+    "events": [
+      "event.missing",
+      "event.unknown",
+      "event.conflict",
+      "event.validation_error",
+      "event.dependency_failure",
+      "event.execution_error",
+      "event.verification_failure",
+      "event.host_constraint",
+      "event.cancelled"
+    ],
+    "formats": [
+      "format.plain_text",
+      "format.lcl",
+      "format.json",
+      "format.yaml",
+      "format.xml",
+      "format.markdown",
+      "format.csv",
+      "format.tsv",
+      "format.source_code",
+      "format.binary",
+      "format.image",
+      "format.video",
+      "format.audio",
+      "format.document"
+    ],
+    "encodings": [
+      "encoding.utf_8",
+      "encoding.ascii",
+      "encoding.binary"
+    ],
+    "units": [
+      "unit.nanosecond",
+      "unit.microsecond",
+      "unit.millisecond",
+      "unit.second",
+      "unit.minute",
+      "unit.hour",
+      "unit.day",
+      "unit.week",
+      "unit.byte",
+      "unit.kibibyte",
+      "unit.mebibyte",
+      "unit.gibibyte",
+      "unit.pixel",
+      "unit.point",
+      "unit.millimeter",
+      "unit.centimeter",
+      "unit.meter",
+      "unit.kilometer",
+      "unit.degree",
+      "unit.radian",
+      "unit.hertz",
+      "unit.kilohertz",
+      "unit.megahertz",
+      "unit.frame",
+      "unit.frame_per_second",
+      "unit.bit_per_second"
+    ],
+    "statuses": [
+      "status.not_started",
+      "status.validating",
+      "status.invalid",
+      "status.ready",
+      "status.running",
+      "status.blocked",
+      "status.stopped",
+      "status.cancelled",
+      "status.failed",
+      "status.partial",
+      "status.succeeded",
+      "status.skipped"
+    ],
+    "errors": [
+      "error.block.conditional_requirement",
+      "error.block.context",
+      "error.block.duplicate",
+      "error.block.field",
+      "error.block.occurrence",
+      "error.block.required",
+      "error.cancelled",
+      "error.collection.heterogeneous",
+      "error.conflict.hard",
+      "error.delimiter.mismatch",
+      "error.delimiter.unclosed",
+      "error.dependency.unsatisfied",
+      "error.encoding.invalid",
+      "error.evidence.missing",
+      "error.execution.action",
+      "error.execution.order",
+      "error.extension.invalid",
+      "error.field.cardinality",
+      "error.field.duplicate",
+      "error.field.forbidden",
+      "error.field.required",
+      "error.field.type",
+      "error.grammar.invalid",
+      "error.host.constraint",
+      "error.id.duplicate",
+      "error.identifier.invalid",
+      "error.import.checksum",
+      "error.import.cycle",
+      "error.import.not_found",
+      "error.indentation.empty_block",
+      "error.indentation.invalid",
+      "error.indentation.jump",
+      "error.indentation.width",
+      "error.keyword.case",
+      "error.keyword.unknown",
+      "error.lexical.malformed_token",
+      "error.lexical.unknown_symbol",
+      "error.literal.escape",
+      "error.literal.invalid",
+      "error.literal.unclosed",
+      "error.namespace.invalid",
+      "error.newline.invalid",
+      "error.numeric.division_by_zero",
+      "error.numeric.non_terminating",
+      "error.numeric.unit_mismatch",
+      "error.object.schema",
+      "error.operation.parameter",
+      "error.operation.postcondition",
+      "error.operation.precondition",
+      "error.operation.undefined",
+      "error.operator.operand",
+      "error.override.invalid",
+      "error.pattern.mismatch",
+      "error.permission.denied",
+      "error.reference.cycle",
+      "error.reference.kind",
+      "error.reference.unresolved",
+      "error.required.missing",
+      "error.retry.exhausted",
+      "error.scope.violation",
+      "error.source.bom",
+      "error.source.control_character",
+      "error.source.final_line_feed",
+      "error.source.non_ascii_outside_string",
+      "error.source.tab",
+      "error.source.trailing_space",
+      "error.success.unsatisfied",
+      "error.symbol.invalid",
+      "error.type.mismatch",
+      "error.validation.failed",
+      "error.value.out_of_range",
+      "error.value.unknown",
+      "error.verification.failed",
+      "error.version.mismatch",
+      "error.version.unsupported"
+    ],
+    "operation_categories": [
+      "read_only",
+      "mutating",
+      "memory_state",
+      "control"
+    ],
+    "determinism_values": [
+      "deterministic",
+      "nondeterministic",
+      "host_dependent"
+    ],
+    "side_effect_classes": [
+      "none",
+      "local_read",
+      "local_mutation",
+      "external_mutation",
+      "communication",
+      "persistent_state",
+      "control"
+    ],
+    "conformance_classes": [
+      "source_conforming",
+      "semantics_conforming",
+      "portable_lc_interpreter",
+      "extension_conforming"
+    ],
+    "cardinalities": [
+      "zero",
+      "zero_or_one",
+      "exactly_one",
+      "one_or_more",
+      "zero_or_more"
+    ],
+    "authority_classes": [
+      "language",
+      "extension",
+      "imported_specification",
+      "local_specification",
+      "runtime_invocation"
+    ],
+    "source_kinds": [
+      "inline_value",
+      "path",
+      "uri",
+      "reference"
+    ],
+    "target_kinds": [
+      "value",
+      "reference",
+      "path",
+      "uri",
+      "glob",
+      "host_bound"
+    ],
+    "evidence_kinds": [
+      "value",
+      "source",
+      "checksum",
+      "log",
+      "test_result",
+      "verification_result"
+    ],
+    "lifecycle_stages": [
+      "lexical",
+      "grammar_or_schema",
+      "resolution",
+      "static_or_expression",
+      "validation",
+      "execution",
+      "verification_or_completion"
+    ],
+    "failure_dispositions": [
+      "invalid",
+      "blocked",
+      "failed",
+      "stopped",
+      "cancelled",
+      "partial"
+    ]
+  },
+  "result_schemas": {
+    "result.value": {
+      "fields": {
+        "value": "meta.material_value",
+        "status": "qualified_identifier(status)",
+        "evidence": "LIST[REFERENCE[EVIDENCE]]"
+      }
+    },
+    "result.collection": {
+      "fields": {
+        "items": "LIST[T]",
+        "count": "INTEGER",
+        "status": "qualified_identifier(status)"
+      }
+    },
+    "result.operation": {
+      "fields": {
+        "status": "qualified_identifier(status)",
+        "changed": "BOOLEAN",
+        "target": "target_expression",
+        "error": "qualified_identifier(error)|NULL"
+      }
+    },
+    "result.command": {
+      "fields": {
+        "exit_code": "INTEGER",
+        "stdout": "STRING",
+        "stderr": "STRING",
+        "status": "qualified_identifier(status)"
+      }
+    },
+    "result.validation": {
+      "fields": {
+        "valid": "BOOLEAN",
+        "errors": "LIST[qualified_identifier(error)]",
+        "status": "qualified_identifier(status)"
+      }
+    },
+    "result.verification": {
+      "fields": {
+        "verified": "BOOLEAN|UNKNOWN",
+        "observed": "OBJECT",
+        "errors": "LIST[qualified_identifier(error)]"
+      }
+    },
+    "result.test": {
+      "fields": {
+        "passed": "BOOLEAN|UNKNOWN",
+        "expected": "meta.material_value|NULL",
+        "actual": "meta.material_value|NULL",
+        "evidence": "LIST[REFERENCE[EVIDENCE]]"
+      }
+    },
+    "result.message": {
+      "fields": {
+        "delivered": "BOOLEAN|UNKNOWN",
+        "recipient": "target_expression",
+        "message_id": "STRING|NULL",
+        "status": "qualified_identifier(status)"
+      }
+    },
+    "result.transfer": {
+      "fields": {
+        "source": "source_expression",
+        "destination": "target_expression",
+        "bytes": "BYTES|UNKNOWN",
+        "checksum": "STRING|NULL",
+        "status": "qualified_identifier(status)"
+      }
+    }
+  },
+  "reserved_namespaces": [
+    "core",
+    "encoding",
+    "error",
+    "event",
+    "format",
+    "kind",
+    "mode",
+    "status",
+    "unit"
+  ],
+  "core_operation_ids": [
+    "core.inspect",
+    "core.read",
+    "core.analyze",
+    "core.calculate",
+    "core.compare",
+    "core.select",
+    "core.filter",
+    "core.sort",
+    "core.group",
+    "core.validate",
+    "core.verify",
+    "core.test",
+    "core.report",
+    "core.return",
+    "core.create",
+    "core.write",
+    "core.append",
+    "core.modify",
+    "core.copy",
+    "core.move",
+    "core.rename",
+    "core.delete",
+    "core.generate",
+    "core.convert",
+    "core.execute",
+    "core.install",
+    "core.uninstall",
+    "core.start",
+    "core.stop",
+    "core.send",
+    "core.publish",
+    "core.upload",
+    "core.download",
+    "core.memory_write",
+    "core.state_update",
+    "core.ask",
+    "core.retry",
+    "core.continue",
+    "core.cancel"
+  ]
+}

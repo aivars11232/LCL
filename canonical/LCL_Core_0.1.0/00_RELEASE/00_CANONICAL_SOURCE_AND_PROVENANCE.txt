@@ -1,0 +1,39 @@
+LCL CORE 0.1.0
+CANONICAL SOURCE AND PROVENANCE
+NORMATIVE RELEASE METADATA
+
+1. CANONICAL SOURCE
+
+This package root is the only canonical source tree for the LCL Core 0.1.0
+repair candidate produced by LCL-REPAIR-0001. Language meaning is determined by
+the artifacts inside this tree under
+00_RELEASE/02_NORMATIVE_AUTHORITY_ORDER.txt. Files
+outside this package root are not normative inputs to the language.
+
+2. CANONICAL BASE
+
+The base was the 152-file LCL_Core_0_1_Final extracted tree. Before repair it was
+byte-for-byte identical to LCL_Core_0.1_Final_VERIFIED.zip, whose SHA-256 was:
+
+    1f3057e3e186bfca218843976da050f1d504f4beaae8aad10bb144437cbfcfd0
+
+That tree and archive are immutable duplicate historical inputs and are not
+modified by this repair.
+
+3. COMPETING ARTIFACTS
+
+The loose LCL_Core_0_1_Final_VALIDATION files and
+LCL_Core_0_1_Final_SHA256.txt describe absent 126-file ZIP/TAR candidate bytes.
+They are superseded historical-candidate evidence whose referenced package bytes
+are unavailable; they do not validate this package. The experimental
+word-and-symbol audit is supporting research. The unversioned language structure
+tree is supporting source material and is not part of this bare-language package.
+
+4. VERSION AND STATUS
+
+The historical artifacts are candidate builds; the workspace contains no evidence
+that either materially different 0.1.0 candidate was an established release. This
+repair therefore retains language version 0.1.0. This candidate is blocked by
+LCL-AUDIT-001, 005, 007, and 010 through 016, including K-003. It is not ready
+for release, no repair archive is produced, and it must not be represented as
+Final, Verified, Complete, Canonical Release, or release-ready.

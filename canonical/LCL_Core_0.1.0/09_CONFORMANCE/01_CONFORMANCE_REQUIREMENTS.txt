@@ -1,0 +1,29 @@
+LCL CORE 0.1.0 RELEASE CANDIDATE
+CONFORMANCE REQUIREMENTS
+NORMATIVE
+
+The catalog CASES/core_conformance_cases_v0.1.0.json is a requirements index. It
+contains 792 descriptive normative requirements covering keywords, symbols,
+types, blocks, field signatures, operators, pure functions, core operations,
+statuses, errors, enum groups, result schemas, and reserved namespaces. Its
+presence, shape, and count are structural evidence only; catalog entries without
+concrete input and an implementation result are not executed conformance cases.
+
+TOOLS/validate_source_fixtures.py executes the concrete SOURCE_FIXTURES lexical
+and document-kind expectations. TOOLS/validate_ebnf.py validates static grammar
+structure. Neither tool is a type checker, evaluator, or executor.
+
+A source-conforming implementation must pass lexical, grammar, block, and field
+cases. A semantics-conforming implementation must additionally pass type,
+operator, function, operation, status, error, and execution cases. A claimed
+result must state implementation version, host capabilities, exact failed case
+IDs, and evidence. Unsupported core behavior is failure, not silent inference.
+No semantic-conformance claim is permitted while the required implementation or
+concrete executable cases are absent.
+
+A parser, interpreter, compiler, runtime, semantic engine, and executable case
+runner are outside the bare-language package scope. Their absence is not a
+bare-language completeness or release blocker and must be reported by the static
+release validator as OUT_OF_SCOPE or NOT_APPLICABLE, never as PASS. This does not
+weaken the separate evidence required from any implementation that claims one of
+the conformance levels above.

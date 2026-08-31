@@ -1,0 +1,14 @@
+LCL CORE 0.1 FINAL
+CONFORMANCE REQUIREMENTS
+NORMATIVE
+
+The catalog CASES/core_conformance_cases_v0.1.0.json contains 791 normative
+requirements covering every closed keyword, symbol, type, block, field signature,
+operator, pure function, core operation, status, error, enum group, result schema,
+and reserved namespace.
+
+A source-conforming implementation must pass lexical, grammar, block, and field
+cases. A semantics-conforming implementation must additionally pass type,
+operator, function, operation, status, error, and execution cases. A claimed
+result must state implementation version, host capabilities, exact failed case
+IDs, and evidence. Unsupported core behavior is failure, not silent inference.

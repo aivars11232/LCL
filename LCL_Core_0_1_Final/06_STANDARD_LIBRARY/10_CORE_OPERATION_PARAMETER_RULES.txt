@@ -1,0 +1,14 @@
+LCL CORE 0.1 FINAL
+CORE OPERATION CONTRACT RULES
+NORMATIVE
+
+Every core operation's target requirement, accepted target type, named parameters,
+parameter types, required/default status, constraints, result schema,
+preconditions, postconditions, error set, and observable side-effect classes are
+closed in 10_REGISTRIES/operations_v0.1.0.json.
+
+No positional parameters exist. A parameter absent from an operation contract is
+forbidden. A required parameter cannot be inferred. A default applies only to a
+MISSING optional parameter. An operation may cause only its listed side effects
+and effects explicitly required by its postconditions. Additional effects produce
+error.permission.denied or error.scope.violation.

@@ -1,0 +1,141 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Built-in Formats, Encodings, and Units
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+FORMATS
+
+format.plain_text
+    Unicode plain text.
+
+format.lcl
+    A document conforming to an exact LCL version.
+
+format.json
+    JSON conforming to the declared schema.
+
+format.yaml
+    YAML conforming to the declared schema.
+
+format.xml
+    XML conforming to the declared schema.
+
+format.markdown
+    Markdown text.
+
+format.csv
+    CSV with an explicit header/column contract.
+
+format.tsv
+    TSV with an explicit header/column contract.
+
+format.source_code
+    Source code with exact language declared by DOMAIN/property.
+
+format.binary
+    Opaque bytes with declared media/application type.
+
+format.image
+    Image content with declared technical properties.
+
+format.video
+    Video content with declared technical properties.
+
+format.audio
+    Audio content with declared technical properties.
+
+format.document
+    Document artifact with declared subtype.
+
+ENCODINGS
+
+encoding.utf_8
+    UTF-8 without BOM.
+
+encoding.ascii
+    7-bit ASCII.
+
+encoding.binary
+    Opaque bytes.
+
+UNITS
+
+unit.nanosecond
+    Category: Time
+
+unit.microsecond
+    Category: Time
+
+unit.millisecond
+    Category: Time
+
+unit.second
+    Category: Time
+
+unit.minute
+    Category: Time
+
+unit.hour
+    Category: Time
+
+unit.day
+    Category: Time
+
+unit.week
+    Category: Time
+
+unit.byte
+    Category: Storage
+
+unit.kibibyte
+    Category: Storage
+
+unit.mebibyte
+    Category: Storage
+
+unit.gibibyte
+    Category: Storage
+
+unit.pixel
+    Category: Display/image length
+
+unit.point
+    Category: Typography length
+
+unit.millimeter
+    Category: Physical length
+
+unit.centimeter
+    Category: Physical length
+
+unit.meter
+    Category: Physical length
+
+unit.kilometer
+    Category: Physical length
+
+unit.degree
+    Category: Angle
+
+unit.radian
+    Category: Angle
+
+unit.hertz
+    Category: Frequency
+
+unit.kilohertz
+    Category: Frequency
+
+unit.megahertz
+    Category: Frequency
+
+unit.frame
+    Category: Media count
+
+unit.frame_per_second
+    Category: Media rate
+
+unit.bit_per_second
+    Category: Data rate

@@ -1,0 +1,14 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Frozen Design Decisions
+LANGUAGE VERSION: 0.1.0
+STATUS: INFORMATIVE DECISION RECORD
+DATE: 2026-08-30
+
+
+Colon plus four spaces; uppercase keywords; lowercase IDs; double-quoted text;
+bracket LIST/SET values and indented objects; ITEM only for enum members; == not
+bare =; AND/OR/NOT words; IF THEN; bounded FOR EACH and RETRY; explicit
+types/references; exact imports; definition-only extensions; exact ACTION
+authorization; FORBID hard; numeric authority and priority; explicit
+context/memory/state; distinct MISSING/UNKNOWN/NULL; pre-effect VALIDATE;
+post-effect VERIFY; evidence-bound SUCCESS; host constraints reported.

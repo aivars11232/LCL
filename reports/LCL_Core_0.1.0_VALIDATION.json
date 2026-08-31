@@ -1,0 +1,309 @@
+{
+  "task_id": "LCL-REPAIR-0001",
+  "generated_utc": "2026-08-30T21:04:56Z",
+  "implementation_status": "IMPLEMENTATION_PARTIAL",
+  "release_status": "NOT_READY_FOR_RELEASE",
+  "package_name": "LCL Core 0.1.0 Repair Candidate",
+  "formal_version": "0.1.0",
+  "canonical_tree": "/mnt/F/LCL/canonical/LCL_Core_0.1.0",
+  "package": {
+    "file_count": 157,
+    "total_file_bytes": 691407,
+    "symlink_count": 0,
+    "cache_or_temporary_artifact_count": 0
+  },
+  "manifest": {
+    "path": "MANIFEST.json",
+    "record_count": 154,
+    "sha256": "bee3d2f71a1668b7e5794b54be9fe08687ca42b3da4e5b7dd03ef9632a2a8685",
+    "verification": "PASS",
+    "exclusions": [
+      "MANIFEST.json",
+      "VALIDATION_REPORT.txt",
+      "SHA256SUMS.txt"
+    ]
+  },
+  "embedded_validation": {
+    "path": "VALIDATION_REPORT.txt",
+    "sha256": "318e4fc95e836cdde1d771638d77ba77be10ede4f41588414536aa0dd90c5921",
+    "result": "BLOCKED",
+    "scope": "Gates 1 through 8 snapshot"
+  },
+  "checksum_file": {
+    "path": "SHA256SUMS.txt",
+    "record_count": 156,
+    "sha256": "4716d5993417506577643e2ea12d65bb0b7f0219944b6fd1f094948577630ac5",
+    "verification_exit_code": 0,
+    "verification": "PASS",
+    "self_excluded": true
+  },
+  "aggregate_validator": {
+    "exit_code": 1,
+    "pass_count": 12,
+    "fail_count": 0,
+    "blocked_count": 9,
+    "exit_interpretation": "Expected nonzero because release-blocking checks are reported as BLOCKED.",
+    "release_ready": false
+  },
+  "gates": [
+    {
+      "id": 1,
+      "name": "Filesystem and path safety",
+      "status": "PASS",
+      "commands": [
+        {
+          "command": "PYTHONDONTWRITEBYTECODE=1 python3 09_CONFORMANCE/TOOLS/validate_release.py --scope filesystem",
+          "working_directory": "/mnt/F/LCL/canonical/LCL_Core_0.1.0",
+          "exit_code": 0,
+          "relevant_output": "1 PASS; 157 files; zero symlinks, case collisions, cache/temp artifacts, or mode deviations.",
+          "generated_files": [],
+          "classification": "read_only_validation"
+        }
+      ],
+      "blocked_by": []
+    },
+    {
+      "id": 2,
+      "name": "Text and encoding",
+      "status": "PASS",
+      "commands": [
+        {
+          "command": "PYTHONDONTWRITEBYTECODE=1 python3 09_CONFORMANCE/TOOLS/validate_release.py --scope text",
+          "working_directory": "/mnt/F/LCL/canonical/LCL_Core_0.1.0",
+          "exit_code": 0,
+          "relevant_output": "2 PASS; 15 of 15 concrete source-fixture outcomes matched; semantic execution UNVERIFIED.",
+          "generated_files": [],
+          "classification": "read_only_validation"
+        }
+      ],
+      "blocked_by": []
+    },
+    {
+      "id": 3,
+      "name": "Structured-file syntax",
+      "status": "PASS",
+      "commands": [
+        {
+          "command": "PYTHONDONTWRITEBYTECODE=1 python3 09_CONFORMANCE/TOOLS/validate_release.py --scope structured",
+          "working_directory": "/mnt/F/LCL/canonical/LCL_Core_0.1.0",
+          "exit_code": 0,
+          "relevant_output": "15 JSON files parsed with duplicate-key rejection; 4 Python files compiled without bytecode.",
+          "generated_files": [],
+          "classification": "read_only_validation"
+        }
+      ],
+      "blocked_by": []
+    },
+    {
+      "id": 4,
+      "name": "Grammar",
+      "status": "BLOCKED",
+      "commands": [
+        {
+          "command": "PYTHONDONTWRITEBYTECODE=1 python3 09_CONFORMANCE/TOOLS/validate_release.py --scope grammar",
+          "working_directory": "/mnt/F/LCL/canonical/LCL_Core_0.1.0",
+          "exit_code": 1,
+          "relevant_output": "Static EBNF PASS (65 productions, 211 terminals); complete example parse matrix BLOCKED; zero FAIL.",
+          "generated_files": [],
+          "classification": "read_only_expected_blocker_exit"
+        }
+      ],
+      "blocked_by": [
+        "LCL-AUDIT-001",
+        "LCL-AUDIT-005",
+        "LCL-AUDIT-016"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Registry closure",
+      "status": "BLOCKED",
+      "commands": [
+        {
+          "command": "PYTHONDONTWRITEBYTECODE=1 python3 09_CONFORMANCE/TOOLS/validate_release.py --scope registry",
+          "working_directory": "/mnt/F/LCL/canonical/LCL_Core_0.1.0",
+          "exit_code": 1,
+          "relevant_output": "3 PASS, 7 BLOCKED, 0 FAIL; 52 unregistered value-kind strings and 7 nested-parent contradictions.",
+          "generated_files": [],
+          "classification": "read_only_expected_blocker_exit"
+        }
+      ],
+      "blocked_by": [
+        "LCL-AUDIT-005",
+        "LCL-AUDIT-010",
+        "K-003",
+        "LCL-AUDIT-012",
+        "LCL-AUDIT-013",
+        "LCL-AUDIT-014",
+        "LCL-AUDIT-015"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "Semantic consistency",
+      "status": "BLOCKED",
+      "commands": [],
+      "reason": "No semantic implementation exists and owner design decisions remain; static evidence cannot substitute for execution.",
+      "blocked_by": [
+        "LCL-AUDIT-010",
+        "LCL-AUDIT-011",
+        "LCL-AUDIT-012",
+        "LCL-AUDIT-013",
+        "LCL-AUDIT-014",
+        "LCL-AUDIT-015"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "Examples",
+      "status": "BLOCKED",
+      "commands": [],
+      "reason": "Objective defects were repaired, but result binding/cardinality and complete parser/semantic validation are absent.",
+      "blocked_by": [
+        "LCL-AUDIT-007",
+        "LCL-AUDIT-013",
+        "LCL-AUDIT-016"
+      ]
+    },
+    {
+      "id": 8,
+      "name": "Conformance suite",
+      "status": "BLOCKED",
+      "commands": [
+        {
+          "command": "PYTHONDONTWRITEBYTECODE=1 python3 09_CONFORMANCE/TOOLS/validate_release.py --scope catalog",
+          "working_directory": "/mnt/F/LCL/canonical/LCL_Core_0.1.0",
+          "exit_code": 1,
+          "relevant_output": "791-entry requirements index integrity PASS; semantic case execution BLOCKED; zero FAIL.",
+          "generated_files": [],
+          "classification": "read_only_expected_blocker_exit"
+        }
+      ],
+      "blocked_by": [
+        "LCL-AUDIT-016"
+      ]
+    },
+    {
+      "id": 9,
+      "name": "Manifest and checksums",
+      "status": "PASS",
+      "commands": [
+        {
+          "command": "PYTHONDONTWRITEBYTECODE=1 python3 09_CONFORMANCE/TOOLS/validate_release.py --scope integrity",
+          "working_directory": "/mnt/F/LCL/canonical/LCL_Core_0.1.0",
+          "exit_code": 0,
+          "relevant_output": "154 manifest records and 156 checksum records pass exact set/size/hash checks.",
+          "generated_files": [],
+          "classification": "read_only_validation"
+        },
+        {
+          "command": "sha256sum --check --strict --quiet SHA256SUMS.txt",
+          "working_directory": "/mnt/F/LCL/canonical/LCL_Core_0.1.0",
+          "exit_code": 0,
+          "relevant_output": "All listed package files verify.",
+          "generated_files": [],
+          "classification": "read_only_validation"
+        }
+      ],
+      "blocked_by": []
+    },
+    {
+      "id": 10,
+      "name": "Archive",
+      "status": "SKIPPED",
+      "commands": [],
+      "reason": "Gates 1 through 9 did not all pass; archive creation is prohibited.",
+      "blocked_by": [
+        "GATE-4",
+        "GATE-5",
+        "GATE-6",
+        "GATE-7",
+        "GATE-8"
+      ]
+    },
+    {
+      "id": 11,
+      "name": "Clean final state",
+      "status": "PASS",
+      "commands": [
+        {
+          "command": "cmake -E remove_directory /tmp/lcl-repair-VAGanzWt",
+          "working_directory": "/mnt/F/LCL",
+          "exit_code": 0,
+          "relevant_output": "Task-owned temporary directory removed and confirmed absent.",
+          "generated_files": [],
+          "classification": "temporary_cleanup"
+        },
+        {
+          "command": "unzip -tqq /mnt/F/LCL/LCL_Core_0.1_Final_VERIFIED.zip",
+          "working_directory": "/mnt/F/LCL",
+          "exit_code": 0,
+          "relevant_output": "Immutable historical archive integrity passed.",
+          "generated_files": [],
+          "classification": "read_only_validation"
+        }
+      ],
+      "blocked_by": []
+    }
+  ],
+  "finding_dispositions": {
+    "LCL-AUDIT-001": "PARTIALLY_REPAIRED_BLOCKED",
+    "LCL-AUDIT-002": "REPAIRED_STATICALLY",
+    "LCL-AUDIT-003": "PARTIALLY_REPAIRED",
+    "LCL-AUDIT-004": "REPAIRED_STATICALLY",
+    "LCL-AUDIT-005": "DESIGN_DECISION_REQUIRED",
+    "LCL-AUDIT-006": "REPAIRED_STATICALLY",
+    "LCL-AUDIT-007": "PARTIALLY_REPAIRED_BLOCKED",
+    "LCL-AUDIT-008": "REPAIRED",
+    "LCL-AUDIT-009": "REPAIRED",
+    "LCL-AUDIT-010": "PARTIALLY_REPAIRED_BLOCKED",
+    "LCL-AUDIT-011": "PARTIALLY_REPAIRED_BLOCKED",
+    "LCL-AUDIT-012": "PARTIALLY_REPAIRED_BLOCKED",
+    "LCL-AUDIT-013": "PARTIALLY_REPAIRED_BLOCKED",
+    "LCL-AUDIT-014": "DESIGN_DECISION_REQUIRED",
+    "LCL-AUDIT-015": "PARTIALLY_REPAIRED_BLOCKED",
+    "LCL-AUDIT-016": "PARTIALLY_REPAIRED_BLOCKED",
+    "LCL-AUDIT-017": "REPAIRED_FOR_CANDIDATE",
+    "LCL-AUDIT-018": "REPAIRED_FOR_CANDIDATE",
+    "K-001": "NO_REPAIR_WARRANTED",
+    "K-002": "CONFIRMED_PART_REPAIRED",
+    "K-003": "DESIGN_DECISION_REQUIRED",
+    "K-004": "NO_REPAIR_WARRANTED",
+    "K-005": "DOCUMENTED_HISTORICAL_CONFLICT"
+  },
+  "unresolved_findings": [
+    "LCL-AUDIT-001",
+    "LCL-AUDIT-005",
+    "LCL-AUDIT-007",
+    "LCL-AUDIT-010",
+    "LCL-AUDIT-011",
+    "LCL-AUDIT-012",
+    "LCL-AUDIT-013",
+    "LCL-AUDIT-014",
+    "LCL-AUDIT-015",
+    "LCL-AUDIT-016"
+  ],
+  "validation_attempt_corrections": [
+    "Stale shorthand paths were resolved from the actual canonical tree before editing.",
+    "An EBNF comment-delimiter syntax error was corrected and the grammar analyzer rerun.",
+    "A transient py_compile __pycache__ was removed immediately; later compilation used compile() with bytecode disabled.",
+    "Incorrect validation assertions and one unsupported patch shape were corrected rather than bypassed."
+  ],
+  "original_inputs": {
+    "baseline_content_hashes": "PASS_158_OF_158",
+    "baseline_type_mode_size": "PASS_176_OF_176",
+    "historical_archive_path": "/mnt/F/LCL/LCL_Core_0.1_Final_VERIFIED.zip",
+    "historical_archive_sha256": "1f3057e3e186bfca218843976da050f1d504f4beaae8aad10bb144437cbfcfd0",
+    "historical_archive_integrity_exit_code": 0
+  },
+  "archive": {
+    "created": false,
+    "path": null,
+    "sha256": null,
+    "size_bytes": null,
+    "member_count": null,
+    "reason": "Gates 1 through 9 did not all pass and release-blocking design decisions remain."
+  },
+  "releases_directory_exists": false,
+  "ready_for_final": false
+}

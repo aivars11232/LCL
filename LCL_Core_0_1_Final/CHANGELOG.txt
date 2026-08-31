@@ -1,0 +1,18 @@
+LCL CORE CHANGELOG
+
+0.1.0 FINAL
+
+- Preserved the established technical-English language design.
+- Added exact signatures for every field in all 41 core block schemas.
+- Replaced external grammar placeholders with a closed self-contained EBNF.
+- Closed collection, object, enum, schema, reference, and constructor forms.
+- Closed MISSING, UNKNOWN, and NULL semantics.
+- Added exact operator and built-in function contracts.
+- Expanded every core operation into a named-parameter and result contract.
+- Expanded the error registry to cover source, field, delimiter, operator, object,
+  collection, and block failures without removing the established identifiers.
+- Added exact status transition contracts.
+- Added built-in enum groups, result schemas, semantic meta-types, and namespace
+  closure registries.
+- Generated registry-wide conformance requirements and source fixtures.
+- Rebuilt manifests and two standard ZIP variants without symlinks or executables.

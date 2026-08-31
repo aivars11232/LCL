@@ -1,0 +1,19 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Numeric Arithmetic, Comparison, and Rounding
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+Operators + - * / apply only to compatible numeric values. Precedence is unary,
+then multiplication/division, then addition/subtraction, then comparison, AND,
+OR. Parentheses override precedence.
+
+INTEGER division is exact only when the result is an INTEGER; otherwise it
+produces DECIMAL if finite. Non-terminating exact decimal division is an error
+unless ROUND(value, digits) or an explicit TOLERANCE governs the result.
+ROUND uses half-even. Division by zero is always an error.
+
+DURATION is non-negative. Unary negation does not accept DURATION. Subtracting
+one DURATION from another is valid only when the result is non-negative;
+otherwise evaluation produces error.value.out_of_range.

@@ -1,0 +1,15 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Validation, Execution, Failure, and Termination
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+All lexical, grammar, reference, type, dependency, rule-conflict, scope, and
+required VALIDATE checks complete before first side effect. Invalid source ends
+status.invalid. Missing external data/capability can yield status.blocked.
+
+During execution, failure of a required action invokes applicable handler/retry;
+otherwise status.failed. core.stop yields status.stopped unless another declared
+failure status applies. Cancellation yields status.cancelled. Host limitations
+produce error.host.constraint and never change LCL meaning.

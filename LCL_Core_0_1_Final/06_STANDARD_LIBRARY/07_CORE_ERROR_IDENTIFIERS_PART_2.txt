@@ -1,0 +1,10 @@
+LCL CORE 0.1 FINAL
+ERROR SELECTION AND PROPAGATION
+NORMATIVE
+
+When one source position violates multiple layers, report the earliest processing
+stage: lexical before grammar, grammar before schema, schema before resolution,
+resolution before type/expression, validation before effects, execution before
+verification, and verification before completion. A handler may recover only an
+error whose registry entry marks handler recovery permitted. Recovery does not
+erase evidence of the original error.

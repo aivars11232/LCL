@@ -1,0 +1,11 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Built-in Identifier Resolution Rules
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+Identifiers under reserved namespaces resolve only to this core registry.
+Extensions cannot replace them. A bare identifier never resolves by fuzzy match.
+Unknown operation/status/error/format/unit identifiers fail validation. Built-in
+names are versioned with LCL Core 0.1.0.

@@ -1,0 +1,24 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Document Kinds and Boundaries
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+kind.task
+    Executable specification with exactly one EXECUTE root.
+
+kind.library
+    Importable definitions and rules; no EXECUTE.
+
+kind.extension
+    Versioned definitions only; cannot contain executable tasks/rules.
+
+kind.data
+    Typed data/definitions only.
+
+kind.test
+    Executable conformance/test document with exactly one EXECUTE root.
+
+Every document starts with LCL then SPECIFICATION. Top-level block legality is
+closed by 10_REGISTRIES/block_schemas_v0.1.0.json.

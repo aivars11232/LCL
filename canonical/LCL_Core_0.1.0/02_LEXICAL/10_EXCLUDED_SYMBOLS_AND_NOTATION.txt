@@ -1,0 +1,63 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Excluded Symbols and Notation
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+=
+    Use ':' for declaration and '==' for equality.
+
+{ }
+    Blocks and objects use indentation, not braces.
+
+;
+    NEWLINE terminates a statement.
+
+'
+    Single quotes do not delimit strings.
+
+#
+    No symbolic comments, headings, IDs, or unquoted color values.
+
+& / &&
+    Use AND.
+
+| / ||
+    Use OR.
+
+!
+    Use NOT or FORBID.
+
+$
+    No interpolation, shell-variable, or currency syntax.
+
+%
+    Use PERCENTAGE(value); percent signs may occur in strings.
+
+~
+    No approximation, home-path, or match operator.
+
+^
+    No exponent or XOR operator in Core 0.1.0.
+
+->
+    Use IF (...) THEN: or exact references.
+
+?
+    Use REQUIRED: FALSE for optionality.
+
+...
+    Omitted normative content is invalid.
+
+` / ```
+    Markdown code delimiters are not LCL syntax.
+
+<tag>
+    XML tags are not LCL syntax.
+
+// / /* */
+    Use COMMENT blocks.
+
+TAB
+    Tabs are invalid outside string data and invalid for indentation.

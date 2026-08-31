@@ -1,0 +1,3 @@
+EXPECTED_ERROR: error.literal.invalid
+EXPECTED_TERMINAL_STATUS: status.invalid
+RULE: REGEX flags are unique and appear only in canonical ims order.

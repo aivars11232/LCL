@@ -1,0 +1,76 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Built-in Type Reference
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+STRING
+    Unicode text; no interpolation.
+
+INTEGER
+    Unbounded signed whole number.
+
+DECIMAL
+    Exact finite base-10 decimal.
+
+BOOLEAN
+    TRUE or FALSE; no truthy coercion.
+
+NULL
+    Explicit known absence.
+
+LIST[T]
+    Ordered collection using bracket value syntax; duplicates allowed.
+
+SET[T]
+    Unique unordered collection using bracket value syntax. Iteration is canonical
+    ascending only when T has a defined total order; otherwise iteration requires
+    an explicit sort key.
+
+OBJECT
+    Keyed value checked by an explicit schema when provided.
+
+ENUM
+    Closed set of exact declared values.
+
+REFERENCE[T]
+    Exact typed reference expressed with REF(identifier).
+
+PATH
+    Absolute path or path relative to an explicit WORKSPACE; a resolved
+    workspace-relative path cannot escape its WORKSPACE root.
+
+URI
+    Absolute URI with a scheme under the RFC 3986 absolute-URI profile; relative
+    references are invalid.
+
+GLOB
+    Workspace-relative file-selection pattern under the closed LCL GLOB profile.
+
+REGEX
+    Regular-expression pattern under the conservative ECMAScript-compatible LCL
+    REGEX profile.
+
+DATE
+    RFC 3339 full-date value.
+
+TIME
+    RFC 3339 partial-time with an optional offset; an omitted offset means UTC.
+
+DATETIME
+    RFC 3339 full-date and partial-time with an optional offset; an omitted offset
+    means UTC.
+
+DURATION
+    Non-negative amount of elapsed time.
+
+PERCENTAGE
+    DECIMAL from 0 through 100 inclusive.
+
+BYTES
+    Non-negative exact byte count.
+
+MEASURE
+    Number paired with one registered unit identifier; registered time-category
+    units are permitted.

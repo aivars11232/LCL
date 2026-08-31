@@ -1,0 +1,86 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: example.control
+    NAME: "Authority override handler retry"
+    VERSION: "1.0.0"
+    KIND: kind.task
+    AUTHORITY: 600
+
+INPUT:
+    ID: input.endpoint
+    TYPE: URI
+    VALUE: URI("https://example.invalid/data")
+
+OUTPUT:
+    ID: output.payload
+    TYPE: STRING
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.payload
+    RESULT:
+        TYPE: STRING
+
+ALLOW:
+    ID: permission.download
+    OPERATION: core.download
+    TARGET: REF(input.endpoint)
+    AUTHORITY: 500
+    PRIORITY: 0
+
+FORBID:
+    ID: rule.default_no_download
+    OPERATION: core.download
+    TARGET: REF(input.endpoint)
+    AUTHORITY: 500
+    PRIORITY: 0
+
+OVERRIDE:
+    ID: override.endpoint
+    WINNER: REF(permission.download)
+    LOSER: REF(rule.default_no_download)
+
+HANDLER:
+    ID: handler.download
+    EVENT: event.execution_error
+    OPERATION: core.retry
+    FALLBACK: core.stop
+    LIMIT: 2
+
+ACTION:
+    ID: action.download
+    OPERATION: core.download
+    TARGET: REF(input.endpoint)
+    PARAMETER:
+        NAME: destination
+        TYPE: PATH
+        REQUIRED: TRUE
+        VALUE: PATH("/tmp/lcl-example/payload.txt")
+    OUTPUT: REF(output.payload)
+    RETRY:
+        LIMIT: 2
+        WHEN: REF(output.payload) == MISSING
+        DELAY: DURATION(1, unit.second)
+        HANDLER: REF(handler.download)
+
+VERIFY:
+    ID: verify.payload
+    ASSERT: EXISTS(REF(output.payload)) AND NOT EMPTY(REF(output.payload))
+
+SUCCESS:
+    ID: success.payload
+    ALL: [REF(verify.payload)]
+
+TASK:
+    ID: task.download
+    GOAL: REF(goal.payload)
+    INPUT: REF(input.endpoint)
+    ACTION: REF(action.download)
+    OUTPUT: REF(output.payload)
+    HANDLER: REF(handler.download)
+    SUCCESS: REF(success.payload)
+
+EXECUTE:
+    REFERENCE: REF(task.download)

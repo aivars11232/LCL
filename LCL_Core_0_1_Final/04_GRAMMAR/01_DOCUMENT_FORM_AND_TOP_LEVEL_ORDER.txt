@@ -1,0 +1,14 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Document Form and Top-level Order
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+First non-blank block: LCL with exact VERSION. Second: SPECIFICATION. IMPORT and
+EXTENSION are resolved before other declarations. Remaining top-level block
+order does not change meaning except lexical STEP order and explicit BEFORE/
+AFTER. kind.task and kind.test require exactly one EXECUTE. Other kinds forbid
+EXECUTE.
+
+Top-level block legality by KIND is closed in the block-schema registry.

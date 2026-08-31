@@ -1,0 +1,14 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Determinism, Equivalence, and Interpreter Variation
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+When DETERMINISTIC is TRUE, equal valid inputs and state require semantically
+equivalent results, actions, ordering, and status. Byte-identical implementation
+code is not required unless output contract says so.
+
+When FALSE, content may vary only inside explicitly permitted dimensions while
+all types, scopes, hard rules, formats, bounds, checks, evidence, and success
+conditions remain invariant. Model/provider preference cannot redefine syntax.

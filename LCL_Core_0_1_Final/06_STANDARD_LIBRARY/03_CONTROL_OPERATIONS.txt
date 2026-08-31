@@ -1,0 +1,31 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Control Operations
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+core.stop
+    Meaning: Terminate the selected path, process, or service.
+    Side effect: TRUE
+    Deterministic: TRUE
+
+core.ask
+    Meaning: Request one exact missing value from an available authoritative source.
+    Side effect: FALSE
+    Deterministic: DECLARATION REQUIRED
+
+core.retry
+    Meaning: Repeat the associated action under RETRY LIMIT and WHEN.
+    Side effect: TRUE
+    Deterministic: DECLARATION REQUIRED
+
+core.continue
+    Meaning: Continue a bounded path after a handled event.
+    Side effect: FALSE
+    Deterministic: TRUE
+
+core.cancel
+    Meaning: Terminate because the invoking authority cancelled execution.
+    Side effect: TRUE
+    Deterministic: TRUE

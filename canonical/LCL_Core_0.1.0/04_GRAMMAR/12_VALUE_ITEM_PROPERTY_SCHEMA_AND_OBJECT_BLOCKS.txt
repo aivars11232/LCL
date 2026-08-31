@@ -1,0 +1,20 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Value, Item, Property, Schema, and Object Data Fields
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+VALUE, ITEM, PROPERTY, and SCHEMA are reserved field keys. They are not core
+block words and never open independent declarations.
+
+VALUE contains an inline expression or an indented OBJECT-data body. LIST and SET
+values use inline or multiline bracket literals. ITEM is a repeatable field only
+for enum-member declarations inside DEFINE with BASE ENUM; it is not a LIST or SET
+member form. PROPERTY names one exact schema or target property. SCHEMA contains
+an exact REF to a defined object type or a locally nested sequence of FIELD
+declarations. The enclosing block schema and field-signature registry determine
+where each field is legal.
+
+OBJECT fields are lowercase, unique, typed where a schema exists, and data-only.
+Executable/rule blocks inside object data produce error.block.field.

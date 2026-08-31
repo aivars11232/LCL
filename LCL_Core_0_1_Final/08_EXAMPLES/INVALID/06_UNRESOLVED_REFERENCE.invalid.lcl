@@ -1,0 +1,11 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: invalid.reference
+    NAME: "Unresolved"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+EXECUTE:
+    REFERENCE: REF(task.missing)

@@ -1,0 +1,14 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Formats, Encodings, Units, Bounds, and Patterns
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+FORMAT and ENCODING select exact built-in/extension identifiers. MINIMUM and
+MAXIMUM are inclusive. TOLERANCE is absolute and non-negative. PATTERN is GLOB
+or REGEX and does not silently coerce the target to STRING.
+
+DURATION requires a time unit. BYTES accepts only non-negative INTEGER. MEASURE
+pairs a number with one unit. PERCENTAGE is 0 through 100 inclusive. Custom units
+require a versioned extension.

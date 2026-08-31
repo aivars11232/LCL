@@ -1,0 +1,174 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Core Block Schemas B
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+REQUIRE
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID
+    Optional: ASSERT, ACTION, WHEN, SCOPE, AUTHORITY, PRIORITY, EVIDENCE, DESCRIPTION
+    Repeatable: none
+    Rule: Exactly one ASSERT or ACTION.
+    Rule: Hard rule.
+
+PREFER
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID
+    Optional: ASSERT, ACTION, WHEN, SCOPE, AUTHORITY, PRIORITY, DESCRIPTION
+    Repeatable: none
+    Rule: Exactly one ASSERT or ACTION.
+    Rule: Soft and does not authorize action.
+
+PRESERVE
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, TARGET
+    Optional: PROPERTY, WHEN, SCOPE, AUTHORITY, PRIORITY, EVIDENCE, DESCRIPTION
+    Repeatable: PROPERTY
+    Rule: No PROPERTY means complete target.
+    Rule: Hard pre-state equals post-state rule.
+
+OVERRIDE
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, WINNER, LOSER
+    Optional: WHEN, DESCRIPTION
+    Repeatable: none
+    Rule: Exact conflicting clauses only.
+    Rule: Lower authority cannot win.
+
+PHASE
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID
+    Optional: MODE, STEP, SEQUENCE, BEFORE, AFTER, WHEN, REQUIRED, DESCRIPTION
+    Repeatable: STEP
+    Rule: At least STEP, SEQUENCE, IF, or FOR EACH.
+    Rule: MODE defaults mode.sequential.
+
+SEQUENCE
+    Contexts: top_level, PHASE
+    Occurrence: zero_or_more
+    Required: ID
+    Optional: MODE, STEP, WHEN, REQUIRED, DESCRIPTION
+    Repeatable: STEP
+    Rule: At least STEP, IF, or FOR EACH.
+    Rule: Lexical order is normative.
+
+STEP
+    Contexts: SEQUENCE, PHASE, IF, FOR_EACH, ELSE
+    Occurrence: one_or_more
+    Required: ID
+    Optional: ACTION, SEQUENCE, PHASE, TASK, BEFORE, AFTER, WHEN, REQUIRED, RETRY, HANDLER, DESCRIPTION
+    Repeatable: none
+    Rule: Exactly one ACTION, SEQUENCE, PHASE, or TASK.
+
+RETRY
+    Contexts: ACTION, STEP, HANDLER
+    Occurrence: zero_or_one
+    Required: LIMIT
+    Optional: WHEN, DELAY, HANDLER, DESCRIPTION
+    Repeatable: none
+    Rule: LIMIT counts additional attempts and is 0 through 100.
+
+HANDLER
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, EVENT, OPERATION
+    Optional: TARGET, PARAMETER, WHEN, FALLBACK, LIMIT, DESCRIPTION
+    Repeatable: PARAMETER
+
+OUTPUT
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, TYPE, FORMAT
+    Optional: TARGET, SCHEMA, ENCODING, REQUIRED, DEFAULT, PROPERTY, DESCRIPTION
+    Repeatable: PROPERTY
+    Rule: TARGET is destination, not produced VALUE.
+
+VALIDATE
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, ASSERT
+    Optional: TARGET, ERROR, WHEN, REQUIRED, EVIDENCE, DESCRIPTION
+    Repeatable: none
+    Rule: Runs before first side effect.
+
+VERIFY
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, ASSERT
+    Optional: TARGET, ERROR, WHEN, REQUIRED, EVIDENCE, DESCRIPTION
+    Repeatable: none
+    Rule: Runs after observed target exists.
+    Rule: Required failure prevents success.
+
+TEST
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID
+    Optional: TASK, ACTION, INPUT, EXPECTED, ACTUAL, ASSERT, EVIDENCE, REQUIRED, DESCRIPTION
+    Repeatable: none
+    Rule: At least ASSERT or EXPECTED+ACTUAL.
+    Rule: At most one TASK/ACTION.
+
+EVIDENCE
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, TYPE
+    Optional: SOURCE, VALUE, FORMAT, ENCODING, CHECKSUM, PROVENANCE, REQUIRED, DESCRIPTION
+    Repeatable: none
+    Rule: Exactly one SOURCE or VALUE when evaluated.
+
+SUCCESS
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID
+    Optional: ALL, ANY, NONE, DESCRIPTION
+    Repeatable: none
+    Rule: Exactly one ALL, ANY, or NONE.
+
+FAILURE
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, WHEN, STATUS
+    Optional: ERROR, HANDLER, EVIDENCE, DESCRIPTION
+    Repeatable: none
+    Rule: STATUS is terminal non-success.
+
+ASSUME
+    Contexts: top_level
+    Occurrence: zero_or_more
+    Required: ID, TARGET, VALUE, WHEN
+    Optional: SCOPE, EVIDENCE, DESCRIPTION
+    Repeatable: none
+    Rule: Never overrides explicit data.
+    Rule: Applied assumption appears in evidence.
+
+EXECUTE
+    Contexts: top_level
+    Occurrence: zero_or_one
+    Required: REFERENCE
+    Optional: MODE, OUTPUT, DESCRIPTION
+    Repeatable: none
+    Rule: Reference is TASK, PHASE, SEQUENCE, ACTION, or TEST.
+    Rule: task/test documents require exactly one.
+
+COMMENT
+    Contexts: top_level, any_block
+    Occurrence: zero_or_more
+    Required: CONTENT
+    Optional: none
+    Repeatable: none
+
+EXAMPLE
+    Contexts: top_level, DEFINE
+    Occurrence: zero_or_more
+    Required: ID, CONTENT
+    Optional: EXPECTED, REQUIRED, DESCRIPTION
+    Repeatable: none
+    Rule: REQUIRED defaults FALSE.

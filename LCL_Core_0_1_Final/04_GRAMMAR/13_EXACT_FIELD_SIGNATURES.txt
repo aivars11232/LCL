@@ -1,0 +1,14 @@
+LCL CORE 0.1 FINAL
+EXACT FIELD SIGNATURES
+NORMATIVE
+
+The complete legal-parent, block-occurrence, required/optional status, minimum and
+maximum cardinality, accepted value kind, default, and conditional requirement for
+every field in every core block is defined by:
+
+    10_REGISTRIES/field_signatures_v0.1.0.json
+
+No field absent from a block signature is accepted. A null maximum means unbounded
+source repetition within the containing block; execution remains bounded by the
+separate execution rules. A default is applied only when the field is MISSING,
+never when it is NULL or UNKNOWN.

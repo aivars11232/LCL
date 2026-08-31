@@ -1,0 +1,16 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Declaration Resolution, Reachability, and Execution Graph
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+Definitions and source structure are immutable during one execution. Forward
+references are valid after full-document resolution; unresolved or cyclic
+prohibited references invalidate before effects.
+
+EXECUTE identifies one root. Reachability follows TASK/PHASE/SEQUENCE/STEP/
+ACTION references, TRUE branches, and applicable handlers. Unreachable ACTION
+and ALLOW declarations do not execute. Reachability does not expand SCOPE or
+permission. Each declaration evaluates at most once except bounded loop runtime
+instances and explicit RETRY attempts.

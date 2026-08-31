@@ -1,0 +1,20 @@
+LCL CORE CHANGELOG
+
+0.1.0 BLOCKED REPAIR CANDIDATE - LCL-REPAIR-0001
+
+- Established one canonical candidate tree from the byte-verified 152-file
+  historical base without modifying the original tree or archive.
+- Declared the EBNF profile; repaired blank-line, grouping, unary, identifier,
+  type-expression, COMMENT-branch, and structural-field grammar defects.
+- Added machine-readable excluded lexemes and deterministic tokenization rules.
+- Reconciled EXISTS, SET, non-negative DURATION, PRIORITY ranges, control-operation
+  side effects, semantic meta-type references, and four pre-effect lifecycle errors.
+- Corrected two accepted source fixtures and three objective example operation
+  parameter defects.
+- Added executable static EBNF, concrete source-fixture, and release-gate validators.
+- Retained the 791-entry catalog as a requirements index; semantic execution remains
+  unverified.
+- Recorded unresolved constructor/pattern, value-kind, nested-parent, division,
+  SET sorting, PRIORITY omission, determinism/result, diagnostic-selection,
+  lifecycle, example-result, and semantic-conformance decisions.
+- Produced no repair ZIP because mandatory release gates are blocked.

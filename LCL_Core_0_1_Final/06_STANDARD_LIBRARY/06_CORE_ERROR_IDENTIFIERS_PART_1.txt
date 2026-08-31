@@ -1,0 +1,8 @@
+LCL CORE 0.1 FINAL
+CORE ERROR IDENTIFIERS
+NORMATIVE
+
+The complete closed set of 75 error identifiers, meanings, detection stage,
+handler recoverability, and default terminal/blocking status is defined in
+10_REGISTRIES/statuses_and_errors_v0.1.0.json. No unregistered error identifier
+may be emitted as an LCL Core error.

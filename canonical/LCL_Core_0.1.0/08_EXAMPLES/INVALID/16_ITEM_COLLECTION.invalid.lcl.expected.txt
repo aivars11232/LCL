@@ -1,0 +1,3 @@
+EXPECTED_ERROR: error.field.forbidden
+EXPECTED_TERMINAL_STATUS: status.invalid
+RULE: ITEM is legal only for enum members in DEFINE with BASE ENUM.

@@ -1,0 +1,19 @@
+LCL CORE 0.1 FINAL
+NORMATIVE AUTHORITY ORDER
+NORMATIVE
+
+When two artifacts appear inconsistent, meaning is resolved in this exact order:
+
+1. 10_REGISTRIES machine-readable closed registries.
+2. 04_GRAMMAR/10_COMPLETE_EBNF.ebnf for syntactic form.
+3. 02_LEXICAL source and token rules.
+4. 03_TYPES_AND_VALUES type and value semantics.
+5. 05_SEMANTICS execution and rule semantics.
+6. 06_STANDARD_LIBRARY operation, function, status, and error prose.
+7. 07_VERSIONING_AND_EXTENSIONS version and extension rules.
+8. 08_EXAMPLES examples.
+9. 09_CONFORMANCE test descriptions.
+
+A lower item cannot change a higher item's meaning. Examples are never normative
+exceptions. The manifest and validation report establish package integrity, not
+language semantics.

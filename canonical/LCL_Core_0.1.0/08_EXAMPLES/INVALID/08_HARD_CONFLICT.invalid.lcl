@@ -1,0 +1,21 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: invalid.conflict
+    NAME: "Hard conflict"
+    VERSION: "1.0.0"
+    KIND: kind.library
+
+DATA:
+    ID: data.flag
+    TYPE: BOOLEAN
+    VALUE: TRUE
+
+REQUIRE:
+    ID: rule.one
+    ASSERT: REF(data.flag) == TRUE
+
+REQUIRE:
+    ID: rule.two
+    ASSERT: REF(data.flag) == FALSE

@@ -1,0 +1,14 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Language and Specification Versioning
+LANGUAGE VERSION: 0.1.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+LCL.VERSION selects language semantics and must be exact MAJOR.MINOR.PATCH.
+SPECIFICATION.VERSION versions the document contract separately. latest,
+ranges, wildcards, omitted components, and date-only versions are invalid.
+
+Patch releases repair contradiction/clarity without intentional valid-program
+breakage. Minor releases may add backward-compatible constructs. Major releases
+may change grammar/semantics. Core 0.1.0 does not assume future compatibility.

@@ -21,8 +21,8 @@ LCL CORE CHANGELOG
   source and expectation bytes, and added block-local and unresolved-reference
   static checks without claiming parser or semantic execution.
 - Expanded the descriptive requirements index to 797 entries, including exact
-  diagnostic-policy and failure-lifecycle requirements, and added ten concrete
-  deterministic selection vectors plus cross-registry lifecycle checks.
+  diagnostic-policy and failure-lifecycle requirements, and added twelve
+  concrete deterministic selection vectors plus cross-registry lifecycle checks.
 - Closed LCL-AUDIT-014 and LCL-AUDIT-015 and classified the language-definition
   scope as BARE_SPECIFICATION_COMPLETE. MANIFEST.json, SHA256SUMS.txt, and
   VALIDATION_REPORT.txt remain deliberately frozen and stale; no repair archive

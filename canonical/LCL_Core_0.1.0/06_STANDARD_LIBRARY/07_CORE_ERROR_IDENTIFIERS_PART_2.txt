@@ -9,11 +9,11 @@ through that closed contract. This prose does not create a second precedence
 table.
 
 The exact selection stages are lexical, grammar_or_schema, resolution,
-static_or_expression, validation, execution, and
-verification_or_completion. Select the earliest failing stage for each failed
-source unit or invocation path. Emit every independent unsuppressed diagnostic
-at that stage. A later-stage consequence of the same failed unit or path is not
-evaluated, but independent diagnostics and completed child-path evidence remain.
+static_or_expression, validation, execution, and verification_or_completion.
+Select the earliest failing stage for each failed source unit or invocation
+path. Emit every independent unsuppressed diagnostic at that stage. A
+later-stage consequence of the same failed unit or path is not evaluated, but
+independent diagnostics and completed child-path evidence remain.
 
 Core 0.1.0 has one diagnostic severity, error. After applying only explicit
 same-cause supersession and exact duplicate suppression, order diagnostics by

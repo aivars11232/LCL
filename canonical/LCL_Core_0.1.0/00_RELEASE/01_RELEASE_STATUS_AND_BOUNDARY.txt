@@ -7,13 +7,17 @@ NORMATIVE
 This tree is the canonical LCL Core 0.1.0 repair candidate identified by
 00_CANONICAL_SOURCE_AND_PROVENANCE.txt. It supersedes competing historical
 candidate metadata in this workspace but does not alter the immutable historical
-tree or archive. Accepted Tasks 0001 through 0005 resolve LCL-AUDIT-001, 005,
+tree; the historical ZIP is absent by the owner-approved LCL-TASK-0001 deletion.
+Accepted Tasks 0001 through 0006 resolve LCL-AUDIT-001, 005,
 LCL-AUDIT-010/K-003, 011, 012, the bare-language result-binding portion of
-LCL-AUDIT-007, and the operation/result-contract portions of LCL-AUDIT-013.
-Release-blocking bare-language work remains under LCL-AUDIT-014 and 015.
+LCL-AUDIT-007, the operation/result-contract portions of LCL-AUDIT-013, and
+LCL-AUDIT-014 and 015. The language-definition scope is
+BARE_SPECIFICATION_COMPLETE.
 Parser/runtime/executable-semantic evidence under LCL-AUDIT-007 and LCL-AUDIT-016
 is outside the bare-language scope and is not a release blocker. This tree is not
-frozen, release-ready, Final, or Verified. No repair archive is produced.
+release-ready, Final, or Verified: MANIFEST.json, SHA256SUMS.txt, and
+VALIDATION_REPORT.txt are deliberately frozen and stale until the corrected
+final release task, and no repair archive is produced.
 
 2. LANGUAGE BOUNDARY
 

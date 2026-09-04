@@ -5,7 +5,7 @@ STATUS: NORMATIVE
 DATE: 2026-08-30
 
 
-A conforming interpreter processes one specification in this order:
+A conforming implementation processes one specification in this order:
 
 1. Decode UTF-8 and validate line/indentation rules.
 2. Tokenize under the closed lexicon and symbol inventory.
@@ -21,4 +21,18 @@ A conforming interpreter processes one specification in this order:
 12. Collect required evidence and evaluate SUCCESS/FAILURE.
 13. Return one terminal STATUS and declared outputs.
 
-No later stage repairs an earlier invalid stage by guessing intent.
+For diagnostic selection, the closed stage order is lexical,
+grammar_or_schema, resolution, static_or_expression, validation, execution,
+and verification_or_completion. Grammar and schema form one selection stage;
+verification and completion form one selection stage. A registry stage is the
+normative classification of a diagnostic, even when an implementation first
+observes the underlying fact while performing an earlier numbered prerequisite.
+Discovery time, host completion time, and parallel scheduling never change the
+registered stage or diagnostic order.
+
+Each source unit or invocation path advances only while its earlier applicable
+stage has no unsuppressed diagnostic. At the first failing stage, apply the
+complete multiplicity, supersession, duplicate, primary/secondary, and stable
+ordering rules in 10_REGISTRIES/statuses_and_errors_v0.1.0.json. Independent
+diagnostics and already-completed child-path evidence remain recorded. No later
+stage repairs an earlier invalid stage by guessing intent.

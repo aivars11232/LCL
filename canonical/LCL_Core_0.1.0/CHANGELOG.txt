@@ -1,5 +1,33 @@
 LCL CORE CHANGELOG
 
+0.1.0 BARE-SPECIFICATION-COMPLETE CANDIDATE - LCL-TASK-0006
+
+- Reproduced the accepted Claude handoff decisions against the actual local
+  candidate; no web-session edit was assumed present.
+- Closed deterministic diagnostic selection across seven stages with one
+  severity, exact specificity and same-cause supersession, independent
+  multiplicity, exact duplicate identity, canonical omission locations, stable
+  ordering, primary/secondary propagation, and declared-handler recovery.
+- Distinguished missing required fields and duplicate blocks or fields from
+  their generic cardinality consequences, including precise same-iteration and
+  same-retry-attempt suppression identity.
+- Resolved allowed failure phases for all 77 registered errors and specified
+  producer-relative status, effect-state, observed-effect, OUTPUT-binding,
+  retained-evidence, recovery, and indeterminate-state behavior.
+- Preserved RETRY syntax for every resolved ACTION while requiring exact safety
+  evidence after known effects, reconciliation after indeterminate effects, and
+  actual failed attempts before error.retry.exhausted.
+- Corrected the four accepted invalid-example expectations, pinned their exact
+  source and expectation bytes, and added block-local and unresolved-reference
+  static checks without claiming parser or semantic execution.
+- Expanded the descriptive requirements index to 797 entries, including exact
+  diagnostic-policy and failure-lifecycle requirements, and added ten concrete
+  deterministic selection vectors plus cross-registry lifecycle checks.
+- Closed LCL-AUDIT-014 and LCL-AUDIT-015 and classified the language-definition
+  scope as BARE_SPECIFICATION_COMPLETE. MANIFEST.json, SHA256SUMS.txt, and
+  VALIDATION_REPORT.txt remain deliberately frozen and stale; no repair archive
+  was produced.
+
 0.1.0 BLOCKED REPAIR CANDIDATE - LCL-TASK-0005
 
 - Reproduced the accepted Claude handoff decisions against the actual local

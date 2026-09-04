@@ -17,8 +17,10 @@ byte-for-byte identical to LCL_Core_0.1_Final_VERIFIED.zip, whose SHA-256 was:
 
     1f3057e3e186bfca218843976da050f1d504f4beaae8aad10bb144437cbfcfd0
 
-That tree and archive are immutable duplicate historical inputs and are not
-modified by this repair.
+The extracted historical tree remains an immutable input and is not modified by
+this repair. The historical ZIP was intentionally deleted with owner approval
+during LCL-TASK-0001; its recorded verified hash remains lineage evidence but
+the archive bytes are not present in this workspace.
 
 3. COMPETING ARTIFACTS
 
@@ -33,15 +35,17 @@ tree is supporting source material and is not part of this bare-language package
 
 The historical artifacts are candidate builds; the workspace contains no evidence
 that either materially different 0.1.0 candidate was an established release. This
-repair therefore retains language version 0.1.0. Accepted Tasks 0001 through 0005
-resolve LCL-AUDIT-001, 005, LCL-AUDIT-010/K-003, 011, 012, the bare-language
+repair therefore retains language version 0.1.0. Accepted Tasks 0001 through 0006
+resolve LCL-AUDIT-001, 005, LCL-AUDIT-010/K-003, 011, 012, 014, 015, the bare-language
 result-binding portion of LCL-AUDIT-007, and the operation/result-contract
 portions of LCL-AUDIT-013 through the LIST/SET/ITEM, constructor/pattern, field
 value-kind/parent closure, division/SET sorting, PRIORITY, 39-row operation, and
-nine closed result-schema contracts. This candidate remains blocked by findings
-LCL-AUDIT-014 and 015.
+nine closed result-schema contracts, deterministic diagnostic selection, and
+producer-relative failure lifecycle and retry-safety rules.
 Parser/runtime/executable-semantic evidence under LCL-AUDIT-007 and LCL-AUDIT-016
 is outside the bare-language package scope and is not a release blocker. The
-candidate is not ready for release, no repair archive is produced, and it must
-not be represented as Final, Verified, Complete, Canonical Release, or
-release-ready.
+language-definition scope is BARE_SPECIFICATION_COMPLETE. MANIFEST.json,
+SHA256SUMS.txt, and VALIDATION_REPORT.txt remain deliberately frozen and stale
+until the corrected final release task. Therefore this candidate is not
+release-ready, no repair archive is produced, and it must not be represented as
+Final, Verified, Canonical Release, or a packaged release.

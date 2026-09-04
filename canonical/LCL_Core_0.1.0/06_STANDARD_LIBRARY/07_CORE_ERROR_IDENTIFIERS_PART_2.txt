@@ -2,9 +2,48 @@ LCL CORE 0.1.0 RELEASE CANDIDATE
 ERROR SELECTION AND PROPAGATION
 NORMATIVE
 
-When one source position violates multiple layers, report the earliest processing
-stage: lexical before grammar, grammar before schema, schema before resolution,
-resolution before type/expression, validation before effects, execution before
-verification, and verification before completion. A handler may recover only an
-error whose registry entry marks handler recovery permitted. Recovery does not
-erase evidence of the original error.
+The complete selection and failure-lifecycle contracts are defined in
+10_REGISTRIES/statuses_and_errors_v0.1.0.json. Every registered diagnostic has
+resolved severity, specificity, supersession, and allowed-failure-phase metadata
+through that closed contract. This prose does not create a second precedence
+table.
+
+The exact selection stages are lexical, grammar_or_schema, resolution,
+static_or_expression, validation, execution, and
+verification_or_completion. Select the earliest failing stage for each failed
+source unit or invocation path. Emit every independent unsuppressed diagnostic
+at that stage. A later-stage consequence of the same failed unit or path is not
+evaluated, but independent diagnostics and completed child-path evidence remain.
+
+Core 0.1.0 has one diagnostic severity, error. After applying only explicit
+same-cause supersession and exact duplicate suppression, order diagnostics by
+registered stage, canonical source or declared execution-path location,
+iteration, retry-attempt index, severity, specificity, and identifier exactly as
+the registry specifies. Discovery time and host completion order are irrelevant.
+For an omission, the canonical source location is the zero-width parent-closing
+or end-of-file byte position defined by the registry. Iteration and retry-attempt
+indexes are part of both duplicate and supersession identity. The same identifier
+at a distinct locus, producer, iteration, or attempt is not a duplicate.
+
+After permitted declared-handler recovery, the first unhandled diagnostic in
+stable order is primary; every other unhandled diagnostic is secondary. Handled
+or retried diagnostics remain ordered secondary evidence. The primary unhandled
+diagnostic supplies default status. If it is recovered, the first remaining
+unhandled diagnostic becomes primary; only recovery of every applicable
+diagnostic permits the handler result to control status.
+
+failure_phase is relative to the exposed result producer, not inferred from an
+error identifier or status. Child operations and retry attempts retain their own
+local phase and effect evidence. The aggregate producer reports pre_effect only
+when no concrete effect in its invocation began, post_effect when at least one
+effect is known to have begun, and indeterminate when available evidence cannot
+establish that fact. Status, effect_state, observed effects, and OUTPUT binding
+remain separate axes under the result-schema contract.
+
+A handler may recover only an error whose registry entry permits declared
+handler recovery. Recovery and retry never erase the original diagnostic or its
+evidence. A retry after known effects requires exact repetition, resumption, or
+reconciliation safety evidence; indeterminate effects prohibit another attempt
+until reconciled. Missing, UNKNOWN, and proved-unsafe safety facts map to the
+exact errors listed by the registry. A blocked, unmade attempt does not constitute
+retry exhaustion.

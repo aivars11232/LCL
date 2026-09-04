@@ -1,6 +1,8 @@
-LCL Core 0.1.0 Blocked Repair Candidate
+LCL Core 0.1.0 Bare-Specification-Complete Candidate
 Formal version: 0.1.0
-Status: implementation partial; not ready for release
+Language-definition status: BARE_SPECIFICATION_COMPLETE through LCL-TASK-0006
+Packaging status: unpublished; not Final, Verified, or release-ready
 Canonical base build UTC: 2026-08-30T18:52:24+00:00
 Repair task: LCL-REPAIR-0001
+Integrity metadata: deliberately frozen pending the corrected final release task
 Repair archive: not created

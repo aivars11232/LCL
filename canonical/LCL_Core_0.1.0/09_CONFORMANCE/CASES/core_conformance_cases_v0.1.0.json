@@ -2,13 +2,15 @@
   "language": "LCL",
   "version": "0.1.0",
   "normative": true,
-  "case_count": 795,
+  "case_count": 797,
   "category_counts": {
     "block_extra": 41,
     "block_minimum": 41,
     "block_missing": 41,
+    "diagnostic_policy": 1,
     "enum_groups": 22,
     "error_contract": 77,
+    "failure_lifecycle": 1,
     "function_invalid": 11,
     "function_valid": 11,
     "keyword_invalid": 141,
@@ -5303,8 +5305,8 @@
       "id": "OPERATION-ERRORS-0660",
       "category": "operation_errors",
       "subject": "core.retry",
-      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Reject limit outside 0..100 with error.value.out_of_range. Exercise ACTION resolution before inheritance; error.required.missing or error.value.unknown for a MISSING or UNKNOWN required when condition; local retry exhaustion and action execution failure; then union every applicable error of the resolved wrapped ACTION, including any wrapped operation or profile precondition error. Every ACTION that resolves exactly once may be retried under its explicit bounded RETRY declaration; no separate retryable marker exists.",
-      "expected": "exact local retry error or inherited ACTION error",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Reject limit outside 0..100 with error.value.out_of_range. Exercise ACTION resolution before inheritance; error.required.missing or error.value.unknown for a MISSING or UNKNOWN required when condition; then union every applicable error of the resolved wrapped ACTION. Every ACTION that resolves exactly once remains syntactically eligible under its explicit bounded RETRY declaration; no separate retryable marker exists. An additional attempt after known effects requires exact safe repetition, resumption, or reconciliation evidence and an indeterminate attempt requires reconciliation first. Missing safety proof uses error.required.missing, UNKNOWN proof uses error.value.unknown, and proved-unsafe repetition uses error.operation.precondition. Retain every attempt result and diagnostic in attempt order. Emit error.retry.exhausted only after every permitted attempt was actually made and failed; a safety-blocked unmade attempt is not exhaustion.",
+      "expected": "exact local retry safety error or inherited ACTION error with ordered attempt evidence",
       "source": "operations_v0.1.0.json"
     },
     {
@@ -6386,6 +6388,22 @@
       "requirement": "Enforce inherited as the only operation-axis marker and permit it only for core.retry after resolving the wrapped ACTION.",
       "expected": "exact inherited marker contract",
       "source": "built_in_groups_and_results_v0.1.0.json"
+    },
+    {
+      "id": "DIAGNOSTIC-POLICY-0796",
+      "category": "diagnostic_policy",
+      "subject": "core.error_selection",
+      "requirement": "Resolve complete metadata for all 77 errors from the closed diagnostic_selection contract. Use exactly one severity, error. Evaluate the seven registered stages in order and emit every independent unsuppressed diagnostic at the earliest failing stage. Apply supersession only to the same cause, canonical locus, stage, producer, iteration, and retry attempt; suppress exact duplicate keys; and order by stage, canonical source or declared execution-path location, iteration, retry-attempt index, severity, specificity, and identifier without discovery-time influence. After permitted declared-handler recovery, select the first unhandled diagnostic as primary, retain every other unhandled diagnostic as secondary, and retain handled or retried diagnostics as ordered secondary evidence. When every diagnostic is recovered, select no primary.",
+      "expected": "deterministic unhandled primary and ordered unhandled, handled, and retried secondary evidence with exact same-cause suppression",
+      "source": "statuses_and_errors_v0.1.0.json"
+    },
+    {
+      "id": "FAILURE-LIFECYCLE-0797",
+      "category": "failure_lifecycle",
+      "subject": "core.failure_lifecycle",
+      "requirement": "Resolve allowed failure phases for every error from stage defaults and exact overrides, measuring phase at the exposed result producer while retaining local child and retry-attempt evidence. Enforce error.dependency.unsatisfied and error.scope.violation as pre_effect; resolve error.execution.order and error.required.missing from observed producer timing; and cover every additional mixed-phase identifier. Let the primary unhandled diagnostic's registered default status control, promote the first remaining unhandled diagnostic after recovery, and permit a handler result to control only after every applicable diagnostic is recovered. Keep status, effect_state, observed effects, and OUTPUT binding independent; require exact phase/effect/output evidence; fail closed for indeterminate state; and permit another retry after known effects only with exact safe repetition, resumption, or reconciliation evidence. A safety-blocked unmade attempt is not retry exhaustion.",
+      "expected": "exact producer-relative phase, status, effect, OUTPUT, evidence, indeterminate, and retry-safety behavior",
+      "source": "statuses_and_errors_v0.1.0.json"
     }
   ]
 }

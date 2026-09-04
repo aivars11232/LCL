@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -135,9 +136,9 @@ def validate_source(data: bytes) -> str:
         previous_indent = indent
 
     outside_text = "".join(char if outside[index] else " " for index, char in enumerate(text))
-    if "#" in outside_text or ";" in outside_text:
-        return "error.lexical.unknown_symbol"
-    if "'" in outside_text:
+    if any(symbol in outside_text for symbol in ("#", ";", "'", "%")):
+        return "error.symbol.invalid"
+    if re.search(r"(?<![!<>=])=(?!=)", outside_text):
         return "error.symbol.invalid"
     if unclosed_string:
         return "error.literal.unclosed"

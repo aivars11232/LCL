@@ -122,31 +122,31 @@
       "default_status": "status.invalid"
     },
     "error.block.context": {
-      "meaning": "A block occurs under an illegal parent or document position.",
+      "meaning": "A block occurs at an illegal document position or as a top-level block forbidden for the document kind.",
       "stage": "grammar_or_schema",
       "recoverable_with_declared_handler": false,
       "default_status": "status.invalid"
     },
     "error.block.duplicate": {
-      "meaning": "A non-repeatable field occurs more than once in one parent.",
+      "meaning": "A non-repeatable child block occurs more than once in one parent.",
       "stage": "grammar_or_schema",
       "recoverable_with_declared_handler": false,
       "default_status": "status.invalid"
     },
     "error.block.field": {
-      "meaning": "A block contains a field or child not permitted by its schema.",
+      "meaning": "A child block occurs under a parent whose schema does not permit that child.",
       "stage": "grammar_or_schema",
       "recoverable_with_declared_handler": false,
       "default_status": "status.invalid"
     },
     "error.block.occurrence": {
-      "meaning": "A block violates its document or parent occurrence limit.",
+      "meaning": "A present block exceeds its document or parent maximum occurrence limit and no more specific duplicate-block diagnostic applies.",
       "stage": "grammar_or_schema",
       "recoverable_with_declared_handler": false,
       "default_status": "status.invalid"
     },
     "error.block.required": {
-      "meaning": "A block omits a required field or child.",
+      "meaning": "A block omits a required child block.",
       "stage": "grammar_or_schema",
       "recoverable_with_declared_handler": false,
       "default_status": "status.invalid"
@@ -194,7 +194,7 @@
       "default_status": "status.invalid"
     },
     "error.encoding.invalid": {
-      "meaning": "Source is not valid UTF-8 or contains a prohibited BOM.",
+      "meaning": "Source is not valid UTF-8.",
       "stage": "lexical",
       "recoverable_with_declared_handler": false,
       "default_status": "status.invalid"
@@ -302,7 +302,7 @@
       "default_status": "status.invalid"
     },
     "error.indentation.invalid": {
-      "meaning": "Indentation uses tabs, non-multiple-of-four spaces, or an invalid level change.",
+      "meaning": "Indentation violates a lexical indentation rule for which no more specific indentation diagnostic applies.",
       "stage": "lexical",
       "recoverable_with_declared_handler": false,
       "default_status": "status.invalid"
@@ -332,13 +332,13 @@
       "default_status": "status.invalid"
     },
     "error.lexical.malformed_token": {
-      "meaning": "Characters cannot form any registered token.",
+      "meaning": "Source that has passed byte and character validation contains a token-starting sequence that cannot form any registered token, is not an exact excluded-symbol lexeme or notation pattern, and is not a literal covered by a more specific literal diagnostic.",
       "stage": "lexical",
       "recoverable_with_declared_handler": false,
       "default_status": "status.invalid"
     },
     "error.lexical.unknown_symbol": {
-      "meaning": "Punctuation outside strings is absent from the adopted-symbol registry.",
+      "meaning": "Punctuation outside strings is absent from both the adopted-symbol registry and the explicit excluded-symbol inventory.",
       "stage": "lexical",
       "recoverable_with_declared_handler": false,
       "default_status": "status.invalid"
@@ -350,7 +350,7 @@
       "default_status": "status.invalid"
     },
     "error.literal.invalid": {
-      "meaning": "A scalar, list, constructor, or multiline string is malformed.",
+      "meaning": "A scalar, list, constructor, or multiline string is malformed for a reason other than an unclosed string or an invalid string escape.",
       "stage": "lexical",
       "recoverable_with_declared_handler": false,
       "default_status": "status.invalid"
@@ -530,7 +530,7 @@
       "default_status": "status.failed"
     },
     "error.symbol.invalid": {
-      "meaning": "An excluded symbol occurs outside string/data content.",
+      "meaning": "An exact lexeme or notation pattern in the explicit excluded-symbol inventory occurs outside string/data content.",
       "stage": "lexical",
       "recoverable_with_declared_handler": false,
       "default_status": "status.invalid"
@@ -578,5 +578,204 @@
       "default_status": "status.invalid"
     }
   },
-  "compatibility_note": "The original 46 error identifiers remain exact and 31 additional precise identifiers are present in this repair candidate; same-stage selection precedence remains undefined and blocks release."
+  "diagnostic_selection": {
+    "stage_order": [
+      "lexical",
+      "grammar_or_schema",
+      "resolution",
+      "static_or_expression",
+      "validation",
+      "execution",
+      "verification_or_completion"
+    ],
+    "severity": {
+      "closed_values": [
+        "error"
+      ],
+      "default_for_every_error": "error",
+      "descending_order": [
+        "error"
+      ]
+    },
+    "specificity_rank": {
+      "default_for_every_error": 100,
+      "higher_is_more_specific": true,
+      "overrides": {
+        "error.block.duplicate": 200,
+        "error.field.duplicate": 200,
+        "error.field.required": 200,
+        "error.indentation.jump": 200,
+        "error.indentation.width": 200,
+        "error.literal.escape": 200,
+        "error.literal.unclosed": 200,
+        "error.source.tab": 200
+      }
+    },
+    "supersedes": {
+      "default_for_every_error": [],
+      "overrides": {
+        "error.block.duplicate": [
+          "error.block.occurrence"
+        ],
+        "error.field.duplicate": [
+          "error.field.cardinality"
+        ],
+        "error.field.required": [
+          "error.field.cardinality"
+        ],
+        "error.indentation.jump": [
+          "error.indentation.invalid"
+        ],
+        "error.indentation.width": [
+          "error.indentation.invalid"
+        ],
+        "error.literal.escape": [
+          "error.literal.invalid"
+        ],
+        "error.literal.unclosed": [
+          "error.literal.invalid"
+        ],
+        "error.source.tab": [
+          "error.indentation.invalid"
+        ]
+      }
+    },
+    "selection_scope": "one exposed result producer or one source validation run",
+    "earliest_stage_rule": "Evaluate stages in stage_order. When a stage has one or more diagnostics, emit that stage's independent unsuppressed diagnostics and do not evaluate later stages for the failed source unit or invocation path. Diagnostics already recorded for independent units or completed child paths remain evidence.",
+    "multiplicity_rule": "Emit every independent applicable diagnostic at the selected stage. Distinct source loci, declaration paths, invocation paths, iteration indexes, or retry-attempt indexes are independent even when their identifiers match.",
+    "supersession_rule": "A supersedes edge suppresses its target only when both diagnostics describe the same cause at the same canonical locus, stage, producer path, iteration index, and retry-attempt index. It never suppresses an independent occurrence. Supersession is applied transitively before duplicate suppression and ordering.",
+    "duplicate_key": [
+      "error_identifier",
+      "stage",
+      "cause_identity",
+      "canonical_locus",
+      "producer_path",
+      "iteration_index",
+      "retry_attempt_index"
+    ],
+    "duplicate_rule": "After supersession, emit one diagnostic for each duplicate_key. Merge its evidence records in canonical evidence-key order and remove byte-identical evidence records. Discovery count and discovery time do not affect output.",
+    "stable_order": [
+      "stage_order ascending",
+      "canonical source byte offset or declared execution-path order ascending",
+      "iteration index ascending",
+      "retry-attempt index ascending",
+      "severity descending",
+      "specificity_rank descending",
+      "error identifier by Unicode scalar value ascending"
+    ],
+    "location_rule": "Every source byte offset is zero-based. A source diagnostic for present bytes uses its first offending UTF-8 byte offset. An omitted field or child block uses the zero-width byte position at the first following nonblank line whose indentation is not greater than the parent block header; when no such line exists, it uses the end-of-file offset equal to the source byte length. An omitted required top-level block uses that end-of-file offset. error.source.final_line_feed uses the end-of-file offset equal to the non-empty source byte length because the required byte is absent. An execution diagnostic uses the declaration order of the producer path and then the declared iteration and retry-attempt indexes. Host completion or discovery time is never an ordering key.",
+    "primary_rule": "After suppression, stable_order, and permitted declared-handler recovery, the first unhandled diagnostic is primary. If every diagnostic is recovered, no diagnostic is primary and all handled diagnostics remain ordered evidence.",
+    "secondary_rule": "Every other unhandled emitted diagnostic is secondary and remains in stable_order. A handled or retried diagnostic remains ordered secondary evidence and never controls status while handled."
+  },
+  "failure_lifecycle": {
+    "phase_scope": "failure_phase is measured relative to the exposed result producer. A delegated child or retry attempt retains its own local phase and effect observations as ordered evidence; the aggregate producer derives its phase from all effects begun within its invocation.",
+    "error_phase_resolution": {
+      "defaults_by_stage": {
+        "lexical": [
+          "pre_effect"
+        ],
+        "grammar_or_schema": [
+          "pre_effect"
+        ],
+        "resolution": [
+          "pre_effect"
+        ],
+        "static_or_expression": [
+          "pre_effect"
+        ],
+        "validation": [
+          "pre_effect"
+        ],
+        "execution": [
+          "pre_effect",
+          "post_effect",
+          "indeterminate"
+        ],
+        "verification_or_completion": [
+          "pre_effect",
+          "post_effect",
+          "indeterminate"
+        ]
+      },
+      "overrides": {
+        "error.dependency.unsatisfied": [
+          "pre_effect"
+        ],
+        "error.scope.violation": [
+          "pre_effect"
+        ],
+        "error.value.unknown": [
+          "pre_effect",
+          "post_effect",
+          "indeterminate"
+        ]
+      },
+      "resolution_rule": "Each error inherits the list for its registered stage unless an exact identifier override exists. This resolves complete allowed-failure-phase metadata for every registered error. none is not an allowed failure phase when an error exists."
+    },
+    "baseline_error_profiles": {
+      "error.dependency.unsatisfied": "pre_effect only: required dependencies resolve at processing step 7 before the first authorized effect",
+      "error.execution.order": "pre_effect when graph construction or the first operation detects the order failure; post_effect when an aggregate producer detects a violation after an earlier child effect; indeterminate when evidence cannot establish whether an earlier effect began",
+      "error.required.missing": "pre_effect when the required item is missing before any producer effect; post_effect when it becomes required or is found missing after an earlier producer effect; indeterminate when the timing or earlier effects cannot be established",
+      "error.scope.violation": "pre_effect only: effective scope resolves at processing step 6 before the first authorized effect"
+    },
+    "additional_mixed_error_profiles": {
+      "error.cancelled": "the invoking authority or host may cancel before an effect, after a known effect, or while effect timing is unknown",
+      "error.evidence.missing": "completion may require evidence after no effect or after known effects; uncertain effect observations remain indeterminate",
+      "error.execution.action": "failure to start is pre_effect; failure after a begun action is post_effect; unavailable start/effect observation is indeterminate",
+      "error.host.constraint": "a host limitation may be detected before an effect, after a prior aggregate effect, or with uncertain effect timing",
+      "error.operation.postcondition": "a postcondition may fail for an effect-free producer, after known effects, or when the effect extent cannot be established",
+      "error.operation.precondition": "an immediate operation precondition fails before that operation's effects; an aggregate producer may already contain prior child or attempt effects",
+      "error.permission.denied": "denial may occur in preflight, after earlier aggregate effects, or with uncertain effect timing",
+      "error.retry.exhausted": "all failed attempts may be effect-free, may include known effects, or may include an attempt whose effects are indeterminate",
+      "error.success.unsatisfied": "SUCCESS may be unsatisfied after an effect-free run, after known effects, or when effect observations are indeterminate",
+      "error.value.unknown": "ordinary static use is pre_effect; a retry condition or other aggregate decision may become UNKNOWN after a prior child or attempt effect",
+      "error.verification.failed": "verification may fail after an effect-free producer, after known effects, or when effect observations are indeterminate"
+    },
+    "status_rule": "The primary unhandled diagnostic contributes its registered default_status; secondary diagnostics never override it. If recovery handles that diagnostic while another remains unhandled, the first remaining diagnostic under stable_order becomes primary. Only when every applicable diagnostic is recovered may the declared handler result control status. failure_phase never changes status, and status never infers failure_phase.",
+    "effect_state_rule": "pre_effect requires effect_state none and an empty observed_effects list. post_effect requires at least one known begun effect and preserves applied, partial, or independently proven indeterminate effect truth. indeterminate failure_phase requires effect_state indeterminate unless independent evidence proves the exact effect_state.",
+    "output_binding_rule": "pre_effect leaves OUTPUT unbound and forbids partial OUTPUT. post_effect does not bind OUTPUT merely because an effect or schema-local effect-truth field exists. Partial OUTPUT is permitted only where the selected result schema explicitly declares it. Indeterminate phase binds only a value whose existence, type, and provenance are independently proven under that schema.",
+    "retry_safety": {
+      "eligibility_rule": "Every ACTION resolving exactly once remains syntactically eligible for an explicit RETRY; no separate retryable marker is introduced and retry adds no authority, scope, dependency, determinism, or effect capability.",
+      "pre_effect_rule": "A failed attempt proven pre_effect with effect_state none may be attempted again only when the declared retry count and WHEN condition permit it.",
+      "known_effect_rule": "After applied or partial effects, another attempt is permitted only when exact evidence proves the observed state and proves that repetition, resumption, or reconciliation cannot duplicate a non-idempotent effect or exceed the wrapped action's original authority, scope, and post-state.",
+      "indeterminate_rule": "An attempt with indeterminate phase or effects prohibits another attempt until exact reconciliation evidence resolves the relevant state.",
+      "safety_error_mapping": {
+        "missing proof": "error.required.missing",
+        "UNKNOWN proof or condition": "error.value.unknown",
+        "proved unsafe": "error.operation.precondition"
+      },
+      "exhaustion_rule": "error.retry.exhausted is emitted only when the initial attempt and every retry permitted by the declared count and conditions were actually made and failed. A safety-blocked unmade attempt does not satisfy exhaustion.",
+      "evidence_rule": "Every attempt result and diagnostic remains in attempt-index order. Recovery does not erase prior evidence. The retry producer folds phase and effect observations across all attempts under phase_scope."
+    },
+    "evidence_requirements": {
+      "common": [
+        "error identifier and registered stage",
+        "producer declaration or invocation path",
+        "canonical source locus or declared execution event",
+        "iteration and retry-attempt indexes when applicable",
+        "observations supporting failure_phase",
+        "observations supporting effect_state and every observed_effects record",
+        "observations supporting OUTPUT binding state"
+      ],
+      "error.dependency.unsatisfied": [
+        "dependency identifier",
+        "resolved FALSE, MISSING, or UNKNOWN state before effects"
+      ],
+      "error.execution.order": [
+        "violated or cyclic ordering edge",
+        "ordered child results preceding detection"
+      ],
+      "error.required.missing": [
+        "required item identifier",
+        "point at which absence became determinable"
+      ],
+      "error.scope.violation": [
+        "resolved target",
+        "effective scope",
+        "failed containment or membership relation before effects"
+      ]
+    },
+    "indeterminate_state_rule": "Preserve every known observation, but do not infer an exact phase, exact effect extent, successful postcondition, or OUTPUT value from absence of evidence. Reconciliation may replace indeterminate only with exact retained evidence; until then no retry or success claim that depends on the unknown fact is permitted."
+  },
+  "compatibility_note": "The original 46 error identifiers remain exact and 31 additional precise identifiers are present. Task 0006 closes same-stage selection and mixed failure timing through the diagnostic_selection and failure_lifecycle contracts without changing those identifiers."
 }

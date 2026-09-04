@@ -3,11 +3,13 @@ CHANGE CONTROL
 NORMATIVE
 
 Published release bytes are immutable and may never retain the same checksum
-after an edit. This repair tree is a blocked candidate, not an established
-release; it retains the historical candidate version only while it remains
-unpublished. Before any release, the owner must adjudicate whether accepted
-repairs change language meaning and select the corresponding semantic version.
-Corrections that change no meaning require a patch release. Added
-backward-compatible features require a minor release. Breaking lexical, grammar,
-type, or semantic changes require a major release. Every packaged candidate or
-release receives freshly generated integrity metadata.
+after an edit. This repair tree is a BARE_SPECIFICATION_COMPLETE unpublished
+candidate, not an established or packaged release; it retains the historical
+candidate version only while it remains unpublished. Before any release, the
+owner must adjudicate whether accepted repairs change language meaning and select
+the corresponding semantic version. Corrections that change no meaning require a
+patch release. Added backward-compatible features require a minor release.
+Breaking lexical, grammar, type, or semantic changes require a major release.
+Every packaged candidate or release receives freshly generated integrity metadata
+only in the corrected final release task. Task 0006 neither regenerates those
+artifacts nor produces an archive.

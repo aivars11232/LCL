@@ -1,3 +1,3 @@
-EXPECTED_ERROR: error.block.required
+EXPECTED_ERROR: error.field.required
 EXPECTED_TERMINAL_STATUS: status.invalid
 RULE: Reject before any side effect.

@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import re
+import runpy
 import stat
 import subprocess
 import sys
@@ -146,6 +147,257 @@ def check_text(root: Path, results: Results) -> None:
         exit_code=completed.returncode,
         output=payload,
     )
+
+    def static_examples_operation() -> dict[str, Any]:
+        examples = root / "08_EXAMPLES"
+        valid_paths = sorted(examples.glob("VALID/*.lcl"), key=lambda path: path.name)
+        invalid_paths = sorted(
+            examples.glob("INVALID/*.invalid.lcl"), key=lambda path: path.name
+        )
+        expected_paths = sorted(
+            examples.glob("INVALID/*.invalid.lcl.expected.txt"),
+            key=lambda path: path.name,
+        )
+        expected_valid_names = {
+            "01_MINIMAL_TASK.lcl",
+            "02_IMPORT_LIBRARY.lcl",
+            "03_IMPORTING_TASK.lcl",
+            "04_AUTOMATED_CODING_TASK.lcl",
+            "05_CONDITION_AND_ITERATION.lcl",
+            "06_EXPLICIT_CONTEXT_MEMORY_AND_STATE.lcl",
+            "07_DOMAIN_EXTENSION_OPERATION.lcl",
+            "08_AUTHORITY_OVERRIDE_HANDLER_AND_RETRY.lcl",
+            "09_EXPLICIT_ASSUMPTION_AND_EVIDENCE.lcl",
+            "10_ACCEPTED_CORE_PROFILES.lcl",
+            "11_EXACT_DIVISION_AND_ROUNDING.lcl",
+            "12_SET_SORTING.lcl",
+        }
+        expected_invalid_names = {
+            "01_WRONG_KEYWORD_CASE.invalid.lcl",
+            "02_TAB_INDENTATION.invalid.lcl",
+            "03_BARE_EQUALS.invalid.lcl",
+            "04_UNKNOWN_MODAL.invalid.lcl",
+            "05_DUPLICATE_ID.invalid.lcl",
+            "06_UNRESOLVED_REFERENCE.invalid.lcl",
+            "07_TYPE_MISMATCH.invalid.lcl",
+            "08_HARD_CONFLICT.invalid.lcl",
+            "09_UNBOUNDED_WHILE.invalid.lcl",
+            "10_CONTEXT_WITHOUT_SCOPE.invalid.lcl",
+            "11_DUPLICATE_FIELD.invalid.lcl",
+            "12_FLOATING_VERSION.invalid.lcl",
+            "13_PERCENT_SYMBOL.invalid.lcl",
+            "14_SINGLE_QUOTED_STRING.invalid.lcl",
+            "15_MISSING_TASK_STRUCTURE.invalid.lcl",
+            "16_ITEM_COLLECTION.invalid.lcl",
+            "17_REGEX_FLAGS.invalid.lcl",
+            "18_NON_TERMINATING_DIVISION.invalid.lcl",
+            "19_DIVISION_BY_ZERO.invalid.lcl",
+            "20_UNORDERED_SET_DIRECT_ITERATION.invalid.lcl",
+            "21_SORT_STABLE_PARAMETER.invalid.lcl",
+        }
+        expected_expectation_names = {
+            f"{name}.expected.txt" for name in expected_invalid_names
+        }
+        assert {path.name for path in valid_paths} == expected_valid_names, (
+            "valid example inventory differs from the exact accepted set"
+        )
+        assert {path.name for path in invalid_paths} == expected_invalid_names, (
+            "invalid example inventory differs from the exact accepted set"
+        )
+        assert {path.name for path in expected_paths} == expected_expectation_names, (
+            "invalid expectation inventory differs from the exact accepted set"
+        )
+        paired = {Path(f"{path}.expected.txt") for path in invalid_paths}
+        assert paired == set(expected_paths), "invalid example/expectation pairing differs"
+
+        statuses_document = load_json_strict(
+            root / "10_REGISTRIES/statuses_and_errors_v0.1.0.json"
+        )
+        error_registry = statuses_document["errors"]
+        status_registry = statuses_document["statuses"]
+        phase_resolution = statuses_document["failure_lifecycle"][
+            "error_phase_resolution"
+        ]
+        expected_pattern = re.compile(
+            r"EXPECTED_ERROR: (error\.[a-z0-9_.]+)\n"
+            r"EXPECTED_TERMINAL_STATUS: (status\.[a-z_]+)\n"
+            r"RULE: ([^\n]+)\n"
+        )
+        parsed_expectations: dict[str, dict[str, str]] = {}
+        for path in expected_paths:
+            match = expected_pattern.fullmatch(path.read_text(encoding="utf-8"))
+            assert match is not None, f"invalid expectation shape: {path.name}"
+            error_name, status_name, rule = match.groups()
+            assert error_name in error_registry, f"unregistered expected error: {error_name}"
+            assert status_name in status_registry, f"unregistered expected status: {status_name}"
+            assert error_registry[error_name]["default_status"] == status_name, (
+                f"expected status differs from {error_name} default"
+            )
+            stage = error_registry[error_name]["stage"]
+            phases = phase_resolution["overrides"].get(
+                error_name, phase_resolution["defaults_by_stage"].get(stage)
+            )
+            assert isinstance(phases, list) and "pre_effect" in phases, (
+                f"invalid source expectation lacks pre_effect metadata: {error_name}"
+            )
+            parsed_expectations[path.name] = {
+                "error": error_name,
+                "status": status_name,
+                "rule": rule,
+            }
+
+        source_module = runpy.run_path(
+            str(root / "09_CONFORMANCE/TOOLS/validate_source_fixtures.py"),
+            run_name="lcl_source_fixture_validator",
+        )
+        validate_source = source_module.get("validate_source")
+        assert callable(validate_source), "bounded source validator is unavailable"
+        valid_source_results = {
+            path.name: validate_source(path.read_bytes()) for path in valid_paths
+        }
+        assert set(valid_source_results.values()) == {"accept"}, (
+            f"valid example source-hygiene failure: {valid_source_results}"
+        )
+
+        focused_expected = {
+            "02_TAB_INDENTATION.invalid.lcl.expected.txt": "error.source.tab",
+            "03_BARE_EQUALS.invalid.lcl.expected.txt": "error.symbol.invalid",
+            "10_CONTEXT_WITHOUT_SCOPE.invalid.lcl.expected.txt": "error.field.required",
+            "11_DUPLICATE_FIELD.invalid.lcl.expected.txt": "error.field.duplicate",
+            "13_PERCENT_SYMBOL.invalid.lcl.expected.txt": "error.symbol.invalid",
+            "14_SINGLE_QUOTED_STRING.invalid.lcl.expected.txt": "error.symbol.invalid",
+            "15_MISSING_TASK_STRUCTURE.invalid.lcl.expected.txt": (
+                "error.reference.unresolved"
+            ),
+        }
+        focused_hashes = {
+            "02_TAB_INDENTATION.invalid.lcl": (
+                "2eae884823243f6530c6edcbcd4f25a53136fbc152f046aa8a70e80d1cc0d050"
+            ),
+            "02_TAB_INDENTATION.invalid.lcl.expected.txt": (
+                "1b72812c2596815a22894d4da13f16456faac14117ca196a798b64f3dafd8649"
+            ),
+            "03_BARE_EQUALS.invalid.lcl": (
+                "25e81efc99e15efbf9a51d8f2f8f0e18a2c76b9b7b4e1ef80428a18650109323"
+            ),
+            "03_BARE_EQUALS.invalid.lcl.expected.txt": (
+                "d1c146089a9cc71189e6f7036d273250b62ed0050cc2db7886035b94976df558"
+            ),
+            "10_CONTEXT_WITHOUT_SCOPE.invalid.lcl": (
+                "96ec4f463aa52c3d780d20f2824b205f6457e5d5461e2d7c1ce479529b08f7f5"
+            ),
+            "10_CONTEXT_WITHOUT_SCOPE.invalid.lcl.expected.txt": (
+                "ea6298878411745d0d0712c85d9845866ad5e4111431a3462d869a960aa3df97"
+            ),
+            "11_DUPLICATE_FIELD.invalid.lcl": (
+                "c6739c6e62bc0ee54bd55fd64ff2960056582d2b3f6bd5aa95fb853915b71db1"
+            ),
+            "11_DUPLICATE_FIELD.invalid.lcl.expected.txt": (
+                "53c75b217f9a266d3305483450f257162d8d710de0b385567b42be4d05fe6a58"
+            ),
+            "13_PERCENT_SYMBOL.invalid.lcl": (
+                "e82501c2508be4b23399c0f73afd210abbd1e33d6e1e0e7bf0435ccb2fad1ebf"
+            ),
+            "13_PERCENT_SYMBOL.invalid.lcl.expected.txt": (
+                "d1c146089a9cc71189e6f7036d273250b62ed0050cc2db7886035b94976df558"
+            ),
+            "14_SINGLE_QUOTED_STRING.invalid.lcl": (
+                "f180d6e85bcb8ab66822ccd7bf3109924fa5eb4489fb8213bcc115b6738fe17d"
+            ),
+            "14_SINGLE_QUOTED_STRING.invalid.lcl.expected.txt": (
+                "d1c146089a9cc71189e6f7036d273250b62ed0050cc2db7886035b94976df558"
+            ),
+            "15_MISSING_TASK_STRUCTURE.invalid.lcl": (
+                "47c8dca2ac65dac33de8a516e87d5133be28171a06e6237367d55c71172196db"
+            ),
+            "15_MISSING_TASK_STRUCTURE.invalid.lcl.expected.txt": (
+                "b1366c605cf9cfb9df0d0d837657128cd3caac0b817c45ffa647029d12d8517f"
+            ),
+        }
+        for name, expected_hash in focused_hashes.items():
+            path = examples / "INVALID" / name
+            assert sha256(path) == expected_hash, f"focused example bytes differ: {name}"
+        for name, error_name in focused_expected.items():
+            assert parsed_expectations.get(name, {}).get("error") == error_name, (
+                f"focused expected primary differs: {name}"
+            )
+
+        def top_level_block(source: str, header: str) -> str:
+            lines = source.splitlines(keepends=True)
+            starts = [index for index, line in enumerate(lines) if line == f"{header}\n"]
+            assert len(starts) == 1, f"expected one top-level {header} block"
+            start = starts[0]
+            end = len(lines)
+            for index in range(start + 1, len(lines)):
+                line = lines[index]
+                if line.strip() and not line[0].isspace():
+                    end = index
+                    break
+            return "".join(lines[start:end])
+
+        tab_source = examples / "INVALID/02_TAB_INDENTATION.invalid.lcl"
+        assert validate_source(tab_source.read_bytes()) == "error.source.tab", (
+            "TAB example does not select error.source.tab"
+        )
+        for name in (
+            "03_BARE_EQUALS.invalid.lcl",
+            "13_PERCENT_SYMBOL.invalid.lcl",
+            "14_SINGLE_QUOTED_STRING.invalid.lcl",
+        ):
+            assert validate_source((examples / "INVALID" / name).read_bytes()) == (
+                "error.symbol.invalid"
+            ), f"excluded-symbol example does not select error.symbol.invalid: {name}"
+        context_text = (
+            examples / "INVALID/10_CONTEXT_WITHOUT_SCOPE.invalid.lcl"
+        ).read_text(encoding="utf-8")
+        context_block = top_level_block(context_text, "CONTEXT:")
+        context_fields = re.findall(r"^    ([A-Z_]+):", context_block, re.MULTILINE)
+        assert context_fields == ["ID", "TYPE", "VALUE"], (
+            "CONTEXT example does not isolate missing SCOPE"
+        )
+        duplicate_text = (
+            examples / "INVALID/11_DUPLICATE_FIELD.invalid.lcl"
+        ).read_text(encoding="utf-8")
+        specification_text = top_level_block(duplicate_text, "SPECIFICATION:")
+        specification_fields = re.findall(
+            r"^    ([A-Z_]+):", specification_text, re.MULTILINE
+        )
+        assert specification_fields.count("VERSION") == 2 and all(
+            specification_fields.count(field) == 1
+            for field in ("ID", "NAME", "KIND")
+        ), (
+            "duplicate-field example does not contain two SPECIFICATION.VERSION fields"
+        )
+        unresolved_text = (
+            examples / "INVALID/15_MISSING_TASK_STRUCTURE.invalid.lcl"
+        ).read_text(encoding="utf-8")
+        declared_ids = set(
+            re.findall(r"^\s+ID: ([a-z][a-z0-9_.-]*)$", unresolved_text, re.MULTILINE)
+        )
+        referenced_ids = set(re.findall(r"REF\(([a-z][a-z0-9_.-]*)\)", unresolved_text))
+        assert referenced_ids - declared_ids == {"task.none"}, (
+            "unresolved-reference example no longer isolates task.none"
+        )
+
+        index_text = (root / "INDEX.txt").read_text(encoding="utf-8")
+        for path in valid_paths + invalid_paths + expected_paths:
+            relative = path.relative_to(examples).as_posix()
+            assert index_text.count(f"    {relative}\n") == 1, (
+                f"INDEX.txt does not list example exactly once: {relative}"
+            )
+        return {
+            "valid_example_count": len(valid_paths),
+            "invalid_example_count": len(invalid_paths),
+            "expectation_pair_count": len(expected_paths),
+            "registered_expectation_count": len(parsed_expectations),
+            "bounded_valid_source_count": len(valid_source_results),
+            "focused_primary_diagnostic_count": len(focused_expected),
+            "focused_byte_fingerprint_count": len(focused_hashes),
+            "parser_execution": "OUT_OF_SCOPE",
+            "semantic_execution": "OUT_OF_SCOPE",
+        }
+
+    results.guarded("text", "static_example_contracts", static_examples_operation)
 
 
 def check_structured(root: Path, results: Results) -> None:
@@ -2323,22 +2575,30 @@ def set_sort_contract_violations(
 
     release_status_requirements = {
         "00_RELEASE/00_CANONICAL_SOURCE_AND_PROVENANCE.txt": [
-            "Accepted Tasks 0001 through 0005",
+            "Accepted Tasks 0001 through 0006",
             "operation/result-contract",
             "result-binding portion of",
             "LCL-AUDIT-007",
-            "LCL-AUDIT-014 and 015",
+            "012, 014, 015",
             "LCL-AUDIT-016",
             "outside the bare-language package scope",
+            "deterministic diagnostic selection",
+            "producer-relative failure lifecycle and retry-safety rules",
+            "BARE_SPECIFICATION_COMPLETE",
+            "remain deliberately frozen and stale",
+            "no repair archive is produced",
         ],
         "00_RELEASE/01_RELEASE_STATUS_AND_BOUNDARY.txt": [
-            "Accepted Tasks 0001 through 0005",
+            "Accepted Tasks 0001 through 0006",
             "operation/result-contract portions of LCL-AUDIT-013",
             "result-binding portion of",
             "LCL-AUDIT-007",
             "LCL-AUDIT-014 and 015",
             "LCL-AUDIT-016",
             "outside the bare-language scope",
+            "BARE_SPECIFICATION_COMPLETE",
+            "deliberately frozen and stale",
+            "no repair archive is produced",
         ],
     }
     for relative_path, required_text in release_status_requirements.items():
@@ -2361,6 +2621,23 @@ def set_sort_contract_violations(
             not present_stale_task_0005_claims,
             f"{relative_path} still reports resolved Task-0005 work: "
             f"{present_stale_task_0005_claims}",
+        )
+        stale_task_0006_claims = [
+            "Accepted Tasks 0001 through 0005",
+            "LCL-AUDIT-014 and 015 remain",
+            "LCL-AUDIT-014 remains",
+            "LCL-AUDIT-015 remains",
+            "Task 0006 remains",
+            "diagnostic selection remains unresolved",
+            "failure lifecycle remains unresolved",
+        ]
+        present_stale_task_0006_claims = [
+            claim for claim in stale_task_0006_claims if claim in release_status
+        ]
+        expect(
+            not present_stale_task_0006_claims,
+            f"{relative_path} still reports resolved Task-0006 work: "
+            f"{present_stale_task_0006_claims}",
         )
 
     grammar = (root / "04_GRAMMAR/10_COMPLETE_EBNF.ebnf").read_text(encoding="utf-8")
@@ -3111,7 +3388,7 @@ def result_contract_violations(
 
 
 EXPECTED_OPERATION_CONTRACT_FINGERPRINT = (
-    "7e0f1e418de04ee44e85376e9c8db684ca8243e864b2b3b8fc4a3de37245dcc8"
+    "fc7c347f597fad0db7ab8eee2a9ac24c913fa312fbd4918a49d865f146257e95"
 )
 EXPECTED_OPERATION_ROW_FINGERPRINTS = {
     "core.inspect": "fc2ae5ad368d5bba7e4599740b68d627471585b039834d2ad5b5f766beeaf234",
@@ -3150,7 +3427,7 @@ EXPECTED_OPERATION_ROW_FINGERPRINTS = {
     "core.memory_write": "79c11d4767f792c59c0c502b6d8d33826b1a34670985f6269316c75c95323bfe",
     "core.state_update": "fd6f0d9d8c543e42125b67de2c3fe540d3de8fc2cbab48f572cbf85c4836ed12",
     "core.ask": "508262d4c096f90ce488915de24cc14830d826789d2c1c78b8d64bf0bd797b18",
-    "core.retry": "11d4773a8ae64ce32089baa033f37bb2428244d7640adedb0cd3e61651bed359",
+    "core.retry": "0beefdefc94ed1cd4ce9631a993fca2faa95174e4ca6791cd74c68836e1b4e44",
     "core.continue": "2639da73903e268cab43da10e8d1385290c2d31aec88f56918368f006cd3ea06",
     "core.cancel": "e93170aea13204ec59ae5f49bb154382e60c39a1faa7ea116db9579f426a0c9e",
 }
@@ -4647,21 +4924,36 @@ def operation_contract_violations(
         and "error.required.missing" in retry.get("errors", [])
         and "error.value.unknown" in retry.get("errors", [])
         and "error.value.out_of_range" in retry.get("errors", [])
-        and "error.operation.precondition" not in retry.get("errors", [])
+        and "error.operation.precondition" in retry.get("errors", [])
         and retry.get("preconditions")
-        == ["wrapped ACTION resolves exactly once before any retry decision"]
+        == [
+            "wrapped ACTION resolves exactly once before any retry decision",
+            "before an additional attempt after known effects, exact retained evidence "
+            "proves safe repetition, resumption, or reconciliation within inherited "
+            "authority, scope, and post-state",
+            "an indeterminate prior attempt is reconciled before another attempt",
+        ]
+        and retry.get("postconditions")
+        == [
+            "attempt count never exceeds 1+limit",
+            "every attempt and its local diagnostics, phase, effects, and OUTPUT binding "
+            "are evidenced in attempt-index order",
+            "aggregate failure phase and effects account for every attempt made",
+        ]
         and "limit outside 0..100 produces error.value.out_of_range"
         in str(retry.get("invocation_resolution", ""))
         and "Before each additional attempt, evaluate when as a required BOOLEAN condition"
         in str(retry.get("invocation_resolution", ""))
-        and retry.get("error_resolution")
-        == (
-            "Before inheritance, use error.reference.unresolved when the wrapped ACTION "
-            "does not resolve exactly once and error.reference.cycle when its reference "
-            "graph contains a prohibited cycle; otherwise union the local retry errors "
-            "with every applicable error of the wrapped ACTION contract, including any "
-            "wrapped operation or profile precondition error."
-        ),
+        and "A prior pre_effect attempt with effect_state none requires no additional "
+        "effect-safety proof" in str(retry.get("invocation_resolution", ""))
+        and "An indeterminate prior attempt prohibits another attempt until reconciled"
+        in str(retry.get("invocation_resolution", ""))
+        and "error.operation.precondition for proved-unsafe repetition"
+        in str(retry.get("error_resolution", ""))
+        and "a safety-blocked unmade attempt is not exhaustion"
+        in str(retry.get("error_resolution", ""))
+        and "including any wrapped operation or profile precondition error"
+        in str(retry.get("error_resolution", "")),
         "core.retry does not inherit all three axes",
     )
     out_of_range_rows = sorted(
@@ -4900,6 +5192,799 @@ def operation_prose_contract_violations(
         in deterministic_keyword.get("meaning", ""),
         "DETERMINISTIC keyword meaning lacks verified-assertion semantics",
     )
+    return violations
+
+
+EXPECTED_DIAGNOSTIC_SELECTION_FINGERPRINT = (
+    "0c52f53d57e540c034838a05640bc0f16e816c5ca5393dc513db7fd2a1ced7c2"
+)
+EXPECTED_FAILURE_LIFECYCLE_FINGERPRINT = (
+    "a6e247aa8fc0278e2514e0fbced9958f50cce14ae243815ef171e43b4ce85afe"
+)
+DIAGNOSTIC_SELECTION_VECTOR_COUNT = 12
+
+
+def diagnostic_selection_contract_violations(
+    root: Path, statuses: dict[str, Any]
+) -> list[str]:
+    violations: list[str] = []
+
+    def expect(condition: bool, message: str) -> None:
+        if not condition:
+            violations.append(message)
+
+    errors_value = statuses.get("errors", {})
+    errors = errors_value if isinstance(errors_value, dict) else {}
+    symbols = load_json_strict(root / "10_REGISTRIES/symbols_v0.1.0.json")
+    excluded_symbols = symbols.get("excluded_exact_lexemes", [])
+    selection_value = statuses.get("diagnostic_selection", {})
+    selection = selection_value if isinstance(selection_value, dict) else {}
+    expect(
+        canonical_contract_fingerprint(selection)
+        == EXPECTED_DIAGNOSTIC_SELECTION_FINGERPRINT,
+        "diagnostic-selection policy fingerprint differs",
+    )
+    expected_selection_fields = {
+        "stage_order",
+        "severity",
+        "specificity_rank",
+        "supersedes",
+        "selection_scope",
+        "earliest_stage_rule",
+        "multiplicity_rule",
+        "supersession_rule",
+        "duplicate_key",
+        "duplicate_rule",
+        "stable_order",
+        "location_rule",
+        "primary_rule",
+        "secondary_rule",
+    }
+    expect(set(selection) == expected_selection_fields, "diagnostic_selection fields differ")
+    expected_stage_order = [
+        "lexical",
+        "grammar_or_schema",
+        "resolution",
+        "static_or_expression",
+        "validation",
+        "execution",
+        "verification_or_completion",
+    ]
+    expect(selection.get("stage_order") == expected_stage_order, "stage order is not exact")
+    expect(
+        {value.get("stage") for value in errors.values() if isinstance(value, dict)}
+        == set(expected_stage_order),
+        "registered error stages differ from the closed selection stages",
+    )
+    expect(
+        selection.get("severity")
+        == {
+            "closed_values": ["error"],
+            "default_for_every_error": "error",
+            "descending_order": ["error"],
+        },
+        "severity contract is not the exact one-value ordering",
+    )
+    expected_rank_overrides = {
+        "error.block.duplicate": 200,
+        "error.field.duplicate": 200,
+        "error.field.required": 200,
+        "error.indentation.jump": 200,
+        "error.indentation.width": 200,
+        "error.literal.escape": 200,
+        "error.literal.unclosed": 200,
+        "error.source.tab": 200,
+    }
+    specificity_value = selection.get("specificity_rank", {})
+    specificity = specificity_value if isinstance(specificity_value, dict) else {}
+    expect(
+        specificity
+        == {
+            "default_for_every_error": 100,
+            "higher_is_more_specific": True,
+            "overrides": expected_rank_overrides,
+        },
+        "specificity-rank contract is not exact",
+    )
+    expected_supersedes = {
+        "error.block.duplicate": ["error.block.occurrence"],
+        "error.field.duplicate": ["error.field.cardinality"],
+        "error.field.required": ["error.field.cardinality"],
+        "error.indentation.jump": ["error.indentation.invalid"],
+        "error.indentation.width": ["error.indentation.invalid"],
+        "error.literal.escape": ["error.literal.invalid"],
+        "error.literal.unclosed": ["error.literal.invalid"],
+        "error.source.tab": ["error.indentation.invalid"],
+    }
+    supersedes_value = selection.get("supersedes", {})
+    supersedes = supersedes_value if isinstance(supersedes_value, dict) else {}
+    expect(
+        supersedes
+        == {"default_for_every_error": [], "overrides": expected_supersedes},
+        "supersession contract is not exact",
+    )
+    error_names = set(errors)
+    supersession_edges = {
+        source: target
+        for source, targets in expected_supersedes.items()
+        for target in targets
+    }
+    expect(
+        set(supersession_edges) <= error_names
+        and set(supersession_edges.values()) <= error_names,
+        "supersession references an unregistered error",
+    )
+    for source, target in supersession_edges.items():
+        source_stage = errors.get(source, {}).get("stage")
+        target_stage = errors.get(target, {}).get("stage")
+        expect(source != target, f"self-supersession: {source}")
+        expect(source_stage == target_stage, f"cross-stage supersession: {source}->{target}")
+        source_rank = expected_rank_overrides.get(
+            source, specificity.get("default_for_every_error")
+        )
+        target_rank = expected_rank_overrides.get(
+            target, specificity.get("default_for_every_error")
+        )
+        expect(
+            isinstance(source_rank, int)
+            and isinstance(target_rank, int)
+            and source_rank > target_rank,
+            f"superseder is not more specific than target: {source}->{target}",
+        )
+
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(error_name: str) -> bool:
+        if error_name in visiting:
+            return False
+        if error_name in visited:
+            return True
+        visiting.add(error_name)
+        for target in expected_supersedes.get(error_name, []):
+            if not visit(target):
+                return False
+        visiting.remove(error_name)
+        visited.add(error_name)
+        return True
+
+    expect(all(visit(name) for name in sorted(error_names)), "supersession graph has a cycle")
+    resolved_metadata_count = 0
+    for error_name, contract in errors.items():
+        if not isinstance(contract, dict):
+            continue
+        severity = selection.get("severity", {}).get("default_for_every_error")
+        rank = expected_rank_overrides.get(error_name, specificity.get("default_for_every_error"))
+        targets = expected_supersedes.get(error_name, supersedes.get("default_for_every_error"))
+        if (
+            severity == "error"
+            and isinstance(rank, int)
+            and rank >= 0
+            and isinstance(targets, list)
+            and all(target in error_names for target in targets)
+        ):
+            resolved_metadata_count += 1
+    expect(len(errors) == 77, "diagnostic metadata registry does not contain 77 errors")
+    expect(resolved_metadata_count == 77, "not every error resolves selection metadata")
+    expect(
+        selection.get("duplicate_key")
+        == [
+            "error_identifier",
+            "stage",
+            "cause_identity",
+            "canonical_locus",
+            "producer_path",
+            "iteration_index",
+            "retry_attempt_index",
+        ],
+        "duplicate key is not exact",
+    )
+    expect(
+        selection.get("stable_order")
+        == [
+            "stage_order ascending",
+            "canonical source byte offset or declared execution-path order ascending",
+            "iteration index ascending",
+            "retry-attempt index ascending",
+            "severity descending",
+            "specificity_rank descending",
+            "error identifier by Unicode scalar value ascending",
+        ],
+        "stable diagnostic order is not exact",
+    )
+    expect(
+        selection.get("selection_scope")
+        == "one exposed result producer or one source validation run",
+        "diagnostic selection scope is not exact",
+    )
+    selection_tokens = {
+        "earliest_stage_rule": ("stage_order", "do not evaluate later stages", "independent"),
+        "multiplicity_rule": ("every independent", "Distinct source loci", "retry-attempt"),
+        "supersession_rule": (
+            "same cause",
+            "same canonical locus",
+            "iteration index",
+            "retry-attempt index",
+            "never suppresses",
+        ),
+        "duplicate_rule": ("duplicate_key", "Merge", "Discovery count"),
+        "location_rule": (
+            "zero-based",
+            "first offending UTF-8 byte offset",
+            "zero-width byte position",
+            "first following nonblank line",
+            "source byte length",
+            "error.source.final_line_feed",
+            "declaration order",
+            "Host completion",
+        ),
+        "primary_rule": (
+            "permitted declared-handler recovery",
+            "first unhandled diagnostic",
+            "no diagnostic is primary",
+        ),
+        "secondary_rule": (
+            "Every other unhandled",
+            "handled or retried diagnostic",
+            "never controls status",
+        ),
+    }
+    for field, tokens in selection_tokens.items():
+        value = selection.get(field, "")
+        expect(
+            isinstance(value, str) and all(token in value for token in tokens),
+            f"{field} lacks required deterministic selection terms",
+        )
+
+    stage_indexes = {name: index for index, name in enumerate(expected_stage_order)}
+
+    def candidate(
+        error_name: str,
+        *,
+        cause: str = "cause.same",
+        locus: int = 10,
+        producer: str = "source.unit",
+        iteration: int = 0,
+        retry_attempt: int = 0,
+    ) -> dict[str, Any]:
+        return {
+            "error_identifier": error_name,
+            "stage": errors.get(error_name, {}).get("stage"),
+            "cause_identity": cause,
+            "canonical_locus": locus,
+            "producer_path": producer,
+            "iteration_index": iteration,
+            "retry_attempt_index": retry_attempt,
+        }
+
+    def supersedes_transitively(source: str, target: str) -> bool:
+        pending = list(expected_supersedes.get(source, []))
+        seen: set[str] = set()
+        while pending:
+            current = pending.pop()
+            if current == target:
+                return True
+            if current in seen:
+                continue
+            seen.add(current)
+            pending.extend(expected_supersedes.get(current, []))
+        return False
+
+    identity_fields = (
+        "stage",
+        "cause_identity",
+        "canonical_locus",
+        "producer_path",
+        "iteration_index",
+        "retry_attempt_index",
+    )
+    duplicate_fields = tuple(selection.get("duplicate_key", []))
+
+    def select_diagnostics(candidates: list[dict[str, Any]]) -> list[str]:
+        earliest = min(stage_indexes[item["stage"]] for item in candidates)
+        staged = [item for item in candidates if stage_indexes[item["stage"]] == earliest]
+        retained: list[dict[str, Any]] = []
+        for index, item in enumerate(staged):
+            item_identity = tuple(item[field] for field in identity_fields)
+            suppressed = any(
+                other_index != index
+                and tuple(other[field] for field in identity_fields) == item_identity
+                and supersedes_transitively(
+                    other["error_identifier"], item["error_identifier"]
+                )
+                for other_index, other in enumerate(staged)
+            )
+            if not suppressed:
+                retained.append(item)
+        unique: list[dict[str, Any]] = []
+        seen_keys: set[tuple[Any, ...]] = set()
+        for item in retained:
+            key = tuple(item[field] for field in duplicate_fields)
+            if key not in seen_keys:
+                seen_keys.add(key)
+                unique.append(item)
+        unique.sort(
+            key=lambda item: (
+                stage_indexes[item["stage"]],
+                item["canonical_locus"],
+                item["iteration_index"],
+                item["retry_attempt_index"],
+                -expected_rank_overrides.get(
+                    item["error_identifier"], specificity["default_for_every_error"]
+                ),
+                item["error_identifier"],
+            )
+        )
+        return [item["error_identifier"] for item in unique]
+
+    selection_vectors = {
+        "tab_over_generic_indentation": (
+            [candidate("error.source.tab"), candidate("error.indentation.invalid")],
+            ["error.source.tab"],
+        ),
+        "required_over_generic_cardinality": (
+            [candidate("error.field.required"), candidate("error.field.cardinality")],
+            ["error.field.required"],
+        ),
+        "duplicate_field_over_cardinality": (
+            [candidate("error.field.duplicate"), candidate("error.field.cardinality")],
+            ["error.field.duplicate"],
+        ),
+        "duplicate_block_over_occurrence": (
+            [candidate("error.block.duplicate"), candidate("error.block.occurrence")],
+            ["error.block.duplicate"],
+        ),
+        "unclosed_over_generic_literal": (
+            [candidate("error.literal.unclosed"), candidate("error.literal.invalid")],
+            ["error.literal.unclosed"],
+        ),
+        "escape_over_generic_literal": (
+            [candidate("error.literal.escape"), candidate("error.literal.invalid")],
+            ["error.literal.escape"],
+        ),
+        "same_identifier_distinct_locus": (
+            [
+                candidate("error.source.bom", locus=10),
+                candidate("error.source.bom", locus=20),
+            ],
+            ["error.source.bom", "error.source.bom"],
+        ),
+        "same_identifier_distinct_iteration": (
+            [
+                candidate("error.execution.action", iteration=0),
+                candidate("error.execution.action", iteration=1),
+            ],
+            ["error.execution.action", "error.execution.action"],
+        ),
+        "same_identifier_distinct_retry": (
+            [
+                candidate("error.execution.action", retry_attempt=0),
+                candidate("error.execution.action", retry_attempt=1),
+            ],
+            ["error.execution.action", "error.execution.action"],
+        ),
+        "exact_duplicate_suppression": (
+            [candidate("error.source.bom"), candidate("error.source.bom")],
+            ["error.source.bom"],
+        ),
+        "earliest_stage_only": (
+            [candidate("error.source.bom"), candidate("error.field.required")],
+            ["error.source.bom"],
+        ),
+        "specificity_before_identifier": (
+            [
+                candidate("error.source.tab", cause="cause.tab"),
+                candidate("error.source.bom", cause="cause.bom"),
+            ],
+            ["error.source.tab", "error.source.bom"],
+        ),
+    }
+    expect(
+        len(selection_vectors) == DIAGNOSTIC_SELECTION_VECTOR_COUNT,
+        "diagnostic selection vector inventory differs",
+    )
+    for name, (inputs, expected) in selection_vectors.items():
+        expect(select_diagnostics(inputs) == expected, f"selection vector failed: {name}")
+
+    expect(
+        isinstance(excluded_symbols, list)
+        and {"=", ";", "'", "#", "%"} <= set(excluded_symbols),
+        "excluded-symbol boundary inventory is incomplete",
+    )
+    expect(
+        errors.get("error.lexical.unknown_symbol", {}).get("meaning")
+        == "Punctuation outside strings is absent from both the adopted-symbol registry and the explicit excluded-symbol inventory.",
+        "unknown-symbol trigger overlaps the excluded-symbol inventory",
+    )
+    expect(
+        errors.get("error.symbol.invalid", {}).get("meaning")
+        == "An exact lexeme or notation pattern in the explicit excluded-symbol inventory occurs outside string/data content.",
+        "invalid-symbol trigger does not own the excluded-symbol inventory",
+    )
+    expect(
+        "passed byte and character validation"
+        in errors.get("error.lexical.malformed_token", {}).get("meaning", ""),
+        "malformed-token trigger overlaps source byte/character validation",
+    )
+    expect(
+        "other than an unclosed string or an invalid string escape"
+        in errors.get("error.literal.invalid", {}).get("meaning", ""),
+        "generic literal trigger overlaps specific literal diagnostics",
+    )
+
+    prose_tokens = {
+        "01_FOUNDATION/03_NORMATIVE_PROCESSING_MODEL.txt": (
+            "closed stage order",
+            "grammar_or_schema",
+            "verification_or_completion",
+            "Discovery time",
+        ),
+        "06_STANDARD_LIBRARY/07_CORE_ERROR_IDENTIFIERS_PART_2.txt": (
+            "one diagnostic severity, error",
+            "first unhandled diagnostic in",
+            "every other unhandled diagnostic is secondary",
+            "retried diagnostics remain ordered secondary evidence",
+            "at a distinct locus",
+        ),
+    }
+    for relative, tokens in prose_tokens.items():
+        text = (root / relative).read_text(encoding="utf-8")
+        expect(all(token in text for token in tokens), f"{relative} lacks selection parity")
+    return violations
+
+
+def failure_lifecycle_contract_violations(
+    root: Path,
+    statuses: dict[str, Any],
+    operations: dict[str, Any],
+    groups_and_results: dict[str, Any],
+) -> list[str]:
+    violations: list[str] = []
+
+    def expect(condition: bool, message: str) -> None:
+        if not condition:
+            violations.append(message)
+
+    errors_value = statuses.get("errors", {})
+    errors = errors_value if isinstance(errors_value, dict) else {}
+    lifecycle_value = statuses.get("failure_lifecycle", {})
+    lifecycle = lifecycle_value if isinstance(lifecycle_value, dict) else {}
+    expect(
+        canonical_contract_fingerprint(lifecycle)
+        == EXPECTED_FAILURE_LIFECYCLE_FINGERPRINT,
+        "failure-lifecycle policy fingerprint differs",
+    )
+    expect(
+        set(lifecycle)
+        == {
+            "phase_scope",
+            "error_phase_resolution",
+            "baseline_error_profiles",
+            "additional_mixed_error_profiles",
+            "status_rule",
+            "effect_state_rule",
+            "output_binding_rule",
+            "retry_safety",
+            "evidence_requirements",
+            "indeterminate_state_rule",
+        },
+        "failure_lifecycle fields differ",
+    )
+    expected_defaults = {
+        "lexical": ["pre_effect"],
+        "grammar_or_schema": ["pre_effect"],
+        "resolution": ["pre_effect"],
+        "static_or_expression": ["pre_effect"],
+        "validation": ["pre_effect"],
+        "execution": ["pre_effect", "post_effect", "indeterminate"],
+        "verification_or_completion": ["pre_effect", "post_effect", "indeterminate"],
+    }
+    expected_overrides = {
+        "error.dependency.unsatisfied": ["pre_effect"],
+        "error.scope.violation": ["pre_effect"],
+        "error.value.unknown": ["pre_effect", "post_effect", "indeterminate"],
+    }
+    resolution_value = lifecycle.get("error_phase_resolution", {})
+    resolution = resolution_value if isinstance(resolution_value, dict) else {}
+    expect(
+        set(resolution) == {"defaults_by_stage", "overrides", "resolution_rule"},
+        "error_phase_resolution fields differ",
+    )
+    expect(resolution.get("defaults_by_stage") == expected_defaults, "phase defaults differ")
+    expect(resolution.get("overrides") == expected_overrides, "phase overrides differ")
+    resolution_rule = resolution.get("resolution_rule", "")
+    expect(
+        isinstance(resolution_rule, str)
+        and all(
+            token in resolution_rule
+            for token in (
+                "registered stage",
+                "exact identifier override",
+                "every registered error",
+                "none is not an allowed failure phase",
+            )
+        ),
+        "phase resolution rule is incomplete",
+    )
+    allowed_phase_values = {"pre_effect", "post_effect", "indeterminate"}
+
+    def resolved_phases(error_name: str) -> list[str]:
+        contract = errors.get(error_name, {})
+        return expected_overrides.get(
+            error_name, expected_defaults.get(contract.get("stage"), [])
+        )
+
+    resolved_phase_count = 0
+    for error_name, contract in errors.items():
+        if not isinstance(contract, dict):
+            continue
+        phases = resolved_phases(error_name)
+        if phases and set(phases) <= allowed_phase_values and "none" not in phases:
+            resolved_phase_count += 1
+    expect(len(errors) == 77, "failure metadata registry does not contain 77 errors")
+    expect(resolved_phase_count == 77, "not every error resolves allowed failure phases")
+    expected_baseline = {
+        "error.dependency.unsatisfied",
+        "error.execution.order",
+        "error.required.missing",
+        "error.scope.violation",
+    }
+    baseline_value = lifecycle.get("baseline_error_profiles", {})
+    baseline = baseline_value if isinstance(baseline_value, dict) else {}
+    expect(set(baseline) == expected_baseline, "baseline four lifecycle profiles differ")
+    expected_baseline_statuses = {
+        "error.dependency.unsatisfied": "status.blocked",
+        "error.execution.order": "status.failed",
+        "error.required.missing": "status.blocked",
+        "error.scope.violation": "status.failed",
+    }
+    expect(
+        {
+            name: errors.get(name, {}).get("default_status")
+            for name in expected_baseline_statuses
+        }
+        == expected_baseline_statuses,
+        "baseline lifecycle default statuses differ",
+    )
+    expect(
+        resolved_phases("error.dependency.unsatisfied") == ["pre_effect"]
+        and resolved_phases("error.scope.violation") == ["pre_effect"]
+        and resolved_phases("error.execution.order")
+        == ["pre_effect", "post_effect", "indeterminate"]
+        and resolved_phases("error.required.missing")
+        == ["pre_effect", "post_effect", "indeterminate"],
+        "baseline lifecycle allowed phases differ",
+    )
+    baseline_tokens = {
+        "error.dependency.unsatisfied": ("pre_effect only", "processing step 7"),
+        "error.execution.order": ("pre_effect", "post_effect", "indeterminate"),
+        "error.required.missing": ("pre_effect", "post_effect", "indeterminate"),
+        "error.scope.violation": ("pre_effect only", "processing step 6"),
+    }
+    for error_name, tokens in baseline_tokens.items():
+        value = baseline.get(error_name, "")
+        expect(
+            isinstance(value, str) and all(token in value for token in tokens),
+            f"{error_name} lifecycle profile is incomplete",
+        )
+    expected_additional = {
+        "error.cancelled",
+        "error.evidence.missing",
+        "error.execution.action",
+        "error.host.constraint",
+        "error.operation.postcondition",
+        "error.operation.precondition",
+        "error.permission.denied",
+        "error.retry.exhausted",
+        "error.success.unsatisfied",
+        "error.value.unknown",
+        "error.verification.failed",
+    }
+    additional_value = lifecycle.get("additional_mixed_error_profiles", {})
+    additional = additional_value if isinstance(additional_value, dict) else {}
+    expect(set(additional) == expected_additional, "additional mixed-phase set differs")
+    expect(
+        all(
+            resolved_phases(error_name)
+            == ["pre_effect", "post_effect", "indeterminate"]
+            for error_name in expected_additional
+        ),
+        "an additional mixed-phase error lacks the exact three allowed phases",
+    )
+    expect(
+        all(isinstance(value, str) and len(value) >= 80 for value in additional.values()),
+        "an additional mixed-phase profile is not substantive",
+    )
+    lifecycle_tokens = {
+        "phase_scope": ("exposed result producer", "retry attempt", "aggregate producer"),
+        "status_rule": (
+            "primary unhandled diagnostic",
+            "secondary diagnostics never override",
+            "first remaining diagnostic",
+            "every applicable diagnostic is recovered",
+            "failure_phase never changes status",
+        ),
+        "effect_state_rule": ("pre_effect", "post_effect", "indeterminate"),
+        "output_binding_rule": ("pre_effect leaves OUTPUT unbound", "Partial OUTPUT", "independently proven"),
+        "indeterminate_state_rule": ("Preserve every known observation", "no retry", "exact retained evidence"),
+    }
+    for field, tokens in lifecycle_tokens.items():
+        value = lifecycle.get(field, "")
+        expect(
+            isinstance(value, str) and all(token in value for token in tokens),
+            f"{field} lacks required lifecycle terms",
+        )
+    retry_value = lifecycle.get("retry_safety", {})
+    retry = retry_value if isinstance(retry_value, dict) else {}
+    expect(
+        set(retry)
+        == {
+            "eligibility_rule",
+            "pre_effect_rule",
+            "known_effect_rule",
+            "indeterminate_rule",
+            "safety_error_mapping",
+            "exhaustion_rule",
+            "evidence_rule",
+        },
+        "retry_safety fields differ",
+    )
+    expect(
+        retry.get("safety_error_mapping")
+        == {
+            "missing proof": "error.required.missing",
+            "UNKNOWN proof or condition": "error.value.unknown",
+            "proved unsafe": "error.operation.precondition",
+        },
+        "retry safety error mapping differs",
+    )
+    retry_tokens = {
+        "eligibility_rule": ("Every ACTION", "syntactically eligible", "adds no authority"),
+        "pre_effect_rule": ("pre_effect", "effect_state none", "declared retry count"),
+        "known_effect_rule": ("applied or partial", "exact evidence", "non-idempotent"),
+        "indeterminate_rule": ("prohibits another attempt", "exact reconciliation"),
+        "exhaustion_rule": ("actually made and failed", "does not satisfy exhaustion"),
+        "evidence_rule": ("attempt-index order", "does not erase", "folds phase"),
+    }
+    for field, tokens in retry_tokens.items():
+        value = retry.get(field, "")
+        expect(
+            isinstance(value, str) and all(token in value for token in tokens),
+            f"retry_safety.{field} lacks required terms",
+        )
+    evidence_value = lifecycle.get("evidence_requirements", {})
+    evidence = evidence_value if isinstance(evidence_value, dict) else {}
+    expect(set(evidence) == {"common"} | expected_baseline, "evidence requirement keys differ")
+    expected_common_evidence = [
+        "error identifier and registered stage",
+        "producer declaration or invocation path",
+        "canonical source locus or declared execution event",
+        "iteration and retry-attempt indexes when applicable",
+        "observations supporting failure_phase",
+        "observations supporting effect_state and every observed_effects record",
+        "observations supporting OUTPUT binding state",
+    ]
+    expect(
+        evidence.get("common") == expected_common_evidence,
+        "common lifecycle evidence is not the exact seven-part contract",
+    )
+    expected_baseline_evidence = {
+        "error.dependency.unsatisfied": [
+            "dependency identifier",
+            "resolved FALSE, MISSING, or UNKNOWN state before effects",
+        ],
+        "error.execution.order": [
+            "violated or cyclic ordering edge",
+            "ordered child results preceding detection",
+        ],
+        "error.required.missing": [
+            "required item identifier",
+            "point at which absence became determinable",
+        ],
+        "error.scope.violation": [
+            "resolved target",
+            "effective scope",
+            "failed containment or membership relation before effects",
+        ],
+    }
+    expect(
+        {name: evidence.get(name) for name in expected_baseline_evidence}
+        == expected_baseline_evidence,
+        "baseline lifecycle evidence differs from the exact contract",
+    )
+    retry_operation = operations.get("core.retry", {})
+    retry_error_names = set(retry_operation.get("errors", []))
+    safety_error_names = set(retry.get("safety_error_mapping", {}).values())
+    expect(
+        isinstance(retry_operation, dict)
+        and safety_error_names
+        == {
+            "error.required.missing",
+            "error.value.unknown",
+            "error.operation.precondition",
+        }
+        and safety_error_names <= set(errors)
+        and safety_error_names <= retry_error_names
+        and "safety-blocked unmade attempt is not exhaustion"
+        in retry_operation.get("error_resolution", ""),
+        "core.retry does not close the lifecycle safety mapping",
+    )
+
+    result_contract_value = groups_and_results.get("result_contract", {})
+    result_contract = (
+        result_contract_value if isinstance(result_contract_value, dict) else {}
+    )
+    common_fields_value = result_contract.get("common_fields", {})
+    common_fields = common_fields_value if isinstance(common_fields_value, dict) else {}
+    expected_common_fields = {
+        "status": {
+            "type": "qualified_identifier(status)",
+            "cardinality": "exactly_one",
+        },
+        "output_binding": {
+            "type": "ENUM[not_requested|unbound|bound|partial]",
+            "cardinality": "exactly_one",
+        },
+        "execution_errors": {
+            "type": "LIST[qualified_identifier(error)]",
+            "cardinality": "exactly_one",
+        },
+        "failure_phase": {
+            "type": "ENUM[none|pre_effect|post_effect|indeterminate]",
+            "cardinality": "exactly_one",
+        },
+        "effect_state": {
+            "type": "ENUM[none|applied|partial|indeterminate]",
+            "cardinality": "exactly_one",
+        },
+        "observed_effects": {
+            "type": "LIST[result.effect]",
+            "cardinality": "exactly_one",
+        },
+    }
+    expect(
+        common_fields == expected_common_fields,
+        "lifecycle axes differ from the exact common result fields",
+    )
+    result_schemas_value = groups_and_results.get("result_schemas", {})
+    result_schemas = (
+        result_schemas_value if isinstance(result_schemas_value, dict) else {}
+    )
+    partial_output_profiles = {
+        name: schema.get("partial_output")
+        for name, schema in result_schemas.items()
+        if isinstance(schema, dict)
+    }
+    expect(
+        partial_output_profiles.get("result.command")
+        == {"supported": True, "fields": ["stdout", "stderr"]}
+        and all(
+            profile == {"supported": False, "fields": []}
+            for name, profile in partial_output_profiles.items()
+            if name != "result.command"
+        )
+        and len(partial_output_profiles) == 9,
+        "lifecycle partial-OUTPUT rule differs from the nine result schemas",
+    )
+    prose_tokens = {
+        "05_SEMANTICS/09_VALIDATION_EXECUTION_FAILURE_AND_TERMINATION.txt": (
+            "failure_phase is measured",
+            "exposed result producer",
+            "error.dependency.unsatisfied and error.scope.violation are pre_effect only",
+            "The other mixed-phase identifiers",
+            "safety-blocked unmade attempt is not exhaustion",
+        ),
+        "06_STANDARD_LIBRARY/07_CORE_ERROR_IDENTIFIERS_PART_2.txt": (
+            "failure_phase is relative to the exposed result producer",
+            "indeterminate effects",
+            "prohibit another attempt",
+            "does not constitute",
+            "retry exhaustion",
+        ),
+    }
+    for relative, tokens in prose_tokens.items():
+        text = (root / relative).read_text(encoding="utf-8")
+        expect(all(token in text for token in tokens), f"{relative} lacks lifecycle parity")
     return violations
 
 
@@ -5298,29 +6383,51 @@ def check_registry(root: Path, results: Results) -> None:
     )
 
     compatibility = statuses.get("compatibility_note", "")
-    diagnostic_metadata = any(
-        key in value for value in statuses["errors"].values() for key in ("supersedes", "rank", "severity")
-    )
+    diagnostic_violations = diagnostic_selection_contract_violations(root, statuses)
     results.add(
         "registry",
         "diagnostic_selection_contract",
-        "BLOCKED" if not diagnostic_metadata else "PASS",
-        selection_metadata_present=diagnostic_metadata,
+        "FAIL" if diagnostic_violations else "PASS",
+        error_metadata_resolved_count=(
+            len(statuses.get("errors", {})) if not diagnostic_violations else 0
+        ),
+        diagnostic_selection_violations=diagnostic_violations,
+        severity_values=statuses.get("diagnostic_selection", {})
+        .get("severity", {})
+        .get("closed_values", []),
+        policy_fingerprint=canonical_contract_fingerprint(
+            statuses.get("diagnostic_selection", {})
+        ),
+        selection_vector_count=DIAGNOSTIC_SELECTION_VECTOR_COUNT,
         compatibility_note=compatibility,
-        blocked_by=["LCL-AUDIT-014"],
+        closed_finding="LCL-AUDIT-014",
+        blocked_by=[],
     )
 
-    mixed = [
-        name
-        for name in ("error.execution.order", "error.scope.violation", "error.required.missing", "error.dependency.unsatisfied")
-        if name in statuses["errors"]
-    ]
+    lifecycle_violations = failure_lifecycle_contract_violations(
+        root, statuses, operations, groups_and_results
+    )
     results.add(
         "registry",
         "mixed_phase_lifecycle_contracts",
-        "BLOCKED" if mixed else "PASS",
-        unresolved_errors=mixed,
-        blocked_by=["LCL-AUDIT-015"],
+        "FAIL" if lifecycle_violations else "PASS",
+        error_phase_metadata_resolved_count=(
+            len(statuses.get("errors", {})) if not lifecycle_violations else 0
+        ),
+        baseline_error_count=len(
+            statuses.get("failure_lifecycle", {}).get("baseline_error_profiles", {})
+        ),
+        additional_mixed_error_count=len(
+            statuses.get("failure_lifecycle", {}).get(
+                "additional_mixed_error_profiles", {}
+            )
+        ),
+        policy_fingerprint=canonical_contract_fingerprint(
+            statuses.get("failure_lifecycle", {})
+        ),
+        mixed_phase_lifecycle_violations=lifecycle_violations,
+        closed_finding="LCL-AUDIT-015",
+        blocked_by=[],
     )
 
 
@@ -5363,8 +6470,10 @@ def check_catalog(root: Path, results: Results) -> None:
             "block_extra": 41,
             "block_minimum": 41,
             "block_missing": 41,
+            "diagnostic_policy": 1,
             "enum_groups": 22,
             "error_contract": 77,
+            "failure_lifecycle": 1,
             "function_invalid": 11,
             "function_valid": 11,
             "keyword_invalid": 141,
@@ -5386,8 +6495,10 @@ def check_catalog(root: Path, results: Results) -> None:
             "block_extra": "field_signatures_v0.1.0.json",
             "block_minimum": "field_signatures_v0.1.0.json",
             "block_missing": "field_signatures_v0.1.0.json",
+            "diagnostic_policy": "statuses_and_errors_v0.1.0.json",
             "enum_groups": "built_in_groups_and_results_v0.1.0.json",
             "error_contract": "statuses_and_errors_v0.1.0.json",
+            "failure_lifecycle": "statuses_and_errors_v0.1.0.json",
             "function_invalid": "operators_and_functions_v0.1.0.json",
             "function_valid": "operators_and_functions_v0.1.0.json",
             "keyword_invalid": "keywords_v0.1.0.json",
@@ -5406,7 +6517,7 @@ def check_catalog(root: Path, results: Results) -> None:
             "type_valid": "types_v0.1.0.json",
         }
         assert catalog.get("category_counts") == expected_category_counts, (
-            "catalog category_counts are not the exact 21-category contract"
+            "catalog category_counts are not the exact 23-category contract"
         )
         for index, case in enumerate(cases, start=1):
             assert isinstance(case, dict), f"catalog case {index} is not an object"
@@ -5426,7 +6537,7 @@ def check_catalog(root: Path, results: Results) -> None:
             assert case["source"] == expected_sources.get(case["category"]), (
                 f"catalog case {index} source/category mapping differs"
             )
-        assert catalog["case_count"] == len(cases) == 795, "case_count mismatch"
+        assert catalog["case_count"] == len(cases) == 797, "case_count mismatch"
         identifiers = [case["id"] for case in cases]
         assert len(identifiers) == len(set(identifiers)), "duplicate case IDs"
         counts: dict[str, int] = {}
@@ -5477,6 +6588,8 @@ def check_catalog(root: Path, results: Results) -> None:
         exact_subjects("enum_groups", set(groups_and_results["enum_groups"]))
         exact_subjects("result_schemas", set(groups_and_results["result_schemas"]))
         exact_subjects("reserved_namespaces", set(groups_and_results["reserved_namespaces"]))
+        exact_subjects("diagnostic_policy", {"core.error_selection"})
+        exact_subjects("failure_lifecycle", {"core.failure_lifecycle"})
 
         by_id = {case["id"]: case for case in cases}
         task_0001_tokens = {
@@ -5678,6 +6791,9 @@ def check_catalog(root: Path, results: Results) -> None:
                 "error.value.out_of_range",
                 "MISSING or UNKNOWN required when condition",
                 "no separate retryable marker exists",
+                "safe repetition, resumption, or reconciliation evidence",
+                "proved-unsafe repetition uses error.operation.precondition",
+                "safety-blocked unmade attempt is not exhaustion",
             ),
             "OPERATION-EFFECTS-0665": (
                 "registered allowed_next set",
@@ -5819,7 +6935,7 @@ def check_catalog(root: Path, results: Results) -> None:
             ).encode("utf-8")
         ).hexdigest()
         assert task_0004_catalog_sha256 == (
-            "78b452953ddb098e6b5540293230d6251ea028f952e543f4f6172cc93705468a"
+            "2748d6c28b82a82829fd4a6ba885da08893861a4084aa5b8905e24164d936566"
         ), "Task-0004 catalog cases differ from the approved contract"
 
         task_0005_subjects = {
@@ -5953,6 +7069,93 @@ def check_catalog(root: Path, results: Results) -> None:
             "2c65296a7da92f7d66c3fea373f20832976929476eb6e6f3c160185eba4dfb1d"
         ), "Task-0005 catalog cases differ from the approved contract"
 
+        task_0006_contracts = {
+            "DIAGNOSTIC-POLICY-0796": {
+                "category": "diagnostic_policy",
+                "subject": "core.error_selection",
+                "tokens": (
+                    "complete metadata for all 77 errors",
+                    "exactly one severity, error",
+                    "seven registered stages",
+                    "every independent unsuppressed diagnostic",
+                    "same cause, canonical locus, stage, producer, iteration, and retry attempt",
+                    "exact duplicate keys",
+                    "without discovery-time influence",
+                    "permitted declared-handler recovery",
+                    "first unhandled diagnostic as primary",
+                    "handled or retried diagnostics as ordered secondary evidence",
+                    "select no primary",
+                ),
+                "expected": (
+                    "deterministic unhandled primary and ordered unhandled, handled, and "
+                    "retried secondary evidence with exact same-cause suppression"
+                ),
+            },
+            "FAILURE-LIFECYCLE-0797": {
+                "category": "failure_lifecycle",
+                "subject": "core.failure_lifecycle",
+                "tokens": (
+                    "allowed failure phases for every error",
+                    "exposed result producer",
+                    "error.dependency.unsatisfied and error.scope.violation as pre_effect",
+                    "error.execution.order and error.required.missing",
+                    "every additional mixed-phase identifier",
+                    "primary unhandled diagnostic's registered default status control",
+                    "promote the first remaining unhandled diagnostic after recovery",
+                    "every applicable diagnostic is recovered",
+                    "OUTPUT binding independent",
+                    "fail closed for indeterminate state",
+                    "safe repetition, resumption, or reconciliation evidence",
+                    "not retry exhaustion",
+                ),
+                "expected": (
+                    "exact producer-relative phase, status, effect, OUTPUT, evidence, "
+                    "indeterminate, and retry-safety behavior"
+                ),
+            },
+        }
+        for identifier, contract in task_0006_contracts.items():
+            case = by_id.get(identifier, {})
+            assert case.get("category") == contract["category"], (
+                f"{identifier} category is not exact"
+            )
+            assert case.get("subject") == contract["subject"], (
+                f"{identifier} subject is not exact"
+            )
+            assert case.get("source") == "statuses_and_errors_v0.1.0.json", (
+                f"{identifier} source is not exact"
+            )
+            requirement = case.get("requirement", "")
+            assert all(token in requirement for token in contract["tokens"]), (
+                f"{identifier} is not Task-0006-specific"
+            )
+            assert case.get("expected") == contract["expected"], (
+                f"{identifier} expected outcome is not exact"
+            )
+        task_0006_case_ids = {
+            case["id"]
+            for case in cases
+            if case.get("category") in {"diagnostic_policy", "failure_lifecycle"}
+        }
+        assert task_0006_case_ids == set(task_0006_contracts), (
+            "Task-0006 case set is not exact"
+        )
+        task_0006_cases = sorted(
+            (case for case in cases if case["id"] in task_0006_case_ids),
+            key=lambda case: case["id"],
+        )
+        task_0006_catalog_sha256 = hashlib.sha256(
+            json.dumps(
+                task_0006_cases,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()
+        assert task_0006_catalog_sha256 == (
+            "beec1b7929d41617b0accf83e0ecbc8695cf2030728ef3df3a4c39f226f864b3"
+        ), "Task-0006 catalog cases differ from the approved contract"
+
         operation_axis_case_count = 0
         for case in cases:
             if case.get("category") != "operation_effects":
@@ -5969,7 +7172,7 @@ def check_catalog(root: Path, results: Results) -> None:
             "case_count": len(cases),
             "category_count": len(counts),
             "concrete_case_count": concrete,
-            "closed_registry_categories_checked": 21,
+            "closed_registry_categories_checked": 23,
             "task_0001_requirements_checked": len(task_0001_tokens),
             "task_0004_requirements_checked": len(task_0004_tokens),
             "task_0004_catalog_cases_checked": len(task_0004_cases),
@@ -5978,6 +7181,9 @@ def check_catalog(root: Path, results: Results) -> None:
             "task_0005_requirements_checked": len(task_0005_tokens),
             "task_0005_catalog_cases_checked": len(task_0005_cases),
             "task_0005_catalog_sha256": task_0005_catalog_sha256,
+            "task_0006_requirements_checked": len(task_0006_contracts),
+            "task_0006_catalog_cases_checked": len(task_0006_cases),
+            "task_0006_catalog_sha256": task_0006_catalog_sha256,
         }
 
     before = len(results.checks)

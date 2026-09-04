@@ -41,3 +41,53 @@ required work. It does not imply that OUTPUT is partial and does not imply that
 effects are partial. Conversely, effect_state partial does not force
 status.partial: the applicable failure, cancellation, stop, or block contract
 determines status while the effect state records what happened.
+
+The complete per-error phase metadata is resolved from
+10_REGISTRIES/statuses_and_errors_v0.1.0.json. failure_phase is measured at the
+exposed result producer. A child operation or retry attempt records its local
+phase and effects in ordered evidence, while an aggregate producer accounts for
+every effect begun within its whole invocation. The first unhandled diagnostic
+in stable order supplies its registered default_status; secondary diagnostics do
+not override it. Recovery promotes the first remaining unhandled diagnostic to
+primary. Only recovery of every applicable diagnostic permits the declared
+handler result to control status. Phase does not alter status.
+
+error.dependency.unsatisfied and error.scope.violation are pre_effect only:
+dependency availability and effective scope resolve before the first authorized
+effect. error.execution.order may be pre_effect at graph construction or the
+first operation, post_effect after an earlier aggregate child effect, or
+indeterminate when earlier effect timing is unknown. error.required.missing may
+be pre_effect when absence is known before effects, post_effect when an item
+becomes required or is found missing after an earlier aggregate effect, or
+indeterminate when the timing cannot be established.
+
+The other mixed-phase identifiers are error.cancelled,
+error.evidence.missing, error.execution.action, error.host.constraint,
+error.operation.postcondition, error.operation.precondition,
+error.permission.denied, error.retry.exhausted, error.success.unsatisfied,
+error.value.unknown, and error.verification.failed. Their exact triggers are in
+the registry. An immediate operation precondition still precedes that immediate
+operation's effects; its aggregate producer may have earlier child effects.
+Likewise, a verification or completion failure after effect-free work remains
+pre_effect, while one after known effects is post_effect.
+
+Every failure record retains the error identifier, registered stage, producer
+path, canonical source locus or declared execution event, applicable iteration
+and attempt indexes, and the observations supporting phase, effects, and OUTPUT
+binding. The four baseline errors also retain the exact dependency state,
+ordering edge and prior child results, missing-item detection point, or resolved
+target/effective-scope relation specified by the registry. Absence of evidence
+never proves absence of effects or OUTPUT.
+
+Every ACTION that resolves exactly once remains syntactically eligible for an
+explicit bounded RETRY. A proven pre_effect attempt with no effects may be tried
+again when LIMIT and WHEN permit it. After known applied or partial effects,
+another attempt additionally requires exact evidence that repetition,
+resumption, or reconciliation cannot duplicate a non-idempotent effect or exceed
+the wrapped action's authority, scope, and post-state. Indeterminate phase or
+effects prohibit another attempt until reconciled. Missing proof, UNKNOWN proof,
+and proof that retry is unsafe use error.required.missing,
+error.value.unknown, and error.operation.precondition respectively.
+error.retry.exhausted applies only after every permitted attempt was actually
+made and failed; a safety-blocked unmade attempt is not exhaustion. All attempt
+results and diagnostics remain as ordered evidence.

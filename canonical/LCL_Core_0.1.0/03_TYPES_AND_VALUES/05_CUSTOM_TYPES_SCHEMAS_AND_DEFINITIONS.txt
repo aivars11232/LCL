@@ -15,31 +15,35 @@ kind.type
     BASE required and is one TYPE_EXPRESSION or one REF resolving to a
     kind.type definition; OBJECT base requires one or more FIELD.
 kind.operation
-    MEANING, SIDE_EFFECT, DETERMINISTIC required; zero or more PARAMETER and at
-    most one RESULT. SIDE_EFFECT and DETERMINISTIC are separate contract axes.
-    Every definition selects exactly one immutable profile with profile_role
-    implementation under
-    operations_v0.1.0.json#/axis_contract/implementation_profile. That profile
-    supplies its closed possible-dependency and possible-effect sets and their
-    invocation-resolution rule. Its determinism category is one final
-    deterministic or nondeterministic value; derived and inherited are forbidden
-    as terminal profile categories. declared_state_only denotes no external
-    dependency class and none denotes no concrete effect class when profile
-    bounds are checked. SIDE_EFFECT FALSE requires possible effects exactly
-    {none}; SIDE_EFFECT TRUE requires one or more concrete effect classes and
-    forbids none. A missing, ambiguous, incomplete, or out-of-bounds profile
-    emits error.operation.precondition and cannot begin effects.
+    MEANING, SIDE_EFFECT, DETERMINISTIC required; optional DEPENDENCY; zero or
+    more PARAMETER and at most one RESULT. SIDE_EFFECT, DEPENDENCY, and
+    DETERMINISTIC are separate contract axes. A custom operation declares its
+    complete axis contract in its own definition and selects no implementation
+    profile, so every property the language requires of it is expressible in
+    LCL. SIDE_EFFECT FALSE declares possible effects exactly {none}. SIDE_EFFECT
+    otherwise takes one LIST of one or more distinct concrete effect classes
+    from the closed effect vocabulary and forbids none; that list is the
+    operation's possible-effect maximum. DEPENDENCY takes one LIST of one or
+    more distinct classes from the closed dependency vocabulary; an omitted
+    DEPENDENCY declares exactly {declared_state_only}.
+    declared_state_only denotes no external dependency class and none denotes
+    no concrete effect class when declared bounds are checked. An invocation
+    resolves its effect set from the address classes of its resolved TARGET and
+    declared destination arguments, bounded by the declared maximum. An
+    invocation that would resolve an effect class outside that maximum, and a
+    declared effect-class maximum whose invocation resolves no concrete effect
+    class, each emits error.operation.precondition and cannot begin effects.
     DETERMINISTIC TRUE is a verified assertion over the fully resolved built-in
-    operation or selected implementation profile, using identical declared
-    inputs, dependency snapshots, selected profile-role binding, and
-    implementation version.
+    operation or the declared custom-operation contract, using identical
+    declared inputs, dependency snapshots, and the declared dependency and
+    effect axes.
     It is not an override. It is valid only when the resolved contract is
     deterministic; otherwise validation emits error.determinism.mismatch with
-    terminal status.invalid. A definition for a normally nondeterministic core
-    operation may assert TRUE only by selecting and validating a deterministic
-    non-generative or rule-based profile. DETERMINISTIC FALSE conservatively
-    permits either deterministic behavior or only the bounded variation admitted
-    by the resolved operation contract; it never relaxes another rule.
+    terminal status.invalid. A custom operation may assert TRUE only when its
+    declared axes and parameters admit no permitted variation. DETERMINISTIC
+    FALSE conservatively permits either deterministic behavior or only the
+    bounded variation admitted by the resolved operation contract; it never
+    relaxes another rule.
 kind.format
     MEANING required; optional BASE/ENCODING. BASE is a core format identifier
     or the ID of a kind.format definition. ENCODING is one core registered

@@ -18,8 +18,10 @@ error.operation.precondition is emitted before effects of its immediate
 operation when any registered operation precondition is false, missing, or
 unknown. This includes failure to resolve exactly one
 complete immutable implementation profile for every role required by the
-operation. Custom kind.operation invocations use the same trigger for their
-required implementation role. An exposed aggregate producer may already contain
+operation. A custom kind.operation requires no profile role; its invocations use
+this identifier when a resolved effect class falls outside its declared effect
+maximum or when a declared effect maximum resolves no concrete effect class. An
+exposed aggregate producer may already contain
 an earlier child or retry-attempt effect, so its aggregate failure_phase is
 derived from retained observations rather than from this identifier.
 

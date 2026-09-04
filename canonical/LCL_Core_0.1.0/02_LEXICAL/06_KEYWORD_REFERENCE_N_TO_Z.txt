@@ -37,7 +37,7 @@ OBJECT
 
 OPERATION
     Category: field
-    Meaning: Name the exact built-in or extension operation performed by an ACTION.
+    Meaning: Name the exact built-in or extension operation invoked by an ACTION or HANDLER invocation site under the same operation contract.
     Context: Defined by grammar and block schemas.
 
 OR
@@ -167,7 +167,7 @@ SET
 
 SIDE_EFFECT
     Category: field
-    Meaning: Declare whether an operation may change external state.
+    Meaning: Declare whether an operation may change external state and, when it may, the exact closed effect classes it can produce. FALSE declares possible effects exactly none; an effect-class LIST declares one or more concrete classes and forbids none.
     Context: Defined by grammar and block schemas.
 
 SOURCE

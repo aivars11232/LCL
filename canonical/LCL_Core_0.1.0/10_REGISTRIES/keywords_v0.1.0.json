@@ -173,7 +173,7 @@
     },
     "DEPENDENCY": {
       "category": "block/field",
-      "meaning": "Declare or reference a prerequisite that must be satisfied before execution.",
+      "meaning": "Declare or reference a prerequisite that must be satisfied before execution. In a kind.operation definition it declares the closed dependency classes the operation may select, defaulting to declared_state_only when omitted.",
       "contexts": "Defined by grammar and block schemas.",
       "case_sensitive": true
     },
@@ -293,7 +293,7 @@
     },
     "FALLBACK": {
       "category": "field",
-      "meaning": "Name behavior used only when a primary handler operation cannot execute.",
+      "meaning": "Name behavior used only when a primary handler operation cannot execute. It admits one HANDLER reference or one operation identifier that requires no named parameter and whose required target the handler-context binding supplies.",
       "contexts": "Defined by grammar and block schemas.",
       "case_sensitive": true
     },
@@ -341,7 +341,7 @@
     },
     "HANDLER": {
       "category": "block/field",
-      "meaning": "Declare or reference deterministic behavior for one named event.",
+      "meaning": "Declare or reference deterministic behavior for one named event. A HANDLER block is an invocation site whose OPERATION is invoked under the ACTION operation contract.",
       "contexts": "Defined by grammar and block schemas.",
       "case_sensitive": true
     },
@@ -527,7 +527,7 @@
     },
     "OPERATION": {
       "category": "field",
-      "meaning": "Name the exact built-in or extension operation performed by an ACTION.",
+      "meaning": "Name the exact built-in or extension operation invoked by an ACTION or HANDLER invocation site under the same operation contract.",
       "contexts": "Defined by grammar and block schemas.",
       "case_sensitive": true
     },
@@ -683,7 +683,7 @@
     },
     "SIDE_EFFECT": {
       "category": "field",
-      "meaning": "Declare whether an operation may change external state.",
+      "meaning": "Declare whether an operation may change external state and, when it may, the exact closed effect classes it can produce. FALSE declares possible effects exactly none; an effect-class LIST declares one or more concrete classes and forbids none.",
       "contexts": "Defined by grammar and block schemas.",
       "case_sensitive": true
     },

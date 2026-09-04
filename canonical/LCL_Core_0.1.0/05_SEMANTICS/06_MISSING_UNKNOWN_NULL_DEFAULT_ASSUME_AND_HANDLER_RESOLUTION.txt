@@ -20,3 +20,37 @@ Resolution order:
 DEFAULT never replaces NULL/UNKNOWN unless a rule explicitly maps them first.
 ASSUME is conditional, cannot override explicit data, and must be recorded as
 evidence. No silent guessing is permitted.
+
+HANDLER resolution:
+
+A HANDLER is an invocation site. Its OPERATION field selects and invokes exactly
+one operation under the same contract that binds an ACTION: every target and
+named parameter the selected operation marks required must be satisfied, no
+positional argument is permitted, no named parameter may be duplicated, and no
+unregistered named parameter may be supplied. Violations use
+error.operation.parameter. HANDLER.OPERATION is neither a bare reference nor a
+handler selector; EVENT alone selects the handler.
+
+HANDLER.TARGET supplies the invocation target. Exactly one omission is
+permitted, the handler-context binding: when the selected operation's registered
+target type is REFERENCE[ACTION] or REFERENCE[meta.execution_unit] and TARGET is
+omitted, the target binds to the execution unit that raised the handled event,
+resolving to the ACTION itself for REFERENCE[ACTION] and to the failing
+execution unit for REFERENCE[meta.execution_unit]. That binding is declared by
+this rule, never by host convention, and applies to no other target type. Any
+other omission of a required TARGET uses error.operation.parameter.
+
+HANDLER.PARAMETER blocks supply named parameters. HANDLER.LIMIT is exactly the
+limit named parameter of the selected operation and is legal only when that
+operation registers a limit parameter; supplying LIMIT to an operation without a
+registered limit parameter, or supplying both LIMIT and a PARAMETER named limit,
+uses error.operation.parameter.
+
+FALLBACK names the behavior used only when the primary handler operation cannot
+execute. It is a second invocation site with no target or parameter surface of
+its own, so it admits exactly two forms. One REF resolving to a HANDLER carries
+that handler's own complete invocation data. One operation identifier is legal
+only when the operation registers no required named parameter and its required
+target, if any, is supplied by the handler-context binding above. An operation
+identifier that cannot satisfy its contract under those limits uses
+error.operation.parameter and never executes with an unsatisfied contract.

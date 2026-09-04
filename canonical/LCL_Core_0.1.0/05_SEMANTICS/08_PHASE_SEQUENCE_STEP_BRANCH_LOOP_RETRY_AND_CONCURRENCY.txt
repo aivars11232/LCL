@@ -19,5 +19,16 @@ RETRY LIMIT is the number of additional attempts after the first; 0..100. DELAY
 occurs before each additional attempt. Retry does not expand permissions or
 change parameters.
 
+The ACTION or STEP RETRY block is the only source of attempt bounds for its
+execution unit. Total attempts are exactly 1 + LIMIT. A handler whose OPERATION
+is core.retry selects and authorizes that declared RETRY; it never opens a
+second, independent attempt budget and never multiplies attempts. When such a
+handler is reached for an execution unit that declares RETRY, its resolved limit
+must equal that RETRY LIMIT; an unequal limit is a false operation precondition
+and uses error.operation.precondition before effects. When the wrapped ACTION
+declares no RETRY block, core.retry has no declared bound to authorize and uses
+the same error. DELAY and WHEN are taken from the RETRY block, which is their
+only declaration site.
+
 mode.parallel permits unspecified scheduling but requires declared independence;
 conflicting side effects invalidate. Completion semantics remain deterministic.

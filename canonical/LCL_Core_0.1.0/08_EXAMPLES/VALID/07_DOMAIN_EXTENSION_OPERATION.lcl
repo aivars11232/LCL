@@ -29,7 +29,8 @@ DEFINE:
     ID: image.generate
     KIND: kind.operation
     MEANING: "Generate one image following exact prompt and dimensions."
-    SIDE_EFFECT: TRUE
+    SIDE_EFFECT: [state]
+    DEPENDENCY: [model]
     DETERMINISTIC: FALSE
     PARAMETER:
         NAME: prompt

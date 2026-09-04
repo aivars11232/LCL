@@ -8,7 +8,7 @@ requirement records are stored in:
 
     10_REGISTRIES/field_signatures_v0.1.0.json
 
-Its 334 fields use 65 distinct value-kind expressions. Every expression resolves
+Its 335 fields use 67 distinct value-kind expressions. Every expression resolves
 as either one exact name in value_kind_registry or one instance of a template in
 value_kind_templates. The template metagrammar is closed and is used only inside
 the JSON field-signature registry; it is not LCL source syntax:

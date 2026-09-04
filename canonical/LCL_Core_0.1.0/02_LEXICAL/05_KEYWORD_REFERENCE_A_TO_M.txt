@@ -147,7 +147,7 @@ DELAY
 
 DEPENDENCY
     Category: block/field
-    Meaning: Declare or reference a prerequisite that must be satisfied before execution.
+    Meaning: Declare or reference a prerequisite that must be satisfied before execution. In a kind.operation definition it declares the closed dependency classes the operation may select, defaulting to declared_state_only when omitted.
     Context: Defined by grammar and block schemas.
 
 DESCRIPTION
@@ -247,7 +247,7 @@ FAILURE
 
 FALLBACK
     Category: field
-    Meaning: Name behavior used only when a primary handler operation cannot execute.
+    Meaning: Name behavior used only when a primary handler operation cannot execute. It admits one HANDLER reference or one operation identifier that requires no named parameter and whose required target the handler-context binding supplies.
     Context: Defined by grammar and block schemas.
 
 FALSE
@@ -287,7 +287,7 @@ GOAL
 
 HANDLER
     Category: block/field
-    Meaning: Declare or reference deterministic behavior for one named event.
+    Meaning: Declare or reference deterministic behavior for one named event. A HANDLER block is an invocation site whose OPERATION is invoked under the ACTION operation contract.
     Context: Defined by grammar and block schemas.
 
 ID

@@ -526,7 +526,9 @@ TASK_0002_NAMED_VALUE_KIND_DEFINITIONS = {
         "whose KIND is kind.operation."
     ),
     "operation_identifier_or_handler_reference": (
-        "An operation_identifier or one REF resolving to HANDLER."
+        "One REF resolving to HANDLER, or one operation_identifier that registers no "
+        "required named parameter and whose required target, if any, is supplied by "
+        "the handler-context binding."
     ),
     "path": "One PATH value.",
     "property_path": (
@@ -2409,12 +2411,15 @@ def set_sort_contract_violations(
     expected_error_fields = {
         "error.operation.parameter": {
             "meaning": (
-                "An ACTION omits TARGET when the selected operation marks it required, "
-                "omits a named parameter that the operation marks required, supplies any "
-                "positional argument, duplicates a named parameter, or supplies an "
-                "unregistered named parameter. A declared parameter value rejected by its "
-                "type or semantic constraint uses the general or row-specific error and is "
-                "not remapped to error.operation.parameter."
+                "An ACTION, HANDLER, or FALLBACK invocation site omits TARGET when the "
+                "selected operation marks it required and no handler-context binding "
+                "supplies it, omits a named parameter that the operation marks required, "
+                "supplies any positional argument, duplicates a named parameter, or supplies "
+                "an unregistered named parameter. A FALLBACK operation identifier that "
+                "requires any named parameter, or whose required TARGET no handler-context "
+                "binding can supply, uses this error. A declared parameter value rejected by "
+                "its type or semantic constraint uses the general or row-specific error and "
+                "is not remapped to error.operation.parameter."
             ),
             "stage": "static_or_expression",
             "recoverable_with_declared_handler": False,
@@ -3406,7 +3411,7 @@ def result_contract_violations(
 
 
 EXPECTED_OPERATION_CONTRACT_FINGERPRINT = (
-    "fc7c347f597fad0db7ab8eee2a9ac24c913fa312fbd4918a49d865f146257e95"
+    "eda21bef2f30075595d45f68b41a39e56637f4ecd3e4ba23192c317504afb7a4"
 )
 EXPECTED_OPERATION_ROW_FINGERPRINTS = {
     "core.inspect": "fc2ae5ad368d5bba7e4599740b68d627471585b039834d2ad5b5f766beeaf234",
@@ -3445,7 +3450,7 @@ EXPECTED_OPERATION_ROW_FINGERPRINTS = {
     "core.memory_write": "79c11d4767f792c59c0c502b6d8d33826b1a34670985f6269316c75c95323bfe",
     "core.state_update": "fd6f0d9d8c543e42125b67de2c3fe540d3de8fc2cbab48f572cbf85c4836ed12",
     "core.ask": "508262d4c096f90ce488915de24cc14830d826789d2c1c78b8d64bf0bd797b18",
-    "core.retry": "0beefdefc94ed1cd4ce9631a993fca2faa95174e4ca6791cd74c68836e1b4e44",
+    "core.retry": "e0e246d6ec03e6e9e8a3894378a05edff6fdc557d797f65272666a84235f6362",
     "core.continue": "2639da73903e268cab43da10e8d1385290c2d31aec88f56918368f006cd3ea06",
     "core.cancel": "e93170aea13204ec59ae5f49bb154382e60c39a1faa7ea116db9579f426a0c9e",
 }
@@ -3506,6 +3511,26 @@ def operation_contract_violations(
     operations = raw_operations if isinstance(raw_operations, dict) else {}
     enum_groups = groups_and_results.get("enum_groups", {})
     expected_axis_contract = {
+        "custom_operation_resolution": (
+            "A custom kind.operation declares its complete axis contract in its own "
+            "DEFINE block and selects no implementation profile. SIDE_EFFECT FALSE "
+            "declares possible_effects exactly none. A SIDE_EFFECT effect-class LIST "
+            "declares one or more distinct concrete effect classes, excludes none, and "
+            "is that operation's possible_effects maximum. DEPENDENCY declares the "
+            "possible_dependencies maximum from the closed dependency vocabulary; an "
+            "omitted DEPENDENCY declares exactly declared_state_only. Resolve the "
+            "invocation effect set from the address classes of the resolved target and "
+            "declared destination arguments under the same address-class rules that bind "
+            "core rows, bounded by the declared maximum; an invocation that resolves an "
+            "effect class outside that maximum, and an effect-class declaration whose "
+            "invocation resolves no concrete effect class, each emit "
+            "error.operation.precondition before effects. DETERMINISTIC TRUE requires the "
+            "declared contract to satisfy determinism_identity over identical declared "
+            "inputs and declared dependency snapshots; DETERMINISTIC FALSE conservatively "
+            "permits either final category and never relaxes another rule. The declaration "
+            "supplies the final category and the dependency and effect sets used by an "
+            "ACTION graph."
+        ),
         "determinism_identity": (
             "For a deterministic operation, identical declared inputs, dependency "
             "snapshots, selected profile-role bindings, and implementation versions require "
@@ -3649,8 +3674,9 @@ def operation_contract_violations(
                 "exactly to REFERENCE[TASK|PHASE|SEQUENCE|ACTION|TEST] targets; graph mode has "
                 "no local execution profile and resolves every reachable operation profile "
                 "transitively. A core operation absent from required_roles_by_operation "
-                "requires no local core profile. Every custom kind.operation requires exactly "
-                "the implementation role. No unlisted local profile role may be selected."
+                "requires no local core profile. A custom kind.operation selects no profile "
+                "role and resolves under axis_contract.custom_operation_resolution. No "
+                "unlisted local profile role may be selected."
             ),
             "determinism_category_domain": (
                 "A profile declares exactly one final category: deterministic or "
@@ -3664,8 +3690,9 @@ def operation_contract_violations(
                 "effect maxima; an empty narrowed set is represented exactly by its sentinel. "
                 "A profile selected by a deterministic base row must declare deterministic; "
                 "a nondeterministic profile is out of bounds. "
-                "A custom kind.operation profile declares maxima from the same closed "
-                "vocabularies. Every profile's invocation rule resolves actual sets within "
+                "A custom kind.operation declares its own maxima from the same closed "
+                "vocabularies in its DEFINE block. Every profile's invocation rule resolves "
+                "actual sets within "
                 "its maxima."
             ),
             "determinism_resolution": (
@@ -3678,19 +3705,12 @@ def operation_contract_violations(
                 "categories of every resolved profile and/or graph. DETERMINISTIC TRUE is "
                 "verified afterward and never causes category narrowing."
             ),
-            "custom_operation_resolution": (
-                "Every custom kind.operation selects exactly one profile. SIDE_EFFECT FALSE "
-                "requires possible_effects exactly none; SIDE_EFFECT TRUE requires one or more "
-                "concrete effect classes and forbids none. DETERMINISTIC TRUE requires the "
-                "profile's final category to be deterministic; DETERMINISTIC FALSE "
-                "conservatively permits either final category and never relaxes another rule. "
-                "The profile supplies the dependency and effect sets used by an ACTION graph."
-            ),
             "graph_resolution": (
                 "For TASK, PHASE, SEQUENCE, ACTION, or TEST references, emit "
                 "error.reference.cycle and fail before axis resolution when a prohibited "
-                "reference cycle exists, then resolve every reachable core row or custom "
-                "kind.operation profile to a final category and invocation sets. The graph is "
+                "reference cycle exists, then resolve every reachable core row profile or "
+                "custom kind.operation declaration to a final category and invocation sets. "
+                "The graph is "
                 "deterministic exactly when every reachable resolved operation is deterministic, "
                 "including when no operation is reachable; it is nondeterministic when any "
                 "reachable resolved operation is nondeterministic. Form each transitive union "
@@ -4946,6 +4966,7 @@ def operation_contract_violations(
         and retry.get("preconditions")
         == [
             "wrapped ACTION resolves exactly once before any retry decision",
+            "wrapped ACTION declares a RETRY block whose LIMIT equals the resolved limit",
             "before an additional attempt after known effects, exact retained evidence "
             "proves safe repetition, resumption, or reconciliation within inherited "
             "authority, scope, and post-state",
@@ -5153,8 +5174,12 @@ def operation_prose_contract_violations(
         ],
         "03_TYPES_AND_VALUES/05_CUSTOM_TYPES_SCHEMAS_AND_DEFINITIONS.txt": [
             "DETERMINISTIC TRUE is a verified assertion",
-            "selected implementation profile",
-            "deterministic or nondeterministic value",
+            "declared custom-operation contract",
+            "selects no implementation",
+            "SIDE_EFFECT FALSE declares possible effects exactly {none}",
+            "one LIST of one or more distinct concrete effect classes",
+            "an omitted",
+            "DEPENDENCY declares exactly {declared_state_only}",
             "declared_state_only denotes no external",
             "emits error.operation.precondition",
             "It is not an override",
@@ -6006,6 +6031,323 @@ def failure_lifecycle_contract_violations(
     return violations
 
 
+CUSTOM_OPERATION_RETIRED_CLAIMS = (
+    "Every custom kind.operation selects exactly one profile",
+    "custom kind.operation requires the implementation role",
+    "custom kind.operation requires exactly the implementation role",
+    "Every custom kind.operation also selects exactly one such profile",
+    "Every custom kind.operation also resolves through exactly one such profile",
+    "custom kind.operation has exactly the implementation role",
+    "SIDE_EFFECT TRUE",
+)
+
+
+def custom_operation_declaration_violations(
+    root: Path,
+    fields: dict[str, Any],
+    blocks: dict[str, Any],
+    operation_registry: dict[str, Any],
+    groups_and_results: dict[str, Any],
+) -> tuple[list[str], int]:
+    """Verify that a custom kind.operation can express every axis the language demands.
+
+    This is a static declaration check. It proves that the closed DEFINE surface admits
+    the effect and dependency vocabularies, that no normative surface still requires a
+    custom operation to select an implementation profile, and that every shipped
+    kind.operation definition declares axis values inside the closed vocabularies. It
+    does not parse LCL and therefore claims no coverage of full document semantics.
+    """
+    violations: list[str] = []
+    enum_groups = groups_and_results.get("enum_groups", {})
+    effect_classes = set(enum_groups.get("effect_classes", []))
+    dependency_classes = set(enum_groups.get("dependency_classes", []))
+    if not effect_classes or not dependency_classes:
+        violations.append("closed effect or dependency vocabulary is unavailable")
+
+    # 1. The DEFINE surface must admit both axis declarations.
+    define_fields = fields.get("blocks", {}).get("DEFINE", {}).get("fields", {})
+    define_schema = blocks.get("DEFINE", {})
+    for field_name, expected_kind in (
+        ("SIDE_EFFECT", "side_effect_declaration"),
+        ("DEPENDENCY", "dependency_class_list"),
+    ):
+        actual = define_fields.get(field_name, {}).get("value_kind")
+        if actual != expected_kind:
+            violations.append(
+                f"DEFINE.{field_name} value_kind is {actual!r}, expected {expected_kind!r}"
+            )
+        if field_name not in set(define_schema.get("optional", [])) | set(
+            define_schema.get("required", [])
+        ):
+            violations.append(f"DEFINE block schema does not admit {field_name}")
+    named_kinds = fields.get("value_kind_registry", {})
+    for kind_name, vocabulary in (
+        ("side_effect_declaration", "effect_classes"),
+        ("dependency_class_list", "dependency_classes"),
+    ):
+        definition = named_kinds.get(kind_name)
+        if not isinstance(definition, str) or vocabulary not in definition:
+            violations.append(
+                f"value kind {kind_name} does not resolve against the closed {vocabulary}"
+            )
+
+    # 2. No normative surface may still oblige a custom operation to select a profile.
+    axis_contract = operation_registry.get("axis_contract", {})
+    custom_rule = axis_contract.get("custom_operation_resolution")
+    if not isinstance(custom_rule, str):
+        violations.append("axis_contract.custom_operation_resolution is absent")
+    else:
+        for token in ("SIDE_EFFECT", "DEPENDENCY", "DETERMINISTIC", "selects no implementation profile"):
+            if token not in custom_rule:
+                violations.append(
+                    f"custom_operation_resolution does not govern {token}"
+                )
+    profile_contract = axis_contract.get("implementation_profile", {})
+    if "custom_operation_resolution" in profile_contract:
+        violations.append(
+            "custom_operation_resolution is still nested under implementation_profile"
+        )
+    for relative_path in (
+        "03_TYPES_AND_VALUES/05_CUSTOM_TYPES_SCHEMAS_AND_DEFINITIONS.txt",
+        "05_SEMANTICS/11_DETERMINISM_EQUIVALENCE_AND_INTERPRETER_VARIATION.txt",
+        "06_STANDARD_LIBRARY/06_CORE_ERROR_IDENTIFIERS_PART_1.txt",
+        "06_STANDARD_LIBRARY/10_CORE_OPERATION_PARAMETER_RULES.txt",
+        "10_REGISTRIES/operations_v0.1.0.json",
+        "09_CONFORMANCE/CASES/core_conformance_cases_v0.1.0.json",
+    ):
+        text = (root / relative_path).read_text(encoding="utf-8")
+        for claim in CUSTOM_OPERATION_RETIRED_CLAIMS:
+            if claim in text:
+                violations.append(
+                    f"{relative_path} still asserts the retired custom-operation claim {claim!r}"
+                )
+
+    # 3. Every shipped kind.operation definition declares axes inside the closed vocabularies.
+    checked_definitions = 0
+    for path in sorted((root / "08_EXAMPLES/VALID").glob("*.lcl")):
+        lines = path.read_text(encoding="utf-8").split("\n")
+        for index, line in enumerate(lines):
+            if line.strip() != "KIND: kind.operation":
+                continue
+            checked_definitions += 1
+            declared: dict[str, str] = {}
+            for candidate in lines[index + 1 :]:
+                if candidate and not candidate.startswith(" "):
+                    break
+                stripped = candidate.strip()
+                for field_name in ("SIDE_EFFECT", "DEPENDENCY", "DETERMINISTIC"):
+                    prefix = f"{field_name}: "
+                    if stripped.startswith(prefix):
+                        declared[field_name] = stripped[len(prefix) :]
+            location = f"{path.name} definition {checked_definitions}"
+            side_effect = declared.get("SIDE_EFFECT")
+            if side_effect is None:
+                violations.append(f"{location} omits required SIDE_EFFECT")
+            elif side_effect == "TRUE":
+                violations.append(
+                    f"{location} uses retired bare SIDE_EFFECT TRUE without effect classes"
+                )
+            elif side_effect != "FALSE":
+                if not (side_effect.startswith("[") and side_effect.endswith("]")):
+                    violations.append(f"{location} SIDE_EFFECT is not FALSE or an effect LIST")
+                else:
+                    members = [item.strip() for item in side_effect[1:-1].split(",") if item.strip()]
+                    if not members:
+                        violations.append(f"{location} declares an empty effect LIST")
+                    if "none" in members:
+                        violations.append(f"{location} declares none among concrete effect classes")
+                    if len(members) != len(set(members)):
+                        violations.append(f"{location} repeats an effect class")
+                    unknown = [item for item in members if item not in effect_classes]
+                    if unknown:
+                        violations.append(f"{location} declares unregistered effect classes {unknown}")
+            dependency = declared.get("DEPENDENCY")
+            if dependency is not None:
+                if not (dependency.startswith("[") and dependency.endswith("]")):
+                    violations.append(f"{location} DEPENDENCY is not a class LIST")
+                else:
+                    members = [item.strip() for item in dependency[1:-1].split(",") if item.strip()]
+                    if not members:
+                        violations.append(f"{location} declares an empty dependency LIST")
+                    if len(members) != len(set(members)):
+                        violations.append(f"{location} repeats a dependency class")
+                    unknown = [item for item in members if item not in dependency_classes]
+                    if unknown:
+                        violations.append(
+                            f"{location} declares unregistered dependency classes {unknown}"
+                        )
+                    if "declared_state_only" in members and len(members) > 1:
+                        violations.append(
+                            f"{location} combines declared_state_only with another class"
+                        )
+            if declared.get("DETERMINISTIC") not in {"TRUE", "FALSE"}:
+                violations.append(f"{location} omits a BOOLEAN DETERMINISTIC declaration")
+    if checked_definitions == 0:
+        violations.append("no shipped kind.operation definition was checked")
+    return violations, checked_definitions
+
+
+HANDLER_CONTEXT_TARGET_TYPES = ("REFERENCE[ACTION]", "REFERENCE[meta.execution_unit]")
+
+
+def invocation_site_contract_violations(
+    root: Path,
+    fields: dict[str, Any],
+    blocks: dict[str, Any],
+    operations: dict[str, Any],
+    statuses: dict[str, Any],
+) -> tuple[list[str], int]:
+    """Verify that ACTION, HANDLER, and FALLBACK operation contracts are total.
+
+    This is a static contract check. It proves that the invocation-site rule is stated
+    on every authoritative surface, that HANDLER carries the fields its rule requires,
+    and that every shipped HANDLER declaration can satisfy the contract of the operation
+    it names, including FALLBACK. It does not parse or execute LCL documents.
+    """
+    violations: list[str] = []
+
+    # 1. The widened invocation-site rule must be stated on every authoritative surface.
+    parameter_error = statuses.get("errors", {}).get("error.operation.parameter", {})
+    meaning = parameter_error.get("meaning", "")
+    for token in ("ACTION, HANDLER, or FALLBACK invocation site", "handler-context binding"):
+        if token not in meaning:
+            violations.append(f"error.operation.parameter meaning omits {token!r}")
+    surfaces = {
+        "06_STANDARD_LIBRARY/10_CORE_OPERATION_PARAMETER_RULES.txt": (
+            "ACTION, HANDLER,",
+            "are the only invocation sites",
+        ),
+        "05_SEMANTICS/06_MISSING_UNKNOWN_NULL_DEFAULT_ASSUME_AND_HANDLER_RESOLUTION.txt": (
+            "A HANDLER is an invocation site",
+            "handler-context binding",
+            "FALLBACK names the behavior",
+        ),
+        "05_SEMANTICS/08_PHASE_SEQUENCE_STEP_BRANCH_LOOP_RETRY_AND_CONCURRENCY.txt": (
+            "only source of attempt bounds",
+            "Total attempts are exactly 1 + LIMIT",
+            "never opens a",
+        ),
+    }
+    for relative_path, tokens in surfaces.items():
+        text = (root / relative_path).read_text(encoding="utf-8")
+        for token in tokens:
+            if token not in text:
+                violations.append(f"{relative_path} omits invocation-site prose {token!r}")
+
+    # 2. HANDLER must carry the fields its normative rule requires.
+    handler_fields = fields.get("blocks", {}).get("HANDLER", {}).get("fields", {})
+    for field_name in ("OPERATION", "TARGET", "PARAMETER", "FALLBACK", "LIMIT"):
+        if field_name not in handler_fields:
+            violations.append(f"HANDLER does not carry {field_name}")
+    handler_rules = blocks.get("HANDLER", {}).get("rules", [])
+    if not any("invocation site" in rule for rule in handler_rules):
+        violations.append("HANDLER block schema does not state the invocation-site rule")
+    if not any("handler-context binding" in rule for rule in handler_rules):
+        violations.append("HANDLER block schema does not state the target binding rule")
+    if not any(rule.startswith("FALLBACK admits") for rule in handler_rules):
+        violations.append("HANDLER block schema does not bound FALLBACK")
+    retry_rules = blocks.get("RETRY", {}).get("rules", [])
+    if not any("only source of attempt bounds" in rule for rule in retry_rules):
+        violations.append("RETRY block schema does not state the attempt-bound rule")
+
+    # 3. core.retry must bind its composition rule to the declared RETRY block.
+    retry_contract = operations.get("core.retry", {})
+    if "RETRY block is the only attempt bound" not in str(
+        retry_contract.get("invocation_resolution", "")
+    ):
+        violations.append("core.retry invocation rule omits the RETRY composition bound")
+    if not any(
+        "RETRY block whose LIMIT equals the resolved limit" in precondition
+        for precondition in retry_contract.get("preconditions", [])
+    ):
+        violations.append("core.retry does not require limit equality with the RETRY block")
+
+    # 4. Every shipped HANDLER declaration must satisfy the contract it names.
+    checked_handlers = 0
+    for path in sorted((root / "08_EXAMPLES/VALID").glob("*.lcl")):
+        lines = path.read_text(encoding="utf-8").split("\n")
+        for index, line in enumerate(lines):
+            if line != "HANDLER:":
+                continue
+            checked_handlers += 1
+            declared: dict[str, str] = {}
+            parameter_names: list[str] = []
+            for candidate in lines[index + 1 :]:
+                if candidate and not candidate.startswith(" "):
+                    break
+                stripped = candidate.strip()
+                if stripped.startswith("NAME: "):
+                    parameter_names.append(stripped[len("NAME: ") :])
+                    continue
+                for field_name in ("ID", "OPERATION", "TARGET", "FALLBACK", "LIMIT"):
+                    prefix = f"{field_name}: "
+                    if stripped.startswith(prefix):
+                        declared.setdefault(field_name, stripped[len(prefix) :])
+            location = f"{path.name} HANDLER {declared.get('ID', checked_handlers)}"
+            operation_name = declared.get("OPERATION")
+            contract = operations.get(operation_name)
+            if operation_name is None:
+                violations.append(f"{location} omits required OPERATION")
+                continue
+            if contract is None:
+                if operation_name.startswith("core."):
+                    violations.append(f"{location} names unregistered core operation {operation_name}")
+                continue
+            target_contract = contract.get("target", {})
+            if target_contract.get("required") and "TARGET" not in declared:
+                if target_contract.get("type") not in HANDLER_CONTEXT_TARGET_TYPES and not any(
+                    admitted in str(target_contract.get("type", "")).split("|")
+                    for admitted in HANDLER_CONTEXT_TARGET_TYPES
+                ):
+                    violations.append(
+                        f"{location} omits a required TARGET that no handler-context binding supplies"
+                    )
+            registered_parameters = contract.get("parameters", {})
+            if "LIMIT" in declared and "limit" not in registered_parameters:
+                violations.append(f"{location} supplies LIMIT to an operation without a limit parameter")
+            if "LIMIT" in declared and "limit" in parameter_names:
+                violations.append(f"{location} duplicates limit through LIMIT and PARAMETER")
+            supplied = set(parameter_names) | ({"limit"} if "LIMIT" in declared else set())
+            missing_required = [
+                name
+                for name, parameter in registered_parameters.items()
+                if parameter.get("required") and name not in supplied
+            ]
+            if missing_required:
+                violations.append(f"{location} omits required parameters {missing_required}")
+            unregistered = [name for name in parameter_names if name not in registered_parameters]
+            if unregistered:
+                violations.append(f"{location} supplies unregistered parameters {unregistered}")
+            fallback = declared.get("FALLBACK")
+            if fallback is not None and not fallback.startswith("REF("):
+                fallback_contract = operations.get(fallback)
+                if fallback_contract is None:
+                    if fallback.startswith("core."):
+                        violations.append(f"{location} FALLBACK names unregistered {fallback}")
+                else:
+                    required_parameters = [
+                        name
+                        for name, parameter in fallback_contract.get("parameters", {}).items()
+                        if parameter.get("required")
+                    ]
+                    if required_parameters:
+                        violations.append(
+                            f"{location} FALLBACK {fallback} requires named parameters "
+                            f"{required_parameters} it cannot supply"
+                        )
+                    fallback_target = fallback_contract.get("target", {})
+                    if fallback_target.get("required") and not any(
+                        admitted in str(fallback_target.get("type", "")).split("|")
+                        for admitted in HANDLER_CONTEXT_TARGET_TYPES
+                    ):
+                        violations.append(
+                            f"{location} FALLBACK {fallback} requires a TARGET no binding supplies"
+                        )
+    if checked_handlers == 0:
+        violations.append("no shipped HANDLER declaration was checked")
+    return violations, checked_handlers
+
+
 def check_registry(root: Path, results: Results) -> None:
     registry = root / "10_REGISTRIES"
     keywords = load_json_strict(registry / "keywords_v0.1.0.json")["keywords"]
@@ -6422,6 +6764,42 @@ def check_registry(root: Path, results: Results) -> None:
         blocked_by=[],
     )
 
+    custom_violations, custom_definition_count = custom_operation_declaration_violations(
+        root, fields, blocks, operation_registry, groups_and_results
+    )
+    results.add(
+        "registry",
+        "custom_operation_declaration_contract",
+        "FAIL" if custom_violations else "PASS",
+        custom_operation_violations=custom_violations,
+        checked_shipped_definitions=custom_definition_count,
+        declared_effect_vocabulary=groups_and_results["enum_groups"]["effect_classes"],
+        declared_dependency_vocabulary=groups_and_results["enum_groups"]["dependency_classes"],
+        static_limit=(
+            "Checks declarability, retired-claim absence, and shipped definition axis "
+            "closure only; no LCL document is parsed or executed."
+        ),
+        blocked_by=[],
+    )
+
+    invocation_violations, checked_handlers = invocation_site_contract_violations(
+        root, fields, blocks, operations, statuses
+    )
+    results.add(
+        "registry",
+        "invocation_site_contract",
+        "FAIL" if invocation_violations else "PASS",
+        invocation_site_violations=invocation_violations,
+        checked_shipped_handlers=checked_handlers,
+        handler_context_target_types=list(HANDLER_CONTEXT_TARGET_TYPES),
+        static_limit=(
+            "Checks invocation-site rule presence, HANDLER schema totality, core.retry "
+            "composition, and shipped HANDLER/FALLBACK contract satisfaction only; no LCL "
+            "document is parsed or executed."
+        ),
+        blocked_by=[],
+    )
+
     lifecycle_violations = failure_lifecycle_contract_violations(
         root, statuses, operations, groups_and_results
     )
@@ -6822,7 +7200,10 @@ def check_catalog(root: Path, results: Results) -> None:
                 "does not allow status.cancelled",
             ),
             "ERROR-CONTRACT-0725": (
-                "TARGET when a selected operation marks it required",
+                "ACTION, HANDLER, or FALLBACK invocation site",
+                "when a selected operation marks it required",
+                "no handler-context binding supplies it",
+                "FALLBACK operation identifier that requires any named parameter",
                 "any named parameter that a row marks required",
                 "every positional argument",
                 "unregistered named parameter",
@@ -6832,7 +7213,8 @@ def check_catalog(root: Path, results: Results) -> None:
             "ERROR-CONTRACT-0727": (
                 "false, missing, or unknown",
                 "exactly one complete immutable profile",
-                "every required core or custom operation profile role",
+                "every required core profile role",
+                "outside its declared maximum",
                 "stage, recoverability, and default status",
             ),
             "ERROR-CONTRACT-0732": (
@@ -6856,7 +7238,7 @@ def check_catalog(root: Path, results: Results) -> None:
                 "closed 23-operation local role map",
                 "download=source+transfer",
                 "core.execute uses execution only in non-graph mode",
-                "custom kind.operation has exactly the implementation role",
+                "custom kind.operation selects no profile role",
                 "never causes narrowing",
             ),
             "ENUM-GROUPS-0765": (
@@ -6953,7 +7335,7 @@ def check_catalog(root: Path, results: Results) -> None:
             ).encode("utf-8")
         ).hexdigest()
         assert task_0004_catalog_sha256 == (
-            "2748d6c28b82a82829fd4a6ba885da08893861a4084aa5b8905e24164d936566"
+            "a4fb9a99f4f13680e22d5caef1278915dc933491b13e1637515414a190f30073"
         ), "Task-0004 catalog cases differ from the approved contract"
 
         task_0005_subjects = {

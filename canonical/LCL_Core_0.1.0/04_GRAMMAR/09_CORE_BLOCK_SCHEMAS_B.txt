@@ -80,6 +80,8 @@ RETRY
     Optional: WHEN, DELAY, HANDLER, DESCRIPTION
     Repeatable: none
     Rule: LIMIT counts additional attempts and is 0 through 100.
+    Rule: This block is the only source of attempt bounds for its execution unit; total attempts are exactly 1 + LIMIT.
+    Rule: A handler using core.retry authorizes this declared RETRY and its resolved limit must equal this LIMIT.
 
 HANDLER
     Contexts: top_level
@@ -87,6 +89,10 @@ HANDLER
     Required: ID, EVENT, OPERATION
     Optional: TARGET, PARAMETER, WHEN, FALLBACK, LIMIT, DESCRIPTION
     Repeatable: PARAMETER
+    Rule: HANDLER is an invocation site; OPERATION selects and invokes one operation under the ACTION contract.
+    Rule: A required TARGET may be omitted only under the handler-context binding for REFERENCE[ACTION] or REFERENCE[meta.execution_unit] targets.
+    Rule: LIMIT is exactly the limit named parameter of the selected operation and is legal only when that operation registers it.
+    Rule: FALLBACK admits one REF to a HANDLER, or one operation identifier that requires no named parameter and whose required TARGET the handler-context binding supplies.
 
 OUTPUT
     Contexts: top_level

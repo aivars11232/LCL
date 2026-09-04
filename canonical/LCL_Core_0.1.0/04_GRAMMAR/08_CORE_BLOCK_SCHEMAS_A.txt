@@ -45,7 +45,7 @@ DEFINE
     Contexts: top_level
     Occurrence: zero_or_more
     Required: ID, KIND
-    Optional: MEANING, TYPE, VALUE, BASE, ITEM, FIELD, PARAMETER, RESULT, FORMAT, ENCODING, SIDE_EFFECT, DETERMINISTIC, EXAMPLE, DESCRIPTION
+    Optional: MEANING, TYPE, VALUE, BASE, ITEM, FIELD, PARAMETER, RESULT, FORMAT, ENCODING, SIDE_EFFECT, DEPENDENCY, DETERMINISTIC, EXAMPLE, DESCRIPTION
     Repeatable: ITEM, FIELD, PARAMETER, EXAMPLE
     Rule: Immutable.
     Rule: Kind-specific required fields are normative.

@@ -123,7 +123,8 @@ core.execute target (PATH, URI, or STRING) requires the execution role; a graph
 target (REFERENCE[TASK|PHASE|SEQUENCE|ACTION|TEST]) has no local execution
 profile and resolves every reachable profile transitively. A core operation
 absent from the map requires no local core profile. A custom kind.operation
-requires the implementation role. No unlisted local profile role is permitted.
+selects no profile role and resolves from its own declaration. No unlisted local
+profile role is permitted.
 
 A deterministic base row remains deterministic and accepts only a deterministic
 profile. A nondeterministic base row resolves deterministic only when its
@@ -134,21 +135,25 @@ nondeterministic categories of its resolved profiles and/or graph.
 DETERMINISTIC TRUE is verified only after that resolution and never causes
 category narrowing.
 
-Every custom kind.operation also resolves through exactly one such profile. Its
-profile declares dependency and effect maxima from the same closed vocabularies.
-SIDE_EFFECT FALSE requires possible effects exactly {none}; SIDE_EFFECT TRUE
-requires one or more concrete effect classes and forbids none. DETERMINISTIC TRUE
-requires the profile's final category to be deterministic. DETERMINISTIC FALSE
-conservatively permits either final category and never relaxes another rule.
+Every custom kind.operation instead resolves from its own declaration and selects
+no profile. Its definition declares dependency and effect maxima from the same
+closed vocabularies. SIDE_EFFECT FALSE declares possible effects exactly {none};
+an effect-class LIST declares one or more concrete effect classes and forbids
+none. An omitted DEPENDENCY declares exactly {declared_state_only}. The
+invocation effect set resolves from the address classes of the resolved TARGET
+and declared destination arguments within that declared maximum. DETERMINISTIC
+TRUE requires the declared contract to admit no permitted variation.
+DETERMINISTIC FALSE conservatively permits either final category and never
+relaxes another rule.
 Thus an ACTION that names a custom operation contributes concrete resolved axes
 rather than an unclassified boolean.
 
 An invocation must not acquire an unregistered or undeclared dependency or
 effect. For a referenced TASK, PHASE, SEQUENCE, ACTION, or TEST, a prohibited
 reference cycle emits error.reference.cycle and fails before axis resolution.
-Every reachable core row or custom kind.operation profile then resolves to a
-final deterministic or nondeterministic category and invocation sets. The graph
-is deterministic
+Every reachable core row profile or custom kind.operation declaration then
+resolves to a final deterministic or nondeterministic category and invocation
+sets. The graph is deterministic
 exactly when every reachable resolved operation is deterministic, including
 when no operation is reachable; any reachable nondeterministic operation makes
 the graph nondeterministic. The transitive union contains concrete external

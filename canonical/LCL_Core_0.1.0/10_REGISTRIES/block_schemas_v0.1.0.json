@@ -105,6 +105,7 @@
         "FORMAT",
         "ENCODING",
         "SIDE_EFFECT",
+        "DEPENDENCY",
         "DETERMINISTIC",
         "EXAMPLE",
         "DESCRIPTION"
@@ -710,7 +711,9 @@
       ],
       "repeatable": [],
       "rules": [
-        "LIMIT counts additional attempts and is 0 through 100."
+        "LIMIT counts additional attempts and is 0 through 100.",
+        "This block is the only source of attempt bounds for its execution unit; total attempts are exactly 1 + LIMIT.",
+        "A handler using core.retry authorizes this declared RETRY and its resolved limit must equal this LIMIT."
       ]
     },
     "HANDLER": {
@@ -734,7 +737,12 @@
       "repeatable": [
         "PARAMETER"
       ],
-      "rules": []
+      "rules": [
+        "HANDLER is an invocation site; OPERATION selects and invokes one operation under the ACTION contract.",
+        "A required TARGET may be omitted only under the handler-context binding for REFERENCE[ACTION] or REFERENCE[meta.execution_unit] targets.",
+        "LIMIT is exactly the limit named parameter of the selected operation and is legal only when that operation registers it.",
+        "FALLBACK admits one REF to a HANDLER, or one operation identifier that requires no named parameter and whose required TARGET the handler-context binding supplies."
+      ]
     },
     "OUTPUT": {
       "contexts": [

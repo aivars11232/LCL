@@ -18,12 +18,17 @@ diagnostics, resolved effects, or field availability.
 No positional parameters exist. A parameter absent from an operation contract is
 forbidden. A required parameter cannot be inferred. A default applies only to a
 MISSING optional parameter. Every operation lists error.operation.parameter;
-that error is emitted during static/expression checking when an ACTION omits
-TARGET while the selected operation marks it required, omits a named parameter
+that error is emitted during static/expression checking when an ACTION, HANDLER,
+or FALLBACK invocation site omits TARGET while the selected operation marks it
+required and no handler-context binding supplies it, omits a named parameter
 that the operation marks required, supplies any positional argument, duplicates
 a named parameter, or supplies an unregistered named parameter. A declared
 parameter value rejected by its type or semantic constraint uses the general or
-row-specific error and is not remapped to error.operation.parameter.
+row-specific error and is not remapped to error.operation.parameter. ACTION,
+HANDLER, and FALLBACK are the only invocation sites; every required target and
+named parameter rule applies identically on each of them, and no path is exempt
+except by the handler-context target binding defined in
+05_SEMANTICS/06_MISSING_UNKNOWN_NULL_DEFAULT_ASSUME_AND_HANDLER_RESOLUTION.txt.
 
 In operations_v0.1.0.json only, JSON null in a parameter default field means no
 declared default and is not the LCL NULL value. A non-null default is the exact
@@ -103,8 +108,8 @@ Each listed role applies to every invocation except core.execute. A PATH, URI,
 or STRING core.execute target requires the execution role; a
 REFERENCE[TASK|PHASE|SEQUENCE|ACTION|TEST] target has no local execution profile
 and resolves every reachable profile transitively. A core operation absent from
-the map requires no local core profile. A custom kind.operation requires the
-implementation role. No unlisted local profile role is permitted.
+the map requires no local core profile. A custom kind.operation selects no
+profile role. No unlisted local profile role is permitted.
 
 A deterministic base row remains deterministic and accepts only a deterministic
 profile. A nondeterministic base row may resolve deterministic only when its
@@ -114,12 +119,19 @@ derived row applies the exact operation-specific mapping named by its source to
 the final categories of every resolved profile and/or graph. DETERMINISTIC TRUE
 is verified afterward and never causes category narrowing.
 
-Every custom kind.operation also selects exactly one such profile. That profile
-supplies its dependency and effect maxima and invocation rule from the closed
-vocabularies. SIDE_EFFECT FALSE requires effects exactly {none}; SIDE_EFFECT TRUE
-requires at least one concrete effect and forbids none. DETERMINISTIC TRUE
-requires the profile's final category to be deterministic; DETERMINISTIC FALSE
-conservatively permits either final category and never relaxes another rule. Graph
+Every custom kind.operation instead declares its complete axis contract in its
+own DEFINE block and selects no profile, so nothing it must satisfy is
+inexpressible in LCL. SIDE_EFFECT FALSE declares effects exactly {none}; a
+SIDE_EFFECT effect-class LIST declares at least one concrete effect, forbids
+none, and is that operation's effect maximum. DEPENDENCY declares its dependency
+maximum from the closed vocabulary and defaults to exactly {declared_state_only}
+when omitted. The invocation effect set resolves from the address classes of the
+resolved TARGET and declared destination arguments within the declared maximum;
+a resolved class outside that maximum and a declared effect maximum that resolves
+no concrete class each use error.operation.precondition before effects.
+DETERMINISTIC TRUE requires the declared contract to admit no permitted
+variation; DETERMINISTIC FALSE conservatively permits either final category and
+never relaxes another rule. Graph
 resolution first emits error.reference.cycle and fails on a prohibited reference
 cycle, then resolves every reachable core or custom operation to a final category
 and invocation sets. A graph is

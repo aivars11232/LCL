@@ -16,11 +16,13 @@
     "source_expression": "PATH, URI, or REFERENCE to declared source data.",
     "ordered_value": "INTEGER, DECIMAL, STRING, DATE, TIME, DATETIME, DURATION, BYTES, PERCENTAGE, or same-unit MEASURE.",
     "boolean": "One exact BOOLEAN value: TRUE or FALSE.",
+    "side_effect_declaration": "Exactly the BOOLEAN FALSE, meaning the possible effect set is exactly none, or one LIST of one or more distinct concrete effect classes drawn from built_in_groups_and_results_v0.1.0.json#/enum_groups/effect_classes excluding none.",
+    "dependency_class_list": "One LIST of one or more distinct dependency classes drawn from built_in_groups_and_results_v0.1.0.json#/enum_groups/dependency_classes; declared_state_only is exclusive and never appears with another member.",
     "boolean_or_reference_list": "A boolean_expression or a possibly empty LIST containing only REF values whose targets evaluate to BOOLEAN or UNKNOWN.",
     "duration": "One DURATION value.",
     "nonnegative_numeric_or_measure": "An INTEGER or DECIMAL greater than or equal to zero, or a MEASURE whose numeric component is greater than or equal to zero.",
     "operation_identifier": "A core_operation_ids member or the identifier of a DEFINE declaration whose KIND is kind.operation.",
-    "operation_identifier_or_handler_reference": "An operation_identifier or one REF resolving to HANDLER.",
+    "operation_identifier_or_handler_reference": "One REF resolving to HANDLER, or one operation_identifier that registers no required named parameter and whose required target, if any, is supplied by the handler-context binding.",
     "path": "One PATH value.",
     "property_path": "One property path made of one or more SIMPLE_IDENTIFIER segments separated by '.'.",
     "regex_or_glob": "One REGEX or GLOB value.",
@@ -465,7 +467,14 @@
           "required": false,
           "minimum_occurrences": 0,
           "maximum_occurrences": 1,
-          "value_kind": "boolean",
+          "value_kind": "side_effect_declaration",
+          "default": null
+        },
+        "DEPENDENCY": {
+          "required": false,
+          "minimum_occurrences": 0,
+          "maximum_occurrences": 1,
+          "value_kind": "dependency_class_list",
           "default": null
         },
         "DETERMINISTIC": {
@@ -2313,7 +2322,9 @@
         }
       },
       "conditional_requirements": [
-        "LIMIT counts additional attempts and is 0 through 100."
+        "LIMIT counts additional attempts and is 0 through 100.",
+        "This block is the only source of attempt bounds for its execution unit; total attempts are exactly 1 + LIMIT.",
+        "A handler using core.retry authorizes this declared RETRY and its resolved limit must equal this LIMIT."
       ],
       "unknown_fields": "forbidden",
       "field_order": "not_semantic_except_where_explicitly_declared"
@@ -2388,7 +2399,12 @@
           "default": null
         }
       },
-      "conditional_requirements": [],
+      "conditional_requirements": [
+        "HANDLER is an invocation site; OPERATION selects and invokes one operation under the ACTION contract.",
+        "A required TARGET may be omitted only under the handler-context binding for REFERENCE[ACTION] or REFERENCE[meta.execution_unit] targets.",
+        "LIMIT is exactly the limit named parameter of the selected operation and is legal only when that operation registers it.",
+        "FALLBACK admits one REF to a HANDLER, or one operation identifier that requires no named parameter and whose required TARGET the handler-context binding supplies."
+      ],
       "unknown_fields": "forbidden",
       "field_order": "not_semantic_except_where_explicitly_declared"
     },

@@ -398,7 +398,7 @@
       "default_status": "status.invalid"
     },
     "error.operation.parameter": {
-      "meaning": "An ACTION omits TARGET when the selected operation marks it required, omits a named parameter that the operation marks required, supplies any positional argument, duplicates a named parameter, or supplies an unregistered named parameter. A declared parameter value rejected by its type or semantic constraint uses the general or row-specific error and is not remapped to error.operation.parameter.",
+      "meaning": "An ACTION, HANDLER, or FALLBACK invocation site omits TARGET when the selected operation marks it required and no handler-context binding supplies it, omits a named parameter that the operation marks required, supplies any positional argument, duplicates a named parameter, or supplies an unregistered named parameter. A FALLBACK operation identifier that requires any named parameter, or whose required TARGET no handler-context binding can supply, uses this error. A declared parameter value rejected by its type or semantic constraint uses the general or row-specific error and is not remapped to error.operation.parameter.",
       "stage": "static_or_expression",
       "recoverable_with_declared_handler": false,
       "default_status": "status.invalid"

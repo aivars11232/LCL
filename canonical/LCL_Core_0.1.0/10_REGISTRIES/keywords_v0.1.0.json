@@ -185,8 +185,8 @@
     },
     "DETERMINISTIC": {
       "category": "field",
-      "meaning": "Declare whether equal valid inputs require semantically equivalent outputs.",
-      "contexts": "Defined by grammar and block schemas.",
+      "meaning": "Declare the determinism allowance of the fully resolved operation or selected profile set. TRUE asserts semantically equivalent results, effects, ordering, and status for identical declared inputs, dependency snapshots, selected profile-role bindings, and implementation versions; it is verified and never overrides nondeterminism. FALSE conservatively permits either deterministic behavior or bounded nondeterminism and never relaxes another rule.",
+      "contexts": "Defined by grammar, block schemas, and determinism semantics.",
       "case_sensitive": true
     },
     "DOMAIN": {

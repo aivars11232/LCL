@@ -2,7 +2,32 @@ LCL CORE 0.1.0 RELEASE CANDIDATE
 CORE ERROR IDENTIFIERS
 NORMATIVE
 
-The complete closed set of 76 error identifiers, meanings, detection stage,
+The complete closed set of 77 error identifiers, meanings, detection stage,
 handler recoverability, and default terminal/blocking status is defined in
 10_REGISTRIES/statuses_and_errors_v0.1.0.json. No unregistered error identifier
 may be emitted as an LCL Core error.
+
+error.determinism.mismatch is emitted only during contract validation when a
+kind.operation declares DETERMINISTIC TRUE but its fully resolved operation or
+selected profile set is nondeterministic. It is nonrecoverable and defaults to
+status.invalid. It never changes, overrides, or repairs the resolved contract.
+DETERMINISTIC FALSE conservatively permits either deterministic behavior or
+bounded nondeterminism and never triggers this error.
+
+error.operation.precondition is emitted before effects when any registered
+operation precondition is false, missing, or unknown. This includes failure to
+resolve exactly one complete immutable implementation profile for every role
+required by the operation. Custom kind.operation invocations use the same
+trigger for their required implementation role.
+
+error.operation.parameter applies to every core operation. It is emitted during
+static/expression checking when an ACTION omits TARGET while the selected
+operation marks it required, omits a named parameter that the operation marks
+required, supplies any positional argument, duplicates a named parameter, or
+supplies an unregistered named parameter. A declared parameter value rejected by
+its type or semantic constraint uses the general or row-specific error and is
+not remapped to error.operation.parameter.
+
+error.permission.denied is emitted when required access or an effect is
+unauthorized or prohibited. It applies to read authorization as well as effect
+authorization, is nonrecoverable, and defaults to status.failed.

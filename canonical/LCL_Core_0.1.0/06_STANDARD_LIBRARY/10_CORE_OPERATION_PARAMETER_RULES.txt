@@ -2,28 +2,252 @@ LCL CORE 0.1.0 RELEASE CANDIDATE
 CORE OPERATION CONTRACT RULES
 NORMATIVE
 
-Every core operation's candidate target, named-parameter, precondition,
-postcondition, error, side-effect, determinism, and result-schema records are
-stored in 10_REGISTRIES/operations_v0.1.0.json. Named-parameter membership and
-required/default status are closed. The candidate is not contract-complete:
-25 operations have no determinism declaration, result schemas do not declare
-field cardinality/openness, and result-to-OUTPUT binding is unresolved.
+Every core operation's target, named-parameter, precondition, postcondition,
+applicable-error, determinism-category, determinism-source, possible-dependency,
+possible-effect, invocation-resolution, and result-schema-reference records are
+stored in 10_REGISTRIES/operations_v0.1.0.json. All 39 operation contracts and
+their operation-owned fields are closed. Result-schema field cardinality,
+openness, domain-outcome semantics, and result-to-OUTPUT binding remain deferred
+to LCL-TASK-0005 and are not completed by this contract.
 
 No positional parameters exist. A parameter absent from an operation contract is
 forbidden. A required parameter cannot be inferred. A default applies only to a
-MISSING optional parameter. An operation may cause only its listed side effects
-and effects explicitly required by its postconditions. Additional effects produce
-error.permission.denied or error.scope.violation.
+MISSING optional parameter. Every operation lists error.operation.parameter;
+that error is emitted during static/expression checking when an ACTION omits
+TARGET while the selected operation marks it required, omits a named parameter
+that the operation marks required, supplies any positional argument, duplicates
+a named parameter, or supplies an unregistered named parameter. A declared
+parameter value rejected by its type or semantic constraint uses the general or
+row-specific error and is not remapped to error.operation.parameter.
+
+In operations_v0.1.0.json only, JSON null in a parameter default field means no
+declared default and is not the LCL NULL value. A non-null default is the exact
+declared value applied only when an optional parameter is MISSING. A required
+parameter never acquires a default. A declared value outside a numeric bound such
+as core.inspect depth or core.retry limit uses error.value.out_of_range, not
+error.operation.parameter.
+
+possible_dependencies and possible_effects are registry maxima, not claims that
+every listed capability is selected by every invocation. The actual invocation
+sets resolve from the target, source, destination, selected profile, arguments,
+and referenced execution graph. The dependency vocabulary is
+declared_state_only, host, network, model, and human. The effect vocabulary is
+none, filesystem, network, process, package, message, memory, and state.
+declared_state_only and none are exclusive singleton values. Unregistered or
+undeclared dependencies and effects are forbidden; they do not become permitted
+merely because a postcondition mentions them.
+
+The exact category and axis meanings are closed by
+operations_v0.1.0.json#/axis_contract. In particular, read_only requires
+possible effects exactly {none}; core.test is control because TASK/ACTION mode
+delegates a graph that may have effects. The dependency named network is remote
+access. The network effect is a declared primary transfer, copy, download,
+upload, or publication over a network, or a network-addressed content mutation.
+Incidental remote input is a dependency. Remote transport used only to realize a
+process, package, message, memory, or state effect is not an additional network
+effect. One network axis never implies the other.
+
+The state effect changes an LCL STATE or OUTPUT target, an authorized
+addressable target not classified as filesystem, network, or memory, or
+internal execution-unit or lifecycle state. Source and destination address
+classes resolve independently, so one operation may produce more than one
+concrete effect class.
+
+A REFERENCE used as an address is classified by the address class of its
+resolved target, never by REFERENCE syntax. PATH mutation resolves filesystem,
+URI content mutation resolves network, and mutation of OUTPUT or another
+authorized non-filesystem, non-network, non-memory, non-STATE addressable target
+resolves state. core.create, core.write, core.append, core.modify, core.rename,
+core.delete, and core.generate prohibit MEMORY and STATE targets; core.move
+prohibits MEMORY and STATE sources. Those mutations use core.memory_write or
+core.state_update. core.copy may observe MEMORY or STATE as a source, but source
+observation adds no source-side effect.
+
+core.move requires resolved source and destination addresses to be distinct;
+overwrite never permits a source to be its own destination. core.rename requires
+new_name to differ from the current name and, on success, makes the target
+addressable by new_name and not by its prior name while preserving content and
+all non-name properties.
+
+When a row requires one or more selected or implementation profile roles, the
+exact operation, profile role, target/address class, arguments, implementation
+identifier, and implementation version select exactly one immutable profile for
+each role before effects. Every profile must contain every property listed by
+axis_contract/implementation_profile and must
+declare one final deterministic or nondeterministic category; derived and
+inherited are operation-row resolution markers. For profile bounds,
+declared_state_only represents no external dependency class and none represents
+no concrete effect class. A core profile may narrow those concrete sets but
+never widen its row. A deterministic base row accepts only deterministic
+profiles; selecting a nondeterministic profile is out of bounds. A missing,
+ambiguous, incomplete, or out-of-bounds required profile role emits
+error.operation.precondition before effects.
+
+The closed required local core-profile role map is:
+    core.analyze=analysis; core.verify=verification; core.report=reporting;
+    core.create=target; core.write=write; core.modify=change; core.copy=copy;
+    core.move=move; core.rename=rename; core.delete=delete;
+    core.generate=generation; core.convert=conversion;
+    core.execute(non_graph)=execution; core.execute(graph)=none;
+    core.install=package;
+    core.uninstall=package; core.start=start; core.stop=stop;
+    core.send=transport; core.publish=publication; core.upload=transfer;
+    core.download=source+transfer; core.memory_write=storage;
+    core.state_update=storage.
+Each listed role applies to every invocation except core.execute. A PATH, URI,
+or STRING core.execute target requires the execution role; a
+REFERENCE[TASK|PHASE|SEQUENCE|ACTION|TEST] target has no local execution profile
+and resolves every reachable profile transitively. A core operation absent from
+the map requires no local core profile. A custom kind.operation requires the
+implementation role. No unlisted local profile role is permitted.
+
+A deterministic base row remains deterministic and accepts only a deterministic
+profile. A nondeterministic base row may resolve deterministic only when its
+immutable profile removes every permitted variation and supplies an exact source
+satisfying the deterministic identity; otherwise it remains nondeterministic. A
+derived row applies the exact operation-specific mapping named by its source to
+the final categories of every resolved profile and/or graph. DETERMINISTIC TRUE
+is verified afterward and never causes category narrowing.
+
+Every custom kind.operation also selects exactly one such profile. That profile
+supplies its dependency and effect maxima and invocation rule from the closed
+vocabularies. SIDE_EFFECT FALSE requires effects exactly {none}; SIDE_EFFECT TRUE
+requires at least one concrete effect and forbids none. DETERMINISTIC TRUE
+requires the profile's final category to be deterministic; DETERMINISTIC FALSE
+conservatively permits either final category and never relaxes another rule. Graph
+resolution first emits error.reference.cycle and fails on a prohibited reference
+cycle, then resolves every reachable core or custom operation to a final category
+and invocation sets. A graph is
+deterministic exactly when every reachable resolved operation is deterministic,
+including when none is reachable; any reachable nondeterministic operation makes
+the graph nondeterministic. It then unions concrete axes for both core and custom
+operations. If any external dependency is present, declared_state_only is
+omitted; otherwise the union is exactly {declared_state_only}. If any concrete
+effect is present, none is omitted; otherwise the union is exactly {none}.
+
+For a deterministic operation, identical declared inputs, dependency snapshots,
+selected profile-role bindings, and implementation versions require semantically
+equivalent results, effects, ordering, and status. A derived row names its exact derivation
+source. DETERMINISTIC TRUE in a kind.operation definition is verified after full
+operation or profile resolution; it is not an override. A nondeterministic
+resolved contract declared TRUE produces error.determinism.mismatch during
+validation.
+
+The six derived core rows use closed mappings. core.sort is deterministic for
+every valid invocation and otherwise fails. core.verify is deterministic exactly
+when its immutable verification profile is deterministic because its
+resolved assertion evaluation is always deterministic. core.test is
+deterministic in comparison-only mode and otherwise
+copies the graph category. core.execute copies the execution-profile category in
+non-graph mode and the graph category in graph mode. core.publish copies the
+publication-profile category after its destination and policy are fixed.
+core.download is deterministic exactly when its source profile fixes one
+immutable source identity and content snapshot and both its source and transfer
+profiles are deterministic; otherwise core.download is nondeterministic.
+
+Every operation field whose admitted value domain contains REFERENCE uses
+error.reference.unresolved when that reference does not resolve exactly once. A
+bare REFERENCE constrained by an operation to a specific declaration domain uses
+error.reference.kind when it resolves to another declaration kind. A mismatch
+against an explicit typed REFERENCE[...] domain is rejected by the general
+type/reference rules before invocation and is not duplicated as a local
+operation error.
+
+core.test always requires exactly one comparison form: assertion; or expected
+together with exactly one actual source, either the actual parameter or a
+material-value TARGET. A material-value TARGET is legal only as that actual
+source and cannot accompany actual or assertion. Expected-and-actual form always
+uses the registered == strict-equality operator; operands outside its
+equality_compatible domain use error.operator.operand. Without a TASK/ACTION
+target, comparison resolves dependencies to {declared_state_only} and effects to {none}.
+An assertion REFERENCE resolves only to a declared BOOLEAN value or expression
+snapshot, and an actual REFERENCE resolves only to a declared material-value
+snapshot after any graph execution; neither invokes an operation or profile.
+With a TASK/ACTION target, the referenced graph executes first and contributes
+its final determinism category, the normalized transitive unions of dependencies
+and effects, and all applicable errors, including host constraints; the supplied
+comparison is then evaluated. TARGET alone is not a complete test.
+
+core.select, core.filter, core.sort, and core.group retain possible dependencies
+exactly {declared_state_only}. Any predicate or key REFERENCE used by those rows
+must therefore resolve to a deterministic kind.operation with SIDE_EFFECT FALSE
+and a fully resolved dependency set exactly {declared_state_only}; an external
+dependency cannot be hidden behind the reference. When a predicate or key
+REFERENCE is selected, the calling operation unions its local errors with every
+applicable error of that referenced operation.
+
+core.filter and core.group accept LIST[T], not SET[T]. This preserves their
+deterministic result ordering without assigning source order to an intrinsically
+unordered SET. core.filter retains every TRUE member in exact LIST source order.
+core.group orders groups by the first source occurrence of each key and retains
+source order among members of each group. SET input must first be given an
+explicit deterministic LIST order through core.sort; passing SET directly to
+either operation produces error.type.mismatch before effects.
+
+For core.select and core.filter, a required predicate result of MISSING produces
+error.required.missing and UNKNOWN produces error.value.unknown. The same mapping
+applies to the required grouping key in core.group. core.calculate uses
+error.required.missing for a MISSING operand outside == or != and
+error.value.unknown when its required result is UNKNOWN. core.return distinguishes
+an unresolved REFERENCE from one resolved to a non-material sentinel: unresolved
+uses error.reference.unresolved, MISSING uses error.required.missing, and UNKNOWN
+uses error.value.unknown.
+
+core.compare evaluates each criterion under the registered operator and sentinel
+rules. Omitted criteria selects ==. That equality form accepts MISSING and UNKNOWN
+as singleton sentinels and produces material BOOLEAN. A supplied non-==/!=
+criterion that encounters MISSING uses error.required.missing; a criterion whose
+result remains UNKNOWN uses error.value.unknown because successful result.value
+content is material. Unsupported operand types or arity use
+error.operator.operand. MATCHES resource exhaustion uses
+error.pattern.resource_limit.
+
+Every core.ask option must be compatible with expected_type. A non-MISSING answer
+must be compatible with expected_type and, when options is supplied, equal one
+listed option. An incompatible option uses error.type.mismatch before invocation;
+when no authorized valid answer is provided, the answer remains MISSING and uses
+error.required.missing.
+
+core.uninstall always makes the target installation absent. purge_data FALSE
+preserves declared associated data; purge_data TRUE makes every declared
+associated data item in authorized scope absent. core.cancel is permitted only
+when the target's current registered allowed_next set contains status.cancelled;
+otherwise it uses error.execution.order.
+
+core.retry resolves the wrapped ACTION before retrying. An unresolved ACTION
+uses error.reference.unresolved, a prohibited wrapped-ACTION reference cycle uses
+error.reference.cycle before inheritance. Every ACTION that resolves exactly
+once may be retried under its explicit bounded RETRY declaration; no separate
+retryable marker exists. Before each additional attempt, the resolved when
+expression is a required BOOLEAN condition; MISSING uses
+error.required.missing and UNKNOWN uses error.value.unknown. After successful
+resolution, the determinism category and source, dependency set, effect set, and
+applicable errors, including any wrapped operation or profile precondition, are
+inherited exactly from that ACTION. Retry adds no capability, effect, or
+authority. core.cancel uses error.permission.denied when the invoking authority
+may not cancel its target.
+
+For a non-graph core.execute target, the exact executable, arguments, working
+directory, and environment select one complete immutable execution profile. Its
+rule always includes the process effect because the invocation runs the
+executable, then unions any other dependencies and effects selected by the
+profile within the row's maxima. Graph targets have no mandatory local process
+effect; they instead resolve the final graph determinism category and use the
+normalized transitive union rule. Graph mode unions local errors with every
+applicable error of every reachable operation; a prohibited cycle is the local
+error.reference.cycle. No free-form or undeclared effect channel exists.
 
 core.sort has exactly key and direction as named parameters. stable, comparator,
 and every other name are unregistered and produce error.operation.parameter. key
 may be omitted only for mutually order-compatible target members; otherwise it is
 one exact property_path STRING or one REF resolving to a deterministic,
-side-effect-free kind.operation with exactly one compatible member parameter and
-one concrete registered ordered result. Reference resolution uses
+side-effect-free kind.operation with dependencies exactly {declared_state_only},
+exactly one compatible member parameter, and one concrete registered ordered
+result. Reference resolution uses
 error.reference.unresolved or error.reference.kind. A MISSING or UNKNOWN key uses
 error.required.missing or error.value.unknown. Omitted natural order, incompatible
-key results, or equal keys for distinct SET members use
+key results, equal keys for distinct SET members, invalid key-operation axes, or
+a missing, ambiguous, incomplete, or out-of-bounds key-operation profile use
 error.operation.precondition. direction defaults to ascending; descending reverses
 primary order but not original LIST source order among equal-key members. The
 result value and result.collection items are LIST[T].

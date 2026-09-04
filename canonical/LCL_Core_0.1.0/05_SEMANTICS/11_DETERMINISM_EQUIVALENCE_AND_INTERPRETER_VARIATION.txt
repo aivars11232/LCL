@@ -2,13 +2,180 @@ LEARNED COMPUTING LANGUAGE (LCL)
 TITLE: Determinism, Equivalence, and Interpreter Variation
 LANGUAGE VERSION: 0.1.0
 STATUS: NORMATIVE
-DATE: 2026-08-30
+DATE: 2026-08-31
 
 
-When DETERMINISTIC is TRUE, equal valid inputs and state require semantically
-equivalent results, actions, ordering, and status. Byte-identical implementation
-code is not required unless output contract says so.
+The operation registry assigns every core operation exactly one determinism
+category: deterministic, nondeterministic, derived, or inherited.
 
-When FALSE, content may vary only inside explicitly permitted dimensions while
-all types, scopes, hard rules, formats, bounds, checks, evidence, and success
-conditions remain invariant. Model/provider preference cannot redefine syntax.
+The separate operation category is a closed behavioral classification. read_only
+observes or computes and therefore has possible_effects exactly {none}. mutating
+may change an external or addressable target. memory_state writes an LCL MEMORY
+or STATE target. control coordinates or delegates execution, changes an execution
+path, or requests authoritative input. The concrete authority of every category
+is still bounded by that row's possible_effects. core.test is control because its
+TASK/ACTION mode delegates the reachable graph and may therefore carry effects.
+
+A deterministic operation requires semantically equivalent results, effects,
+ordering, and status when its declared inputs, dependency snapshots, selected
+profile-role bindings, and implementation versions are identical. Byte-identical
+implementation code is not required unless the output contract requires byte
+identity.
+
+A nondeterministic operation may vary only inside explicitly permitted
+dimensions. All declared types, scopes, hard rules, formats, bounds, checks,
+evidence requirements, and success conditions remain invariant. Model or
+provider preference cannot redefine language syntax or relax a contract.
+
+A derived operation applies the exact operation-specific mapping named in its
+contract to the final categories of every resolved profile and/or graph. An
+inherited operation copies the resolved category and
+source of the referenced operation. core.retry inherits determinism, dependencies,
+effects, and applicable errors from its wrapped ACTION and adds no authority.
+
+possible_dependencies is the maximum dependency set admitted by an operation
+contract. Its closed values are declared_state_only, host, network, model, and
+human. At each invocation, the actual set is resolved from the target, source,
+destination, selected profile, arguments, and referenced execution graph. When
+no external capability is selected, it is exactly {declared_state_only}; that
+value is exclusive and cannot be combined with another dependency.
+
+The dependency values have these exact meanings:
+
+- declared_state_only reads only declared LCL values, immutable definitions, and
+  invocation-local or internal execution snapshots; it selects no host, network,
+  model, or human capability.
+- host reads or invokes an addressable resource or capability supplied by the
+  execution host, excluding a separately declared network, model, or human
+  capability.
+- network reads from or invokes a remote endpoint or transport capability. It
+  does not by itself imply the network effect.
+- model obtains inference or generation from the selected LC or model capability.
+- human obtains an authoritative response or decision from a human.
+
+possible_effects is the maximum effect set admitted by an operation contract.
+Its closed values are none, filesystem, network, process, package, message,
+memory, and state. At each invocation, the actual set is resolved from the
+selected targets, destinations, profiles, arguments, and referenced execution
+graph. When no observable effect can occur, it is exactly {none}; that value is
+exclusive and cannot be combined with another effect. A dependency does not by
+itself imply the same-named effect.
+
+The effect values have these exact meanings:
+
+- none produces no observable state change or outbound communication.
+- filesystem creates, changes, moves, or deletes filesystem content or metadata.
+- network performs a primary transfer, copy, download, upload, or publication
+  over a network, or creates, changes, or removes network-addressed content.
+  Remote access used only as observation or computation input is a dependency.
+  Remote transport used only to realize a process, package, message, memory, or
+  state effect is not an additional network effect.
+- process starts, executes, stops, or otherwise changes a native process or
+  service.
+- package changes installed package state or package-manager records.
+- message sends an externally observable message or request to a recipient.
+- memory changes an LCL MEMORY target.
+- state changes an LCL STATE or OUTPUT target, an authorized addressable target
+  not classified as filesystem, network, or memory, or internal execution-unit
+  or lifecycle state.
+
+A REFERENCE used as an address is classified by the address class of its
+resolved target, never by REFERENCE syntax. PATH mutation resolves filesystem,
+URI content mutation resolves network, and mutation of OUTPUT or another
+authorized non-filesystem, non-network, non-memory, non-STATE addressable target
+resolves state. core.create, core.write, core.append, core.modify, core.rename,
+core.delete, and core.generate prohibit MEMORY and STATE targets; core.move
+prohibits MEMORY and STATE sources. Those mutations use core.memory_write or
+core.state_update. core.copy may observe MEMORY or STATE as a source, but its
+source observation adds no source-side effect.
+
+When an operation contract names one or more selected or implementation profile
+roles, the exact operation identifier, profile role, target or address class,
+arguments, implementation identifier, and implementation version select exactly
+one immutable profile for each role before effects. Every profile states all
+properties required by
+operations_v0.1.0.json#/axis_contract/implementation_profile, including its
+determinism source, maximum dependency/effect sets, and invocation-resolution
+rule. A profile's determinism category is exactly one final value,
+deterministic or nondeterministic; derived and inherited are operation-row
+resolution markers and cannot be terminal profile categories. For profile
+bounds, declared_state_only represents an empty set of external dependencies and
+none represents an empty set of concrete effects. A core-operation profile may
+narrow those concrete sets but never widen its row; an empty narrowed set is
+represented by its exclusive sentinel. A deterministic base row accepts only a
+profile whose final category is deterministic; a nondeterministic profile is
+out of bounds. A missing, ambiguous, incomplete, or out-of-bounds required
+profile role cannot begin effects.
+
+The closed required local core-profile role map is:
+    core.analyze=analysis; core.verify=verification; core.report=reporting;
+    core.create=target; core.write=write; core.modify=change; core.copy=copy;
+    core.move=move; core.rename=rename; core.delete=delete;
+    core.generate=generation; core.convert=conversion;
+    core.execute(non_graph)=execution; core.execute(graph)=none;
+    core.install=package;
+    core.uninstall=package; core.start=start; core.stop=stop;
+    core.send=transport; core.publish=publication; core.upload=transfer;
+    core.download=source+transfer; core.memory_write=storage;
+    core.state_update=storage.
+Each listed role applies to every invocation except core.execute. A non-graph
+core.execute target (PATH, URI, or STRING) requires the execution role; a graph
+target (REFERENCE[TASK|PHASE|SEQUENCE|ACTION|TEST]) has no local execution
+profile and resolves every reachable profile transitively. A core operation
+absent from the map requires no local core profile. A custom kind.operation
+requires the implementation role. No unlisted local profile role is permitted.
+
+A deterministic base row remains deterministic and accepts only a deterministic
+profile. A nondeterministic base row resolves deterministic only when its
+immutable profile removes every permitted variation and declares an exact source
+satisfying the deterministic identity; otherwise it remains nondeterministic. A
+derived row applies that exact mapping to the final deterministic or
+nondeterministic categories of its resolved profiles and/or graph.
+DETERMINISTIC TRUE is verified only after that resolution and never causes
+category narrowing.
+
+Every custom kind.operation also resolves through exactly one such profile. Its
+profile declares dependency and effect maxima from the same closed vocabularies.
+SIDE_EFFECT FALSE requires possible effects exactly {none}; SIDE_EFFECT TRUE
+requires one or more concrete effect classes and forbids none. DETERMINISTIC TRUE
+requires the profile's final category to be deterministic. DETERMINISTIC FALSE
+conservatively permits either final category and never relaxes another rule.
+Thus an ACTION that names a custom operation contributes concrete resolved axes
+rather than an unclassified boolean.
+
+An invocation must not acquire an unregistered or undeclared dependency or
+effect. For a referenced TASK, PHASE, SEQUENCE, ACTION, or TEST, a prohibited
+reference cycle emits error.reference.cycle and fails before axis resolution.
+Every reachable core row or custom kind.operation profile then resolves to a
+final deterministic or nondeterministic category and invocation sets. The graph
+is deterministic
+exactly when every reachable resolved operation is deterministic, including
+when no operation is reachable; any reachable nondeterministic operation makes
+the graph nondeterministic. The transitive union contains concrete external
+dependency and effect classes only. If at least one external dependency is
+present, declared_state_only is omitted; otherwise the dependency result is
+exactly {declared_state_only}. If at least one concrete effect is present, none
+is omitted; otherwise the effect result is exactly {none}.
+
+The six derived core rows have these closed final-category mappings. core.sort is
+deterministic for every valid invocation and otherwise fails. core.verify is
+deterministic exactly when its immutable verification profile is
+deterministic because its resolved assertion evaluation is always deterministic.
+core.test is deterministic in comparison-only mode and otherwise copies the
+referenced graph category.
+core.execute copies its execution-profile category in non-graph mode and its
+graph category in graph mode. core.publish copies its publication-profile
+category after destination, visibility, and replacement policy are fixed.
+core.download is deterministic exactly when its source profile fixes one
+immutable identity and content snapshot and both its source and transfer
+profiles are deterministic; otherwise core.download resolves nondeterministic.
+
+For a kind.operation definition, DETERMINISTIC TRUE is a contract assertion
+verified after the referenced core operation or selected profile is fully
+resolved. It is not an override and cannot convert nondeterministic behavior into
+deterministic behavior. Validation emits error.determinism.mismatch exactly when
+DETERMINISTIC TRUE is declared and that resolved contract is nondeterministic.
+The error is nonrecoverable, has validation stage, and defaults to status.invalid.
+DETERMINISTIC FALSE conservatively permits either deterministic behavior or
+bounded nondeterminism and does not relax any other operation, dependency,
+effect, result, or validation rule.

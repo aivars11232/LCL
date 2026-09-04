@@ -2,86 +2,136 @@ LEARNED COMPUTING LANGUAGE (LCL)
 TITLE: Read-only and Analytical Operations
 LANGUAGE VERSION: 0.1.0
 STATUS: NORMATIVE
-DATE: 2026-08-30
+DATE: 2026-08-31
 
+
+Each entry mirrors the authoritative operation registry. Targets, named parameters,
+preconditions, postconditions, applicable errors, and result-schema references are
+closed by 10_REGISTRIES/operations_v0.1.0.json.
 
 core.inspect
     Meaning: Observe metadata or structure without changing the target.
-    Side effect: FALSE
-    Deterministic: TRUE
+    Determinism category: deterministic
+    Determinism source: Exact metadata projection from the resolved target snapshot under the selected implementation version.
+    Possible dependencies: {host, network}
+    Possible effects: {none}
+    Invocation resolution: Resolve host for PATH, host-bound, or host-backed REFERENCE access and host plus network for URI access; otherwise resolve declared_state_only. A depth outside 0..100 produces error.value.out_of_range. The invocation has no effects.
+    Result schema: result.value
 
 core.read
     Meaning: Retrieve accessible exact content without changing its source.
-    Side effect: FALSE
-    Deterministic: TRUE
+    Determinism category: deterministic
+    Determinism source: Exact requested content, range, and format from the resolved target snapshot.
+    Possible dependencies: {host, network}
+    Possible effects: {none}
+    Invocation resolution: Resolve dependencies from the target address class and requested range or format; URI access adds network. The invocation has no effects.
+    Result schema: result.value
 
 core.analyze
     Meaning: Derive stated findings from declared input.
-    Side effect: FALSE
-    Deterministic: DECLARATION REQUIRED
+    Determinism category: nondeterministic
+    Determinism source: The base model or analytical method may vary only within the declared criteria and method constraints.
+    Possible dependencies: {host, network, model}
+    Possible effects: {none}
+    Invocation resolution: Resolve exactly one immutable analysis profile for every invocation, then resolve model from the selected analytical method and host or network from an addressable target. A non-generative deterministic analysis profile may narrow the nondeterministic base only under axis_contract.implementation_profile; any kind.operation DETERMINISTIC TRUE is checked afterward against the resolved final category.
+    Result schema: result.value
 
 core.calculate
     Meaning: Compute a result from declared values and rules.
-    Side effect: FALSE
-    Deterministic: TRUE
+    Determinism category: deterministic
+    Determinism source: The registered expression, binding, numeric, division, and rounding rules fix the result.
+    Possible dependencies: {declared_state_only}
+    Possible effects: {none}
+    Invocation resolution: Use only the declared target value, expression, bindings, and declared snapshots. A MISSING operand used outside == or != produces error.required.missing; a required UNKNOWN result produces error.value.unknown. A host-capacity failure is error.host.constraint and does not change the dependency class.
+    Result schema: result.value
 
 core.compare
     Meaning: Compare artifacts or values against exact criteria.
-    Side effect: FALSE
-    Deterministic: TRUE
+    Determinism category: deterministic
+    Determinism source: The resolved operand snapshots and exact comparison criteria fix the result.
+    Possible dependencies: {host, network}
+    Possible effects: {none}
+    Invocation resolution: Resolve host or network independently for the target and against operands; material-value-only comparison resolves declared_state_only. When criteria is omitted, use the registered == exact strict-equality comparison over the resolved operands. Evaluate every criterion under the registered operator and sentinel rules: a non-==/!= criterion encountering MISSING produces error.required.missing, and any criterion whose result remains UNKNOWN produces error.value.unknown because a successful result.value must contain a material value. The invocation has no effects.
+    Result schema: result.value
 
 core.select
     Meaning: Choose members satisfying a predicate.
-    Side effect: FALSE
-    Deterministic: TRUE
+    Determinism category: nondeterministic
+    Determinism source: No mandatory strategy pins returned cardinality, complete subset, or order even when every returned member satisfies the predicate.
+    Possible dependencies: {declared_state_only}
+    Possible effects: {none}
+    Invocation resolution: Evaluate a type-compatible predicate from declared values and snapshots. A predicate result of MISSING produces error.required.missing and UNKNOWN produces error.value.unknown. A referenced kind.operation must resolve to deterministic, side-effect-free behavior with dependencies exactly declared_state_only; no invocation may add a dependency or effect.
+    Error resolution: Union the local errors with every applicable error of the referenced predicate operation when a predicate REFERENCE is selected.
+    Result schema: result.collection
+    Selection contract: Every result member is one target member occurrence for which the predicate is TRUE, and no target occurrence is returned more than once. Cardinality may range from zero through the number of TRUE target member occurrences; the selected TRUE subset and result order are otherwise unspecified.
 
 core.filter
-    Meaning: Return members satisfying a predicate while preserving order.
-    Side effect: FALSE
-    Deterministic: TRUE
+    Meaning: Return all members of one LIST that satisfy a predicate, preserving source order.
+    Determinism category: deterministic
+    Determinism source: All and only TRUE members are returned in their exact LIST source order.
+    Possible dependencies: {declared_state_only}
+    Possible effects: {none}
+    Invocation resolution: Resolve the predicate to a deterministic side-effect-free expression over declared values or a kind.operation whose fully resolved dependency set is exactly declared_state_only. A predicate result of MISSING produces error.required.missing and UNKNOWN produces error.value.unknown. No invocation may add a dependency or effect.
+    Error resolution: Union the local errors with every applicable error of the referenced predicate operation when a predicate REFERENCE is selected.
+    Result schema: result.collection
 
 core.sort
-    Meaning: Accept LIST[T] or SET[T] directly and return LIST[T] in ascending or
-    descending deterministic total order; no prior SET-to-LIST conversion exists.
-    Key: Omit only for mutually order-compatible members. Otherwise use one exact
-    property_path STRING or REF to a deterministic, side-effect-free kind.operation
-    with exactly one compatible input and one concrete registered ordered result.
-    Ties: Equal-key LIST members retain source order. Distinct SET members must
-    produce distinct keys. No comparator or stable parameter exists.
-    Errors: Exact triggers are registered for operation parameters, key references,
-    MISSING/UNKNOWN keys, absent total order, incompatible keys, and SET key collision.
-    Side effect: FALSE
-    Deterministic: DERIVED from registered ordered-type membership and rules for
-    natural order, the registered property-access expression for a STRING key, or
-    the validated operation contract for a REF key; plus original LIST source
-    position for equal keys and the distinct-key requirement for SET members.
+    Meaning: Return LIST[T] in one declared deterministic total order from LIST[T] or SET[T].
+    Determinism category: derived
+    Determinism source: Derived from operators_and_functions_v0.1.0.json#/ordered_types, #/ordered_type_rules, the registered property-access projection or validated key operation, original LIST source position for ties, and the distinct-key rule for SET members: every valid invocation resolves deterministic; an invocation that cannot satisfy those rules fails.
+    Possible dependencies: {declared_state_only}
+    Possible effects: {none}
+    Invocation resolution: Resolve natural order, one property_path, or one validated deterministic side-effect-free key operation whose fully resolved dependency set is exactly declared_state_only. No invocation may add a dependency or effect.
+    Error resolution: Union the local errors with every applicable error of the referenced key operation when a key REFERENCE is selected.
+    Result schema: result.collection
+    Sort contract: Accept LIST[T] or SET[T] directly and return LIST[T]; no prior SET-to-LIST conversion exists.
+    Key contract: Omit only for mutually order-compatible members. Otherwise use one exact property_path STRING through the registered property-access expression for a STRING key, or REF to a deterministic side-effect-free kind.operation with fully resolved dependencies exactly {declared_state_only}, exactly one compatible input, and one concrete registered ordered result.
+    Tie contract: Equal-key LIST members retain source order. Distinct SET members must produce distinct keys. No comparator or stable parameter exists.
+    Error contract: Exact triggers are registered for unknown, duplicate, positional, stable, or comparator operation parameters; an invalid direction type; key references; MISSING or UNKNOWN keys; malformed property paths; incompatible key-operation signatures; absent total order; incompatible keys; SET key collision; and invalid key-operation axes or profile resolution.
 
 core.group
-    Meaning: Partition values by one declared key or predicate.
-    Side effect: FALSE
-    Deterministic: TRUE
+    Meaning: Partition one LIST by one declared key, preserving deterministic group and member order.
+    Determinism category: deterministic
+    Determinism source: The exact deterministic key partitions every LIST member into exactly one group; groups follow first key occurrence and members retain source order.
+    Possible dependencies: {declared_state_only}
+    Possible effects: {none}
+    Invocation resolution: Resolve the key to fixed declared data, a deterministic side-effect-free expression, or a kind.operation whose fully resolved dependency set is exactly declared_state_only. A key result of MISSING produces error.required.missing and UNKNOWN produces error.value.unknown. No invocation may add a dependency or effect.
+    Error resolution: Union the local errors with every applicable error of the referenced key operation when a key REFERENCE is selected.
+    Result schema: result.value
 
 core.validate
     Meaning: Check syntax, type, reference, dependency, and constraints before effects.
-    Side effect: FALSE
-    Deterministic: TRUE
+    Determinism category: deterministic
+    Determinism source: The closed syntax, type, reference, dependency, schema, and constraint rules fix the validation result.
+    Possible dependencies: {host, network}
+    Possible effects: {none}
+    Invocation resolution: Resolve host or network only for addressable targets or referenced schemas and rules; material-value-only validation resolves declared_state_only. The invocation has no effects.
+    Reference contract: A schema REFERENCE resolves exactly once to a kind.type definition whose BASE is OBJECT and whose schema applies to the target; every rules REFERENCE resolves exactly once to an applicable VALIDATE declaration. Wrong declaration kinds use error.reference.kind.
+    Result schema: result.validation
 
 core.verify
     Meaning: Check observable postconditions.
-    Side effect: FALSE
-    Deterministic: TRUE
-
-core.test
-    Meaning: Execute one declared test and compare ACTUAL with EXPECTED.
-    Side effect: FALSE
-    Deterministic: DECLARATION REQUIRED
+    Determinism category: derived
+    Determinism source: Derived from deterministic evaluation of the resolved assertion against the observed target snapshot and the immutable verification profile: the invocation copies that profile's final category.
+    Possible dependencies: {host, network}
+    Possible effects: {none}
+    Invocation resolution: Resolve the assertion as a side-effect-free BOOLEAN_EXPRESSION or a REFERENCE to one declared BOOLEAN value or expression snapshot; it never invokes an operation or profile. Resolve observation dependencies and exactly one immutable verification profile from the target and evidence sources; URI observation adds network. Verification itself has no effects.
+    Result schema: result.verification
 
 core.report
     Meaning: Produce a factual report from declared results and evidence.
-    Side effect: FALSE
-    Deterministic: DECLARATION REQUIRED
+    Determinism category: nondeterministic
+    Determinism source: Base model-authored wording may vary while facts, inferences, missing values, unknown values, format, and evidence constraints remain invariant.
+    Possible dependencies: {model}
+    Possible effects: {none}
+    Invocation resolution: Resolve exactly one immutable reporting profile for every invocation and the selected reporting method. A structured or rule-based deterministic reporting profile may narrow the nondeterministic base only under axis_contract.implementation_profile; any kind.operation DETERMINISTIC TRUE is checked afterward against the resolved final category. Reporting itself has no effects.
+    Result schema: result.value
 
 core.return
-    Meaning: Return declared OUTPUT values to the invoking channel.
-    Side effect: FALSE
-    Deterministic: TRUE
+    Meaning: Return one declared value to the invoking channel.
+    Determinism category: deterministic
+    Determinism source: The returned value equals the exactly resolved target value.
+    Possible dependencies: {declared_state_only}
+    Possible effects: {none}
+    Invocation resolution: Resolve only the declared material value or REFERENCE. A REFERENCE that does not resolve exactly once produces error.reference.unresolved; one that resolves to MISSING produces error.required.missing, and one that resolves to UNKNOWN produces error.value.unknown. Returning a material value adds no effects.
+    Result schema: result.value

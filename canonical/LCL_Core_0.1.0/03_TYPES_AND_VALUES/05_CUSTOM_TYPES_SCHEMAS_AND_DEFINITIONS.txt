@@ -2,7 +2,7 @@ LEARNED COMPUTING LANGUAGE (LCL)
 TITLE: Custom Types, Schemas, and Definitions
 LANGUAGE VERSION: 0.1.0
 STATUS: NORMATIVE
-DATE: 2026-08-30
+DATE: 2026-08-31
 
 
 DEFINE KIND rules:
@@ -16,7 +16,30 @@ kind.type
     kind.type definition; OBJECT base requires one or more FIELD.
 kind.operation
     MEANING, SIDE_EFFECT, DETERMINISTIC required; zero or more PARAMETER and at
-    most one RESULT.
+    most one RESULT. SIDE_EFFECT and DETERMINISTIC are separate contract axes.
+    Every definition selects exactly one immutable profile with profile_role
+    implementation under
+    operations_v0.1.0.json#/axis_contract/implementation_profile. That profile
+    supplies its closed possible-dependency and possible-effect sets and their
+    invocation-resolution rule. Its determinism category is one final
+    deterministic or nondeterministic value; derived and inherited are forbidden
+    as terminal profile categories. declared_state_only denotes no external
+    dependency class and none denotes no concrete effect class when profile
+    bounds are checked. SIDE_EFFECT FALSE requires possible effects exactly
+    {none}; SIDE_EFFECT TRUE requires one or more concrete effect classes and
+    forbids none. A missing, ambiguous, incomplete, or out-of-bounds profile
+    emits error.operation.precondition and cannot begin effects.
+    DETERMINISTIC TRUE is a verified assertion over the fully resolved built-in
+    operation or selected implementation profile, using identical declared
+    inputs, dependency snapshots, selected profile-role binding, and
+    implementation version.
+    It is not an override. It is valid only when the resolved contract is
+    deterministic; otherwise validation emits error.determinism.mismatch with
+    terminal status.invalid. A definition for a normally nondeterministic core
+    operation may assert TRUE only by selecting and validating a deterministic
+    non-generative or rule-based profile. DETERMINISTIC FALSE conservatively
+    permits either deterministic behavior or only the bounded variation admitted
+    by the resolved operation contract; it never relaxes another rule.
 kind.format
     MEANING required; optional BASE/ENCODING. BASE is a core format identifier
     or the ID of a kind.format definition. ENCODING is one core registered

@@ -114,6 +114,7 @@
       "error.delimiter.mismatch",
       "error.delimiter.unclosed",
       "error.dependency.unsatisfied",
+      "error.determinism.mismatch",
       "error.encoding.invalid",
       "error.evidence.missing",
       "error.execution.action",
@@ -188,16 +189,28 @@
     "determinism_values": [
       "deterministic",
       "nondeterministic",
-      "host_dependent"
+      "derived",
+      "inherited"
     ],
-    "side_effect_classes": [
+    "dependency_classes": [
+      "declared_state_only",
+      "host",
+      "network",
+      "model",
+      "human"
+    ],
+    "effect_classes": [
       "none",
-      "local_read",
-      "local_mutation",
-      "external_mutation",
-      "communication",
-      "persistent_state",
-      "control"
+      "filesystem",
+      "network",
+      "process",
+      "package",
+      "message",
+      "memory",
+      "state"
+    ],
+    "operation_axis_markers": [
+      "inherited"
     ],
     "conformance_classes": [
       "source_conforming",

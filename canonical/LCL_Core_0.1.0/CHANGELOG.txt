@@ -1,5 +1,25 @@
 LCL CORE CHANGELOG
 
+0.1.0 BLOCKED REPAIR CANDIDATE - LCL-TASK-0004
+
+- Reproduced the accepted Claude handoff decisions against the actual local
+  candidate after presenting and receiving approval for the complete 39-row
+  operation matrix.
+- Closed every core operation's determinism category and source, possible
+  dependency/effect maxima, invocation-level resolution rule, applicable errors,
+  and inherited or transitive behavior without changing result-schema internals.
+- Defined deterministic identity over declared inputs, dependency snapshots,
+  selected profile, and implementation version; made DETERMINISTIC TRUE a
+  verified assertion rather than an override.
+- Added the precise validation-stage error.determinism.mismatch contract and
+  positive/negative conformance requirements.
+- Replaced legacy side-effect classes with closed dependency/effect vocabularies,
+  the inherited marker, 39 exact prose mirrors, and static mutation-resistant
+  validator checks.
+- Expanded the descriptive requirements index to 795 entries. Result-schema
+  cardinality/output remains for Task 0005; diagnostic selection and mixed-phase
+  lifecycle work remain for Task 0006. No release archive was produced.
+
 0.1.0 BLOCKED REPAIR CANDIDATE - LCL-TASK-0001
 
 - Replayed the five accepted Claude-web decisions against the actual extracted

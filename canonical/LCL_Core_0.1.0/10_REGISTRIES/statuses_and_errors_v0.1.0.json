@@ -175,6 +175,12 @@
       "recoverable_with_declared_handler": true,
       "default_status": "status.blocked"
     },
+    "error.determinism.mismatch": {
+      "meaning": "A kind.operation definition declares DETERMINISTIC TRUE, but its fully resolved operation or selected profile set is nondeterministic.",
+      "stage": "validation",
+      "recoverable_with_declared_handler": false,
+      "default_status": "status.invalid"
+    },
     "error.encoding.invalid": {
       "meaning": "Source is not valid UTF-8 or contains a prohibited BOM.",
       "stage": "lexical",
@@ -380,7 +386,7 @@
       "default_status": "status.invalid"
     },
     "error.operation.parameter": {
-      "meaning": "An ACTION omits, duplicates, mistypes, or supplies an unregistered named operation parameter.",
+      "meaning": "An ACTION omits TARGET when the selected operation marks it required, omits a named parameter that the operation marks required, supplies any positional argument, duplicates a named parameter, or supplies an unregistered named parameter. A declared parameter value rejected by its type or semantic constraint uses the general or row-specific error and is not remapped to error.operation.parameter.",
       "stage": "static_or_expression",
       "recoverable_with_declared_handler": false,
       "default_status": "status.invalid"
@@ -392,7 +398,7 @@
       "default_status": "status.failed"
     },
     "error.operation.precondition": {
-      "meaning": "A core operation precondition is false, missing, or unknown.",
+      "meaning": "A registered operation precondition, including exact resolution of every required profile role, is false, missing, or unknown.",
       "stage": "execution",
       "recoverable_with_declared_handler": false,
       "default_status": "status.failed"
@@ -428,7 +434,7 @@
       "default_status": "status.invalid"
     },
     "error.permission.denied": {
-      "meaning": "A side effect is undeclared/unallowed or prohibited.",
+      "meaning": "Required access or an effect is unauthorized or prohibited.",
       "stage": "execution",
       "recoverable_with_declared_handler": false,
       "default_status": "status.failed"
@@ -560,5 +566,5 @@
       "default_status": "status.invalid"
     }
   },
-  "compatibility_note": "The original 46 error identifiers remain exact and 30 precise subcategory identifiers are present in this repair candidate; same-stage selection precedence remains undefined and blocks release."
+  "compatibility_note": "The original 46 error identifiers remain exact and 31 additional precise identifiers are present in this repair candidate; same-stage selection precedence remains undefined and blocks release."
 }

@@ -2,30 +2,71 @@ LEARNED COMPUTING LANGUAGE (LCL)
 TITLE: Control Operations
 LANGUAGE VERSION: 0.1.0
 STATUS: NORMATIVE
-DATE: 2026-08-30
+DATE: 2026-08-31
 
+
+Each entry mirrors the authoritative operation registry. Targets, named parameters,
+preconditions, postconditions, applicable errors, and result-schema references are
+closed by 10_REGISTRIES/operations_v0.1.0.json.
+
+core.test
+    Meaning: Evaluate one declared comparison, optionally after executing one referenced TASK or ACTION.
+    Determinism category: derived
+    Determinism source: Derived from the supplied assertion or expected-and-actual comparison and, when TARGET is a TASK or ACTION, its resolved reachable execution graph: comparison-only mode is deterministic; reference-execution mode copies the graph's final category before deterministic comparison.
+    Possible dependencies: {host, network, model, human}
+    Possible effects: {filesystem, network, process, package, message, memory, state}
+    Invocation resolution: Exactly one comparison form is always supplied: assertion, or expected with exactly one actual source. Expected-and-actual form always uses the registered == strict-equality operator. A material-value TARGET is the actual source; without a TASK or ACTION TARGET, comparison resolves dependencies to declared_state_only and effects to none. With a TASK or ACTION TARGET, execute its reachable graph, resolve its final determinism category and normalized transitive dependency and effect unions under axis_contract.implementation_profile.graph_resolution, then evaluate the supplied assertion or registered == comparison.
+    Error resolution: Union the local errors, including error.reference.cycle for a prohibited graph cycle, with every applicable error of the referenced TASK or ACTION graph when reference-execution mode is selected.
+    Result schema: result.test
+    Mode contract: Exactly one comparison form is required: assertion; or expected with exactly one actual source, either the actual parameter or a material-value TARGET. Expected-and-actual form uses the registered == strict-equality operator; operands outside its equality_compatible domain use error.operator.operand. A material-value TARGET cannot accompany actual or assertion. An assertion REFERENCE resolves only a declared BOOLEAN value or expression snapshot; an actual REFERENCE resolves only a declared material-value snapshot after any graph execution; neither invokes an operation or profile. A TASK or ACTION TARGET executes before the comparison; TARGET alone is not a complete test.
 
 core.stop
     Meaning: Terminate the selected path, process, or service.
-    Side effect: TRUE
-    Deterministic: TRUE
+    Determinism category: deterministic
+    Determinism source: The exact stable target, force flag, timeout, dependency snapshot, and selected stop profile fix the result.
+    Possible dependencies: {host, network}
+    Possible effects: {process, state}
+    Invocation resolution: Resolve process for a path, process, or service and state for an internal execution-unit reference; remote-control mode of the selected stop profile adds network dependency.
+    Result schema: result.operation
 
 core.ask
     Meaning: Request one exact missing value from an available authoritative source.
-    Side effect: TRUE (communication)
-    Deterministic: DECLARATION REQUIRED
+    Determinism category: nondeterministic
+    Determinism source: The authoritative human responder may provide any type-valid answer permitted by the exact question and options.
+    Possible dependencies: {human}
+    Possible effects: {message}
+    Invocation resolution: Resolve one authoritative human responder. The request channel is internal to that human capability and adds no separate host or network dependency; the request is a message effect.
+    Authorization contract: The request and responder must be authorized and in scope; violations use error.permission.denied or error.scope.violation.
+    Closed-choice contract: Every supplied option is compatible with expected_type. A non-MISSING answer is compatible with expected_type and, when options is supplied, equals one listed option. An incompatible option uses error.type.mismatch before invocation; no authorized valid answer leaves MISSING and uses error.required.missing.
+    Result schema: result.value
 
 core.retry
     Meaning: Repeat the associated action under RETRY LIMIT and WHEN.
-    Side effect: TRUE
-    Deterministic: DECLARATION REQUIRED
+    Determinism category: inherited
+    Determinism source: The determinism category and source are inherited exactly from the wrapped ACTION contract.
+    Possible dependencies: {inherited}
+    Possible effects: {inherited}
+    Invocation resolution: Resolve the wrapped ACTION first, then copy its exact determinism, dependency set, effect set, and applicable errors. A limit outside 0..100 produces error.value.out_of_range. Before each additional attempt, evaluate when as a required BOOLEAN condition; MISSING produces error.required.missing and UNKNOWN produces error.value.unknown. Retry adds no authority and no dependency or effect class.
+    Error resolution: Before inheritance, use error.reference.unresolved when the wrapped ACTION does not resolve exactly once and error.reference.cycle when its reference graph contains a prohibited cycle; otherwise union the local retry errors with every applicable error of the wrapped ACTION contract, including any wrapped operation or profile precondition error.
+    Eligibility contract: Every ACTION that resolves exactly once may be retried under its explicit bounded RETRY declaration. RETRY does not define or require a separate retryable marker.
+    Result schema: result.operation
 
 core.continue
     Meaning: Continue a bounded path after a handled event.
-    Side effect: TRUE (control)
-    Deterministic: TRUE
+    Determinism category: deterministic
+    Determinism source: The handled event and exact declared successor fix the resumed execution path.
+    Possible dependencies: {declared_state_only}
+    Possible effects: {state}
+    Invocation resolution: Resolve only the referenced execution-unit state and its exact declared successor.
+    Local error contract: An unresolved target uses error.reference.unresolved; an invalid continuation path uses error.execution.order.
+    Result schema: result.operation
 
 core.cancel
     Meaning: Terminate because the invoking authority cancelled execution.
-    Side effect: TRUE
-    Deterministic: TRUE
+    Determinism category: deterministic
+    Determinism source: The invoking authority, exact execution-unit target, and recorded reason fix the cancellation transition.
+    Possible dependencies: {declared_state_only}
+    Possible effects: {state}
+    Invocation resolution: Resolve only the referenced internal execution-unit state, require its registered allowed_next set to contain status.cancelled, and record the exact reason.
+    Local error contract: An unresolved target uses error.reference.unresolved; insufficient invoking authority uses error.permission.denied; a current status that does not allow status.cancelled uses error.execution.order.
+    Result schema: result.operation

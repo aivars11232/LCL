@@ -3,11 +3,199 @@
   "version": "0.1.0",
   "closed": true,
   "parameter_binding": "named_only",
+  "parameter_default_encoding": "In this registry only, JSON null in a parameter default field means no declared default and is not the LCL NULL value. A non-null default is the exact declared value applied only when an optional parameter is MISSING; required parameters never acquire a default.",
+  "axis_contract": {
+    "determinism_identity": "For a deterministic operation, identical declared inputs, dependency snapshots, selected profile-role bindings, and implementation versions require semantically equivalent results, effects, ordering, and status.",
+    "dependency_resolution": "possible_dependencies is the registry maximum. Resolve the invocation dependency set from the target, source, destination, selected profile, arguments, and referenced execution graph. When no external capability is selected, the invocation set is exactly declared_state_only.",
+    "effect_resolution": "possible_effects is the registry maximum. Resolve the invocation effect set from the selected targets, destinations, profiles, arguments, and referenced execution graph. When no observable effect can occur, the invocation set is exactly none.",
+    "category_definitions": {
+      "read_only": "Observes or computes without authorizing any observable effect; possible_effects is exactly none.",
+      "mutating": "May change an external or addressable target; the permitted effect classes remain exactly bounded by possible_effects.",
+      "memory_state": "Writes an LCL MEMORY or STATE target; the permitted effect classes remain exactly bounded by possible_effects.",
+      "control": "Coordinates, delegates, stops, resumes, retries, or cancels execution, or requests authoritative input; the permitted effect classes remain exactly bounded by possible_effects."
+    },
+    "dependency_definitions": {
+      "declared_state_only": "Reads only declared LCL values, immutable definitions, and invocation-local or internal execution snapshots; selects no host, network, model, or human capability.",
+      "host": "Reads or invokes an addressable resource or capability supplied by the execution host, excluding any separately declared network, model, or human capability.",
+      "network": "Reads from or invokes a remote endpoint or transport capability; this dependency alone is not a network effect.",
+      "model": "Obtains inference or generation from the selected LC or model capability.",
+      "human": "Obtains an authoritative response or decision from a human."
+    },
+    "effect_definitions": {
+      "none": "Produces no observable state change or outbound communication and is exclusive.",
+      "filesystem": "Creates, changes, moves, or deletes filesystem content or metadata.",
+      "network": "Performs a primary transfer, copy, download, upload, or publication over a network, or creates, changes, or removes network-addressed content. Remote access used only as observation or computation input is a dependency. Remote transport used only to realize a process, package, message, memory, or state effect is not an additional network effect.",
+      "process": "Starts, executes, stops, or otherwise changes a native process or service.",
+      "package": "Changes installed package state or package-manager records.",
+      "message": "Sends an externally observable message or request to a recipient.",
+      "memory": "Changes an LCL MEMORY target.",
+      "state": "Changes an LCL STATE or OUTPUT target, an authorized addressable target not classified as filesystem, network, or memory, or internal execution-unit or lifecycle state."
+    },
+    "marker_definitions": {
+      "inherited": "Resolve the marked axis exactly and transitively from the referenced ACTION; this marker appears only on core.retry and never combines with another member."
+    },
+    "implementation_profile": {
+      "selection": "When an operation contract names one or more selected or implementation profile roles, the exact operation identifier, profile role, target or address class, arguments, implementation identifier, and implementation version select exactly one immutable profile for each role before effects.",
+      "required_properties": [
+        "operation_id",
+        "profile_role",
+        "implementation_id",
+        "implementation_version",
+        "target_class",
+        "determinism_category",
+        "determinism_source",
+        "possible_dependencies",
+        "possible_effects",
+        "invocation_resolution"
+      ],
+      "required_roles_by_operation": {
+        "core.analyze": {
+          "all": [
+            "analysis"
+          ]
+        },
+        "core.verify": {
+          "all": [
+            "verification"
+          ]
+        },
+        "core.report": {
+          "all": [
+            "reporting"
+          ]
+        },
+        "core.create": {
+          "all": [
+            "target"
+          ]
+        },
+        "core.write": {
+          "all": [
+            "write"
+          ]
+        },
+        "core.modify": {
+          "all": [
+            "change"
+          ]
+        },
+        "core.copy": {
+          "all": [
+            "copy"
+          ]
+        },
+        "core.move": {
+          "all": [
+            "move"
+          ]
+        },
+        "core.rename": {
+          "all": [
+            "rename"
+          ]
+        },
+        "core.delete": {
+          "all": [
+            "delete"
+          ]
+        },
+        "core.generate": {
+          "all": [
+            "generation"
+          ]
+        },
+        "core.convert": {
+          "all": [
+            "conversion"
+          ]
+        },
+        "core.execute": {
+          "non_graph": [
+            "execution"
+          ],
+          "graph": []
+        },
+        "core.install": {
+          "all": [
+            "package"
+          ]
+        },
+        "core.uninstall": {
+          "all": [
+            "package"
+          ]
+        },
+        "core.start": {
+          "all": [
+            "start"
+          ]
+        },
+        "core.stop": {
+          "all": [
+            "stop"
+          ]
+        },
+        "core.send": {
+          "all": [
+            "transport"
+          ]
+        },
+        "core.publish": {
+          "all": [
+            "publication"
+          ]
+        },
+        "core.upload": {
+          "all": [
+            "transfer"
+          ]
+        },
+        "core.download": {
+          "all": [
+            "source",
+            "transfer"
+          ]
+        },
+        "core.memory_write": {
+          "all": [
+            "storage"
+          ]
+        },
+        "core.state_update": {
+          "all": [
+            "storage"
+          ]
+        }
+      },
+      "role_resolution": "all applies to every invocation of that core operation. For core.execute, non_graph applies exactly to PATH, URI, or STRING targets and graph applies exactly to REFERENCE[TASK|PHASE|SEQUENCE|ACTION|TEST] targets; graph mode has no local execution profile and resolves every reachable operation profile transitively. A core operation absent from required_roles_by_operation requires no local core profile. Every custom kind.operation requires exactly the implementation role. No unlisted local profile role may be selected.",
+      "determinism_category_domain": "A profile declares exactly one final category: deterministic or nondeterministic. derived and inherited are operation-row resolution markers and are forbidden as profile categories.",
+      "bounds": "For bounds checking, declared_state_only denotes an empty set of external dependency classes and none denotes an empty set of concrete effect classes. A core profile may narrow but never widen the row's concrete dependency or effect maxima; an empty narrowed set is represented exactly by its sentinel. A profile selected by a deterministic base row must declare deterministic; a nondeterministic profile is out of bounds. A custom kind.operation profile declares maxima from the same closed vocabularies. Every profile's invocation rule resolves actual sets within its maxima.",
+      "determinism_resolution": "A deterministic base row remains deterministic and accepts only a deterministic profile. A nondeterministic base row resolves deterministic only when its immutable profile removes every permitted variation and declares an exact source satisfying determinism_identity; otherwise it remains nondeterministic. A derived row applies the exact operation-specific mapping named by its derivation source to the final categories of every resolved profile and/or graph. DETERMINISTIC TRUE is verified afterward and never causes category narrowing.",
+      "custom_operation_resolution": "Every custom kind.operation selects exactly one profile. SIDE_EFFECT FALSE requires possible_effects exactly none; SIDE_EFFECT TRUE requires one or more concrete effect classes and forbids none. DETERMINISTIC TRUE requires the profile's final category to be deterministic; DETERMINISTIC FALSE conservatively permits either final category and never relaxes another rule. The profile supplies the dependency and effect sets used by an ACTION graph.",
+      "graph_resolution": "For TASK, PHASE, SEQUENCE, ACTION, or TEST references, emit error.reference.cycle and fail before axis resolution when a prohibited reference cycle exists, then resolve every reachable core row or custom kind.operation profile to a final category and invocation sets. The graph is deterministic exactly when every reachable resolved operation is deterministic, including when no operation is reachable; it is nondeterministic when any reachable resolved operation is nondeterministic. Form each transitive union from concrete external dependency classes and concrete effect classes only: omit declared_state_only when any external dependency is present and otherwise return exactly declared_state_only; omit none when any concrete effect is present and otherwise return exactly none.",
+      "failure": "A missing, ambiguous, incomplete, or out-of-bounds required profile role emits error.operation.precondition and fails before effects."
+    },
+    "exclusive_dependency": "declared_state_only",
+    "exclusive_effect": "none",
+    "undeclared_dependencies": "forbidden",
+    "undeclared_effects": "forbidden"
+  },
   "contracts": {
     "core.inspect": {
       "meaning": "Observe metadata or structure without changing the target.",
       "category": "read_only",
-      "deterministic": true,
+      "determinism": {
+        "category": "deterministic",
+        "source": "Exact metadata projection from the resolved target snapshot under the selected implementation version."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "none"
+      ],
+      "invocation_resolution": "Resolve host for PATH, host-bound, or host-backed REFERENCE access and host plus network for URI access; otherwise resolve declared_state_only. A depth outside 0..100 produces error.value.out_of_range. The invocation has no effects.",
       "target": {
         "type": "meta.addressable",
         "required": true
@@ -33,24 +221,36 @@
       "positional_parameters": false,
       "result_schema": "result.value",
       "preconditions": [
-        "target exists or optional target handling is declared"
+        "target exists"
       ],
       "postconditions": [
         "target bytes/state unchanged"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
-        "error.host.constraint"
-      ],
-      "side_effects": [],
-      "additional_undeclared_effects": "forbidden"
+        "error.host.constraint",
+        "error.value.out_of_range",
+        "error.operation.precondition"
+      ]
     },
     "core.read": {
       "meaning": "Retrieve accessible exact content without changing its source.",
       "category": "read_only",
-      "deterministic": true,
+      "determinism": {
+        "category": "deterministic",
+        "source": "Exact requested content, range, and format from the resolved target snapshot."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "none"
+      ],
+      "invocation_resolution": "Resolve dependencies from the target address class and requested range or format; URI access adds network. The invocation has no effects.",
       "target": {
         "type": "meta.addressable",
         "required": true
@@ -81,18 +281,30 @@
         "result is exact requested range"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
-        "error.host.constraint"
-      ],
-      "side_effects": [],
-      "additional_undeclared_effects": "forbidden"
+        "error.host.constraint",
+        "error.operation.precondition"
+      ]
     },
     "core.analyze": {
       "meaning": "Derive stated findings from declared input.",
       "category": "read_only",
-      "deterministic": null,
+      "determinism": {
+        "category": "nondeterministic",
+        "source": "The base model or analytical method may vary only within the declared criteria and method constraints."
+      },
+      "possible_dependencies": [
+        "host",
+        "network",
+        "model"
+      ],
+      "possible_effects": [
+        "none"
+      ],
+      "invocation_resolution": "Resolve exactly one immutable analysis profile for every invocation, then resolve model from the selected analytical method and host or network from an addressable target. A non-generative deterministic analysis profile may narrow the nondeterministic base only under axis_contract.implementation_profile; any kind.operation DETERMINISTIC TRUE is checked afterward against the resolved final category.",
       "target": {
         "type": "meta.material_value|meta.addressable",
         "required": true
@@ -122,18 +334,28 @@
         "findings distinguish observed facts from inference"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
-        "error.host.constraint"
-      ],
-      "side_effects": [],
-      "additional_undeclared_effects": "forbidden"
+        "error.host.constraint",
+        "error.operation.precondition"
+      ]
     },
     "core.calculate": {
       "meaning": "Compute a result from declared values and rules.",
       "category": "read_only",
-      "deterministic": true,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The registered expression, binding, numeric, division, and rounding rules fix the result."
+      },
+      "possible_dependencies": [
+        "declared_state_only"
+      ],
+      "possible_effects": [
+        "none"
+      ],
+      "invocation_resolution": "Use only the declared target value, expression, bindings, and declared snapshots. A MISSING operand used outside == or != produces error.required.missing; a required UNKNOWN result produces error.value.unknown. A host-capacity failure is error.host.constraint and does not change the dependency class.",
       "target": {
         "type": "meta.material_value",
         "required": false
@@ -163,21 +385,33 @@
         "result equals exact expression semantics"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.operator.operand",
+        "error.reference.unresolved",
         "error.numeric.division_by_zero",
         "error.numeric.non_terminating",
         "error.numeric.unit_mismatch",
         "error.value.out_of_range",
         "error.host.constraint",
+        "error.required.missing",
         "error.value.unknown"
-      ],
-      "side_effects": [],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.compare": {
       "meaning": "Compare artifacts or values against exact criteria.",
       "category": "read_only",
-      "deterministic": true,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The resolved operand snapshots and exact comparison criteria fix the result."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "none"
+      ],
+      "invocation_resolution": "Resolve host or network independently for the target and against operands; material-value-only comparison resolves declared_state_only. When criteria is omitted, use the registered == exact strict-equality comparison over the resolved operands. Evaluate every criterion under the registered operator and sentinel rules: a non-==/!= criterion encountering MISSING produces error.required.missing, and any criterion whose result remains UNKNOWN produces error.value.unknown because a successful result.value must contain a material value. The invocation has no effects.",
       "target": {
         "type": "meta.material_value|meta.addressable",
         "required": true
@@ -193,8 +427,8 @@
         "criteria": {
           "type": "STRING|OBJECT|REFERENCE",
           "required": false,
-          "default": null,
-          "meaning": "Exact comparison criteria.",
+          "default": "==",
+          "meaning": "Exact comparison criteria; omission selects the registered == strict-equality comparison.",
           "constraints": []
         }
       },
@@ -204,22 +438,36 @@
         "both operands are accessible and criteria are type-valid"
       ],
       "postconditions": [
-        "result records every requested criterion"
+        "every resolved criterion is evaluated exactly, including the default == criterion when selected, and a successful comparison yields a material value"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
         "error.host.constraint",
-        "error.type.mismatch"
-      ],
-      "side_effects": [],
-      "additional_undeclared_effects": "forbidden"
+        "error.type.mismatch",
+        "error.operator.operand",
+        "error.pattern.resource_limit",
+        "error.required.missing",
+        "error.value.unknown",
+        "error.operation.precondition"
+      ]
     },
     "core.select": {
       "meaning": "Choose members satisfying a predicate.",
       "category": "read_only",
-      "deterministic": true,
+      "determinism": {
+        "category": "nondeterministic",
+        "source": "No mandatory strategy pins returned cardinality, complete subset, or order even when every returned member satisfies the predicate."
+      },
+      "possible_dependencies": [
+        "declared_state_only"
+      ],
+      "possible_effects": [
+        "none"
+      ],
+      "invocation_resolution": "Evaluate a type-compatible predicate from declared values and snapshots. A predicate result of MISSING produces error.required.missing and UNKNOWN produces error.value.unknown. A referenced kind.operation must resolve to deterministic, side-effect-free behavior with dependencies exactly declared_state_only; no invocation may add a dependency or effect.",
       "target": {
         "type": "meta.collection",
         "required": true
@@ -230,7 +478,9 @@
           "required": true,
           "default": null,
           "meaning": "Boolean member predicate.",
-          "constraints": []
+          "constraints": [
+            "A REFERENCE resolves exactly once to a kind.operation with SIDE_EFFECT FALSE, DETERMINISTIC TRUE, a fully resolved dependency set of exactly declared_state_only, exactly one PARAMETER accepting the member type, and exactly one BOOLEAN RESULT."
+          ]
         }
       },
       "positional_parameters": false,
@@ -239,21 +489,38 @@
         "predicate accepts the member type"
       ],
       "postconditions": [
-        "every returned member satisfies predicate"
+        "every returned member is one target member occurrence for which predicate is TRUE",
+        "no target member occurrence is returned more than once",
+        "result cardinality is any integer from zero through the number of TRUE target member occurrences",
+        "the selected TRUE subset and result order are otherwise unspecified"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.operator.operand",
-        "error.value.unknown"
+        "error.required.missing",
+        "error.value.unknown",
+        "error.reference.unresolved",
+        "error.reference.kind",
+        "error.operation.precondition"
       ],
-      "side_effects": [],
-      "additional_undeclared_effects": "forbidden"
+      "error_resolution": "Union the local errors with every applicable error of the referenced predicate operation when a predicate REFERENCE is selected."
     },
     "core.filter": {
-      "meaning": "Return members satisfying a predicate while preserving order.",
+      "meaning": "Return all members of one LIST that satisfy a predicate, preserving source order.",
       "category": "read_only",
-      "deterministic": true,
+      "determinism": {
+        "category": "deterministic",
+        "source": "All and only TRUE members are returned in their exact LIST source order."
+      },
+      "possible_dependencies": [
+        "declared_state_only"
+      ],
+      "possible_effects": [
+        "none"
+      ],
+      "invocation_resolution": "Resolve the predicate to a deterministic side-effect-free expression over declared values or a kind.operation whose fully resolved dependency set is exactly declared_state_only. A predicate result of MISSING produces error.required.missing and UNKNOWN produces error.value.unknown. No invocation may add a dependency or effect.",
       "target": {
-        "type": "meta.collection",
+        "type": "LIST[T]",
         "required": true
       },
       "parameters": {
@@ -262,37 +529,46 @@
           "required": true,
           "default": null,
           "meaning": "Boolean member predicate.",
-          "constraints": []
+          "constraints": [
+            "A REFERENCE resolves exactly once to a kind.operation with SIDE_EFFECT FALSE, DETERMINISTIC TRUE, a fully resolved dependency set of exactly declared_state_only, exactly one PARAMETER accepting the member type, and exactly one BOOLEAN RESULT."
+          ]
         }
       },
       "positional_parameters": false,
       "result_schema": "result.collection",
       "preconditions": [
-        "predicate accepts the member type"
+        "target is LIST[T] and predicate accepts T"
       ],
       "postconditions": [
-        "source order is preserved for LIST",
+        "source order is preserved",
         "all and only TRUE members are returned"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.operator.operand",
-        "error.value.unknown"
+        "error.type.mismatch",
+        "error.required.missing",
+        "error.value.unknown",
+        "error.reference.unresolved",
+        "error.reference.kind",
+        "error.operation.precondition"
       ],
-      "side_effects": [],
-      "additional_undeclared_effects": "forbidden"
+      "error_resolution": "Union the local errors with every applicable error of the referenced predicate operation when a predicate REFERENCE is selected."
     },
     "core.sort": {
       "meaning": "Return LIST[T] in one declared deterministic total order from LIST[T] or SET[T].",
       "category": "read_only",
-      "deterministic": "derived",
-      "determinism_derivation": {
-        "natural_order_membership": "operators_and_functions_v0.1.0.json#/ordered_types",
-        "natural_order_rules": "operators_and_functions_v0.1.0.json#/ordered_type_rules",
-        "property_path_projection": "operators_and_functions_v0.1.0.json#/operators/property access",
-        "key_reference": "validated deterministic side-effect-free kind.operation",
-        "list_equal_key_tie_breaker": "original_LIST_source_position",
-        "set_equal_key_policy": "distinct_members_require_distinct_keys"
+      "determinism": {
+        "category": "derived",
+        "source": "Derived from operators_and_functions_v0.1.0.json#/ordered_types, #/ordered_type_rules, the registered property-access projection or validated key operation, original LIST source position for ties, and the distinct-key rule for SET members: every valid invocation resolves deterministic; an invocation that cannot satisfy those rules fails."
       },
+      "possible_dependencies": [
+        "declared_state_only"
+      ],
+      "possible_effects": [
+        "none"
+      ],
+      "invocation_resolution": "Resolve natural order, one property_path, or one validated deterministic side-effect-free key operation whose fully resolved dependency set is exactly declared_state_only. No invocation may add a dependency or effect.",
       "target": {
         "type": "LIST[T]|SET[T]",
         "required": true
@@ -306,7 +582,7 @@
           "constraints": [
             "Omission is legal only when every pair of target members is mutually order-compatible under operators_and_functions_v0.1.0.json#/ordered_types.",
             "A STRING is exactly one property_path defined for every target member.",
-            "A REFERENCE resolves to a kind.operation with SIDE_EFFECT FALSE, DETERMINISTIC TRUE, exactly one PARAMETER accepting T, and exactly one RESULT of a concrete registered ordered type.",
+            "A REFERENCE resolves to a kind.operation with SIDE_EFFECT FALSE, DETERMINISTIC TRUE, a fully resolved dependency set of exactly declared_state_only, exactly one PARAMETER accepting T, and exactly one RESULT of a concrete registered ordered type.",
             "Every key value is present, known, and mutually order-compatible; distinct SET members produce distinct keys."
           ]
         },
@@ -338,27 +614,38 @@
         "error.operation.parameter",
         "error.reference.unresolved",
         "error.reference.kind",
+        "error.type.mismatch",
         "error.required.missing",
         "error.value.unknown",
         "error.operation.precondition"
       ],
       "diagnostic_triggers": {
-        "error.operation.parameter": "An unknown, duplicate, or mistyped parameter; stable or comparator; invalid direction; malformed property_path; or invalid key-extractor signature.",
+        "error.operation.parameter": "A missing required TARGET, or an unknown, duplicate, or positional parameter, including unregistered stable or comparator.",
         "error.reference.unresolved": "The key REFERENCE does not resolve exactly once.",
         "error.reference.kind": "The key REFERENCE resolves to a declaration other than kind.operation.",
+        "error.type.mismatch": "direction is outside ENUM[ascending|descending].",
         "error.required.missing": "A declared key value is MISSING for any member.",
         "error.value.unknown": "A declared key value is UNKNOWN for any member.",
-        "error.operation.precondition": "An omitted key lacks natural total order, key values are not mutually order-compatible, or distinct SET members produce equal keys."
+        "error.operation.precondition": "An omitted key lacks natural total order; a STRING key is not one well-formed property_path defined for every member; a key-operation signature is incompatible; key values are not mutually order-compatible; distinct SET members produce equal keys; or the key operation has invalid determinism, effects, dependencies, or a missing, ambiguous, incomplete, or out-of-bounds immutable profile."
       },
-      "side_effects": [],
-      "additional_undeclared_effects": "forbidden"
+      "error_resolution": "Union the local errors with every applicable error of the referenced key operation when a key REFERENCE is selected."
     },
     "core.group": {
-      "meaning": "Partition values by one declared key or predicate.",
+      "meaning": "Partition one LIST by one declared key, preserving deterministic group and member order.",
       "category": "read_only",
-      "deterministic": true,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The exact deterministic key partitions every LIST member into exactly one group; groups follow first key occurrence and members retain source order."
+      },
+      "possible_dependencies": [
+        "declared_state_only"
+      ],
+      "possible_effects": [
+        "none"
+      ],
+      "invocation_resolution": "Resolve the key to fixed declared data, a deterministic side-effect-free expression, or a kind.operation whose fully resolved dependency set is exactly declared_state_only. A key result of MISSING produces error.required.missing and UNKNOWN produces error.value.unknown. No invocation may add a dependency or effect.",
       "target": {
-        "type": "meta.collection",
+        "type": "LIST[T]",
         "required": true
       },
       "parameters": {
@@ -367,28 +654,47 @@
           "required": true,
           "default": null,
           "meaning": "Exact grouping key.",
-          "constraints": []
+          "constraints": [
+            "A REFERENCE resolves exactly once to a kind.operation with SIDE_EFFECT FALSE, DETERMINISTIC TRUE, a fully resolved dependency set of exactly declared_state_only, exactly one PARAMETER accepting the member type, and exactly one material RESULT usable as a grouping key."
+          ]
         }
       },
       "positional_parameters": false,
       "result_schema": "result.value",
       "preconditions": [
-        "key is defined for every member"
+        "target is LIST[T] and key is defined for every T member"
       ],
       "postconditions": [
-        "every input member occurs in exactly one group"
+        "every input member occurs in exactly one group",
+        "groups follow first key occurrence and members within each group retain LIST source order"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.operator.operand",
-        "error.value.unknown"
+        "error.type.mismatch",
+        "error.required.missing",
+        "error.value.unknown",
+        "error.reference.unresolved",
+        "error.reference.kind",
+        "error.operation.precondition"
       ],
-      "side_effects": [],
-      "additional_undeclared_effects": "forbidden"
+      "error_resolution": "Union the local errors with every applicable error of the referenced key operation when a key REFERENCE is selected."
     },
     "core.validate": {
       "meaning": "Check syntax, type, reference, dependency, and constraints before effects.",
       "category": "read_only",
-      "deterministic": true,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The closed syntax, type, reference, dependency, schema, and constraint rules fix the validation result."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "none"
+      ],
+      "invocation_resolution": "Resolve host or network only for addressable targets or referenced schemas and rules; material-value-only validation resolves declared_state_only. The invocation has no effects.",
       "target": {
         "type": "meta.material_value|meta.addressable|REFERENCE",
         "required": true
@@ -399,14 +705,18 @@
           "required": false,
           "default": null,
           "meaning": "Schema to validate against.",
-          "constraints": []
+          "constraints": [
+            "A REFERENCE resolves exactly once to a kind.type definition whose BASE is OBJECT and whose schema applies to the target."
+          ]
         },
         "rules": {
           "type": "LIST[REFERENCE]",
           "required": false,
           "default": [],
           "meaning": "Additional VALIDATE declarations.",
-          "constraints": []
+          "constraints": [
+            "Every REFERENCE resolves exactly once to a VALIDATE declaration applicable to the target."
+          ]
         }
       },
       "positional_parameters": false,
@@ -418,30 +728,44 @@
         "all detected failures use registered error identifiers"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
+        "error.reference.kind",
         "error.permission.denied",
         "error.scope.violation",
         "error.host.constraint",
-        "error.validation.failed"
-      ],
-      "side_effects": [],
-      "additional_undeclared_effects": "forbidden"
+        "error.validation.failed",
+        "error.determinism.mismatch"
+      ]
     },
     "core.verify": {
       "meaning": "Check observable postconditions.",
       "category": "read_only",
-      "deterministic": true,
+      "determinism": {
+        "category": "derived",
+        "source": "Derived from deterministic evaluation of the resolved assertion against the observed target snapshot and the immutable verification profile: the invocation copies that profile's final category."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "none"
+      ],
+      "invocation_resolution": "Resolve the assertion as a side-effect-free BOOLEAN_EXPRESSION or a REFERENCE to one declared BOOLEAN value or expression snapshot; it never invokes an operation or profile. Resolve observation dependencies and exactly one immutable verification profile from the target and evidence sources; URI observation adds network. Verification itself has no effects.",
       "target": {
         "type": "meta.material_value|meta.addressable|REFERENCE",
         "required": true
       },
       "parameters": {
         "assertion": {
-          "type": "BOOLEAN_EXPRESSION|REFERENCE",
+          "type": "BOOLEAN_EXPRESSION|REFERENCE[BOOLEAN]",
           "required": true,
           "default": null,
           "meaning": "Observable postcondition.",
-          "constraints": []
+          "constraints": [
+            "A REFERENCE resolves exactly once to a declared BOOLEAN value or expression snapshot and never invokes an operation or profile."
+          ]
         },
         "evidence": {
           "type": "LIST[REFERENCE[EVIDENCE]]",
@@ -460,31 +784,52 @@
         "result records TRUE, FALSE, or UNKNOWN and evidence"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
         "error.host.constraint",
+        "error.operation.precondition",
         "error.verification.failed",
         "error.evidence.missing"
-      ],
-      "side_effects": [],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.test": {
-      "meaning": "Execute one declared test and compare ACTUAL with EXPECTED.",
-      "category": "read_only",
-      "deterministic": null,
+      "meaning": "Evaluate one declared comparison, optionally after executing one referenced TASK or ACTION.",
+      "category": "control",
+      "determinism": {
+        "category": "derived",
+        "source": "Derived from the supplied assertion or expected-and-actual comparison and, when TARGET is a TASK or ACTION, its resolved reachable execution graph: comparison-only mode is deterministic; reference-execution mode copies the graph's final category before deterministic comparison."
+      },
+      "possible_dependencies": [
+        "host",
+        "network",
+        "model",
+        "human"
+      ],
+      "possible_effects": [
+        "filesystem",
+        "network",
+        "process",
+        "package",
+        "message",
+        "memory",
+        "state"
+      ],
+      "invocation_resolution": "Exactly one comparison form is always supplied: assertion, or expected with exactly one actual source. Expected-and-actual form always uses the registered == strict-equality operator. A material-value TARGET is the actual source; without a TASK or ACTION TARGET, comparison resolves dependencies to declared_state_only and effects to none. With a TASK or ACTION TARGET, execute its reachable graph, resolve its final determinism category and normalized transitive dependency and effect unions under axis_contract.implementation_profile.graph_resolution, then evaluate the supplied assertion or registered == comparison.",
       "target": {
         "type": "REFERENCE[TASK|ACTION]|meta.material_value",
         "required": false
       },
       "parameters": {
         "assertion": {
-          "type": "BOOLEAN_EXPRESSION|REFERENCE",
+          "type": "BOOLEAN_EXPRESSION|REFERENCE[BOOLEAN]",
           "required": false,
           "default": null,
           "meaning": "Direct pass condition.",
-          "constraints": []
+          "constraints": [
+            "A REFERENCE resolves exactly once to a declared BOOLEAN value or expression snapshot and never invokes an operation or profile."
+          ]
         },
         "expected": {
           "type": "meta.material_value",
@@ -494,32 +839,49 @@
           "constraints": []
         },
         "actual": {
-          "type": "meta.material_value|REFERENCE",
+          "type": "meta.material_value|REFERENCE[meta.material_value]",
           "required": false,
           "default": null,
           "meaning": "Actual value.",
-          "constraints": []
+          "constraints": [
+            "A REFERENCE resolves exactly once to a declared material-value snapshot after any referenced TASK or ACTION completes and never invokes another operation or profile."
+          ]
         }
       },
       "positional_parameters": false,
       "result_schema": "result.test",
       "preconditions": [
-        "exactly assertion or expected+actual mode is supplied"
+        "exactly one comparison form is supplied: assertion; or expected together with exactly one actual source, either the actual parameter or a material-value TARGET",
+        "a material-value TARGET is legal only as the actual source for expected, cannot accompany actual, and cannot accompany assertion",
+        "a TASK or ACTION TARGET is executed before the supplied comparison and TARGET alone is not a complete test"
       ],
       "postconditions": [
-        "passed reflects strict comparison/assertion"
+        "passed reflects the supplied assertion or registered == strict-equality comparison after any referenced execution completes"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.block.conditional_requirement",
-        "error.verification.failed"
+        "error.operator.operand",
+        "error.reference.unresolved",
+        "error.reference.cycle",
+        "error.host.constraint"
       ],
-      "side_effects": [],
-      "additional_undeclared_effects": "forbidden"
+      "error_resolution": "Union the local errors, including error.reference.cycle for a prohibited graph cycle, with every applicable error of the referenced TASK or ACTION graph when reference-execution mode is selected."
     },
     "core.report": {
       "meaning": "Produce a factual report from declared results and evidence.",
       "category": "read_only",
-      "deterministic": null,
+      "determinism": {
+        "category": "nondeterministic",
+        "source": "Base model-authored wording may vary while facts, inferences, missing values, unknown values, format, and evidence constraints remain invariant."
+      },
+      "possible_dependencies": [
+        "model"
+      ],
+      "possible_effects": [
+        "none"
+      ],
+      "invocation_resolution": "Resolve exactly one immutable reporting profile for every invocation and the selected reporting method. A structured or rule-based deterministic reporting profile may narrow the nondeterministic base only under axis_contract.implementation_profile; any kind.operation DETERMINISTIC TRUE is checked afterward against the resolved final category. Reporting itself has no effects.",
       "target": {
         "type": "meta.material_value|REFERENCE",
         "required": true
@@ -549,18 +911,28 @@
         "report distinguishes facts, inference, missing, and unknown"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
-        "error.host.constraint"
-      ],
-      "side_effects": [],
-      "additional_undeclared_effects": "forbidden"
+        "error.host.constraint",
+        "error.operation.precondition"
+      ]
     },
     "core.return": {
-      "meaning": "Return declared OUTPUT values to the invoking channel.",
+      "meaning": "Return one declared value to the invoking channel.",
       "category": "read_only",
-      "deterministic": true,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The returned value equals the exactly resolved target value."
+      },
+      "possible_dependencies": [
+        "declared_state_only"
+      ],
+      "possible_effects": [
+        "none"
+      ],
+      "invocation_resolution": "Resolve only the declared material value or REFERENCE. A REFERENCE that does not resolve exactly once produces error.reference.unresolved; one that resolves to MISSING produces error.required.missing, and one that resolves to UNKNOWN produces error.value.unknown. Returning a material value adds no effects.",
       "target": {
         "type": "meta.material_value|REFERENCE",
         "required": true
@@ -569,22 +941,35 @@
       "positional_parameters": false,
       "result_schema": "result.value",
       "preconditions": [
-        "target resolves"
+        "target resolves to a material value other than MISSING or UNKNOWN"
       ],
       "postconditions": [
         "returned value equals resolved target value"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
+        "error.required.missing",
         "error.value.unknown"
-      ],
-      "side_effects": [],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.create": {
-      "meaning": "Create a new target that does not already exist.",
+      "meaning": "Establish an authorized target with the declared content or type.",
       "category": "mutating",
-      "deterministic": null,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The target pre-state, content or target type, fail-if-exists flag, and selected target profile fix the required post-state."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "filesystem",
+        "network",
+        "state"
+      ],
+      "invocation_resolution": "Classify a REFERENCE target by the address class of its resolved target, never by REFERENCE syntax. PATH mutation adds host dependency and filesystem effect; URI mutation adds network dependency and network effect; OUTPUT or another authorized non-filesystem, non-network, non-memory, non-STATE addressable target adds state effect and its required dependency. MEMORY and STATE targets are prohibited; use core.memory_write or core.state_update.",
       "target": {
         "type": "meta.mutable_target",
         "required": true
@@ -608,13 +993,14 @@
           "type": "BOOLEAN",
           "required": false,
           "default": true,
-          "meaning": "Reject existing target.",
+          "meaning": "Reject an existing target when TRUE; when FALSE, permit replacing or reconciling it to the declared post-state.",
           "constraints": []
         }
       },
       "positional_parameters": false,
       "result_schema": "result.operation",
       "preconditions": [
+        "target is not MEMORY or STATE; those mutations use core.memory_write or core.state_update",
         "target does not exist when fail_if_exists is TRUE",
         "at least content or target_type is supplied"
       ],
@@ -623,6 +1009,7 @@
         "content/type matches parameters"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
@@ -630,16 +1017,25 @@
         "error.operation.precondition",
         "error.operation.postcondition",
         "error.execution.action"
-      ],
-      "side_effects": [
-        "local_mutation"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.write": {
       "meaning": "Establish or replace complete content of an authorized target.",
       "category": "mutating",
-      "deterministic": null,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The exact replacement content, create-if-missing flag, target snapshot, and selected write profile fix the required post-state."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "filesystem",
+        "network",
+        "state"
+      ],
+      "invocation_resolution": "Classify a REFERENCE target by the address class of its resolved target, never by REFERENCE syntax. PATH mutation adds host dependency and filesystem effect; URI mutation adds network dependency and network effect; OUTPUT or another authorized non-filesystem, non-network, non-memory, non-STATE addressable target adds state effect and its required dependency. MEMORY and STATE targets are prohibited; use core.memory_write or core.state_update.",
       "target": {
         "type": "meta.mutable_target",
         "required": true
@@ -663,12 +1059,14 @@
       "positional_parameters": false,
       "result_schema": "result.operation",
       "preconditions": [
+        "target is not MEMORY or STATE; those mutations use core.memory_write or core.state_update",
         "target exists unless create_if_missing is TRUE"
       ],
       "postconditions": [
         "complete target content equals content parameter"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
@@ -676,16 +1074,25 @@
         "error.operation.precondition",
         "error.operation.postcondition",
         "error.execution.action"
-      ],
-      "side_effects": [
-        "local_mutation"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.append": {
       "meaning": "Add content at the declared end of an authorized target.",
       "category": "mutating",
-      "deterministic": null,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The target pre-state remains the exact prefix and the declared content is the exact suffix."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "filesystem",
+        "network",
+        "state"
+      ],
+      "invocation_resolution": "Classify a REFERENCE target by the address class of its resolved target, never by REFERENCE syntax. PATH mutation adds host dependency and filesystem effect; URI mutation adds network dependency and network effect; OUTPUT or another authorized non-filesystem, non-network, non-memory, non-STATE addressable target adds state effect and its required dependency. MEMORY and STATE targets are prohibited; use core.memory_write or core.state_update.",
       "target": {
         "type": "meta.mutable_target",
         "required": true
@@ -702,12 +1109,14 @@
       "positional_parameters": false,
       "result_schema": "result.operation",
       "preconditions": [
+        "target is not MEMORY or STATE; those mutations use core.memory_write or core.state_update",
         "target exists and supports append"
       ],
       "postconditions": [
         "pre-state is unchanged prefix and content is exact suffix"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
@@ -715,16 +1124,25 @@
         "error.operation.precondition",
         "error.operation.postcondition",
         "error.execution.action"
-      ],
-      "side_effects": [
-        "local_mutation"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.modify": {
       "meaning": "Change selected content or properties of an existing target.",
       "category": "mutating",
-      "deterministic": null,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The exact change, bounded selection, optional pre-state guard, target snapshot, and selected change profile fix the permitted post-state."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "filesystem",
+        "network",
+        "state"
+      ],
+      "invocation_resolution": "Classify a REFERENCE target by the address class of its resolved target, never by REFERENCE syntax. PATH mutation adds host dependency and filesystem effect; URI mutation adds network dependency and network effect; OUTPUT or another authorized non-filesystem, non-network, non-memory, non-STATE addressable target adds state effect and its required dependency. MEMORY and STATE targets are prohibited; use core.memory_write or core.state_update. Resolve the selected change profile within those classes.",
       "target": {
         "type": "meta.mutable_target",
         "required": true
@@ -755,6 +1173,7 @@
       "positional_parameters": false,
       "result_schema": "result.operation",
       "preconditions": [
+        "target is not MEMORY or STATE; those mutations use core.memory_write or core.state_update",
         "target exists",
         "expected_before matches when supplied"
       ],
@@ -762,6 +1181,7 @@
         "only declared selection/properties change"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
@@ -769,16 +1189,24 @@
         "error.operation.precondition",
         "error.operation.postcondition",
         "error.execution.action"
-      ],
-      "side_effects": [
-        "local_mutation"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.copy": {
-      "meaning": "Create a new target containing an exact copy of a source.",
+      "meaning": "Establish a destination containing an exact copy of a source.",
       "category": "mutating",
-      "deterministic": null,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The destination content equals the exact source pre-state, the source remains unchanged, and overwrite behavior is fixed."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "filesystem",
+        "network"
+      ],
+      "invocation_resolution": "Classify a REFERENCE source by the address class of its resolved target, never by REFERENCE syntax. Resolve source observation dependencies and destination mutation effects independently under the selected copy profile: any URI side adds a network dependency and network effect for the primary copy; any PATH side adds host dependency; a PATH destination adds filesystem effect; observing a PATH, MEMORY, STATE, OUTPUT, or other host-bound source adds its required dependency but no source-side effect.",
       "target": {
         "type": "meta.addressable",
         "required": true
@@ -810,6 +1238,7 @@
         "source remains unchanged"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
@@ -817,16 +1246,25 @@
         "error.operation.precondition",
         "error.operation.postcondition",
         "error.execution.action"
-      ],
-      "side_effects": [
-        "local_mutation"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.move": {
       "meaning": "Relocate a target without changing declared content.",
       "category": "mutating",
-      "deterministic": null,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The destination equals the exact source pre-state, the original address is absent, overwrite behavior is fixed, and the selected move profile is fixed."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "filesystem",
+        "network",
+        "state"
+      ],
+      "invocation_resolution": "Classify a REFERENCE source by the address class of its resolved target, never by REFERENCE syntax. Resolve source and destination address classes independently; the selected move profile chooses rename or verified copy-delete strategy. A PATH side adds host dependency and PATH mutation adds filesystem effect; a URI side adds network dependency and URI content relocation adds network effect; removing OUTPUT or another authorized non-filesystem, non-network, non-memory, non-STATE addressable source adds state effect and its required dependency. MEMORY and STATE sources are prohibited; use core.memory_write or core.state_update.",
       "target": {
         "type": "meta.addressable",
         "required": true
@@ -850,7 +1288,9 @@
       "positional_parameters": false,
       "result_schema": "result.transfer",
       "preconditions": [
+        "source is not MEMORY or STATE; those mutations use core.memory_write or core.state_update",
         "source exists",
+        "resolved source and destination addresses are distinct",
         "destination absent unless overwrite is TRUE"
       ],
       "postconditions": [
@@ -858,6 +1298,7 @@
         "source no longer exists at original address"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
@@ -865,16 +1306,25 @@
         "error.operation.precondition",
         "error.operation.postcondition",
         "error.execution.action"
-      ],
-      "side_effects": [
-        "local_mutation"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.rename": {
       "meaning": "Change a target identifier/path name without changing content.",
       "category": "mutating",
-      "deterministic": null,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The exact legal new name, overwrite flag, target snapshot, and selected rename profile preserve content and all non-name properties."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "filesystem",
+        "network",
+        "state"
+      ],
+      "invocation_resolution": "Classify a REFERENCE target by the address class of its resolved target, never by REFERENCE syntax. Require new_name to differ from the current target name. PATH mutation adds host dependency and filesystem effect; URI mutation adds network dependency and network effect; OUTPUT or another authorized non-filesystem, non-network, non-memory, non-STATE addressable target adds state effect and its required dependency. MEMORY and STATE targets are prohibited; use core.memory_write or core.state_update.",
       "target": {
         "type": "meta.mutable_target",
         "required": true
@@ -901,13 +1351,18 @@
       "positional_parameters": false,
       "result_schema": "result.operation",
       "preconditions": [
+        "target is not MEMORY or STATE; those mutations use core.memory_write or core.state_update",
         "target exists",
-        "new_name is legal"
+        "new_name is legal",
+        "new_name differs from the current target name",
+        "renamed destination is absent unless overwrite is TRUE"
       ],
       "postconditions": [
+        "target is addressable by new_name and not by its prior name",
         "content and non-name properties are preserved"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
@@ -915,16 +1370,25 @@
         "error.operation.precondition",
         "error.operation.postcondition",
         "error.execution.action"
-      ],
-      "side_effects": [
-        "local_mutation"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.delete": {
-      "meaning": "Remove an existing target.",
+      "meaning": "Ensure an authorized target is absent.",
       "category": "mutating",
-      "deterministic": null,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The exact target snapshot, recursive flag, require-exists flag, authorization, and selected delete profile fix the required absence postcondition."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "filesystem",
+        "network",
+        "state"
+      ],
+      "invocation_resolution": "Classify a REFERENCE target by the address class of its resolved target, never by REFERENCE syntax. PATH mutation adds host dependency and filesystem effect; URI mutation adds network dependency and network effect; OUTPUT or another authorized non-filesystem, non-network, non-memory, non-STATE addressable target adds state effect and its required dependency. MEMORY and STATE targets are prohibited; use core.memory_write or core.state_update. No out-of-scope effect is permitted.",
       "target": {
         "type": "meta.mutable_target",
         "required": true
@@ -948,6 +1412,7 @@
       "positional_parameters": false,
       "result_schema": "result.operation",
       "preconditions": [
+        "target is not MEMORY or STATE; those mutations use core.memory_write or core.state_update",
         "target exists unless require_exists is FALSE",
         "recursive deletion is explicitly authorized when needed"
       ],
@@ -956,6 +1421,7 @@
         "no out-of-scope target changed"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
@@ -963,16 +1429,26 @@
         "error.operation.precondition",
         "error.operation.postcondition",
         "error.execution.action"
-      ],
-      "side_effects": [
-        "local_mutation"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.generate": {
       "meaning": "Produce a new artifact from declared input and constraints.",
       "category": "mutating",
-      "deterministic": null,
+      "determinism": {
+        "category": "nondeterministic",
+        "source": "The selected generative capability may vary output only within the declared specification, format, variation bounds, and verification requirements."
+      },
+      "possible_dependencies": [
+        "host",
+        "network",
+        "model"
+      ],
+      "possible_effects": [
+        "filesystem",
+        "network",
+        "state"
+      ],
+      "invocation_resolution": "Resolve model from the generation profile. Classify any REFERENCE target by the address class of its resolved target, never by REFERENCE syntax. PATH mutation adds host dependency and filesystem effect; URI mutation adds network dependency and network effect; OUTPUT or another authorized non-filesystem, non-network, non-memory, non-STATE addressable target adds state effect and its required dependency. MEMORY and STATE targets are prohibited; use core.memory_write or core.state_update.",
       "target": {
         "type": "meta.mutable_target|REFERENCE[OUTPUT]",
         "required": true
@@ -1003,12 +1479,14 @@
       "positional_parameters": false,
       "result_schema": "result.operation",
       "preconditions": [
+        "target is not MEMORY or STATE; those mutations use core.memory_write or core.state_update",
         "required generation capability exists"
       ],
       "postconditions": [
         "artifact satisfies specification and declared verification"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
@@ -1016,16 +1494,25 @@
         "error.operation.precondition",
         "error.operation.postcondition",
         "error.execution.action"
-      ],
-      "side_effects": [
-        "local_mutation"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.convert": {
       "meaning": "Produce an artifact in a declared target type or format.",
       "category": "mutating",
-      "deterministic": null,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The selected implementation version and exact conversion profile, target format, preserve list, source snapshot, and destination fix the required result."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "filesystem",
+        "network",
+        "state"
+      ],
+      "invocation_resolution": "Resolve source and destination address classes and the exact conversion profile; an omitted destination binds only the declared result or OUTPUT state.",
       "target": {
         "type": "meta.addressable|meta.material_value",
         "required": true
@@ -1062,6 +1549,7 @@
         "output has target_format and preserved properties"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
@@ -1069,16 +1557,31 @@
         "error.operation.precondition",
         "error.operation.postcondition",
         "error.execution.action"
-      ],
-      "side_effects": [
-        "local_mutation"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.execute": {
-      "meaning": "Run an exact command, program, task, phase, sequence, or action.",
+      "meaning": "Run an exact command, program, task, phase, sequence, action, or test.",
       "category": "mutating",
-      "deterministic": null,
+      "determinism": {
+        "category": "derived",
+        "source": "Derived from the exact invoked command, program, or referenced execution graph and the immutable profile required by axis_contract.implementation_profile: non-graph mode copies the execution profile's final category; graph mode copies the graph's final category."
+      },
+      "possible_dependencies": [
+        "host",
+        "network",
+        "model",
+        "human"
+      ],
+      "possible_effects": [
+        "filesystem",
+        "network",
+        "process",
+        "package",
+        "message",
+        "memory",
+        "state"
+      ],
+      "invocation_resolution": "A PATH, URI, or STRING executable target and its exact arguments, working directory, and environment select exactly one immutable execution profile under axis_contract.implementation_profile. Every such non-graph invocation has the process effect because it runs the executable; union process with any other dependencies and effects selected by the profile within this row's maxima. A referenced TASK, PHASE, SEQUENCE, ACTION, or TEST has no mandatory local process effect and resolves the final determinism category and normalized transitive dependency and effect unions of its reachable graph under axis_contract.implementation_profile.graph_resolution.",
       "target": {
         "type": "PATH|URI|REFERENCE[TASK|PHASE|SEQUENCE|ACTION|TEST]|STRING",
         "required": true
@@ -1117,31 +1620,42 @@
       "result_schema": "result.command",
       "preconditions": [
         "target is executable and authorized",
-        "effects are within declared scope"
+        "a non-graph executable target resolves to exactly one complete immutable execution profile",
+        "resolved profile dependencies and effects are within this contract and declared scope"
       ],
       "postconditions": [
-        "exit code/stdout/stderr/status are recorded"
+        "completion is recorded through result.command without requiring a graph target to synthesize non-graph command observations; result field cardinality and mode projection remain deferred to LCL-TASK-0005"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
+        "error.reference.cycle",
         "error.permission.denied",
         "error.scope.violation",
         "error.host.constraint",
         "error.operation.precondition",
         "error.operation.postcondition",
-        "error.execution.action",
-        "error.retry.exhausted"
+        "error.execution.action"
       ],
-      "side_effects": [
-        "control",
-        "declared_external_effects"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      "error_resolution": "For a graph target, union the local errors, including error.reference.cycle for a prohibited graph cycle, with every applicable error of every reachable operation; for a non-graph target, use the local errors."
     },
     "core.install": {
       "meaning": "Add declared software or resources to an external environment.",
       "category": "mutating",
-      "deterministic": null,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The exact package or resource identity, version, source, scope, dependency snapshot, and selected package profile fix the required installed state."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "filesystem",
+        "process",
+        "package"
+      ],
+      "invocation_resolution": "Resolve network only for a remote source or package profile; resolve filesystem, process, and package effects from the selected installation transaction.",
       "target": {
         "type": "STRING|PATH|URI|REFERENCE",
         "required": true
@@ -1178,6 +1692,7 @@
         "declared package/resource is installed at requested version"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
@@ -1185,16 +1700,25 @@
         "error.operation.precondition",
         "error.operation.postcondition",
         "error.execution.action"
-      ],
-      "side_effects": [
-        "external_mutation"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.uninstall": {
       "meaning": "Remove declared software or resources.",
       "category": "mutating",
-      "deterministic": null,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The exact installed-target snapshot, purge-data flag, and selected package profile fix the required removed state."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "filesystem",
+        "process",
+        "package"
+      ],
+      "invocation_resolution": "Resolve host and optional network from the selected package profile, including its remote-management variant, and resolve filesystem, process, and package effects from that profile's removal transaction. purge_data FALSE preserves declared associated data; purge_data TRUE removes all declared associated data in authorized scope.",
       "target": {
         "type": "STRING|REFERENCE",
         "required": true
@@ -1215,9 +1739,11 @@
       ],
       "postconditions": [
         "target installation is absent",
-        "data preserved unless purge_data TRUE"
+        "when purge_data is FALSE, declared associated data is preserved",
+        "when purge_data is TRUE, declared associated data is absent"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
@@ -1225,16 +1751,24 @@
         "error.operation.precondition",
         "error.operation.postcondition",
         "error.execution.action"
-      ],
-      "side_effects": [
-        "external_mutation"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.start": {
       "meaning": "Put a process or service into running state.",
       "category": "mutating",
-      "deterministic": null,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The exact stable target, arguments, environment, timeout, readiness rule, dependency snapshot, and selected start profile fix the result."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "process",
+        "state"
+      ],
+      "invocation_resolution": "Resolve process for a native process or service and state for a referenced execution target; remote-control mode of the selected start profile adds network dependency.",
       "target": {
         "type": "PATH|STRING|REFERENCE",
         "required": true
@@ -1271,6 +1805,7 @@
         "target reaches running/ready state or fails explicitly"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
@@ -1278,16 +1813,24 @@
         "error.operation.precondition",
         "error.operation.postcondition",
         "error.execution.action"
-      ],
-      "side_effects": [
-        "control"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.stop": {
       "meaning": "Terminate the selected path, process, or service.",
       "category": "control",
-      "deterministic": true,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The exact stable target, force flag, timeout, dependency snapshot, and selected stop profile fix the result."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "process",
+        "state"
+      ],
+      "invocation_resolution": "Resolve process for a path, process, or service and state for an internal execution-unit reference; remote-control mode of the selected stop profile adds network dependency.",
       "target": {
         "type": "PATH|STRING|REFERENCE[meta.execution_unit]",
         "required": true
@@ -1318,6 +1861,7 @@
         "force used only when TRUE"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
@@ -1325,16 +1869,23 @@
         "error.operation.precondition",
         "error.operation.postcondition",
         "error.execution.action"
-      ],
-      "side_effects": [
-        "control"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.send": {
       "meaning": "Transmit declared content to an external recipient or endpoint.",
       "category": "mutating",
-      "deterministic": null,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The exact content, recipient, subject, format, dependency snapshot, selected transport profile, and implementation version fix dispatch behavior; delivery truth is a separate result contract."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "message"
+      ],
+      "invocation_resolution": "Resolve host and optional network from the recipient or endpoint and resolve the message effect from the selected transport profile.",
       "target": {
         "type": "PATH|URI|STRING|BYTES|REFERENCE",
         "required": true
@@ -1371,6 +1922,7 @@
         "delivery result and recipient are recorded"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
@@ -1378,16 +1930,24 @@
         "error.operation.precondition",
         "error.operation.postcondition",
         "error.execution.action"
-      ],
-      "side_effects": [
-        "communication"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.publish": {
       "meaning": "Make declared content externally available.",
       "category": "mutating",
-      "deterministic": null,
+      "determinism": {
+        "category": "derived",
+        "source": "Derived from the exact selected destination and publication profile together with visibility and replacement policy: after those values are fixed, the invocation copies the publication profile's final category."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "filesystem",
+        "network"
+      ],
+      "invocation_resolution": "Resolve content-source and destination address classes under the single immutable publication profile: a PATH destination adds host dependency and filesystem effect; a URI or remote destination adds network dependency and network effect; source observation adds only its required host or network dependency.",
       "target": {
         "type": "PATH|URI|STRING|BYTES|REFERENCE",
         "required": true
@@ -1418,12 +1978,14 @@
       "positional_parameters": false,
       "result_schema": "result.operation",
       "preconditions": [
-        "content and visibility are authorized"
+        "content and visibility are authorized",
+        "destination is absent unless replace is TRUE"
       ],
       "postconditions": [
         "only declared content is available at destination with exact visibility"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
@@ -1431,16 +1993,24 @@
         "error.operation.precondition",
         "error.operation.postcondition",
         "error.execution.action"
-      ],
-      "side_effects": [
-        "external_mutation"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.upload": {
       "meaning": "Transfer declared content to an external destination.",
       "category": "mutating",
-      "deterministic": null,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The exact source snapshot, checksum, destination, overwrite flag, selected transfer profile, and implementation version fix the transfer contract."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "filesystem",
+        "network"
+      ],
+      "invocation_resolution": "Resolve source observation dependencies and destination mutation effects independently under the selected transfer profile: a PATH source adds host dependency but no filesystem effect; a URI destination adds network dependency and network effect for the primary upload; a PATH destination adds host dependency and filesystem effect.",
       "target": {
         "type": "PATH|BYTES|REFERENCE",
         "required": true
@@ -1472,12 +2042,14 @@
       "result_schema": "result.transfer",
       "preconditions": [
         "source exists",
+        "destination is absent unless overwrite is TRUE",
         "checksum matches when supplied"
       ],
       "postconditions": [
         "destination bytes equal source bytes"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
@@ -1485,16 +2057,24 @@
         "error.operation.precondition",
         "error.operation.postcondition",
         "error.execution.action"
-      ],
-      "side_effects": [
-        "external_mutation"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.download": {
       "meaning": "Transfer declared content from an external source into scope.",
       "category": "mutating",
-      "deterministic": null,
+      "determinism": {
+        "category": "derived",
+        "source": "Derived from source pinning or mutability, the optional checksum, source profile, destination snapshot, and selected transfer profile: the invocation is deterministic exactly when the source profile fixes one immutable source identity and content snapshot and both source and transfer profiles are deterministic; otherwise it is nondeterministic."
+      },
+      "possible_dependencies": [
+        "host",
+        "network"
+      ],
+      "possible_effects": [
+        "filesystem",
+        "network"
+      ],
+      "invocation_resolution": "Resolve the source profile, transfer profile, and destination PATH independently: a remote source adds network dependency and network effect for the primary download; a local source adds host dependency but no network effect; the destination PATH adds host dependency and filesystem effect.",
       "target": {
         "type": "URI|PATH|REFERENCE",
         "required": true
@@ -1526,13 +2106,15 @@
       "result_schema": "result.transfer",
       "preconditions": [
         "source is accessible",
-        "destination is in scope"
+        "destination is in scope",
+        "destination is absent unless overwrite is TRUE"
       ],
       "postconditions": [
         "destination bytes equal received source",
         "checksum matches when supplied"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
@@ -1540,16 +2122,22 @@
         "error.operation.precondition",
         "error.operation.postcondition",
         "error.execution.action"
-      ],
-      "side_effects": [
-        "local_mutation"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.memory_write": {
       "meaning": "Create or update explicitly authorized persistent memory data.",
       "category": "memory_state",
-      "deterministic": null,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The exact MEMORY snapshot, declared value, merge flag, storage profile, and implementation version fix the post-state."
+      },
+      "possible_dependencies": [
+        "host"
+      ],
+      "possible_effects": [
+        "memory"
+      ],
+      "invocation_resolution": "Resolve the authorized MEMORY storage profile. When merge is FALSE, replace the stored value exactly. When merge is TRUE, require the current and new values to be OBJECT, form the union of their top-level field names, use the new value for every same-name field, preserve the current value for every other field, and do not recurse into nested OBJECT values.",
       "target": {
         "type": "REFERENCE[MEMORY]",
         "required": true
@@ -1566,20 +2154,25 @@
           "type": "BOOLEAN",
           "required": false,
           "default": false,
-          "meaning": "Merge object fields instead of replace.",
-          "constraints": []
+          "meaning": "Apply the closed shallow right-biased OBJECT merge instead of replacement.",
+          "constraints": [
+            "TRUE requires the current MEMORY value and value parameter both to be OBJECT"
+          ]
         }
       },
       "positional_parameters": false,
       "result_schema": "result.operation",
       "preconditions": [
         "MEMORY mode permits write",
-        "value matches declared MEMORY type"
+        "when merge is FALSE, value matches the declared MEMORY type",
+        "when merge is TRUE, the current MEMORY value and value parameter are OBJECT and the computed merged OBJECT matches the declared MEMORY type"
       ],
       "postconditions": [
-        "persistent value equals requested replacement/merge"
+        "when merge is FALSE, the persistent value equals the value parameter",
+        "when merge is TRUE, the persistent OBJECT contains the union of current and new top-level fields, with new same-name fields winning and no recursive merge"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
@@ -1587,16 +2180,22 @@
         "error.operation.precondition",
         "error.operation.postcondition",
         "error.execution.action"
-      ],
-      "side_effects": [
-        "persistent_state"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.state_update": {
       "meaning": "Update explicitly authorized STATE data.",
       "category": "memory_state",
-      "deterministic": null,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The exact STATE snapshot, declared value, atomic expected-before guard, storage profile, and implementation version fix the post-state."
+      },
+      "possible_dependencies": [
+        "host"
+      ],
+      "possible_effects": [
+        "state"
+      ],
+      "invocation_resolution": "Resolve the authorized STATE storage profile, including its transaction variant, and enforce expected_before atomically when supplied.",
       "target": {
         "type": "REFERENCE[STATE]",
         "required": true
@@ -1628,6 +2227,7 @@
         "state equals requested value"
       ],
       "errors": [
+        "error.operation.parameter",
         "error.reference.unresolved",
         "error.permission.denied",
         "error.scope.violation",
@@ -1635,16 +2235,22 @@
         "error.operation.precondition",
         "error.operation.postcondition",
         "error.execution.action"
-      ],
-      "side_effects": [
-        "persistent_state"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.ask": {
       "meaning": "Request one exact missing value from an available authoritative source.",
       "category": "control",
-      "deterministic": null,
+      "determinism": {
+        "category": "nondeterministic",
+        "source": "The authoritative human responder may provide any type-valid answer permitted by the exact question and options."
+      },
+      "possible_dependencies": [
+        "human"
+      ],
+      "possible_effects": [
+        "message"
+      ],
+      "invocation_resolution": "Resolve one authoritative human responder. The request channel is internal to that human capability and adds no separate host or network dependency; the request is a message effect.",
       "target": {
         "type": "REFERENCE|qualified_identifier",
         "required": true
@@ -1668,31 +2274,48 @@
           "type": "LIST[meta.material_value]",
           "required": false,
           "default": null,
-          "meaning": "Closed answer choices.",
-          "constraints": []
+          "meaning": "Closed answer choices, each compatible with expected_type.",
+          "constraints": [
+            "Every option is compatible with expected_type."
+          ]
         }
       },
       "positional_parameters": false,
       "result_schema": "result.value",
       "preconditions": [
-        "authoritative responder is available"
+        "authoritative responder is available",
+        "request and responder are authorized and in scope",
+        "every option is compatible with expected_type"
       ],
       "postconditions": [
-        "answer is recorded and type-valid or remains MISSING"
+        "a non-MISSING answer is recorded and compatible with expected_type",
+        "when options is supplied, every non-MISSING answer equals one listed option",
+        "when no authorized valid answer is provided, the value remains MISSING and error.required.missing applies"
       ],
       "errors": [
+        "error.operation.parameter",
+        "error.reference.unresolved",
         "error.required.missing",
+        "error.type.mismatch",
+        "error.permission.denied",
+        "error.scope.violation",
         "error.host.constraint"
-      ],
-      "side_effects": [
-        "communication"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.retry": {
       "meaning": "Repeat the associated action under RETRY LIMIT and WHEN.",
       "category": "control",
-      "deterministic": null,
+      "determinism": {
+        "category": "inherited",
+        "source": "The determinism category and source are inherited exactly from the wrapped ACTION contract."
+      },
+      "possible_dependencies": [
+        "inherited"
+      ],
+      "possible_effects": [
+        "inherited"
+      ],
+      "invocation_resolution": "Resolve the wrapped ACTION first, then copy its exact determinism, dependency set, effect set, and applicable errors. A limit outside 0..100 produces error.value.out_of_range. Before each additional attempt, evaluate when as a required BOOLEAN condition; MISSING produces error.required.missing and UNKNOWN produces error.value.unknown. Retry adds no authority and no dependency or effect class.",
       "target": {
         "type": "REFERENCE[ACTION]",
         "required": true
@@ -1725,25 +2348,38 @@
       "positional_parameters": false,
       "result_schema": "result.operation",
       "preconditions": [
-        "associated action is retryable"
+        "wrapped ACTION resolves exactly once before any retry decision"
       ],
       "postconditions": [
         "attempt count never exceeds 1+limit",
         "every attempt is evidenced"
       ],
       "errors": [
+        "error.operation.parameter",
+        "error.reference.unresolved",
+        "error.reference.cycle",
+        "error.required.missing",
+        "error.value.unknown",
+        "error.value.out_of_range",
         "error.retry.exhausted",
         "error.execution.action"
       ],
-      "side_effects": [
-        "control"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      "error_resolution": "Before inheritance, use error.reference.unresolved when the wrapped ACTION does not resolve exactly once and error.reference.cycle when its reference graph contains a prohibited cycle; otherwise union the local retry errors with every applicable error of the wrapped ACTION contract, including any wrapped operation or profile precondition error."
     },
     "core.continue": {
       "meaning": "Continue a bounded path after a handled event.",
       "category": "control",
-      "deterministic": true,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The handled event and exact declared successor fix the resumed execution path."
+      },
+      "possible_dependencies": [
+        "declared_state_only"
+      ],
+      "possible_effects": [
+        "state"
+      ],
+      "invocation_resolution": "Resolve only the referenced execution-unit state and its exact declared successor.",
       "target": {
         "type": "REFERENCE[meta.execution_unit]",
         "required": true
@@ -1758,17 +2394,25 @@
         "execution resumes at exact declared successor"
       ],
       "errors": [
+        "error.operation.parameter",
+        "error.reference.unresolved",
         "error.execution.order"
-      ],
-      "side_effects": [
-        "control"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     },
     "core.cancel": {
       "meaning": "Terminate because the invoking authority cancelled execution.",
       "category": "control",
-      "deterministic": true,
+      "determinism": {
+        "category": "deterministic",
+        "source": "The invoking authority, exact execution-unit target, and recorded reason fix the cancellation transition."
+      },
+      "possible_dependencies": [
+        "declared_state_only"
+      ],
+      "possible_effects": [
+        "state"
+      ],
+      "invocation_resolution": "Resolve only the referenced internal execution-unit state, require its registered allowed_next set to contain status.cancelled, and record the exact reason.",
       "target": {
         "type": "REFERENCE[meta.execution_unit]",
         "required": true
@@ -1785,19 +2429,20 @@
       "positional_parameters": false,
       "result_schema": "result.operation",
       "preconditions": [
-        "invoking authority may cancel target"
+        "invoking authority may cancel target",
+        "target current status has status.cancelled in its registered allowed_next set"
       ],
       "postconditions": [
         "target reaches status.cancelled",
         "reason is evidenced"
       ],
       "errors": [
+        "error.operation.parameter",
+        "error.reference.unresolved",
+        "error.permission.denied",
+        "error.execution.order",
         "error.cancelled"
-      ],
-      "side_effects": [
-        "control"
-      ],
-      "additional_undeclared_effects": "forbidden"
+      ]
     }
   }
 }

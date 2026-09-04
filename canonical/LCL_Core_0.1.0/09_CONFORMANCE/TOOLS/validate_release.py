@@ -61,7 +61,14 @@ class Results:
         try:
             details = operation()
             self.add(scope, check, "PASS", **details)
-        except (AssertionError, OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
+        except (
+            AssertionError,
+            OSError,
+            TypeError,
+            UnicodeError,
+            ValueError,
+            json.JSONDecodeError,
+        ) as error:
             self.add(scope, check, "FAIL", error=str(error))
 
 
@@ -2016,21 +2023,23 @@ def set_sort_contract_violations(
             "Return LIST[T] in one declared deterministic total order from LIST[T] or SET[T]."
         ),
         "category": "read_only",
-        "deterministic": "derived",
-        "determinism_derivation": {
-            "natural_order_membership": (
-                "operators_and_functions_v0.1.0.json#/ordered_types"
+        "determinism": {
+            "category": "derived",
+            "source": (
+                "Derived from operators_and_functions_v0.1.0.json#/ordered_types, "
+                "#/ordered_type_rules, the registered property-access projection or "
+                "validated key operation, original LIST source position for ties, and "
+                "the distinct-key rule for SET members: every valid invocation resolves "
+                "deterministic; an invocation that cannot satisfy those rules fails."
             ),
-            "natural_order_rules": (
-                "operators_and_functions_v0.1.0.json#/ordered_type_rules"
-            ),
-            "property_path_projection": (
-                "operators_and_functions_v0.1.0.json#/operators/property access"
-            ),
-            "key_reference": "validated deterministic side-effect-free kind.operation",
-            "list_equal_key_tie_breaker": "original_LIST_source_position",
-            "set_equal_key_policy": "distinct_members_require_distinct_keys",
         },
+        "possible_dependencies": ["declared_state_only"],
+        "possible_effects": ["none"],
+        "invocation_resolution": (
+            "Resolve natural order, one property_path, or one validated deterministic "
+            "side-effect-free key operation whose fully resolved dependency set is "
+            "exactly declared_state_only. No invocation may add a dependency or effect."
+        ),
         "target": {"type": "LIST[T]|SET[T]", "required": True},
         "parameters": {
             "key": {
@@ -2049,7 +2058,8 @@ def set_sort_contract_violations(
                     "A STRING is exactly one property_path defined for every target member.",
                     (
                         "A REFERENCE resolves to a kind.operation with SIDE_EFFECT FALSE, "
-                        "DETERMINISTIC TRUE, exactly one PARAMETER accepting T, and exactly "
+                        "DETERMINISTIC TRUE, a fully resolved dependency set of exactly "
+                        "declared_state_only, exactly one PARAMETER accepting T, and exactly "
                         "one RESULT of a concrete registered ordered type."
                     ),
                     (
@@ -2095,14 +2105,15 @@ def set_sort_contract_violations(
             "error.operation.parameter",
             "error.reference.unresolved",
             "error.reference.kind",
+            "error.type.mismatch",
             "error.required.missing",
             "error.value.unknown",
             "error.operation.precondition",
         ],
         "diagnostic_triggers": {
             "error.operation.parameter": (
-                "An unknown, duplicate, or mistyped parameter; stable or comparator; "
-                "invalid direction; malformed property_path; or invalid key-extractor signature."
+                "A missing required TARGET, or an unknown, duplicate, or positional "
+                "parameter, including unregistered stable or comparator."
             ),
             "error.reference.unresolved": (
                 "The key REFERENCE does not resolve exactly once."
@@ -2110,15 +2121,18 @@ def set_sort_contract_violations(
             "error.reference.kind": (
                 "The key REFERENCE resolves to a declaration other than kind.operation."
             ),
+            "error.type.mismatch": "direction is outside ENUM[ascending|descending].",
             "error.required.missing": "A declared key value is MISSING for any member.",
             "error.value.unknown": "A declared key value is UNKNOWN for any member.",
             "error.operation.precondition": (
-                "An omitted key lacks natural total order, key values are not mutually "
-                "order-compatible, or distinct SET members produce equal keys."
+                "An omitted key lacks natural total order; a STRING key is not one "
+                "well-formed property_path defined for every member; a key-operation "
+                "signature is incompatible; key values are not mutually order-compatible; "
+                "distinct SET members produce equal keys; or the key operation has invalid "
+                "determinism, effects, dependencies, or a missing, ambiguous, incomplete, "
+                "or out-of-bounds immutable profile."
             ),
         },
-        "side_effects": [],
-        "additional_undeclared_effects": "forbidden",
     }
     sort_contract = operations.get("core.sort", {})
     for field, expected_value in expected_sort_fields.items():
@@ -2143,8 +2157,12 @@ def set_sort_contract_violations(
     expected_error_fields = {
         "error.operation.parameter": {
             "meaning": (
-                "An ACTION omits, duplicates, mistypes, or supplies an unregistered named "
-                "operation parameter."
+                "An ACTION omits TARGET when the selected operation marks it required, "
+                "omits a named parameter that the operation marks required, supplies any "
+                "positional argument, duplicates a named parameter, or supplies an "
+                "unregistered named parameter. A declared parameter value rejected by its "
+                "type or semantic constraint uses the general or row-specific error and is "
+                "not remapped to error.operation.parameter."
             ),
             "stage": "static_or_expression",
             "recoverable_with_declared_handler": False,
@@ -2177,7 +2195,10 @@ def set_sort_contract_violations(
             "default_status": "status.blocked",
         },
         "error.operation.precondition": {
-            "meaning": "A core operation precondition is false, missing, or unknown.",
+            "meaning": (
+                "A registered operation precondition, including exact resolution of every "
+                "required profile role, is false, missing, or unknown."
+            ),
             "stage": "execution",
             "recoverable_with_declared_handler": False,
             "default_status": "status.failed",
@@ -2266,7 +2287,8 @@ def set_sort_contract_violations(
         "06_STANDARD_LIBRARY/01_READ_ONLY_AND_ANALYTICAL_OPERATIONS.txt": [
             "Accept LIST[T] or SET[T] directly",
             "No comparator or stable parameter exists",
-            "Deterministic: DERIVED",
+            "Determinism category: derived",
+            "Determinism source: Derived from operators_and_functions_v0.1.0.json#/ordered_types",
             "registered property-access expression for a STRING key",
         ],
         "06_STANDARD_LIBRARY/10_CORE_OPERATION_PARAMETER_RULES.txt": [
@@ -2301,16 +2323,22 @@ def set_sort_contract_violations(
 
     release_status_requirements = {
         "00_RELEASE/00_CANONICAL_SOURCE_AND_PROVENANCE.txt": [
-            "LCL-AUDIT-010/K-003, 011, and 012 are resolved",
+            "Accepted Tasks 0001 through 0004",
+            "operation-contract portion of LCL-AUDIT-013",
             "result-binding portion of LCL-AUDIT-007",
-            "LCL-AUDIT-013 through",
-            "LCL-AUDIT-016 is outside the bare-language package scope",
+            "cardinality/output portion of LCL-AUDIT-013",
+            "LCL-AUDIT-014 and 015",
+            "LCL-AUDIT-016",
+            "outside the bare-language package scope",
         ],
         "00_RELEASE/01_RELEASE_STATUS_AND_BOUNDARY.txt": [
-            "LCL-AUDIT-010/K-003, 011, and 012",
+            "Accepted Tasks 0001 through 0004",
+            "operation-contract portion of",
             "result-binding portion of LCL-AUDIT-007",
-            "LCL-AUDIT-013 through",
-            "LCL-AUDIT-016 is outside the bare-language scope",
+            "result-schema cardinality/output",
+            "LCL-AUDIT-014 and 015",
+            "LCL-AUDIT-016",
+            "outside the bare-language scope",
         ],
     }
     for relative_path, required_text in release_status_requirements.items():
@@ -2378,7 +2406,7 @@ def set_sort_contract_violations(
                 "Derive determinism",
                 "ordered-type membership and rules",
                 "property-access projection",
-                "preserve LIST source position",
+                "Preserve LIST source position",
                 "require distinct keys",
             ],
         ),
@@ -2386,7 +2414,13 @@ def set_sort_contract_violations(
             "operation_errors",
             "core.sort",
             "operations_v0.1.0.json",
-            ["operation-parameter defects", "MISSING or UNKNOWN", "equal keys for distinct SET"],
+            [
+                "stable and comparator are unregistered",
+                "error.type.mismatch",
+                "malformed property_path",
+                "MISSING or UNKNOWN",
+                "equal keys for distinct SET",
+            ],
         ),
         "ERROR-CONTRACT-0725": (
             "error_contract",
@@ -2494,12 +2528,1806 @@ def set_sort_contract_violations(
     return violations
 
 
+EXPECTED_OPERATION_CONTRACT_FINGERPRINT = (
+    "ac8f456d2b83f8059eaeb00ac84120af92142205f6c883987dfb399a7112c7d1"
+)
+EXPECTED_OPERATION_ROW_FINGERPRINTS = {
+    "core.inspect": "fc2ae5ad368d5bba7e4599740b68d627471585b039834d2ad5b5f766beeaf234",
+    "core.read": "975035d5c3e583d40855be013677235b3d8caa5e6eb3cad1739e589291161302",
+    "core.analyze": "ecbce69889d9ac22c0065186bd1f62fbac626983189e63c5c8d0fcb51ad4d462",
+    "core.calculate": "e78dd9482b2da25f174e0122550c638554b1fe52dd2aa1d6ee576d1c9d0f222d",
+    "core.compare": "7ffa852f5df6ce98c71081b3b671fd702b55985f5063b549f55e702c04e4fb57",
+    "core.select": "3ce6c33c6be8e90455942b2c9393835b5024fdd827d0f428de1ed2ba7530f8ec",
+    "core.filter": "991fe9e140f143eae9d592d51d63519d77888fef1f633e2224550ea164119880",
+    "core.sort": "bf13927bbed4cd17d1a9f8a03d5249b8779768cd24d671677f7ba1bc0e3f2b16",
+    "core.group": "353fd0c5ac6784a824a3e41508fb13034e230ad119c0e6e2500fe3fed43e6e04",
+    "core.validate": "9746a344ec76fb63f32dd5a00b7b85c722e96829461e3dadc2403a375ac41754",
+    "core.verify": "47eda410f75ce83cc8c83f9b064b3e404125c9ace2f3979bf27e50efaa19ba40",
+    "core.test": "fd93d7fb916bebf97b2384fe4a83754c00f333a7b7737dfea5315af7a1013673",
+    "core.report": "466c758adf4a24ca72af7d10d178825b16dd670b3daeb3be9c7e8e14e0dbb5d1",
+    "core.return": "d412141b34ad45433f840758063e378c35fdad07b3c341a796ee657aaedfdb9e",
+    "core.create": "f0a0d85c6ef3b0b8eea603b16de509c81c2fb8a27f47b66518cfab361b6c5100",
+    "core.write": "bbfe03cc64ef1aeb1c04d428b466dfef63dfe9153fb1f9e7a1f7309240df2041",
+    "core.append": "ac718cbb01a8732128ecf60bc9a7e4b548bbb35fa9ecd1f443c8d922ceda26a0",
+    "core.modify": "29ff3bf523f0ee1c1e6fbee835adaf95d10b707f7a9d17267d61e4535732969c",
+    "core.copy": "6ec868b6929463235966b2a801161621083b0958ced852ff0ae47508e6f8eefa",
+    "core.move": "dc33c95e763f2d25d34995b957a92dabde7bdb0345d3e5cab50d1c9b378517fa",
+    "core.rename": "06bc994fd1b85a499ee9b95d941a9724e0bc2b34dfe38f6aaf9e59ba6c4d4240",
+    "core.delete": "c786bddf0832f48432fb9c813191e36d60cb1153d618b7d09e5f4d62281cf517",
+    "core.generate": "253e0885da5f6739f974b73e39de8d46cf38346dce792359aa4b1762a48516b5",
+    "core.convert": "437edd24d7d51e5fdb3ae3cab77adc1dd0bf52944b8cc0520253c3ebe2d95904",
+    "core.execute": "6c3abeecb23b37649c264996e589b0bfe4be4dfc5f1e7f5820659743a18a8e3c",
+    "core.install": "b9df3d850ef7e1de21223bd4cc078e27cf07ba0bc509953611eb6ee03f3997a4",
+    "core.uninstall": "0e2db0cdbf6f4a6ce38c6b13fbde3d62df013528a103d8b79d5606a2a2f35dbf",
+    "core.start": "73d937f8ea0bb2762624bd6e95f3cd16ef398dce01c17490fefa45f0051ba2d1",
+    "core.stop": "7fde87485da7e426998cb08d85e41f2389074d2b59f6e831286e3bbf70e3e452",
+    "core.send": "fdae1894d136becbd31b3b40bc90f1618210e08ce612d925bbe610e638c1a3f6",
+    "core.publish": "b94bb753e139d22511823f2afc588d91f6be4174425ebaa94ef0d2c07ff9af12",
+    "core.upload": "c7efd0b692d5ccd9a818da3b87e0b4d9e5e9345841d278927d5dd3c3ea3193d4",
+    "core.download": "d888f5c96fb3fcc526264b403007ded1d44cdaf9140dbf1d033b58914808e0fe",
+    "core.memory_write": "79c11d4767f792c59c0c502b6d8d33826b1a34670985f6269316c75c95323bfe",
+    "core.state_update": "fd6f0d9d8c543e42125b67de2c3fe540d3de8fc2cbab48f572cbf85c4836ed12",
+    "core.ask": "508262d4c096f90ce488915de24cc14830d826789d2c1c78b8d64bf0bd797b18",
+    "core.retry": "11d4773a8ae64ce32089baa033f37bb2428244d7640adedb0cd3e61651bed359",
+    "core.continue": "2639da73903e268cab43da10e8d1385290c2d31aec88f56918368f006cd3ea06",
+    "core.cancel": "e93170aea13204ec59ae5f49bb154382e60c39a1faa7ea116db9579f426a0c9e",
+}
+
+
+def operation_contract_row_fingerprint(contract: Any) -> str:
+    if not isinstance(contract, dict):
+        return "invalid-structure"
+    encoded = json.dumps(
+        contract,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def operation_contract_fingerprint(operations: Any) -> str:
+    if not isinstance(operations, dict) or not all(
+        isinstance(contract, dict) for contract in operations.values()
+    ):
+        return "invalid-structure"
+    encoded = json.dumps(
+        operations,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def operation_contract_violations(
+    operation_registry: dict[str, Any],
+    groups_and_results: dict[str, Any],
+    statuses: dict[str, Any],
+) -> list[str]:
+    violations: list[str] = []
+
+    def expect(condition: bool, message: str) -> None:
+        if not condition:
+            violations.append(message)
+
+    expected_root_fields = {
+        "language",
+        "version",
+        "closed",
+        "parameter_binding",
+        "parameter_default_encoding",
+        "axis_contract",
+        "contracts",
+    }
+    expect(
+        set(operation_registry) == expected_root_fields,
+        "operation registry root fields are not exact",
+    )
+    raw_operations = operation_registry.get("contracts", {})
+    expect(isinstance(raw_operations, dict), "operation contracts is not an object")
+    operations = raw_operations if isinstance(raw_operations, dict) else {}
+    enum_groups = groups_and_results.get("enum_groups", {})
+    expected_axis_contract = {
+        "determinism_identity": (
+            "For a deterministic operation, identical declared inputs, dependency "
+            "snapshots, selected profile-role bindings, and implementation versions require "
+            "semantically equivalent results, effects, ordering, and status."
+        ),
+        "dependency_resolution": (
+            "possible_dependencies is the registry maximum. Resolve the invocation "
+            "dependency set from the target, source, destination, selected profile, "
+            "arguments, and referenced execution graph. When no external capability is "
+            "selected, the invocation set is exactly declared_state_only."
+        ),
+        "effect_resolution": (
+            "possible_effects is the registry maximum. Resolve the invocation effect set "
+            "from the selected targets, destinations, profiles, arguments, and referenced "
+            "execution graph. When no observable effect can occur, the invocation set is "
+            "exactly none."
+        ),
+        "category_definitions": {
+            "read_only": (
+                "Observes or computes without authorizing any observable effect; "
+                "possible_effects is exactly none."
+            ),
+            "mutating": (
+                "May change an external or addressable target; the permitted effect "
+                "classes remain exactly bounded by possible_effects."
+            ),
+            "memory_state": (
+                "Writes an LCL MEMORY or STATE target; the permitted effect classes "
+                "remain exactly bounded by possible_effects."
+            ),
+            "control": (
+                "Coordinates, delegates, stops, resumes, retries, or cancels execution, "
+                "or requests authoritative input; the permitted effect classes remain "
+                "exactly bounded by possible_effects."
+            ),
+        },
+        "dependency_definitions": {
+            "declared_state_only": (
+                "Reads only declared LCL values, immutable definitions, and invocation-local "
+                "or internal execution snapshots; selects no host, network, model, or human "
+                "capability."
+            ),
+            "host": (
+                "Reads or invokes an addressable resource or capability supplied by the "
+                "execution host, excluding any separately declared network, model, or human "
+                "capability."
+            ),
+            "network": (
+                "Reads from or invokes a remote endpoint or transport capability; this "
+                "dependency alone is not a network effect."
+            ),
+            "model": (
+                "Obtains inference or generation from the selected LC or model capability."
+            ),
+            "human": "Obtains an authoritative response or decision from a human.",
+        },
+        "effect_definitions": {
+            "none": (
+                "Produces no observable state change or outbound communication and is exclusive."
+            ),
+            "filesystem": (
+                "Creates, changes, moves, or deletes filesystem content or metadata."
+            ),
+            "network": (
+                "Performs a primary transfer, copy, download, upload, or publication over a "
+                "network, or creates, changes, or removes network-addressed content. "
+                "Remote access used only as observation or computation input is a dependency. "
+                "Remote transport used only to realize a process, package, message, memory, "
+                "or state effect is not an additional network effect."
+            ),
+            "process": (
+                "Starts, executes, stops, or otherwise changes a native process or service."
+            ),
+            "package": "Changes installed package state or package-manager records.",
+            "message": (
+                "Sends an externally observable message or request to a recipient."
+            ),
+            "memory": "Changes an LCL MEMORY target.",
+            "state": (
+                "Changes an LCL STATE or OUTPUT target, an authorized addressable target not "
+                "classified as filesystem, network, or memory, or internal execution-unit "
+                "or lifecycle state."
+            ),
+        },
+        "marker_definitions": {
+            "inherited": (
+                "Resolve the marked axis exactly and transitively from the referenced ACTION; "
+                "this marker appears only on core.retry and never combines with another member."
+            )
+        },
+        "implementation_profile": {
+            "selection": (
+                "When an operation contract names one or more selected or implementation "
+                "profile roles, the exact operation identifier, profile role, target or address "
+                "class, arguments, implementation identifier, and implementation version "
+                "select exactly one immutable profile for each role before effects."
+            ),
+            "required_properties": [
+                "operation_id",
+                "profile_role",
+                "implementation_id",
+                "implementation_version",
+                "target_class",
+                "determinism_category",
+                "determinism_source",
+                "possible_dependencies",
+                "possible_effects",
+                "invocation_resolution",
+            ],
+            "required_roles_by_operation": {
+                "core.analyze": {"all": ["analysis"]},
+                "core.verify": {"all": ["verification"]},
+                "core.report": {"all": ["reporting"]},
+                "core.create": {"all": ["target"]},
+                "core.write": {"all": ["write"]},
+                "core.modify": {"all": ["change"]},
+                "core.copy": {"all": ["copy"]},
+                "core.move": {"all": ["move"]},
+                "core.rename": {"all": ["rename"]},
+                "core.delete": {"all": ["delete"]},
+                "core.generate": {"all": ["generation"]},
+                "core.convert": {"all": ["conversion"]},
+                "core.execute": {
+                    "non_graph": ["execution"],
+                    "graph": [],
+                },
+                "core.install": {"all": ["package"]},
+                "core.uninstall": {"all": ["package"]},
+                "core.start": {"all": ["start"]},
+                "core.stop": {"all": ["stop"]},
+                "core.send": {"all": ["transport"]},
+                "core.publish": {"all": ["publication"]},
+                "core.upload": {"all": ["transfer"]},
+                "core.download": {"all": ["source", "transfer"]},
+                "core.memory_write": {"all": ["storage"]},
+                "core.state_update": {"all": ["storage"]},
+            },
+            "role_resolution": (
+                "all applies to every invocation of that core operation. For core.execute, "
+                "non_graph applies exactly to PATH, URI, or STRING targets and graph applies "
+                "exactly to REFERENCE[TASK|PHASE|SEQUENCE|ACTION|TEST] targets; graph mode has "
+                "no local execution profile and resolves every reachable operation profile "
+                "transitively. A core operation absent from required_roles_by_operation "
+                "requires no local core profile. Every custom kind.operation requires exactly "
+                "the implementation role. No unlisted local profile role may be selected."
+            ),
+            "determinism_category_domain": (
+                "A profile declares exactly one final category: deterministic or "
+                "nondeterministic. derived and inherited are operation-row resolution "
+                "markers and are forbidden as profile categories."
+            ),
+            "bounds": (
+                "For bounds checking, declared_state_only denotes an empty set of external "
+                "dependency classes and none denotes an empty set of concrete effect classes. "
+                "A core profile may narrow but never widen the row's concrete dependency or "
+                "effect maxima; an empty narrowed set is represented exactly by its sentinel. "
+                "A profile selected by a deterministic base row must declare deterministic; "
+                "a nondeterministic profile is out of bounds. "
+                "A custom kind.operation profile declares maxima from the same closed "
+                "vocabularies. Every profile's invocation rule resolves actual sets within "
+                "its maxima."
+            ),
+            "determinism_resolution": (
+                "A deterministic base row remains deterministic and accepts only a deterministic "
+                "profile. A nondeterministic base row "
+                "resolves deterministic only when its immutable profile removes every permitted "
+                "variation and declares an exact source satisfying determinism_identity; "
+                "otherwise it remains nondeterministic. A derived row applies the exact "
+                "operation-specific mapping named by its derivation source to the final "
+                "categories of every resolved profile and/or graph. DETERMINISTIC TRUE is "
+                "verified afterward and never causes category narrowing."
+            ),
+            "custom_operation_resolution": (
+                "Every custom kind.operation selects exactly one profile. SIDE_EFFECT FALSE "
+                "requires possible_effects exactly none; SIDE_EFFECT TRUE requires one or more "
+                "concrete effect classes and forbids none. DETERMINISTIC TRUE requires the "
+                "profile's final category to be deterministic; DETERMINISTIC FALSE "
+                "conservatively permits either final category and never relaxes another rule. "
+                "The profile supplies the dependency and effect sets used by an ACTION graph."
+            ),
+            "graph_resolution": (
+                "For TASK, PHASE, SEQUENCE, ACTION, or TEST references, emit "
+                "error.reference.cycle and fail before axis resolution when a prohibited "
+                "reference cycle exists, then resolve every reachable core row or custom "
+                "kind.operation profile to a final category and invocation sets. The graph is "
+                "deterministic exactly when every reachable resolved operation is deterministic, "
+                "including when no operation is reachable; it is nondeterministic when any "
+                "reachable resolved operation is nondeterministic. Form each transitive union "
+                "from concrete external dependency classes and concrete effect classes only: "
+                "omit declared_state_only when any external dependency is present and otherwise "
+                "return exactly declared_state_only; omit none when any concrete effect is "
+                "present and otherwise return exactly none."
+            ),
+            "failure": (
+                "A missing, ambiguous, incomplete, or out-of-bounds required profile role "
+                "emits error.operation.precondition and fails before effects."
+            ),
+        },
+        "exclusive_dependency": "declared_state_only",
+        "exclusive_effect": "none",
+        "undeclared_dependencies": "forbidden",
+        "undeclared_effects": "forbidden",
+    }
+    determinism_values = [
+        "deterministic",
+        "nondeterministic",
+        "derived",
+        "inherited",
+    ]
+    dependency_classes = [
+        "declared_state_only",
+        "host",
+        "network",
+        "model",
+        "human",
+    ]
+    effect_classes = [
+        "none",
+        "filesystem",
+        "network",
+        "process",
+        "package",
+        "message",
+        "memory",
+        "state",
+    ]
+    expected_mismatch_error = {
+        "meaning": (
+            "A kind.operation definition declares DETERMINISTIC TRUE, but its fully "
+            "resolved operation or selected profile set is nondeterministic."
+        ),
+        "stage": "validation",
+        "recoverable_with_declared_handler": False,
+        "default_status": "status.invalid",
+    }
+    expected_precondition_error = {
+        "meaning": (
+            "A registered operation precondition, including exact resolution of every required "
+            "profile role, is false, missing, or unknown."
+        ),
+        "stage": "execution",
+        "recoverable_with_declared_handler": False,
+        "default_status": "status.failed",
+    }
+    expected_permission_error = {
+        "meaning": "Required access or an effect is unauthorized or prohibited.",
+        "stage": "execution",
+        "recoverable_with_declared_handler": False,
+        "default_status": "status.failed",
+    }
+    expected_cycle_error = {
+        "meaning": "Immutable definitions contain a prohibited dependency cycle.",
+        "stage": "resolution",
+        "recoverable_with_declared_handler": False,
+        "default_status": "status.invalid",
+    }
+
+    expect(operation_registry.get("language") == "LCL", "operation registry language is not LCL")
+    expect(operation_registry.get("version") == "0.1.0", "operation registry version is not 0.1.0")
+    expect(operation_registry.get("closed") is True, "operation registry is not closed")
+    expect(
+        operation_registry.get("parameter_binding") == "named_only",
+        "operation registry parameter binding is not named_only",
+    )
+    expect(
+        operation_registry.get("parameter_default_encoding")
+        == (
+            "In this registry only, JSON null in a parameter default field means no "
+            "declared default and is not the LCL NULL value. A non-null default is the "
+            "exact declared value applied only when an optional parameter is MISSING; "
+            "required parameters never acquire a default."
+        ),
+        "operation registry JSON-null default encoding is not exact",
+    )
+    expect(
+        operation_registry.get("axis_contract") == expected_axis_contract,
+        "operation axis_contract is not the exact approved contract",
+    )
+    expect(
+        enum_groups.get("determinism_values") == determinism_values,
+        "determinism_values is not the exact closed vocabulary",
+    )
+    expect(
+        enum_groups.get("operation_categories")
+        == ["read_only", "mutating", "memory_state", "control"],
+        "operation_categories is not the exact closed vocabulary",
+    )
+    expect(
+        enum_groups.get("dependency_classes") == dependency_classes,
+        "dependency_classes is not the exact closed vocabulary",
+    )
+    expect(
+        enum_groups.get("effect_classes") == effect_classes,
+        "effect_classes is not the exact closed vocabulary",
+    )
+    expect(
+        enum_groups.get("operation_axis_markers") == ["inherited"],
+        "operation_axis_markers must contain only inherited",
+    )
+    expect(
+        "side_effect_classes" not in enum_groups,
+        "legacy side_effect_classes remains registered",
+    )
+
+    expected_ids_value = groups_and_results.get("core_operation_ids", [])
+    expect(isinstance(expected_ids_value, list), "core_operation_ids is not a list")
+    expected_ids = expected_ids_value if isinstance(expected_ids_value, list) else []
+    expect(len(expected_ids) == 39, "core_operation_ids does not contain exactly 39 rows")
+    expect(
+        list(operations) == expected_ids,
+        "operation order or membership differs from core_operation_ids",
+    )
+    required_fields = {
+        "meaning",
+        "category",
+        "determinism",
+        "possible_dependencies",
+        "possible_effects",
+        "invocation_resolution",
+        "target",
+        "parameters",
+        "positional_parameters",
+        "result_schema",
+        "preconditions",
+        "postconditions",
+        "errors",
+    }
+    base_fields = set(required_fields)
+    error_resolution_rows = {
+        "core.select",
+        "core.filter",
+        "core.sort",
+        "core.group",
+        "core.test",
+        "core.execute",
+        "core.retry",
+    }
+    sort_fields = base_fields | {
+        "result_value_type",
+        "diagnostic_triggers",
+        "error_resolution",
+    }
+    delegated_fields = base_fields | {"error_resolution"}
+    legacy_fields = {
+        "deterministic",
+        "determinism_derivation",
+        "side_effects",
+        "additional_undeclared_effects",
+    }
+    allowed_dependencies = set(dependency_classes) | {"inherited"}
+    allowed_effects = set(effect_classes) | {"inherited"}
+    registered_errors = set(statuses.get("errors", {}))
+    registered_categories = set(enum_groups.get("operation_categories", []))
+    registered_results = set(groups_and_results.get("result_schemas", {}))
+    category_counts = {value: 0 for value in determinism_values}
+
+    for name, contract in operations.items():
+        if not isinstance(contract, dict):
+            violations.append(f"{name} contract is not an object")
+            continue
+        missing = sorted(required_fields - set(contract))
+        expect(not missing, f"{name} is missing required contract fields: {missing}")
+        legacy = sorted(legacy_fields & set(contract))
+        expect(not legacy, f"{name} retains legacy axis fields: {legacy}")
+        expected_fields = (
+            sort_fields
+            if name == "core.sort"
+            else delegated_fields
+            if name in error_resolution_rows
+            else base_fields
+        )
+        expect(
+            set(contract) == expected_fields,
+            f"{name} contract fields are not the exact closed schema",
+        )
+
+        expect(
+            isinstance(contract.get("meaning"), str) and bool(contract.get("meaning", "").strip()),
+            f"{name}.meaning must be a non-empty string",
+        )
+        operation_category = contract.get("category")
+        expect(
+            isinstance(operation_category, str)
+            and operation_category in registered_categories,
+            f"{name}.category is not registered",
+        )
+        target = contract.get("target")
+        expect(
+            isinstance(target, dict)
+            and set(target) == {"type", "required"}
+            and isinstance(target.get("type"), str)
+            and bool(target.get("type", "").strip())
+            and type(target.get("required")) is bool,
+            f"{name}.target is not the exact target schema",
+        )
+        parameters = contract.get("parameters")
+        expect(isinstance(parameters, dict), f"{name}.parameters is not an object")
+        if isinstance(parameters, dict):
+            for parameter_name, parameter in parameters.items():
+                expect(
+                    isinstance(parameter_name, str)
+                    and bool(parameter_name)
+                    and isinstance(parameter, dict)
+                    and set(parameter)
+                    == {"type", "required", "default", "meaning", "constraints"}
+                    and isinstance(parameter.get("type"), str)
+                    and bool(parameter.get("type", "").strip())
+                    and type(parameter.get("required")) is bool
+                    and (
+                        parameter.get("required") is False
+                        or parameter.get("default") is None
+                    )
+                    and isinstance(parameter.get("meaning"), str)
+                    and bool(parameter.get("meaning", "").strip())
+                    and isinstance(parameter.get("constraints"), list)
+                    and all(
+                        isinstance(item, str) and bool(item.strip())
+                        for item in parameter.get("constraints", [])
+                    ),
+                    f"{name}.parameters.{parameter_name} is not the exact parameter schema",
+                )
+        expect(
+            contract.get("positional_parameters") is False,
+            f"{name} must forbid positional parameters",
+        )
+        result_schema = contract.get("result_schema")
+        expect(
+            isinstance(result_schema, str) and result_schema in registered_results,
+            f"{name}.result_schema is not registered",
+        )
+        for field in ("preconditions", "postconditions"):
+            value = contract.get(field)
+            expect(
+                isinstance(value, list)
+                and bool(value)
+                and all(isinstance(item, str) and bool(item.strip()) for item in value),
+                f"{name}.{field} must be a non-empty string set representation",
+            )
+        if name == "core.sort":
+            expect(
+                isinstance(contract.get("result_value_type"), str)
+                and bool(contract.get("result_value_type", "").strip()),
+                "core.sort.result_value_type must be a non-empty string",
+            )
+            triggers = contract.get("diagnostic_triggers")
+            trigger_errors = contract.get("errors")
+            trigger_error_set = (
+                set(trigger_errors)
+                if isinstance(trigger_errors, list)
+                and all(isinstance(value, str) for value in trigger_errors)
+                else set()
+            )
+            expect(
+                isinstance(triggers, dict)
+                and set(triggers) == trigger_error_set
+                and all(
+                    isinstance(value, str) and bool(value.strip())
+                    for value in triggers.values()
+                ),
+                "core.sort diagnostic_triggers must cover exactly its errors",
+            )
+        if name in error_resolution_rows:
+            expect(
+                isinstance(contract.get("error_resolution"), str)
+                and bool(contract.get("error_resolution", "").strip()),
+                f"{name}.error_resolution must be a non-empty string",
+            )
+
+        determinism = contract.get("determinism")
+        expect(
+            isinstance(determinism, dict) and set(determinism) == {"category", "source"},
+            f"{name}.determinism must contain exactly category and source",
+        )
+        category = determinism.get("category") if isinstance(determinism, dict) else None
+        source = determinism.get("source") if isinstance(determinism, dict) else None
+        expect(category in determinism_values, f"{name} has an unregistered determinism category")
+        if isinstance(category, str) and category in category_counts:
+            category_counts[category] += 1
+        expect(
+            isinstance(source, str) and bool(source.strip()),
+            f"{name} lacks an exact determinism source",
+        )
+        if category == "derived":
+            expect(
+                isinstance(source, str) and source.startswith("Derived from "),
+                f"{name} derived determinism does not identify its derivation source",
+            )
+
+        dependencies = contract.get("possible_dependencies")
+        effects = contract.get("possible_effects")
+        expect(
+            isinstance(dependencies, list) and bool(dependencies),
+            f"{name}.possible_dependencies must be a non-empty set representation",
+        )
+        expect(
+            isinstance(effects, list) and bool(effects),
+            f"{name}.possible_effects must be a non-empty set representation",
+        )
+        if isinstance(dependencies, list):
+            dependency_strings = all(isinstance(value, str) for value in dependencies)
+            expect(dependency_strings, f"{name}.possible_dependencies contains a non-string")
+            if dependency_strings:
+                expect(
+                    len(dependencies) == len(set(dependencies)),
+                    f"{name}.possible_dependencies contains duplicates",
+                )
+                expect(
+                    set(dependencies) <= allowed_dependencies,
+                    f"{name}.possible_dependencies contains unregistered values",
+                )
+                expected_order = (
+                    ["inherited"]
+                    if dependencies == ["inherited"]
+                    else [value for value in dependency_classes if value in dependencies]
+                )
+                expect(
+                    dependencies == expected_order,
+                    f"{name}.possible_dependencies is not in canonical registry order",
+                )
+                expect(
+                    "declared_state_only" not in dependencies or len(dependencies) == 1,
+                    f"{name} combines exclusive declared_state_only with another dependency",
+                )
+                expect(
+                    "inherited" not in dependencies or len(dependencies) == 1,
+                    f"{name} combines inherited with another dependency",
+                )
+        if isinstance(effects, list):
+            effect_strings = all(isinstance(value, str) for value in effects)
+            expect(effect_strings, f"{name}.possible_effects contains a non-string")
+            if effect_strings:
+                expect(
+                    len(effects) == len(set(effects)),
+                    f"{name}.possible_effects contains duplicates",
+                )
+                expect(
+                    set(effects) <= allowed_effects,
+                    f"{name}.possible_effects contains unregistered values",
+                )
+                expected_order = (
+                    ["inherited"]
+                    if effects == ["inherited"]
+                    else [value for value in effect_classes if value in effects]
+                )
+                expect(
+                    effects == expected_order,
+                    f"{name}.possible_effects is not in canonical registry order",
+                )
+                expect(
+                    "none" not in effects or len(effects) == 1,
+                    f"{name} combines exclusive none with another effect",
+                )
+                expect(
+                    "inherited" not in effects or len(effects) == 1,
+                    f"{name} combines inherited with another effect",
+                )
+
+        resolution = contract.get("invocation_resolution")
+        expect(
+            isinstance(resolution, str) and bool(resolution.strip()),
+            f"{name} lacks an invocation-level resolution rule",
+        )
+        errors = contract.get("errors")
+        expect(isinstance(errors, list), f"{name}.errors is not a list")
+        if isinstance(errors, list):
+            error_strings = all(isinstance(value, str) for value in errors)
+            expect(error_strings, f"{name}.errors contains a non-string")
+            if error_strings:
+                expect(len(errors) == len(set(errors)), f"{name}.errors contains duplicates")
+                expect(
+                    set(errors) <= registered_errors,
+                    f"{name}.errors contains undefined identifiers",
+                )
+
+        actual_row_fingerprint = operation_contract_row_fingerprint(contract)
+        expected_row_fingerprint = EXPECTED_OPERATION_ROW_FINGERPRINTS.get(name)
+        expect(
+            actual_row_fingerprint == expected_row_fingerprint,
+            f"{name} Task-0004 approved contract differs: {actual_row_fingerprint}",
+        )
+
+    expect(
+        category_counts
+        == {
+            "deterministic": 27,
+            "nondeterministic": 5,
+            "derived": 6,
+            "inherited": 1,
+        },
+        f"operation determinism category counts differ: {category_counts}",
+    )
+    parameter_error_omissions = sorted(
+        name
+        for name, contract in operations.items()
+        if not isinstance(contract, dict)
+        or not isinstance(contract.get("errors"), list)
+        or "error.operation.parameter" not in contract["errors"]
+    )
+    expect(
+        not parameter_error_omissions,
+        "core operations omit universal error.operation.parameter: "
+        f"{parameter_error_omissions}",
+    )
+    required_target_rows = sorted(
+        name
+        for name, contract in operations.items()
+        if isinstance(contract, dict)
+        and isinstance(contract.get("target"), dict)
+        and contract["target"].get("required") is True
+    )
+    expect(
+        len(required_target_rows) == 37
+        and all(
+            "error.operation.parameter" in operations[name].get("errors", [])
+            for name in required_target_rows
+        ),
+        "required TARGET omission is not closed for exactly 37 operation rows",
+    )
+
+    def row_category(name: str) -> Any:
+        row = operations.get(name)
+        if not isinstance(row, dict):
+            return None
+        determinism = row.get("determinism")
+        return determinism.get("category") if isinstance(determinism, dict) else None
+
+    expected_derived_sources = {
+        "core.sort": (
+            "Derived from operators_and_functions_v0.1.0.json#/ordered_types, "
+            "#/ordered_type_rules, the registered property-access projection or validated "
+            "key operation, original LIST source position for ties, and the distinct-key "
+            "rule for SET members: every valid invocation resolves deterministic; an "
+            "invocation that cannot satisfy those rules fails."
+        ),
+        "core.verify": (
+            "Derived from deterministic evaluation of the resolved assertion against the "
+            "observed target snapshot and the immutable verification profile: the "
+            "invocation copies that profile's final category."
+        ),
+        "core.test": (
+            "Derived from the supplied assertion or expected-and-actual comparison and, "
+            "when TARGET is a TASK or ACTION, its resolved reachable execution graph: "
+            "comparison-only mode is deterministic; reference-execution mode copies the "
+            "graph's final category before deterministic comparison."
+        ),
+        "core.execute": (
+            "Derived from the exact invoked command, program, or referenced execution graph "
+            "and the immutable profile required by axis_contract.implementation_profile: "
+            "non-graph mode copies the execution profile's final category; graph mode copies "
+            "the graph's final category."
+        ),
+        "core.publish": (
+            "Derived from the exact selected destination and publication profile together "
+            "with visibility and replacement policy: after those values are fixed, the "
+            "invocation copies the publication profile's final category."
+        ),
+        "core.download": (
+            "Derived from source pinning or mutability, the optional checksum, source "
+            "profile, destination snapshot, and selected transfer profile: the invocation "
+            "is deterministic exactly when the source profile fixes one immutable source "
+            "identity and content snapshot and both source and transfer profiles are "
+            "deterministic; otherwise it is nondeterministic."
+        ),
+    }
+    actual_derived_sources = {
+        name: contract.get("determinism", {}).get("source")
+        for name, contract in operations.items()
+        if isinstance(contract, dict)
+        and isinstance(contract.get("determinism"), dict)
+        and contract["determinism"].get("category") == "derived"
+    }
+    expect(
+        actual_derived_sources == expected_derived_sources,
+        "derived operation final-category mappings are not exact",
+    )
+
+    operation_category_counts = {
+        category_name: sum(
+            1
+            for contract in operations.values()
+            if isinstance(contract, dict) and contract.get("category") == category_name
+        )
+        for category_name in ("read_only", "mutating", "memory_state", "control")
+    }
+    expect(
+        operation_category_counts
+        == {"read_only": 13, "mutating": 18, "memory_state": 2, "control": 6},
+        f"operation category counts differ: {operation_category_counts}",
+    )
+    read_only_effect_violations = sorted(
+        name
+        for name, contract in operations.items()
+        if isinstance(contract, dict)
+        and contract.get("category") == "read_only"
+        and contract.get("possible_effects") != ["none"]
+    )
+    expect(
+        not read_only_effect_violations,
+        f"read_only operations permit effects: {read_only_effect_violations}",
+    )
+
+    callback_constraints = {
+        "core.select": (
+            "predicate",
+            "A REFERENCE resolves exactly once to a kind.operation with SIDE_EFFECT FALSE, "
+            "DETERMINISTIC TRUE, a fully resolved dependency set of exactly "
+            "declared_state_only, exactly one PARAMETER accepting the member type, and "
+            "exactly one BOOLEAN RESULT.",
+        ),
+        "core.filter": (
+            "predicate",
+            "A REFERENCE resolves exactly once to a kind.operation with SIDE_EFFECT FALSE, "
+            "DETERMINISTIC TRUE, a fully resolved dependency set of exactly "
+            "declared_state_only, exactly one PARAMETER accepting the member type, and "
+            "exactly one BOOLEAN RESULT.",
+        ),
+        "core.sort": (
+            "key",
+            "A REFERENCE resolves to a kind.operation with SIDE_EFFECT FALSE, DETERMINISTIC "
+            "TRUE, a fully resolved dependency set of exactly declared_state_only, exactly "
+            "one PARAMETER accepting T, and exactly one RESULT of a concrete registered "
+            "ordered type.",
+        ),
+        "core.group": (
+            "key",
+            "A REFERENCE resolves exactly once to a kind.operation with SIDE_EFFECT FALSE, "
+            "DETERMINISTIC TRUE, a fully resolved dependency set of exactly "
+            "declared_state_only, exactly one PARAMETER accepting the member type, and "
+            "exactly one material RESULT usable as a grouping key.",
+        ),
+    }
+    for name, (parameter_name, exact_constraint) in callback_constraints.items():
+        contract_value = operations.get(name)
+        contract = contract_value if isinstance(contract_value, dict) else {}
+        parameters_value = contract.get("parameters")
+        parameters = parameters_value if isinstance(parameters_value, dict) else {}
+        parameter_value = parameters.get(parameter_name)
+        parameter = parameter_value if isinstance(parameter_value, dict) else {}
+        expect(
+            contract.get("possible_dependencies") == ["declared_state_only"]
+            and contract.get("possible_effects") == ["none"]
+            and isinstance(parameter.get("constraints"), list)
+            and exact_constraint in parameter.get("constraints", []),
+            f"{name} does not close referenced {parameter_name} axes to declared_state_only/none",
+        )
+        resolution = contract.get("invocation_resolution")
+        expect(
+            isinstance(resolution, str)
+            and "declared_state_only" in resolution
+            and "no invocation may add a dependency or effect." in resolution.lower(),
+            f"{name} invocation resolution permits hidden callback axes",
+        )
+        expect(
+            contract.get("error_resolution")
+            == (
+                "Union the local errors with every applicable error of the referenced "
+                f"{parameter_name} operation when a {parameter_name} REFERENCE is selected."
+            ),
+            f"{name} does not propagate referenced {parameter_name} errors",
+        )
+
+    reference_rows = sorted(
+        name
+        for name, contract in operations.items()
+        if isinstance(contract, dict)
+        and (
+            "REFERENCE"
+            in json.dumps(
+                {
+                    "target": contract.get("target"),
+                    "parameters": contract.get("parameters"),
+                },
+                ensure_ascii=False,
+            )
+            or any(
+                marker
+                in str(
+                    contract.get("target", {}).get("type", "")
+                    if isinstance(contract.get("target"), dict)
+                    else ""
+                )
+                for marker in ("meta.addressable", "meta.mutable_target")
+            )
+        )
+    )
+    unresolved_error_omissions = [
+        name
+        for name in reference_rows
+        if not isinstance(operations[name].get("errors"), list)
+        or "error.reference.unresolved" not in operations[name]["errors"]
+    ]
+    expect(
+        not unresolved_error_omissions,
+        "REFERENCE-admitting operations omit error.reference.unresolved: "
+        f"{unresolved_error_omissions}",
+    )
+    kind_constrained_rows = {
+        "core.select",
+        "core.filter",
+        "core.sort",
+        "core.group",
+        "core.validate",
+    }
+    expect(
+        all(
+            isinstance(operations.get(name), dict)
+            and "error.reference.kind" in operations[name].get("errors", [])
+            for name in kind_constrained_rows
+        ),
+        "operation-constrained bare references do not all map wrong kinds",
+    )
+
+    validate_value = operations.get("core.validate", {})
+    validate_contract = validate_value if isinstance(validate_value, dict) else {}
+    validate_parameters_value = validate_contract.get("parameters", {})
+    validate_parameters = (
+        validate_parameters_value if isinstance(validate_parameters_value, dict) else {}
+    )
+    expect(
+        validate_parameters.get("schema")
+        == {
+            "type": "REFERENCE|OBJECT",
+            "required": False,
+            "default": None,
+            "meaning": "Schema to validate against.",
+            "constraints": [
+                "A REFERENCE resolves exactly once to a kind.type definition whose BASE is "
+                "OBJECT and whose schema applies to the target."
+            ],
+        }
+        and validate_parameters.get("rules")
+        == {
+            "type": "LIST[REFERENCE]",
+            "required": False,
+            "default": [],
+            "meaning": "Additional VALIDATE declarations.",
+            "constraints": [
+                "Every REFERENCE resolves exactly once to a VALIDATE declaration applicable "
+                "to the target."
+            ],
+        }
+        and "error.reference.kind" in validate_contract.get("errors", []),
+        "core.validate does not map bare schema/rule reference domains exactly",
+    )
+
+    verify_value = operations.get("core.verify", {})
+    verify_contract = verify_value if isinstance(verify_value, dict) else {}
+    verify_parameters_value = verify_contract.get("parameters", {})
+    verify_parameters = (
+        verify_parameters_value if isinstance(verify_parameters_value, dict) else {}
+    )
+    expect(
+        verify_parameters.get("assertion", {}).get("type")
+        == "BOOLEAN_EXPRESSION|REFERENCE[BOOLEAN]"
+        and verify_parameters.get("evidence", {}).get("type")
+        == "LIST[REFERENCE[EVIDENCE]]"
+        and "error.reference.unresolved" in verify_contract.get("errors", [])
+        and "error.reference.kind" not in verify_contract.get("errors", []),
+        "core.verify typed references or local reference diagnostics are not exact",
+    )
+
+    select = operations.get("core.select", {})
+    expect(
+        row_category("core.select") == "nondeterministic",
+        "core.select must be nondeterministic without a mandatory complete strategy",
+    )
+    expect(
+        isinstance(select, dict)
+        and select.get("postconditions")
+        == [
+            (
+                "every returned member is one target member occurrence for which predicate "
+                "is TRUE"
+            ),
+            "no target member occurrence is returned more than once",
+            (
+                "result cardinality is any integer from zero through the number of TRUE "
+                "target member occurrences"
+            ),
+            "the selected TRUE subset and result order are otherwise unspecified",
+        ],
+        "core.select does not bound nondeterminism to a duplicate-free TRUE subset",
+    )
+    expect(
+        "error.required.missing" in select.get("errors", [])
+        and "error.value.unknown" in select.get("errors", [])
+        and "A predicate result of MISSING produces error.required.missing"
+        in str(select.get("invocation_resolution", "")),
+        "core.select does not distinguish MISSING and UNKNOWN predicate results",
+    )
+    expect(
+        row_category("core.filter") == "deterministic",
+        "core.filter must retain its evidence-determined deterministic contract",
+    )
+    filter_value = operations.get("core.filter", {})
+    filter_contract = filter_value if isinstance(filter_value, dict) else {}
+    expect(
+        filter_contract.get("target") == {"type": "LIST[T]", "required": True}
+        and filter_contract.get("determinism")
+        == {
+            "category": "deterministic",
+            "source": "All and only TRUE members are returned in their exact LIST source order.",
+        }
+        and filter_contract.get("preconditions")
+        == ["target is LIST[T] and predicate accepts T"]
+        and filter_contract.get("postconditions")
+        == ["source order is preserved", "all and only TRUE members are returned"]
+        and "error.type.mismatch" in filter_contract.get("errors", [])
+        and "error.required.missing" in filter_contract.get("errors", [])
+        and "error.value.unknown" in filter_contract.get("errors", []),
+        "core.filter does not close deterministic output ordering to LIST[T]",
+    )
+    group_value = operations.get("core.group", {})
+    group_contract = group_value if isinstance(group_value, dict) else {}
+    expect(
+        group_contract.get("target") == {"type": "LIST[T]", "required": True}
+        and group_contract.get("determinism")
+        == {
+            "category": "deterministic",
+            "source": (
+                "The exact deterministic key partitions every LIST member into exactly one "
+                "group; groups follow first key occurrence and members retain source order."
+            ),
+        }
+        and group_contract.get("preconditions")
+        == ["target is LIST[T] and key is defined for every T member"]
+        and group_contract.get("postconditions")
+        == [
+            "every input member occurs in exactly one group",
+            (
+                "groups follow first key occurrence and members within each group retain "
+                "LIST source order"
+            ),
+        ]
+        and "error.type.mismatch" in group_contract.get("errors", [])
+        and "error.required.missing" in group_contract.get("errors", [])
+        and "error.value.unknown" in group_contract.get("errors", []),
+        "core.group does not close deterministic group/member ordering to LIST[T]",
+    )
+
+    inspect_value = operations.get("core.inspect", {})
+    inspect_contract = inspect_value if isinstance(inspect_value, dict) else {}
+    inspect_parameters_value = inspect_contract.get("parameters", {})
+    inspect_parameters = (
+        inspect_parameters_value if isinstance(inspect_parameters_value, dict) else {}
+    )
+    expect(
+        inspect_parameters.get("depth", {}).get("constraints") == ["0..100"]
+        and "error.value.out_of_range" in inspect_contract.get("errors", [])
+        and "depth outside 0..100 produces error.value.out_of_range"
+        in str(inspect_contract.get("invocation_resolution", "")),
+        "core.inspect does not map the bounded depth constraint to value.out_of_range",
+    )
+
+    calculate_value = operations.get("core.calculate", {})
+    calculate_contract = calculate_value if isinstance(calculate_value, dict) else {}
+    calculate_resolution = str(calculate_contract.get("invocation_resolution", ""))
+    expect(
+        "error.required.missing" in calculate_contract.get("errors", [])
+        and "error.value.unknown" in calculate_contract.get("errors", [])
+        and "MISSING operand used outside == or != produces error.required.missing"
+        in calculate_resolution
+        and "required UNKNOWN result produces error.value.unknown"
+        in calculate_resolution,
+        "core.calculate does not apply the registered MISSING/UNKNOWN expression rules",
+    )
+
+    compare_value = operations.get("core.compare", {})
+    compare_contract = compare_value if isinstance(compare_value, dict) else {}
+    compare_parameters_value = compare_contract.get("parameters", {})
+    compare_parameters = (
+        compare_parameters_value if isinstance(compare_parameters_value, dict) else {}
+    )
+    compare_resolution = str(compare_contract.get("invocation_resolution", ""))
+    expect(
+        compare_parameters.get("criteria", {}).get("default") == "=="
+        and "registered == exact strict-equality comparison" in compare_resolution
+        and "non-==/!= criterion encountering MISSING produces error.required.missing"
+        in compare_resolution
+        and "criterion whose result remains UNKNOWN produces error.value.unknown"
+        in compare_resolution
+        and "error.operator.operand" in compare_contract.get("errors", [])
+        and "error.pattern.resource_limit" in compare_contract.get("errors", [])
+        and "error.required.missing" in compare_contract.get("errors", [])
+        and "error.value.unknown" in compare_contract.get("errors", []),
+        "core.compare default or registered sentinel-error resolution is not exact",
+    )
+
+    return_value = operations.get("core.return", {})
+    return_contract = return_value if isinstance(return_value, dict) else {}
+    return_resolution = str(return_contract.get("invocation_resolution", ""))
+    expect(
+        return_contract.get("preconditions")
+        == ["target resolves to a material value other than MISSING or UNKNOWN"]
+        and "does not resolve exactly once produces error.reference.unresolved"
+        in return_resolution
+        and "resolves to MISSING produces error.required.missing" in return_resolution
+        and "resolves to UNKNOWN produces error.value.unknown" in return_resolution
+        and "error.required.missing" in return_contract.get("errors", [])
+        and "error.value.unknown" in return_contract.get("errors", []),
+        "core.return does not distinguish unresolved, MISSING, and UNKNOWN targets",
+    )
+
+    missing_error_rows = sorted(
+        name
+        for name, contract in operations.items()
+        if isinstance(contract, dict)
+        and "error.required.missing" in contract.get("errors", [])
+    )
+    unknown_error_rows = sorted(
+        name
+        for name, contract in operations.items()
+        if isinstance(contract, dict)
+        and "error.value.unknown" in contract.get("errors", [])
+    )
+    expect(
+        missing_error_rows
+        == sorted(
+            {
+                "core.calculate",
+                "core.compare",
+                "core.select",
+                "core.filter",
+                "core.sort",
+                "core.group",
+                "core.return",
+                "core.ask",
+                "core.retry",
+            }
+        ),
+        f"error.required.missing operation coverage differs: {missing_error_rows}",
+    )
+    expect(
+        unknown_error_rows
+        == sorted(
+            {
+                "core.calculate",
+                "core.compare",
+                "core.select",
+                "core.filter",
+                "core.sort",
+                "core.group",
+                "core.return",
+                "core.retry",
+            }
+        ),
+        f"error.value.unknown operation coverage differs: {unknown_error_rows}",
+    )
+
+    test_value = operations.get("core.test", {})
+    test_contract = test_value if isinstance(test_value, dict) else {}
+    test_parameters_value = test_contract.get("parameters", {})
+    test_parameters = (
+        test_parameters_value if isinstance(test_parameters_value, dict) else {}
+    )
+    expect(
+        test_contract.get("category") == "control"
+        and test_contract.get("possible_dependencies")
+        == ["host", "network", "model", "human"]
+        and test_contract.get("possible_effects")
+        == ["filesystem", "network", "process", "package", "message", "memory", "state"],
+        "core.test is not control with the exact transitive execution maxima",
+    )
+    expect(
+        test_contract.get("target")
+        == {"type": "REFERENCE[TASK|ACTION]|meta.material_value", "required": False}
+        and test_contract.get("preconditions")
+        == [
+            (
+                "exactly one comparison form is supplied: assertion; or expected together "
+                "with exactly one actual source, either the actual parameter or a "
+                "material-value TARGET"
+            ),
+            (
+                "a material-value TARGET is legal only as the actual source for expected, "
+                "cannot accompany actual, and cannot accompany assertion"
+            ),
+            (
+                "a TASK or ACTION TARGET is executed before the supplied comparison and "
+                "TARGET alone is not a complete test"
+            ),
+        ]
+        and test_contract.get("postconditions")
+        == [
+            (
+                "passed reflects the supplied assertion or registered == strict-equality "
+                "comparison after any referenced execution completes"
+            )
+        ],
+        "core.test comparison and reference-execution modes are not exact",
+    )
+    expect(
+        test_parameters.get("assertion", {}).get("type")
+        == "BOOLEAN_EXPRESSION|REFERENCE[BOOLEAN]"
+        and test_parameters.get("actual", {}).get("type")
+        == "meta.material_value|REFERENCE[meta.material_value]"
+        and "error.reference.unresolved" in test_contract.get("errors", [])
+        and "error.operator.operand" in test_contract.get("errors", [])
+        and "error.reference.kind" not in test_contract.get("errors", []),
+        "core.test typed comparison references or local diagnostics are not exact",
+    )
+    test_resolution = test_contract.get("invocation_resolution")
+    expect(
+        isinstance(test_resolution, str)
+        and "declared_state_only" in test_resolution
+        and "effects to none" in test_resolution,
+        "core.test does not resolve comparison-only mode to declared state and no effects",
+    )
+    expect(
+        isinstance(test_resolution, str)
+        and "Exactly one comparison form is always supplied:" in test_resolution
+        and "A material-value TARGET is the actual source" in test_resolution
+        and "Expected-and-actual form always uses the registered == strict-equality operator"
+        in test_resolution
+        and "execute its reachable graph" in test_resolution
+        and "normalized transitive dependency and effect unions" in test_resolution
+        and "axis_contract.implementation_profile.graph_resolution" in test_resolution
+        and "then evaluate the supplied assertion or registered == comparison"
+        in test_resolution
+        and test_contract.get("error_resolution")
+        == (
+            "Union the local errors, including error.reference.cycle for a prohibited graph "
+            "cycle, with every applicable error of the referenced TASK or ACTION graph when "
+            "reference-execution mode is selected."
+        ),
+        "core.test does not resolve comparison after transitive graph execution/errors",
+    )
+
+    profile_contract = operation_registry.get("axis_contract", {}).get(
+        "implementation_profile", {}
+    )
+    actual_profile_roles = (
+        profile_contract.get("required_roles_by_operation", {})
+        if isinstance(profile_contract, dict)
+        else {}
+    )
+    expected_profile_roles = expected_axis_contract["implementation_profile"][
+        "required_roles_by_operation"
+    ]
+    expect(
+        actual_profile_roles == expected_profile_roles,
+        "required profile roles or core.execute mode switch differ",
+    )
+    expected_profile_rows = sorted(expected_profile_roles)
+    actual_profile_rows = sorted(actual_profile_roles)
+    expect(
+        actual_profile_rows == expected_profile_rows and len(actual_profile_rows) == 23,
+        f"required-profile operation set differs: {actual_profile_rows}",
+    )
+    profile_role_binding_count = sum(
+        len(roles)
+        for modes in actual_profile_roles.values()
+        if isinstance(modes, dict)
+        for roles in modes.values()
+        if isinstance(roles, list)
+    )
+    expect(
+        profile_role_binding_count == 24,
+        f"required-profile direct role binding count differs: {profile_role_binding_count}",
+    )
+    expect(
+        all(name in operations for name in actual_profile_rows),
+        "required_roles_by_operation names an unregistered core operation",
+    )
+    unlisted_role_rows = sorted(
+        name
+        for name, contract in operations.items()
+        if name not in actual_profile_roles
+        and isinstance(contract, dict)
+        and "local profile role"
+        in json.dumps(contract, ensure_ascii=False).lower()
+    )
+    expect(
+        not unlisted_role_rows,
+        f"operations outside the closed role map claim a local profile role: {unlisted_role_rows}",
+    )
+    profile_error_violations = sorted(
+        name
+        for name in actual_profile_rows
+        if not isinstance(operations.get(name), dict)
+        or not isinstance(operations[name].get("errors"), list)
+        or "error.operation.precondition" not in operations[name]["errors"]
+    )
+    expect(
+        not profile_error_violations,
+        f"required-profile operations omit error.operation.precondition: {profile_error_violations}",
+    )
+    expect(
+        statuses.get("errors", {}).get("error.operation.precondition")
+        == expected_precondition_error,
+        "error.operation.precondition is not the exact core/custom profile-failure contract",
+    )
+    expect(
+        statuses.get("errors", {}).get("error.permission.denied")
+        == expected_permission_error,
+        "error.permission.denied is not the exact access/effect-authorization contract",
+    )
+    expect(
+        statuses.get("errors", {}).get("error.reference.cycle")
+        == expected_cycle_error,
+        "error.reference.cycle is not the exact graph-resolution contract",
+    )
+
+    generic_target_mutators = {
+        "core.create",
+        "core.write",
+        "core.append",
+        "core.modify",
+        "core.rename",
+        "core.delete",
+        "core.generate",
+    }
+    generic_target_mutator_violations: list[str] = []
+    for name in sorted(generic_target_mutators):
+        contract_value = operations.get(name, {})
+        contract = contract_value if isinstance(contract_value, dict) else {}
+        resolution = str(contract.get("invocation_resolution", ""))
+        if not (
+            "target is not MEMORY or STATE; those mutations use core.memory_write or "
+            "core.state_update" in contract.get("preconditions", [])
+            and "address class of its resolved target, never by REFERENCE syntax"
+            in resolution
+            and "MEMORY and STATE targets are prohibited" in resolution
+            and "core.memory_write or core.state_update" in resolution
+            and "error.operation.precondition" in contract.get("errors", [])
+        ):
+            generic_target_mutator_violations.append(name)
+    expect(
+        not generic_target_mutator_violations,
+        "generic target mutators do not classify resolved addresses or exclude MEMORY/STATE: "
+        f"{generic_target_mutator_violations}",
+    )
+
+    move_value = operations.get("core.move", {})
+    move_contract = move_value if isinstance(move_value, dict) else {}
+    move_resolution = str(move_contract.get("invocation_resolution", ""))
+    expect(
+        "source is not MEMORY or STATE; those mutations use core.memory_write or "
+        "core.state_update" in move_contract.get("preconditions", [])
+        and "resolved source and destination addresses are distinct"
+        in move_contract.get("preconditions", [])
+        and "address class of its resolved target, never by REFERENCE syntax"
+        in move_resolution
+        and "removing OUTPUT or another authorized non-filesystem, non-network, "
+        "non-memory, non-STATE addressable source adds state effect"
+        in move_resolution
+        and "MEMORY and STATE sources are prohibited" in move_resolution
+        and "error.operation.precondition" in move_contract.get("errors", []),
+        "core.move does not classify resolved sources or exclude MEMORY/STATE sources",
+    )
+
+    rename_value = operations.get("core.rename", {})
+    rename_contract = rename_value if isinstance(rename_value, dict) else {}
+    expect(
+        "new_name differs from the current target name"
+        in rename_contract.get("preconditions", [])
+        and rename_contract.get("postconditions")
+        == [
+            "target is addressable by new_name and not by its prior name",
+            "content and non-name properties are preserved",
+        ]
+        and "Require new_name to differ from the current target name"
+        in str(rename_contract.get("invocation_resolution", "")),
+        "core.rename permits a no-op or fails to require the exact name transition",
+    )
+
+    copy_value = operations.get("core.copy", {})
+    copy_contract = copy_value if isinstance(copy_value, dict) else {}
+    copy_resolution = str(copy_contract.get("invocation_resolution", ""))
+    expect(
+        "address class of its resolved target, never by REFERENCE syntax"
+        in copy_resolution
+        and "source observation dependencies and destination mutation effects independently"
+        in copy_resolution
+        and "MEMORY, STATE, OUTPUT" in copy_resolution
+        and "no source-side effect" in copy_resolution,
+        "core.copy does not classify resolved source observation without a source effect",
+    )
+
+    memory_write_value = operations.get("core.memory_write", {})
+    memory_write = memory_write_value if isinstance(memory_write_value, dict) else {}
+    memory_parameters_value = memory_write.get("parameters", {})
+    memory_parameters = (
+        memory_parameters_value if isinstance(memory_parameters_value, dict) else {}
+    )
+    expect(
+        memory_parameters.get("merge")
+        == {
+            "type": "BOOLEAN",
+            "required": False,
+            "default": False,
+            "meaning": (
+                "Apply the closed shallow right-biased OBJECT merge instead of replacement."
+            ),
+            "constraints": [
+                "TRUE requires the current MEMORY value and value parameter both to be OBJECT"
+            ],
+        }
+        and memory_write.get("preconditions")
+        == [
+            "MEMORY mode permits write",
+            "when merge is FALSE, value matches the declared MEMORY type",
+            (
+                "when merge is TRUE, the current MEMORY value and value parameter are "
+                "OBJECT and the computed merged OBJECT matches the declared MEMORY type"
+            ),
+        ]
+        and memory_write.get("postconditions")
+        == [
+            "when merge is FALSE, the persistent value equals the value parameter",
+            (
+                "when merge is TRUE, the persistent OBJECT contains the union of current "
+                "and new top-level fields, with new same-name fields winning and no "
+                "recursive merge"
+            ),
+        ]
+        and "form the union of their top-level field names"
+        in str(memory_write.get("invocation_resolution", ""))
+        and "do not recurse into nested OBJECT values"
+        in str(memory_write.get("invocation_resolution", "")),
+        "core.memory_write does not close replacement and shallow right-biased merge",
+    )
+
+    ask_value = operations.get("core.ask")
+    ask = ask_value if isinstance(ask_value, dict) else {}
+    expect(
+        ask.get("possible_dependencies") == ["human"]
+        and ask.get("possible_effects") == ["message"]
+        and ask.get("invocation_resolution")
+        == (
+            "Resolve one authoritative human responder. The request channel is internal to "
+            "that human capability and adds no separate host or network dependency; the "
+            "request is a message effect."
+        ),
+        "core.ask does not close its request channel to the human dependency",
+    )
+    ask_parameters_value = ask.get("parameters", {})
+    ask_parameters = ask_parameters_value if isinstance(ask_parameters_value, dict) else {}
+    expect(
+        ask_parameters.get("options")
+        == {
+            "type": "LIST[meta.material_value]",
+            "required": False,
+            "default": None,
+            "meaning": "Closed answer choices, each compatible with expected_type.",
+            "constraints": ["Every option is compatible with expected_type."],
+        }
+        and ask.get("preconditions")
+        == [
+            "authoritative responder is available",
+            "request and responder are authorized and in scope",
+            "every option is compatible with expected_type",
+        ]
+        and ask.get("postconditions")
+        == [
+            "a non-MISSING answer is recorded and compatible with expected_type",
+            "when options is supplied, every non-MISSING answer equals one listed option",
+            (
+                "when no authorized valid answer is provided, the value remains MISSING "
+                "and error.required.missing applies"
+            ),
+        ]
+        and "error.type.mismatch" in ask.get("errors", [])
+        and "error.required.missing" in ask.get("errors", []),
+        "core.ask does not close expected-type and supplied-options answer selection",
+    )
+
+    uninstall_value = operations.get("core.uninstall", {})
+    uninstall = uninstall_value if isinstance(uninstall_value, dict) else {}
+    expect(
+        uninstall.get("postconditions")
+        == [
+            "target installation is absent",
+            "when purge_data is FALSE, declared associated data is preserved",
+            "when purge_data is TRUE, declared associated data is absent",
+        ]
+        and "purge_data TRUE removes all declared associated data in authorized scope"
+        in str(uninstall.get("invocation_resolution", "")),
+        "core.uninstall purge_data TRUE/FALSE branches are not exact",
+    )
+
+    cancel_value = operations.get("core.cancel", {})
+    cancel = cancel_value if isinstance(cancel_value, dict) else {}
+    expect(
+        "target current status has status.cancelled in its registered allowed_next set"
+        in cancel.get("preconditions", [])
+        and "error.execution.order" in cancel.get("errors", [])
+        and "require its registered allowed_next set to contain status.cancelled"
+        in str(cancel.get("invocation_resolution", "")),
+        "core.cancel does not enforce the registered status transition",
+    )
+
+    execute_value = operations.get("core.execute")
+    execute = execute_value if isinstance(execute_value, dict) else {}
+    execute_source_value = execute.get("determinism")
+    execute_source = (
+        execute_source_value.get("source", "")
+        if isinstance(execute_source_value, dict)
+        else ""
+    )
+    execute_resolution = execute.get("invocation_resolution")
+    expect(
+        "axis_contract.implementation_profile" in execute_source
+        and isinstance(execute_resolution, str)
+        and "exactly one immutable execution profile" in execute_resolution
+        and "Every such non-graph invocation has the process effect"
+        in execute_resolution
+        and "union process with any other dependencies and effects selected by the profile"
+        in execute_resolution
+        and "has no mandatory local process effect" in execute_resolution
+        and "invocation-declared external effects" not in execute_resolution
+        and execute.get("postconditions")
+        == [
+            (
+                "completion is recorded through result.command without requiring a graph "
+                "target to synthesize non-graph command observations; result field "
+                "cardinality and mode projection remain deferred to LCL-TASK-0005"
+            )
+        ]
+        and execute.get("preconditions")
+        == [
+            "target is executable and authorized",
+            "a non-graph executable target resolves to exactly one complete immutable execution profile",
+            "resolved profile dependencies and effects are within this contract and declared scope",
+        ],
+        "core.execute does not resolve native axes through one bounded immutable profile",
+    )
+    retry_value = operations.get("core.retry", {})
+    retry = retry_value if isinstance(retry_value, dict) else {}
+    expect(
+        row_category("core.retry") == "inherited"
+        and retry.get("possible_dependencies") == ["inherited"]
+        and retry.get("possible_effects") == ["inherited"]
+        and "error.required.missing" in retry.get("errors", [])
+        and "error.value.unknown" in retry.get("errors", [])
+        and "error.value.out_of_range" in retry.get("errors", [])
+        and "error.operation.precondition" not in retry.get("errors", [])
+        and retry.get("preconditions")
+        == ["wrapped ACTION resolves exactly once before any retry decision"]
+        and "limit outside 0..100 produces error.value.out_of_range"
+        in str(retry.get("invocation_resolution", ""))
+        and "Before each additional attempt, evaluate when as a required BOOLEAN condition"
+        in str(retry.get("invocation_resolution", ""))
+        and retry.get("error_resolution")
+        == (
+            "Before inheritance, use error.reference.unresolved when the wrapped ACTION "
+            "does not resolve exactly once and error.reference.cycle when its reference "
+            "graph contains a prohibited cycle; otherwise union the local retry errors "
+            "with every applicable error of the wrapped ACTION contract, including any "
+            "wrapped operation or profile precondition error."
+        ),
+        "core.retry does not inherit all three axes",
+    )
+    out_of_range_rows = sorted(
+        name
+        for name, contract in operations.items()
+        if isinstance(contract, dict)
+        and "error.value.out_of_range" in contract.get("errors", [])
+    )
+    expect(
+        out_of_range_rows == ["core.calculate", "core.inspect", "core.retry"],
+        f"error.value.out_of_range operation coverage differs: {out_of_range_rows}",
+    )
+    inherited_rows = sorted(
+        name
+        for name, contract in operations.items()
+        if isinstance(contract, dict)
+        and (
+            row_category(name) == "inherited"
+            or contract.get("possible_dependencies") == ["inherited"]
+            or contract.get("possible_effects") == ["inherited"]
+        )
+    )
+    expect(inherited_rows == ["core.retry"], "inherited axis marker appears outside core.retry")
+
+    mismatch_users = sorted(
+        name
+        for name, contract in operations.items()
+        if isinstance(contract, dict)
+        and isinstance(contract.get("errors"), list)
+        and "error.determinism.mismatch" in contract.get("errors", [])
+    )
+    expect(
+        mismatch_users == ["core.validate"],
+        "error.determinism.mismatch must apply only to core.validate",
+    )
+    expect(
+        statuses.get("errors", {}).get("error.determinism.mismatch")
+        == expected_mismatch_error,
+        "error.determinism.mismatch is not the exact validation-stage contract",
+    )
+
+    actual_fingerprint = operation_contract_fingerprint(operations)
+    expect(
+        actual_fingerprint == EXPECTED_OPERATION_CONTRACT_FINGERPRINT,
+        "Task-0004 complete contract differs from the approved 39-row matrix: "
+        f"{actual_fingerprint}",
+    )
+    return violations
+
+
+def operation_prose_contract_violations(
+    root: Path, operations: dict[str, Any]
+) -> list[str]:
+    violations: list[str] = []
+
+    def expect(condition: bool, message: str) -> None:
+        if not condition:
+            violations.append(message)
+
+    prose_profiles = {
+        "06_STANDARD_LIBRARY/01_READ_ONLY_AND_ANALYTICAL_OPERATIONS.txt": {
+            "read_only"
+        },
+        "06_STANDARD_LIBRARY/02_MUTATING_AND_EXTERNAL_OPERATIONS.txt": {
+            "mutating",
+            "memory_state",
+        },
+        "06_STANDARD_LIBRARY/03_CONTROL_OPERATIONS.txt": {"control"},
+    }
+    all_headings: list[str] = []
+    heading_pattern = re.compile(r"^core\.[a-z_]+$", re.MULTILINE)
+    for relative_path, categories in prose_profiles.items():
+        text = (root / relative_path).read_text(encoding="utf-8")
+        matches = list(heading_pattern.finditer(text))
+        headings = [match.group(0) for match in matches]
+        expected_headings = [
+            name
+            for name, contract in operations.items()
+            if isinstance(contract, dict) and contract.get("category") in categories
+        ]
+        expect(
+            headings == expected_headings,
+            f"{relative_path} operation headings differ from the registry partition",
+        )
+        expect(
+            "    Side effect:" not in text and "    Deterministic:" not in text,
+            f"{relative_path} retains legacy operation-axis labels",
+        )
+        all_headings.extend(headings)
+        for index, match in enumerate(matches):
+            name = match.group(0)
+            contract = operations.get(name)
+            if not isinstance(contract, dict):
+                violations.append(f"{relative_path} has no object contract for {name}")
+                continue
+            block_start = match.end() + 1
+            block_end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+            block = text[block_start:block_end]
+            determinism_value = contract.get("determinism", {})
+            determinism = determinism_value if isinstance(determinism_value, dict) else {}
+            dependency_value = contract.get("possible_dependencies", [])
+            dependencies = (
+                dependency_value
+                if isinstance(dependency_value, list)
+                and all(isinstance(value, str) for value in dependency_value)
+                else ["<invalid>"]
+            )
+            effect_value = contract.get("possible_effects", [])
+            effects = (
+                effect_value
+                if isinstance(effect_value, list)
+                and all(isinstance(value, str) for value in effect_value)
+                else ["<invalid>"]
+            )
+            expected_labels = {
+                "Meaning": contract.get("meaning"),
+                "Determinism category": determinism.get("category"),
+                "Determinism source": determinism.get("source"),
+                "Possible dependencies": "{" + ", ".join(dependencies) + "}",
+                "Possible effects": "{" + ", ".join(effects) + "}",
+                "Invocation resolution": contract.get("invocation_resolution"),
+                "Result schema": contract.get("result_schema"),
+            }
+            if "error_resolution" in contract:
+                expected_labels["Error resolution"] = contract.get("error_resolution")
+            governed_labels = (
+                "Meaning",
+                "Determinism category",
+                "Determinism source",
+                "Possible dependencies",
+                "Possible effects",
+                "Invocation resolution",
+                "Result schema",
+                "Error resolution",
+            )
+            for label in governed_labels:
+                actual_count = len(
+                    re.findall(rf"^[ \t]*{re.escape(label)}:", block, re.MULTILINE)
+                )
+                expected_count = 1 if label in expected_labels else 0
+                expect(
+                    actual_count == expected_count,
+                    f"{relative_path} {name} has {actual_count} {label} labels; "
+                    f"expected {expected_count}",
+                )
+            for label, expected_value in expected_labels.items():
+                expected_line = f"    {label}: {expected_value}\n"
+                expect(
+                    block.count(expected_line) == 1,
+                    f"{relative_path} {name} does not contain exact {label} parity",
+                )
+
+    expect(
+        set(all_headings) == set(operations),
+        "operation prose union is not the exact 39-row registry membership",
+    )
+    expect(
+        len(all_headings) == len(set(all_headings)) == 39,
+        "operation prose headings are not unique 39/39 coverage",
+    )
+
+    required_prose = {
+        "05_SEMANTICS/11_DETERMINISM_EQUIVALENCE_AND_INTERPRETER_VARIATION.txt": [
+            "The separate operation category is a closed behavioral classification",
+            "declared inputs, dependency snapshots, selected",
+            "possible_dependencies is the maximum dependency set",
+            "possible_effects is the maximum effect set",
+            "declared_state_only",
+            "{none}",
+            "Remote transport used only to realize a process, package, message, memory, or",
+            "A REFERENCE used as an address is classified by the address class of its",
+            "core.move",
+            "prohibits MEMORY and STATE sources",
+            "source observation adds no source-side effect",
+            "derived and inherited are operation-row",
+            "declared_state_only is omitted",
+            "It is not an override",
+            "error.determinism.mismatch exactly when",
+        ],
+        "03_TYPES_AND_VALUES/05_CUSTOM_TYPES_SCHEMAS_AND_DEFINITIONS.txt": [
+            "DETERMINISTIC TRUE is a verified assertion",
+            "selected implementation profile",
+            "deterministic or nondeterministic value",
+            "declared_state_only denotes no external",
+            "emits error.operation.precondition",
+            "It is not an override",
+            "error.determinism.mismatch",
+        ],
+        "06_STANDARD_LIBRARY/10_CORE_OPERATION_PARAMETER_RULES.txt": [
+            "All 39 operation contracts",
+            "possible_dependencies and possible_effects are registry maxima",
+            "declared_state_only and none are exclusive singleton values",
+            "core.test always requires exactly one comparison form",
+            "material-value TARGET is legal only as that actual",
+            "core.filter and core.group accept LIST[T], not SET[T]",
+            "passing SET directly to",
+            "error.type.mismatch before effects",
+            "For core.select and core.filter, a required predicate result of MISSING",
+            "core.compare evaluates each criterion under the registered operator",
+            "Every core.ask option must be compatible with expected_type",
+            "Before each additional attempt, the resolved",
+            "rule always includes the process effect because the invocation runs the",
+            "normalized transitive union rule",
+            "core.retry resolves the wrapped ACTION",
+            "free-form or undeclared effect channel exists",
+            "LCL-TASK-0005",
+        ],
+        "06_STANDARD_LIBRARY/06_CORE_ERROR_IDENTIFIERS_PART_1.txt": [
+            "complete closed set of 77 error identifiers",
+            "error.determinism.mismatch is emitted only during contract validation",
+            "fully resolved operation or",
+            "It never changes, overrides, or repairs",
+            "error.operation.precondition is emitted before effects",
+            "complete immutable implementation profile",
+        ],
+    }
+    for relative_path, tokens in required_prose.items():
+        text = (root / relative_path).read_text(encoding="utf-8")
+        missing = [token for token in tokens if token not in text]
+        expect(not missing, f"{relative_path} is missing operation prose: {missing}")
+
+    keyword_registry = load_json_strict(root / "10_REGISTRIES/keywords_v0.1.0.json")
+    deterministic_keyword = keyword_registry.get("keywords", {}).get("DETERMINISTIC", {})
+    keyword_prose = (
+        root / "02_LEXICAL/05_KEYWORD_REFERENCE_A_TO_M.txt"
+    ).read_text(encoding="utf-8")
+    expect(
+        f"    Meaning: {deterministic_keyword.get('meaning')}\n" in keyword_prose
+        and f"    Context: {deterministic_keyword.get('contexts')}\n" in keyword_prose,
+        "DETERMINISTIC keyword prose and registry differ",
+    )
+    expect(
+        "it is verified and never overrides nondeterminism"
+        in deterministic_keyword.get("meaning", ""),
+        "DETERMINISTIC keyword meaning lacks verified-assertion semantics",
+    )
+    return violations
+
+
 def check_registry(root: Path, results: Results) -> None:
     registry = root / "10_REGISTRIES"
     keywords = load_json_strict(registry / "keywords_v0.1.0.json")["keywords"]
     blocks = load_json_strict(registry / "block_schemas_v0.1.0.json")["schemas"]
     fields = load_json_strict(registry / "field_signatures_v0.1.0.json")
-    operations = load_json_strict(registry / "operations_v0.1.0.json")["contracts"]
+    operation_document = load_json_strict(registry / "operations_v0.1.0.json")
+    operation_registry = operation_document if isinstance(operation_document, dict) else {}
+    operation_values = operation_registry.get("contracts", {})
+    operations = operation_values if isinstance(operation_values, dict) else {}
     statuses = load_json_strict(registry / "statuses_and_errors_v0.1.0.json")
     groups_and_results = load_json_strict(registry / "built_in_groups_and_results_v0.1.0.json")
     results_schema = groups_and_results["result_schemas"]
@@ -2733,7 +4561,19 @@ def check_registry(root: Path, results: Results) -> None:
 
     all_errors = set(statuses["errors"])
     all_results = set(results_schema)
-    referenced_errors = {error for operation in operations.values() for error in operation["errors"]}
+    referenced_errors: set[str] = set()
+    referenced_results: set[str] = set()
+    for operation in operations.values():
+        if not isinstance(operation, dict):
+            continue
+        operation_errors = operation.get("errors")
+        if isinstance(operation_errors, list):
+            referenced_errors.update(
+                error for error in operation_errors if isinstance(error, str)
+            )
+        operation_result = operation.get("result_schema")
+        if isinstance(operation_result, str):
+            referenced_results.add(operation_result)
     for family in ("constructors", "operators", "functions"):
         for contract in operator_functions.get(family, {}).values():
             referenced_errors.update(contract.get("errors", []))
@@ -2741,7 +4581,6 @@ def check_registry(root: Path, results: Results) -> None:
         resource_error = profile.get("resource_limit_error")
         if resource_error:
             referenced_errors.add(resource_error)
-    referenced_results = {operation["result_schema"] for operation in operations.values()}
     meta_refs = set()
     meta_refs.update(re.findall(r"\bmeta\.[a-z_]+\b", json.dumps(operations)))
     meta_refs.update(re.findall(r"\bmeta\.[a-z_]+\b", json.dumps(operator_functions)))
@@ -2779,15 +4618,36 @@ def check_registry(root: Path, results: Results) -> None:
         decision="D-005",
     )
 
-    deterministic_unknown = sorted(name for name, operation in operations.items() if operation["deterministic"] is None)
+    operation_violations = operation_contract_violations(
+        operation_registry, groups_and_results, statuses
+    )
     incomplete_results = sorted(name for name, schema in results_schema.items() if set(schema) == {"fields"})
     results.add(
         "registry",
-        "operation_determinism_and_result_contracts",
-        "BLOCKED" if deterministic_unknown or incomplete_results else "PASS",
-        undeclared_determinism=deterministic_unknown,
+        "operation_contracts",
+        "FAIL" if operation_violations else "PASS",
+        operation_contract_violations=operation_violations,
+        operation_count=len(operations),
+        approved_contract_sha256=operation_contract_fingerprint(operations),
+        blocked_by=[],
+    )
+    operation_prose_violations = operation_prose_contract_violations(root, operations)
+    results.add(
+        "registry",
+        "operation_prose_contracts",
+        "FAIL" if operation_prose_violations else "PASS",
+        operation_prose_contract_violations=operation_prose_violations,
+        operation_count=len(operations),
+        prose_file_count=3,
+        blocked_by=[],
+    )
+    results.add(
+        "registry",
+        "result_schema_cardinality_and_output_contracts",
+        "BLOCKED" if incomplete_results else "PASS",
         result_schemas_without_cardinality=incomplete_results,
-        blocked_by=["LCL-AUDIT-013"],
+        deferred_to="LCL-TASK-0005",
+        blocked_by=["LCL-TASK-0005", "LCL-AUDIT-013"],
     )
 
     division_violations = division_contract_violations(
@@ -2864,6 +4724,19 @@ def check_registry(root: Path, results: Results) -> None:
 def check_catalog(root: Path, results: Results) -> None:
     def operation() -> dict[str, Any]:
         catalog = load_json_strict(root / "09_CONFORMANCE/CASES/core_conformance_cases_v0.1.0.json")
+        expected_catalog_fields = {
+            "language",
+            "version",
+            "normative",
+            "case_count",
+            "category_counts",
+            "cases",
+        }
+        assert isinstance(catalog, dict), "catalog root is not an object"
+        assert set(catalog) == expected_catalog_fields, "catalog root fields are not exact"
+        assert catalog.get("language") == "LCL", "catalog language is not LCL"
+        assert catalog.get("version") == "0.1.0", "catalog version is not 0.1.0"
+        assert catalog.get("normative") is True, "catalog is not normative"
         registry = root / "10_REGISTRIES"
         keywords = load_json_strict(registry / "keywords_v0.1.0.json")["keywords"]
         symbols = load_json_strict(registry / "symbols_v0.1.0.json")["adopted"]
@@ -2874,7 +4747,83 @@ def check_catalog(root: Path, results: Results) -> None:
         statuses = load_json_strict(registry / "statuses_and_errors_v0.1.0.json")
         groups_and_results = load_json_strict(registry / "built_in_groups_and_results_v0.1.0.json")
         cases = catalog["cases"]
-        assert catalog["case_count"] == len(cases), "case_count mismatch"
+        assert isinstance(cases, list), "catalog cases is not a list"
+        expected_case_fields = {
+            "id",
+            "category",
+            "subject",
+            "requirement",
+            "expected",
+            "source",
+        }
+        expected_category_counts = {
+            "block_extra": 41,
+            "block_minimum": 41,
+            "block_missing": 41,
+            "enum_groups": 22,
+            "error_contract": 77,
+            "function_invalid": 11,
+            "function_valid": 11,
+            "keyword_invalid": 141,
+            "keyword_valid": 141,
+            "operation_binding": 39,
+            "operation_effects": 39,
+            "operation_errors": 39,
+            "operator_invalid": 19,
+            "operator_valid": 19,
+            "reserved_namespaces": 9,
+            "result_schemas": 9,
+            "status_transition": 12,
+            "symbol_invalid": 21,
+            "symbol_valid": 21,
+            "type_invalid": 21,
+            "type_valid": 21,
+        }
+        expected_sources = {
+            "block_extra": "field_signatures_v0.1.0.json",
+            "block_minimum": "field_signatures_v0.1.0.json",
+            "block_missing": "field_signatures_v0.1.0.json",
+            "enum_groups": "built_in_groups_and_results_v0.1.0.json",
+            "error_contract": "statuses_and_errors_v0.1.0.json",
+            "function_invalid": "operators_and_functions_v0.1.0.json",
+            "function_valid": "operators_and_functions_v0.1.0.json",
+            "keyword_invalid": "keywords_v0.1.0.json",
+            "keyword_valid": "keywords_v0.1.0.json",
+            "operation_binding": "operations_v0.1.0.json",
+            "operation_effects": "operations_v0.1.0.json",
+            "operation_errors": "operations_v0.1.0.json",
+            "operator_invalid": "operators_and_functions_v0.1.0.json",
+            "operator_valid": "operators_and_functions_v0.1.0.json",
+            "reserved_namespaces": "built_in_groups_and_results_v0.1.0.json",
+            "result_schemas": "built_in_groups_and_results_v0.1.0.json",
+            "status_transition": "statuses_and_errors_v0.1.0.json",
+            "symbol_invalid": "symbols_v0.1.0.json",
+            "symbol_valid": "symbols_v0.1.0.json",
+            "type_invalid": "types_v0.1.0.json",
+            "type_valid": "types_v0.1.0.json",
+        }
+        assert catalog.get("category_counts") == expected_category_counts, (
+            "catalog category_counts are not the exact 21-category contract"
+        )
+        for index, case in enumerate(cases, start=1):
+            assert isinstance(case, dict), f"catalog case {index} is not an object"
+            assert set(case) == expected_case_fields, (
+                f"catalog case {index} fields are not exact"
+            )
+            assert all(
+                isinstance(case[field], str) and bool(case[field])
+                for field in expected_case_fields
+            ), f"catalog case {index} fields must be non-empty strings"
+            expected_identifier = (
+                f"{case['category'].replace('_', '-').upper()}-{index:04d}"
+            )
+            assert case["id"] == expected_identifier, (
+                f"catalog case {index} ID/order differs"
+            )
+            assert case["source"] == expected_sources.get(case["category"]), (
+                f"catalog case {index} source/category mapping differs"
+            )
+        assert catalog["case_count"] == len(cases) == 795, "case_count mismatch"
         identifiers = [case["id"] for case in cases]
         assert len(identifiers) == len(set(identifiers)), "duplicate case IDs"
         counts: dict[str, int] = {}
@@ -2906,6 +4855,20 @@ def check_catalog(root: Path, results: Results) -> None:
         exact_subjects("function_invalid", set(operator_functions["functions"]))
         for category in ("operation_binding", "operation_effects", "operation_errors"):
             exact_subjects(category, set(operations))
+        parameter_error_prefix = (
+            "Reject omission of TARGET when this row marks it required, omission of any "
+            "named parameter that this row marks required, any positional argument, any "
+            "duplicate named parameter, and any unregistered named parameter with "
+            "error.operation.parameter. "
+        )
+        operation_error_cases = [
+            case for case in cases if case["category"] == "operation_errors"
+        ]
+        assert all(
+            case["requirement"].startswith(parameter_error_prefix)
+            for case in operation_error_cases
+        ), "operation error cases do not all specify the exact universal parameter trigger"
+        assert len(operation_error_cases) == 39, "operation error case cardinality is not 39"
         exact_subjects("status_transition", set(statuses["statuses"]))
         exact_subjects("error_contract", set(statuses["errors"]))
         exact_subjects("enum_groups", set(groups_and_results["enum_groups"]))
@@ -2941,12 +4904,341 @@ def check_catalog(root: Path, results: Results) -> None:
             requirement = by_id.get(identifier, {}).get("requirement", "")
             assert all(token in requirement for token in tokens), f"{identifier} is not decision-specific"
 
+        task_0004_tokens = {
+            "KEYWORD-VALID-0061": (
+                "DETERMINISTIC TRUE",
+                "fully resolved operation",
+                "identical declared inputs",
+                "verified assertion",
+                "not an override",
+            ),
+            "KEYWORD-INVALID-0062": (
+                "DETERMINISTIC TRUE",
+                "nondeterministic",
+                "error.determinism.mismatch",
+                "never treat TRUE as an override",
+            ),
+            "OPERATION-BINDING-0565": (
+                "DETERMINISTIC TRUE",
+                "SIDE_EFFECT FALSE",
+                "dependencies exactly {declared_state_only}",
+            ),
+            "OPERATION-ERRORS-0558": (
+                "error.operation.precondition",
+                "required analysis profile",
+                "before effects",
+            ),
+            "OPERATION-BINDING-0550": (
+                "null means no declared default",
+                "never the LCL NULL value",
+                "MISSING optional parameter",
+            ),
+            "OPERATION-ERRORS-0552": (
+                "depth outside 0..100",
+                "error.value.out_of_range",
+            ),
+            "OPERATION-ERRORS-0561": (
+                "MISSING operand outside == or !=",
+                "required UNKNOWN-result",
+            ),
+            "OPERATION-EFFECTS-0563": (
+                "Omitted criteria uses ==",
+                "non-==/!= criterion encountering MISSING",
+                "result remaining UNKNOWN",
+            ),
+            "OPERATION-ERRORS-0564": (
+                "error.operator.operand",
+                "error.pattern.resource_limit",
+                "non-equality MISSING",
+                "propagated UNKNOWN",
+            ),
+            "OPERATION-BINDING-0568": (
+                "LIST[T] target",
+                "Reject SET input",
+                "dependencies exactly {declared_state_only}",
+            ),
+            "OPERATION-ERRORS-0570": (
+                "non-LIST target",
+                "error.type.mismatch before effects",
+                "predicate, reference, MISSING, UNKNOWN, and precondition",
+            ),
+            "OPERATION-BINDING-0571": (
+                "LIST[T] or SET[T]",
+                "reject stable, comparator, positional",
+                "dependencies exactly {declared_state_only}",
+            ),
+            "OPERATION-ERRORS-0573": (
+                "stable and comparator are unregistered",
+                "direction outside ENUM[ascending|descending]",
+                "malformed property_path",
+                "invalid key-operation axes",
+                "out-of-bounds key-operation profiles",
+            ),
+            "OPERATION-BINDING-0574": (
+                "LIST[T] target",
+                "Reject SET input",
+                "material grouping result",
+            ),
+            "OPERATION-ERRORS-0576": (
+                "non-LIST target",
+                "error.type.mismatch before effects",
+                "key, reference, MISSING, UNKNOWN, and precondition",
+            ),
+            "OPERATION-ERRORS-0582": (
+                "error.operation.precondition",
+                "required verification profile",
+                "before effects",
+            ),
+            "OPERATION-BINDING-0583": (
+                "exactly one actual source",
+                "material-value TARGET",
+                "registered == strict equality",
+                "cannot accompany actual or assertion",
+            ),
+            "OPERATION-ERRORS-0585": (
+                "six local errors",
+                "error.operator.operand",
+                "unresolved typed value references",
+                "custom-operation profile precondition",
+                "host-constraint failures",
+            ),
+            "OPERATION-ERRORS-0588": (
+                "error.operation.precondition",
+                "required reporting profile",
+                "before effects",
+            ),
+            "OPERATION-ERRORS-0591": (
+                "unresolved REFERENCE",
+                "resolved MISSING",
+                "resolved UNKNOWN",
+            ),
+            "OPERATION-EFFECTS-0608": (
+                "REFERENCE source by its resolved address class",
+                "removing OUTPUT",
+                "MEMORY and STATE sources are prohibited",
+            ),
+            "OPERATION-BINDING-0607": (
+                "source and destination addresses to be distinct",
+                "same-address move",
+            ),
+            "OPERATION-ERRORS-0609": (
+                "equal resolved source and destination addresses",
+            ),
+            "OPERATION-BINDING-0610": (
+                "new_name to differ from the current name",
+            ),
+            "OPERATION-EFFECTS-0611": (
+                "addressable by new_name and not by its prior name",
+            ),
+            "OPERATION-ERRORS-0612": (
+                "same-name request",
+                "illegal new name",
+            ),
+            "OPERATION-BINDING-0622": (
+                "non-graph target",
+                "exactly one complete immutable execution profile",
+            ),
+            "OPERATION-EFFECTS-0623": (
+                "always has the process effect",
+                "no mandatory local process effect",
+                "normalized transitive dependency/effect unions",
+                "without requiring graph mode to synthesize non-graph command observations",
+                "LCL-TASK-0005",
+            ),
+            "OPERATION-ERRORS-0624": (
+                "nine local failure paths",
+                "error.operation.precondition",
+                "required execution profile",
+                "before effects",
+            ),
+            "OPERATION-EFFECTS-0629": (
+                "purge_data FALSE preserves declared associated data",
+                "purge_data TRUE makes every declared associated data item",
+            ),
+            "OPERATION-BINDING-0655": (
+                "every option to be compatible with expected_type",
+                "before the message effect",
+            ),
+            "OPERATION-EFFECTS-0656": (
+                "non-MISSING answer",
+                "equal one listed option",
+                "error.required.missing",
+            ),
+            "OPERATION-ERRORS-0657": (
+                "incompatible with expected_type",
+                "error.type.mismatch before invocation",
+            ),
+            "OPERATION-ERRORS-0660": (
+                "limit outside 0..100",
+                "error.value.out_of_range",
+                "MISSING or UNKNOWN required when condition",
+                "no separate retryable marker exists",
+            ),
+            "OPERATION-EFFECTS-0665": (
+                "registered allowed_next set",
+                "status.cancelled",
+            ),
+            "OPERATION-ERRORS-0666": (
+                "error.execution.order",
+                "does not allow status.cancelled",
+            ),
+            "ERROR-CONTRACT-0725": (
+                "TARGET when a selected operation marks it required",
+                "any named parameter that a row marks required",
+                "every positional argument",
+                "unregistered named parameter",
+                "general or row-specific error",
+                "instead of being remapped universally",
+            ),
+            "ERROR-CONTRACT-0727": (
+                "false, missing, or unknown",
+                "exactly one complete immutable profile",
+                "every required core or custom operation profile role",
+                "stage, recoverability, and default status",
+            ),
+            "ERROR-CONTRACT-0732": (
+                "unauthorized or prohibited required access or effects",
+                "execution stage",
+                "status.failed",
+            ),
+            "ERROR-CONTRACT-0733": (
+                "prohibited TASK, PHASE, SEQUENCE, ACTION, or TEST reference cycle",
+                "before graph-axis resolution",
+                "resolution stage",
+            ),
+            "ENUM-GROUPS-0763": (
+                "read_only, mutating, memory_state, and control",
+                "read_only requires effects exactly {none}",
+                "core.test is control",
+            ),
+            "ENUM-GROUPS-0764": (
+                "deterministic, nondeterministic, derived, and inherited",
+                "immutable profile has one final deterministic or nondeterministic category",
+                "closed 23-operation local role map",
+                "download=source+transfer",
+                "core.execute uses execution only in non-graph mode",
+                "custom kind.operation has exactly the implementation role",
+                "never causes narrowing",
+            ),
+            "ENUM-GROUPS-0765": (
+                "declared_state_only, host, network, model, and human",
+                "declared_state_only is exclusive",
+                "omitted from a graph union",
+            ),
+            "ERROR-CONTRACT-0793": (
+                "during validation",
+                "DETERMINISTIC TRUE",
+                "fully resolved operation",
+                "nondeterministic",
+                "never overrides",
+            ),
+            "ENUM-GROUPS-0794": (
+                "none, filesystem, network, process, package, message, memory, and state",
+                "none is exclusive",
+                "resolved target address class",
+                "network-addressed content",
+                "Generic target mutators and core.move sources reject MEMORY and STATE",
+                "Every non-graph core.execute has process",
+                "Graph unions omit none",
+            ),
+            "ENUM-GROUPS-0795": (
+                "inherited as the only operation-axis marker",
+                "only for core.retry",
+                "wrapped ACTION",
+            ),
+        }
+        for identifier, tokens in task_0004_tokens.items():
+            requirement = by_id.get(identifier, {}).get("requirement", "")
+            assert all(
+                token in requirement for token in tokens
+            ), f"{identifier} is not Task-0004-specific"
+        expected_task_0004_outcomes = {
+            "KEYWORD-VALID-0061": "accept after successful contract validation",
+            "KEYWORD-INVALID-0062": "error.determinism.mismatch; status.invalid",
+            "ERROR-CONTRACT-0727": (
+                "execution; non-recoverable; status.failed before effects"
+            ),
+            "ERROR-CONTRACT-0793": "validation; non-recoverable; status.invalid",
+        }
+        for identifier, expected in expected_task_0004_outcomes.items():
+            assert by_id.get(identifier, {}).get("expected") == expected, (
+                f"{identifier} expected outcome is not exact"
+            )
+
+        focused_task_0004_case_ids = {
+            "KEYWORD-VALID-0061",
+            "KEYWORD-INVALID-0062",
+            "OPERATION-ERRORS-0558",
+            "OPERATION-BINDING-0565",
+            "OPERATION-BINDING-0568",
+            "OPERATION-ERRORS-0570",
+            "OPERATION-BINDING-0571",
+            "OPERATION-ERRORS-0573",
+            "OPERATION-BINDING-0574",
+            "OPERATION-ERRORS-0576",
+            "OPERATION-ERRORS-0582",
+            "OPERATION-BINDING-0583",
+            "OPERATION-ERRORS-0585",
+            "OPERATION-ERRORS-0588",
+            "OPERATION-BINDING-0622",
+            "OPERATION-ERRORS-0624",
+            "ERROR-CONTRACT-0727",
+            "ERROR-CONTRACT-0725",
+            "ERROR-CONTRACT-0732",
+            "ERROR-CONTRACT-0733",
+            "ENUM-GROUPS-0763",
+            "ENUM-GROUPS-0764",
+            "ENUM-GROUPS-0765",
+            "ERROR-CONTRACT-0793",
+            "ENUM-GROUPS-0794",
+            "ENUM-GROUPS-0795",
+        }
+        task_0004_case_ids = focused_task_0004_case_ids | {
+            case["id"]
+            for case in cases
+            if case["category"]
+            in {"operation_binding", "operation_effects", "operation_errors"}
+        }
+        assert len(task_0004_case_ids) == 129, "Task-0004 case set cardinality is not 129"
+        task_0004_cases = sorted(
+            (case for case in cases if case["id"] in task_0004_case_ids),
+            key=lambda case: case["id"],
+        )
+        assert len(task_0004_cases) == 129, "Task-0004 cases are missing"
+        task_0004_catalog_sha256 = hashlib.sha256(
+            json.dumps(
+                task_0004_cases,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()
+        assert task_0004_catalog_sha256 == (
+            "db0c2d55caa7e37e1649b1c603bec99a3acd1f8a2814171582820843e32c20dc"
+        ), "Task-0004 catalog cases differ from the approved contract"
+
+        operation_axis_case_count = 0
+        for case in cases:
+            if case.get("category") != "operation_effects":
+                continue
+            requirement = case.get("requirement", "").lower()
+            assert all(
+                token in requirement
+                for token in ("determinism", "dependency", "effect", "invocation")
+            ), f"{case.get('id')} does not cover all operation axes"
+            operation_axis_case_count += 1
+        assert operation_axis_case_count == 39, "operation-axis case cardinality is not 39"
+
         return {
             "case_count": len(cases),
             "category_count": len(counts),
             "concrete_case_count": concrete,
             "closed_registry_categories_checked": 21,
             "task_0001_requirements_checked": len(task_0001_tokens),
+            "task_0004_requirements_checked": len(task_0004_tokens),
+            "task_0004_catalog_cases_checked": len(task_0004_cases),
+            "task_0004_catalog_sha256": task_0004_catalog_sha256,
+            "task_0004_operation_axis_cases_checked": operation_axis_case_count,
         }
 
     before = len(results.checks)
@@ -3024,11 +5316,30 @@ def main() -> int:
         "catalog": check_catalog,
         "integrity": check_integrity,
     }
-    for scope in selected:
-        try:
-            actions[scope](root, results)
-        except (AssertionError, KeyError, OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
-            results.add(scope, "scope_execution", "FAIL", error=str(error))
+    if sys.flags.optimize:
+        results.add(
+            selected[0],
+            "python_optimization_mode",
+            "FAIL",
+            reason=(
+                "Validation uses assertions for fail-closed checks and must not run with "
+                "Python optimization enabled."
+            ),
+        )
+    else:
+        for scope in selected:
+            try:
+                actions[scope](root, results)
+            except (
+                AssertionError,
+                KeyError,
+                OSError,
+                TypeError,
+                UnicodeError,
+                ValueError,
+                json.JSONDecodeError,
+            ) as error:
+                results.add(scope, "scope_execution", "FAIL", error=str(error))
 
     counts = {
         status_value: sum(1 for check in results.checks if check["status"] == status_value)

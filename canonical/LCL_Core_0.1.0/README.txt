@@ -16,17 +16,17 @@ THIS PACKAGE CONTAINS
   GLOB/REGEX profiles;
 - closed block, field-signature, value-kind, and parameterized-template contracts;
 - rule, permission, authority, conflict, state, memory, and evidence semantics;
-- core operation and pure-function contracts, with unresolved determinism and
-  result-binding decisions;
+- closed 39-row core-operation determinism, dependency, effect, invocation, and
+  applicable-error contracts, plus pure-function contracts;
 - status and error contracts;
 - versioning and extension rules;
 - examples and normative conformance requirements.
 
 KNOWN CANDIDATE LIMITATIONS
 
-- result binding, diagnostic selection, and mixed-phase lifecycle behavior require
-  owner decisions;
-- the 792-entry catalog is a descriptive requirements index, not an executed
+- result-schema cardinality/output binding, diagnostic selection, and mixed-phase
+  lifecycle behavior remain unresolved under Tasks 0005 and 0006;
+- the 795-entry catalog is a descriptive requirements index, not an executed
   semantic suite; executable semantic evidence is outside the bare-language
   package scope and its absence is not a release blocker;
 - no repair archive is produced from this blocked candidate.

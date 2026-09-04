@@ -2,105 +2,193 @@ LEARNED COMPUTING LANGUAGE (LCL)
 TITLE: Mutating and External Operations
 LANGUAGE VERSION: 0.1.0
 STATUS: NORMATIVE
-DATE: 2026-08-30
+DATE: 2026-08-31
 
+
+Each entry mirrors the authoritative operation registry. Targets, named parameters,
+preconditions, postconditions, applicable errors, and result-schema references are
+closed by 10_REGISTRIES/operations_v0.1.0.json.
 
 core.create
-    Meaning: Create a new target that does not already exist.
-    Side effect: TRUE
-    Deterministic: DECLARATION REQUIRED
+    Meaning: Establish an authorized target with the declared content or type.
+    Determinism category: deterministic
+    Determinism source: The target pre-state, content or target type, fail-if-exists flag, and selected target profile fix the required post-state.
+    Possible dependencies: {host, network}
+    Possible effects: {filesystem, network, state}
+    Invocation resolution: Classify a REFERENCE target by the address class of its resolved target, never by REFERENCE syntax. PATH mutation adds host dependency and filesystem effect; URI mutation adds network dependency and network effect; OUTPUT or another authorized non-filesystem, non-network, non-memory, non-STATE addressable target adds state effect and its required dependency. MEMORY and STATE targets are prohibited; use core.memory_write or core.state_update.
+    Result schema: result.operation
 
 core.write
     Meaning: Establish or replace complete content of an authorized target.
-    Side effect: TRUE
-    Deterministic: DECLARATION REQUIRED
+    Determinism category: deterministic
+    Determinism source: The exact replacement content, create-if-missing flag, target snapshot, and selected write profile fix the required post-state.
+    Possible dependencies: {host, network}
+    Possible effects: {filesystem, network, state}
+    Invocation resolution: Classify a REFERENCE target by the address class of its resolved target, never by REFERENCE syntax. PATH mutation adds host dependency and filesystem effect; URI mutation adds network dependency and network effect; OUTPUT or another authorized non-filesystem, non-network, non-memory, non-STATE addressable target adds state effect and its required dependency. MEMORY and STATE targets are prohibited; use core.memory_write or core.state_update.
+    Result schema: result.operation
 
 core.append
     Meaning: Add content at the declared end of an authorized target.
-    Side effect: TRUE
-    Deterministic: DECLARATION REQUIRED
+    Determinism category: deterministic
+    Determinism source: The target pre-state remains the exact prefix and the declared content is the exact suffix.
+    Possible dependencies: {host, network}
+    Possible effects: {filesystem, network, state}
+    Invocation resolution: Classify a REFERENCE target by the address class of its resolved target, never by REFERENCE syntax. PATH mutation adds host dependency and filesystem effect; URI mutation adds network dependency and network effect; OUTPUT or another authorized non-filesystem, non-network, non-memory, non-STATE addressable target adds state effect and its required dependency. MEMORY and STATE targets are prohibited; use core.memory_write or core.state_update.
+    Result schema: result.operation
 
 core.modify
     Meaning: Change selected content or properties of an existing target.
-    Side effect: TRUE
-    Deterministic: DECLARATION REQUIRED
+    Determinism category: deterministic
+    Determinism source: The exact change, bounded selection, optional pre-state guard, target snapshot, and selected change profile fix the permitted post-state.
+    Possible dependencies: {host, network}
+    Possible effects: {filesystem, network, state}
+    Invocation resolution: Classify a REFERENCE target by the address class of its resolved target, never by REFERENCE syntax. PATH mutation adds host dependency and filesystem effect; URI mutation adds network dependency and network effect; OUTPUT or another authorized non-filesystem, non-network, non-memory, non-STATE addressable target adds state effect and its required dependency. MEMORY and STATE targets are prohibited; use core.memory_write or core.state_update. Resolve the selected change profile within those classes.
+    Result schema: result.operation
 
 core.copy
-    Meaning: Create a new target containing an exact copy of a source.
-    Side effect: TRUE
-    Deterministic: DECLARATION REQUIRED
+    Meaning: Establish a destination containing an exact copy of a source.
+    Determinism category: deterministic
+    Determinism source: The destination content equals the exact source pre-state, the source remains unchanged, and overwrite behavior is fixed.
+    Possible dependencies: {host, network}
+    Possible effects: {filesystem, network}
+    Invocation resolution: Classify a REFERENCE source by the address class of its resolved target, never by REFERENCE syntax. Resolve source observation dependencies and destination mutation effects independently under the selected copy profile: any URI side adds a network dependency and network effect for the primary copy; any PATH side adds host dependency; a PATH destination adds filesystem effect; observing a PATH, MEMORY, STATE, OUTPUT, or other host-bound source adds its required dependency but no source-side effect.
+    Result schema: result.transfer
 
 core.move
     Meaning: Relocate a target without changing declared content.
-    Side effect: TRUE
-    Deterministic: DECLARATION REQUIRED
+    Determinism category: deterministic
+    Determinism source: The destination equals the exact source pre-state, the original address is absent, overwrite behavior is fixed, and the selected move profile is fixed.
+    Possible dependencies: {host, network}
+    Possible effects: {filesystem, network, state}
+    Invocation resolution: Classify a REFERENCE source by the address class of its resolved target, never by REFERENCE syntax. Resolve source and destination address classes independently; the selected move profile chooses rename or verified copy-delete strategy. A PATH side adds host dependency and PATH mutation adds filesystem effect; a URI side adds network dependency and URI content relocation adds network effect; removing OUTPUT or another authorized non-filesystem, non-network, non-memory, non-STATE addressable source adds state effect and its required dependency. MEMORY and STATE sources are prohibited; use core.memory_write or core.state_update.
+    Result schema: result.transfer
 
 core.rename
     Meaning: Change a target identifier/path name without changing content.
-    Side effect: TRUE
-    Deterministic: DECLARATION REQUIRED
+    Determinism category: deterministic
+    Determinism source: The exact legal new name, overwrite flag, target snapshot, and selected rename profile preserve content and all non-name properties.
+    Possible dependencies: {host, network}
+    Possible effects: {filesystem, network, state}
+    Invocation resolution: Classify a REFERENCE target by the address class of its resolved target, never by REFERENCE syntax. Require new_name to differ from the current target name. PATH mutation adds host dependency and filesystem effect; URI mutation adds network dependency and network effect; OUTPUT or another authorized non-filesystem, non-network, non-memory, non-STATE addressable target adds state effect and its required dependency. MEMORY and STATE targets are prohibited; use core.memory_write or core.state_update.
+    Result schema: result.operation
 
 core.delete
-    Meaning: Remove an existing target.
-    Side effect: TRUE
-    Deterministic: DECLARATION REQUIRED
+    Meaning: Ensure an authorized target is absent.
+    Determinism category: deterministic
+    Determinism source: The exact target snapshot, recursive flag, require-exists flag, authorization, and selected delete profile fix the required absence postcondition.
+    Possible dependencies: {host, network}
+    Possible effects: {filesystem, network, state}
+    Invocation resolution: Classify a REFERENCE target by the address class of its resolved target, never by REFERENCE syntax. PATH mutation adds host dependency and filesystem effect; URI mutation adds network dependency and network effect; OUTPUT or another authorized non-filesystem, non-network, non-memory, non-STATE addressable target adds state effect and its required dependency. MEMORY and STATE targets are prohibited; use core.memory_write or core.state_update. No out-of-scope effect is permitted.
+    Result schema: result.operation
 
 core.generate
     Meaning: Produce a new artifact from declared input and constraints.
-    Side effect: TRUE
-    Deterministic: DECLARATION REQUIRED
+    Determinism category: nondeterministic
+    Determinism source: The selected generative capability may vary output only within the declared specification, format, variation bounds, and verification requirements.
+    Possible dependencies: {host, network, model}
+    Possible effects: {filesystem, network, state}
+    Invocation resolution: Resolve model from the generation profile. Classify any REFERENCE target by the address class of its resolved target, never by REFERENCE syntax. PATH mutation adds host dependency and filesystem effect; URI mutation adds network dependency and network effect; OUTPUT or another authorized non-filesystem, non-network, non-memory, non-STATE addressable target adds state effect and its required dependency. MEMORY and STATE targets are prohibited; use core.memory_write or core.state_update.
+    Result schema: result.operation
 
 core.convert
     Meaning: Produce an artifact in a declared target type or format.
-    Side effect: TRUE
-    Deterministic: DECLARATION REQUIRED
+    Determinism category: deterministic
+    Determinism source: The selected implementation version and exact conversion profile, target format, preserve list, source snapshot, and destination fix the required result.
+    Possible dependencies: {host, network}
+    Possible effects: {filesystem, network, state}
+    Invocation resolution: Resolve source and destination address classes and the exact conversion profile; an omitted destination binds only the declared result or OUTPUT state.
+    Result schema: result.operation
 
 core.execute
-    Meaning: Run an exact command, program, task, phase, sequence, or action.
-    Side effect: TRUE
-    Deterministic: DECLARATION REQUIRED
+    Meaning: Run an exact command, program, task, phase, sequence, action, or test.
+    Determinism category: derived
+    Determinism source: Derived from the exact invoked command, program, or referenced execution graph and the immutable profile required by axis_contract.implementation_profile: non-graph mode copies the execution profile's final category; graph mode copies the graph's final category.
+    Possible dependencies: {host, network, model, human}
+    Possible effects: {filesystem, network, process, package, message, memory, state}
+    Invocation resolution: A PATH, URI, or STRING executable target and its exact arguments, working directory, and environment select exactly one immutable execution profile under axis_contract.implementation_profile. Every such non-graph invocation has the process effect because it runs the executable; union process with any other dependencies and effects selected by the profile within this row's maxima. A referenced TASK, PHASE, SEQUENCE, ACTION, or TEST has no mandatory local process effect and resolves the final determinism category and normalized transitive dependency and effect unions of its reachable graph under axis_contract.implementation_profile.graph_resolution.
+    Error resolution: For a graph target, union the local errors, including error.reference.cycle for a prohibited graph cycle, with every applicable error of every reachable operation; for a non-graph target, use the local errors.
+    Completion contract: Record completion through result.command without requiring a graph target to synthesize non-graph command observations. Result field cardinality and mode projection remain deferred to LCL-TASK-0005.
+    Result schema: result.command
 
 core.install
     Meaning: Add declared software or resources to an external environment.
-    Side effect: TRUE
-    Deterministic: DECLARATION REQUIRED
+    Determinism category: deterministic
+    Determinism source: The exact package or resource identity, version, source, scope, dependency snapshot, and selected package profile fix the required installed state.
+    Possible dependencies: {host, network}
+    Possible effects: {filesystem, process, package}
+    Invocation resolution: Resolve network only for a remote source or package profile; resolve filesystem, process, and package effects from the selected installation transaction.
+    Result schema: result.operation
 
 core.uninstall
     Meaning: Remove declared software or resources.
-    Side effect: TRUE
-    Deterministic: DECLARATION REQUIRED
+    Determinism category: deterministic
+    Determinism source: The exact installed-target snapshot, purge-data flag, and selected package profile fix the required removed state.
+    Possible dependencies: {host, network}
+    Possible effects: {filesystem, process, package}
+    Invocation resolution: Resolve host and optional network from the selected package profile, including its remote-management variant, and resolve filesystem, process, and package effects from that profile's removal transaction. purge_data FALSE preserves declared associated data; purge_data TRUE removes all declared associated data in authorized scope.
+    Purge contract: On success the target installation is absent. purge_data FALSE preserves declared associated data; purge_data TRUE makes all declared associated data in authorized scope absent.
+    Result schema: result.operation
 
 core.start
     Meaning: Put a process or service into running state.
-    Side effect: TRUE
-    Deterministic: DECLARATION REQUIRED
+    Determinism category: deterministic
+    Determinism source: The exact stable target, arguments, environment, timeout, readiness rule, dependency snapshot, and selected start profile fix the result.
+    Possible dependencies: {host, network}
+    Possible effects: {process, state}
+    Invocation resolution: Resolve process for a native process or service and state for a referenced execution target; remote-control mode of the selected start profile adds network dependency.
+    Result schema: result.operation
 
 core.send
     Meaning: Transmit declared content to an external recipient or endpoint.
-    Side effect: TRUE
-    Deterministic: DECLARATION REQUIRED
+    Determinism category: deterministic
+    Determinism source: The exact content, recipient, subject, format, dependency snapshot, selected transport profile, and implementation version fix dispatch behavior; delivery truth is a separate result contract.
+    Possible dependencies: {host, network}
+    Possible effects: {message}
+    Invocation resolution: Resolve host and optional network from the recipient or endpoint and resolve the message effect from the selected transport profile.
+    Result schema: result.message
 
 core.publish
     Meaning: Make declared content externally available.
-    Side effect: TRUE
-    Deterministic: DECLARATION REQUIRED
+    Determinism category: derived
+    Determinism source: Derived from the exact selected destination and publication profile together with visibility and replacement policy: after those values are fixed, the invocation copies the publication profile's final category.
+    Possible dependencies: {host, network}
+    Possible effects: {filesystem, network}
+    Invocation resolution: Resolve content-source and destination address classes under the single immutable publication profile: a PATH destination adds host dependency and filesystem effect; a URI or remote destination adds network dependency and network effect; source observation adds only its required host or network dependency.
+    Result schema: result.operation
 
 core.upload
     Meaning: Transfer declared content to an external destination.
-    Side effect: TRUE
-    Deterministic: DECLARATION REQUIRED
+    Determinism category: deterministic
+    Determinism source: The exact source snapshot, checksum, destination, overwrite flag, selected transfer profile, and implementation version fix the transfer contract.
+    Possible dependencies: {host, network}
+    Possible effects: {filesystem, network}
+    Invocation resolution: Resolve source observation dependencies and destination mutation effects independently under the selected transfer profile: a PATH source adds host dependency but no filesystem effect; a URI destination adds network dependency and network effect for the primary upload; a PATH destination adds host dependency and filesystem effect.
+    Result schema: result.transfer
 
 core.download
     Meaning: Transfer declared content from an external source into scope.
-    Side effect: TRUE
-    Deterministic: DECLARATION REQUIRED
+    Determinism category: derived
+    Determinism source: Derived from source pinning or mutability, the optional checksum, source profile, destination snapshot, and selected transfer profile: the invocation is deterministic exactly when the source profile fixes one immutable source identity and content snapshot and both source and transfer profiles are deterministic; otherwise it is nondeterministic.
+    Possible dependencies: {host, network}
+    Possible effects: {filesystem, network}
+    Invocation resolution: Resolve the source profile, transfer profile, and destination PATH independently: a remote source adds network dependency and network effect for the primary download; a local source adds host dependency but no network effect; the destination PATH adds host dependency and filesystem effect.
+    Result schema: result.transfer
 
 core.memory_write
     Meaning: Create or update explicitly authorized persistent memory data.
-    Side effect: TRUE
-    Deterministic: DECLARATION REQUIRED
+    Determinism category: deterministic
+    Determinism source: The exact MEMORY snapshot, declared value, merge flag, storage profile, and implementation version fix the post-state.
+    Possible dependencies: {host}
+    Possible effects: {memory}
+    Invocation resolution: Resolve the authorized MEMORY storage profile. When merge is FALSE, replace the stored value exactly. When merge is TRUE, require the current and new values to be OBJECT, form the union of their top-level field names, use the new value for every same-name field, preserve the current value for every other field, and do not recurse into nested OBJECT values.
+    Result schema: result.operation
+    Merge contract: merge FALSE requires the replacement to match the declared MEMORY type. merge TRUE is shallow and right-biased: current and new values must be OBJECT, new same-name top-level fields win, untouched current fields remain, nested OBJECT values are not recursively merged, and the computed merged OBJECT must match the declared MEMORY type even when the patch OBJECT alone does not.
 
 core.state_update
     Meaning: Update explicitly authorized STATE data.
-    Side effect: TRUE
-    Deterministic: DECLARATION REQUIRED
+    Determinism category: deterministic
+    Determinism source: The exact STATE snapshot, declared value, atomic expected-before guard, storage profile, and implementation version fix the post-state.
+    Possible dependencies: {host}
+    Possible effects: {state}
+    Invocation resolution: Resolve the authorized STATE storage profile, including its transaction variant, and enforce expected_before atomically when supplied.
+    Result schema: result.operation

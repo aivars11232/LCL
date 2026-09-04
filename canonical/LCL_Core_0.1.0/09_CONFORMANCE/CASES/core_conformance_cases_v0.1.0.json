@@ -2,13 +2,13 @@
   "language": "LCL",
   "version": "0.1.0",
   "normative": true,
-  "case_count": 792,
+  "case_count": 795,
   "category_counts": {
     "block_extra": 41,
     "block_minimum": 41,
     "block_missing": 41,
-    "enum_groups": 20,
-    "error_contract": 76,
+    "enum_groups": 22,
+    "error_contract": 77,
     "function_invalid": 11,
     "function_valid": 11,
     "keyword_invalid": 141,
@@ -511,16 +511,16 @@
       "id": "KEYWORD-VALID-0061",
       "category": "keyword_valid",
       "subject": "DETERMINISTIC",
-      "requirement": "Accept the keyword in every registered legal grammar/schema context.",
-      "expected": "accept",
+      "requirement": "Accept DETERMINISTIC TRUE for kind.operation only when the fully resolved operation or selected profile set guarantees semantically equivalent results, effects, ordering, and status for identical declared inputs, dependency snapshots, selected profile-role bindings, and implementation versions; treat TRUE as a verified assertion, not an override. Accept DETERMINISTIC FALSE for either deterministic behavior or bounded nondeterminism without relaxing another rule.",
+      "expected": "accept after successful contract validation",
       "source": "keywords_v0.1.0.json"
     },
     {
       "id": "KEYWORD-INVALID-0062",
       "category": "keyword_invalid",
       "subject": "DETERMINISTIC",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject DETERMINISTIC TRUE when the fully resolved operation or selected profile set is nondeterministic; emit error.determinism.mismatch during validation and never treat TRUE as an override.",
+      "expected": "error.determinism.mismatch; status.invalid",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -4423,7 +4423,7 @@
       "id": "OPERATION-BINDING-0550",
       "category": "operation_binding",
       "subject": "core.inspect",
-      "requirement": "Bind exact target and named parameters including defaults.",
+      "requirement": "Bind one required existing target and exact depth and properties parameters. In the registry JSON, null means no declared default and never the LCL NULL value; only a non-null default applies to a MISSING optional parameter. No undefined optional-target policy is permitted.",
       "expected": "accept exact contract",
       "source": "operations_v0.1.0.json"
     },
@@ -4431,15 +4431,15 @@
       "id": "OPERATION-EFFECTS-0551",
       "category": "operation_effects",
       "subject": "core.inspect",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0552",
       "category": "operation_errors",
       "subject": "core.inspect",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Reject depth outside 0..100 with error.value.out_of_range. Exercise unresolved-reference, unauthorized-access, scope, host-constraint, and absent-target precondition paths.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -4455,15 +4455,15 @@
       "id": "OPERATION-EFFECTS-0554",
       "category": "operation_effects",
       "subject": "core.read",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0555",
       "category": "operation_errors",
       "subject": "core.read",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise unresolved-reference, unauthorized-access, scope, host-constraint, and absent or unreadable target precondition paths.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -4479,16 +4479,16 @@
       "id": "OPERATION-EFFECTS-0557",
       "category": "operation_effects",
       "subject": "core.analyze",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the nondeterministic base determinism category/source, possible dependency set {host, network, model}, possible effect set {none}, and exact invocation rule. A deterministic profile is valid only when one immutable profile removes every permitted variation and supplies an exact source satisfying the deterministic identity.",
+      "expected": "bounded base nondeterminism or exact verified deterministic profile; registered dependencies and no effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0558",
       "category": "operation_errors",
       "subject": "core.analyze",
-      "requirement": "Exercise every registered failure path.",
-      "expected": "exact registered error",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path, including error.operation.precondition before effects when a required analysis profile is missing, ambiguous, incomplete, or out of bounds.",
+      "expected": "exact registered error including required-profile precondition failure",
       "source": "operations_v0.1.0.json"
     },
     {
@@ -4503,15 +4503,15 @@
       "id": "OPERATION-EFFECTS-0560",
       "category": "operation_effects",
       "subject": "core.calculate",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0561",
       "category": "operation_errors",
       "subject": "core.calculate",
-      "requirement": "Exercise every registered failure path, including division operand, zero, non-termination, exact-unit mismatch, declared-bound, host-capacity, and UNKNOWN diagnostics.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path, including unresolved expression REFERENCE, division operand, zero, non-termination, exact-unit mismatch, declared-bound, host-capacity, MISSING operand outside == or !=, and required UNKNOWN-result diagnostics.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -4519,7 +4519,7 @@
       "id": "OPERATION-BINDING-0562",
       "category": "operation_binding",
       "subject": "core.compare",
-      "requirement": "Bind exact target and named parameters including defaults.",
+      "requirement": "Bind the exact target and against operand. Bind supplied criteria exactly; when omitted, default criteria to the registered == strict-equality comparison.",
       "expected": "accept exact contract",
       "source": "operations_v0.1.0.json"
     },
@@ -4527,15 +4527,15 @@
       "id": "OPERATION-EFFECTS-0563",
       "category": "operation_effects",
       "subject": "core.compare",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, dependency/effect maxima, and exact invocation criterion resolution. Omitted criteria uses ==; every supplied criterion follows registered operator/sentinel rules; a non-==/!= criterion encountering MISSING uses error.required.missing, and any criterion result remaining UNKNOWN uses error.value.unknown because successful result.value content is material.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0564",
       "category": "operation_errors",
       "subject": "core.compare",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise unresolved-reference, unauthorized-access, scope, host-constraint, type-mismatch, error.operator.operand for unsupported registered-operator operands or arity, error.pattern.resource_limit for MATCHES exhaustion, inaccessible-operand precondition, non-equality MISSING, and propagated UNKNOWN paths.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -4543,55 +4543,55 @@
       "id": "OPERATION-BINDING-0565",
       "category": "operation_binding",
       "subject": "core.select",
-      "requirement": "Bind exact target and named parameters including defaults.",
-      "expected": "accept exact contract",
+      "requirement": "Bind one collection target and one predicate. A predicate REFERENCE resolves exactly once to a DETERMINISTIC TRUE, SIDE_EFFECT FALSE kind.operation with dependencies exactly {declared_state_only}, one compatible member parameter, and one BOOLEAN result.",
+      "expected": "exact collection/predicate contract with declared-state-only reference closure",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-EFFECTS-0566",
       "category": "operation_effects",
       "subject": "core.select",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce nondeterministic determinism because cardinality, selected TRUE subset, and order are not pinned. Require every result member to be one TRUE target member occurrence, forbid returning any target occurrence more than once, and bound cardinality from zero through the TRUE-member count. The invocation rule resolves the possible dependency set exactly {declared_state_only}, possible effect set exactly {none}, and rejects a predicate reference that would add either axis.",
+      "expected": "bounded nondeterministic selection with declared-state-only dependency and no effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0567",
       "category": "operation_errors",
       "subject": "core.select",
-      "requirement": "Exercise every registered failure path.",
-      "expected": "exact registered error",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every local failure path, including error.required.missing for a MISSING predicate and error.value.unknown for an UNKNOWN predicate, and, when predicate is a REFERENCE, union every applicable error of the referenced predicate operation.",
+      "expected": "exact local error or referenced-predicate error",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-BINDING-0568",
       "category": "operation_binding",
       "subject": "core.filter",
-      "requirement": "Bind exact target and named parameters including defaults.",
-      "expected": "accept exact contract",
+      "requirement": "Bind one LIST[T] target and one predicate. Reject SET input. A predicate REFERENCE resolves exactly once to a DETERMINISTIC TRUE, SIDE_EFFECT FALSE kind.operation with dependencies exactly {declared_state_only}, one compatible T parameter, and one BOOLEAN result.",
+      "expected": "exact LIST/predicate contract with declared-state-only reference closure",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-EFFECTS-0569",
       "category": "operation_effects",
       "subject": "core.filter",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce deterministic determinism returning all and only TRUE members in exact LIST source order; the invocation rule resolves the possible dependency set exactly {declared_state_only}, possible effect set exactly {none}, and no predicate reference that adds either axis.",
+      "expected": "deterministic complete LIST filtering with declared-state-only dependency and no effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0570",
       "category": "operation_errors",
       "subject": "core.filter",
-      "requirement": "Exercise every registered failure path.",
-      "expected": "exact registered error",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Reject SET or any other non-LIST target with error.type.mismatch before effects, exercise every registered predicate, reference, MISSING, UNKNOWN, and precondition failure path, and union every applicable error of a referenced predicate operation.",
+      "expected": "error.type.mismatch, exact local predicate/reference/precondition error, or referenced-predicate error",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-BINDING-0571",
       "category": "operation_binding",
       "subject": "core.sort",
-      "requirement": "Accept LIST[T] or SET[T] directly; bind exactly optional key and direction, default direction to ascending, and reject stable, comparator, positional, or any other parameter name.",
+      "requirement": "Accept LIST[T] or SET[T] directly; bind exactly optional key and direction; default direction to ascending; reject stable, comparator, positional, or any other name; and require a key-operation REFERENCE to resolve DETERMINISTIC TRUE, SIDE_EFFECT FALSE, and dependencies exactly {declared_state_only}.",
       "expected": "exact key/direction-only binding contract",
       "source": "operations_v0.1.0.json"
     },
@@ -4599,63 +4599,63 @@
       "id": "OPERATION-EFFECTS-0572",
       "category": "operation_effects",
       "subject": "core.sort",
-      "requirement": "Derive determinism from registered ordered-type membership and rules, the registered property-access projection for a STRING key, or a validated key operation for a REF key; preserve LIST source position for equal keys, require distinct keys for distinct SET members, and return result.collection items and result value as LIST[T] without side effects.",
-      "expected": "deterministic ordered LIST[T] with fixed tie behavior and no effects",
+      "requirement": "Enforce the registered derived determinism source, possible dependency set exactly {declared_state_only}, possible effect set exactly {none}, and invocation-level resolution rule. Derive determinism from registered ordered-type membership and rules, the registered property-access projection for a STRING key, or a validated key operation whose dependencies are exactly {declared_state_only}; every valid invocation resolves deterministic and an invalid invocation fails. Preserve LIST source position for equal keys, require distinct keys for distinct SET members, and return result.collection items and result value as LIST[T] without effects.",
+      "expected": "registered derived determinism, declared-state-only dependency, deterministic ordered LIST[T] with fixed tie behavior, and no effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0573",
       "category": "operation_errors",
       "subject": "core.sort",
-      "requirement": "Cover operation-parameter defects; unresolved or wrong-kind key references; MISSING or UNKNOWN keys; omitted natural order; incompatible key results; and equal keys for distinct SET members.",
-      "expected": "error.operation.parameter, error.reference.unresolved, error.reference.kind, error.required.missing, error.value.unknown, or error.operation.precondition",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. stable and comparator are unregistered. Reject direction outside ENUM[ascending|descending] with error.type.mismatch. Use error.operation.precondition for a malformed property_path or incompatible key-operation signature. Cover unresolved or wrong-kind key references; MISSING or UNKNOWN keys; omitted natural order; incompatible key results; equal keys for distinct SET members; invalid key-operation axes; missing, ambiguous, incomplete, or out-of-bounds key-operation profiles; and every applicable error of a referenced key operation.",
+      "expected": "exact local key error or referenced-key error",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-BINDING-0574",
       "category": "operation_binding",
       "subject": "core.group",
-      "requirement": "Bind exact target and named parameters including defaults.",
-      "expected": "accept exact contract",
+      "requirement": "Bind one LIST[T] target and one key. Reject SET input. A key REFERENCE resolves exactly once to a DETERMINISTIC TRUE, SIDE_EFFECT FALSE kind.operation with dependencies exactly {declared_state_only}, one compatible T parameter, and one material grouping result.",
+      "expected": "exact LIST/key contract with declared-state-only reference closure",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-EFFECTS-0575",
       "category": "operation_effects",
       "subject": "core.group",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce deterministic determinism that partitions every LIST member exactly once, orders groups by first key occurrence, and retains source order within each group; the invocation rule resolves the possible dependency set exactly {declared_state_only}, possible effect set exactly {none}, and no key reference that adds either axis.",
+      "expected": "deterministic ordered LIST grouping with declared-state-only dependency and no effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0576",
       "category": "operation_errors",
       "subject": "core.group",
-      "requirement": "Exercise every registered failure path.",
-      "expected": "exact registered error",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Reject SET or any other non-LIST target with error.type.mismatch before effects, exercise every registered key, reference, MISSING, UNKNOWN, and precondition failure path, and union every applicable error of a referenced key operation.",
+      "expected": "error.type.mismatch, exact local key/reference/precondition error, or referenced-key error",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-BINDING-0577",
       "category": "operation_binding",
       "subject": "core.validate",
-      "requirement": "Bind exact target and named parameters including defaults.",
-      "expected": "accept exact contract",
+      "requirement": "Bind exact target, optional schema, and rules. A schema REFERENCE resolves exactly once to a kind.type definition whose BASE is OBJECT and whose schema applies to the target; each rules REFERENCE resolves exactly once to an applicable VALIDATE declaration.",
+      "expected": "accept exact target with typed schema/rule references",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-EFFECTS-0578",
       "category": "operation_effects",
       "subject": "core.validate",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0579",
       "category": "operation_errors",
       "subject": "core.validate",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path, including unresolved and wrong-kind schema or rule references.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -4663,48 +4663,48 @@
       "id": "OPERATION-BINDING-0580",
       "category": "operation_binding",
       "subject": "core.verify",
-      "requirement": "Bind exact target and named parameters including defaults.",
-      "expected": "accept exact contract",
+      "requirement": "Bind the exact target, BOOLEAN_EXPRESSION or REFERENCE[BOOLEAN] assertion, and LIST[REFERENCE[EVIDENCE]] evidence parameter and exactly one immutable verification profile role. An assertion REFERENCE resolves to one declared BOOLEAN value or expression snapshot and never invokes an operation or profile.",
+      "expected": "accept exact deterministic assertion and verification-profile contract",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-EFFECTS-0581",
       "category": "operation_effects",
       "subject": "core.verify",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered derived determinism source and invocation rule: evaluate the assertion deterministically against the observed snapshot and copy the immutable verification profile's final category. Resolve the possible dependency set only to declared_state_only, host, or network and the possible effect set exactly to {none}.",
+      "expected": "profile-derived final category, bounded observation dependencies, and no effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0582",
       "category": "operation_errors",
       "subject": "core.verify",
-      "requirement": "Exercise every registered failure path.",
-      "expected": "exact registered error",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path, including unresolved typed assertion references and error.operation.precondition before effects when the required verification profile role is missing, ambiguous, incomplete, or out of bounds.",
+      "expected": "exact registered error including required-profile precondition failure",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-BINDING-0583",
       "category": "operation_binding",
       "subject": "core.test",
-      "requirement": "Bind exact target and named parameters including defaults.",
-      "expected": "accept exact contract",
+      "requirement": "Require exactly one comparison form: assertion; or expected with exactly one actual source, either actual or a material-value TARGET. Expected-and-actual form always uses registered == strict equality. A material-value TARGET cannot accompany actual or assertion. An assertion REFERENCE resolves only a declared BOOLEAN value or expression snapshot; an actual REFERENCE resolves only a material-value snapshot after optional graph execution; neither invokes an operation or profile. A TASK/ACTION TARGET executes before that comparison; TARGET alone is invalid.",
+      "expected": "exact assertion or single-actual-source comparison with optional pre-comparison TASK/ACTION execution",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-EFFECTS-0584",
       "category": "operation_effects",
       "subject": "core.test",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered derived determinism source and invocation rule and classify core.test as control. Comparison-only mode is deterministic, uses registered == for expected-and-actual form, and resolves dependency/effect sets as {declared_state_only}/{none}. TASK/ACTION mode rejects a prohibited cycle with error.reference.cycle before axis resolution, resolves every reachable core row or custom kind.operation profile, copies the graph's final category, forms normalized transitive dependency/effect unions that omit exclusive sentinels when concrete classes exist, executes the graph, and then evaluates the required assertion or registered == comparison.",
+      "expected": "deterministic comparison-only mode or exact graph-derived category and normalized transitive axes",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0585",
       "category": "operation_errors",
       "subject": "core.test",
-      "requirement": "Exercise every registered failure path.",
-      "expected": "exact registered error",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise the six local errors for parameter binding, invalid comparison shape, non-equality-compatible registered == operands, unresolved typed value references, prohibited graph cycle, and host constraints; incompatible == operands use error.operator.operand. A completed FALSE comparison is a passed-domain outcome and not error.verification.failed. For TASK/ACTION mode, union every applicable error from the resolved reachable graph, including custom-operation profile precondition and host-constraint failures.",
+      "expected": "exact six local errors plus transitive graph error union; FALSE comparison is not an error",
       "source": "operations_v0.1.0.json"
     },
     {
@@ -4719,16 +4719,16 @@
       "id": "OPERATION-EFFECTS-0587",
       "category": "operation_effects",
       "subject": "core.report",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the nondeterministic base determinism category/source, possible dependency set {model}, possible effect set {none}, and exact invocation rule. A deterministic profile is valid only when one immutable structured/rule-based profile removes every permitted variation and supplies an exact deterministic source.",
+      "expected": "bounded base nondeterminism or exact verified deterministic profile; model dependency and no effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0588",
       "category": "operation_errors",
       "subject": "core.report",
-      "requirement": "Exercise every registered failure path.",
-      "expected": "exact registered error",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path, including error.operation.precondition before effects when a required reporting profile is missing, ambiguous, incomplete, or out of bounds.",
+      "expected": "exact registered error including required-profile precondition failure",
       "source": "operations_v0.1.0.json"
     },
     {
@@ -4743,15 +4743,15 @@
       "id": "OPERATION-EFFECTS-0590",
       "category": "operation_effects",
       "subject": "core.return",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0591",
       "category": "operation_errors",
       "subject": "core.return",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise unresolved REFERENCE, resolved MISSING, and resolved UNKNOWN failure paths with error.reference.unresolved, error.required.missing, and error.value.unknown respectively.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -4759,7 +4759,7 @@
       "id": "OPERATION-BINDING-0592",
       "category": "operation_binding",
       "subject": "core.create",
-      "requirement": "Bind exact target and named parameters including defaults.",
+      "requirement": "Bind the exact target, content, target_type, and fail_if_exists with default TRUE and exactly one immutable target profile role. TRUE requires an absent target; FALSE permits replacing or reconciling an existing target to the exact declared post-state. Reject MEMORY or STATE targets in favor of core.memory_write or core.state_update.",
       "expected": "accept exact contract",
       "source": "operations_v0.1.0.json"
     },
@@ -4767,15 +4767,15 @@
       "id": "OPERATION-EFFECTS-0593",
       "category": "operation_effects",
       "subject": "core.create",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions. Classify a REFERENCE target by its resolved address class rather than REFERENCE syntax: PATH mutation maps to host/filesystem, URI mutation to network/network, and OUTPUT or another permitted addressable target to state; MEMORY and STATE are prohibited.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0594",
       "category": "operation_errors",
       "subject": "core.create",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path, including error.operation.precondition before effects for a MEMORY or STATE target.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -4783,7 +4783,7 @@
       "id": "OPERATION-BINDING-0595",
       "category": "operation_binding",
       "subject": "core.write",
-      "requirement": "Bind exact target and named parameters including defaults.",
+      "requirement": "Bind the exact target, content, and create_if_missing policy and exactly one immutable write profile role. Reject MEMORY or STATE targets in favor of core.memory_write or core.state_update.",
       "expected": "accept exact contract",
       "source": "operations_v0.1.0.json"
     },
@@ -4791,15 +4791,15 @@
       "id": "OPERATION-EFFECTS-0596",
       "category": "operation_effects",
       "subject": "core.write",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions. Classify a REFERENCE target by its resolved address class rather than REFERENCE syntax: PATH mutation maps to host/filesystem, URI mutation to network/network, and OUTPUT or another permitted addressable target to state; MEMORY and STATE are prohibited.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0597",
       "category": "operation_errors",
       "subject": "core.write",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path, including error.operation.precondition before effects for a MEMORY or STATE target.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -4807,7 +4807,7 @@
       "id": "OPERATION-BINDING-0598",
       "category": "operation_binding",
       "subject": "core.append",
-      "requirement": "Bind exact target and named parameters including defaults.",
+      "requirement": "Bind the exact target and content. Reject MEMORY or STATE targets in favor of core.memory_write or core.state_update.",
       "expected": "accept exact contract",
       "source": "operations_v0.1.0.json"
     },
@@ -4815,15 +4815,15 @@
       "id": "OPERATION-EFFECTS-0599",
       "category": "operation_effects",
       "subject": "core.append",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions. Classify a REFERENCE target by its resolved address class rather than REFERENCE syntax: PATH mutation maps to host/filesystem, URI mutation to network/network, and OUTPUT or another permitted addressable target to state; MEMORY and STATE are prohibited.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0600",
       "category": "operation_errors",
       "subject": "core.append",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path, including error.operation.precondition before effects for a MEMORY or STATE target.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -4831,7 +4831,7 @@
       "id": "OPERATION-BINDING-0601",
       "category": "operation_binding",
       "subject": "core.modify",
-      "requirement": "Bind exact target and named parameters including defaults.",
+      "requirement": "Bind the exact target, change, selection, and expected_before guard and exactly one immutable change profile role. Reject MEMORY or STATE targets in favor of core.memory_write or core.state_update.",
       "expected": "accept exact contract",
       "source": "operations_v0.1.0.json"
     },
@@ -4839,15 +4839,15 @@
       "id": "OPERATION-EFFECTS-0602",
       "category": "operation_effects",
       "subject": "core.modify",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions. Classify a REFERENCE target by its resolved address class rather than REFERENCE syntax: PATH mutation maps to host/filesystem, URI mutation to network/network, and OUTPUT or another permitted addressable target to state; MEMORY and STATE are prohibited.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0603",
       "category": "operation_errors",
       "subject": "core.modify",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path, including error.operation.precondition before effects for a MEMORY or STATE target.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -4855,7 +4855,7 @@
       "id": "OPERATION-BINDING-0604",
       "category": "operation_binding",
       "subject": "core.copy",
-      "requirement": "Bind exact target and named parameters including defaults.",
+      "requirement": "Bind the exact source target, destination, and overwrite policy and exactly one immutable copy profile role. The destination must be absent unless overwrite is TRUE.",
       "expected": "accept exact contract",
       "source": "operations_v0.1.0.json"
     },
@@ -4863,15 +4863,15 @@
       "id": "OPERATION-EFFECTS-0605",
       "category": "operation_effects",
       "subject": "core.copy",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered deterministic determinism source and invocation rule through exactly one immutable copy profile. Classify a REFERENCE source by its resolved address class rather than REFERENCE syntax and resolve the possible dependency set for source observation separately from the possible effect set for destination mutation: any URI side adds network dependency and network effect for the primary copy; any PATH side adds host dependency; a PATH destination adds filesystem effect; observing a PATH, MEMORY, STATE, OUTPUT, or other host-bound source adds its required dependency but no source-side effect.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0606",
       "category": "operation_errors",
       "subject": "core.copy",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -4879,7 +4879,7 @@
       "id": "OPERATION-BINDING-0607",
       "category": "operation_binding",
       "subject": "core.move",
-      "requirement": "Bind exact target and named parameters including defaults.",
+      "requirement": "Bind the exact source target, destination, and overwrite policy and exactly one immutable move profile role. Require resolved source and destination addresses to be distinct; overwrite never permits a same-address move. Reject a MEMORY or STATE source in favor of core.memory_write or core.state_update.",
       "expected": "accept exact contract",
       "source": "operations_v0.1.0.json"
     },
@@ -4887,15 +4887,15 @@
       "id": "OPERATION-EFFECTS-0608",
       "category": "operation_effects",
       "subject": "core.move",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered deterministic determinism source and invocation rule through exactly one immutable move profile with {host, network} possible dependency maxima and {filesystem, network, state} possible effect maxima. Classify a REFERENCE source by its resolved address class rather than REFERENCE syntax, resolve source and destination independently, and let the move profile choose rename or verified copy-delete strategy. PATH maps to host/filesystem, URI to network/network, and removing OUTPUT or another permitted addressable source to state; MEMORY and STATE sources are prohibited.",
+      "expected": "deterministic relocation with exact independently resolved address-class effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0609",
       "category": "operation_errors",
       "subject": "core.move",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path, including error.operation.precondition before effects for a MEMORY or STATE source or equal resolved source and destination addresses.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -4903,7 +4903,7 @@
       "id": "OPERATION-BINDING-0610",
       "category": "operation_binding",
       "subject": "core.rename",
-      "requirement": "Bind exact target and named parameters including defaults.",
+      "requirement": "Bind the exact target, new_name, and overwrite policy and exactly one immutable rename profile role. Require new_name to differ from the current name. The renamed destination must be absent unless overwrite is TRUE. Reject MEMORY or STATE targets in favor of core.memory_write or core.state_update.",
       "expected": "accept exact contract",
       "source": "operations_v0.1.0.json"
     },
@@ -4911,15 +4911,15 @@
       "id": "OPERATION-EFFECTS-0611",
       "category": "operation_effects",
       "subject": "core.rename",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions. Classify a REFERENCE target by its resolved address class rather than REFERENCE syntax: PATH mutation maps to host/filesystem, URI mutation to network/network, and OUTPUT or another permitted addressable target to state; MEMORY and STATE are prohibited. On success the target is addressable by new_name and not by its prior name, with content and non-name properties preserved.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0612",
       "category": "operation_errors",
       "subject": "core.rename",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path, including error.operation.precondition before effects for a MEMORY or STATE target, same-name request, illegal new name, or disallowed existing destination.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -4927,7 +4927,7 @@
       "id": "OPERATION-BINDING-0613",
       "category": "operation_binding",
       "subject": "core.delete",
-      "requirement": "Bind exact target and named parameters including defaults.",
+      "requirement": "Bind the exact target, recursive policy, and require_exists policy and exactly one immutable delete profile role. require_exists TRUE rejects an absent target; FALSE permits an already-absent target. Reject MEMORY or STATE targets in favor of core.memory_write or core.state_update.",
       "expected": "accept exact contract",
       "source": "operations_v0.1.0.json"
     },
@@ -4935,15 +4935,15 @@
       "id": "OPERATION-EFFECTS-0614",
       "category": "operation_effects",
       "subject": "core.delete",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions. Classify a REFERENCE target by its resolved address class rather than REFERENCE syntax: PATH mutation maps to host/filesystem, URI mutation to network/network, and OUTPUT or another permitted addressable target to state; MEMORY and STATE are prohibited.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0615",
       "category": "operation_errors",
       "subject": "core.delete",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path, including error.operation.precondition before effects for a MEMORY or STATE target.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -4951,7 +4951,7 @@
       "id": "OPERATION-BINDING-0616",
       "category": "operation_binding",
       "subject": "core.generate",
-      "requirement": "Bind exact target and named parameters including defaults.",
+      "requirement": "Bind the exact target, specification, format, and variation bounds and exactly one immutable generation profile role. Reject MEMORY or STATE targets in favor of core.memory_write or core.state_update.",
       "expected": "accept exact contract",
       "source": "operations_v0.1.0.json"
     },
@@ -4959,15 +4959,15 @@
       "id": "OPERATION-EFFECTS-0617",
       "category": "operation_effects",
       "subject": "core.generate",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions. Classify a REFERENCE target by its resolved address class rather than REFERENCE syntax: PATH mutation maps to host/filesystem, URI mutation to network/network, and OUTPUT or another permitted addressable target to state; MEMORY and STATE are prohibited.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0618",
       "category": "operation_errors",
       "subject": "core.generate",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path, including error.operation.precondition before effects for a MEMORY or STATE target.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -4983,15 +4983,15 @@
       "id": "OPERATION-EFFECTS-0620",
       "category": "operation_effects",
       "subject": "core.convert",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0621",
       "category": "operation_errors",
       "subject": "core.convert",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -4999,24 +4999,24 @@
       "id": "OPERATION-BINDING-0622",
       "category": "operation_binding",
       "subject": "core.execute",
-      "requirement": "Bind exact target and named parameters including defaults.",
-      "expected": "accept exact contract",
+      "requirement": "Bind one exact executable or graph target and only arguments, working_directory, environment, and timeout. A non-graph target must select exactly one complete immutable execution profile for its named role from operation, role, target, arguments, directory, environment, and implementation identity/version.",
+      "expected": "exact native-profile or graph-target execution binding",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-EFFECTS-0623",
       "category": "operation_effects",
       "subject": "core.execute",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce derived determinism, all registered possible dependency/effect maxima, and the exact invocation rule. A non-graph target copies exactly one immutable execution profile's final category, always has the process effect because it runs the executable, and unions process with any other profile-selected axes within the row maxima. A graph target has no mandatory local process effect, rejects a prohibited cycle with error.reference.cycle before axis resolution, copies the graph's final category, resolves every reachable core row or custom kind.operation profile, and forms normalized transitive dependency/effect unions that omit exclusive sentinels when concrete classes exist. Record completion through result.command without requiring graph mode to synthesize non-graph command observations; field cardinality and mode projection remain LCL-TASK-0005. No free-form effect channel exists.",
+      "expected": "exact profile-derived or graph-derived category and normalized axes within closed maxima",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0624",
       "category": "operation_errors",
       "subject": "core.execute",
-      "requirement": "Exercise every registered failure path.",
-      "expected": "exact registered error",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise the nine local failure paths, including error.reference.cycle and error.operation.precondition before effects for a missing, ambiguous, incomplete, or out-of-bounds required execution profile role. In graph mode union every applicable error of every reachable operation; error.retry.exhausted is available only through that union, not as a non-graph local error.",
+      "expected": "exact nine local errors or transitive graph error",
       "source": "operations_v0.1.0.json"
     },
     {
@@ -5031,15 +5031,15 @@
       "id": "OPERATION-EFFECTS-0626",
       "category": "operation_effects",
       "subject": "core.install",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0627",
       "category": "operation_errors",
       "subject": "core.install",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -5055,15 +5055,15 @@
       "id": "OPERATION-EFFECTS-0629",
       "category": "operation_effects",
       "subject": "core.uninstall",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism source, dependency/effect maxima, invocation resolution, package-profile removal axes, and exact purge branches. On success the installation is absent; purge_data FALSE preserves declared associated data and purge_data TRUE makes every declared associated data item in authorized scope absent.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0630",
       "category": "operation_errors",
       "subject": "core.uninstall",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -5079,15 +5079,15 @@
       "id": "OPERATION-EFFECTS-0632",
       "category": "operation_effects",
       "subject": "core.start",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0633",
       "category": "operation_errors",
       "subject": "core.start",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -5103,15 +5103,15 @@
       "id": "OPERATION-EFFECTS-0635",
       "category": "operation_effects",
       "subject": "core.stop",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0636",
       "category": "operation_errors",
       "subject": "core.stop",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -5127,15 +5127,15 @@
       "id": "OPERATION-EFFECTS-0638",
       "category": "operation_effects",
       "subject": "core.send",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0639",
       "category": "operation_errors",
       "subject": "core.send",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -5143,7 +5143,7 @@
       "id": "OPERATION-BINDING-0640",
       "category": "operation_binding",
       "subject": "core.publish",
-      "requirement": "Bind exact target and named parameters including defaults.",
+      "requirement": "Bind the exact content target, destination, visibility, and replace policy and exactly one immutable publication profile role. The destination must be absent unless replace is TRUE.",
       "expected": "accept exact contract",
       "source": "operations_v0.1.0.json"
     },
@@ -5151,15 +5151,15 @@
       "id": "OPERATION-EFFECTS-0641",
       "category": "operation_effects",
       "subject": "core.publish",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered derived determinism source and invocation rule by copying the publication profile's final category after destination, visibility, and replacement policy are fixed. A PATH destination adds host dependency and filesystem effect; a URI or remote destination adds network dependency and network effect; source observation contributes dependencies only.",
+      "expected": "publication-profile final category and only registered external axes",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0642",
       "category": "operation_errors",
       "subject": "core.publish",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path, including error.operation.precondition before effects when the required publication profile role is missing, ambiguous, incomplete, or out of bounds.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -5167,7 +5167,7 @@
       "id": "OPERATION-BINDING-0643",
       "category": "operation_binding",
       "subject": "core.upload",
-      "requirement": "Bind exact target and named parameters including defaults.",
+      "requirement": "Bind the exact source target, destination, overwrite policy, and checksum and exactly one immutable transfer profile role. The destination must be absent unless overwrite is TRUE.",
       "expected": "accept exact contract",
       "source": "operations_v0.1.0.json"
     },
@@ -5175,15 +5175,15 @@
       "id": "OPERATION-EFFECTS-0644",
       "category": "operation_effects",
       "subject": "core.upload",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered deterministic determinism source and invocation rule through exactly one immutable transfer profile and resolve the possible dependency set for source observation separately from the possible effect set for destination mutation: a PATH source adds host dependency but no filesystem effect; a URI destination adds network dependency and network effect for the primary upload; a PATH destination adds host dependency and filesystem effect.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0645",
       "category": "operation_errors",
       "subject": "core.upload",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -5191,7 +5191,7 @@
       "id": "OPERATION-BINDING-0646",
       "category": "operation_binding",
       "subject": "core.download",
-      "requirement": "Bind exact target and named parameters including defaults.",
+      "requirement": "Bind the exact source target, destination, overwrite policy, and checksum and exactly one immutable source profile role plus one immutable transfer profile role. The destination must be absent unless overwrite is TRUE.",
       "expected": "accept exact contract",
       "source": "operations_v0.1.0.json"
     },
@@ -5199,15 +5199,15 @@
       "id": "OPERATION-EFFECTS-0647",
       "category": "operation_effects",
       "subject": "core.download",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered derived determinism source and invocation rule: resolve deterministic exactly when the source profile fixes one immutable source identity and content snapshot and both source and transfer profiles are deterministic; otherwise resolve nondeterministic. A remote source adds network dependency and network effect for the primary download; a local source adds host dependency but no network effect; the destination PATH adds host dependency and filesystem effect.",
+      "expected": "exact source-and-transfer-profile category mapping and registered transfer axes",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0648",
       "category": "operation_errors",
       "subject": "core.download",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path, applying error.operation.precondition before effects independently when either required source or transfer profile role is missing, ambiguous, incomplete, or out of bounds.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -5215,7 +5215,7 @@
       "id": "OPERATION-BINDING-0649",
       "category": "operation_binding",
       "subject": "core.memory_write",
-      "requirement": "Bind exact target and named parameters including defaults.",
+      "requirement": "Bind the exact MEMORY target and value, default merge to FALSE, and select exactly one immutable storage profile role. merge FALSE requires value to match the declared MEMORY type. merge TRUE requires current and new values to be OBJECT and the computed merged OBJECT, not necessarily the patch OBJECT alone, to match that type.",
       "expected": "accept exact contract",
       "source": "operations_v0.1.0.json"
     },
@@ -5223,15 +5223,15 @@
       "id": "OPERATION-EFFECTS-0650",
       "category": "operation_effects",
       "subject": "core.memory_write",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, and invocation-level resolution rule. merge FALSE replaces exactly; merge TRUE forms a shallow right-biased union of top-level OBJECT fields, preserves current-only fields, lets new same-name fields win, and never recursively merges nested OBJECT values.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0651",
       "category": "operation_errors",
       "subject": "core.memory_write",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path, including error.operation.precondition before effects when merge is TRUE and either the current or new value is not OBJECT or the computed merged OBJECT does not match the declared MEMORY type.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -5247,15 +5247,15 @@
       "id": "OPERATION-EFFECTS-0653",
       "category": "operation_effects",
       "subject": "core.state_update",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0654",
       "category": "operation_errors",
       "subject": "core.state_update",
-      "requirement": "Exercise every registered failure path.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -5263,24 +5263,24 @@
       "id": "OPERATION-BINDING-0655",
       "category": "operation_binding",
       "subject": "core.ask",
-      "requirement": "Bind exact target and named parameters including defaults.",
-      "expected": "accept exact contract",
+      "requirement": "Bind one authoritative responder and exact question, expected_type, and optional closed options. Require every option to be compatible with expected_type and require the request and responder to be authorized and in scope before the message effect.",
+      "expected": "accept exact authorized human-request contract",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-EFFECTS-0656",
       "category": "operation_effects",
       "subject": "core.ask",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered nondeterministic determinism source, human dependency, message effect, and invocation resolution. A non-MISSING answer must be compatible with expected_type and, when options is supplied, equal one listed option; otherwise no authorized valid answer leaves MISSING and uses error.required.missing.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0657",
       "category": "operation_errors",
       "subject": "core.ask",
-      "requirement": "Exercise every registered failure path.",
-      "expected": "exact registered error",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Reject any option incompatible with expected_type using error.type.mismatch before invocation, and exercise unresolved responder, missing authoritative answer, unauthorized request, out-of-scope responder/request, and host-constraint failure paths.",
+      "expected": "error.reference.unresolved, error.required.missing, error.type.mismatch, error.permission.denied, error.scope.violation, or error.host.constraint",
       "source": "operations_v0.1.0.json"
     },
     {
@@ -5295,16 +5295,16 @@
       "id": "OPERATION-EFFECTS-0659",
       "category": "operation_effects",
       "subject": "core.retry",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0660",
       "category": "operation_errors",
       "subject": "core.retry",
-      "requirement": "Exercise every registered failure path.",
-      "expected": "exact registered error",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Reject limit outside 0..100 with error.value.out_of_range. Exercise ACTION resolution before inheritance; error.required.missing or error.value.unknown for a MISSING or UNKNOWN required when condition; local retry exhaustion and action execution failure; then union every applicable error of the resolved wrapped ACTION, including any wrapped operation or profile precondition error. Every ACTION that resolves exactly once may be retried under its explicit bounded RETRY declaration; no separate retryable marker exists.",
+      "expected": "exact local retry error or inherited ACTION error",
       "source": "operations_v0.1.0.json"
     },
     {
@@ -5319,16 +5319,16 @@
       "id": "OPERATION-EFFECTS-0662",
       "category": "operation_effects",
       "subject": "core.continue",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0663",
       "category": "operation_errors",
       "subject": "core.continue",
-      "requirement": "Exercise every registered failure path.",
-      "expected": "exact registered error",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise error.reference.unresolved for an unresolved execution-unit target and error.execution.order for an unhandled event or absent continuation path.",
+      "expected": "error.reference.unresolved or error.execution.order",
       "source": "operations_v0.1.0.json"
     },
     {
@@ -5343,16 +5343,16 @@
       "id": "OPERATION-EFFECTS-0665",
       "category": "operation_effects",
       "subject": "core.cancel",
-      "requirement": "Enforce preconditions, postconditions, and side-effect list.",
-      "expected": "only registered observable effects",
+      "requirement": "Enforce the registered determinism source, dependency/effect maxima, invocation resolution, and internal-state transition. Resolve the target current status and permit status.cancelled only when it occurs in that status's registered allowed_next set; record the exact reason.",
+      "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
     {
       "id": "OPERATION-ERRORS-0666",
       "category": "operation_errors",
       "subject": "core.cancel",
-      "requirement": "Exercise every registered failure path.",
-      "expected": "exact registered error",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise error.reference.unresolved for an unresolved execution-unit target, error.permission.denied for insufficient invoking authority, error.execution.order when the current status does not allow status.cancelled, and error.cancelled for the registered cancellation path.",
+      "expected": "error.reference.unresolved, error.permission.denied, error.execution.order, or error.cancelled",
       "source": "operations_v0.1.0.json"
     },
     {
@@ -5823,7 +5823,7 @@
       "id": "ERROR-CONTRACT-0725",
       "category": "error_contract",
       "subject": "error.operation.parameter",
-      "requirement": "Verify omitted, duplicate, mistyped, and unregistered named operation-parameter triggers, including forbidden core.sort stable or comparator names, plus stage, recoverability, and default status.",
+      "requirement": "Verify omission of TARGET when a selected operation marks it required, omission of any named parameter that a row marks required, every positional argument, every duplicate named parameter, and every unregistered named parameter, including forbidden core.sort stable or comparator names, plus stage, recoverability, and default status. Confirm that a declared value rejected by its type or semantic constraint retains the applicable general or row-specific error instead of being remapped universally.",
       "expected": "exact registered contract",
       "source": "statuses_and_errors_v0.1.0.json"
     },
@@ -5839,8 +5839,8 @@
       "id": "ERROR-CONTRACT-0727",
       "category": "error_contract",
       "subject": "error.operation.precondition",
-      "requirement": "Verify stage, recoverability, and default status.",
-      "expected": "exact registered contract",
+      "requirement": "Verify a false, missing, or unknown registered-operation precondition, including failure to resolve exactly one complete immutable profile for every required core or custom operation profile role and a determinism-incompatible profile as out of bounds, plus stage, recoverability, and default status.",
+      "expected": "execution; non-recoverable; status.failed before effects",
       "source": "statuses_and_errors_v0.1.0.json"
     },
     {
@@ -5879,7 +5879,7 @@
       "id": "ERROR-CONTRACT-0732",
       "category": "error_contract",
       "subject": "error.permission.denied",
-      "requirement": "Verify stage, recoverability, and default status.",
+      "requirement": "Verify that unauthorized or prohibited required access or effects emit error.permission.denied, plus its execution stage, non-recoverability, and status.failed default.",
       "expected": "exact registered contract",
       "source": "statuses_and_errors_v0.1.0.json"
     },
@@ -5887,7 +5887,7 @@
       "id": "ERROR-CONTRACT-0733",
       "category": "error_contract",
       "subject": "error.reference.cycle",
-      "requirement": "Verify stage, recoverability, and default status.",
+      "requirement": "Verify that a prohibited TASK, PHASE, SEQUENCE, ACTION, or TEST reference cycle emits error.reference.cycle before graph-axis resolution, plus its resolution stage, non-recoverability, and status.invalid default.",
       "expected": "exact registered contract",
       "source": "statuses_and_errors_v0.1.0.json"
     },
@@ -6127,24 +6127,24 @@
       "id": "ENUM-GROUPS-0763",
       "category": "enum_groups",
       "subject": "operation_categories",
-      "requirement": "Resolve and enforce the complete closed identifier contract.",
-      "expected": "exact registered behavior",
+      "requirement": "Enforce exactly read_only, mutating, memory_state, and control with the axis_contract meanings; read_only requires effects exactly {none}, and core.test is control because it may delegate graph effects.",
+      "expected": "exact four-category vocabulary and behavioral definitions",
       "source": "built_in_groups_and_results_v0.1.0.json"
     },
     {
       "id": "ENUM-GROUPS-0764",
       "category": "enum_groups",
       "subject": "determinism_values",
-      "requirement": "Resolve and enforce the complete closed identifier contract.",
-      "expected": "exact registered behavior",
+      "requirement": "Enforce exactly deterministic, nondeterministic, derived, and inherited for operation rows. Every named profile role selects exactly one immutable profile; that immutable profile has one final deterministic or nondeterministic category, and derived and inherited are forbidden as terminal profile categories. Enforce the closed 23-operation local role map: analyze=analysis, verify=verification, report=reporting, create=target, write=write, modify=change, copy=copy, move=move, rename=rename, delete=delete, generate=generation, convert=conversion, install=package, uninstall=package, start=start, stop=stop, send=transport, publish=publication, upload=transfer, download=source+transfer, memory_write=storage, and state_update=storage; core.execute uses execution only in non-graph mode and no local profile in graph mode. An unlisted core operation has no local profile role, and every custom kind.operation has exactly the implementation role. A deterministic base row rejects a nondeterministic profile as out of bounds. A nondeterministic base row narrows only through a profile that removes every permitted variation and supplies an exact deterministic source. Each derived row applies its exact operation-specific final-category mapping. DETERMINISTIC TRUE is verified afterward and never causes narrowing; DETERMINISTIC FALSE permits either final category without relaxing another rule. A graph is deterministic exactly when every reachable resolved operation is deterministic, including an empty graph; any reachable nondeterministic operation makes it nondeterministic.",
+      "expected": "exact four-value row vocabulary, two-value final profile domain, closed local role map, and profile-resolution rule",
       "source": "built_in_groups_and_results_v0.1.0.json"
     },
     {
       "id": "ENUM-GROUPS-0765",
       "category": "enum_groups",
-      "subject": "side_effect_classes",
-      "requirement": "Resolve and enforce the complete closed identifier contract.",
-      "expected": "exact registered behavior",
+      "subject": "dependency_classes",
+      "requirement": "Enforce exactly declared_state_only, host, network, model, and human with the axis_contract meanings; declared_state_only is exclusive, represents an empty external set for profile bounds, cannot hide an external dependency behind a predicate/key operation reference, and is omitted from a graph union whenever any concrete external dependency exists.",
+      "expected": "exact five-value dependency vocabulary, meanings, profile bounds, normalized union, exclusivity, and reference closure",
       "source": "built_in_groups_and_results_v0.1.0.json"
     },
     {
@@ -6362,6 +6362,30 @@
       "requirement": "Enforce the registered meaning, stage, recoverability, and default status for finite pattern-resource exhaustion.",
       "expected": "static_or_expression; non-recoverable; status.invalid",
       "source": "statuses_and_errors_v0.1.0.json"
+    },
+    {
+      "id": "ERROR-CONTRACT-0793",
+      "category": "error_contract",
+      "subject": "error.determinism.mismatch",
+      "requirement": "Emit only during validation when kind.operation declares DETERMINISTIC TRUE but its fully resolved operation or selected profile set is nondeterministic; the assertion never overrides the resolved contract. DETERMINISTIC FALSE permits either deterministic behavior or bounded nondeterminism and never emits this mismatch.",
+      "expected": "validation; non-recoverable; status.invalid",
+      "source": "statuses_and_errors_v0.1.0.json"
+    },
+    {
+      "id": "ENUM-GROUPS-0794",
+      "category": "enum_groups",
+      "subject": "effect_classes",
+      "requirement": "Enforce exactly none, filesystem, network, process, package, message, memory, and state with the axis_contract meanings; none is exclusive and represents an empty concrete set for profile bounds. Classify an address REFERENCE by its resolved target address class, never its syntax. A network effect is a primary transfer, copy, download, upload, or publication over a network, or a network-addressed content mutation, not incidental remote observation or transport realizing another effect. A state effect covers LCL STATE or OUTPUT, non-filesystem/non-network/non-memory authorized addressable targets, and internal execution/lifecycle state. Generic target mutators and core.move sources reject MEMORY and STATE in favor of core.memory_write or core.state_update; core.copy source observation adds no source-side effect. Every non-graph core.execute has process, while graph mode has no mandatory local process effect. Graph unions omit none whenever a concrete effect exists. Custom SIDE_EFFECT FALSE resolves exactly none; TRUE resolves one or more concrete classes.",
+      "expected": "exact eight-value effect vocabulary, meanings, profile bounds, normalized union, exclusivity, network distinction, and custom-operation mapping",
+      "source": "built_in_groups_and_results_v0.1.0.json"
+    },
+    {
+      "id": "ENUM-GROUPS-0795",
+      "category": "enum_groups",
+      "subject": "operation_axis_markers",
+      "requirement": "Enforce inherited as the only operation-axis marker and permit it only for core.retry after resolving the wrapped ACTION.",
+      "expected": "exact inherited marker contract",
+      "source": "built_in_groups_and_results_v0.1.0.json"
     }
   ]
 }

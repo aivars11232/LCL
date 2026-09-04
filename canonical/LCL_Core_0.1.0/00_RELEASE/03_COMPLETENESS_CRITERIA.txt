@@ -11,7 +11,9 @@ bytes provide and freshly validate all of the following:
 - exact legal parents, occurrence, field type, cardinality, default, and
   conditional requirements for every core block;
 - deterministic expression, operator, order, conflict, error, and status rules;
-- exact named-parameter contracts for every core operation and pure function;
+- exact target, named-parameter, determinism, dependency, effect,
+  invocation-resolution, applicable-error, and result-schema-reference contracts
+  for every core operation, plus exact contracts for every pure function;
 - closed import, namespace, reference, version, and extension behavior;
 - required conformance cases covering every closed registry entry;
 - valid and deliberately invalid examples;

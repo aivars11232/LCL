@@ -2,7 +2,7 @@ LEARNED COMPUTING LANGUAGE (LCL)
 TITLE: Frozen Design Decisions
 LANGUAGE VERSION: 0.1.0
 STATUS: INFORMATIVE DECISION RECORD
-DATE: 2026-08-30
+DATE: 2026-08-31
 
 
 Colon plus four spaces; uppercase keywords; lowercase IDs; double-quoted text;
@@ -12,3 +12,10 @@ types/references; exact imports; definition-only extensions; exact ACTION
 authorization; FORBID hard; numeric authority and priority; explicit
 context/memory/state; distinct MISSING/UNKNOWN/NULL; pre-effect VALIDATE;
 post-effect VERIFY; evidence-bound SUCCESS; host constraints reported.
+
+Operation determinism uses deterministic, nondeterministic, derived, and
+inherited categories. Registry dependency/effect sets are possible maxima and
+resolve per invocation; declared_state_only and none are exclusive. A
+kind.operation DETERMINISTIC TRUE value is a verified assertion, never an
+override. core.retry inherits determinism, dependencies, effects, and applicable
+errors from its wrapped ACTION.

@@ -6,9 +6,149 @@ DATE: 2026-08-30
 
 
 INPUT resolves VALUE or SOURCE under its TYPE/schema. DATA is immutable material.
-OUTPUT declares produced type/format and optional destination. RESULT declares a
-semantic returned value contract. An ACTION OUTPUT reference binds operation
-result to that OUTPUT after type/format validation.
+OUTPUT declares a produced material value, its type/format, and an optional
+destination. RESULT declares a semantic returned-value contract. A result record
+is not itself an OUTPUT value; the projection rules below select its primary
+material value.
 
-Required outputs that are MISSING or invalid prevent success. Output existence
-alone does not prove correctness; required VERIFY and EVIDENCE also apply.
+CORE RESULT RECORDS
+
+Every core operation names exactly one of the nine closed result schemas in
+built_in_groups_and_results_v0.1.0.json. The effective fields of each schema are
+the exact union of the registry's common_fields and its schema-local fields.
+Unknown fields and duplicate fields are forbidden. Each field obeys its exact
+registered type and cardinality plus every conditional constraint for its
+schema.
+
+The six common fields are always present exactly once:
+
+- status is producer execution status, not the schema-local domain outcome;
+- output_binding is not_requested, unbound, bound, or partial;
+- execution_errors is the possibly empty list of producer-execution errors;
+- failure_phase is none, pre_effect, post_effect, or indeterminate;
+- effect_state is none, applied, partial, or indeterminate; and
+- observed_effects is the possibly empty list of closed result.effect records.
+
+Each result.effect record contains exactly one concrete effect class and record
+state, at most one target, and exactly one possibly empty evidence list. The
+class must be within the invocation's resolved possible-effect set. No record is
+created for the none sentinel. effect_state none requires no records. applied
+means every begun authorized effect completed. partial means at least one begun
+authorized effect did not complete. indeterminate means the extent of effects
+cannot be established; any effects that are known are still recorded.
+
+failure_phase none means no failure. pre_effect means no concrete effect began
+and therefore requires effect_state none, no observed effect, and no bound or
+partial OUTPUT. post_effect means a failure occurred after at least one effect
+began. indeterminate means it cannot be established whether failure was before
+or after an effect. Failure phase, effect state, and OUTPUT binding are separate
+axes. A known effect-truth field remains populated after failure even when no
+OUTPUT binds.
+
+execution_errors contains errors in producing the result. The errors field of
+result.validation or result.verification instead contains domain findings. A
+producer status.succeeded means its invocation contract completed; it does not
+mean that a Boolean domain outcome is TRUE. FALSE, zero, zero BYTES, an empty
+STRING, and an empty collection are completed material outcomes. A nonzero
+command exit code is also a completed domain outcome.
+
+OUTPUT PROJECTION AND BINDING
+
+An ACTION OUTPUT reference selects one declared OUTPUT. For a built-in core
+operation, zero PROPERTY occurrences on that OUTPUT select the result schema's
+registered default_property. One PROPERTY selects the named schema-local field
+as a scalar. Two or more PROPERTY occurrences select a closed OBJECT containing
+exactly those unique top-level fields in declaration order. Every selected name
+must occur in the schema's projectable_fields list; common bookkeeping fields
+cannot be projected. Duplicate, unavailable, or unregistered selections are
+invalid.
+
+For a custom kind.operation, zero PROPERTY occurrences select the operation's
+whole declared RESULT value. One or more PROPERTY occurrences select declared
+properties of that RESULT using the same scalar-versus-closed-OBJECT rule. A
+custom operation with no declared RESULT cannot bind an ACTION OUTPUT.
+
+The projected value is validated against the OUTPUT TYPE, FORMAT, SCHEMA, and
+ENCODING before binding. Operation-specific types narrow generic result-field
+types: for example, a core.copy destination projected to a PATH OUTPUT has the
+PATH type required by that invocation. An absent conditional field makes that
+projection unavailable. MISSING and UNKNOWN are non-material and never bind or
+partially bind OUTPUT. NULL binds only when the OUTPUT type or schema explicitly
+permits NULL.
+
+output_binding is not_requested when the ACTION selected no OUTPUT, unbound when
+it selected an OUTPUT but no complete legal value was assigned, bound when the
+complete projection was assigned, and partial only when the result schema both
+permits partial output and lists every selected field as partial-bindable. Core
+0.1.0 permits partial binding only for result.command stdout and stderr after a
+non-graph command started. Partial effects never imply partial OUTPUT, and
+partial OUTPUT never implies partial effects. A required selected OUTPUT that is
+unbound or partial prevents execution-root status.succeeded.
+
+SCHEMA-SPECIFIC OUTCOMES
+
+result.value
+    value is the default projection and is required on producer success.
+    evidence is always a possibly empty list.
+
+result.collection
+    items is the default projection. items and count are co-present on completed
+    production. count is a non-negative INTEGER exactly equal to the number of
+    items. An empty items list with count 0 is valid.
+
+result.operation
+    changed is the default projection and is always present. It is TRUE when at
+    least one requested target state is known to have changed, FALSE when none
+    changed, and UNKNOWN only when that truth cannot be established. It remains
+    effect truth even when OUTPUT is unbound. value is present only for an
+    operation whose contract explicitly exposes a produced material artifact or
+    converted value.
+
+result.command
+    mode is non_graph or graph. In non_graph mode, started and completed are
+    always present. Failure to start records started FALSE, completed FALSE, no
+    exit_code/stdout/stderr, failure_phase pre_effect, and effect_state none.
+    Once the command starts, stdout and stderr are present even when empty;
+    exit_code is present exactly when completed is TRUE. Completion with a
+    nonzero exit_code is not failure to start and normally has producer
+    status.succeeded. In graph mode, native command fields are absent; status and
+    the graph's resolved result/effects record completion without synthesizing
+    an exit code or streams. value is present exactly when the completed graph
+    exposes one material primary result. stdout is the default projection and
+    is therefore unavailable in graph mode; a graph OUTPUT must explicitly
+    select value or mode.
+
+result.test
+    passed is the default projection and is TRUE, FALSE, or UNKNOWN after the
+    comparison runs. Assertion form omits expected and actual. Expected-and-
+    actual form records both, including a material NULL when NULL was tested.
+
+result.transfer
+    bytes is the default projection. source and destination are always recorded.
+    bytes is absent before transfer begins and is present thereafter. A material
+    bytes value is a non-negative BYTES count of bytes actually transferred, not
+    transferred content; BYTES(0) is valid. UNKNOWN is legal only when the count
+    cannot be established and cannot bind OUTPUT. value is present only when the
+    selected transfer contract explicitly exposes material transferred content.
+
+result.validation
+    valid is the default projection and is TRUE or FALSE after validation. TRUE
+    requires no domain errors; FALSE requires at least one. Producer
+    status.succeeded with valid FALSE is valid.
+
+result.verification
+    verified is the default projection and is TRUE, FALSE, or UNKNOWN after
+    verification. observed records the observations, errors records domain
+    findings, and evidence records the evidence used or produced. UNKNOWN cannot
+    bind OUTPUT.
+
+result.message
+    delivered is the default projection and is TRUE, FALSE, or UNKNOWN. FALSE is
+    confirmed non-delivery; UNKNOWN means delivery truth cannot be established.
+    Either may accompany successful completion of dispatch processing. recipient
+    is always recorded and message_id is NULL when the completed provider
+    interaction is known not to have assigned one.
+
+Required outputs that are MISSING, UNKNOWN, unbound, partial, or invalid prevent
+execution-root success. Output existence alone does not prove correctness;
+required VERIFY and EVIDENCE also apply.

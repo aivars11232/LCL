@@ -18,14 +18,16 @@ THIS PACKAGE CONTAINS
 - rule, permission, authority, conflict, state, memory, and evidence semantics;
 - closed 39-row core-operation determinism, dependency, effect, invocation, and
   applicable-error contracts, plus pure-function contracts;
+- nine closed result schemas with separate execution status, domain outcome,
+  failure/effect truth, and explicit OUTPUT PROPERTY projection contracts;
 - status and error contracts;
 - versioning and extension rules;
 - examples and normative conformance requirements.
 
 KNOWN CANDIDATE LIMITATIONS
 
-- result-schema cardinality/output binding, diagnostic selection, and mixed-phase
-  lifecycle behavior remain unresolved under Tasks 0005 and 0006;
+- diagnostic selection and mixed-phase lifecycle behavior remain unresolved under
+  Task 0006;
 - the 795-entry catalog is a descriptive requirements index, not an executed
   semantic suite; executable semantic evidence is outside the bare-language
   package scope and its absence is not a release blocker;

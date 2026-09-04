@@ -10,7 +10,10 @@ presence, shape, and count are structural evidence only; catalog entries without
 concrete input and an implementation result are not executed conformance cases.
 The index includes positive and negative DETERMINISTIC assertion requirements,
 the error.determinism.mismatch contract, all operation-axis vocabularies, and one
-axis-resolution requirement for each of the 39 core operations.
+axis-resolution requirement for each of the 39 core operations. Its nine
+result-schema entries cover exact common and schema-specific cardinality,
+execution/domain separation, closure, failure/effect truth, UNKNOWN legality,
+and OUTPUT projection/binding requirements.
 
 TOOLS/validate_source_fixtures.py executes the concrete SOURCE_FIXTURES lexical
 and document-kind expectations. TOOLS/validate_ebnf.py validates static grammar

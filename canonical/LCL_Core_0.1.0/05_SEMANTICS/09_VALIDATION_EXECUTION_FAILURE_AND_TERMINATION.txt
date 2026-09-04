@@ -13,3 +13,31 @@ During execution, failure of a required action invokes applicable handler/retry;
 otherwise status.failed. core.stop yields status.stopped unless another declared
 failure status applies. Cancellation yields status.cancelled. Host limitations
 produce error.host.constraint and never change LCL meaning.
+
+Every exposed core-operation result records failure_phase and effect_state as
+separate axes. failure_phase is none when no failure exists. pre_effect means
+the producer failed before any concrete effect began; this includes a command
+that could not start. post_effect means at least one effect began before the
+failure. indeterminate is used only when available observations cannot establish
+whether an effect began before failure. The selected error and status do not by
+themselves infer one of these phases.
+
+effect_state none means no concrete effect began, applied means every begun
+authorized effect completed, partial means at least one begun authorized effect
+did not complete, and indeterminate means the extent of effects cannot be
+established. Every known begun effect is retained in observed_effects with its
+own applied, partial, or indeterminate record state. The operation's resolved
+possible-effect set bounds those records.
+
+A pre-effect failure requires effect_state none, an empty observed_effects list,
+and no bound or partial OUTPUT. A post-effect failure may have applied or partial
+effects and may retain known schema-local effect-truth fields. Those fields are
+observations, not implicit OUTPUT bindings. An indeterminate failure phase uses
+effect_state indeterminate unless all available evidence proves the exact effect
+state independently.
+
+status.partial means only that the producer completed a declared subset of its
+required work. It does not imply that OUTPUT is partial and does not imply that
+effects are partial. Conversely, effect_state partial does not force
+status.partial: the applicable failure, cancellation, stop, or block contract
+determines status while the effect state records what happened.

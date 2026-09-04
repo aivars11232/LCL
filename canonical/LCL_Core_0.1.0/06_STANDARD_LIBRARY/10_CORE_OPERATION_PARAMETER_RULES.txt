@@ -6,9 +6,14 @@ Every core operation's target, named-parameter, precondition, postcondition,
 applicable-error, determinism-category, determinism-source, possible-dependency,
 possible-effect, invocation-resolution, and result-schema-reference records are
 stored in 10_REGISTRIES/operations_v0.1.0.json. All 39 operation contracts and
-their operation-owned fields are closed. Result-schema field cardinality,
-openness, domain-outcome semantics, and result-to-OUTPUT binding remain deferred
-to LCL-TASK-0005 and are not completed by this contract.
+their operation-owned fields are closed. The nine result schemas, their common
+fields, exact cardinalities, domain outcomes, effect records, closure, and
+result-to-OUTPUT binding are closed by
+10_REGISTRIES/built_in_groups_and_results_v0.1.0.json and
+05_SEMANTICS/05_INPUT_DATA_OUTPUT_RESULT_AND_FORMAT.txt. Each operation's
+result_schema selects that contract. OUTPUT PROPERTY projection may narrow the
+operation-owned result fields but never changes the operation's status,
+diagnostics, resolved effects, or field availability.
 
 No positional parameters exist. A parameter absent from an operation contract is
 forbidden. A required parameter cannot be inferred. A default applies only to a

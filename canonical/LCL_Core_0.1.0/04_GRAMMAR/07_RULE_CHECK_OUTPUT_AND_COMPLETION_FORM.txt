@@ -10,3 +10,10 @@ TARGET. PRESERVE names TARGET and optional repeated PROPERTY. VALIDATE/VERIFY
 contain ASSERT. SUCCESS contains exactly ALL, ANY, or NONE. FAILURE contains
 WHEN and one terminal non-success STATUS. EVIDENCE contains exact typed SOURCE
 or VALUE plus provenance when required.
+
+OUTPUT requires ID, TYPE, and FORMAT. TARGET is a destination, not the produced
+value. PROPERTY is repeatable and each occurrence contains one unique
+property_path. Zero PROPERTY occurrences select the applicable default result;
+one selects one scalar result field; two or more select a closed OBJECT whose
+top-level fields occur in declaration order. Each selected property must be an
+available projectable field under the operation result contract.

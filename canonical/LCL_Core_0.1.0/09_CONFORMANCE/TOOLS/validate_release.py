@@ -2150,7 +2150,7 @@ def set_sort_contract_violations(
         results_schema.get("result.collection", {}).get("fields", {}).get("items")
     )
     expect(
-        collection_items == "LIST[T]",
+        collection_items == {"type": "LIST[T]", "cardinality": "zero_or_one"},
         "result.collection.items does not preserve the required LIST[T] dependency",
     )
 
@@ -2323,19 +2323,19 @@ def set_sort_contract_violations(
 
     release_status_requirements = {
         "00_RELEASE/00_CANONICAL_SOURCE_AND_PROVENANCE.txt": [
-            "Accepted Tasks 0001 through 0004",
-            "operation-contract portion of LCL-AUDIT-013",
-            "result-binding portion of LCL-AUDIT-007",
-            "cardinality/output portion of LCL-AUDIT-013",
+            "Accepted Tasks 0001 through 0005",
+            "operation/result-contract",
+            "result-binding portion of",
+            "LCL-AUDIT-007",
             "LCL-AUDIT-014 and 015",
             "LCL-AUDIT-016",
             "outside the bare-language package scope",
         ],
         "00_RELEASE/01_RELEASE_STATUS_AND_BOUNDARY.txt": [
-            "Accepted Tasks 0001 through 0004",
-            "operation-contract portion of",
-            "result-binding portion of LCL-AUDIT-007",
-            "result-schema cardinality/output",
+            "Accepted Tasks 0001 through 0005",
+            "operation/result-contract portions of LCL-AUDIT-013",
+            "result-binding portion of",
+            "LCL-AUDIT-007",
             "LCL-AUDIT-014 and 015",
             "LCL-AUDIT-016",
             "outside the bare-language scope",
@@ -2348,6 +2348,19 @@ def set_sort_contract_violations(
         expect(
             "value-kind closure, 011" not in release_status,
             f"{relative_path} still lists resolved value-kind/division/SET work as blocked",
+        )
+        stale_task_0005_claims = [
+            "Accepted Tasks 0001 through 0004",
+            "cardinality/output portion of LCL-AUDIT-013",
+            "result-schema cardinality/output",
+        ]
+        present_stale_task_0005_claims = [
+            claim for claim in stale_task_0005_claims if claim in release_status
+        ]
+        expect(
+            not present_stale_task_0005_claims,
+            f"{relative_path} still reports resolved Task-0005 work: "
+            f"{present_stale_task_0005_claims}",
         )
 
     grammar = (root / "04_GRAMMAR/10_COMPLETE_EBNF.ebnf").read_text(encoding="utf-8")
@@ -2442,7 +2455,12 @@ def set_sort_contract_violations(
             "result_schemas",
             "result.collection",
             "built_in_groups_and_results_v0.1.0.json",
-            ["result.collection.items is LIST[T]", "without claiming", "cardinality"],
+            [
+                "items LIST[T]",
+                "count equal to the actual item count",
+                "empty list with count 0",
+                "items as the default OUTPUT projection",
+            ],
         ),
     }
     for case_id, (category, subject, source, required_text) in case_requirements.items():
@@ -2528,8 +2546,572 @@ def set_sort_contract_violations(
     return violations
 
 
+EXPECTED_RESULT_CONTRACT_FINGERPRINT = (
+    "21de485d9d618aee571d0204f49d03a32be41871350766c6709713237f4e36e4"
+)
+EXPECTED_RESULT_STATUS_FINGERPRINT = (
+    "cafd53e48444e124f2ca3f6d3c84df2c438da558f852644d5c09f1932366376a"
+)
+EXPECTED_RESULT_SCHEMA_FINGERPRINTS = {
+    "result.value": "65fb266615cff90c8dbbcf1fb09f7de165277b3809e1ed314b5359ad673be652",
+    "result.collection": "a5bd7a583beb10627739febe06454c559e3c47e1cb42772a68d340fb46d3332c",
+    "result.operation": "6b2f64882d279e4d6ea7bb5c5c90c40c8d00a7af6a3e7c3ef6781d45d0c73c20",
+    "result.command": "2b0b131e675295a996ccfb282197a555a782f1513c2b7849a67ed78739e75ae0",
+    "result.validation": "4ee378cdb9f5932f190066d04b1bb1678cb9848ccb257fe8be175c8267dcf3c8",
+    "result.verification": "62150b28f17e2893b68f6f355a475e1a16fbae44dabfb84a2f00c8fe90f299ab",
+    "result.test": "09b60f093a049a8d023ebb228d3f2824d82daa62ff78b95499b6f63a78d0ae28",
+    "result.message": "7d0d24c2087aee8517614699bec6c3db7dfeaeade90a4a537e00367a3373ba76",
+    "result.transfer": "ad2e02fe946ec4ca56e3206dc5f63416e7d3823e0fbec0d3643cbba68da07e35",
+}
+
+
+def canonical_contract_fingerprint(value: Any) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def result_contract_violations(
+    root: Path,
+    groups_and_results: dict[str, Any],
+    statuses: dict[str, Any],
+    operations: dict[str, Any],
+    blocks: dict[str, Any],
+    fields: dict[str, Any],
+) -> list[str]:
+    violations: list[str] = []
+
+    def expect(condition: bool, message: str) -> None:
+        if not condition:
+            violations.append(message)
+
+    expect(
+        set(groups_and_results)
+        == {
+            "language",
+            "version",
+            "closed",
+            "enum_groups",
+            "result_contract",
+            "result_schemas",
+            "reserved_namespaces",
+            "core_operation_ids",
+        },
+        "groups/result registry root fields are not exact",
+    )
+    result_contract_value = groups_and_results.get("result_contract")
+    result_contract = result_contract_value if isinstance(result_contract_value, dict) else {}
+    expect(
+        set(result_contract)
+        == {
+            "effective_fields",
+            "common_fields",
+            "effect_schemas",
+            "output_projection",
+            "invariants",
+        },
+        "result_contract fields are not exact",
+    )
+
+    expected_common_fields = {
+        "status": {
+            "type": "qualified_identifier(status)",
+            "cardinality": "exactly_one",
+        },
+        "output_binding": {
+            "type": "ENUM[not_requested|unbound|bound|partial]",
+            "cardinality": "exactly_one",
+        },
+        "execution_errors": {
+            "type": "LIST[qualified_identifier(error)]",
+            "cardinality": "exactly_one",
+        },
+        "failure_phase": {
+            "type": "ENUM[none|pre_effect|post_effect|indeterminate]",
+            "cardinality": "exactly_one",
+        },
+        "effect_state": {
+            "type": "ENUM[none|applied|partial|indeterminate]",
+            "cardinality": "exactly_one",
+        },
+        "observed_effects": {
+            "type": "LIST[result.effect]",
+            "cardinality": "exactly_one",
+        },
+    }
+    common_fields = result_contract.get("common_fields")
+    expect(
+        common_fields == expected_common_fields,
+        "common result fields, types, or cardinalities are not exact",
+    )
+
+    effect_schemas = result_contract.get("effect_schemas")
+    expect(
+        isinstance(effect_schemas, dict) and set(effect_schemas) == {"result.effect"},
+        "result.effect is not the one exact auxiliary effect schema",
+    )
+    effect_schema_value = (
+        effect_schemas.get("result.effect") if isinstance(effect_schemas, dict) else None
+    )
+    effect_schema = effect_schema_value if isinstance(effect_schema_value, dict) else {}
+    expected_effect_fields = {
+        "class": {
+            "type": "ENUM[filesystem|network|process|package|message|memory|state]",
+            "cardinality": "exactly_one",
+        },
+        "state": {
+            "type": "ENUM[applied|partial|indeterminate]",
+            "cardinality": "exactly_one",
+        },
+        "target": {"type": "target_expression", "cardinality": "zero_or_one"},
+        "evidence": {
+            "type": "LIST[REFERENCE[EVIDENCE]]",
+            "cardinality": "exactly_one",
+        },
+    }
+    expect(
+        set(effect_schema) == {"closed", "fields", "constraints"}
+        and effect_schema.get("closed") is True
+        and effect_schema.get("fields") == expected_effect_fields
+        and isinstance(effect_schema.get("constraints"), list)
+        and bool(effect_schema.get("constraints")),
+        "result.effect is not the exact closed effect-record shape",
+    )
+
+    expected_fields = {
+        "result.value": {
+            "value": {"type": "meta.material_value", "cardinality": "zero_or_one"},
+            "evidence": {
+                "type": "LIST[REFERENCE[EVIDENCE]]",
+                "cardinality": "exactly_one",
+            },
+        },
+        "result.collection": {
+            "items": {"type": "LIST[T]", "cardinality": "zero_or_one"},
+            "count": {"type": "INTEGER", "cardinality": "zero_or_one"},
+        },
+        "result.operation": {
+            "changed": {"type": "BOOLEAN|UNKNOWN", "cardinality": "exactly_one"},
+            "target": {"type": "target_expression", "cardinality": "exactly_one"},
+            "value": {"type": "meta.material_value", "cardinality": "zero_or_one"},
+        },
+        "result.command": {
+            "mode": {"type": "ENUM[non_graph|graph]", "cardinality": "exactly_one"},
+            "started": {"type": "BOOLEAN", "cardinality": "zero_or_one"},
+            "completed": {"type": "BOOLEAN", "cardinality": "zero_or_one"},
+            "exit_code": {"type": "INTEGER", "cardinality": "zero_or_one"},
+            "stdout": {"type": "STRING", "cardinality": "zero_or_one"},
+            "stderr": {"type": "STRING", "cardinality": "zero_or_one"},
+            "value": {"type": "meta.material_value", "cardinality": "zero_or_one"},
+        },
+        "result.validation": {
+            "valid": {"type": "BOOLEAN", "cardinality": "zero_or_one"},
+            "errors": {
+                "type": "LIST[qualified_identifier(error)]",
+                "cardinality": "exactly_one",
+            },
+        },
+        "result.verification": {
+            "verified": {"type": "BOOLEAN|UNKNOWN", "cardinality": "zero_or_one"},
+            "observed": {"type": "OBJECT", "cardinality": "zero_or_one"},
+            "errors": {
+                "type": "LIST[qualified_identifier(error)]",
+                "cardinality": "exactly_one",
+            },
+            "evidence": {
+                "type": "LIST[REFERENCE[EVIDENCE]]",
+                "cardinality": "exactly_one",
+            },
+        },
+        "result.test": {
+            "passed": {"type": "BOOLEAN|UNKNOWN", "cardinality": "zero_or_one"},
+            "expected": {"type": "meta.material_value", "cardinality": "zero_or_one"},
+            "actual": {"type": "meta.material_value", "cardinality": "zero_or_one"},
+            "evidence": {
+                "type": "LIST[REFERENCE[EVIDENCE]]",
+                "cardinality": "exactly_one",
+            },
+        },
+        "result.message": {
+            "delivered": {"type": "BOOLEAN|UNKNOWN", "cardinality": "exactly_one"},
+            "recipient": {"type": "target_expression", "cardinality": "exactly_one"},
+            "message_id": {"type": "STRING|NULL", "cardinality": "exactly_one"},
+        },
+        "result.transfer": {
+            "source": {"type": "target_expression", "cardinality": "exactly_one"},
+            "destination": {"type": "target_expression", "cardinality": "exactly_one"},
+            "bytes": {"type": "BYTES|UNKNOWN", "cardinality": "zero_or_one"},
+            "checksum": {"type": "STRING|NULL", "cardinality": "zero_or_one"},
+            "value": {"type": "meta.material_value", "cardinality": "zero_or_one"},
+        },
+    }
+    expected_domains = {
+        "result.value": ["value"],
+        "result.collection": ["items", "count"],
+        "result.operation": ["changed"],
+        "result.command": ["started", "completed", "exit_code", "value"],
+        "result.validation": ["valid"],
+        "result.verification": ["verified"],
+        "result.test": ["passed"],
+        "result.message": ["delivered"],
+        "result.transfer": ["bytes"],
+    }
+    expected_unknown = {
+        "result.value": [],
+        "result.collection": [],
+        "result.operation": ["changed"],
+        "result.command": [],
+        "result.validation": [],
+        "result.verification": ["verified"],
+        "result.test": ["passed"],
+        "result.message": ["delivered"],
+        "result.transfer": ["bytes"],
+    }
+    expected_defaults = {
+        "result.value": "value",
+        "result.collection": "items",
+        "result.operation": "changed",
+        "result.command": "stdout",
+        "result.validation": "valid",
+        "result.verification": "verified",
+        "result.test": "passed",
+        "result.message": "delivered",
+        "result.transfer": "bytes",
+    }
+    expected_projectable = {
+        "result.value": ["value", "evidence"],
+        "result.collection": ["items", "count"],
+        "result.operation": ["changed", "target", "value"],
+        "result.command": [
+            "mode",
+            "started",
+            "completed",
+            "exit_code",
+            "stdout",
+            "stderr",
+            "value",
+        ],
+        "result.validation": ["valid", "errors"],
+        "result.verification": ["verified", "observed", "errors", "evidence"],
+        "result.test": ["passed", "expected", "actual", "evidence"],
+        "result.message": ["delivered", "recipient", "message_id"],
+        "result.transfer": ["source", "destination", "bytes", "checksum", "value"],
+    }
+    schemas_value = groups_and_results.get("result_schemas")
+    schemas = schemas_value if isinstance(schemas_value, dict) else {}
+    expect(
+        list(schemas) == list(expected_fields),
+        "result schema membership or canonical order is not exact",
+    )
+    schema_keys = {
+        "common_fields",
+        "unknown_fields",
+        "field_order",
+        "domain_outcome",
+        "primary_output",
+        "partial_output",
+        "fields",
+        "constraints",
+    }
+    common_names = set(expected_common_fields)
+    cardinalities = set(groups_and_results.get("enum_groups", {}).get("cardinalities", []))
+    typed_unknown_fields: set[tuple[str, str]] = set()
+    for name, expected_local_fields in expected_fields.items():
+        schema_value = schemas.get(name)
+        schema = schema_value if isinstance(schema_value, dict) else {}
+        expect(set(schema) == schema_keys, f"{name} schema fields are not exact")
+        expect(schema.get("common_fields") is True, f"{name} does not inherit common fields")
+        expect(schema.get("unknown_fields") == "forbidden", f"{name} is not closed")
+        expect(schema.get("field_order") == "not_semantic", f"{name} field order is not exact")
+        local_fields = schema.get("fields")
+        expect(local_fields == expected_local_fields, f"{name} local fields are not exact")
+        if isinstance(local_fields, dict):
+            expect(
+                not (set(local_fields) & common_names),
+                f"{name} duplicates an inherited common field",
+            )
+            for field_name, specification in local_fields.items():
+                expect(
+                    isinstance(specification, dict)
+                    and set(specification) == {"type", "cardinality"},
+                    f"{name}.{field_name} field specification is not exact",
+                )
+                if isinstance(specification, dict):
+                    expect(
+                        specification.get("cardinality") in cardinalities,
+                        f"{name}.{field_name} uses an unregistered cardinality",
+                    )
+                    if "UNKNOWN" in str(specification.get("type", "")):
+                        typed_unknown_fields.add((name, field_name))
+        domain_outcome = schema.get("domain_outcome")
+        expect(
+            domain_outcome
+            == {
+                "fields": expected_domains[name],
+                "unknown_fields": expected_unknown[name],
+            },
+            f"{name} domain-outcome contract is not exact",
+        )
+        primary_output = schema.get("primary_output")
+        expect(
+            primary_output
+            == {
+                "default_property": expected_defaults[name],
+                "projectable_fields": expected_projectable[name],
+            },
+            f"{name} primary OUTPUT contract is not exact",
+        )
+        partial_output = schema.get("partial_output")
+        expected_partial = (
+            {"supported": True, "fields": ["stdout", "stderr"]}
+            if name == "result.command"
+            else {"supported": False, "fields": []}
+        )
+        expect(partial_output == expected_partial, f"{name} partial OUTPUT contract is not exact")
+        constraints = schema.get("constraints")
+        expect(
+            isinstance(constraints, list)
+            and bool(constraints)
+            and all(isinstance(item, str) and bool(item.strip()) for item in constraints),
+            f"{name} constraints are not a non-empty string list",
+        )
+        expect(
+            canonical_contract_fingerprint(schema)
+            == EXPECTED_RESULT_SCHEMA_FINGERPRINTS[name],
+            f"{name} differs from the approved result contract",
+        )
+
+    expected_unknown_set = {
+        ("result.operation", "changed"),
+        ("result.verification", "verified"),
+        ("result.test", "passed"),
+        ("result.message", "delivered"),
+        ("result.transfer", "bytes"),
+    }
+    expect(
+        typed_unknown_fields == expected_unknown_set,
+        f"result UNKNOWN field set differs: {sorted(typed_unknown_fields)}",
+    )
+    contract_fingerprint = canonical_contract_fingerprint(
+        {"result_contract": result_contract, "result_schemas": schemas}
+    )
+    expect(
+        contract_fingerprint == EXPECTED_RESULT_CONTRACT_FINGERPRINT,
+        f"combined result contract differs: {contract_fingerprint}",
+    )
+
+    status_records_value = statuses.get("statuses")
+    status_records = status_records_value if isinstance(status_records_value, dict) else {}
+    expect(len(status_records) == 12, "status registry does not contain exactly 12 statuses")
+    for name, record_value in status_records.items():
+        record = record_value if isinstance(record_value, dict) else {}
+        expect(
+            set(record) == {"meaning", "result_meaning", "terminal", "allowed_next", "scope"},
+            f"{name} does not have the exact result-aware status shape",
+        )
+        expect(
+            isinstance(record.get("result_meaning"), str)
+            and bool(record.get("result_meaning", "").strip())
+            and "result" in str(record.get("scope", "")),
+            f"{name} lacks an explicit result meaning or scope",
+        )
+    status_fingerprint = canonical_contract_fingerprint(status_records)
+    expect(
+        status_fingerprint == EXPECTED_RESULT_STATUS_FINGERPRINT,
+        f"result-aware status contract differs: {status_fingerprint}",
+    )
+    expect(
+        "FALSE domain outcome" in status_records.get("status.succeeded", {}).get("result_meaning", "")
+        and "neither implies partial OUTPUT binding"
+        in status_records.get("status.partial", {}).get("result_meaning", "")
+        and "pre-effect failure to start"
+        in status_records.get("status.failed", {}).get("result_meaning", ""),
+        "succeeded, partial, or failed result-status distinction is not exact",
+    )
+
+    expected_mapping_counts = {
+        "result.value": 9,
+        "result.collection": 3,
+        "result.operation": 18,
+        "result.command": 1,
+        "result.validation": 1,
+        "result.verification": 1,
+        "result.test": 1,
+        "result.message": 1,
+        "result.transfer": 4,
+    }
+    actual_mapping_counts = {
+        name: sum(
+            1
+            for operation in operations.values()
+            if isinstance(operation, dict) and operation.get("result_schema") == name
+        )
+        for name in expected_mapping_counts
+    }
+    expect(
+        len(operations) == 39 and actual_mapping_counts == expected_mapping_counts,
+        f"operation-to-result mapping differs: {actual_mapping_counts}",
+    )
+    expect(
+        all(
+            isinstance(operation, dict) and operation.get("result_schema") in schemas
+            for operation in operations.values()
+        ),
+        "an operation references an unavailable result schema",
+    )
+    expected_result_postconditions = {
+        "core.generate": [
+            "artifact satisfies specification and declared verification",
+            "result.operation.value equals the produced material artifact",
+        ],
+        "core.convert": [
+            "output has target_format and preserved properties",
+            "result.operation.value equals the converted material value",
+        ],
+        "core.execute": [
+            "result.command.mode is non_graph for PATH, URI, or STRING executable targets and graph for REFERENCE[TASK|PHASE|SEQUENCE|ACTION|TEST] targets",
+            "a non_graph failure to start records started FALSE and completed FALSE without exit_code, stdout, or stderr; after start, started is TRUE and stdout and stderr are present, and exit_code is present exactly when completed is TRUE",
+            "a completed non_graph command with a nonzero exit_code has producer status.succeeded unless another producer-contract failure occurred",
+            "graph mode never synthesizes started, completed, exit_code, stdout, or stderr and records value exactly when the completed graph exposes one material primary result",
+            "completion, failure phase, effects, and OUTPUT binding are recorded through the closed result.command contract",
+        ],
+        "core.download": [
+            "destination bytes equal received source",
+            "checksum matches when supplied",
+            "result.transfer.value equals the received material content",
+        ],
+    }
+    for operation_name, postconditions in expected_result_postconditions.items():
+        operation_value = operations.get(operation_name)
+        operation = operation_value if isinstance(operation_value, dict) else {}
+        expect(
+            operation.get("postconditions") == postconditions,
+            f"{operation_name} result-population postconditions are not exact",
+        )
+
+    expected_output_rules = [
+        "TARGET is destination, not produced VALUE.",
+        "Zero PROPERTY occurrences select the applicable default result; one selects a scalar field; two or more select a closed OBJECT in declaration order.",
+        "Every PROPERTY is unique and must name an available projectable result field.",
+    ]
+    expect(
+        blocks.get("OUTPUT", {}).get("rules") == expected_output_rules
+        and fields.get("blocks", {}).get("OUTPUT", {}).get("conditional_requirements")
+        == expected_output_rules,
+        "OUTPUT block and field-signature projection rules are not exact or do not agree",
+    )
+
+    prose_requirements = {
+        "03_TYPES_AND_VALUES/09_MISSING_UNKNOWN_NULL_AND_OPTIONALITY.txt": [
+            "transient result record may contain UNKNOWN",
+            "result.operation.changed",
+            "result.transfer.bytes",
+            "cannot bind or partially bind OUTPUT",
+        ],
+        "04_GRAMMAR/07_RULE_CHECK_OUTPUT_AND_COMPLETION_FORM.txt": [
+            "Zero PROPERTY occurrences",
+            "one scalar result field",
+            "two or more select a closed OBJECT",
+        ],
+        "05_SEMANTICS/05_INPUT_DATA_OUTPUT_RESULT_AND_FORMAT.txt": [
+            "The six common fields are always present exactly once",
+            "Two or more PROPERTY occurrences select a closed OBJECT",
+            "failure_phase pre_effect",
+            "Partial effects never imply partial OUTPUT",
+            "nonzero exit_code is not failure to start",
+            "graph OUTPUT must explicitly select value or mode",
+            "count is a non-negative INTEGER exactly equal",
+            "non-negative BYTES count of bytes actually transferred",
+        ],
+        "05_SEMANTICS/09_VALIDATION_EXECUTION_FAILURE_AND_TERMINATION.txt": [
+            "failure_phase and effect_state as separate axes",
+            "pre-effect failure requires effect_state none",
+            "effect_state partial does not force status.partial",
+        ],
+        "05_SEMANTICS/10_VERIFY_TEST_EVIDENCE_SUCCESS_FAILURE_AND_STATUS.txt": [
+            "A result record's status is instead scoped to the producer invocation",
+            "passed FALSE",
+            "valid FALSE",
+            "material FALSE remains a valid bound result value",
+        ],
+        "06_STANDARD_LIBRARY/10_CORE_OPERATION_PARAMETER_RULES.txt": [
+            "The nine result schemas",
+            "exact cardinalities",
+            "result-to-OUTPUT binding are closed",
+        ],
+    }
+    for relative_path, tokens in prose_requirements.items():
+        prose = " ".join((root / relative_path).read_text(encoding="utf-8").split())
+        missing = [token for token in tokens if token not in prose]
+        expect(not missing, f"{relative_path} is missing result-contract prose: {missing}")
+        expect(
+            "remain deferred to LCL-TASK-0005" not in prose,
+            f"{relative_path} retains a Task-0005 deferral",
+        )
+
+    expected_example_blocks = {
+        "08_EXAMPLES/VALID/03_IMPORTING_TASK.lcl": (
+            "OUTPUT:\n"
+            "    ID: output.copy\n"
+            "    TYPE: PATH\n"
+            "    FORMAT: format.binary\n"
+            "    TARGET: PATH(REF(workspace.example), \"copy.bin\")\n"
+            "    PROPERTY: destination\n"
+        ),
+        "08_EXAMPLES/VALID/04_AUTOMATED_CODING_TASK.lcl": (
+            "OUTPUT:\n"
+            "    ID: output.test\n"
+            "    TYPE: OBJECT[REF(type.command_result)]\n"
+            "    FORMAT: format.json\n"
+            "    PROPERTY: exit_code\n"
+            "    PROPERTY: stdout\n"
+            "    PROPERTY: stderr\n"
+        ),
+        "08_EXAMPLES/VALID/06_EXPLICIT_CONTEXT_MEMORY_AND_STATE.lcl": (
+            "OUTPUT:\n"
+            "    ID: output.draft\n"
+            "    TYPE: STRING\n"
+            "    FORMAT: format.plain_text\n"
+            "    PROPERTY: value\n"
+        ),
+        "08_EXAMPLES/VALID/08_AUTHORITY_OVERRIDE_HANDLER_AND_RETRY.lcl": (
+            "OUTPUT:\n"
+            "    ID: output.payload\n"
+            "    TYPE: STRING\n"
+            "    FORMAT: format.plain_text\n"
+            "    PROPERTY: value\n"
+        ),
+    }
+    for relative_path, output_block in expected_example_blocks.items():
+        text = (root / relative_path).read_text(encoding="utf-8")
+        expect(
+            text.count(output_block) == 1,
+            f"{relative_path} lacks its exact Task-0005 OUTPUT projection",
+        )
+    custom_example = (
+        root / "08_EXAMPLES/VALID/07_DOMAIN_EXTENSION_OPERATION.lcl"
+    ).read_text(encoding="utf-8")
+    custom_output = (
+        "OUTPUT:\n"
+        "    ID: output.image\n"
+        "    TYPE: OBJECT[REF(type.image_result)]\n"
+        "    FORMAT: format.image\n"
+    )
+    expect(
+        custom_example.count(custom_output) == 1
+        and "KIND: kind.operation" in custom_example
+        and "RESULT:\n        TYPE: OBJECT[REF(type.image_result)]" in custom_example,
+        "custom-operation whole RESULT default projection example is not exact",
+    )
+    return violations
+
+
 EXPECTED_OPERATION_CONTRACT_FINGERPRINT = (
-    "ac8f456d2b83f8059eaeb00ac84120af92142205f6c883987dfb399a7112c7d1"
+    "7e0f1e418de04ee44e85376e9c8db684ca8243e864b2b3b8fc4a3de37245dcc8"
 )
 EXPECTED_OPERATION_ROW_FINGERPRINTS = {
     "core.inspect": "fc2ae5ad368d5bba7e4599740b68d627471585b039834d2ad5b5f766beeaf234",
@@ -2554,9 +3136,9 @@ EXPECTED_OPERATION_ROW_FINGERPRINTS = {
     "core.move": "dc33c95e763f2d25d34995b957a92dabde7bdb0345d3e5cab50d1c9b378517fa",
     "core.rename": "06bc994fd1b85a499ee9b95d941a9724e0bc2b34dfe38f6aaf9e59ba6c4d4240",
     "core.delete": "c786bddf0832f48432fb9c813191e36d60cb1153d618b7d09e5f4d62281cf517",
-    "core.generate": "253e0885da5f6739f974b73e39de8d46cf38346dce792359aa4b1762a48516b5",
-    "core.convert": "437edd24d7d51e5fdb3ae3cab77adc1dd0bf52944b8cc0520253c3ebe2d95904",
-    "core.execute": "6c3abeecb23b37649c264996e589b0bfe4be4dfc5f1e7f5820659743a18a8e3c",
+    "core.generate": "b7a1e626ac246b08cb202643d5c976657397d637710f5fa68b6ffa406be5f969",
+    "core.convert": "8c877ce820c08c56df28733c10536f2426f59a45472103c70bbe5e86a10e9314",
+    "core.execute": "24b5e8dc4d306d16422b2d3f92beb6556898bbcaac7e98bd1618cb99b2a7da4c",
     "core.install": "b9df3d850ef7e1de21223bd4cc078e27cf07ba0bc509953611eb6ee03f3997a4",
     "core.uninstall": "0e2db0cdbf6f4a6ce38c6b13fbde3d62df013528a103d8b79d5606a2a2f35dbf",
     "core.start": "73d937f8ea0bb2762624bd6e95f3cd16ef398dce01c17490fefa45f0051ba2d1",
@@ -2564,7 +3146,7 @@ EXPECTED_OPERATION_ROW_FINGERPRINTS = {
     "core.send": "fdae1894d136becbd31b3b40bc90f1618210e08ce612d925bbe610e638c1a3f6",
     "core.publish": "b94bb753e139d22511823f2afc588d91f6be4174425ebaa94ef0d2c07ff9af12",
     "core.upload": "c7efd0b692d5ccd9a818da3b87e0b4d9e5e9345841d278927d5dd3c3ea3193d4",
-    "core.download": "d888f5c96fb3fcc526264b403007ded1d44cdaf9140dbf1d033b58914808e0fe",
+    "core.download": "9f603f23ac69a4ef1b64246c9e3c58112e0c1df11f800b9eb8bd4d407d04007f",
     "core.memory_write": "79c11d4767f792c59c0c502b6d8d33826b1a34670985f6269316c75c95323bfe",
     "core.state_update": "fd6f0d9d8c543e42125b67de2c3fe540d3de8fc2cbab48f572cbf85c4836ed12",
     "core.ask": "508262d4c096f90ce488915de24cc14830d826789d2c1c78b8d64bf0bd797b18",
@@ -4042,11 +4624,11 @@ def operation_contract_violations(
         and "invocation-declared external effects" not in execute_resolution
         and execute.get("postconditions")
         == [
-            (
-                "completion is recorded through result.command without requiring a graph "
-                "target to synthesize non-graph command observations; result field "
-                "cardinality and mode projection remain deferred to LCL-TASK-0005"
-            )
+            "result.command.mode is non_graph for PATH, URI, or STRING executable targets and graph for REFERENCE[TASK|PHASE|SEQUENCE|ACTION|TEST] targets",
+            "a non_graph failure to start records started FALSE and completed FALSE without exit_code, stdout, or stderr; after start, started is TRUE and stdout and stderr are present, and exit_code is present exactly when completed is TRUE",
+            "a completed non_graph command with a nonzero exit_code has producer status.succeeded unless another producer-contract failure occurred",
+            "graph mode never synthesizes started, completed, exit_code, stdout, or stderr and records value exactly when the completed graph exposes one material primary result",
+            "completion, failure phase, effects, and OUTPUT binding are recorded through the closed result.command contract",
         ]
         and execute.get("preconditions")
         == [
@@ -4285,7 +4867,9 @@ def operation_prose_contract_violations(
             "normalized transitive union rule",
             "core.retry resolves the wrapped ACTION",
             "free-form or undeclared effect channel exists",
-            "LCL-TASK-0005",
+            "The nine result schemas, their common",
+            "result-to-OUTPUT binding are closed",
+            "OUTPUT PROPERTY projection may narrow the",
         ],
         "06_STANDARD_LIBRARY/06_CORE_ERROR_IDENTIFIERS_PART_1.txt": [
             "complete closed set of 77 error identifiers",
@@ -4621,7 +5205,6 @@ def check_registry(root: Path, results: Results) -> None:
     operation_violations = operation_contract_violations(
         operation_registry, groups_and_results, statuses
     )
-    incomplete_results = sorted(name for name, schema in results_schema.items() if set(schema) == {"fields"})
     results.add(
         "registry",
         "operation_contracts",
@@ -4641,13 +5224,33 @@ def check_registry(root: Path, results: Results) -> None:
         prose_file_count=3,
         blocked_by=[],
     )
+    result_violations = result_contract_violations(
+        root,
+        groups_and_results,
+        statuses,
+        operations,
+        blocks,
+        fields,
+    )
     results.add(
         "registry",
         "result_schema_cardinality_and_output_contracts",
-        "BLOCKED" if incomplete_results else "PASS",
-        result_schemas_without_cardinality=incomplete_results,
-        deferred_to="LCL-TASK-0005",
-        blocked_by=["LCL-TASK-0005", "LCL-AUDIT-013"],
+        "FAIL" if result_violations else "PASS",
+        result_contract_violations=result_violations,
+        result_schema_count=len(results_schema),
+        common_field_count=len(groups_and_results.get("result_contract", {}).get("common_fields", {})),
+        operation_result_reference_count=sum(
+            1
+            for operation in operations.values()
+            if isinstance(operation, dict) and "result_schema" in operation
+        ),
+        approved_contract_sha256=canonical_contract_fingerprint(
+            {
+                "result_contract": groups_and_results.get("result_contract"),
+                "result_schemas": results_schema,
+            }
+        ),
+        blocked_by=[],
     )
 
     division_violations = division_contract_violations(
@@ -5042,8 +5645,10 @@ def check_catalog(root: Path, results: Results) -> None:
                 "always has the process effect",
                 "no mandatory local process effect",
                 "normalized transitive dependency/effect unions",
-                "without requiring graph mode to synthesize non-graph command observations",
-                "LCL-TASK-0005",
+                "failure to start records started FALSE",
+                "nonzero is a completed outcome",
+                "Graph mode synthesizes no native command observations",
+                "failure phase, effect state, observed effects, and OUTPUT binding independently",
             ),
             "OPERATION-ERRORS-0624": (
                 "nine local failure paths",
@@ -5214,8 +5819,139 @@ def check_catalog(root: Path, results: Results) -> None:
             ).encode("utf-8")
         ).hexdigest()
         assert task_0004_catalog_sha256 == (
-            "db0c2d55caa7e37e1649b1c603bec99a3acd1f8a2814171582820843e32c20dc"
+            "78b452953ddb098e6b5540293230d6251ea028f952e543f4f6172cc93705468a"
         ), "Task-0004 catalog cases differ from the approved contract"
+
+        task_0005_subjects = {
+            "RESULT-SCHEMAS-0774": "result.value",
+            "RESULT-SCHEMAS-0775": "result.collection",
+            "RESULT-SCHEMAS-0776": "result.operation",
+            "RESULT-SCHEMAS-0777": "result.command",
+            "RESULT-SCHEMAS-0778": "result.validation",
+            "RESULT-SCHEMAS-0779": "result.verification",
+            "RESULT-SCHEMAS-0780": "result.test",
+            "RESULT-SCHEMAS-0781": "result.message",
+            "RESULT-SCHEMAS-0782": "result.transfer",
+        }
+        task_0005_tokens = {
+            "RESULT-SCHEMAS-0774": (
+                "value as zero-or-one meta.material_value",
+                "value required on producer success",
+                "FALSE, zero, and empty material values",
+            ),
+            "RESULT-SCHEMAS-0775": (
+                "co-present zero-or-one items LIST[T] and count INTEGER",
+                "non-negative count equal to the actual item count",
+                "empty list with count 0",
+            ),
+            "RESULT-SCHEMAS-0776": (
+                "changed BOOLEAN|UNKNOWN and target exactly once",
+                "optional material value",
+                "known changed effect truth after failure",
+            ),
+            "RESULT-SCHEMAS-0777": (
+                "mode exactly once and mode-specific conditional fields",
+                "failure to start has started FALSE and completed FALSE",
+                "nonzero remains a completed producer outcome",
+                "Graph mode has no native command-observation fields",
+                "only stdout/stderr permit declared partial binding",
+            ),
+            "RESULT-SCHEMAS-0778": (
+                "zero-or-one valid BOOLEAN and exactly one domain-errors list",
+                "distinguish domain errors from execution_errors",
+                "producer status.succeeded with valid FALSE",
+            ),
+            "RESULT-SCHEMAS-0779": (
+                "verified BOOLEAN|UNKNOWN and observed OBJECT",
+                "exactly one domain-errors list and evidence list",
+                "producer success with FALSE or UNKNOWN",
+            ),
+            "RESULT-SCHEMAS-0780": (
+                "passed BOOLEAN|UNKNOWN and material expected/actual",
+                "assertion form without expected/actual",
+                "comparison form with both",
+                "tested NULL is present material data",
+            ),
+            "RESULT-SCHEMAS-0781": (
+                "delivered BOOLEAN|UNKNOWN, recipient, and nullable message_id exactly once",
+                "NULL means no identifier was assigned",
+                "successful dispatch processing with FALSE or UNKNOWN",
+            ),
+            "RESULT-SCHEMAS-0782": (
+                "source and destination target_expression exactly once",
+                "bytes BYTES|UNKNOWN, checksum STRING|NULL, and material value",
+                "BYTES(0) is valid",
+                "interrupted-transfer count as effect truth without partial OUTPUT",
+            ),
+        }
+        task_0005_expected = {
+            "RESULT-SCHEMAS-0774": (
+                "exact closed result.value cardinality, outcome, effect, failure, and OUTPUT contract"
+            ),
+            "RESULT-SCHEMAS-0775": (
+                "exact closed result.collection cardinality, count, outcome, effect, failure, and OUTPUT contract"
+            ),
+            "RESULT-SCHEMAS-0776": (
+                "exact closed result.operation cardinality, outcome, effect truth, failure, and OUTPUT contract"
+            ),
+            "RESULT-SCHEMAS-0777": (
+                "exact closed result.command cardinality, start/completion, mode, effect, failure, and OUTPUT contract"
+            ),
+            "RESULT-SCHEMAS-0778": (
+                "exact closed result.validation cardinality, domain-error, effect, failure, and OUTPUT contract"
+            ),
+            "RESULT-SCHEMAS-0779": (
+                "exact closed result.verification cardinality, evidence, domain-error, effect, failure, and OUTPUT contract"
+            ),
+            "RESULT-SCHEMAS-0780": (
+                "exact closed result.test cardinality, comparison outcome, evidence, effect, failure, and OUTPUT contract"
+            ),
+            "RESULT-SCHEMAS-0781": (
+                "exact closed result.message cardinality, delivery outcome, effect, failure, and OUTPUT contract"
+            ),
+            "RESULT-SCHEMAS-0782": (
+                "exact closed result.transfer cardinality, byte-count, content, effect, failure, and OUTPUT contract"
+            ),
+        }
+        for identifier, subject in task_0005_subjects.items():
+            case = by_id.get(identifier, {})
+            assert case.get("category") == "result_schemas", (
+                f"{identifier} category is not result_schemas"
+            )
+            assert case.get("subject") == subject, f"{identifier} subject is not exact"
+            assert case.get("source") == "built_in_groups_and_results_v0.1.0.json", (
+                f"{identifier} source is not exact"
+            )
+            requirement = case.get("requirement", "")
+            assert all(token in requirement for token in task_0005_tokens[identifier]), (
+                f"{identifier} is not Task-0005-specific"
+            )
+            assert case.get("expected") == task_0005_expected[identifier], (
+                f"{identifier} expected outcome is not exact"
+            )
+
+        task_0005_case_ids = {
+            case["id"] for case in cases if case.get("category") == "result_schemas"
+        }
+        assert task_0005_case_ids == set(task_0005_subjects), (
+            "Task-0005 result-schema case set is not exact"
+        )
+        task_0005_cases = sorted(
+            (case for case in cases if case["id"] in task_0005_case_ids),
+            key=lambda case: case["id"],
+        )
+        assert len(task_0005_cases) == 9, "Task-0005 cases are missing"
+        task_0005_catalog_sha256 = hashlib.sha256(
+            json.dumps(
+                task_0005_cases,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()
+        assert task_0005_catalog_sha256 == (
+            "2c65296a7da92f7d66c3fea373f20832976929476eb6e6f3c160185eba4dfb1d"
+        ), "Task-0005 catalog cases differ from the approved contract"
 
         operation_axis_case_count = 0
         for case in cases:
@@ -5239,6 +5975,9 @@ def check_catalog(root: Path, results: Results) -> None:
             "task_0004_catalog_cases_checked": len(task_0004_cases),
             "task_0004_catalog_sha256": task_0004_catalog_sha256,
             "task_0004_operation_axis_cases_checked": operation_axis_case_count,
+            "task_0005_requirements_checked": len(task_0005_tokens),
+            "task_0005_catalog_cases_checked": len(task_0005_cases),
+            "task_0005_catalog_sha256": task_0005_catalog_sha256,
         }
 
     before = len(results.checks)

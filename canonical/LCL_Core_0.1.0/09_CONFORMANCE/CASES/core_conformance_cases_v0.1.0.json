@@ -5007,8 +5007,8 @@
       "id": "OPERATION-EFFECTS-0623",
       "category": "operation_effects",
       "subject": "core.execute",
-      "requirement": "Enforce derived determinism, all registered possible dependency/effect maxima, and the exact invocation rule. A non-graph target copies exactly one immutable execution profile's final category, always has the process effect because it runs the executable, and unions process with any other profile-selected axes within the row maxima. A graph target has no mandatory local process effect, rejects a prohibited cycle with error.reference.cycle before axis resolution, copies the graph's final category, resolves every reachable core row or custom kind.operation profile, and forms normalized transitive dependency/effect unions that omit exclusive sentinels when concrete classes exist. Record completion through result.command without requiring graph mode to synthesize non-graph command observations; field cardinality and mode projection remain LCL-TASK-0005. No free-form effect channel exists.",
-      "expected": "exact profile-derived or graph-derived category and normalized axes within closed maxima",
+      "requirement": "Enforce derived determinism, all registered possible dependency/effect maxima, and the exact invocation rule. A non-graph target copies exactly one immutable execution profile's final category, always has the process effect because it runs the executable, and unions process with any other profile-selected axes within the row maxima. A graph target has no mandatory local process effect, rejects a prohibited cycle with error.reference.cycle before axis resolution, copies the graph's final category, resolves every reachable core row or custom kind.operation profile, and forms normalized transitive dependency/effect unions that omit exclusive sentinels when concrete classes exist. Under the closed result.command contract, non_graph failure to start records started FALSE and completed FALSE without native observations; a started command records both streams and a completed command records exit_code, where nonzero is a completed outcome. Graph mode synthesizes no native command observations and records value only when the completed graph exposes one material primary result. Record failure phase, effect state, observed effects, and OUTPUT binding independently. No free-form effect channel exists.",
+      "expected": "exact profile-derived or graph-derived category, normalized axes, and mode-specific closed result.command record",
       "source": "operations_v0.1.0.json"
     },
     {
@@ -6215,72 +6215,72 @@
       "id": "RESULT-SCHEMAS-0774",
       "category": "result_schemas",
       "subject": "result.value",
-      "requirement": "Resolve and enforce the complete closed identifier contract.",
-      "expected": "exact registered behavior",
+      "requirement": "Require the exact common status, output_binding, execution_errors, failure_phase, effect_state, and observed_effects fields and forbid unknown fields. Enforce value as zero-or-one meta.material_value, evidence exactly once, value required on producer success, value as the default OUTPUT projection, UNKNOWN forbidden, and partial output unsupported. FALSE, zero, and empty material values remain valid completed outputs.",
+      "expected": "exact closed result.value cardinality, outcome, effect, failure, and OUTPUT contract",
       "source": "built_in_groups_and_results_v0.1.0.json"
     },
     {
       "id": "RESULT-SCHEMAS-0775",
       "category": "result_schemas",
       "subject": "result.collection",
-      "requirement": "Verify result.collection.items is LIST[T] and core.sort result_value_type is LIST[T] without claiming that shared result cardinality, openness, or OUTPUT binding is closed.",
-      "expected": "exact LIST[T] items dependency with later result-contract work still open",
+      "requirement": "Require the exact common status, output_binding, execution_errors, failure_phase, effect_state, and observed_effects fields and forbid unknown fields. Enforce co-present zero-or-one items LIST[T] and count INTEGER, require both on producer success, require non-negative count equal to the actual item count, permit an empty list with count 0, use items as the default OUTPUT projection, forbid UNKNOWN, and disallow partial output.",
+      "expected": "exact closed result.collection cardinality, count, outcome, effect, failure, and OUTPUT contract",
       "source": "built_in_groups_and_results_v0.1.0.json"
     },
     {
       "id": "RESULT-SCHEMAS-0776",
       "category": "result_schemas",
       "subject": "result.operation",
-      "requirement": "Resolve and enforce the complete closed identifier contract.",
-      "expected": "exact registered behavior",
+      "requirement": "Require the exact common status, output_binding, execution_errors, failure_phase, effect_state, and observed_effects fields and forbid unknown fields. Enforce changed BOOLEAN|UNKNOWN and target exactly once, optional material value only for an operation that explicitly exposes one, and changed as the default OUTPUT projection. Keep known changed effect truth after failure without binding OUTPUT; FALSE is valid, UNKNOWN is legal only for changed and never binds, and partial output is unsupported.",
+      "expected": "exact closed result.operation cardinality, outcome, effect truth, failure, and OUTPUT contract",
       "source": "built_in_groups_and_results_v0.1.0.json"
     },
     {
       "id": "RESULT-SCHEMAS-0777",
       "category": "result_schemas",
       "subject": "result.command",
-      "requirement": "Resolve and enforce the complete closed identifier contract.",
-      "expected": "exact registered behavior",
+      "requirement": "Require the exact common status, output_binding, execution_errors, failure_phase, effect_state, and observed_effects fields and forbid unknown fields. Enforce mode exactly once and mode-specific conditional fields. A non_graph failure to start has started FALSE and completed FALSE with no exit_code or streams, pre_effect failure, no effects, and unbound requested OUTPUT. After start both streams exist even when empty; completion adds exit_code, and nonzero remains a completed producer outcome. Graph mode has no native command-observation fields and exposes optional material value only for one completed graph primary result. stdout is the default projection, graph OUTPUT requires explicit value or mode, UNKNOWN is forbidden, and only stdout/stderr permit declared partial binding.",
+      "expected": "exact closed result.command cardinality, start/completion, mode, effect, failure, and OUTPUT contract",
       "source": "built_in_groups_and_results_v0.1.0.json"
     },
     {
       "id": "RESULT-SCHEMAS-0778",
       "category": "result_schemas",
       "subject": "result.validation",
-      "requirement": "Resolve and enforce the complete closed identifier contract.",
-      "expected": "exact registered behavior",
+      "requirement": "Require the exact common status, output_binding, execution_errors, failure_phase, effect_state, and observed_effects fields and forbid unknown fields. Enforce zero-or-one valid BOOLEAN and exactly one domain-errors list; require valid after validation, require no domain errors for TRUE and one or more for FALSE, distinguish domain errors from execution_errors, use valid as the default OUTPUT projection, permit producer status.succeeded with valid FALSE, forbid UNKNOWN, and disallow partial output.",
+      "expected": "exact closed result.validation cardinality, domain-error, effect, failure, and OUTPUT contract",
       "source": "built_in_groups_and_results_v0.1.0.json"
     },
     {
       "id": "RESULT-SCHEMAS-0779",
       "category": "result_schemas",
       "subject": "result.verification",
-      "requirement": "Resolve and enforce the complete closed identifier contract.",
-      "expected": "exact registered behavior",
+      "requirement": "Require the exact common status, output_binding, execution_errors, failure_phase, effect_state, and observed_effects fields and forbid unknown fields. Enforce zero-or-one verified BOOLEAN|UNKNOWN and observed OBJECT, exactly one domain-errors list and evidence list, and require verified plus observed after verification runs. Keep domain errors separate from execution_errors, use verified as the default OUTPUT projection, allow producer success with FALSE or UNKNOWN, forbid UNKNOWN OUTPUT binding, and disallow partial output.",
+      "expected": "exact closed result.verification cardinality, evidence, domain-error, effect, failure, and OUTPUT contract",
       "source": "built_in_groups_and_results_v0.1.0.json"
     },
     {
       "id": "RESULT-SCHEMAS-0780",
       "category": "result_schemas",
       "subject": "result.test",
-      "requirement": "Resolve and enforce the complete closed identifier contract.",
-      "expected": "exact registered behavior",
+      "requirement": "Require the exact common status, output_binding, execution_errors, failure_phase, effect_state, and observed_effects fields and forbid unknown fields. Enforce zero-or-one passed BOOLEAN|UNKNOWN and material expected/actual, evidence exactly once, passed required after comparison, assertion form without expected/actual, and comparison form with both. A tested NULL is present material data, passed is the default OUTPUT projection, producer success may accompany FALSE or UNKNOWN, UNKNOWN never binds, and partial output is unsupported.",
+      "expected": "exact closed result.test cardinality, comparison outcome, evidence, effect, failure, and OUTPUT contract",
       "source": "built_in_groups_and_results_v0.1.0.json"
     },
     {
       "id": "RESULT-SCHEMAS-0781",
       "category": "result_schemas",
       "subject": "result.message",
-      "requirement": "Resolve and enforce the complete closed identifier contract.",
-      "expected": "exact registered behavior",
+      "requirement": "Require the exact common status, output_binding, execution_errors, failure_phase, effect_state, and observed_effects fields and forbid unknown fields. Enforce delivered BOOLEAN|UNKNOWN, recipient, and nullable message_id exactly once; FALSE means known non-delivery, UNKNOWN means delivery truth is unavailable, and NULL means no identifier was assigned. Use delivered as the default OUTPUT projection, permit successful dispatch processing with FALSE or UNKNOWN, forbid UNKNOWN binding, and disallow partial output.",
+      "expected": "exact closed result.message cardinality, delivery outcome, effect, failure, and OUTPUT contract",
       "source": "built_in_groups_and_results_v0.1.0.json"
     },
     {
       "id": "RESULT-SCHEMAS-0782",
       "category": "result_schemas",
       "subject": "result.transfer",
-      "requirement": "Resolve and enforce the complete closed identifier contract.",
-      "expected": "exact registered behavior",
+      "requirement": "Require the exact common status, output_binding, execution_errors, failure_phase, effect_state, and observed_effects fields and forbid unknown fields. Enforce source and destination target_expression exactly once, optional bytes BYTES|UNKNOWN, checksum STRING|NULL, and material value. bytes is absent before transfer, then records the non-negative count actually transferred rather than content; BYTES(0) is valid and UNKNOWN only represents an indeterminate count and never binds. Use bytes as the default OUTPUT projection, expose value only when an operation explicitly supplies transferred content, retain interrupted-transfer count as effect truth without partial OUTPUT, and disallow partial output.",
+      "expected": "exact closed result.transfer cardinality, byte-count, content, effect, failure, and OUTPUT contract",
       "source": "built_in_groups_and_results_v0.1.0.json"
     },
     {

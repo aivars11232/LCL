@@ -14,6 +14,9 @@ bytes provide and freshly validate all of the following:
 - exact target, named-parameter, determinism, dependency, effect,
   invocation-resolution, applicable-error, and result-schema-reference contracts
   for every core operation, plus exact contracts for every pure function;
+- nine closed result schemas with exact common and schema-specific fields,
+  cardinality, domain-outcome, execution-status, failure-phase, effect-state,
+  partial-effect, and OUTPUT projection/binding contracts;
 - closed import, namespace, reference, version, and extension behavior;
 - required conformance cases covering every closed registry entry;
 - valid and deliberately invalid examples;

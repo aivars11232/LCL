@@ -759,7 +759,9 @@
         "PROPERTY"
       ],
       "rules": [
-        "TARGET is destination, not produced VALUE."
+        "TARGET is destination, not produced VALUE.",
+        "Zero PROPERTY occurrences select the applicable default result; one selects a scalar field; two or more select a closed OBJECT in declaration order.",
+        "Every PROPERTY is unique and must name an available projectable result field."
       ]
     },
     "VALIDATE": {

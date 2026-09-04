@@ -25,6 +25,7 @@ OUTPUT:
     TYPE: PATH
     FORMAT: format.binary
     TARGET: PATH(REF(workspace.example), "copy.bin")
+    PROPERTY: destination
 
 GOAL:
     ID: goal.copy

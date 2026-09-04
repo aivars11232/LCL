@@ -43,6 +43,9 @@ OUTPUT:
     ID: output.test
     TYPE: OBJECT[REF(type.command_result)]
     FORMAT: format.json
+    PROPERTY: exit_code
+    PROPERTY: stdout
+    PROPERTY: stderr
 
 GOAL:
     ID: goal.implementation

@@ -88,6 +88,7 @@ core.generate
     Possible dependencies: {host, network, model}
     Possible effects: {filesystem, network, state}
     Invocation resolution: Resolve model from the generation profile. Classify any REFERENCE target by the address class of its resolved target, never by REFERENCE syntax. PATH mutation adds host dependency and filesystem effect; URI mutation adds network dependency and network effect; OUTPUT or another authorized non-filesystem, non-network, non-memory, non-STATE addressable target adds state effect and its required dependency. MEMORY and STATE targets are prohibited; use core.memory_write or core.state_update.
+    Result population: result.operation.value equals the produced material artifact.
     Result schema: result.operation
 
 core.convert
@@ -97,6 +98,7 @@ core.convert
     Possible dependencies: {host, network}
     Possible effects: {filesystem, network, state}
     Invocation resolution: Resolve source and destination address classes and the exact conversion profile; an omitted destination binds only the declared result or OUTPUT state.
+    Result population: result.operation.value equals the converted material value.
     Result schema: result.operation
 
 core.execute
@@ -107,7 +109,7 @@ core.execute
     Possible effects: {filesystem, network, process, package, message, memory, state}
     Invocation resolution: A PATH, URI, or STRING executable target and its exact arguments, working directory, and environment select exactly one immutable execution profile under axis_contract.implementation_profile. Every such non-graph invocation has the process effect because it runs the executable; union process with any other dependencies and effects selected by the profile within this row's maxima. A referenced TASK, PHASE, SEQUENCE, ACTION, or TEST has no mandatory local process effect and resolves the final determinism category and normalized transitive dependency and effect unions of its reachable graph under axis_contract.implementation_profile.graph_resolution.
     Error resolution: For a graph target, union the local errors, including error.reference.cycle for a prohibited graph cycle, with every applicable error of every reachable operation; for a non-graph target, use the local errors.
-    Completion contract: Record completion through result.command without requiring a graph target to synthesize non-graph command observations. Result field cardinality and mode projection remain deferred to LCL-TASK-0005.
+    Completion contract: Set result.command.mode from the target form. In non_graph mode, failure to start records started FALSE and completed FALSE with no exit_code or streams; after start, streams are present and exit_code is present exactly on completion. A completed nonzero exit_code normally has producer status.succeeded. Graph mode synthesizes no native command field and records value exactly when the completed graph exposes one material primary result. All modes use the closed failure, effect, and OUTPUT-binding contract.
     Result schema: result.command
 
 core.install
@@ -172,6 +174,7 @@ core.download
     Possible dependencies: {host, network}
     Possible effects: {filesystem, network}
     Invocation resolution: Resolve the source profile, transfer profile, and destination PATH independently: a remote source adds network dependency and network effect for the primary download; a local source adds host dependency but no network effect; the destination PATH adds host dependency and filesystem effect.
+    Result population: result.transfer.value equals the received material content; result.transfer.bytes remains the non-negative count actually transferred.
     Result schema: result.transfer
 
 core.memory_write

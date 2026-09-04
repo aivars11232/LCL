@@ -10,7 +10,23 @@ EXPECTED/ACTUAL or ASSERT. Required failed checks prevent success. EVIDENCE must
 be observable, typed, and traceable; declared required provenance/checksum must
 resolve.
 
-SUCCESS evaluates ALL, ANY, or NONE after execution/checks. status.succeeded is
-legal only when SUCCESS is TRUE, all required outputs exist, all hard rules hold,
-and all required evidence exists. status.partial is explicitly non-success.
-FAILURE blocks may map exact WHEN conditions to terminal non-success statuses.
+SUCCESS evaluates ALL, ANY, or NONE after execution/checks. At the execution
+root, status.succeeded is legal only when SUCCESS is TRUE, all required outputs
+are fully bound and valid, all hard rules hold, and all required evidence
+exists. status.partial is explicitly non-success. FAILURE blocks may map exact
+WHEN conditions to terminal non-success statuses.
+
+A result record's status is instead scoped to the producer invocation. Producer
+status.succeeded means that invocation completed its contract; its domain
+outcome remains independent. A completed TEST may record passed FALSE, a
+completed VALIDATE may record valid FALSE, a completed VERIFY may record
+verified FALSE or UNKNOWN, and completed dispatch may record delivered FALSE or
+UNKNOWN without turning producer completion into execution failure. The
+execution root still fails whenever its own required SUCCESS, OUTPUT, rule, or
+evidence condition is unsatisfied.
+
+UNKNOWN in passed, verified, delivered, changed, or transfer bytes is a transient
+observation only. It never binds OUTPUT and therefore cannot satisfy a required
+output or required Boolean success condition. A material FALSE remains a valid
+bound result value when the declared OUTPUT type permits BOOLEAN; its truth is
+then evaluated normally by any separate SUCCESS condition.

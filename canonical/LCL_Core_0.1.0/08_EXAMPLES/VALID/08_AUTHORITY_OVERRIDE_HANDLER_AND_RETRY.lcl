@@ -17,6 +17,7 @@ OUTPUT:
     ID: output.payload
     TYPE: STRING
     FORMAT: format.plain_text
+    PROPERTY: value
 
 GOAL:
     ID: goal.payload

@@ -4,5 +4,9 @@ NORMATIVE
 
 Every status meaning, terminality, legal successor, and scope is closed in
 10_REGISTRIES/statuses_and_errors_v0.1.0.json. A transition absent from
-allowed_next is invalid. status.skipped applies to a declaration, not as the
-successful root status of an EXECUTE document.
+allowed_next is invalid. Each status's result_meaning is its producer-result
+interpretation; it does not replace the execution-root meaning. In particular,
+producer status.succeeded records completed production independently of a
+schema-local Boolean outcome, while execution-root status.succeeded still
+requires all root SUCCESS conditions. status.skipped applies to a declaration or
+producer result, not as the successful root status of an EXECUTE document.

@@ -1483,7 +1483,8 @@
         "required generation capability exists"
       ],
       "postconditions": [
-        "artifact satisfies specification and declared verification"
+        "artifact satisfies specification and declared verification",
+        "result.operation.value equals the produced material artifact"
       ],
       "errors": [
         "error.operation.parameter",
@@ -1546,7 +1547,8 @@
         "source format/type is known"
       ],
       "postconditions": [
-        "output has target_format and preserved properties"
+        "output has target_format and preserved properties",
+        "result.operation.value equals the converted material value"
       ],
       "errors": [
         "error.operation.parameter",
@@ -1624,7 +1626,11 @@
         "resolved profile dependencies and effects are within this contract and declared scope"
       ],
       "postconditions": [
-        "completion is recorded through result.command without requiring a graph target to synthesize non-graph command observations; result field cardinality and mode projection remain deferred to LCL-TASK-0005"
+        "result.command.mode is non_graph for PATH, URI, or STRING executable targets and graph for REFERENCE[TASK|PHASE|SEQUENCE|ACTION|TEST] targets",
+        "a non_graph failure to start records started FALSE and completed FALSE without exit_code, stdout, or stderr; after start, started is TRUE and stdout and stderr are present, and exit_code is present exactly when completed is TRUE",
+        "a completed non_graph command with a nonzero exit_code has producer status.succeeded unless another producer-contract failure occurred",
+        "graph mode never synthesizes started, completed, exit_code, stdout, or stderr and records value exactly when the completed graph exposes one material primary result",
+        "completion, failure phase, effects, and OUTPUT binding are recorded through the closed result.command contract"
       ],
       "errors": [
         "error.operation.parameter",
@@ -2111,7 +2117,8 @@
       ],
       "postconditions": [
         "destination bytes equal received source",
-        "checksum matches when supplied"
+        "checksum matches when supplied",
+        "result.transfer.value equals the received material content"
       ],
       "errors": [
         "error.operation.parameter",

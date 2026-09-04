@@ -38,6 +38,7 @@ OUTPUT:
     ID: output.draft
     TYPE: STRING
     FORMAT: format.plain_text
+    PROPERTY: value
 
 GOAL:
     ID: goal.draft

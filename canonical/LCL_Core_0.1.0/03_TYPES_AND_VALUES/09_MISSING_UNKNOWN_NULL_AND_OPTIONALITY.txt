@@ -20,6 +20,15 @@ UNKNOWN
     It may appear literally only in equality/inequality tests, conditions,
     handlers, assumptions, or conformance cases. It cannot be persisted.
 
+    A transient result record may contain UNKNOWN only in a schema-local field
+    whose registered type explicitly includes UNKNOWN. Core 0.1.0 permits this
+    only for result.operation.changed, result.test.passed,
+    result.verification.verified, result.message.delivered, and
+    result.transfer.bytes. Such an observation remains non-material: it cannot
+    bind or partially bind OUTPUT and cannot be written to memory, state,
+    evidence, or another persistent destination. All other result fields reject
+    UNKNOWN.
+
 DEFAULT
     DEFAULT replaces MISSING only. DEFAULT never replaces NULL or UNKNOWN.
 

@@ -272,75 +272,517 @@
       "partial"
     ]
   },
+  "result_contract": {
+    "effective_fields": "Each result schema is the closed union of common_fields and that schema's fields; a duplicate field name is invalid.",
+    "common_fields": {
+      "status": {
+        "type": "qualified_identifier(status)",
+        "cardinality": "exactly_one"
+      },
+      "output_binding": {
+        "type": "ENUM[not_requested|unbound|bound|partial]",
+        "cardinality": "exactly_one"
+      },
+      "execution_errors": {
+        "type": "LIST[qualified_identifier(error)]",
+        "cardinality": "exactly_one"
+      },
+      "failure_phase": {
+        "type": "ENUM[none|pre_effect|post_effect|indeterminate]",
+        "cardinality": "exactly_one"
+      },
+      "effect_state": {
+        "type": "ENUM[none|applied|partial|indeterminate]",
+        "cardinality": "exactly_one"
+      },
+      "observed_effects": {
+        "type": "LIST[result.effect]",
+        "cardinality": "exactly_one"
+      }
+    },
+    "effect_schemas": {
+      "result.effect": {
+        "closed": true,
+        "fields": {
+          "class": {
+            "type": "ENUM[filesystem|network|process|package|message|memory|state]",
+            "cardinality": "exactly_one"
+          },
+          "state": {
+            "type": "ENUM[applied|partial|indeterminate]",
+            "cardinality": "exactly_one"
+          },
+          "target": {
+            "type": "target_expression",
+            "cardinality": "zero_or_one"
+          },
+          "evidence": {
+            "type": "LIST[REFERENCE[EVIDENCE]]",
+            "cardinality": "exactly_one"
+          }
+        },
+        "constraints": [
+          "Every record describes one concrete effect that began; absence is represented by no record, never by an effect class named none.",
+          "The class is within the operation invocation's resolved possible-effect set.",
+          "Evidence may be an empty list only when the effect truth is directly observed without a declared EVIDENCE object."
+        ]
+      }
+    },
+    "output_projection": {
+      "core_default": "With zero OUTPUT.PROPERTY occurrences, select the result schema's default_property.",
+      "custom_default": "With zero OUTPUT.PROPERTY occurrences, a custom kind.operation selects its whole declared RESULT value.",
+      "one_property": "One OUTPUT.PROPERTY selects that one schema-local projectable field as a scalar value.",
+      "multiple_properties": "Two or more unique OUTPUT.PROPERTY occurrences select one closed OBJECT containing exactly those top-level fields in declaration order.",
+      "property_restriction": "For a built-in result schema, each OUTPUT.PROPERTY is one top-level name in projectable_fields; common bookkeeping fields are not projectable.",
+      "validation": "The complete selected projection must be material and must satisfy OUTPUT TYPE, FORMAT, SCHEMA, and ENCODING before binding.",
+      "special_values": "MISSING and UNKNOWN never bind to OUTPUT; FALSE, numeric zero, zero BYTES, an empty STRING, and an empty collection are material and may bind.",
+      "unavailable_field": "If a selected conditional field is absent for the operation or mode, the projection is unavailable and OUTPUT remains unbound."
+    },
+    "invariants": [
+      "status is producer execution status and is independent of every schema-local domain outcome.",
+      "status.succeeded means the producer completed its contract; it may accompany a FALSE domain outcome or a nonzero command exit_code.",
+      "execution_errors contains producer-execution diagnostics; a schema-local errors field contains domain findings.",
+      "failure_phase none denotes no failure; pre_effect denotes failure before any concrete effect began; post_effect denotes failure after at least one effect began; indeterminate denotes that timing cannot be established.",
+      "failure_phase pre_effect requires effect_state none, an empty observed_effects list, and output_binding not_requested or unbound.",
+      "effect_state none requires an empty observed_effects list; applied means all begun authorized effects completed; partial means at least one begun authorized effect did not complete; indeterminate means the effect extent cannot be established.",
+      "effect_state partial and output_binding partial are independent; known effect-truth fields remain populated even when OUTPUT is unbound.",
+      "output_binding not_requested means no OUTPUT was selected; unbound means an OUTPUT was selected but received no value; bound means the complete projection was bound; partial means a schema-declared partial projection was bound.",
+      "output_binding partial is legal only for fields listed by that schema's partial_output contract.",
+      "A pre_effect failure never binds OUTPUT. A required selected OUTPUT that is unbound or partial prevents execution-root status.succeeded."
+    ]
+  },
   "result_schemas": {
     "result.value": {
+      "common_fields": true,
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic",
+      "domain_outcome": {
+        "fields": [
+          "value"
+        ],
+        "unknown_fields": []
+      },
+      "primary_output": {
+        "default_property": "value",
+        "projectable_fields": [
+          "value",
+          "evidence"
+        ]
+      },
+      "partial_output": {
+        "supported": false,
+        "fields": []
+      },
       "fields": {
-        "value": "meta.material_value",
-        "status": "qualified_identifier(status)",
-        "evidence": "LIST[REFERENCE[EVIDENCE]]"
-      }
+        "value": {
+          "type": "meta.material_value",
+          "cardinality": "zero_or_one"
+        },
+        "evidence": {
+          "type": "LIST[REFERENCE[EVIDENCE]]",
+          "cardinality": "exactly_one"
+        }
+      },
+      "constraints": [
+        "status.succeeded requires value exactly once.",
+        "value is absent when its computation did not complete.",
+        "The evidence list may be empty when no declared EVIDENCE object is required."
+      ]
     },
     "result.collection": {
+      "common_fields": true,
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic",
+      "domain_outcome": {
+        "fields": [
+          "items",
+          "count"
+        ],
+        "unknown_fields": []
+      },
+      "primary_output": {
+        "default_property": "items",
+        "projectable_fields": [
+          "items",
+          "count"
+        ]
+      },
+      "partial_output": {
+        "supported": false,
+        "fields": []
+      },
       "fields": {
-        "items": "LIST[T]",
-        "count": "INTEGER",
-        "status": "qualified_identifier(status)"
-      }
+        "items": {
+          "type": "LIST[T]",
+          "cardinality": "zero_or_one"
+        },
+        "count": {
+          "type": "INTEGER",
+          "cardinality": "zero_or_one"
+        }
+      },
+      "constraints": [
+        "items and count are either both absent or both present exactly once.",
+        "status.succeeded requires items and count.",
+        "count is non-negative and equals the actual number of members in items.",
+        "An empty items list is a valid completed outcome and has count 0."
+      ]
     },
     "result.operation": {
+      "common_fields": true,
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic",
+      "domain_outcome": {
+        "fields": [
+          "changed"
+        ],
+        "unknown_fields": [
+          "changed"
+        ]
+      },
+      "primary_output": {
+        "default_property": "changed",
+        "projectable_fields": [
+          "changed",
+          "target",
+          "value"
+        ]
+      },
+      "partial_output": {
+        "supported": false,
+        "fields": []
+      },
       "fields": {
-        "status": "qualified_identifier(status)",
-        "changed": "BOOLEAN",
-        "target": "target_expression",
-        "error": "qualified_identifier(error)|NULL"
-      }
+        "changed": {
+          "type": "BOOLEAN|UNKNOWN",
+          "cardinality": "exactly_one"
+        },
+        "target": {
+          "type": "target_expression",
+          "cardinality": "exactly_one"
+        },
+        "value": {
+          "type": "meta.material_value",
+          "cardinality": "zero_or_one"
+        }
+      },
+      "constraints": [
+        "changed is FALSE when no requested target state changed, TRUE when at least one requested target state is known to have changed, and UNKNOWN only when that truth cannot be established.",
+        "changed remains present after failure and does not by itself bind OUTPUT.",
+        "value is present only when the selected operation contract explicitly produces a material artifact or converted value.",
+        "UNKNOWN changed never binds OUTPUT."
+      ]
     },
     "result.command": {
+      "common_fields": true,
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic",
+      "domain_outcome": {
+        "fields": [
+          "started",
+          "completed",
+          "exit_code",
+          "value"
+        ],
+        "unknown_fields": []
+      },
+      "primary_output": {
+        "default_property": "stdout",
+        "projectable_fields": [
+          "mode",
+          "started",
+          "completed",
+          "exit_code",
+          "stdout",
+          "stderr",
+          "value"
+        ]
+      },
+      "partial_output": {
+        "supported": true,
+        "fields": [
+          "stdout",
+          "stderr"
+        ]
+      },
       "fields": {
-        "exit_code": "INTEGER",
-        "stdout": "STRING",
-        "stderr": "STRING",
-        "status": "qualified_identifier(status)"
-      }
+        "mode": {
+          "type": "ENUM[non_graph|graph]",
+          "cardinality": "exactly_one"
+        },
+        "started": {
+          "type": "BOOLEAN",
+          "cardinality": "zero_or_one"
+        },
+        "completed": {
+          "type": "BOOLEAN",
+          "cardinality": "zero_or_one"
+        },
+        "exit_code": {
+          "type": "INTEGER",
+          "cardinality": "zero_or_one"
+        },
+        "stdout": {
+          "type": "STRING",
+          "cardinality": "zero_or_one"
+        },
+        "stderr": {
+          "type": "STRING",
+          "cardinality": "zero_or_one"
+        },
+        "value": {
+          "type": "meta.material_value",
+          "cardinality": "zero_or_one"
+        }
+      },
+      "constraints": [
+        "In non_graph mode, started and completed are present exactly once.",
+        "A non_graph failure to start has started FALSE, completed FALSE, no exit_code, stdout, or stderr, failure_phase pre_effect, effect_state none, and an unbound OUTPUT when requested.",
+        "Once a non_graph command starts, started is TRUE and stdout and stderr are present, including as empty strings; exit_code is present exactly when completed is TRUE.",
+        "A completed non_graph command with a nonzero exit_code has producer status.succeeded unless another producer-contract failure occurred; nonzero is a completed domain outcome, not failure to start.",
+        "In graph mode, started, completed, exit_code, stdout, and stderr are absent; graph completion is represented by status and no command observation is synthesized.",
+        "In graph mode, value is present exactly when the completed graph exposes one material primary result; otherwise value is absent.",
+        "The default stdout projection is unavailable in graph mode; a graph OUTPUT requires an explicit value or mode property, and common bookkeeping fields are not projectable."
+      ]
     },
     "result.validation": {
+      "common_fields": true,
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic",
+      "domain_outcome": {
+        "fields": [
+          "valid"
+        ],
+        "unknown_fields": []
+      },
+      "primary_output": {
+        "default_property": "valid",
+        "projectable_fields": [
+          "valid",
+          "errors"
+        ]
+      },
+      "partial_output": {
+        "supported": false,
+        "fields": []
+      },
       "fields": {
-        "valid": "BOOLEAN",
-        "errors": "LIST[qualified_identifier(error)]",
-        "status": "qualified_identifier(status)"
-      }
+        "valid": {
+          "type": "BOOLEAN",
+          "cardinality": "zero_or_one"
+        },
+        "errors": {
+          "type": "LIST[qualified_identifier(error)]",
+          "cardinality": "exactly_one"
+        }
+      },
+      "constraints": [
+        "valid is present exactly once after validation completes.",
+        "valid TRUE requires an empty errors list; valid FALSE requires at least one domain validation error.",
+        "status.succeeded with valid FALSE is a valid completed validation result."
+      ]
     },
     "result.verification": {
+      "common_fields": true,
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic",
+      "domain_outcome": {
+        "fields": [
+          "verified"
+        ],
+        "unknown_fields": [
+          "verified"
+        ]
+      },
+      "primary_output": {
+        "default_property": "verified",
+        "projectable_fields": [
+          "verified",
+          "observed",
+          "errors",
+          "evidence"
+        ]
+      },
+      "partial_output": {
+        "supported": false,
+        "fields": []
+      },
       "fields": {
-        "verified": "BOOLEAN|UNKNOWN",
-        "observed": "OBJECT",
-        "errors": "LIST[qualified_identifier(error)]"
-      }
+        "verified": {
+          "type": "BOOLEAN|UNKNOWN",
+          "cardinality": "zero_or_one"
+        },
+        "observed": {
+          "type": "OBJECT",
+          "cardinality": "zero_or_one"
+        },
+        "errors": {
+          "type": "LIST[qualified_identifier(error)]",
+          "cardinality": "exactly_one"
+        },
+        "evidence": {
+          "type": "LIST[REFERENCE[EVIDENCE]]",
+          "cardinality": "exactly_one"
+        }
+      },
+      "constraints": [
+        "verified and observed are present exactly once after verification runs.",
+        "verified records TRUE, FALSE, or UNKNOWN independently of producer status.",
+        "UNKNOWN verified never binds OUTPUT.",
+        "errors contains domain verification findings and is distinct from execution_errors; evidence records the evidence used or produced."
+      ]
     },
     "result.test": {
+      "common_fields": true,
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic",
+      "domain_outcome": {
+        "fields": [
+          "passed"
+        ],
+        "unknown_fields": [
+          "passed"
+        ]
+      },
+      "primary_output": {
+        "default_property": "passed",
+        "projectable_fields": [
+          "passed",
+          "expected",
+          "actual",
+          "evidence"
+        ]
+      },
+      "partial_output": {
+        "supported": false,
+        "fields": []
+      },
       "fields": {
-        "passed": "BOOLEAN|UNKNOWN",
-        "expected": "meta.material_value|NULL",
-        "actual": "meta.material_value|NULL",
-        "evidence": "LIST[REFERENCE[EVIDENCE]]"
-      }
+        "passed": {
+          "type": "BOOLEAN|UNKNOWN",
+          "cardinality": "zero_or_one"
+        },
+        "expected": {
+          "type": "meta.material_value",
+          "cardinality": "zero_or_one"
+        },
+        "actual": {
+          "type": "meta.material_value",
+          "cardinality": "zero_or_one"
+        },
+        "evidence": {
+          "type": "LIST[REFERENCE[EVIDENCE]]",
+          "cardinality": "exactly_one"
+        }
+      },
+      "constraints": [
+        "passed is present exactly once after the test comparison runs and may be TRUE, FALSE, or UNKNOWN independently of producer status.",
+        "Assertion form omits expected and actual; expected-and-actual form requires each exactly once.",
+        "A tested NULL is a present meta.material_value; field absence, not a NULL union, represents an unavailable expected or actual value.",
+        "UNKNOWN passed never binds OUTPUT."
+      ]
     },
     "result.message": {
+      "common_fields": true,
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic",
+      "domain_outcome": {
+        "fields": [
+          "delivered"
+        ],
+        "unknown_fields": [
+          "delivered"
+        ]
+      },
+      "primary_output": {
+        "default_property": "delivered",
+        "projectable_fields": [
+          "delivered",
+          "recipient",
+          "message_id"
+        ]
+      },
+      "partial_output": {
+        "supported": false,
+        "fields": []
+      },
       "fields": {
-        "delivered": "BOOLEAN|UNKNOWN",
-        "recipient": "target_expression",
-        "message_id": "STRING|NULL",
-        "status": "qualified_identifier(status)"
-      }
+        "delivered": {
+          "type": "BOOLEAN|UNKNOWN",
+          "cardinality": "exactly_one"
+        },
+        "recipient": {
+          "type": "target_expression",
+          "cardinality": "exactly_one"
+        },
+        "message_id": {
+          "type": "STRING|NULL",
+          "cardinality": "exactly_one"
+        }
+      },
+      "constraints": [
+        "delivered is FALSE when non-delivery is known and UNKNOWN only when delivery truth cannot be established.",
+        "status.succeeded records completed dispatch processing and may accompany delivered FALSE or UNKNOWN.",
+        "message_id is NULL when the completed provider interaction is known not to have assigned an identifier.",
+        "UNKNOWN delivered never binds OUTPUT."
+      ]
     },
     "result.transfer": {
+      "common_fields": true,
+      "unknown_fields": "forbidden",
+      "field_order": "not_semantic",
+      "domain_outcome": {
+        "fields": [
+          "bytes"
+        ],
+        "unknown_fields": [
+          "bytes"
+        ]
+      },
+      "primary_output": {
+        "default_property": "bytes",
+        "projectable_fields": [
+          "source",
+          "destination",
+          "bytes",
+          "checksum",
+          "value"
+        ]
+      },
+      "partial_output": {
+        "supported": false,
+        "fields": []
+      },
       "fields": {
-        "source": "source_expression",
-        "destination": "target_expression",
-        "bytes": "BYTES|UNKNOWN",
-        "checksum": "STRING|NULL",
-        "status": "qualified_identifier(status)"
-      }
+        "source": {
+          "type": "target_expression",
+          "cardinality": "exactly_one"
+        },
+        "destination": {
+          "type": "target_expression",
+          "cardinality": "exactly_one"
+        },
+        "bytes": {
+          "type": "BYTES|UNKNOWN",
+          "cardinality": "zero_or_one"
+        },
+        "checksum": {
+          "type": "STRING|NULL",
+          "cardinality": "zero_or_one"
+        },
+        "value": {
+          "type": "meta.material_value",
+          "cardinality": "zero_or_one"
+        }
+      },
+      "constraints": [
+        "bytes is absent before transfer begins and present once transfer begins, including after interruption.",
+        "A material bytes value is a non-negative BYTES byte-count magnitude equal to the number of bytes actually transferred; it is never transferred content.",
+        "bytes may be UNKNOWN only when the count cannot be established, and UNKNOWN bytes never binds OUTPUT.",
+        "A completed zero-byte transfer is valid and records BYTES(0).",
+        "value is present only when the selected transfer operation explicitly exposes material transferred content; it is distinct from bytes.",
+        "A known interrupted-transfer byte count is effect truth and does not constitute partial OUTPUT binding."
+      ]
     }
   },
   "reserved_namespaces": [

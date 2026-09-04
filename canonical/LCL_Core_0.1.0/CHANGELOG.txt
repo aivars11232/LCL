@@ -1,5 +1,27 @@
 LCL CORE CHANGELOG
 
+0.1.0 BLOCKED REPAIR CANDIDATE - LCL-TASK-0005
+
+- Reproduced the accepted Claude handoff decisions against the actual local
+  candidate after receiving approval for explicit OUTPUT.PROPERTY projection;
+  no web-session edit was assumed present.
+- Closed all nine result schemas with inherited execution status, output-binding,
+  execution-error, failure-phase, effect-state, and observed-effect fields plus
+  exact schema-specific fields, cardinalities, and unknown-field rejection.
+- Separated producer execution status from domain outcomes, preserved false and
+  empty completed values, and made UNKNOWN legality agree with field types and
+  binding rules.
+- Defined zero-, one-, and multi-property OUTPUT projection, default primary
+  properties, explicit graph-command projection, and partial-output support only
+  for command stdout/stderr.
+- Distinguished command failure to start from completed nonzero exit, byte counts
+  from transferred content, and known effect truth from OUTPUT binding after
+  partial or post-effect failure.
+- Updated the affected operation postconditions and valid examples, strengthened
+  static result-contract checks, and closed all nine result-schema catalog cases.
+- Preserved the Task 0006 diagnostic/lifecycle blockers and stale integrity
+  metadata. No release archive was produced.
+
 0.1.0 BLOCKED REPAIR CANDIDATE - LCL-TASK-0004
 
 - Reproduced the accepted Claude handoff decisions against the actual local

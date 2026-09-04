@@ -5,15 +5,17 @@
   "statuses": {
     "status.not_started": {
       "meaning": "The executable root has not begun validation.",
+      "result_meaning": "The producer has not begun validating or executing the invocation and no domain outcome exists.",
       "terminal": false,
       "allowed_next": [
         "status.validating",
         "status.cancelled"
       ],
-      "scope": "execution_root_or_declaration"
+      "scope": "execution_root_declaration_or_result"
     },
     "status.validating": {
       "meaning": "Syntax, types, references, rules, inputs, and dependencies are being checked.",
+      "result_meaning": "The producer is validating the invocation; no concrete effect or completed domain outcome exists.",
       "terminal": false,
       "allowed_next": [
         "status.invalid",
@@ -21,16 +23,18 @@
         "status.blocked",
         "status.cancelled"
       ],
-      "scope": "execution_root_or_declaration"
+      "scope": "execution_root_declaration_or_result"
     },
     "status.invalid": {
       "meaning": "The document cannot execute because language validation failed.",
+      "result_meaning": "The invocation cannot execute because its language or operation contract is invalid; failure_phase is pre_effect.",
       "terminal": true,
       "allowed_next": [],
-      "scope": "execution_root_or_declaration"
+      "scope": "execution_root_declaration_or_result"
     },
     "status.ready": {
       "meaning": "Validation passed and required inputs/dependencies are available.",
+      "result_meaning": "Invocation validation passed and required inputs and dependencies are available, but execution has not begun.",
       "terminal": false,
       "allowed_next": [
         "status.running",
@@ -39,10 +43,11 @@
         "status.stopped",
         "status.cancelled"
       ],
-      "scope": "execution_root_or_declaration"
+      "scope": "execution_root_declaration_or_result"
     },
     "status.running": {
       "meaning": "At least one required action began and no terminal status exists.",
+      "result_meaning": "The producer invocation began and has no terminal producer status; any begun effects are recorded separately.",
       "terminal": false,
       "allowed_next": [
         "status.succeeded",
@@ -52,10 +57,11 @@
         "status.stopped",
         "status.cancelled"
       ],
-      "scope": "execution_root_or_declaration"
+      "scope": "execution_root_declaration_or_result"
     },
     "status.blocked": {
       "meaning": "Execution cannot proceed because required external data, permission, dependency, or host capability is unavailable.",
+      "result_meaning": "The producer cannot presently proceed because required external data, permission, dependency, or host capability is unavailable; failure_phase and effect_state record whether anything began.",
       "terminal": false,
       "allowed_next": [
         "status.ready",
@@ -63,43 +69,49 @@
         "status.stopped",
         "status.cancelled"
       ],
-      "scope": "execution_root_or_declaration"
+      "scope": "execution_root_declaration_or_result"
     },
     "status.stopped": {
       "meaning": "Execution halted on a declared stop path without satisfying SUCCESS.",
+      "result_meaning": "The producer halted on a declared stop path before completing its invocation contract; output and effect states remain independent.",
       "terminal": true,
       "allowed_next": [],
-      "scope": "execution_root_or_declaration"
+      "scope": "execution_root_declaration_or_result"
     },
     "status.cancelled": {
       "meaning": "The invoking authority or host cancelled execution.",
+      "result_meaning": "The invoking authority or host cancelled the producer; failure_phase and effect_state record the observed timing and effects.",
       "terminal": true,
       "allowed_next": [],
-      "scope": "execution_root_or_declaration"
+      "scope": "execution_root_declaration_or_result"
     },
     "status.failed": {
-      "meaning": "A required action, check, or hard rule failed after execution began.",
+      "meaning": "A required action, check, or hard rule failed; its failure phase records whether any concrete effect began.",
+      "result_meaning": "The producer did not complete its invocation contract. This includes a pre-effect failure to start and a post-effect failure; failure_phase distinguishes them.",
       "terminal": true,
       "allowed_next": [],
-      "scope": "execution_root_or_declaration"
+      "scope": "execution_root_declaration_or_result"
     },
     "status.partial": {
-      "meaning": "Some outputs exist but SUCCESS is FALSE; this is not success.",
+      "meaning": "Execution terminated after completing only a declared subset of required work; output and effect states separately record what exists. This is not success.",
+      "result_meaning": "The producer completed only a declared subset of its invocation contract. This status neither implies partial OUTPUT binding nor requires partial effects.",
       "terminal": true,
       "allowed_next": [],
-      "scope": "execution_root_or_declaration"
+      "scope": "execution_root_declaration_or_result"
     },
     "status.succeeded": {
-      "meaning": "Every required SUCCESS condition is TRUE and required evidence exists.",
+      "meaning": "The scoped producer completed its execution contract; at an execution root, every required SUCCESS condition is TRUE and required evidence exists.",
+      "result_meaning": "The producer completed its invocation contract. A FALSE domain outcome, an empty result, numeric zero, or a nonzero command exit_code does not contradict producer success.",
       "terminal": true,
       "allowed_next": [],
-      "scope": "execution_root_or_declaration"
+      "scope": "execution_root_declaration_or_result"
     },
     "status.skipped": {
       "meaning": "A non-root declaration did not apply because WHEN was FALSE or it was optional and omitted.",
+      "result_meaning": "The producer invocation did not apply; no domain outcome or effect exists and any selected OUTPUT remains unbound.",
       "terminal": true,
       "allowed_next": [],
-      "scope": "declaration"
+      "scope": "declaration_or_result"
     }
   },
   "errors": {

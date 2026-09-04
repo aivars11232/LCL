@@ -1,8 +1,15 @@
-LCL Core 0.1.0 Bare-Specification-Complete Candidate
+LCL Core 0.1.0 Bare Language Specification Release
 Formal version: 0.1.0
 Language-definition status: BARE_SPECIFICATION_COMPLETE through LCL-TASK-0006
-Packaging status: unpublished; not Final, Verified, or release-ready
+Package status: BARE_LANGUAGE_RELEASE, packaged by LCL-TASK-0007
+Package scope: bare language specification only
 Canonical base build UTC: 2026-08-30T18:52:24+00:00
 Repair task: LCL-REPAIR-0001
-Integrity metadata: deliberately frozen pending the corrected final release task
-Repair archive: not created
+Release task: LCL-TASK-0007
+Integrity metadata: regenerated from the current bytes as MANIFEST.json, then
+VALIDATION_REPORT.txt, then SHA256SUMS.txt
+Release archive: LCL_Core_0.1.0_Final.zip, created outside this package root
+Out of scope: this release defines the language only. No lexer, parser,
+interpreter, compiler, runtime, semantic execution engine, UI, IDE, provider
+integration, agent framework, or deployment tooling is included, and no such
+absence is a release blocker.

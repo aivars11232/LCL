@@ -1,13 +1,26 @@
 {
-  "package": "LCL Core 0.1.0 Repair Candidate",
+  "package": "LCL Core 0.1.0 Bare Language Specification Release",
   "formal_version": "0.1.0",
-  "status": "blocked_repair_candidate",
-  "release_ready": false,
+  "status": "bare_language_release",
+  "release_ready": true,
+  "package_scope": "bare_language_specification",
+  "out_of_scope_artifacts": [
+    "lexer",
+    "parser",
+    "interpreter",
+    "compiler",
+    "runtime",
+    "semantic_execution_engine",
+    "ui",
+    "ide",
+    "provider_integration",
+    "deployment_tooling"
+  ],
   "package_root": "LCL_Core_0.1.0",
-  "generated_utc": "2026-08-30T21:00:31Z",
-  "package_file_count": 157,
-  "manifest_record_count": 154,
-  "checksum_record_count": 156,
+  "generated_utc": "2026-09-04T17:38:32Z",
+  "package_file_count": 172,
+  "manifest_record_count": 169,
+  "checksum_record_count": 171,
   "integrity_model": {
     "algorithm": "SHA-256",
     "path_basis": "package-root-relative POSIX paths",
@@ -44,20 +57,20 @@
     "functions": 11,
     "operations": 39,
     "statuses": 12,
-    "errors": 75,
-    "conformance_requirements": 791,
+    "errors": 77,
+    "conformance_requirements": 797,
     "concrete_source_fixtures": 15
   },
   "files": [
     {
       "path": "00_RELEASE/00_CANONICAL_SOURCE_AND_PROVENANCE.txt",
-      "bytes": 1715,
-      "sha256": "c807edb93d56dbcfb410e93b82b522e8e7e5e05b397c70577b7528c9d29808b1"
+      "bytes": 3157,
+      "sha256": "da4f2f13ff8a4829d336672854fbfdd7e467a2edb87cc30d988cdd7a2919288f"
     },
     {
       "path": "00_RELEASE/01_RELEASE_STATUS_AND_BOUNDARY.txt",
-      "bytes": 1410,
-      "sha256": "1155ad8ffebb4d31667b36578ea2094c662ebab79a2069abab957e02933168f5"
+      "bytes": 2202,
+      "sha256": "b6f85fd1b8aba46648d6d4511f2e69b50cb18ea20e8551645ecf596c28eb2f24"
     },
     {
       "path": "00_RELEASE/02_NORMATIVE_AUTHORITY_ORDER.txt",
@@ -66,13 +79,13 @@
     },
     {
       "path": "00_RELEASE/03_COMPLETENESS_CRITERIA.txt",
-      "bytes": 2125,
-      "sha256": "b9ebbe9261c15a68aed286da13b612239c5507d8b52221cdfa9785bef6bc3fc2"
+      "bytes": 3713,
+      "sha256": "4db81a3c7516b67942bf180de9a83edcb584cb9ecfec23a6902f3bc55b0a5074"
     },
     {
       "path": "00_RELEASE/04_CHANGE_CONTROL.txt",
-      "bytes": 722,
-      "sha256": "179b3662063ce3a8cc173a7e071c74f30507b968b718212f88debc4eda767080"
+      "bytes": 1073,
+      "sha256": "4a9c20e97aad7a446507748d028dc17381ac9f2ad381b03c9aff557a5bf7ad0b"
     },
     {
       "path": "01_FOUNDATION/01_PURPOSE_AND_TERMINOLOGY.txt",
@@ -86,8 +99,8 @@
     },
     {
       "path": "01_FOUNDATION/03_NORMATIVE_PROCESSING_MODEL.txt",
-      "bytes": 1091,
-      "sha256": "8b473096588d9b57ba5c6617a27037085313f70e269f3ddcffe16ee5914428fc"
+      "bytes": 2041,
+      "sha256": "a920b84500ffd991861472ee427e68bd21a248276365612e690ec996f68aa22f"
     },
     {
       "path": "01_FOUNDATION/04_DOCUMENT_KINDS_AND_BOUNDARIES.txt",
@@ -121,13 +134,13 @@
     },
     {
       "path": "02_LEXICAL/05_KEYWORD_REFERENCE_A_TO_M.txt",
-      "bytes": 12722,
-      "sha256": "94540dc473448a920a69f07af449cc029c25e76c805281c87bb4a4680b0f2184"
+      "bytes": 13241,
+      "sha256": "3c7be9a1c47cb1ee90f624dc2bbfef4a7b2d10a6937e8004447940f43d29d9d8"
     },
     {
       "path": "02_LEXICAL/06_KEYWORD_REFERENCE_N_TO_Z.txt",
-      "bytes": 9737,
-      "sha256": "6779d14a23f6425421ec0b9287cd139c7641922f3ee28c073b956c7113e01eb3"
+      "bytes": 10110,
+      "sha256": "2d4a857effeb43dd9225539b6e94a7670cdb6800ea19773f743736c2c95f4d2e"
     },
     {
       "path": "02_LEXICAL/07_LITERALS_AND_ESCAPE_SEQUENCES.txt",
@@ -136,13 +149,13 @@
     },
     {
       "path": "02_LEXICAL/08_LIST_OBJECT_AND_DATA_LEXICAL_FORM.txt",
-      "bytes": 690,
-      "sha256": "fd054f43156202a52e39512bbf93db9b32d25ffdf81bea18c332d8229512d0f7"
+      "bytes": 933,
+      "sha256": "7769bc596fe1d14202ad2916c99d655a667cf36a06a7ed5419bb36ba808b1f14"
     },
     {
       "path": "02_LEXICAL/09_ADOPTED_SYMBOLS.txt",
-      "bytes": 1388,
-      "sha256": "4fe376ac074314067e655882ef1339c69e0116b04727c75f87e00495d14a40d8"
+      "bytes": 1408,
+      "sha256": "df2d5e7ef402dd51d119ad935e24a7edd09784ad9fe84aa4cf56f0bcea460acf"
     },
     {
       "path": "02_LEXICAL/10_EXCLUDED_SYMBOLS_AND_NOTATION.txt",
@@ -161,38 +174,38 @@
     },
     {
       "path": "03_TYPES_AND_VALUES/01_TYPE_SYSTEM_RULES.txt",
-      "bytes": 583,
-      "sha256": "4e788d0fd24ac1b153cb8593b5dd370d8e6eb3fb29cfab05ff412b09e13df761"
+      "bytes": 1064,
+      "sha256": "2e4c77856bfa8eb25ca7c3c934bd89814b9ff24d446575578e63d7bec062267c"
     },
     {
       "path": "03_TYPES_AND_VALUES/02_BUILT_IN_TYPE_REFERENCE.txt",
-      "bytes": 1319,
-      "sha256": "cbfff1501abcefdb9c62c82a140b454f25e4e0784e85bf45ef822bb71ff6b73f"
+      "bytes": 2240,
+      "sha256": "4a0fc565ce74b010fe7336d97d0d7e5b5a46de4d93ab8981afa15c534a28834f"
     },
     {
       "path": "03_TYPES_AND_VALUES/03_COLLECTIONS_OBJECTS_ENUMS_AND_EQUALITY.txt",
-      "bytes": 687,
-      "sha256": "c33a1adeba3f09b264a35ebd3dbcd728ab660f7322ebd52ee224efa38d88eac8"
+      "bytes": 1174,
+      "sha256": "f5af59b955ac73cfc62abdaf510a62a93c9062bde1fbf8c12b3eafe5973ddea9"
     },
     {
       "path": "03_TYPES_AND_VALUES/04_TYPED_CONSTRUCTORS_AND_REFERENCES.txt",
-      "bytes": 736,
-      "sha256": "6beaa41ea5eeccc6d43279912966eb9b5acfcac77ef3e1b572206fccabe34f8f"
+      "bytes": 2032,
+      "sha256": "5c66b40a37611956fc5be3c7d21acb80d9ffdaf44f828bb262f4219a6b4c34b9"
     },
     {
       "path": "03_TYPES_AND_VALUES/05_CUSTOM_TYPES_SCHEMAS_AND_DEFINITIONS.txt",
-      "bytes": 695,
-      "sha256": "24f5f2c143b80862301ffd177acad509ef63a196070f2867a888a27604bf17fe"
+      "bytes": 2603,
+      "sha256": "4eb8291ec4c984383277b635cb15199bdd218f15863fa9c82ec7b12997ba76d0"
     },
     {
       "path": "03_TYPES_AND_VALUES/06_NUMERIC_ARITHMETIC_COMPARISON_AND_ROUNDING.txt",
-      "bytes": 838,
-      "sha256": "a3b3c26581d8794d9204476efe35358e86f81c6324178576820b4860ea7ac0f4"
+      "bytes": 2722,
+      "sha256": "3c26a276f37745001c345aa00bb029fda5be1116bb1ae451c477ced710ce03a4"
     },
     {
       "path": "03_TYPES_AND_VALUES/07_FORMATS_ENCODINGS_UNITS_BOUNDS_AND_PATTERNS.txt",
-      "bytes": 559,
-      "sha256": "bba8f0100b48a30e74530a579dabad0ad8cda674b58f36f4144ad5fc6971aed4"
+      "bytes": 2557,
+      "sha256": "3475638bd8a797dbaf93267b4ac02acfac75af70620fc43c131691b4b704669c"
     },
     {
       "path": "03_TYPES_AND_VALUES/08_BUILT_IN_FORMATS_ENCODINGS_AND_UNITS.txt",
@@ -201,13 +214,13 @@
     },
     {
       "path": "03_TYPES_AND_VALUES/09_MISSING_UNKNOWN_NULL_AND_OPTIONALITY.txt",
-      "bytes": 1860,
-      "sha256": "a28e3647fae57922d9b56eae7c37543bdb1dae8cad09051461d2544b485b92ff"
+      "bytes": 2388,
+      "sha256": "b99c804db5a711ae1bc2d6d401af99e05ffdacb3642a342a9a8b426c025fa607"
     },
     {
       "path": "03_TYPES_AND_VALUES/10_COLLECTION_OBJECT_ENUM_AND_SCHEMA_FORMS.txt",
-      "bytes": 1545,
-      "sha256": "70801ea9e7084d080f579616bf72204be34dad3c2a18781671924abafd9b2737"
+      "bytes": 1952,
+      "sha256": "cd6282311924ce92802f84952b1ef6527b9b7c645146742289503d4ad657c6bf"
     },
     {
       "path": "04_GRAMMAR/01_DOCUMENT_FORM_AND_TOP_LEVEL_ORDER.txt",
@@ -221,13 +234,13 @@
     },
     {
       "path": "04_GRAMMAR/03_EXPRESSIONS_REFERENCES_PROPERTIES_AND_CALLS.txt",
-      "bytes": 556,
-      "sha256": "92118b78219729a1223ba10c85e18b87686a9605648316e90afbf8bf2e9cd24d"
+      "bytes": 572,
+      "sha256": "80ea9f8cb06f4f1dcf32cf9267b74a7bf95aea1e04457627400936fb605d2337"
     },
     {
       "path": "04_GRAMMAR/04_CONDITIONS_BRANCHES_AND_BOUNDED_ITERATION.txt",
-      "bytes": 903,
-      "sha256": "f3e494fafedf3189d166d4c80905e595d11ff0a1314e18efa95b45c7bd27d019"
+      "bytes": 1292,
+      "sha256": "e3ee503febbf5147eee6b9014d8a420fd2f4b575d0a16e0e5bd6cead0b3e1d44"
     },
     {
       "path": "04_GRAMMAR/05_IMPORT_EXTENSION_AND_REFERENCE_FORM.txt",
@@ -236,28 +249,28 @@
     },
     {
       "path": "04_GRAMMAR/06_TASK_ACTION_PHASE_SEQUENCE_AND_STEP_FORM.txt",
-      "bytes": 610,
-      "sha256": "4d091bfc9b25a8fad5918eaa1836f9e9109d5e47bf67e47b2ad8c4f983559a72"
+      "bytes": 894,
+      "sha256": "675b0cb086b3be0fecd4875f972f927621835c86137a718e0d22b6eed677de03"
     },
     {
       "path": "04_GRAMMAR/07_RULE_CHECK_OUTPUT_AND_COMPLETION_FORM.txt",
-      "bytes": 497,
-      "sha256": "9a97724161922cb546474b3a642cc33a9309264bd265b77a1f108a2ac249c4c5"
+      "bytes": 949,
+      "sha256": "817c0aacc469687a2d92022a95166c226a9e78da9cb8b8d8159dfc1caedc8932"
     },
     {
       "path": "04_GRAMMAR/08_CORE_BLOCK_SCHEMAS_A.txt",
-      "bytes": 5690,
-      "sha256": "cc629e2923b6d73ab2fae66d5c1afcf8a90fc952fb67d6ffa3f1fd10b812850d"
+      "bytes": 6094,
+      "sha256": "28b9fb79c35ba7d94824a2ce309d9caab88cf6dfd7ed5488f6e8c01a546f0aef"
     },
     {
       "path": "04_GRAMMAR/09_CORE_BLOCK_SCHEMAS_B.txt",
-      "bytes": 4847,
-      "sha256": "f52be5339bf92a431d44fa8ed882565a0beefe5b79fd82347dd34d5d9e590f37"
+      "bytes": 5441,
+      "sha256": "6b92147a4793f8d9ece5a19df3c9ab908e496d0236aef2194321d9fd035e7f6e"
     },
     {
       "path": "04_GRAMMAR/10_COMPLETE_EBNF.ebnf",
-      "bytes": 8117,
-      "sha256": "511caa094096da8477f39732fd874350783e7de633eb4110128bbdad617f63e9"
+      "bytes": 8141,
+      "sha256": "364780b6f00c19489a97d2f4ce5073d768394119d870cc89acdefc25288f85fc"
     },
     {
       "path": "04_GRAMMAR/11_GRAMMAR_SEMANTIC_CONSTRAINTS.txt",
@@ -266,13 +279,13 @@
     },
     {
       "path": "04_GRAMMAR/12_VALUE_ITEM_PROPERTY_SCHEMA_AND_OBJECT_BLOCKS.txt",
-      "bytes": 844,
-      "sha256": "4ccc87e301f8c25515618f3d185e6c37841d747aeacde1457d133035c9c7f171"
+      "bytes": 947,
+      "sha256": "571408955f61613bec0b5737061ec830334617c61d217344e15878a9858966f0"
     },
     {
       "path": "04_GRAMMAR/13_EXACT_FIELD_SIGNATURES.txt",
-      "bytes": 994,
-      "sha256": "025b7355dcfe64e008c73358da3bfcc2f1c74431c270d2ecf387ae89fd315f1a"
+      "bytes": 3350,
+      "sha256": "e8b3d29f4651bd37e089abc3dfde0e0dcbba9f90367c37fba6c78b0b4fb667a7"
     },
     {
       "path": "05_SEMANTICS/01_DECLARATION_RESOLUTION_REACHABILITY_AND_EXECUTION_GRAPH.txt",
@@ -281,8 +294,8 @@
     },
     {
       "path": "05_SEMANTICS/02_SCOPE_TARGET_WORKSPACE_AND_SOURCE.txt",
-      "bytes": 682,
-      "sha256": "ce92733572350b69b2b74ca1c296885ece530286cd1e9de785b6a38dea9e1010"
+      "bytes": 1034,
+      "sha256": "400eda2f15675b8959a3db1408d0fcac508294525f999b69a8ef922a47214705"
     },
     {
       "path": "05_SEMANTICS/03_REQUIRE_ALLOW_FORBID_PREFER_PRESERVE_AND_ACTION_AUTHORIZATION.txt",
@@ -291,13 +304,13 @@
     },
     {
       "path": "05_SEMANTICS/04_AUTHORITY_PRIORITY_OVERRIDE_AND_CONFLICT_RESOLUTION.txt",
-      "bytes": 781,
-      "sha256": "67cb331334bbfd5c26f174d7c68923b5f6bfc142ea469a8a7465512a1e9db978"
+      "bytes": 1097,
+      "sha256": "0845d3e0c0d0786ef6dcaedbff97db2144a76adbdafb99f4b17423115707c897"
     },
     {
       "path": "05_SEMANTICS/05_INPUT_DATA_OUTPUT_RESULT_AND_FORMAT.txt",
-      "bytes": 588,
-      "sha256": "a04205e77115efe506a24fe2149adca09df58f1f08f2d34f8a01296f7a0f9c46"
+      "bytes": 8380,
+      "sha256": "662c2bf199f65be9b19ce105ad129f478c4e48ca262cd3f5a82f8c9c02e0511a"
     },
     {
       "path": "05_SEMANTICS/06_MISSING_UNKNOWN_NULL_DEFAULT_ASSUME_AND_HANDLER_RESOLUTION.txt",
@@ -311,63 +324,63 @@
     },
     {
       "path": "05_SEMANTICS/08_PHASE_SEQUENCE_STEP_BRANCH_LOOP_RETRY_AND_CONCURRENCY.txt",
-      "bytes": 715,
-      "sha256": "c07875a47dc683dbf4e38b9673b3ac78a0cff540574f28a4eeaf10e43d9ca8fb"
+      "bytes": 1202,
+      "sha256": "dc7e5d0b3ba0f3a8a9d002b8a884ebcf8dee2c350660071bafc93d7f9b0f21d6"
     },
     {
       "path": "05_SEMANTICS/09_VALIDATION_EXECUTION_FAILURE_AND_TERMINATION.txt",
-      "bytes": 683,
-      "sha256": "d5442fbd0706cb86c756b29b5045f374401f923bec4b3c1ce6d8932b96c9e721"
+      "bytes": 5718,
+      "sha256": "b15f7d9a60f0d6764e0cc3c9180dc812e5890e8b2a264fd40f15fdc97549daf5"
     },
     {
       "path": "05_SEMANTICS/10_VERIFY_TEST_EVIDENCE_SUCCESS_FAILURE_AND_STATUS.txt",
-      "bytes": 721,
-      "sha256": "730df0d8487fc5a24e96858d2abe3c9fc0fc225212e8cd9ab94878fdc46d0f46"
+      "bytes": 1711,
+      "sha256": "8aff49c3de96b7d5f356527581bcd4bcb8f579b4db981576bb45688aa9f0e8f1"
     },
     {
       "path": "05_SEMANTICS/11_DETERMINISM_EQUIVALENCE_AND_INTERPRETER_VARIATION.txt",
-      "bytes": 602,
-      "sha256": "15c21adebd934342fe4d7b0cf8b119873dac8a7e3989b54064a6653581f2cf61"
+      "bytes": 11087,
+      "sha256": "b0ceb2a40d80cb1f2e36b67665acd6bf4b3ed84a62412685c947ede602264fed"
     },
     {
       "path": "05_SEMANTICS/12_OPERATOR_FUNCTION_AND_SPECIAL_VALUE_SEMANTICS.txt",
-      "bytes": 897,
-      "sha256": "45cd61f5bc9d050450948048b464a01b54f9655843bf6dcf416824c07cd83daa"
+      "bytes": 3313,
+      "sha256": "8d2bfe9ff698d03101f2caecf1dec32d7e037b0e69a0ea0199b2274094561b5d"
     },
     {
       "path": "06_STANDARD_LIBRARY/01_READ_ONLY_AND_ANALYTICAL_OPERATIONS.txt",
-      "bytes": 1957,
-      "sha256": "7bd40eaa65b0d427fe2c71249054dc2a68de87b8b0458f45188a80ba124ab65a"
+      "bytes": 11996,
+      "sha256": "fde95916a8b1b50699088c4883f50955dbe73aba2187e11ee5bdd456b8ac8eb9"
     },
     {
       "path": "06_STANDARD_LIBRARY/02_MUTATING_AND_EXTERNAL_OPERATIONS.txt",
-      "bytes": 2996,
-      "sha256": "02ef42a575cc7761ecc93f17f74d9f2d513466ffb95681e8690c0985f3e0d9fd"
+      "bytes": 18672,
+      "sha256": "89adcc88a127314e8c924588eac57c1f97a7eb12cffe120aa0109113370bb09c"
     },
     {
       "path": "06_STANDARD_LIBRARY/03_CONTROL_OPERATIONS.txt",
-      "bytes": 821,
-      "sha256": "88c0ea25dacc52de48b24bab87f94bc85f21433672fc3f58b13540eee6625eb7"
+      "bytes": 8113,
+      "sha256": "dc12274d87c250985225a02d2dc8e47d4eb42f9cf5755e4a86e4021c2637c2b6"
     },
     {
       "path": "06_STANDARD_LIBRARY/04_BUILT_IN_FUNCTIONS.txt",
-      "bytes": 640,
-      "sha256": "268f94af6ad9126fa30f5be5d16aeb0ec3dde4663a2921c7de6274ef4d937f20"
+      "bytes": 806,
+      "sha256": "b69742471d808c7a28e505c545f82a5c5cba86c020cfb947e706287df8940563"
     },
     {
       "path": "06_STANDARD_LIBRARY/05_CORE_STATUS_IDENTIFIERS.txt",
-      "bytes": 339,
-      "sha256": "dab4cb103df3ee0fe3d25a77398af761c2dbe8a0bb97b3732cd21c795741c281"
+      "bytes": 675,
+      "sha256": "c8435630b2b8e8899999be048eccffff27018e6d5d2c0a3ec3266c1ea6f1da27"
     },
     {
       "path": "06_STANDARD_LIBRARY/06_CORE_ERROR_IDENTIFIERS_PART_1.txt",
-      "bytes": 335,
-      "sha256": "e41d5f4cd43239962558ba254723fde5e417e4857d11cc717e103771454c9446"
+      "bytes": 2085,
+      "sha256": "5b9bf17131ec93dc0feaf56f2cdf11883362161c32a983f23e3524014be3e712"
     },
     {
       "path": "06_STANDARD_LIBRARY/07_CORE_ERROR_IDENTIFIERS_PART_2.txt",
-      "bytes": 514,
-      "sha256": "7b831e68c21d26ea2187783c6f21831cc90e17f3e328f5d53d08172eb264c040"
+      "bytes": 3006,
+      "sha256": "fbeae1d14b367bab520b992d0af41baca64ad7e65ad6241f823cb85316ffccb4"
     },
     {
       "path": "06_STANDARD_LIBRARY/08_BUILT_IN_IDENTIFIER_GROUPS.txt",
@@ -381,8 +394,8 @@
     },
     {
       "path": "06_STANDARD_LIBRARY/10_CORE_OPERATION_PARAMETER_RULES.txt",
-      "bytes": 902,
-      "sha256": "0a462a2bc0f16f8339b101ae991a94f500b36d3ce8bafd0b031d41afeff6e60d"
+      "bytes": 16705,
+      "sha256": "4fac3290b7dc685bcde26375f01f565056bf58a60c453e8b3262553be0a550d1"
     },
     {
       "path": "07_VERSIONING_AND_EXTENSIONS/01_LANGUAGE_AND_SPECIFICATION_VERSIONING.txt",
@@ -391,13 +404,13 @@
     },
     {
       "path": "07_VERSIONING_AND_EXTENSIONS/02_IMPORT_VERSION_CHECKSUM_AND_NAMESPACE.txt",
-      "bytes": 522,
-      "sha256": "9fd2198e27f525a4df40e3125f183468719191d1b7abf99c19319f3606c9a4fb"
+      "bytes": 543,
+      "sha256": "514cd08c99f42365b3db43de3c6d2d66e49013b4389a9d8230acaf8d193bd762"
     },
     {
       "path": "07_VERSIONING_AND_EXTENSIONS/03_EXTENSION_CONTRACT.txt",
-      "bytes": 543,
-      "sha256": "04182a186e8fa7ad9ba4ff0d54df6c10b9e4315ec1f015804ba5c113c7e4c928"
+      "bytes": 597,
+      "sha256": "1544824818be48a069eadcf11c3c2e2685b71a8dff3d812fb695e0c4fe051b36"
     },
     {
       "path": "07_VERSIONING_AND_EXTENSIONS/04_CONFORMANCE_LEVELS.txt",
@@ -431,8 +444,8 @@
     },
     {
       "path": "08_EXAMPLES/INVALID/02_TAB_INDENTATION.invalid.lcl.expected.txt",
-      "bytes": 120,
-      "sha256": "dc42550dc36e1d2db1a1df694aad6d7ba1f8694d0a77b081fd5bd092294a6b5f"
+      "bytes": 111,
+      "sha256": "1b72812c2596815a22894d4da13f16456faac14117ca196a798b64f3dafd8649"
     },
     {
       "path": "08_EXAMPLES/INVALID/03_BARE_EQUALS.invalid.lcl",
@@ -512,7 +525,7 @@
     {
       "path": "08_EXAMPLES/INVALID/10_CONTEXT_WITHOUT_SCOPE.invalid.lcl.expected.txt",
       "bytes": 115,
-      "sha256": "395fb9273ada4fe1ea30b01f9d8d6f8da051b2de4ea444e010cc9c4fadd8442a"
+      "sha256": "ea6298878411745d0d0712c85d9845866ad5e4111431a3462d869a960aa3df97"
     },
     {
       "path": "08_EXAMPLES/INVALID/11_DUPLICATE_FIELD.invalid.lcl",
@@ -522,7 +535,7 @@
     {
       "path": "08_EXAMPLES/INVALID/11_DUPLICATE_FIELD.invalid.lcl.expected.txt",
       "bytes": 116,
-      "sha256": "46947166947d27263ab8845868cc5c95de1635a47966ee4f01924d07551dc878"
+      "sha256": "53c75b217f9a266d3305483450f257162d8d710de0b385567b42be4d05fe6a58"
     },
     {
       "path": "08_EXAMPLES/INVALID/12_FLOATING_VERSION.invalid.lcl",
@@ -561,8 +574,68 @@
     },
     {
       "path": "08_EXAMPLES/INVALID/15_MISSING_TASK_STRUCTURE.invalid.lcl.expected.txt",
-      "bytes": 115,
-      "sha256": "395fb9273ada4fe1ea30b01f9d8d6f8da051b2de4ea444e010cc9c4fadd8442a"
+      "bytes": 121,
+      "sha256": "b1366c605cf9cfb9df0d0d837657128cd3caac0b817c45ffa647029d12d8517f"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/16_ITEM_COLLECTION.invalid.lcl",
+      "bytes": 245,
+      "sha256": "2989060fed8ec0e2604826046db7024b07fdcdd9661cda48622985232f9fdd2b"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/16_ITEM_COLLECTION.invalid.lcl.expected.txt",
+      "bytes": 147,
+      "sha256": "3996c7388d501dff956207d27a1d7fdf7e75becfb961728c742c606850351c46"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/17_REGEX_FLAGS.invalid.lcl",
+      "bytes": 237,
+      "sha256": "7f3550736c6792a5fc0e94a6cc2c33b719dd4c2d418cd4cff2e3cc737cb52dc2"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/17_REGEX_FLAGS.invalid.lcl.expected.txt",
+      "bytes": 148,
+      "sha256": "74b07ca829b5fc838d06bab4367672bdd7c61ad1641aef3cb83e74ffbe8d869b"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/18_NON_TERMINATING_DIVISION.invalid.lcl",
+      "bytes": 255,
+      "sha256": "71e1f5f005cabc500e4facbb89ed206aa3e3fb1b5cf5fe74c00b614e4314cb16"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/18_NON_TERMINATING_DIVISION.invalid.lcl.expected.txt",
+      "bytes": 179,
+      "sha256": "b645554804cdb472150621e0cdd7a38127fa5e0272964c59a3d0a1c04ff6f36c"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/19_DIVISION_BY_ZERO.invalid.lcl",
+      "bytes": 253,
+      "sha256": "602f0c8ea58f2d8da68164182d9b84b7b175ba876863658eae36edc08b111592"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/19_DIVISION_BY_ZERO.invalid.lcl.expected.txt",
+      "bytes": 189,
+      "sha256": "9e5a48b4c926d1159ba0153740ebbcc52a86b2d4cd5c9706ba1a305d8a693ae7"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/20_UNORDERED_SET_DIRECT_ITERATION.invalid.lcl",
+      "bytes": 954,
+      "sha256": "584b7132859896748958647f11e6777459512469e92b50cbd3044d27bfb93949"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/20_UNORDERED_SET_DIRECT_ITERATION.invalid.lcl.expected.txt",
+      "bytes": 254,
+      "sha256": "29729b07d895640e6ea5e084368831c5822993f24b327dde60875dc5bd7eef68"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/21_SORT_STABLE_PARAMETER.invalid.lcl",
+      "bytes": 990,
+      "sha256": "dd2fa6d9953c6a6b9e79032ff684dda6d214fdfa2fd321e426fe61e5ee43646c"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/21_SORT_STABLE_PARAMETER.invalid.lcl.expected.txt",
+      "bytes": 248,
+      "sha256": "291763b7449d220675ea8b28920fd43c711dd0d4266cec1696e25aacf289b07e"
     },
     {
       "path": "08_EXAMPLES/VALID/01_MINIMAL_TASK.lcl",
@@ -576,13 +649,13 @@
     },
     {
       "path": "08_EXAMPLES/VALID/03_IMPORTING_TASK.lcl",
-      "bytes": 1186,
-      "sha256": "c5dd620d518f746f48f56dbc2721760ce092fbe59de0273d00e888910984de3e"
+      "bytes": 1212,
+      "sha256": "b7a7b23f53d20ea80d1b800574757419372153548b2761572abba8aac47d9579"
     },
     {
       "path": "08_EXAMPLES/VALID/04_AUTOMATED_CODING_TASK.lcl",
-      "bytes": 2604,
-      "sha256": "be1d61a1389ee14ed462c47266a5b6c9d34f6a1597009ea10098480f1d94073b"
+      "bytes": 2670,
+      "sha256": "c73bae5e63169719fb98f5d0ae107a5f2a7e16899dbf3ba29be1ce5a2407d921"
     },
     {
       "path": "08_EXAMPLES/VALID/05_CONDITION_AND_ITERATION.lcl",
@@ -591,8 +664,8 @@
     },
     {
       "path": "08_EXAMPLES/VALID/06_EXPLICIT_CONTEXT_MEMORY_AND_STATE.lcl",
-      "bytes": 1443,
-      "sha256": "ba69ae064f6f28bffed815caae22be3df0b7835faacdd0872f011ccd06517fe3"
+      "bytes": 1463,
+      "sha256": "7982f606bc771d8cc56e187791f07bbb43cdf2c7515488d615b8a566a429258a"
     },
     {
       "path": "08_EXAMPLES/VALID/07_DOMAIN_EXTENSION_OPERATION.lcl",
@@ -601,8 +674,8 @@
     },
     {
       "path": "08_EXAMPLES/VALID/08_AUTHORITY_OVERRIDE_HANDLER_AND_RETRY.lcl",
-      "bytes": 1770,
-      "sha256": "4c60b7e13895ca8c5a16d30d3a90d28d908bf6cd983635a6b893db7c02e105fe"
+      "bytes": 1790,
+      "sha256": "dd9b5fdcb0ed222e0146b9c38f8278444685d7772e84c72c5cf22793e30bb2ce"
     },
     {
       "path": "08_EXAMPLES/VALID/09_EXPLICIT_ASSUMPTION_AND_EVIDENCE.lcl",
@@ -610,19 +683,34 @@
       "sha256": "756d7e9ff9dee5c41848921d78ac2e822da5cc969109181659b5e15a5a8e57f9"
     },
     {
+      "path": "08_EXAMPLES/VALID/10_ACCEPTED_CORE_PROFILES.lcl",
+      "bytes": 1072,
+      "sha256": "a45dc5c6fa08894faab86621ef03ea1b41cc782bfe4ac79b43c11d778b89ecde"
+    },
+    {
+      "path": "08_EXAMPLES/VALID/11_EXACT_DIVISION_AND_ROUNDING.lcl",
+      "bytes": 733,
+      "sha256": "e05f02de7f575c6458ffb22d1b48c45b1563d4a6e536d393845e1edd94b532b1"
+    },
+    {
+      "path": "08_EXAMPLES/VALID/12_SET_SORTING.lcl",
+      "bytes": 1802,
+      "sha256": "cb83518d64624c1c062c5a078c8ffe1d2c853740708c4afe0bf22bded7476e78"
+    },
+    {
       "path": "09_CONFORMANCE/01_CONFORMANCE_REQUIREMENTS.txt",
-      "bytes": 1276,
-      "sha256": "765c87c298988129c67d9ea81358b84a0ca35bbe5698bb3e20cb1f1a9d0b5327"
+      "bytes": 2680,
+      "sha256": "c093a793ef03b5893d8ce2945a840b28284bebb67fbceb2ac1ab97cc29cb7e02"
     },
     {
       "path": "09_CONFORMANCE/CASES/core_conformance_cases_v0.1.0.json",
-      "bytes": 222576,
-      "sha256": "c2ef5431711e7274d699a3c077525deff2df537f00630270425e53852ec5889f"
+      "bytes": 275216,
+      "sha256": "28986af7683775b7b53ca00a62813f7e441370124ee4aa6b93e933436cce184c"
     },
     {
       "path": "09_CONFORMANCE/SOURCE_FIXTURES/expected_results.json",
-      "bytes": 802,
-      "sha256": "d7b9393f79d4064306187c0179d475f50f83355e9b844b76a6cd850fd9e61dcb"
+      "bytes": 786,
+      "sha256": "7714140f7bcdf704ecd71bcf0514445d39c3b3f14dda3ea7ab3177c6a91c7a9c"
     },
     {
       "path": "09_CONFORMANCE/SOURCE_FIXTURES/invalid_bom.lcl",
@@ -701,8 +789,8 @@
     },
     {
       "path": "09_CONFORMANCE/TOOLS/generate_integrity.py",
-      "bytes": 6541,
-      "sha256": "0ff7133ffe5137a799a3562d97768bf855fdb7c87ea56c2795602bfd61ce74d0"
+      "bytes": 7563,
+      "sha256": "146298b4783d392fbf10a12a87abacd0658b96b57c986f4a6e7a1edfa6e5bbf1"
     },
     {
       "path": "09_CONFORMANCE/TOOLS/validate_ebnf.py",
@@ -711,13 +799,13 @@
     },
     {
       "path": "09_CONFORMANCE/TOOLS/validate_release.py",
-      "bytes": 20397,
-      "sha256": "00b687130a432fcd4de6ed4aa2ce0df92a2af80a8c909b5f7814390ab21303ec"
+      "bytes": 319541,
+      "sha256": "bfcbeba9d0f47e90e46533d500ffee78ea6a35c5bb5bd0596102532a595c41d3"
     },
     {
       "path": "09_CONFORMANCE/TOOLS/validate_source_fixtures.py",
-      "bytes": 7176,
-      "sha256": "7524af12a523b8780539265e9f8b7fba8bf852a681b61174cd639f240a8a919b"
+      "bytes": 7224,
+      "sha256": "85cdf1d56148f604f39db15eaf99a274d3ade9c24823867f4afcacc793f9a723"
     },
     {
       "path": "10_REGISTRIES/ambiguous_replacements_v0.1.0.json",
@@ -726,58 +814,58 @@
     },
     {
       "path": "10_REGISTRIES/block_schemas_v0.1.0.json",
-      "bytes": 20132,
-      "sha256": "a3f08e4f84a3488f59b2035af63c93e7970591d4e988319fcebaf9c22749d477"
+      "bytes": 21359,
+      "sha256": "3c2b74a2f7782b2b8a884c0c341a5fafee997b96e64e36210e3d19f73cb5ccac"
     },
     {
       "path": "10_REGISTRIES/built_in_groups_and_results_v0.1.0.json",
-      "bytes": 9078,
-      "sha256": "52fcfb981676c7ca56809da946104defd405ae336fd8bd781e8d9ccd2eefce43"
+      "bytes": 25533,
+      "sha256": "9812129749f76c8a1249c5eec2ef4dbb20aa5e07a776131ddb45ccf7535536c3"
     },
     {
       "path": "10_REGISTRIES/field_signatures_v0.1.0.json",
-      "bytes": 85907,
-      "sha256": "62b39ae0cfb6be8515eff7a58699f93f90eb1978d4fc437d70efe93513365f93"
+      "bytes": 91989,
+      "sha256": "105f8f8537c21d675ce70c1fa1b97eada113d1b7112dd1fec71e7bed11271446"
     },
     {
       "path": "10_REGISTRIES/formats_encodings_units_v0.1.0.json",
-      "bytes": 2955,
-      "sha256": "7f9f5fa5d413cf7db0ec8a07b190c95a15689ea060a7ae5679d80688c5bfe2c3"
+      "bytes": 3615,
+      "sha256": "1dcf193241185e46223c4de7cb6e7478c8f33bb106f454eabce8c21271b4cbd1"
     },
     {
       "path": "10_REGISTRIES/keywords_v0.1.0.json",
-      "bytes": 31599,
-      "sha256": "557941dacf18b29ad60caa34357f503f4d8c1f473551ab4d11ca427f72e35ed9"
+      "bytes": 32802,
+      "sha256": "bf878045fc67ae4347a5bc9ad688078810dbf67366617067408f458dd2b3b912"
     },
     {
       "path": "10_REGISTRIES/operations_v0.1.0.json",
-      "bytes": 51478,
-      "sha256": "f1936d0479275c68c8b567637d29d0bb9d6224e38c47c25b46ac1553ef7b318f"
+      "bytes": 100677,
+      "sha256": "f1b3fc5198b06a46cc60aa1ee5ab7416e06cb52023bfa0c7d56305fc132b1262"
     },
     {
       "path": "10_REGISTRIES/operators_and_functions_v0.1.0.json",
-      "bytes": 7183,
-      "sha256": "74402a9f668a1d6cb8fb79c1e3c082184f735f1564f5006791a45ad07128efed"
+      "bytes": 16148,
+      "sha256": "a378a61089da7b26bd9204f9d85cdaba0960e25eaaf1b8ddd5d02d8db242a452"
     },
     {
       "path": "10_REGISTRIES/semantic_meta_types_v0.1.0.json",
-      "bytes": 857,
-      "sha256": "05decfaa8b68dccc78c900bbe284b500a89aaf04eba0c9f7d903571330dbb45e"
+      "bytes": 1416,
+      "sha256": "73a4356ec6c53a29f7f69c3d46e1ff565da3378338f064bea1560d1c0fd2fd56"
     },
     {
       "path": "10_REGISTRIES/statuses_and_errors_v0.1.0.json",
-      "bytes": 21339,
-      "sha256": "818716ee6da1096ecfbe56fd55bc87f7b184508a531dc4ba1d44cfb1ffb3d172"
+      "bytes": 38577,
+      "sha256": "7f6368272608aedef9f44335f6d595ead1a0ae460caf46bb748526d18ac49c71"
     },
     {
       "path": "10_REGISTRIES/symbols_v0.1.0.json",
-      "bytes": 3061,
-      "sha256": "98c2741f3c9dc6c5e5fac85d1b8771640e057c1d9ea3f7288df60205a78ade09"
+      "bytes": 3105,
+      "sha256": "8df7f211cfa10d9e42ab1cd5932711e4a2b32b0fbfec0f37d18dd946643cb26f"
     },
     {
       "path": "10_REGISTRIES/types_v0.1.0.json",
-      "bytes": 1359,
-      "sha256": "bbc28ca45c485d6c2f9c88ebbff9943d02d4a83ec84301e0b681e583ed189e31"
+      "bytes": 5061,
+      "sha256": "fc9e91dd681f9680b3cfff4578584e1c35f2146f7a23e84b619eeaa531215b3d"
     },
     {
       "path": "11_RESEARCH_BASIS/01_DOCUMENTATION_BASIS.txt",
@@ -786,8 +874,8 @@
     },
     {
       "path": "11_RESEARCH_BASIS/02_FROZEN_DESIGN_DECISIONS.txt",
-      "bytes": 626,
-      "sha256": "3f3cc01721a50feedbec9453e1648cb3cb2aa5698ec5a72ab1236d68e0adcdc9"
+      "bytes": 1072,
+      "sha256": "aa6fde4417dd3c00632e69ba7289e8bcdc61fd75db33387d8bea167b2cbcf552"
     },
     {
       "path": "11_RESEARCH_BASIS/03_INTENTIONALLY_EXCLUDED_FROM_CORE.txt",
@@ -801,23 +889,23 @@
     },
     {
       "path": "CHANGELOG.txt",
-      "bytes": 1188,
-      "sha256": "d1c59b3f07bafe93ed525362553812f14fac36896ad95509ffbe67d6848c7c5d"
+      "bytes": 8150,
+      "sha256": "17ad164d9f1d2f0e88a82ad19150a6f2df59b9d3aaceff7a510cb225735c5426"
     },
     {
       "path": "INDEX.txt",
-      "bytes": 6935,
-      "sha256": "cc97dc0fcc3d29e1688ede67dbe5a038a745ca5e4400e315afb59b1e55bf6582"
+      "bytes": 7716,
+      "sha256": "3a5a9eb37a0f6777177016ae59ecf4a11324702939f944721fa6ce9919817bb7"
     },
     {
       "path": "README.txt",
-      "bytes": 1933,
-      "sha256": "5e7fa05516e2bc7756201164a89388bce331bae48779da67da83414476138bd5"
+      "bytes": 2948,
+      "sha256": "a5b0fd04ed750b65a23c03e7f29a41551f726417d55e7e1731fdb7eafff2f809"
     },
     {
       "path": "VERSION.txt",
-      "bytes": 225,
-      "sha256": "d12954b44c23fe659256e8b3f77506c34aed617e7d2e20774e11e33bf0df8712"
+      "bytes": 827,
+      "sha256": "05e137d5baa328114cf2915530ca92a29c4a06aa3db816517dc6758f7132b06b"
     }
   ]
 }

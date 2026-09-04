@@ -445,7 +445,7 @@ def check_grammar(root: Path, results: Results) -> None:
         "OUT_OF_SCOPE",
         classification="BARE_LANGUAGE_IMPLEMENTATION_ARTIFACT",
         reason="The bare language package does not include or require a parser or executable example matrix.",
-        retired_task="LCL-TASK-0007",
+        retired_package_task="original LCL-TASK-0007 (reference lexer and parser)",
     )
 
 
@@ -2585,8 +2585,10 @@ def set_sort_contract_violations(
             "deterministic diagnostic selection",
             "producer-relative failure lifecycle and retry-safety rules",
             "BARE_SPECIFICATION_COMPLETE",
-            "remain deliberately frozen and stale",
-            "no repair archive is produced",
+            "regenerated MANIFEST.json, VALIDATION_REPORT.txt, and SHA256SUMS.txt",
+            "BARE_LANGUAGE_RELEASE",
+            "the release archive is created outside the package root",
+            "OUT_OF_SCOPE, never as PASS",
         ],
         "00_RELEASE/01_RELEASE_STATUS_AND_BOUNDARY.txt": [
             "Accepted Tasks 0001 through 0006",
@@ -2597,8 +2599,9 @@ def set_sort_contract_violations(
             "LCL-AUDIT-016",
             "outside the bare-language scope",
             "BARE_SPECIFICATION_COMPLETE",
-            "deliberately frozen and stale",
-            "no repair archive is produced",
+            "LCL-TASK-0007 statically revalidated this tree",
+            "BARE_LANGUAGE_RELEASE",
+            "parser-verified, executed, or runtime-tested",
         ],
     }
     for relative_path, required_text in release_status_requirements.items():
@@ -2638,6 +2641,21 @@ def set_sort_contract_violations(
             not present_stale_task_0006_claims,
             f"{relative_path} still reports resolved Task-0006 work: "
             f"{present_stale_task_0006_claims}",
+        )
+        stale_task_0007_claims = [
+            "deliberately frozen and stale",
+            "no repair archive is produced",
+            "not release-ready",
+            "unpublished candidate",
+            "until the corrected final release task",
+        ]
+        present_stale_task_0007_claims = [
+            claim for claim in stale_task_0007_claims if claim in release_status
+        ]
+        expect(
+            not present_stale_task_0007_claims,
+            f"{relative_path} still reports the pre-release frozen-integrity state: "
+            f"{present_stale_task_0007_claims}",
         )
 
     grammar = (root / "04_GRAMMAR/10_COMPLETE_EBNF.ebnf").read_text(encoding="utf-8")
@@ -7198,7 +7216,10 @@ def check_catalog(root: Path, results: Results) -> None:
             semantic_implementation_present=False,
             classification="BARE_LANGUAGE_IMPLEMENTATION_ARTIFACT",
             reason="The catalog is a descriptive requirements index; an executable semantic engine is outside package scope.",
-            retired_tasks=["LCL-TASK-0008", "LCL-TASK-0009"],
+            retired_package_tasks=[
+                "original LCL-TASK-0008 (reference semantic interpreter)",
+                "original LCL-TASK-0009 (executable conformance)",
+            ],
         )
 
 

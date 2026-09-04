@@ -1,8 +1,9 @@
-LCL CORE 0.1.0 BARE-SPECIFICATION-COMPLETE CANDIDATE
+LCL CORE 0.1.0 BARE LANGUAGE SPECIFICATION RELEASE
 
 Formal language version: 0.1.0
 Language-definition state: BARE_SPECIFICATION_COMPLETE through LCL-TASK-0006
-Packaging state: unpublished candidate; not Final, Verified, or release-ready
+Package state: BARE_LANGUAGE_RELEASE packaged by LCL-TASK-0007
+Package scope: bare language specification only
 
 LCL (Learned Computing Language) is a declarative technical-English language for
 expressing operational intent to learned-computing systems. A person writes a
@@ -29,14 +30,15 @@ THIS PACKAGE CONTAINS
 - versioning and extension rules;
 - examples and normative conformance requirements.
 
-KNOWN CANDIDATE LIMITATIONS
+SCOPE BOUNDARIES OF THIS RELEASE
 
 - the 797-entry catalog is a descriptive requirements index, not an executed
   semantic suite; executable semantic evidence is outside the bare-language
   package scope and its absence is not a release blocker;
-- MANIFEST.json, SHA256SUMS.txt, and VALIDATION_REPORT.txt are deliberately frozen
-  pre-release artifacts and do not validate the current Task 0006 bytes;
-- no repair archive is produced from this unpublished candidate.
+- MANIFEST.json, VALIDATION_REPORT.txt, and SHA256SUMS.txt were regenerated in
+  that acyclic order from the released bytes and validate this tree;
+- the release archive is created outside this package root, so no archive file
+  is a member of the tree that it packages.
 
 THIS PACKAGE DOES NOT CONTAIN
 
@@ -52,4 +54,6 @@ artifact is plain UTF-8 text, EBNF, JSON, or LCL source.
 
 Begin with 00_RELEASE/00_CANONICAL_SOURCE_AND_PROVENANCE.txt,
 00_RELEASE/01_RELEASE_STATUS_AND_BOUNDARY.txt, and INDEX.txt. VALIDATION_REPORT.txt
-is a retained pre-Task6 snapshot, not current validation evidence.
+is the current in-package validation snapshot bound to the exact MANIFEST.json
+hash; the external report under reports/ records the final checksum and archive
+evidence.

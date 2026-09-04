@@ -1,15 +1,17 @@
-LCL CORE 0.1.0 RELEASE CANDIDATE
+LCL CORE 0.1.0 BARE LANGUAGE SPECIFICATION RELEASE
 CHANGE CONTROL
 NORMATIVE
 
 Published release bytes are immutable and may never retain the same checksum
-after an edit. This repair tree is a BARE_SPECIFICATION_COMPLETE unpublished
-candidate, not an established or packaged release; it retains the historical
-candidate version only while it remains unpublished. Before any release, the
-owner must adjudicate whether accepted repairs change language meaning and select
-the corresponding semantic version. Corrections that change no meaning require a
+after an edit. This tree is the packaged BARE_LANGUAGE_RELEASE of LCL Core 0.1.0
+produced by LCL-TASK-0007. Its bytes are now fixed: any later correction is a new
+version with freshly generated integrity metadata, never an in-place edit of
+these released bytes. The owner adjudicated that the accepted Tasks 0001 through
+0006 repairs close an unpublished 0.1.0 candidate rather than change the meaning
+of an established release, so the version remains 0.1.0. Corrections that change no meaning require a
 patch release. Added backward-compatible features require a minor release.
 Breaking lexical, grammar, type, or semantic changes require a major release.
 Every packaged candidate or release receives freshly generated integrity metadata
-only in the corrected final release task. Task 0006 neither regenerates those
-artifacts nor produces an archive.
+in its own release task. Tasks 0001 through 0006 deliberately left the integrity
+artifacts frozen; LCL-TASK-0007 regenerated them from the released bytes and
+produced the archive.

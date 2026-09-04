@@ -1,10 +1,10 @@
-LCL CORE 0.1.0 RELEASE CANDIDATE
+LCL CORE 0.1.0 BARE LANGUAGE SPECIFICATION RELEASE
 RELEASE STATUS AND BOUNDARY
 NORMATIVE
 
 1. STATUS
 
-This tree is the canonical LCL Core 0.1.0 repair candidate identified by
+This tree is the canonical LCL Core 0.1.0 package identified by
 00_CANONICAL_SOURCE_AND_PROVENANCE.txt. It supersedes competing historical
 candidate metadata in this workspace but does not alter the immutable historical
 tree; the historical ZIP is absent by the owner-approved LCL-TASK-0001 deletion.
@@ -14,10 +14,14 @@ LCL-AUDIT-007, the operation/result-contract portions of LCL-AUDIT-013, and
 LCL-AUDIT-014 and 015. The language-definition scope is
 BARE_SPECIFICATION_COMPLETE.
 Parser/runtime/executable-semantic evidence under LCL-AUDIT-007 and LCL-AUDIT-016
-is outside the bare-language scope and is not a release blocker. This tree is not
-release-ready, Final, or Verified: MANIFEST.json, SHA256SUMS.txt, and
-VALIDATION_REPORT.txt are deliberately frozen and stale until the corrected
-final release task, and no repair archive is produced.
+is outside the bare-language scope and is not a release blocker.
+
+LCL-TASK-0007 statically revalidated this tree, regenerated MANIFEST.json,
+VALIDATION_REPORT.txt, and SHA256SUMS.txt from the released bytes in that acyclic
+order, and packaged the release archive outside the package root. The package
+status is BARE_LANGUAGE_RELEASE. That status covers the language definition and
+its static evidence only; it asserts nothing about any implementation, and the
+release must never be described as parser-verified, executed, or runtime-tested.
 
 2. LANGUAGE BOUNDARY
 

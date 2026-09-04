@@ -1,5 +1,28 @@
 LCL CORE CHANGELOG
 
+0.1.0 BARE LANGUAGE RELEASE - LCL-TASK-0007
+
+- Retired the reference lexer/parser, semantic interpreter, and executable
+  conformance tasks as outside the LCL Core 0.1.0 project scope, and replaced the
+  final task with static validation, integrity regeneration, and bare-language
+  release packaging.
+- Revalidated the released bytes statically: path/mode hygiene, UTF-8 and LF
+  hygiene, strict JSON parsing with duplicate-key rejection, Python source
+  compilation, static EBNF graph closure, fifteen concrete source fixtures,
+  thirty-three example contracts, fifteen registry and cross-registry closure
+  gates, and the 797-entry requirements index.
+- Confirmed that parser and executable-semantic evidence is classified
+  OUT_OF_SCOPE rather than PASS or BLOCKED, and that release readiness is
+  computed from FAIL and BLOCKED counts only.
+- Corrected release documentation that still described a frozen, unpublished
+  candidate, and corrected generate_integrity.py, which hard-coded a
+  blocked-repair-candidate manifest status.
+- Regenerated MANIFEST.json, then VALIDATION_REPORT.txt, then SHA256SUMS.txt from
+  the released bytes in the documented acyclic order.
+- Packaged the release archive outside the package root, verified archive
+  integrity, extracted it, compared it byte-for-byte with the release tree, and
+  revalidated the extracted copy.
+
 0.1.0 BARE-SPECIFICATION-COMPLETE CANDIDATE - LCL-TASK-0006
 
 - Reproduced the accepted Claude handoff decisions against the actual local

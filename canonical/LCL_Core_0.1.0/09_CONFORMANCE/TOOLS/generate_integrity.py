@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate acyclic LCL repair-candidate manifest and checksum metadata."""
+"""Generate acyclic LCL package manifest and checksum metadata."""
 
 from __future__ import annotations
 
@@ -13,6 +13,28 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+
+PACKAGE_STATUSES = {
+    "blocked_repair_candidate": ("LCL Core 0.1.0 Repair Candidate", False),
+    "bare_specification_complete_candidate": (
+        "LCL Core 0.1.0 Bare-Specification-Complete Candidate",
+        False,
+    ),
+    "bare_language_release": ("LCL Core 0.1.0 Bare Language Specification Release", True),
+}
+
+OUT_OF_SCOPE_ARTIFACTS = [
+    "lexer",
+    "parser",
+    "interpreter",
+    "compiler",
+    "runtime",
+    "semantic_execution_engine",
+    "ui",
+    "ide",
+    "provider_integration",
+    "deployment_tooling",
+]
 
 MANIFEST_EXCLUSIONS = {
     "MANIFEST.json": "self-reference",
@@ -89,9 +111,12 @@ def component_counts(root: Path) -> dict[str, int]:
     }
 
 
-def generate_manifest(root: Path, generated_utc: str) -> dict[str, Any]:
+def generate_manifest(root: Path, generated_utc: str, status: str) -> dict[str, Any]:
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", generated_utc):
         raise ValueError("--generated-utc must be UTC in YYYY-MM-DDTHH:MM:SSZ form")
+    if status not in PACKAGE_STATUSES:
+        raise ValueError(f"--status must be one of {sorted(PACKAGE_STATUSES)}")
+    package_label, release_ready = PACKAGE_STATUSES[status]
     package_files = files(root)
     payload_files = [
         path for path in package_files if path.relative_to(root).as_posix() not in MANIFEST_EXCLUSIONS
@@ -105,10 +130,12 @@ def generate_manifest(root: Path, generated_utc: str) -> dict[str, Any]:
         for path in payload_files
     ]
     manifest = {
-        "package": "LCL Core 0.1.0 Repair Candidate",
+        "package": package_label,
         "formal_version": "0.1.0",
-        "status": "blocked_repair_candidate",
-        "release_ready": False,
+        "status": status,
+        "release_ready": release_ready,
+        "package_scope": "bare_language_specification",
+        "out_of_scope_artifacts": OUT_OF_SCOPE_ARTIFACTS,
         "package_root": root.name,
         "generated_utc": generated_utc,
         "package_file_count": len(package_files),
@@ -145,16 +172,19 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
     manifest_parser = subparsers.add_parser("manifest")
     manifest_parser.add_argument("--generated-utc", required=True)
+    manifest_parser.add_argument("--status", required=True, choices=sorted(PACKAGE_STATUSES))
     subparsers.add_parser("checksum")
     arguments = parser.parse_args()
     root = arguments.root.resolve()
     try:
         if arguments.command == "manifest":
-            manifest = generate_manifest(root, arguments.generated_utc)
+            manifest = generate_manifest(root, arguments.generated_utc, arguments.status)
             output = {
                 "generated": "MANIFEST.json",
                 "record_count": manifest["manifest_record_count"],
                 "package_file_count": manifest["package_file_count"],
+                "status": manifest["status"],
+                "release_ready": manifest["release_ready"],
             }
         else:
             output = {"generated": "SHA256SUMS.txt", "record_count": generate_checksums(root)}

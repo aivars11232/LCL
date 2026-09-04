@@ -4,8 +4,9 @@ NORMATIVE RELEASE METADATA
 
 1. CANONICAL SOURCE
 
-This package root is the only canonical source tree for the LCL Core 0.1.0
-repair candidate produced by LCL-REPAIR-0001. Language meaning is determined by
+This package root is the only canonical source tree for LCL Core 0.1.0. It
+originates from the repair candidate produced by LCL-REPAIR-0001 and was closed
+and packaged by Accepted Tasks 0001 through 0007. Language meaning is determined by
 the artifacts inside this tree under
 00_RELEASE/02_NORMATIVE_AUTHORITY_ORDER.txt. Files
 outside this package root are not normative inputs to the language.
@@ -44,8 +45,14 @@ nine closed result-schema contracts, deterministic diagnostic selection, and
 producer-relative failure lifecycle and retry-safety rules.
 Parser/runtime/executable-semantic evidence under LCL-AUDIT-007 and LCL-AUDIT-016
 is outside the bare-language package scope and is not a release blocker. The
-language-definition scope is BARE_SPECIFICATION_COMPLETE. MANIFEST.json,
-SHA256SUMS.txt, and VALIDATION_REPORT.txt remain deliberately frozen and stale
-until the corrected final release task. Therefore this candidate is not
-release-ready, no repair archive is produced, and it must not be represented as
-Final, Verified, Canonical Release, or a packaged release.
+language-definition scope is BARE_SPECIFICATION_COMPLETE. LCL-TASK-0007
+regenerated MANIFEST.json, VALIDATION_REPORT.txt, and SHA256SUMS.txt from the
+released bytes in that acyclic order, so the integrity metadata is current for
+this tree. This package root is therefore the packaged BARE_LANGUAGE_RELEASE of
+LCL Core 0.1.0, and the release archive is created outside the package root.
+
+This is a release of the language definition only. It must never be represented
+as containing, requiring, or having been validated by a lexer, parser,
+interpreter, compiler, runtime, semantic execution engine, UI, IDE, provider
+integration, or deployment tooling. Parser and executable-semantic evidence is
+outside the package scope and is reported as OUT_OF_SCOPE, never as PASS.

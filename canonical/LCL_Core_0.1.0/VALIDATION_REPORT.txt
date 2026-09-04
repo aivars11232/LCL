@@ -1,79 +1,99 @@
-LCL CORE 0.1.0 REPAIR CANDIDATE - VALIDATION SNAPSHOT
+LCL CORE 0.1.0 BARE LANGUAGE SPECIFICATION - VALIDATION SNAPSHOT
 
-TASK: LCL-REPAIR-0001
-IMPLEMENTATION STATUS: IMPLEMENTATION_PARTIAL
-RELEASE STATUS: NOT_READY_FOR_RELEASE
-RESULT: BLOCKED
+TASK: LCL-TASK-0007
+PACKAGE SCOPE: BARE LANGUAGE SPECIFICATION ONLY
+LANGUAGE-DEFINITION STATUS: BARE_SPECIFICATION_COMPLETE
+PACKAGE STATUS: BARE_LANGUAGE_RELEASE
+RESULT: PASS
 FORMAL VERSION: 0.1.0
-SNAPSHOT UTC: 2026-08-30T21:00:31Z
-MANIFEST SHA-256: bee3d2f71a1668b7e5794b54be9fe08687ca42b3da4e5b7dd03ef9632a2a8685
+SNAPSHOT UTC: 2026-09-04T17:38:32Z
+MANIFEST SHA-256: c725aaac186323dbfb855063f66422ddc84be0290846008b091ab6458f47ed42
+
+SCOPE STATEMENT
+
+    This package defines the language only. A lexer, parser, interpreter,
+    compiler, runtime, semantic execution engine, UI, IDE, provider integration,
+    agent framework, and deployment tooling are outside its scope. A gate whose
+    only possible evidence is such an implementation is reported OUT_OF_SCOPE.
+    It is never reported PASS and never blocks release.
 
 GATE 1 - FILESYSTEM AND PATH HYGIENE: PASS
-    157 files; zero symlinks, case collisions, cache/temp artifacts, or
-    non-canonical file modes.
+    172 files; zero symlinks, case collisions, cache/bytecode/backup/temporary
+    artifacts, or non-canonical file modes.
 
 GATE 2 - TEXT AND CONCRETE SOURCE FIXTURES: PASS
-    UTF-8/LF hygiene passed outside 13 intentional invalid fixtures.
-    validate_source_fixtures.py matched 15 of 15 expected outcomes.
+    UTF-8/LF hygiene passed on 159 text files, excluding 13 intentional invalid
+    fixtures. validate_source_fixtures.py matched 15 of 15 expected outcomes.
     This is lexical/document-boundary evidence, not semantic execution.
 
 GATE 3 - STRUCTURED FORMATS AND TOOLS: PASS
-    All 15 JSON files parsed with duplicate-key rejection.
-    Four Python validation/generation tools compiled without bytecode output.
+    All 15 JSON files parsed with duplicate-key rejection. Four Python
+    validation/generation tools compiled without bytecode output.
 
-GATE 4 - GRAMMAR: BLOCKED
+GATE 4 - GRAMMAR: PASS
     Static EBNF graph check passed: 65 productions, 211 terminals, zero
     undefined, unreachable, unproductive, nullable, or left-recursive entries.
-    A complete parser/example matrix is absent and language choices under
-    LCL-AUDIT-001 and LCL-AUDIT-005 remain unresolved.
+    A complete parser-driven example matrix is OUT_OF_SCOPE for this package.
 
-GATE 5 - REGISTRY AND TYPE CLOSURE: BLOCKED
-    Keyword/grammar parity, block/field schema parity, and operation reference
-    closure passed. Field signatures contain 334 fields and 64 distinct
-    value-kind strings; only 12 exact strings are registered, leaving 52
-    unregistered strings, 24 unregistered heads, and seven nested-parent
-    contradictions. Constructor/pattern, PRIORITY-default, operation result,
-    diagnostic-selection, and mixed-lifecycle contracts remain unresolved.
+GATE 5 - REGISTRY AND TYPE CLOSURE: PASS
+    141 keywords match the grammar reserved set exactly. 41 block schemas match
+    41 field-signature blocks with zero contract conflicts. 334 field uses
+    resolve across 65 distinct value kinds with zero unresolved value kinds,
+    heads, templates, or default-contract errors. Zero nested-parent
+    contradictions. 11 typed constructors and two pattern profiles are closed.
+    39 operation contracts, 39 operation prose mirrors, and nine result schemas
+    with six common fields are closed and mutually consistent.
 
-GATE 6 - SEMANTICS: BLOCKED
-    Division result mapping, unordered-SET sorting, PRIORITY omission,
-    determinism/effect declarations, result binding/cardinality, same-stage
-    diagnostic selection, and mixed pre/post-effect lifecycle behavior require
-    owner design decisions. No semantic execution was claimed.
+GATE 6 - SEMANTICS: PASS
+    Division result mapping and unordered-SET sorting are resolved. PRIORITY
+    omission is integer 0 without inheritance. Determinism, dependency, and
+    effect axes are closed across all 39 operations. Diagnostic selection is
+    closed over 77 errors with one severity and 12 executed selection vectors
+    (policy fingerprint 0c52f53d57e540c034838a05640bc0f16e816c5ca5393dc513db7fd2a1ced7c2).
+    Failure lifecycle is closed over 77 errors with four baseline and 11
+    additional mixed-phase profiles (policy fingerprint
+    a6e247aa8fc0278e2514e0fbced9958f50cce14ae243815ef171e43b4ce85afe).
+    These are static contract checks. Semantic execution is OUT_OF_SCOPE and is
+    not claimed.
 
-GATE 7 - EXAMPLES: BLOCKED
-    Objective fixture and operation-parameter defects were repaired. Full valid
-    example status cannot be established until operation result-to-OUTPUT
-    binding and result schema cardinality are defined and a complete parser and
-    semantic validator execute the examples.
+GATE 7 - EXAMPLES: PASS
+    12 valid and 21 invalid examples, 21 registered expectation pairs, seven
+    focused primary diagnostics, and 14 pinned byte fingerprints. Every example
+    is listed exactly once in INDEX.txt. Checked against statically decidable
+    rules only; parser execution is OUT_OF_SCOPE.
 
-GATE 8 - CONFORMANCE: BLOCKED
-    The 791-entry catalog has unique IDs and consistent category counts, but its
-    entries are descriptive requirements without concrete inputs/results. The
-    15 concrete source fixtures passed; semantic conformance remains UNVERIFIED.
+GATE 8 - CONFORMANCE: PASS
+    The 797-entry catalog spans 23 categories with unique IDs, consistent
+    category counts, and coverage of every closed registry category. It is a
+    normative descriptive requirements index. Executable semantic conformance is
+    OUT_OF_SCOPE and is reported as such rather than as PASS or BLOCKED.
 
-GATE 9 - PACKAGE INTEGRITY: NOT RUN IN THIS SNAPSHOT
-    SHA256SUMS.txt is generated after this report. External validation reports
-    record the final Gate 9 result without creating an integrity cycle.
+GATE 9 - PACKAGE INTEGRITY: MANIFEST PASS; CHECKSUMS GENERATED AFTER THIS REPORT
+    MANIFEST.json lists 169 stable payload records covering all 172 package
+    files except MANIFEST.json, VALIDATION_REPORT.txt, and SHA256SUMS.txt, and
+    every recorded size and SHA-256 matches the current bytes. SHA256SUMS.txt is
+    generated after this report and covers 171 files, excluding only itself.
+    External validation reports outside the package root record the final
+    checksum, archive, and Gate 9 evidence without creating an integrity cycle.
+
+OUT-OF-SCOPE CHECKS (NOT BLOCKERS, NOT PASSES)
+    complete_example_parse_matrix   requires a reference lexer/parser
+    semantic_case_execution         requires a semantic execution engine
 
 UNRESOLVED RELEASE-BLOCKING FINDINGS
-    LCL-AUDIT-001
-    LCL-AUDIT-005
-    LCL-AUDIT-007
-    LCL-AUDIT-010 / K-003
-    LCL-AUDIT-011
-    LCL-AUDIT-012
-    LCL-AUDIT-013
-    LCL-AUDIT-014
-    LCL-AUDIT-015
-    LCL-AUDIT-016
+    None. LCL-AUDIT-001, 005, 010/K-003, 011, 012, 013, 014, and 015 are closed
+    by Accepted Tasks 0001 through 0006. The parser/runtime/executable-semantic
+    portions of LCL-AUDIT-007 and LCL-AUDIT-016 are outside the bare-language
+    package scope and are not release blockers.
+
+AGGREGATE VALIDATOR RESULT
+    validate_release.py --scope all: 25 PASS, 0 FAIL, 0 BLOCKED, 2 OUT_OF_SCOPE.
 
 ARCHIVE
-    Repair ZIP: NOT CREATED.
-    Reason: Gates 1 through 9 did not all pass and release-blocking design
-    decisions remain. The immutable historical tree and verified archive are
-    preserved outside this candidate.
+    The release archive is created outside this package root, so no archive file
+    is a member of the tree it packages. Its path, size, SHA-256, member count,
+    and extraction comparison are recorded in the external validation report.
 
 The package contains no interpreter, evaluator, executor, UI, environment, or
-database. Static build/registry evidence cannot substitute for runtime or
-semantic conformance evidence.
+database. Static specification evidence cannot substitute for runtime or
+semantic conformance evidence, and this report does not claim otherwise.

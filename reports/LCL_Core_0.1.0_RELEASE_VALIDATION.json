@@ -1,0 +1,254 @@
+{
+  "task_id": "LCL-TASK-0007",
+  "task_name": "Static specification validation, integrity regeneration, and bare-language release packaging",
+  "generated_utc": "2026-09-04T17:38:32Z",
+  "package_scope": "bare_language_specification_only",
+  "language_definition_status": "BARE_SPECIFICATION_COMPLETE",
+  "package_status": "BARE_LANGUAGE_RELEASE",
+  "package_name": "LCL Core 0.1.0 Bare Language Specification Release",
+  "formal_version": "0.1.0",
+  "release_tree": "/mnt/F/LCL/canonical/LCL_Core_0.1.0",
+  "package": {
+    "file_count": 172,
+    "directory_count_including_root": 18,
+    "total_file_bytes": 1277786,
+    "symlink_count": 0,
+    "cache_or_temporary_artifact_count": 0,
+    "tree_fingerprint_sha256": "e202677f29fcf106bb1ffb7220b7ad17d31b275a4fe2c5af499d4cc3e3082b0b",
+    "tree_fingerprint_method": "find . -type f | LC_ALL=C sort | xargs -d'\\n' sha256sum | sha256sum"
+  },
+  "manifest": {
+    "path": "MANIFEST.json",
+    "record_count": 169,
+    "sha256": "c725aaac186323dbfb855063f66422ddc84be0290846008b091ab6458f47ed42",
+    "status_field": "bare_language_release",
+    "release_ready_field": true,
+    "verification": "PASS",
+    "exclusions": [
+      "MANIFEST.json",
+      "VALIDATION_REPORT.txt",
+      "SHA256SUMS.txt"
+    ]
+  },
+  "embedded_validation": {
+    "path": "VALIDATION_REPORT.txt",
+    "sha256": "2e528d5875747de7d1acf7fe3013f458dc9259d89782d12f2c1e1cef8d2395c8",
+    "result": "PASS",
+    "scope": "Gates 1 through 8 snapshot bound to the manifest hash"
+  },
+  "checksum_file": {
+    "path": "SHA256SUMS.txt",
+    "record_count": 171,
+    "sha256": "eec7cc1d98ca8640044e7625dee7193e59674b4dff36f9d27dce6207676576de",
+    "verification_exit_code": 0,
+    "verification": "PASS",
+    "self_excluded": true
+  },
+  "archive": {
+    "path": "/mnt/F/LCL/releases/LCL_Core_0.1.0_Final.zip",
+    "bytes": 314012,
+    "sha256": "1b9c472c53638dc211377cdc7fc810eb5235ca724407b42237de3e511bc39bc0",
+    "root": "LCL_Core_0.1.0",
+    "member_count": 172,
+    "single_root": true,
+    "duplicate_members": 0,
+    "unsafe_members": 0,
+    "testzip": "clean",
+    "extraction_diff_exit_code": 0,
+    "extraction_byte_identical": true,
+    "extracted_revalidation": {
+      "PASS": 25,
+      "FAIL": 0,
+      "BLOCKED": 0,
+      "OUT_OF_SCOPE": 2,
+      "release_ready": true
+    },
+    "stored_outside_package_root": true,
+    "deterministic": "members written in bytewise path order with a fixed timestamp"
+  },
+  "aggregate_validator": {
+    "tool": "validate_release.py",
+    "scope": "all",
+    "exit_code": 0,
+    "counts": {
+      "BLOCKED": 0,
+      "FAIL": 0,
+      "OUT_OF_SCOPE": 2,
+      "PASS": 25
+    },
+    "scope_ready": true,
+    "release_ready": true
+  },
+  "out_of_scope_checks": [
+    {
+      "check": "complete_example_parse_matrix",
+      "scope": "grammar",
+      "reason": "requires a reference lexer/parser",
+      "retired_package_task": "original LCL-TASK-0007",
+      "release_blocking": false,
+      "reported_as_pass": false
+    },
+    {
+      "check": "semantic_case_execution",
+      "scope": "catalog",
+      "reason": "requires a semantic execution engine",
+      "retired_package_tasks": [
+        "original LCL-TASK-0008",
+        "original LCL-TASK-0009"
+      ],
+      "release_blocking": false,
+      "reported_as_pass": false
+    }
+  ],
+  "checks": [
+    {
+      "scope": "filesystem",
+      "check": "path_mode_and_cache_hygiene",
+      "status": "PASS"
+    },
+    {
+      "scope": "text",
+      "check": "utf8_lf_and_control_hygiene",
+      "status": "PASS"
+    },
+    {
+      "scope": "text",
+      "check": "concrete_source_fixtures",
+      "status": "PASS"
+    },
+    {
+      "scope": "text",
+      "check": "static_example_contracts",
+      "status": "PASS"
+    },
+    {
+      "scope": "structured",
+      "check": "strict_json_parse",
+      "status": "PASS"
+    },
+    {
+      "scope": "structured",
+      "check": "python_source_compile",
+      "status": "PASS"
+    },
+    {
+      "scope": "grammar",
+      "check": "static_ebnf_graph",
+      "status": "PASS"
+    },
+    {
+      "scope": "grammar",
+      "check": "complete_example_parse_matrix",
+      "status": "OUT_OF_SCOPE"
+    },
+    {
+      "scope": "registry",
+      "check": "keyword_grammar_parity",
+      "status": "PASS"
+    },
+    {
+      "scope": "registry",
+      "check": "block_field_schema_parity",
+      "status": "PASS"
+    },
+    {
+      "scope": "registry",
+      "check": "collection_value_and_item_contract",
+      "status": "PASS"
+    },
+    {
+      "scope": "registry",
+      "check": "field_value_kind_closure",
+      "status": "PASS"
+    },
+    {
+      "scope": "registry",
+      "check": "nested_parent_closure",
+      "status": "PASS"
+    },
+    {
+      "scope": "registry",
+      "check": "operation_reference_closure",
+      "status": "PASS"
+    },
+    {
+      "scope": "registry",
+      "check": "priority_contract",
+      "status": "PASS"
+    },
+    {
+      "scope": "registry",
+      "check": "operation_contracts",
+      "status": "PASS"
+    },
+    {
+      "scope": "registry",
+      "check": "operation_prose_contracts",
+      "status": "PASS"
+    },
+    {
+      "scope": "registry",
+      "check": "result_schema_cardinality_and_output_contracts",
+      "status": "PASS"
+    },
+    {
+      "scope": "registry",
+      "check": "division_semantics",
+      "status": "PASS"
+    },
+    {
+      "scope": "registry",
+      "check": "set_and_sort_semantics",
+      "status": "PASS"
+    },
+    {
+      "scope": "registry",
+      "check": "constructor_and_pattern_profiles",
+      "status": "PASS"
+    },
+    {
+      "scope": "registry",
+      "check": "diagnostic_selection_contract",
+      "status": "PASS"
+    },
+    {
+      "scope": "registry",
+      "check": "mixed_phase_lifecycle_contracts",
+      "status": "PASS"
+    },
+    {
+      "scope": "catalog",
+      "check": "requirements_index_integrity",
+      "status": "PASS"
+    },
+    {
+      "scope": "catalog",
+      "check": "semantic_case_execution",
+      "status": "OUT_OF_SCOPE"
+    },
+    {
+      "scope": "integrity",
+      "check": "manifest_set_size_hash",
+      "status": "PASS"
+    },
+    {
+      "scope": "integrity",
+      "check": "checksum_set_and_hash",
+      "status": "PASS"
+    }
+  ],
+  "unresolved_release_blocking_findings": [],
+  "preserved_historical_inputs": {
+    "LCL_Core_0_1_Final": {
+      "file_count": 152,
+      "fingerprint_sha256": "7712e2e981e7140cdfde2b679b45b3a96d2b00834541ba6148946376f7d6a7d8",
+      "changed": false
+    },
+    "LCL_Completion_Task_Package_v2.0": {
+      "sha256sums_sha256": "bd0fa1acc9a475ec07ee01b386cf65f8e47a981bb8f870bf910436916cc340ec",
+      "record_count": 20,
+      "verification_exit_code": 0,
+      "changed": false
+    }
+  }
+}

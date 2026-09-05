@@ -4,6 +4,145 @@
   "closed": true,
   "parameter_binding": "named_only",
   "parameter_default_encoding": "In this registry only, JSON null in a parameter default field means no declared default and is not the LCL NULL value. A non-null default is the exact declared value applied only when an optional parameter is MISSING; required parameters never acquire a default.",
+  "contract_type_notation": {
+    "purpose": "The closed machine-readable notation in which every operation-contract and result-schema type string in this release is written. It fixes one exact reading for each such string so that two conforming implementations resolve the same contract type from the same registry bytes.",
+    "closed": true,
+    "applies_to": [
+      "10_REGISTRIES/operations_v0.1.0.json#/contracts/*/target/type",
+      "10_REGISTRIES/operations_v0.1.0.json#/contracts/*/parameters/*/type",
+      "10_REGISTRIES/built_in_groups_and_results_v0.1.0.json#/result_contract/common_fields/*/type",
+      "10_REGISTRIES/built_in_groups_and_results_v0.1.0.json#/result_contract/effect_schemas/*/fields/*/type",
+      "10_REGISTRIES/built_in_groups_and_results_v0.1.0.json#/result_schemas/*/fields/*/type"
+    ],
+    "separation_from_source_syntax": "This notation is not LCL source syntax and no form defined here is admissible in a source TYPE field. Source type syntax is governed by 04_GRAMMAR/10_COMPLETE_EBNF.ebnf TYPE_EXPRESSION and by field_signatures_v0.1.0.json value kinds. The two notations share definitions where they name the same thing, and they never share syntax.",
+    "grammar": {
+      "notation_profile": "ISO 14977 profile identical to 04_GRAMMAR/10_COMPLETE_EBNF.ebnf: comma concatenates, vertical bar alternates, braces repeat zero or more times, square brackets enclose an optional part, and question marks delimit a special sequence.",
+      "productions": [
+        "CONTRACT_TYPE = UNION ;",
+        "UNION = MEMBER , { \"|\" , MEMBER } ;",
+        "MEMBER = ENUM_FORM | COLLECTION_FORM | REFERENCE_FORM | QUALIFIED_IDENTIFIER_FORM | ATOM ;",
+        "ENUM_FORM = \"ENUM\" , \"[\" , ENUM_VALUE , { \"|\" , ENUM_VALUE } , \"]\" ;",
+        "COLLECTION_FORM = ( \"LIST\" | \"SET\" ) , \"[\" , UNION , \"]\" ;",
+        "REFERENCE_FORM = \"REFERENCE\" , [ \"[\" , REFERENCE_DOMAIN , \"]\" ] ;",
+        "REFERENCE_DOMAIN = REFERENCE_TARGET , { \"|\" , REFERENCE_TARGET } ;",
+        "REFERENCE_TARGET = BLOCK_NAME | META_TYPE_NAME | SCALAR_TYPE_NAME ;",
+        "QUALIFIED_IDENTIFIER_FORM = \"qualified_identifier\" , [ \"(\" , DOMAIN_NAME , \")\" ] ;",
+        "ATOM = SCALAR_TYPE_NAME | SPECIAL_VALUE_NAME | META_TYPE_NAME | NAMED_VALUE_KIND | RESULT_RECORD_NAME | TYPE_VARIABLE ;",
+        "ENUM_VALUE = ? one lowercase identifier matching [a-z][a-z0-9_]* ? ;",
+        "TYPE_VARIABLE = ? one ASCII uppercase letter ? ;"
+      ],
+      "start_symbol": "CONTRACT_TYPE"
+    },
+    "constructor_keywords": [
+      "ENUM",
+      "LIST",
+      "SET",
+      "REFERENCE",
+      "qualified_identifier"
+    ],
+    "atom_classes": {
+      "SCALAR_TYPE_NAME": {
+        "source": "10_REGISTRIES/types_v0.1.0.json",
+        "pointer": "/types",
+        "selection": "object_keys_without_type_argument",
+        "meaning": "One built-in scalar type name. The parameterized rows LIST[T], SET[T], and REFERENCE[T] name constructors and are not scalar atoms."
+      },
+      "SPECIAL_VALUE_NAME": {
+        "source": "10_REGISTRIES/semantic_meta_types_v0.1.0.json",
+        "pointer": "/persistence",
+        "selection": "object_keys",
+        "meaning": "One special value name. NULL also resolves as a scalar type name; MISSING and UNKNOWN resolve only here."
+      },
+      "BLOCK_NAME": {
+        "source": "10_REGISTRIES/block_schemas_v0.1.0.json",
+        "pointer": "/schemas",
+        "selection": "object_keys",
+        "meaning": "One declared block name, used only as a reference target."
+      },
+      "META_TYPE_NAME": {
+        "source": "10_REGISTRIES/semantic_meta_types_v0.1.0.json",
+        "pointer": "/meta_types",
+        "selection": "object_keys",
+        "meaning": "One semantic meta-type designator."
+      },
+      "NAMED_VALUE_KIND": {
+        "source": "10_REGISTRIES/field_signatures_v0.1.0.json",
+        "pointer": "/value_kind_registry",
+        "selection": "object_keys",
+        "meaning": "One named value kind, cited by its exact registered lowercase key. Citing the definition does not admit source field syntax into this notation."
+      },
+      "RESULT_RECORD_NAME": {
+        "source": "10_REGISTRIES/built_in_groups_and_results_v0.1.0.json",
+        "pointer": "/result_contract/effect_schemas",
+        "selection": "object_keys",
+        "meaning": "One closed result-side record schema name."
+      },
+      "DOMAIN_NAME": {
+        "source": "10_REGISTRIES/field_signatures_v0.1.0.json",
+        "pointer": "/qualified_identifier_domains",
+        "selection": "object_keys",
+        "meaning": "One declared qualified-identifier domain, resolved by that registry's own source, pointer, and selection record."
+      },
+      "ENUM_VALUE": {
+        "source": "inline",
+        "pointer": null,
+        "selection": "enumerated_in_place",
+        "meaning": "One member of the exhaustive value set written inside its own ENUM form. The set is closed by that form and resolves against no external registry."
+      },
+      "TYPE_VARIABLE": {
+        "source": "inline",
+        "pointer": null,
+        "selection": "bound_per_invocation",
+        "meaning": "One type variable. See type_variable_binding."
+      }
+    },
+    "lexical_rules": [
+      "No whitespace character may occur anywhere in a contract type string.",
+      "An atom written only in ASCII uppercase letters, digits, and underscore is a language-level name: a scalar type name, a special value name, or a block name.",
+      "An atom containing any ASCII lowercase letter is a specification-level designator: a meta-type name, a named value kind, or a result record name.",
+      "One ASCII uppercase letter standing alone is a type variable, never a scalar type name; every registered scalar type name is at least four characters long.",
+      "A constructor keyword is consumed structurally before atom resolution, so it is never classified as an atom even where the same word is separately registered as a type name or value kind, as ENUM and qualified_identifier are. ENUM, LIST, and SET are valid only with their bracketed argument, and a bare occurrence is invalid.",
+      "Comparison of every atom against its declared source is exact and case-sensitive."
+    ],
+    "union_rules": [
+      "A union denotes the set of its members; member order carries no meaning, and two strings whose member sets are equal at every position denote the same contract type.",
+      "A member may not repeat within one union, one reference domain, or one enum value set.",
+      "Every union, reference domain, and enum value set has at least one member; an empty alternative is invalid.",
+      "A union inside a collection argument, a reference domain, or an enum value set binds no tighter or looser than the brackets that enclose it, so no precedence rule is required."
+    ],
+    "nesting": {
+      "maximum_depth": 3,
+      "depth_definition": "The number of bracketed constructor forms enclosing a member, counting the outermost bracketed form as depth 1.",
+      "observed_maximum_in_this_release": 2,
+      "rule": "A contract type string whose nesting exceeds maximum_depth is invalid."
+    },
+    "omitted_parameter": {
+      "REFERENCE": "REFERENCE without a bracketed domain admits any reference target.",
+      "qualified_identifier": "qualified_identifier without a parenthesized domain admits any registered qualified identifier."
+    },
+    "type_variable_binding": {
+      "registered_variables": [
+        "T"
+      ],
+      "scope": "One operation invocation, spanning the invoked operation's own contract and the result schema that contract selects.",
+      "rule": "Every occurrence of one type variable within that scope denotes the same type, fixed by the resolved target or argument that first binds it. A type variable carries no meaning across different operation contracts and is never resolved from a registry.",
+      "worked_example": "core.filter declares target LIST[T] and selects result.collection, whose items field is LIST[T]; both denote the same member type for one invocation."
+    },
+    "invalid_forms": [
+      "Any whitespace character.",
+      "A leading, trailing, or doubled vertical bar.",
+      "An empty bracket or parenthesis pair.",
+      "A repeated member within one union, reference domain, or enum value set.",
+      "An atom that resolves against no declared source.",
+      "A qualified_identifier domain that no declared domain record names.",
+      "ENUM without a bracketed value set, or LIST or SET without a bracketed argument.",
+      "A reference domain member that is neither a block name, a meta-type name, nor a scalar type name.",
+      "Nesting deeper than maximum_depth.",
+      "An uppercase spelling of a named value kind, a meta-type name, or a result record name.",
+      "A lowercase spelling of a scalar type name, a special value name, or a block name."
+    ],
+    "defect_rule": "A contract type string that does not parse under this notation, or whose atom does not resolve against its declared source, is a defect in this specification and is repaired in the registry. It is never a document diagnostic, never selects a registered error, and never reaches a conforming document."
+  },
   "axis_contract": {
     "custom_operation_resolution": "A custom kind.operation declares its complete axis contract in its own DEFINE block and selects no implementation profile. SIDE_EFFECT FALSE declares possible_effects exactly none. A SIDE_EFFECT effect-class LIST declares one or more distinct concrete effect classes, excludes none, and is that operation's possible_effects maximum. DEPENDENCY declares the possible_dependencies maximum from the closed dependency vocabulary; an omitted DEPENDENCY declares exactly declared_state_only. Resolve the invocation effect set from the address classes of the resolved target and declared destination arguments under the same address-class rules that bind core rows, bounded by the declared maximum; an invocation that resolves an effect class outside that maximum, and an effect-class declaration whose invocation resolves no concrete effect class, each emit error.operation.precondition before effects. DETERMINISTIC TRUE requires the declared contract to satisfy determinism_identity over identical declared inputs and declared dependency snapshots; DETERMINISTIC FALSE conservatively permits either final category and never relaxes another rule. The declaration supplies the final category and the dependency and effect sets used by an ACTION graph.",
     "determinism_identity": "For a deterministic operation, identical declared inputs, dependency snapshots, selected profile-role bindings, and implementation versions require semantically equivalent results, effects, ordering, and status.",
@@ -759,7 +898,7 @@
       },
       "parameters": {
         "assertion": {
-          "type": "BOOLEAN_EXPRESSION|REFERENCE[BOOLEAN]",
+          "type": "boolean_expression|REFERENCE[BOOLEAN]",
           "required": true,
           "default": null,
           "meaning": "Observable postcondition.",
@@ -823,7 +962,7 @@
       },
       "parameters": {
         "assertion": {
-          "type": "BOOLEAN_EXPRESSION|REFERENCE[BOOLEAN]",
+          "type": "boolean_expression|REFERENCE[BOOLEAN]",
           "required": false,
           "default": null,
           "meaning": "Direct pass condition.",
@@ -1520,7 +1659,7 @@
       },
       "parameters": {
         "target_format": {
-          "type": "qualified_identifier(format)|TYPE_EXPRESSION",
+          "type": "qualified_identifier(format)|type_expression",
           "required": true,
           "default": null,
           "meaning": "Required destination representation.",
@@ -2271,7 +2410,7 @@
           "constraints": []
         },
         "expected_type": {
-          "type": "TYPE_EXPRESSION",
+          "type": "type_expression",
           "required": true,
           "default": null,
           "meaning": "Required answer type.",
@@ -2345,7 +2484,7 @@
           "constraints": []
         },
         "when": {
-          "type": "BOOLEAN_EXPRESSION",
+          "type": "boolean_expression",
           "required": false,
           "default": true,
           "meaning": "Retry condition.",

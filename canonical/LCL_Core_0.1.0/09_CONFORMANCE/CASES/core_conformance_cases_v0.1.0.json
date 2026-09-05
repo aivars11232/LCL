@@ -2,11 +2,12 @@
   "language": "LCL",
   "version": "0.1.0",
   "normative": true,
-  "case_count": 798,
+  "case_count": 799,
   "category_counts": {
     "block_extra": 41,
     "block_minimum": 41,
     "block_missing": 41,
+    "contract_type_notation": 1,
     "diagnostic_policy": 1,
     "enum_groups": 22,
     "error_contract": 77,
@@ -6413,6 +6414,14 @@
       "requirement": "Raise an event only from an emitted diagnostic, never from a timer, host signal, external notification, or successful completion. Resolve a total event field over every registered error, non-null exactly when the error permits declared handler recovery, forming a bijection between the handler-recoverable errors and the closed event vocabulary. Raise each surviving diagnostic's event once, after supersession and duplicate suppression and before the primary/secondary partition. Activate handlers only through the closed attachment set TASK.HANDLER, STEP.HANDLER, RETRY.HANDLER, DEPENDENCY.HANDLER, and FAILURE.HANDLER, ordering candidates by attachment proximity, then source declaration order, then handler ID. Match on EVENT equality with an absent or TRUE WHEN, run exactly the first matching candidate, and leave the diagnostic unhandled when none matches. Recover exactly when the handler invocation records status.succeeded, never erasing the original diagnostic. Do not re-enter handler selection for diagnostics raised while selecting or executing a handler for the same originating diagnostic.",
       "expected": "deterministic single-handler activation from a total, bijective diagnostic-to-event mapping with acyclic, terminating selection",
       "source": "statuses_and_errors_v0.1.0.json"
+    },
+    {
+      "id": "CONTRACT-TYPE-NOTATION-0799",
+      "category": "contract_type_notation",
+      "subject": "contract_type_notation",
+      "requirement": "Read every operation-contract and result-schema type string under the closed notation declared by operations_v0.1.0.json#/contract_type_notation, which governs the type strings of both that registry and built_in_groups_and_results_v0.1.0.json. Parse each string against the declared grammar: a union of members, where a member is an ENUM value set, a bracketed LIST or SET argument, a REFERENCE with an optional target domain, a qualified_identifier with an optional domain, or one atom. Resolve every atom against the exact registry source, pointer, and selection its atom class declares: scalar type names from types_v0.1.0.json, special value names and semantic meta-types from semantic_meta_types_v0.1.0.json, block names from block_schemas_v0.1.0.json, named value kinds and qualified-identifier domains from field_signatures_v0.1.0.json, and result record names from built_in_groups_and_results_v0.1.0.json. Reject any whitespace, any repeated member within one union, reference domain, or enum value set, any nesting beyond the declared maximum depth, any unregistered type variable, any atom resolving against no declared source, and any qualified_identifier domain that no declared domain record names. Treat an atom written only in uppercase as a language-level name and an atom containing a lowercase letter as a specification-level designator, never interchangeably. Consume constructor keywords structurally so that one is never classified as an atom. Treat this notation as specification notation only: no form it defines is admissible in a source TYPE field, and a string that does not parse or resolve is a specification defect repaired in the registry rather than a document diagnostic.",
+      "expected": "one exact reading and one resolved atom set for every contract type string, with source TYPE syntax left unchanged",
+      "source": "operations_v0.1.0.json"
     }
   ]
 }

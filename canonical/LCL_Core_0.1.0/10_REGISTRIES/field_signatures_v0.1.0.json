@@ -135,6 +135,11 @@
       "pointer": "/enum_groups/modes",
       "selection": "array_values"
     },
+    "status": {
+      "source": "10_REGISTRIES/statuses_and_errors_v0.1.0.json",
+      "pointer": "/statuses",
+      "selection": "object_keys"
+    },
     "terminal_non_success_status": {
       "source": "10_REGISTRIES/statuses_and_errors_v0.1.0.json",
       "pointer": "/statuses",

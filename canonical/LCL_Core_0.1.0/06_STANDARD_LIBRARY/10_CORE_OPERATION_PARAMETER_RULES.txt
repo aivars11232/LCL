@@ -15,6 +15,21 @@ result_schema selects that contract. OUTPUT PROPERTY projection may narrow the
 operation-owned result fields but never changes the operation's status,
 diagnostics, resolved effects, or field availability.
 
+Every type string in those two registries is written in one closed machine-
+readable notation defined by
+10_REGISTRIES/operations_v0.1.0.json#/contract_type_notation. That notation fixes
+its grammar, its atom classes and the exact registry each atom resolves against,
+union and duplicate-member rules, permitted nesting, whitespace, and its closed
+list of invalid forms, so one contract type string has exactly one reading. It is
+a specification notation, not LCL source syntax: no form it defines is admissible
+in a source TYPE field, and source type syntax remains governed by
+04_GRAMMAR/10_COMPLETE_EBNF.ebnf TYPE_EXPRESSION and by the value kinds of
+10_REGISTRIES/field_signatures_v0.1.0.json. Where both cite the same designator
+they share that one definition and never share syntax. A contract type string
+that does not parse, or whose atom resolves against no declared source, is a
+defect in this specification and is repaired in the registry; it is never a
+document diagnostic and selects no registered error.
+
 No positional parameters exist. A parameter absent from an operation contract is
 forbidden. A required parameter cannot be inferred. A default applies only to a
 MISSING optional parameter. Every operation lists error.operation.parameter;

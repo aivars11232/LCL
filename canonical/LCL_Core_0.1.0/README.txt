@@ -32,7 +32,7 @@ THIS PACKAGE CONTAINS
 
 SCOPE BOUNDARIES OF THIS RELEASE
 
-- the 798-entry catalog is a descriptive requirements index, not an executed
+- the 799-entry catalog is a descriptive requirements index, not an executed
   semantic suite; executable semantic evidence is outside the bare-language
   package scope and its absence is not a release blocker;
 - MANIFEST.json, VALIDATION_REPORT.txt, and SHA256SUMS.txt were regenerated in

@@ -592,6 +592,11 @@ TASK_0002_QUALIFIED_IDENTIFIER_DOMAINS = {
         "pointer": "/enum_groups/modes",
         "selection": "array_values",
     },
+    "status": {
+        "source": "10_REGISTRIES/statuses_and_errors_v0.1.0.json",
+        "pointer": "/statuses",
+        "selection": "object_keys",
+    },
     "terminal_non_success_status": {
         "source": "10_REGISTRIES/statuses_and_errors_v0.1.0.json",
         "pointer": "/statuses",
@@ -2909,6 +2914,7 @@ def result_contract_violations(
             "language",
             "version",
             "closed",
+            "contract_type_notation_source",
             "enum_groups",
             "result_contract",
             "result_schemas",
@@ -3425,7 +3431,7 @@ def result_contract_violations(
 
 
 EXPECTED_OPERATION_CONTRACT_FINGERPRINT = (
-    "eda21bef2f30075595d45f68b41a39e56637f4ecd3e4ba23192c317504afb7a4"
+    "8b13d92230d9df6656350f43083ce748207f257d1b70ae9b6a75da9c565265db"
 )
 EXPECTED_OPERATION_ROW_FINGERPRINTS = {
     "core.inspect": "fc2ae5ad368d5bba7e4599740b68d627471585b039834d2ad5b5f766beeaf234",
@@ -3438,8 +3444,8 @@ EXPECTED_OPERATION_ROW_FINGERPRINTS = {
     "core.sort": "bf13927bbed4cd17d1a9f8a03d5249b8779768cd24d671677f7ba1bc0e3f2b16",
     "core.group": "353fd0c5ac6784a824a3e41508fb13034e230ad119c0e6e2500fe3fed43e6e04",
     "core.validate": "9746a344ec76fb63f32dd5a00b7b85c722e96829461e3dadc2403a375ac41754",
-    "core.verify": "47eda410f75ce83cc8c83f9b064b3e404125c9ace2f3979bf27e50efaa19ba40",
-    "core.test": "fd93d7fb916bebf97b2384fe4a83754c00f333a7b7737dfea5315af7a1013673",
+    "core.verify": "b8fb7cac6c5218ca5022ba73468ab7eea0a97c87c2cf4dcd45849a51be08e1ca",
+    "core.test": "5d3d3927b3295c9eab0fed287f15b4364051af0dc7216b36eac1cfcb85996400",
     "core.report": "466c758adf4a24ca72af7d10d178825b16dd670b3daeb3be9c7e8e14e0dbb5d1",
     "core.return": "d412141b34ad45433f840758063e378c35fdad07b3c341a796ee657aaedfdb9e",
     "core.create": "f0a0d85c6ef3b0b8eea603b16de509c81c2fb8a27f47b66518cfab361b6c5100",
@@ -3451,7 +3457,7 @@ EXPECTED_OPERATION_ROW_FINGERPRINTS = {
     "core.rename": "06bc994fd1b85a499ee9b95d941a9724e0bc2b34dfe38f6aaf9e59ba6c4d4240",
     "core.delete": "c786bddf0832f48432fb9c813191e36d60cb1153d618b7d09e5f4d62281cf517",
     "core.generate": "b7a1e626ac246b08cb202643d5c976657397d637710f5fa68b6ffa406be5f969",
-    "core.convert": "8c877ce820c08c56df28733c10536f2426f59a45472103c70bbe5e86a10e9314",
+    "core.convert": "045e1a662376623b268a664e563991805c07f234f3321f8b39a68ce76f63922b",
     "core.execute": "24b5e8dc4d306d16422b2d3f92beb6556898bbcaac7e98bd1618cb99b2a7da4c",
     "core.install": "b9df3d850ef7e1de21223bd4cc078e27cf07ba0bc509953611eb6ee03f3997a4",
     "core.uninstall": "0e2db0cdbf6f4a6ce38c6b13fbde3d62df013528a103d8b79d5606a2a2f35dbf",
@@ -3463,8 +3469,8 @@ EXPECTED_OPERATION_ROW_FINGERPRINTS = {
     "core.download": "9f603f23ac69a4ef1b64246c9e3c58112e0c1df11f800b9eb8bd4d407d04007f",
     "core.memory_write": "79c11d4767f792c59c0c502b6d8d33826b1a34670985f6269316c75c95323bfe",
     "core.state_update": "fd6f0d9d8c543e42125b67de2c3fe540d3de8fc2cbab48f572cbf85c4836ed12",
-    "core.ask": "508262d4c096f90ce488915de24cc14830d826789d2c1c78b8d64bf0bd797b18",
-    "core.retry": "e0e246d6ec03e6e9e8a3894378a05edff6fdc557d797f65272666a84235f6362",
+    "core.ask": "6e519747a5402e50996d39a21644770c4fc4a17425056e22ee904cc3a0fcb2fd",
+    "core.retry": "3ad6b96ad514076169ea344140febf443ad5e67d1af10bb1db76a9dc936cba55",
     "core.continue": "2639da73903e268cab43da10e8d1385290c2d31aec88f56918368f006cd3ea06",
     "core.cancel": "e93170aea13204ec59ae5f49bb154382e60c39a1faa7ea116db9579f426a0c9e",
 }
@@ -3513,6 +3519,7 @@ def operation_contract_violations(
         "closed",
         "parameter_binding",
         "parameter_default_encoding",
+        "contract_type_notation",
         "axis_contract",
         "contracts",
     }
@@ -4397,7 +4404,7 @@ def operation_contract_violations(
     )
     expect(
         verify_parameters.get("assertion", {}).get("type")
-        == "BOOLEAN_EXPRESSION|REFERENCE[BOOLEAN]"
+        == "boolean_expression|REFERENCE[BOOLEAN]"
         and verify_parameters.get("evidence", {}).get("type")
         == "LIST[REFERENCE[EVIDENCE]]"
         and "error.reference.unresolved" in verify_contract.get("errors", [])
@@ -4637,7 +4644,7 @@ def operation_contract_violations(
     )
     expect(
         test_parameters.get("assertion", {}).get("type")
-        == "BOOLEAN_EXPRESSION|REFERENCE[BOOLEAN]"
+        == "boolean_expression|REFERENCE[BOOLEAN]"
         and test_parameters.get("actual", {}).get("type")
         == "meta.material_value|REFERENCE[meta.material_value]"
         and "error.reference.unresolved" in test_contract.get("errors", [])
@@ -6489,6 +6496,352 @@ def invocation_site_contract_violations(
     return violations, checked_handlers
 
 
+CONTRACT_NOTATION_REQUIRED_KEYS = (
+    "purpose",
+    "closed",
+    "applies_to",
+    "separation_from_source_syntax",
+    "grammar",
+    "constructor_keywords",
+    "atom_classes",
+    "lexical_rules",
+    "union_rules",
+    "nesting",
+    "omitted_parameter",
+    "type_variable_binding",
+    "invalid_forms",
+    "defect_rule",
+)
+
+LANGUAGE_LEVEL_ATOM_CLASSES = frozenset(
+    {"SCALAR_TYPE_NAME", "SPECIAL_VALUE_NAME", "BLOCK_NAME"}
+)
+SPECIFICATION_LEVEL_ATOM_CLASSES = frozenset(
+    {"META_TYPE_NAME", "NAMED_VALUE_KIND", "RESULT_RECORD_NAME"}
+)
+
+
+class ContractTypeSyntaxError(Exception):
+    """One contract type string violates the declared notation."""
+
+
+def resolve_atom_vocabulary(root: Path, record: Any) -> set[str]:
+    """Resolve one atom class against the source, pointer, and selection it declares."""
+    if not isinstance(record, dict):
+        raise ContractTypeSyntaxError("atom class record is not an object")
+    source = record.get("source")
+    if source == "inline":
+        return set()
+    pointer = record.get("pointer")
+    selection = record.get("selection")
+    if not isinstance(source, str) or not isinstance(pointer, str):
+        raise ContractTypeSyntaxError(f"atom class declares no resolvable source: {record!r}")
+    document = load_json_strict(root / source)
+    node: Any = document
+    for segment in [part for part in pointer.split("/") if part]:
+        if not isinstance(node, dict) or segment not in node:
+            raise ContractTypeSyntaxError(f"pointer {pointer} does not resolve in {source}")
+        node = node[segment]
+    if selection == "object_keys":
+        if not isinstance(node, dict):
+            raise ContractTypeSyntaxError(f"pointer {pointer} is not an object")
+        return set(node)
+    if selection == "object_keys_without_type_argument":
+        if not isinstance(node, dict):
+            raise ContractTypeSyntaxError(f"pointer {pointer} is not an object")
+        return {key for key in node if "[" not in key}
+    raise ContractTypeSyntaxError(f"unsupported atom selection {selection!r}")
+
+
+class ContractTypeParser:
+    """Recursive-descent parser for the declared contract type notation."""
+
+    def __init__(
+        self,
+        text: str,
+        vocabularies: dict[str, set[str]],
+        maximum_depth: int,
+        registered_variables: set[str],
+    ):
+        self.text = text
+        self.position = 0
+        self.vocabularies = vocabularies
+        self.maximum_depth = maximum_depth
+        self.registered_variables = registered_variables
+        self.atom_uses: list[tuple[str, str]] = []
+        self.observed_depth = 0
+
+    def peek(self) -> str:
+        return self.text[self.position] if self.position < len(self.text) else ""
+
+    def take(self, character: str) -> None:
+        if self.peek() != character:
+            raise ContractTypeSyntaxError(
+                f"expected {character!r} at offset {self.position} in {self.text!r}"
+            )
+        self.position += 1
+
+    def word(self) -> str:
+        start = self.position
+        while self.position < len(self.text) and (
+            self.text[self.position].isalnum() or self.text[self.position] in "_."
+        ):
+            self.position += 1
+        if start == self.position:
+            raise ContractTypeSyntaxError(
+                f"empty atom at offset {start} in {self.text!r}"
+            )
+        return self.text[start:self.position]
+
+    def parse(self) -> None:
+        if any(character.isspace() for character in self.text):
+            raise ContractTypeSyntaxError(f"whitespace in {self.text!r}")
+        if not self.text:
+            raise ContractTypeSyntaxError("empty contract type string")
+        self.parse_union(0, "type")
+        if self.position != len(self.text):
+            raise ContractTypeSyntaxError(
+                f"trailing input {self.text[self.position:]!r} in {self.text!r}"
+            )
+
+    def parse_union(self, depth: int, mode: str) -> list[str]:
+        members = [self.parse_member(depth, mode)]
+        while self.peek() == "|":
+            self.take("|")
+            members.append(self.parse_member(depth, mode))
+        if len(members) != len(set(members)):
+            raise ContractTypeSyntaxError(f"duplicate union member in {self.text!r}")
+        return members
+
+    def enter(self, depth: int) -> int:
+        if depth + 1 > self.maximum_depth:
+            raise ContractTypeSyntaxError(
+                f"nesting deeper than {self.maximum_depth} in {self.text!r}"
+            )
+        self.observed_depth = max(self.observed_depth, depth + 1)
+        return depth + 1
+
+    def parse_member(self, depth: int, mode: str) -> str:
+        if mode == "enum":
+            value = self.word()
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", value):
+                raise ContractTypeSyntaxError(f"invalid enum value {value!r}")
+            self.atom_uses.append(("ENUM_VALUE", value))
+            return value
+        word = self.word()
+        if word == "ENUM":
+            self.take("[")
+            values = self.parse_union(self.enter(depth), "enum")
+            self.take("]")
+            return "ENUM[" + "|".join(values) + "]"
+        if word in ("LIST", "SET"):
+            self.take("[")
+            inner = self.parse_union(self.enter(depth), "type")
+            self.take("]")
+            return f"{word}[" + "|".join(inner) + "]"
+        if word == "REFERENCE":
+            if self.peek() == "[":
+                self.take("[")
+                inner = self.parse_union(self.enter(depth), "reference")
+                self.take("]")
+                return "REFERENCE[" + "|".join(inner) + "]"
+            return "REFERENCE"
+        if word == "qualified_identifier":
+            if self.peek() == "(":
+                self.take("(")
+                domain = self.word()
+                self.take(")")
+                if domain not in self.vocabularies["DOMAIN_NAME"]:
+                    raise ContractTypeSyntaxError(
+                        f"unresolved qualified_identifier domain {domain!r}"
+                    )
+                self.atom_uses.append(("DOMAIN_NAME", domain))
+                return f"qualified_identifier({domain})"
+            return "qualified_identifier"
+        return self.resolve_atom(word, mode)
+
+    def resolve_atom(self, word: str, mode: str) -> str:
+        if mode == "reference":
+            order = ("BLOCK_NAME", "META_TYPE_NAME", "SCALAR_TYPE_NAME")
+        else:
+            order = (
+                "SCALAR_TYPE_NAME",
+                "SPECIAL_VALUE_NAME",
+                "META_TYPE_NAME",
+                "RESULT_RECORD_NAME",
+                "NAMED_VALUE_KIND",
+            )
+        for atom_class in order:
+            if word in self.vocabularies[atom_class]:
+                self.atom_uses.append((atom_class, word))
+                return word
+        if mode != "reference" and re.fullmatch(r"[A-Z]", word):
+            if word not in self.registered_variables:
+                raise ContractTypeSyntaxError(
+                    f"unregistered type variable {word!r} in {self.text!r}"
+                )
+            self.atom_uses.append(("TYPE_VARIABLE", word))
+            return word
+        raise ContractTypeSyntaxError(
+            f"unresolved atom {word!r} in {self.text!r}"
+        )
+
+
+def collect_contract_type_strings(document: Any, prefix: str) -> list[tuple[str, str]]:
+    found: list[tuple[str, str]] = []
+
+    def walk(node: Any, path: str) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "type" and isinstance(value, str):
+                    found.append((f"{path}/type", value))
+                else:
+                    walk(value, f"{path}/{key}")
+        elif isinstance(node, list):
+            for index, item in enumerate(node):
+                walk(item, f"{path}/{index}")
+
+    walk(document, prefix)
+    return found
+
+
+def contract_pointer_matches(pattern: str, path: str) -> bool:
+    pattern_segments = pattern.split("/")
+    path_segments = path.split("/")
+    if len(pattern_segments) != len(path_segments):
+        return False
+    return all(
+        expected in ("*", actual)
+        for expected, actual in zip(pattern_segments, path_segments)
+    )
+
+
+def contract_type_notation_violations(
+    root: Path, operations_registry: Any, groups_and_results: Any
+) -> tuple[list[str], dict[str, Any]]:
+    violations: list[str] = []
+    summary: dict[str, Any] = {
+        "checked_type_strings": 0,
+        "distinct_type_strings": 0,
+        "observed_maximum_depth": 0,
+        "atom_class_usage": {},
+    }
+
+    notation = operations_registry.get("contract_type_notation")
+    if not isinstance(notation, dict):
+        return (["operations registry declares no contract_type_notation"], summary)
+    for key in CONTRACT_NOTATION_REQUIRED_KEYS:
+        if key not in notation:
+            violations.append(f"contract_type_notation omits required key {key}")
+    if notation.get("closed") is not True:
+        violations.append("contract_type_notation is not declared closed")
+    pointer_source = groups_and_results.get("contract_type_notation_source")
+    if not isinstance(pointer_source, str) or "contract_type_notation" not in pointer_source:
+        violations.append(
+            "groups/result registry does not bind itself to the single notation definition"
+        )
+    if violations:
+        return (violations, summary)
+
+    atom_classes = notation.get("atom_classes")
+    if not isinstance(atom_classes, dict):
+        return (["contract_type_notation.atom_classes is not an object"], summary)
+    vocabularies: dict[str, set[str]] = {}
+    for atom_class, record in atom_classes.items():
+        try:
+            vocabularies[atom_class] = resolve_atom_vocabulary(root, record)
+        except ContractTypeSyntaxError as error:
+            violations.append(f"atom class {atom_class}: {error}")
+    if violations:
+        return (violations, summary)
+    for required_class in (
+        LANGUAGE_LEVEL_ATOM_CLASSES
+        | SPECIFICATION_LEVEL_ATOM_CLASSES
+        | {"DOMAIN_NAME", "ENUM_VALUE", "TYPE_VARIABLE"}
+    ):
+        if required_class not in vocabularies:
+            violations.append(f"contract_type_notation omits atom class {required_class}")
+    if violations:
+        return (violations, summary)
+
+    nesting = notation.get("nesting")
+    if not isinstance(nesting, dict) or not isinstance(nesting.get("maximum_depth"), int):
+        return (["contract_type_notation.nesting declares no integer maximum_depth"], summary)
+    maximum_depth = nesting["maximum_depth"]
+    binding = notation.get("type_variable_binding")
+    if not isinstance(binding, dict) or not isinstance(
+        binding.get("registered_variables"), list
+    ):
+        return (
+            ["contract_type_notation.type_variable_binding declares no registered_variables"],
+            summary,
+        )
+    registered_variables = set(binding["registered_variables"])
+
+    constructor_keywords = set(notation.get("constructor_keywords", []))
+
+    strings = collect_contract_type_strings(
+        operations_registry, "10_REGISTRIES/operations_v0.1.0.json#"
+    ) + collect_contract_type_strings(
+        groups_and_results, "10_REGISTRIES/built_in_groups_and_results_v0.1.0.json#"
+    )
+    patterns = notation.get("applies_to", [])
+    if not isinstance(patterns, list) or not patterns:
+        return (["contract_type_notation.applies_to is not a nonempty list"], summary)
+    matched_patterns: set[str] = set()
+    for path, _ in strings:
+        matches = [pattern for pattern in patterns if contract_pointer_matches(pattern, path)]
+        if not matches:
+            violations.append(f"contract type string at {path} matches no applies_to pattern")
+        matched_patterns.update(matches)
+    for pattern in patterns:
+        if pattern not in matched_patterns:
+            violations.append(f"applies_to pattern matches no contract type string: {pattern}")
+
+    usage: dict[str, int] = {}
+    observed_depth = 0
+    for path, text in strings:
+        parser = ContractTypeParser(
+            text, vocabularies, maximum_depth, registered_variables
+        )
+        try:
+            parser.parse()
+        except ContractTypeSyntaxError as error:
+            violations.append(f"{path}: {error}")
+            continue
+        observed_depth = max(observed_depth, parser.observed_depth)
+        for atom_class, word in parser.atom_uses:
+            usage[atom_class] = usage.get(atom_class, 0) + 1
+            if word in constructor_keywords:
+                violations.append(
+                    f"{path}: constructor keyword {word!r} was classified as {atom_class}"
+                )
+            if atom_class in LANGUAGE_LEVEL_ATOM_CLASSES and word.lower() == word:
+                violations.append(
+                    f"{path}: language-level name {word!r} is not written in uppercase"
+                )
+            if atom_class in SPECIFICATION_LEVEL_ATOM_CLASSES and word.upper() == word:
+                violations.append(
+                    f"{path}: specification-level designator {word!r} is written in uppercase"
+                )
+
+    for atom_class in vocabularies:
+        if atom_class not in usage:
+            violations.append(f"atom class {atom_class} is declared but never used")
+
+    declared_observed = nesting.get("observed_maximum_in_this_release")
+    if declared_observed != observed_depth:
+        violations.append(
+            "nesting.observed_maximum_in_this_release is "
+            f"{declared_observed!r} but the registries observe {observed_depth}"
+        )
+
+    summary["checked_type_strings"] = len(strings)
+    summary["distinct_type_strings"] = len({text for _, text in strings})
+    summary["observed_maximum_depth"] = observed_depth
+    summary["atom_class_usage"] = dict(sorted(usage.items()))
+    return (violations, summary)
+
 def check_registry(root: Path, results: Results) -> None:
     registry = root / "10_REGISTRIES"
     keywords = load_json_strict(registry / "keywords_v0.1.0.json")["keywords"]
@@ -6993,6 +7346,26 @@ def check_registry(root: Path, results: Results) -> None:
         blocked_by=[],
     )
 
+    notation_violations, notation_summary = contract_type_notation_violations(
+        root, operation_registry, groups_and_results
+    )
+    results.add(
+        "registry",
+        "contract_type_notation",
+        "FAIL" if notation_violations else "PASS",
+        contract_type_notation_violations=notation_violations,
+        checked_type_strings=notation_summary["checked_type_strings"],
+        distinct_type_strings=notation_summary["distinct_type_strings"],
+        observed_maximum_depth=notation_summary["observed_maximum_depth"],
+        atom_class_usage=notation_summary["atom_class_usage"],
+        static_limit=(
+            "Parses every operation-contract and result-schema type string against the "
+            "notation the registry itself declares and resolves every atom against the "
+            "source that notation names; no LCL document is parsed or executed."
+        ),
+        blocked_by=[],
+    )
+
 
 def check_catalog(root: Path, results: Results) -> None:
     def operation() -> dict[str, Any]:
@@ -7033,6 +7406,7 @@ def check_catalog(root: Path, results: Results) -> None:
             "block_extra": 41,
             "block_minimum": 41,
             "block_missing": 41,
+            "contract_type_notation": 1,
             "diagnostic_policy": 1,
             "enum_groups": 22,
             "error_contract": 77,
@@ -7059,6 +7433,7 @@ def check_catalog(root: Path, results: Results) -> None:
             "block_extra": "field_signatures_v0.1.0.json",
             "block_minimum": "field_signatures_v0.1.0.json",
             "block_missing": "field_signatures_v0.1.0.json",
+            "contract_type_notation": "operations_v0.1.0.json",
             "diagnostic_policy": "statuses_and_errors_v0.1.0.json",
             "enum_groups": "built_in_groups_and_results_v0.1.0.json",
             "error_contract": "statuses_and_errors_v0.1.0.json",
@@ -7082,7 +7457,7 @@ def check_catalog(root: Path, results: Results) -> None:
             "type_valid": "types_v0.1.0.json",
         }
         assert catalog.get("category_counts") == expected_category_counts, (
-            "catalog category_counts are not the exact 24-category contract"
+            "catalog category_counts are not the exact 25-category contract"
         )
         for index, case in enumerate(cases, start=1):
             assert isinstance(case, dict), f"catalog case {index} is not an object"
@@ -7102,7 +7477,7 @@ def check_catalog(root: Path, results: Results) -> None:
             assert case["source"] == expected_sources.get(case["category"]), (
                 f"catalog case {index} source/category mapping differs"
             )
-        assert catalog["case_count"] == len(cases) == 798, "case_count mismatch"
+        assert catalog["case_count"] == len(cases) == 799, "case_count mismatch"
         identifiers = [case["id"] for case in cases]
         assert len(identifiers) == len(set(identifiers)), "duplicate case IDs"
         counts: dict[str, int] = {}

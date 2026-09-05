@@ -2,6 +2,7 @@
   "language": "LCL",
   "version": "0.1.0",
   "closed": true,
+  "contract_type_notation_source": "10_REGISTRIES/operations_v0.1.0.json#/contract_type_notation governs every type string in this registry's result_contract and result_schemas records. This registry defines no notation of its own.",
   "enum_groups": {
     "document_kinds": [
       "kind.task",

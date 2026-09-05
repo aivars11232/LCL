@@ -119,7 +119,9 @@
       "rules": [
         "Immutable.",
         "Kind-specific required fields are normative.",
-        "ITEM is legal only for KIND kind.type with BASE ENUM and occurs one or more times there."
+        "ITEM is legal only for KIND kind.type with BASE ENUM and occurs one or more times there.",
+        "KIND kind.error, kind.event, and kind.status require BASE and MEANING and define same-domain aliases inheriting the canonical core metadata without modification.",
+        "FIELD is legal only for KIND kind.type with direct BASE OBJECT. An alias adds no FIELD or ITEM and preserves the resolved base schema or enum domain."
       ]
     },
     "FIELD": {
@@ -684,7 +686,6 @@
         "AFTER",
         "WHEN",
         "REQUIRED",
-        "RETRY",
         "HANDLER",
         "DESCRIPTION"
       ],
@@ -696,8 +697,7 @@
     },
     "RETRY": {
       "contexts": [
-        "ACTION",
-        "STEP"
+        "ACTION"
       ],
       "occurrence": "zero_or_one",
       "required": [
@@ -712,9 +712,11 @@
       "repeatable": [],
       "rules": [
         "LIMIT counts additional attempts and is 0 through 100.",
-        "This block is the only source of attempt bounds for its execution unit; total attempts are exactly 1 + LIMIT.",
+        "This inline ACTION block is the only source of attempt bounds; total attempts are at most 1 + LIMIT and the first successful attempt ends retrying.",
         "A handler using core.retry authorizes this declared RETRY and its resolved limit must equal this LIMIT.",
-        "RETRY.HANDLER is in scope only for diagnostics raised by an attempt of the execution unit declaring this RETRY, including the first attempt."
+        "RETRY.WHEN defaults to TRUE and RETRY.DELAY defaults to DURATION(0, unit.second). A false condition or a refused safety check prevents another attempt without manufacturing count exhaustion or success.",
+        "Count exhaustion occurs only after 1 + LIMIT actual unsuccessful attempts.",
+        "RETRY.HANDLER is in scope only for diagnostics raised by an attempt of the ACTION declaring this RETRY, including the first attempt."
       ]
     },
     "HANDLER": {
@@ -743,7 +745,9 @@
         "EVENT names the event this handler activates on; the closed event model in statuses_and_errors_v0.1.0.json#/event_model raises events only from emitted diagnostics and selects at most one handler per raised diagnostic.",
         "A required TARGET may be omitted only under the handler-context binding for REFERENCE[ACTION] or REFERENCE[meta.execution_unit] targets.",
         "LIMIT is exactly the limit named parameter of the selected operation and is legal only when that operation registers it.",
-        "FALLBACK admits one REF to a HANDLER, or one operation identifier that requires no named parameter and whose required TARGET the handler-context binding supplies."
+        "FALLBACK admits one REF to a HANDLER, or one operation identifier that requires no named parameter and whose required TARGET the handler-context binding supplies.",
+        "An injected handler-context target identifies the active owning invocation aggregate; the failed child attempt remains immutable evidence. Explicit targets follow the selected operation contract.",
+        "At most one handler is selected through event attachments; direct acyclic FALLBACK calls may invoke another HANDLER without a second event selection."
       ]
     },
     "OUTPUT": {
@@ -905,7 +909,9 @@
       ],
       "repeatable": [],
       "rules": [
-        "STATUS is terminal non-success."
+        "STATUS is terminal non-success.",
+        "Resolve status aliases first. A selected STATUS must be legal in the active producer current allowed_next set and scope; an illegal transition produces error.execution.order, and an execution root cannot select status.skipped.",
+        "The first TRUE FAILURE in source order maps status only when no primary unhandled diagnostic fixes it; ERROR is classification metadata and does not emit an arbitrary new diagnostic."
       ]
     },
     "ASSUME": {

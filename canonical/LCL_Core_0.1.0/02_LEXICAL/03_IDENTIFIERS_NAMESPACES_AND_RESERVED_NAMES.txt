@@ -18,5 +18,23 @@ reference. IMPORT and EXTENSION assign a mandatory namespace. The built-in
 namespaces core, encoding, error, event, format, kind, mode, status, and unit are
 reserved. User identifiers cannot begin with those namespaces.
 
+Namespace ownership is exact. A mandatory IMPORT or EXTENSION NAMESPACE is one
+simple identifier owned by that declaration in the importing document. Two
+imports/extensions cannot own the same prefix, and a local declaration cannot
+use that prefix as its first ID segment. A prefix cannot be a reserved built-in
+namespace. The importing prefix is prepended to the imported declaration's full
+source ID; nested imports prepend each prefix in order. An imported file's own
+references retain that file's namespace environment, so rebinding a prefix in
+another file never captures them. No unqualified reference searches imported
+namespaces. Conflicting ownership or duplicate full IDs use error.id.duplicate.
+
+A lowercase spelling equal to a reserved word after case folding remains a
+legal identifier where identifiers are permitted: count, status, and true do
+not become COUNT, STATUS, or TRUE. Bare identifier expressions denote an exact
+registered domain member or an ITEM of the one expected concrete enum domain;
+they never implicitly read a declaration. Use REF for a declaration or binding.
+
 Loop-local identifiers exist only in their FOR EACH body and may be referenced
 with REF(local_id). They cannot shadow a document ID or reserved namespace.
+They also cannot shadow an imported namespace prefix or an enclosing loop-local
+identifier. Each bounded iteration has its own binding identity.

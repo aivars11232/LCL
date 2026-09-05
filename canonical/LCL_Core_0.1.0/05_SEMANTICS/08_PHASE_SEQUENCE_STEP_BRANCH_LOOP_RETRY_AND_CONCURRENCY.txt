@@ -2,7 +2,7 @@ LEARNED COMPUTING LANGUAGE (LCL)
 TITLE: Phase, Sequence, Step, Branch, Loop, Retry, and Concurrency
 LANGUAGE VERSION: 0.1.0
 STATUS: NORMATIVE
-DATE: 2026-08-30
+DATE: 2026-09-05
 
 
 SEQUENCE lexical STEP order is normative, refined by acyclic BEFORE/AFTER.
@@ -12,23 +12,44 @@ equal members collapse under strict equality before the snapshot, and source or
 insertion order has no semantic meaning. Direct SET iteration is legal only when
 every pair of actual members is mutually order-compatible under the registered
 total-order profile and then uses canonical ascending order. Otherwise direct
-iteration produces error.type.mismatch before any iteration or side effect; pass
-the SET directly to core.sort and iterate its returned LIST instead.
+iteration produces error.type.mismatch before that iteration or any of its
+effects; effects of already completed producers remain recorded. If the SET is
+statically valid and its actual-member ordering check fails only when demanded
+after preflight, apply the exact expression-demand diagnostic rule and
+producer-relative phase; this does not move a static type-family defect to
+execution. Pass the SET directly to core.sort and iterate its returned LIST
+instead when a declared projection supplies the required order.
 
-RETRY LIMIT is the number of additional attempts after the first; 0..100. DELAY
-occurs before each additional attempt. Retry does not expand permissions or
-change parameters.
+RETRY is an inline block of ACTION only; it has no ID, cannot be referenced, and
+cannot be attached to STEP. LIMIT is the maximum number of additional attempts
+after the first, from 0 through 100. Total attempts are at most 1 + LIMIT. A
+successful attempt ends the retry sequence immediately. Retry preserves the
+original ACTION parameters, scope, permissions, and declared effect bounds.
 
-The ACTION or STEP RETRY block is the only source of attempt bounds for its
-execution unit. Total attempts are exactly 1 + LIMIT. A handler whose OPERATION
-is core.retry selects and authorizes that declared RETRY; it never opens a
-second, independent attempt budget and never multiplies attempts. When such a
-handler is reached for an execution unit that declares RETRY, its resolved limit
-must equal that RETRY LIMIT; an unequal limit is a false operation precondition
-and uses error.operation.precondition before effects. When the wrapped ACTION
-declares no RETRY block, core.retry has no declared bound to authorize and uses
-the same error. DELAY and WHEN are taken from the RETRY block, which is their
-only declaration site.
+The ACTION RETRY block is the only source of attempt bounds. A handler whose
+OPERATION is core.retry selects and authorizes that declared RETRY; it never
+opens a second, independent attempt budget and never multiplies attempts. Its
+resolved limit must equal the wrapped ACTION's RETRY LIMIT. An unequal limit
+or an ACTION declaring no RETRY block uses error.operation.precondition before
+another attempt. Reaching core.retry again for the same ACTION invocation does
+not reset the attempt count. Separate loop instances have separate counts.
+
+DELAY and WHEN are taken from the RETRY block, which is their only declaration
+site. Omitted WHEN is TRUE; omitted DELAY is DURATION(0, unit.second). DELAY must
+be nonnegative; a negative value uses error.value.out_of_range. After an
+unsuccessful attempt, first stop if the attempt budget is consumed. Otherwise
+evaluate WHEN before each additional attempt. FALSE ends retrying and leaves
+the previous failure unhandled without error.retry.exhausted. MISSING uses
+error.required.missing and UNKNOWN uses error.value.unknown; neither permits an
+attempt. For TRUE, establish the retry-safety proof required by the failure
+lifecycle, then apply DELAY before beginning the next attempt. A refused or
+unproven safety check consumes no attempt and is not exhaustion.
+
+error.retry.exhausted is emitted only when exactly 1 + LIMIT attempts were
+actually made and every one failed. A successful retry recovers the originating
+failure under the handler contract; prior attempt results and diagnostics remain
+ordered evidence. A RETRY block alone declares eligibility and a budget; the
+selected core.retry handler authorizes additional attempts.
 
 mode.parallel permits unspecified scheduling but requires declared independence;
 conflicting side effects invalidate. Completion semantics remain deterministic.

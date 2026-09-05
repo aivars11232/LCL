@@ -2,37 +2,71 @@ LEARNED COMPUTING LANGUAGE (LCL)
 TITLE: Normative Processing Model
 LANGUAGE VERSION: 0.1.0
 STATUS: NORMATIVE
-DATE: 2026-08-30
+DATE: 2026-09-05
 
 
-A conforming implementation processes one specification in this order:
+One specification has this normative processing order:
 
 1. Decode UTF-8 and validate line/indentation rules.
 2. Tokenize under the closed lexicon and symbol inventory.
 3. Parse the complete grammar and block schemas.
 4. Resolve exact LCL version, imports, extensions, namespaces, IDs, and REF.
-5. Type-check values, expressions, constructors, parameters, and schemas.
-6. Compute effective authority, priority, scope, conditions, and conflicts.
+5. Statically check value families, expression names/arity/types, constructors,
+   parameters, and schemas without demanding deferred expression values.
+6. Establish effective authority, priority, scope, condition contracts, and
+   conflicts; evaluate each condition only when its values are required.
 7. Resolve input, state, memory, context, default, assumption, and dependencies.
 8. Run all applicable required VALIDATE checks before side effects.
-9. Build the reachable execution graph from EXECUTE.
-10. Execute only reachable actions in declared order and authorization bounds.
+9. Build the candidate execution graph from EXECUTE and its declared edges.
+10. Evaluate dynamic reachability conditions when reached and execute only
+    reachable actions in declared order and authorization bounds.
 11. Run applicable VERIFY and TEST checks.
 12. Collect required evidence and evaluate SUCCESS/FAILURE.
 13. Return one terminal STATUS and declared outputs.
 
+Static checking resolves a reference's declaration and static type; it does not
+read an OUTPUT before its producer binds it. Every expression, including a
+short-circuited or unreachable expression, has its names, arity, operand
+families, and receiving contract checked before effects. Value evaluation is
+separate and occurs only when the containing reachable declaration demands the
+value under its operation, condition, check, or completion contract. A skipped
+Boolean operand is not demanded. An unbound OUTPUT yields MISSING only at an
+actual bound-value read; its existence as a reference during static checking
+does not emit error.required.missing. VERIFY, TEST, and SUCCESS observations of
+action outputs occur at their declared post-action demand point. A required
+pre-effect VALIDATE check must resolve at step 8; it cannot depend on a future
+OUTPUT and silently defer itself past effects.
+
 For diagnostic selection, the closed stage order is lexical,
 grammar_or_schema, resolution, static_or_expression, validation, execution,
 and verification_or_completion. Grammar and schema form one selection stage;
-verification and completion form one selection stage. A registry stage is the
-normative classification of a diagnostic, even when an implementation first
-observes the underlying fact while performing an earlier numbered prerequisite.
-Discovery time, host completion time, and parallel scheduling never change the
-registered stage or diagnostic order.
+verification and completion form one selection stage. A registered stage is
+the default normative classification. The only contextual exception is the
+closed expression_demand_resolution map in
+10_REGISTRIES/statuses_and_errors_v0.1.0.json#/diagnostic_selection: an eligible
+value-domain failure of a statically valid expression demanded after preflight
+retains its exact identifier, resolves to execution stage, and uses status.failed
+except that required MISSING and UNKNOWN retain status.blocked. Resolve that
+context before supersession, duplicate suppression, ordering, event selection,
+default-status selection, and producer-relative phase lookup. No structure,
+arity, type-family, reference-name, source-token, or required static-validation
+defect moves to execution. Discovery time and parallel scheduling are never
+classification or ordering inputs.
 
 Each source unit or invocation path advances only while its earlier applicable
-stage has no unsuppressed diagnostic. At the first failing stage, apply the
+stage has no unhandled unsuppressed diagnostic after permitted local recovery.
+At the first failing stage, apply the
 complete multiplicity, supersession, duplicate, primary/secondary, and stable
 ordering rules in 10_REGISTRIES/statuses_and_errors_v0.1.0.json. Independent
-diagnostics and already-completed child-path evidence remain recorded. No later
-stage repairs an earlier invalid stage by guessing intent.
+diagnostics and already-completed child-path evidence remain recorded. The
+permitted error.value.unknown handler recovery occurs at the demanding producer
+and does not justify continuing an unrelated invalid stage. No later stage
+repairs an earlier invalid stage by guessing intent.
+
+Terminal status is scoped to one invocation. status.blocked ends that invocation;
+newly available input permits only a separate explicit invocation. A parent may
+still apply a declared handler, retry, or fallback to a completed child's result
+within the parent's own invocation. Non-root FALSE applicability or optional
+omission may take status.ready to status.skipped; a root cannot be skipped.
+SUCCESS/FAILURE selection follows 05_SEMANTICS/10_VERIFY_TEST_EVIDENCE_SUCCESS_FAILURE_AND_STATUS.txt
+and never overrides an existing primary diagnostic's resolved default status.

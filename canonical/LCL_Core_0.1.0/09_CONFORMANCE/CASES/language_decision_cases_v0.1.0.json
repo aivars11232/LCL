@@ -1,0 +1,202 @@
+{
+  "language": "LCL",
+  "version": "0.1.0",
+  "normative": true,
+  "evidence_kind": "descriptive_language_decision_witnesses",
+  "executed": false,
+  "case_count": 32,
+  "cases": [
+    {
+      "id": "CLOSURE-001",
+      "contract": "source_type",
+      "witness": "TYPE: REF(type.counter), where type.counter is DEFINE KIND kind.type BASE INTEGER",
+      "expected": "Same values and equality as INTEGER; bare type.counter is not a type."
+    },
+    {
+      "id": "CLOSURE-002",
+      "contract": "source_type",
+      "witness": "TYPE: NULL; VALUE: NULL",
+      "expected": "One NULL literal derivation interpreted as a type only in the TYPE slot."
+    },
+    {
+      "id": "CLOSURE-003",
+      "contract": "source_type",
+      "witness": "BASE ENUM; ITEM: ready; ITEM: done, used through two transparent aliases",
+      "expected": "Both aliases preserve the same enum domain; an unrelated ready domain is incompatible."
+    },
+    {
+      "id": "CLOSURE-004",
+      "contract": "reference",
+      "witness": "REF(output.copy).TARGET before OUTPUT value binding",
+      "expected": "Select the declaration TARGET field; do not read the unbound OUTPUT value."
+    },
+    {
+      "id": "CLOSURE-005",
+      "contract": "reference",
+      "witness": "REF(data.record).name with a bound OBJECT value",
+      "expected": "Read the bound value once and select lowercase field name."
+    },
+    {
+      "id": "CLOSURE-006",
+      "contract": "reference",
+      "witness": "A REFERENCE-typed binding read by equality",
+      "expected": "Compare stored reference identity without a second dereference."
+    },
+    {
+      "id": "CLOSURE-007",
+      "contract": "index",
+      "witness": "[10, 20][0], [10, 20][1], [10, 20][-1], [10, 20][2]",
+      "expected": "10, 20, MISSING, MISSING respectively; no negative wraparound."
+    },
+    {
+      "id": "CLOSURE-008",
+      "contract": "call",
+      "witness": "COUNT(value: \"abc\")",
+      "expected": "error.grammar.invalid: pure calls accept positional arguments only."
+    },
+    {
+      "id": "CLOSURE-009",
+      "contract": "keyword_case",
+      "witness": "VALUE: true in an identifier-admitting position",
+      "expected": "Treat true as an identifier, never as an alternate TRUE literal; unresolved name uses error.reference.unresolved."
+    },
+    {
+      "id": "CLOSURE-010",
+      "contract": "keyword_case",
+      "witness": "version: \"0.1.0\" in a required VERSION field position",
+      "expected": "error.keyword.case."
+    },
+    {
+      "id": "CLOSURE-011",
+      "contract": "evaluation",
+      "witness": "FALSE AND (1 / 0 == 0)",
+      "expected": "FALSE; the division is statically well-typed but is not evaluated."
+    },
+    {
+      "id": "CLOSURE-012",
+      "contract": "evaluation",
+      "witness": "TRUE OR (1 + \"x\" == 0)",
+      "expected": "error.operator.operand from static checking of the skipped expression."
+    },
+    {
+      "id": "CLOSURE-013",
+      "contract": "quantifier",
+      "witness": "ALL([]), ANY([]), NONE([])",
+      "expected": "TRUE, FALSE, TRUE respectively; immediate empty argument supplies BOOLEAN context."
+    },
+    {
+      "id": "CLOSURE-014",
+      "contract": "quantifier",
+      "witness": "ALL([TRUE, UNKNOWN]) inside a condition",
+      "expected": "UNKNOWN; the immediate sequence is transient and cannot be stored as LIST data."
+    },
+    {
+      "id": "CLOSURE-015",
+      "contract": "reduction",
+      "witness": "SUM of a declared LIST[INTEGER] value []",
+      "expected": "error.operator.operand because SUM requires a nonempty typed collection."
+    },
+    {
+      "id": "CLOSURE-016",
+      "contract": "collection",
+      "witness": "SUM([]) without a unique member-type context",
+      "expected": "error.type.mismatch; empty literal member type cannot be inferred."
+    },
+    {
+      "id": "CLOSURE-017",
+      "contract": "count",
+      "witness": "COUNT(BYTES(8)), EMPTY(BYTES(0)), COUNT(\"A😀\")",
+      "expected": "8, TRUE, 2 respectively; STRING counts Unicode scalar values."
+    },
+    {
+      "id": "CLOSURE-018",
+      "contract": "fragment",
+      "witness": "core.calculate expression \"target + increment\", TARGET 2, bindings {increment: 3}",
+      "expected": "result.value.value equals INTEGER 5; the fragment consumes exactly one EXPRESSION."
+    },
+    {
+      "id": "CLOSURE-019",
+      "contract": "fragment",
+      "witness": "core.calculate expression \"1; 2\"",
+      "expected": "error.operation.parameter; the fragment must consume exactly one expression."
+    },
+    {
+      "id": "CLOSURE-020",
+      "contract": "compare",
+      "witness": "core.compare target 1 against 2 with criteria omitted",
+      "expected": "Successful result.value.value FALSE; false comparison is not invocation failure."
+    },
+    {
+      "id": "CLOSURE-021",
+      "contract": "group",
+      "witness": "core.group of [{tag: \"a\"}, {tag: \"b\"}, {tag: \"a\"}] with key \"tag\"",
+      "expected": "Two ordered {key, items} records: a contains first/third occurrences; b contains second."
+    },
+    {
+      "id": "CLOSURE-022",
+      "contract": "retry",
+      "witness": "ACTION RETRY LIMIT 2; initial failure then successful first retry",
+      "expected": "Two actual attempts, no third attempt, no exhaustion."
+    },
+    {
+      "id": "CLOSURE-023",
+      "contract": "retry",
+      "witness": "ACTION RETRY LIMIT 2 WHEN FALSE after first failure",
+      "expected": "One attempt; previous failure remains unhandled; no success or count exhaustion."
+    },
+    {
+      "id": "CLOSURE-024",
+      "contract": "retry",
+      "witness": "ACTION RETRY LIMIT 2; all three attempts fail",
+      "expected": "error.retry.exhausted after exactly three actual unsuccessful attempts."
+    },
+    {
+      "id": "CLOSURE-025",
+      "contract": "retry",
+      "witness": "STEP contains an inline RETRY block",
+      "expected": "error.block.field; RETRY is inline ACTION-only."
+    },
+    {
+      "id": "CLOSURE-026",
+      "contract": "alias",
+      "witness": "DEFINE kind.error BASE error.required.missing MEANING \"Missing required datum\"",
+      "expected": "Alias inherits the canonical error stage, status, event, recovery and phase rules; no new event or state."
+    },
+    {
+      "id": "CLOSURE-027",
+      "contract": "continue",
+      "witness": "Selected event handler invokes core.continue and completes successfully",
+      "expected": "Recover the originating diagnostic and advance to the declared successor together."
+    },
+    {
+      "id": "CLOSURE-028",
+      "contract": "fallback",
+      "witness": "HANDLER A FALLBACK REF(B), HANDLER B FALLBACK REF(A)",
+      "expected": "error.reference.cycle before invocation."
+    },
+    {
+      "id": "CLOSURE-029",
+      "contract": "status",
+      "witness": "A ready non-root optional execution unit has WHEN FALSE",
+      "expected": "status.skipped; the transition must be registered."
+    },
+    {
+      "id": "CLOSURE-030",
+      "contract": "pattern",
+      "witness": "REGEX(\"[a-z]+\", \"i\") matched against \"ABC\"",
+      "expected": "TRUE under ASCII folding; non-ASCII case equivalents are not silently added."
+    },
+    {
+      "id": "CLOSURE-031",
+      "contract": "pattern",
+      "witness": "REGEX(\"(?=a)\")",
+      "expected": "error.literal.invalid; lookaround is outside the closed REGEX grammar."
+    },
+    {
+      "id": "CLOSURE-032",
+      "contract": "pattern",
+      "witness": "GLOB(\"src/**/test?.lcl\") against src/test1.lcl",
+      "expected": "TRUE; standalone ** consumes zero or more complete path segments."
+    }
+  ]
+}

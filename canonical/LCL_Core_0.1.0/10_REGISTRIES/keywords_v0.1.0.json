@@ -611,7 +611,7 @@
     },
     "REF": {
       "category": "constructor",
-      "meaning": "Resolve a declaration or loop-local binding by exact identifier.",
+      "meaning": "Resolve a declaration or loop-local binding by exact identifier; preserve identity in a reference/address context and read one bound value in an ordinary value context.",
       "contexts": "Defined by grammar and block schemas.",
       "case_sensitive": true
     },
@@ -623,8 +623,8 @@
     },
     "REGEX": {
       "category": "type/constructor",
-      "meaning": "Represent or construct a conservative ECMAScript-compatible regular expression with optional canonical i, m, and s flags.",
-      "contexts": "Defined by the type and constructor registries.",
+      "meaning": "Represent or construct a pattern in the frozen closed LCL REGEX 0.1.0 grammar with optional canonical i, m, and s flags.",
+      "contexts": "Defined by grammar and block schemas.",
       "case_sensitive": true
     },
     "REQUIRED": {
@@ -647,8 +647,8 @@
     },
     "RETRY": {
       "category": "block",
-      "meaning": "Declare a bounded number of additional attempts after qualifying failure.",
-      "contexts": "Defined by grammar and block schemas.",
+      "meaning": "Declare at most LIMIT additional attempts of the containing ACTION after qualifying failure; attempts stop on success, a false WHEN, or a failed safety precondition.",
+      "contexts": "An inline ACTION child only; never a STEP child or independent declaration. The core.retry operation invokes the target ACTION's declared retry policy.",
       "case_sensitive": true
     },
     "ROUND": {
@@ -707,7 +707,7 @@
     },
     "STATUS": {
       "category": "field",
-      "meaning": "Record one exact core or extension status identifier.",
+      "meaning": "Record one exact core status identifier or a same-domain extension alias that resolves to it; aliases add no core state or transition.",
       "contexts": "Defined by grammar and block schemas.",
       "case_sensitive": true
     },

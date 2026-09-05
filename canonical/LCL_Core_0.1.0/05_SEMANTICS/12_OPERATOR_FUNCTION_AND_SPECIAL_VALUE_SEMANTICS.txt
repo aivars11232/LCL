@@ -2,7 +2,7 @@ LCL CORE 0.1.0 RELEASE CANDIDATE
 OPERATOR, FUNCTION, AND SPECIAL-VALUE SEMANTICS
 NORMATIVE
 
-Candidate operator arity, operand-family, result-family, precedence,
+Operator arity, operand-family, result-family, precedence,
 associativity, numeric-promotion, ordered-type, string-ordering, and UNKNOWN
 truth-table records are stored in:
 
@@ -11,6 +11,92 @@ truth-table records are stored in:
 That registry also closes the typed-constructor names, overloads, results,
 constraints, and diagnostics. A constructor call is pure. An unregistered name,
 arity, or operand family is invalid; implementations do not infer extra overloads.
+Its signature_notation defines every local signature designator, including
+numeric, ordered, same_unit_MEASURE_collection, and every dependent result family.
+Those are specification terms, not source types or an extension of the separate
+operation/result contract-type notation. All pure-function and constructor
+arguments are positional; no function in this release declares named arguments.
+
+Every expression is statically checked, including names and operand families in
+a branch that will not be evaluated. Evaluation proceeds left to right through
+operands, arguments, collection members, and postfix bases/indices, stopping at
+the first diagnostic. AND skips its right operand only when the left result is
+FALSE. OR skips its right operand only when the left result is TRUE. UNKNOWN on
+the left requires the right result. All other pure functions and operators are
+eager; immediate quantifier sequences evaluate every member before reduction.
+
+Consuming MISSING produces error.required.missing except for ==, !=, and EXISTS.
+An absent valid property or index selection may itself yield MISSING. UNKNOWN
+propagates through arithmetic, constructors, ordered comparisons, membership,
+containment, matching, ordinary pure functions, and postfix access after required
+operands have been evaluated and MISSING checked. A concrete subexpression
+diagnostic is never suppressed by UNKNOWN elsewhere. Static material result
+families are lifted to these non-material outcomes; this creates no storable
+UNKNOWN type. A required material destination rejects UNKNOWN with
+error.value.unknown. Equality, EXISTS, Boolean operators, and quantifiers have
+their explicit special rules. All row-local errors are additional to these common
+evaluation errors and the errors of evaluated subexpressions.
+
+== always returns BOOLEAN; != is its negation. Each singleton sentinel equals
+itself and differs from the other sentinel and every material value. Different
+material static types are unequal except for exact INTEGER/DECIMAL comparison.
+MEASURE equality compares both exact unit identifier and numeric magnitude;
+different units produce FALSE. This does not relax ordered comparison or any
+same-unit arithmetic overload.
+REF uses types_v0.1.0.json#/reference_context_contract: ordinary value operands
+read a value-bearing declaration once, and a resulting stored REFERENCE retains
+its identity without another dereference. Two resulting REFERENCE values compare
+resolved declaration or loop-instance identity. No coercion makes references,
+strings, booleans, or quantities equal to numbers.
+
+IN tests strict-equality membership. Collection CONTAINS reverses IN; OBJECT
+CONTAINS tests exact STRING key presence. STRING CONTAINS tests a contiguous exact
+Unicode-scalar substring, and the empty substring is present in every STRING.
+Membership in an empty collection is FALSE once both operands are material.
+
+LIST indexing is zero-based. Every INTEGER below zero or at least the member
+count yields MISSING; negative indices never wrap. OBJECT STRING indexing selects
+an exact, statically known property so its result has one exact field type;
+a runtime-varying key uses error.operator.operand. An absent optional schema
+field or absent schema-free OBJECT
+field yields MISSING; a field not admitted by a closed schema uses
+error.operator.operand. Lowercase property access selects an evaluated OBJECT
+field under the same presence rules. A reserved uppercase property directly after
+REF, with optional parentheses around that REF, selects registered declaration
+metadata before a bound-value read. SET and STRING indexing are not admitted.
+
+Bracket expressions default to LIST. One exact immediate expected SET[T] type
+selects SET instead. A known expected member type applies to each member and to
+nested empty literals; otherwise all members must have the same static type,
+without collection-construction numeric promotion. An empty literal without one
+unique contextual member type produces error.type.mismatch. Accordingly an
+unconstrained COUNT([]) is invalid, while COUNT of an already typed empty
+collection is zero. Source order evaluates every SET source member before
+strict-equal duplicates collapse.
+
+ALL, ANY, and NONE supply BOOLEAN context to an immediate bracket argument.
+They also accept a material LIST[BOOLEAN]. An immediate sequence may contain
+UNKNOWN observations, but such a sequence is non-material and exists only while
+that call reduces it; it cannot be stored, nested as data, indexed, returned, or
+passed through another function. Parentheses around the immediate sequence do
+not change that rule. This immediate quantifier argument explicitly permits
+UNKNOWN literals even outside another condition. A MISSING member emits
+error.required.missing, and a
+member of another material family emits error.operator.operand.
+
+ALL returns FALSE if any member is FALSE, else UNKNOWN if any member is UNKNOWN,
+else TRUE. ANY returns TRUE if any member is TRUE, else UNKNOWN if any member is
+UNKNOWN, else FALSE. NONE is NOT of ANY. Thus ALL([]) and NONE([]) are TRUE and
+ANY([]) is FALSE. The complete three-valued Boolean tables are registered; neither
+UNKNOWN nor MISSING is silently converted to FALSE.
+
+COUNT counts Unicode scalars in STRING, occurrences in LIST, unique SET members,
+and present OBJECT properties. COUNT(BYTES(n)) returns INTEGER n. EMPTY is TRUE
+exactly when COUNT is zero; NULL is not an accepted family. SUM, MIN, and MAX
+require nonempty collections and reject a typed empty collection with
+error.operator.operand. SUM returns the exact mathematical sum in the registered
+member family, with one exact unit for MEASURE; it never invents an empty-sum unit.
+MIN/MAX use the registered total order. SET source order never changes a reduction.
 
 The registered total-order profile is also the sole natural-order source for SET
 iteration and core.sort. INTEGER and DECIMAL use exact mathematical value; STRING

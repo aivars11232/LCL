@@ -11,13 +11,44 @@ table.
 The exact selection stages are lexical, grammar_or_schema, resolution,
 static_or_expression, validation, execution, and verification_or_completion.
 Select the earliest failing stage for each failed source unit or invocation
-path. Emit every independent unsuppressed diagnostic at that stage. A
-later-stage consequence of the same failed unit or path is not evaluated, but
-independent diagnostics and completed child-path evidence remain.
+path after the exact contextual resolution below. Emit every independent
+unsuppressed diagnostic at that stage and apply only permitted local recovery.
+If any applicable diagnostic remains unhandled, a later-stage consequence of
+the same failed unit or path is not evaluated. Independent diagnostics and
+completed child-path evidence remain; local recovery never bypasses an
+unrelated source-invalid diagnostic.
+
+Static checking resolves names, arity, type families, and receiving contracts
+without demanding future OUTPUT values. The closed expression_demand_resolution
+map applies only to listed value-domain failures of statically valid expressions
+actually demanded after preflight. Its exact identifier set is
+error.literal.invalid, error.numeric.division_by_zero,
+error.numeric.non_terminating, error.numeric.unit_mismatch,
+error.operator.operand, error.pattern.mismatch, error.pattern.resource_limit,
+error.type.mismatch, error.value.out_of_range, error.required.missing, and
+error.value.unknown.
+error.literal.invalid qualifies only for a well-typed constructor's dynamic
+material-value rejection, never source token or literal syntax.
+error.operator.operand qualifies only for empty already-typed SUM/MIN/MAX
+reductions, never an unsupported family, arity, property schema, or overload.
+error.type.mismatch qualifies only for a statically valid SET's actual-member
+order-compatibility failure when direct FOR EACH is demanded. That check precedes
+the iteration and its effects, while completed producers' effects remain
+recorded; static operand-family and receiving-type defects never qualify.
+Every other listed identifier must satisfy its exact registered demand trigger.
+
+Eligible demanded failures retain their canonical identifier and resolve to
+execution stage with default status.failed, except that required MISSING and
+UNKNOWN retain status.blocked. Apply the map before supersession, duplicate
+suppression, ordering, event selection, status selection, and phase lookup.
+Retain both registered source metadata and resolved demand-stage evidence.
+Source structure, reference names, static types, signatures, and required
+preflight checks retain their ordinary registered diagnostics. A skipped
+Boolean operand is not demanded and produces no value-evaluation diagnostic.
 
 Core 0.1.0 has one diagnostic severity, error. After applying only explicit
 same-cause supersession and exact duplicate suppression, order diagnostics by
-registered stage, canonical source or declared execution-path location,
+resolved stage, canonical source or declared execution-path location,
 iteration, retry-attempt index, severity, specificity, and identifier exactly as
 the registry specifies. Discovery time and host completion order are irrelevant.
 For an omission, the canonical source location is the zero-width parent-closing
@@ -25,27 +56,68 @@ or end-of-file byte position defined by the registry. Iteration and retry-attemp
 indexes are part of both duplicate and supersession identity. The same identifier
 at a distinct locus, producer, iteration, or attempt is not a duplicate.
 
-After permitted declared-handler recovery, the first unhandled diagnostic in
+After canonical alias resolution and permitted declared-handler recovery or
+successful invocation-outcome substitution, the first unhandled diagnostic in
 stable order is primary; every other unhandled diagnostic is secondary. Handled
-or retried diagnostics remain ordered secondary evidence. The primary unhandled
-diagnostic supplies default status. If it is recovered, the first remaining
+diagnostics and unsuccessful primary/retry diagnostics replaced by successful
+retry or FALLBACK completion remain ordered local evidence. Merely attempting a
+retry does not mark its diagnostic handled. The primary unhandled diagnostic
+supplies its resolved default status. If it is recovered, the first remaining
 unhandled diagnostic becomes primary; only recovery of every applicable
-diagnostic permits the handler result to control status.
+diagnostic or successful local substitution permits the handler result to
+control status. FAILURE mappings never override a primary diagnostic. Without
+one, select the first applicable TRUE FAILURE in source order; its ERROR field
+is classification metadata, not diagnostic emission or a new event. A mapped
+status must be in the current state's allowed_next and satisfy status scope;
+an illegal request uses error.execution.order, including a root request for
+status.skipped.
 
 failure_phase is relative to the exposed result producer, not inferred from an
 error identifier or status. Child operations and retry attempts retain their own
-local phase and effect evidence. The aggregate producer reports pre_effect only
+local phase and effect evidence. An unsuccessful aggregate producer reports pre_effect only
 when no concrete effect in its invocation began, post_effect when at least one
 effect is known to have begun, and indeterminate when available evidence cannot
 establish that fact. Status, effect_state, observed effects, and OUTPUT binding
 remain separate axes under the result-schema contract.
 
+The exact demand-stage override uses execution's pre_effect/post_effect/
+indeterminate phase family with producer-relative evidence. A successful
+aggregate has failure_phase none even when its recovered or substituted child
+invocations retain failed local results. Those results and every observed
+primary, retry, or fallback effect remain recorded. A completed status.blocked
+child remains terminal; recovery belongs to its still-active parent or a later
+explicit separate invocation and never rewrites that child result. Injected
+handler control targets identify the owning active invocation aggregate. The aggregate
+finalizes after handler/fallback resolution, while event evidence identifies the
+immutable failed attempt. core.retry and core.continue require that same active
+aggregate and use error.operation.precondition for another invocation or a
+terminal attempt; other explicit targets follow their own operation contract.
+No control operation reopens a terminal attempt.
+
 A handler may recover only an error whose registry entry permits declared
 handler recovery. Such an error declares exactly one registered event, and the
-closed event model selects at most one handler for each raised diagnostic; an
-error declaring no event raises nothing and is never recoverable. Recovery and retry never erase the original diagnostic or its
-evidence. A retry after known effects requires exact repetition, resumption, or
+closed event model selects at most one handler activation for each raised diagnostic; an
+error declaring no event raises nothing and cannot select a recovery handler.
+Null-event diagnostics and diagnostics suppressed by handler non-reentrancy
+raise no event. Aliases canonicalize before matching and inherit the same
+mapping; they add no event source. A selected handler recovers the originating
+diagnostic only through successful completion, including permitted successful
+FALLBACK substitution. An acyclic FALLBACK chain may substitute after a dynamic
+precondition refusal or failed/blocked primary invocation, never invalid source,
+success, cancellation, stop, or skipped applicability. Failed primary diagnostics
+remain local evidence. Direct FALLBACK references may invoke an otherwise
+unattached HANDLER within the one event-selected activation; they do not select
+another event. core.continue requests the exact successor and commits
+advancement only after successful selected-handler completion.
+
+Recovery and retry never erase the original diagnostic or its evidence. A retry
+after known effects requires exact repetition, resumption, or
 reconciliation safety evidence; indeterminate effects prohibit another attempt
 until reconciled. Missing, UNKNOWN, and proved-unsafe safety facts map to the
 exact errors listed by the registry. A blocked, unmade attempt does not constitute
-retry exhaustion.
+retry exhaustion. RETRY is inline on ACTION only, and one ACTION invocation has
+at most 1 + LIMIT attempts, stopping at first success. Its block supplies WHEN
+and DELAY, defaulting to TRUE and DURATION(0, unit.second). A FALSE WHEN before
+budget consumption leaves the prior failure unhandled without exhaustion.
+error.retry.exhausted requires exactly 1 + LIMIT actual failed attempts; it
+cannot be inferred from a safety refusal or merely reaching a handler.

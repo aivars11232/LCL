@@ -26,7 +26,7 @@ core.stop
     Determinism source: The exact stable target, force flag, timeout, dependency snapshot, and selected stop profile fix the result.
     Possible dependencies: {host, network}
     Possible effects: {process, state}
-    Invocation resolution: Resolve process for a path, process, or service and state for an internal execution-unit reference; remote-control mode of the selected stop profile adds network dependency.
+    Invocation resolution: Resolve process for a path, process, or service and state for an internal execution-unit reference; remote-control mode of the selected stop profile adds network dependency. For an internal execution-unit target, select the active invocation aggregate, not an immutable completed child attempt; its current allowed_next must include status.stopped or error.execution.order results. An implicit handler-context target is the originating active aggregate.
     Result schema: result.operation
 
 core.ask
@@ -46,20 +46,20 @@ core.retry
     Determinism source: The determinism category and source are inherited exactly from the wrapped ACTION contract.
     Possible dependencies: {inherited}
     Possible effects: {inherited}
-    Invocation resolution: Resolve the wrapped ACTION first, then copy its exact determinism, dependency set, effect set, and applicable errors. A limit outside 0..100 produces error.value.out_of_range. Before each additional attempt, evaluate when as a required BOOLEAN condition; MISSING produces error.required.missing and UNKNOWN produces error.value.unknown. A prior pre_effect attempt with effect_state none requires no additional effect-safety proof. After known effects, exact retained evidence must prove safe repetition, resumption, or reconciliation within the wrapped action's original authority, scope, and post-state; missing proof produces error.required.missing, UNKNOWN proof produces error.value.unknown, and proved-unsafe repetition produces error.operation.precondition. An indeterminate prior attempt prohibits another attempt until reconciled. Retry adds no authority and no dependency or effect class. The wrapped ACTION's RETRY block is the only attempt bound: this row authorizes that declared RETRY rather than opening a second budget, total attempts are exactly 1 + that LIMIT, and a resolved limit unequal to it or a wrapped ACTION declaring no RETRY block produces error.operation.precondition.
+    Invocation resolution: Resolve the wrapped ACTION first, then copy its exact determinism, dependency set, effect set, and applicable errors. A limit outside 0..100 produces error.value.out_of_range. Before each additional attempt, evaluate RETRY.WHEN (default TRUE) as a required BOOLEAN condition; MISSING produces error.required.missing and UNKNOWN produces error.value.unknown. A prior pre_effect attempt with effect_state none requires no additional effect-safety proof. After known effects, exact retained evidence must prove safe repetition, resumption, or reconciliation within the wrapped action's original authority, scope, and post-state; missing proof produces error.required.missing, UNKNOWN proof produces error.value.unknown, and proved-unsafe repetition produces error.operation.precondition. An indeterminate prior attempt prohibits another attempt until reconciled. Retry adds no authority and no dependency or effect class. The wrapped ACTION's RETRY block is the only attempt bound: this row authorizes that declared RETRY rather than opening a second budget, total attempts are at most 1 + that LIMIT, and a resolved limit unequal to it or a wrapped ACTION declaring no RETRY block produces error.operation.precondition. Stop after the first successful attempt. RETRY.DELAY alone supplies a nonnegative delay, default DURATION(0, unit.second); a negative delay produces error.value.out_of_range. A false RETRY.WHEN preserves the previous failure and prevents another attempt. Count exhaustion requires 1 + LIMIT actual unsuccessful attempts. The budget is shared by all handler invocations for this ACTION invocation and resets only for a separate ACTION invocation.
     Error resolution: Before inheritance, use error.reference.unresolved when the wrapped ACTION does not resolve exactly once and error.reference.cycle when its reference graph contains a prohibited cycle. For an additional attempt, use error.required.missing for missing safety proof, error.value.unknown for UNKNOWN safety proof or condition, and error.operation.precondition for proved-unsafe repetition; a safety-blocked unmade attempt is not exhaustion. Otherwise union the local retry errors with every applicable error of the wrapped ACTION contract, including any wrapped operation or profile precondition error.
     Eligibility contract: Every ACTION that resolves exactly once may be retried under its explicit bounded RETRY declaration. RETRY does not define or require a separate retryable marker.
     Attempt evidence contract: Every attempt retains its local diagnostics, failure phase, effects, and OUTPUT binding in attempt-index order. The retry producer derives its aggregate phase and effects across every attempt actually made.
-    Exhaustion contract: error.retry.exhausted applies only when the initial attempt and every retry permitted by LIMIT and WHEN were actually made and failed. A retry prohibited for missing, UNKNOWN, unsafe, or indeterminate safety evidence is not an exhausted attempt.
+    Exhaustion contract: error.retry.exhausted requires 1 + LIMIT actual unsuccessful attempts. A false RETRY.WHEN or refused safety check prevents another attempt and preserves the prior failure without manufacturing exhaustion or success.
     Result schema: result.operation
 
 core.continue
-    Meaning: Continue a bounded path after a handled event.
+    Meaning: Request continuation at the declared successor after the selected handler successfully handles its originating event.
     Determinism category: deterministic
     Determinism source: The handled event and exact declared successor fix the resumed execution path.
     Possible dependencies: {declared_state_only}
     Possible effects: {state}
-    Invocation resolution: Resolve only the referenced execution-unit state and its exact declared successor.
+    Invocation resolution: Resolve the originating execution unit and its exact declared successor in the currently selected handler context. Record the continuation request; recovery and advancement commit together only after the selected handler, including any successful FALLBACK, succeeds. An absent or mismatched selected-handler context produces error.operation.precondition; an invalid declared successor uses error.execution.order.
     Local error contract: An unresolved target uses error.reference.unresolved; an invalid continuation path uses error.execution.order.
     Result schema: result.operation
 
@@ -69,6 +69,6 @@ core.cancel
     Determinism source: The invoking authority, exact execution-unit target, and recorded reason fix the cancellation transition.
     Possible dependencies: {declared_state_only}
     Possible effects: {state}
-    Invocation resolution: Resolve only the referenced internal execution-unit state, require its registered allowed_next set to contain status.cancelled, and record the exact reason.
+    Invocation resolution: Resolve only the referenced internal execution-unit state, require its registered allowed_next set to contain status.cancelled, and record the exact reason. A supplied target is an active invocation aggregate, never a completed attempt; an implicit handler-context target is the originating active aggregate. Explicit cancellation outside a handler remains permitted under the registered authority and transition checks.
     Local error contract: An unresolved target uses error.reference.unresolved; insufficient invoking authority uses error.permission.denied; a current status that does not allow status.cancelled uses error.execution.order.
     Result schema: result.operation

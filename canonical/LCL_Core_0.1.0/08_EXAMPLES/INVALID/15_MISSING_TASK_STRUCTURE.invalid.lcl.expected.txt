@@ -1,3 +1,3 @@
-EXPECTED_ERROR: error.reference.unresolved
+EXPECTED_ERROR: error.block.required
 EXPECTED_TERMINAL_STATUS: status.invalid
-RULE: Reject before any side effect.
+RULE: A kind.task document requires exactly one EXECUTE root; all declaration references in this fixture resolve.

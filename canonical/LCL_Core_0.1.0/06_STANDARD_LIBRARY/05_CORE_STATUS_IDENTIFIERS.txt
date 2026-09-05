@@ -8,5 +8,32 @@ allowed_next is invalid. Each status's result_meaning is its producer-result
 interpretation; it does not replace the execution-root meaning. In particular,
 producer status.succeeded records completed production independently of a
 schema-local Boolean outcome, while execution-root status.succeeded still
-requires all root SUCCESS conditions. status.skipped applies to a declaration or
-producer result, not as the successful root status of an EXECUTE document.
+requires all root SUCCESS conditions.
+
+status.blocked is terminal for one invocation and has no outgoing transition.
+A later explicit invocation may use newly available inputs, retaining the prior
+blocked result as evidence; it never changes that completed result. An active
+parent invocation may still apply its declared handler, retry, or fallback to a
+terminal child result under the recovery contract. Injected handler control targets bind
+the owning still-active invocation aggregate, while event evidence retains the
+failed attempt's immutable local result. The aggregate finalizes only after
+handler and fallback resolution; no control operation resumes a terminal attempt.
+
+status.skipped applies only to a non-root declaration or its producer result.
+FALSE applicability or optional omission permits the transition from status.ready
+to status.skipped before the operation begins. An execution root cannot be
+skipped, including through a FAILURE mapping or status alias.
+
+DEFINE kind.status requires BASE and MEANING and aliases one existing core status
+through an acyclic same-domain chain. Resolve to the canonical core identifier
+before equality, lifecycle transition, terminal/non-success restrictions, and
+result recording. The alias inherits all metadata and creates no new status.
+
+An existing primary unhandled diagnostic fixes the producer's status through its
+resolved default_status, including any exact expression-demand override. FAILURE
+mappings cannot override it. When no primary diagnostic fixes status, the first
+applicable TRUE FAILURE in source order selects its terminal non-success status;
+that status must be permitted by the current state's allowed_next. An illegal
+transition or root request for status.skipped uses error.execution.order. The
+complete mapping contract is failure_lifecycle.failure_mapping_rule in the
+registry. Phase and observed effects never silently change the chosen status.

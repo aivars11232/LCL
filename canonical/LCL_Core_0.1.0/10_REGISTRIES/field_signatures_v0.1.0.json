@@ -6,7 +6,7 @@
     "semantic_version_string": "STRING matching MAJOR.MINOR.PATCH with no wildcard.",
     "qualified_identifier": "Lowercase dot-separated identifier resolved under namespace rules.",
     "simple_identifier": "One lowercase identifier segment.",
-    "type_expression": "One built-in or defined type, including declared type arguments.",
+    "type_expression": "One TYPE_EXPRESSION under types_v0.1.0.json#/source_type_contract; a defined type is REF(identifier) resolving to DEFINE kind.type, never a bare identifier.",
     "value_expression": "Expression producing a material value or a permitted special sentinel.",
     "value_or_object_expression": "Inline value expression or indented lowercase-key object value.",
     "reference": "REF(identifier) resolving exactly once.",
@@ -32,7 +32,7 @@
     "string_or_multiline_string": "One STRING or MULTILINE_STRING value.",
     "string_or_qualified_identifier": "One STRING or QUALIFIED_IDENTIFIER value.",
     "string_uri_or_evidence_reference": "One STRING, URI, or REF resolving to EVIDENCE.",
-    "type_or_format_base": "For DEFINE kind.type, one TYPE_EXPRESSION or one REF resolving to DEFINE kind.type; for DEFINE kind.format, one qualified_identifier(format)."
+    "type_or_format_base": "For DEFINE kind.type, one TYPE_EXPRESSION; for kind.format, one qualified_identifier(format); for kind.error, kind.event, or kind.status, one qualified identifier in the corresponding domain. Defined BASE aliases resolve acyclically to a registered base in the same domain."
   },
   "value_kind_templates": {
     "exact_string": {
@@ -138,7 +138,8 @@
     "status": {
       "source": "10_REGISTRIES/statuses_and_errors_v0.1.0.json",
       "pointer": "/statuses",
-      "selection": "object_keys"
+      "selection": "object_keys",
+      "defined_kind": "kind.status"
     },
     "terminal_non_success_status": {
       "source": "10_REGISTRIES/statuses_and_errors_v0.1.0.json",
@@ -149,7 +150,9 @@
       },
       "exclude": [
         "status.succeeded"
-      ]
+      ],
+      "defined_kind": "kind.status",
+      "defined_kind_filter": "Resolve the alias first, then apply where and exclude to its canonical core status."
     }
   },
   "field_policies": {
@@ -507,7 +510,9 @@
       "conditional_requirements": [
         "Immutable.",
         "Kind-specific required fields are normative.",
-        "ITEM is legal only for KIND kind.type with BASE ENUM and occurs one or more times there."
+        "ITEM is legal only for KIND kind.type with BASE ENUM and occurs one or more times there.",
+        "KIND kind.error, kind.event, and kind.status require BASE and MEANING and define same-domain aliases inheriting the canonical core metadata without modification.",
+        "FIELD is legal only for KIND kind.type with direct BASE OBJECT. An alias adds no FIELD or ITEM and preserves the resolved base schema or enum domain."
       ],
       "unknown_fields": "forbidden",
       "field_order": "not_semantic_except_where_explicitly_declared"
@@ -1590,7 +1595,7 @@
           "required": false,
           "minimum_occurrences": 0,
           "maximum_occurrences": 1,
-          "value_kind": "reference_or_nested(RETRY)",
+          "value_kind": "nested_block(RETRY)",
           "default": null
         },
         "EVIDENCE": {
@@ -2254,13 +2259,6 @@
           "value_kind": "boolean",
           "default": true
         },
-        "RETRY": {
-          "required": false,
-          "minimum_occurrences": 0,
-          "maximum_occurrences": 1,
-          "value_kind": "reference_or_nested(RETRY)",
-          "default": null
-        },
         "HANDLER": {
           "required": false,
           "minimum_occurrences": 0,
@@ -2285,8 +2283,7 @@
     },
     "RETRY": {
       "legal_parents": [
-        "ACTION",
-        "STEP"
+        "ACTION"
       ],
       "block_occurrence": "zero_or_one",
       "fields": {
@@ -2302,14 +2299,14 @@
           "minimum_occurrences": 0,
           "maximum_occurrences": 1,
           "value_kind": "boolean_expression",
-          "default": null
+          "default": true
         },
         "DELAY": {
           "required": false,
           "minimum_occurrences": 0,
           "maximum_occurrences": 1,
           "value_kind": "duration",
-          "default": null
+          "default": "DURATION(0, unit.second)"
         },
         "HANDLER": {
           "required": false,
@@ -2328,9 +2325,11 @@
       },
       "conditional_requirements": [
         "LIMIT counts additional attempts and is 0 through 100.",
-        "This block is the only source of attempt bounds for its execution unit; total attempts are exactly 1 + LIMIT.",
+        "This inline ACTION block is the only source of attempt bounds; total attempts are at most 1 + LIMIT and the first successful attempt ends retrying.",
         "A handler using core.retry authorizes this declared RETRY and its resolved limit must equal this LIMIT.",
-        "RETRY.HANDLER is in scope only for diagnostics raised by an attempt of the execution unit declaring this RETRY, including the first attempt."
+        "RETRY.WHEN defaults to TRUE and RETRY.DELAY defaults to DURATION(0, unit.second). A false condition or a refused safety check prevents another attempt without manufacturing count exhaustion or success.",
+        "Count exhaustion occurs only after 1 + LIMIT actual unsuccessful attempts.",
+        "RETRY.HANDLER is in scope only for diagnostics raised by an attempt of the ACTION declaring this RETRY, including the first attempt."
       ],
       "unknown_fields": "forbidden",
       "field_order": "not_semantic_except_where_explicitly_declared"
@@ -2410,7 +2409,9 @@
         "EVENT names the event this handler activates on; the closed event model in statuses_and_errors_v0.1.0.json#/event_model raises events only from emitted diagnostics and selects at most one handler per raised diagnostic.",
         "A required TARGET may be omitted only under the handler-context binding for REFERENCE[ACTION] or REFERENCE[meta.execution_unit] targets.",
         "LIMIT is exactly the limit named parameter of the selected operation and is legal only when that operation registers it.",
-        "FALLBACK admits one REF to a HANDLER, or one operation identifier that requires no named parameter and whose required TARGET the handler-context binding supplies."
+        "FALLBACK admits one REF to a HANDLER, or one operation identifier that requires no named parameter and whose required TARGET the handler-context binding supplies.",
+        "An injected handler-context target identifies the active owning invocation aggregate; the failed child attempt remains immutable evidence. Explicit targets follow the selected operation contract.",
+        "At most one handler is selected through event attachments; direct acyclic FALLBACK calls may invoke another HANDLER without a second event selection."
       ],
       "unknown_fields": "forbidden",
       "field_order": "not_semantic_except_where_explicitly_declared"
@@ -2911,7 +2912,9 @@
         }
       },
       "conditional_requirements": [
-        "STATUS is terminal non-success."
+        "STATUS is terminal non-success.",
+        "Resolve status aliases first. A selected STATUS must be legal in the active producer current allowed_next set and scope; an illegal transition produces error.execution.order, and an execution root cannot select status.skipped.",
+        "The first TRUE FAILURE in source order maps status only when no primary unhandled diagnostic fixes it; ERROR is classification metadata and does not emit an arbitrary new diagnostic."
       ],
       "unknown_fields": "forbidden",
       "field_order": "not_semantic_except_where_explicitly_declared"

@@ -107,7 +107,7 @@ PROVENANCE
 
 REF
     Category: constructor
-    Meaning: Resolve a declaration or loop-local binding by exact identifier.
+    Meaning: Resolve a declaration or loop-local binding by exact identifier; preserve identity in a reference/address context and read one bound value in an ordinary value context.
     Context: Defined by grammar and block schemas.
 
 REFERENCE
@@ -117,7 +117,7 @@ REFERENCE
 
 REGEX
     Category: type/constructor
-    Meaning: Represent or construct a conservative ECMAScript-compatible regular expression with optional canonical i, m, and s flags.
+    Meaning: Represent or construct a pattern in the frozen closed LCL REGEX 0.1.0 grammar with optional canonical i, m, and s flags.
     Context: Defined by grammar and block schemas.
 
 REQUIRED
@@ -137,8 +137,8 @@ RESULT
 
 RETRY
     Category: block
-    Meaning: Declare a bounded number of additional attempts after qualifying failure.
-    Context: Defined by grammar and block schemas.
+    Meaning: Declare at most LIMIT additional attempts of the containing ACTION after qualifying failure; attempts stop on success, a false WHEN, or a failed safety precondition.
+    Context: An inline ACTION child only; never a STEP child or independent declaration. The core.retry operation invokes the target ACTION's declared retry policy.
 
 ROUND
     Category: function
@@ -187,7 +187,7 @@ STATE
 
 STATUS
     Category: field
-    Meaning: Record one exact core or extension status identifier.
+    Meaning: Record one exact core status identifier or a same-domain extension alias that resolves to it; aliases add no core state or transition.
     Context: Defined by grammar and block schemas.
 
 STEP

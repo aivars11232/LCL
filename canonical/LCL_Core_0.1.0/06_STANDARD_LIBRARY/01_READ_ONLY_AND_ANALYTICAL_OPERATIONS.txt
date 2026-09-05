@@ -42,8 +42,10 @@ core.calculate
     Determinism source: The registered expression, binding, numeric, division, and rounding rules fix the result.
     Possible dependencies: {declared_state_only}
     Possible effects: {none}
-    Invocation resolution: Use only the declared target value, expression, bindings, and declared snapshots. A MISSING operand used outside == or != produces error.required.missing; a required UNKNOWN result produces error.value.unknown. A host-capacity failure is error.host.constraint and does not change the dependency class.
+    Invocation resolution: Use only the declared target value, expression, bindings, and declared snapshots. Evaluate MISSING and UNKNOWN under operators_and_functions_v0.1.0.json#/evaluation_contract, including ==, !=, and EXISTS exceptions; a required final MISSING result produces error.required.missing and UNKNOWN produces error.value.unknown. A host-capacity failure is error.host.constraint and does not change the dependency class. Parse and bind the exact expression_fragment_contract; no alternate calculation language is admitted.
+    Error resolution: Union local errors with every applicable diagnostic of the decoded expression; wrong reference declaration kind uses error.reference.kind.
     Result schema: result.value
+    Fragment contract: expression follows operations_v0.1.0.json#/expression_fragment_contract; STRING or REF to a kind.constant STRING contains exactly one existing EXPRESSION. bindings uses exact non-shadowing simple names; reserved target is TARGET or MISSING.
 
 core.compare
     Meaning: Compare artifacts or values against exact criteria.
@@ -51,8 +53,9 @@ core.compare
     Determinism source: The resolved operand snapshots and exact comparison criteria fix the result.
     Possible dependencies: {host, network}
     Possible effects: {none}
-    Invocation resolution: Resolve host or network independently for the target and against operands; material-value-only comparison resolves declared_state_only. When criteria is omitted, use the registered == exact strict-equality comparison over the resolved operands. Evaluate every criterion under the registered operator and sentinel rules: a non-==/!= criterion encountering MISSING produces error.required.missing, and any criterion whose result remains UNKNOWN produces error.value.unknown because a successful result.value must contain a material value. The invocation has no effects.
+    Invocation resolution: Resolve host or network independently for the target and against operands; material-value-only comparison resolves declared_state_only. When criteria is omitted, use the registered == exact strict-equality comparison over the resolved operands. Evaluate the single criterion under the registered operator and sentinel rules: a non-==/!= criterion encountering MISSING produces error.required.missing, and a criterion whose result remains UNKNOWN produces error.value.unknown because a successful result.value must contain a material value. The invocation has no effects.
     Result schema: result.value
+    Criteria contract: Exactly one registered binary comparison token STRING, or a closed OBJECT with required operator and optional left/right property_path strings, or REF to such a declared value. Omitted paths select whole operands. result.value.value is one BOOLEAN, and FALSE is a successful comparison result.
 
 core.select
     Meaning: Choose members satisfying a predicate.
@@ -61,7 +64,7 @@ core.select
     Possible dependencies: {declared_state_only}
     Possible effects: {none}
     Invocation resolution: Evaluate a type-compatible predicate from declared values and snapshots. A predicate result of MISSING produces error.required.missing and UNKNOWN produces error.value.unknown. A referenced kind.operation must resolve to deterministic, side-effect-free behavior with dependencies exactly declared_state_only; no invocation may add a dependency or effect.
-    Error resolution: Union the local errors with every applicable error of the referenced predicate operation when a predicate REFERENCE is selected.
+    Error resolution: Union the local errors with every applicable error of the referenced predicate operation when a predicate REFERENCE is selected. A STRING predicate retains all applicable expression diagnostics.
     Result schema: result.collection
     Selection contract: Every result member is one target member occurrence for which the predicate is TRUE, and no target occurrence is returned more than once. Cardinality may range from zero through the number of TRUE target member occurrences; the selected TRUE subset and result order are otherwise unspecified.
 
@@ -72,7 +75,7 @@ core.filter
     Possible dependencies: {declared_state_only}
     Possible effects: {none}
     Invocation resolution: Resolve the predicate to a deterministic side-effect-free expression over declared values or a kind.operation whose fully resolved dependency set is exactly declared_state_only. A predicate result of MISSING produces error.required.missing and UNKNOWN produces error.value.unknown. No invocation may add a dependency or effect.
-    Error resolution: Union the local errors with every applicable error of the referenced predicate operation when a predicate REFERENCE is selected.
+    Error resolution: Union the local errors with every applicable error of the referenced predicate operation when a predicate REFERENCE is selected. A STRING predicate retains all applicable expression diagnostics.
     Result schema: result.collection
 
 core.sort
@@ -95,9 +98,10 @@ core.group
     Determinism source: The exact deterministic key partitions every LIST member into exactly one group; groups follow first key occurrence and members retain source order.
     Possible dependencies: {declared_state_only}
     Possible effects: {none}
-    Invocation resolution: Resolve the key to fixed declared data, a deterministic side-effect-free expression, or a kind.operation whose fully resolved dependency set is exactly declared_state_only. A key result of MISSING produces error.required.missing and UNKNOWN produces error.value.unknown. No invocation may add a dependency or effect.
+    Invocation resolution: Resolve STRING key as exactly one property_path under field_signatures_v0.1.0.json, or REFERENCE as the registered deterministic side-effect-free key operation with dependencies exactly declared_state_only. A key result of MISSING produces error.required.missing and UNKNOWN produces error.value.unknown. No invocation may add a dependency or effect.
     Error resolution: Union the local errors with every applicable error of the referenced key operation when a key REFERENCE is selected.
     Result schema: result.value
+    Group contract: STRING key is one exact property_path. result.value.value is a LIST of closed {key, items} records; items is LIST[T]. Strict == determines groups, first key occurrence determines group order, and every input occurrence appears once in source order. Empty input gives an empty group-record LIST.
 
 core.validate
     Meaning: Check syntax, type, reference, dependency, and constraints before effects.

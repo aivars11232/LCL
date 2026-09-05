@@ -50,6 +50,8 @@ DEFINE
     Rule: Immutable.
     Rule: Kind-specific required fields are normative.
     Rule: ITEM is legal only for KIND kind.type with BASE ENUM and occurs one or more times there.
+    Rule: KIND kind.error, kind.event, and kind.status require BASE and MEANING and define same-domain aliases inheriting the canonical core metadata without modification.
+    Rule: FIELD is legal only for KIND kind.type with direct BASE OBJECT. An alias adds no FIELD or ITEM and preserves the resolved base schema or enum domain.
 
 FIELD
     Contexts: DEFINE, SCHEMA

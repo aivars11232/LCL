@@ -43,8 +43,8 @@
       "id": "KEYWORD-INVALID-0002",
       "category": "keyword_invalid",
       "subject": "ABS",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -59,8 +59,8 @@
       "id": "KEYWORD-INVALID-0004",
       "category": "keyword_invalid",
       "subject": "ACTION",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -75,8 +75,8 @@
       "id": "KEYWORD-INVALID-0006",
       "category": "keyword_invalid",
       "subject": "ACTUAL",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -91,8 +91,8 @@
       "id": "KEYWORD-INVALID-0008",
       "category": "keyword_invalid",
       "subject": "AFTER",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -107,8 +107,8 @@
       "id": "KEYWORD-INVALID-0010",
       "category": "keyword_invalid",
       "subject": "ALL",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -123,8 +123,8 @@
       "id": "KEYWORD-INVALID-0012",
       "category": "keyword_invalid",
       "subject": "ALLOW",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -139,8 +139,8 @@
       "id": "KEYWORD-INVALID-0014",
       "category": "keyword_invalid",
       "subject": "AND",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -155,8 +155,8 @@
       "id": "KEYWORD-INVALID-0016",
       "category": "keyword_invalid",
       "subject": "ANY",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -171,8 +171,8 @@
       "id": "KEYWORD-INVALID-0018",
       "category": "keyword_invalid",
       "subject": "ASSERT",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -187,8 +187,8 @@
       "id": "KEYWORD-INVALID-0020",
       "category": "keyword_invalid",
       "subject": "ASSUME",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -203,8 +203,8 @@
       "id": "KEYWORD-INVALID-0022",
       "category": "keyword_invalid",
       "subject": "AUTHORITY",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -219,8 +219,8 @@
       "id": "KEYWORD-INVALID-0024",
       "category": "keyword_invalid",
       "subject": "BASE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -235,8 +235,8 @@
       "id": "KEYWORD-INVALID-0026",
       "category": "keyword_invalid",
       "subject": "BEFORE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -251,8 +251,8 @@
       "id": "KEYWORD-INVALID-0028",
       "category": "keyword_invalid",
       "subject": "BOOLEAN",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -267,8 +267,8 @@
       "id": "KEYWORD-INVALID-0030",
       "category": "keyword_invalid",
       "subject": "BYTES",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -283,8 +283,8 @@
       "id": "KEYWORD-INVALID-0032",
       "category": "keyword_invalid",
       "subject": "CHECKSUM",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -299,8 +299,8 @@
       "id": "KEYWORD-INVALID-0034",
       "category": "keyword_invalid",
       "subject": "COMMENT",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -315,8 +315,8 @@
       "id": "KEYWORD-INVALID-0036",
       "category": "keyword_invalid",
       "subject": "CONTAINS",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -331,8 +331,8 @@
       "id": "KEYWORD-INVALID-0038",
       "category": "keyword_invalid",
       "subject": "CONTENT",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -347,8 +347,8 @@
       "id": "KEYWORD-INVALID-0040",
       "category": "keyword_invalid",
       "subject": "CONTEXT",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -363,8 +363,8 @@
       "id": "KEYWORD-INVALID-0042",
       "category": "keyword_invalid",
       "subject": "COUNT",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -379,8 +379,8 @@
       "id": "KEYWORD-INVALID-0044",
       "category": "keyword_invalid",
       "subject": "DATA",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -395,8 +395,8 @@
       "id": "KEYWORD-INVALID-0046",
       "category": "keyword_invalid",
       "subject": "DATE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -411,8 +411,8 @@
       "id": "KEYWORD-INVALID-0048",
       "category": "keyword_invalid",
       "subject": "DATETIME",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -427,8 +427,8 @@
       "id": "KEYWORD-INVALID-0050",
       "category": "keyword_invalid",
       "subject": "DECIMAL",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -443,8 +443,8 @@
       "id": "KEYWORD-INVALID-0052",
       "category": "keyword_invalid",
       "subject": "DEFAULT",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -459,8 +459,8 @@
       "id": "KEYWORD-INVALID-0054",
       "category": "keyword_invalid",
       "subject": "DEFINE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -475,8 +475,8 @@
       "id": "KEYWORD-INVALID-0056",
       "category": "keyword_invalid",
       "subject": "DELAY",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -491,8 +491,8 @@
       "id": "KEYWORD-INVALID-0058",
       "category": "keyword_invalid",
       "subject": "DEPENDENCY",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -507,8 +507,8 @@
       "id": "KEYWORD-INVALID-0060",
       "category": "keyword_invalid",
       "subject": "DESCRIPTION",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -523,8 +523,8 @@
       "id": "KEYWORD-INVALID-0062",
       "category": "keyword_invalid",
       "subject": "DETERMINISTIC",
-      "requirement": "Reject DETERMINISTIC TRUE when the fully resolved operation or selected profile set is nondeterministic; emit error.determinism.mismatch during validation and never treat TRUE as an override.",
-      "expected": "error.determinism.mismatch; status.invalid",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -539,8 +539,8 @@
       "id": "KEYWORD-INVALID-0064",
       "category": "keyword_invalid",
       "subject": "DOMAIN",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -555,8 +555,8 @@
       "id": "KEYWORD-INVALID-0066",
       "category": "keyword_invalid",
       "subject": "DURATION",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -571,8 +571,8 @@
       "id": "KEYWORD-INVALID-0068",
       "category": "keyword_invalid",
       "subject": "EACH",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -587,8 +587,8 @@
       "id": "KEYWORD-INVALID-0070",
       "category": "keyword_invalid",
       "subject": "ELSE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -603,8 +603,8 @@
       "id": "KEYWORD-INVALID-0072",
       "category": "keyword_invalid",
       "subject": "EMPTY",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -619,8 +619,8 @@
       "id": "KEYWORD-INVALID-0074",
       "category": "keyword_invalid",
       "subject": "ENCODING",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -635,8 +635,8 @@
       "id": "KEYWORD-INVALID-0076",
       "category": "keyword_invalid",
       "subject": "ENUM",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -651,8 +651,8 @@
       "id": "KEYWORD-INVALID-0078",
       "category": "keyword_invalid",
       "subject": "ERROR",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -667,8 +667,8 @@
       "id": "KEYWORD-INVALID-0080",
       "category": "keyword_invalid",
       "subject": "EVENT",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -683,8 +683,8 @@
       "id": "KEYWORD-INVALID-0082",
       "category": "keyword_invalid",
       "subject": "EVIDENCE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -699,8 +699,8 @@
       "id": "KEYWORD-INVALID-0084",
       "category": "keyword_invalid",
       "subject": "EXAMPLE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -715,8 +715,8 @@
       "id": "KEYWORD-INVALID-0086",
       "category": "keyword_invalid",
       "subject": "EXCLUDE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -731,8 +731,8 @@
       "id": "KEYWORD-INVALID-0088",
       "category": "keyword_invalid",
       "subject": "EXECUTE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -747,8 +747,8 @@
       "id": "KEYWORD-INVALID-0090",
       "category": "keyword_invalid",
       "subject": "EXISTS",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -763,8 +763,8 @@
       "id": "KEYWORD-INVALID-0092",
       "category": "keyword_invalid",
       "subject": "EXPECTED",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -779,8 +779,8 @@
       "id": "KEYWORD-INVALID-0094",
       "category": "keyword_invalid",
       "subject": "EXTENSION",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -795,8 +795,8 @@
       "id": "KEYWORD-INVALID-0096",
       "category": "keyword_invalid",
       "subject": "FAILURE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -811,8 +811,8 @@
       "id": "KEYWORD-INVALID-0098",
       "category": "keyword_invalid",
       "subject": "FALLBACK",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -827,8 +827,8 @@
       "id": "KEYWORD-INVALID-0100",
       "category": "keyword_invalid",
       "subject": "FALSE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -843,8 +843,8 @@
       "id": "KEYWORD-INVALID-0102",
       "category": "keyword_invalid",
       "subject": "FIELD",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -859,8 +859,8 @@
       "id": "KEYWORD-INVALID-0104",
       "category": "keyword_invalid",
       "subject": "FOR",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -875,8 +875,8 @@
       "id": "KEYWORD-INVALID-0106",
       "category": "keyword_invalid",
       "subject": "FORBID",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -891,8 +891,8 @@
       "id": "KEYWORD-INVALID-0108",
       "category": "keyword_invalid",
       "subject": "FORMAT",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -907,8 +907,8 @@
       "id": "KEYWORD-INVALID-0110",
       "category": "keyword_invalid",
       "subject": "GLOB",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -923,8 +923,8 @@
       "id": "KEYWORD-INVALID-0112",
       "category": "keyword_invalid",
       "subject": "GOAL",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -939,8 +939,8 @@
       "id": "KEYWORD-INVALID-0114",
       "category": "keyword_invalid",
       "subject": "HANDLER",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -955,8 +955,8 @@
       "id": "KEYWORD-INVALID-0116",
       "category": "keyword_invalid",
       "subject": "ID",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -971,8 +971,8 @@
       "id": "KEYWORD-INVALID-0118",
       "category": "keyword_invalid",
       "subject": "IF",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -987,8 +987,8 @@
       "id": "KEYWORD-INVALID-0120",
       "category": "keyword_invalid",
       "subject": "IMPORT",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1003,8 +1003,8 @@
       "id": "KEYWORD-INVALID-0122",
       "category": "keyword_invalid",
       "subject": "IN",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1019,8 +1019,8 @@
       "id": "KEYWORD-INVALID-0124",
       "category": "keyword_invalid",
       "subject": "INCLUDE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1035,8 +1035,8 @@
       "id": "KEYWORD-INVALID-0126",
       "category": "keyword_invalid",
       "subject": "INPUT",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1051,8 +1051,8 @@
       "id": "KEYWORD-INVALID-0128",
       "category": "keyword_invalid",
       "subject": "INTEGER",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1067,8 +1067,8 @@
       "id": "KEYWORD-INVALID-0130",
       "category": "keyword_invalid",
       "subject": "ITEM",
-      "requirement": "Reject wrong case and every LIST/SET collection-value use of ITEM.",
-      "expected": "error.keyword.case or error.field.forbidden",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1083,8 +1083,8 @@
       "id": "KEYWORD-INVALID-0132",
       "category": "keyword_invalid",
       "subject": "ITEM_TYPE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1099,8 +1099,8 @@
       "id": "KEYWORD-INVALID-0134",
       "category": "keyword_invalid",
       "subject": "KIND",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1115,8 +1115,8 @@
       "id": "KEYWORD-INVALID-0136",
       "category": "keyword_invalid",
       "subject": "LCL",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1131,8 +1131,8 @@
       "id": "KEYWORD-INVALID-0138",
       "category": "keyword_invalid",
       "subject": "LIMIT",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1147,8 +1147,8 @@
       "id": "KEYWORD-INVALID-0140",
       "category": "keyword_invalid",
       "subject": "LIST",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1163,8 +1163,8 @@
       "id": "KEYWORD-INVALID-0142",
       "category": "keyword_invalid",
       "subject": "LOSER",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1179,8 +1179,8 @@
       "id": "KEYWORD-INVALID-0144",
       "category": "keyword_invalid",
       "subject": "MATCHES",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1195,8 +1195,8 @@
       "id": "KEYWORD-INVALID-0146",
       "category": "keyword_invalid",
       "subject": "MAX",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1211,8 +1211,8 @@
       "id": "KEYWORD-INVALID-0148",
       "category": "keyword_invalid",
       "subject": "MAXIMUM",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1227,8 +1227,8 @@
       "id": "KEYWORD-INVALID-0150",
       "category": "keyword_invalid",
       "subject": "MEANING",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1243,8 +1243,8 @@
       "id": "KEYWORD-INVALID-0152",
       "category": "keyword_invalid",
       "subject": "MEASURE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1259,8 +1259,8 @@
       "id": "KEYWORD-INVALID-0154",
       "category": "keyword_invalid",
       "subject": "MEMORY",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1275,8 +1275,8 @@
       "id": "KEYWORD-INVALID-0156",
       "category": "keyword_invalid",
       "subject": "MIN",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1291,8 +1291,8 @@
       "id": "KEYWORD-INVALID-0158",
       "category": "keyword_invalid",
       "subject": "MINIMUM",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1307,8 +1307,8 @@
       "id": "KEYWORD-INVALID-0160",
       "category": "keyword_invalid",
       "subject": "MISSING",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1323,8 +1323,8 @@
       "id": "KEYWORD-INVALID-0162",
       "category": "keyword_invalid",
       "subject": "MODE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1339,8 +1339,8 @@
       "id": "KEYWORD-INVALID-0164",
       "category": "keyword_invalid",
       "subject": "NAME",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1355,8 +1355,8 @@
       "id": "KEYWORD-INVALID-0166",
       "category": "keyword_invalid",
       "subject": "NAMESPACE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1371,8 +1371,8 @@
       "id": "KEYWORD-INVALID-0168",
       "category": "keyword_invalid",
       "subject": "NONE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1387,8 +1387,8 @@
       "id": "KEYWORD-INVALID-0170",
       "category": "keyword_invalid",
       "subject": "NOT",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1403,8 +1403,8 @@
       "id": "KEYWORD-INVALID-0172",
       "category": "keyword_invalid",
       "subject": "NULL",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1419,8 +1419,8 @@
       "id": "KEYWORD-INVALID-0174",
       "category": "keyword_invalid",
       "subject": "OBJECT",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1435,8 +1435,8 @@
       "id": "KEYWORD-INVALID-0176",
       "category": "keyword_invalid",
       "subject": "OPERATION",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1451,8 +1451,8 @@
       "id": "KEYWORD-INVALID-0178",
       "category": "keyword_invalid",
       "subject": "OR",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1467,8 +1467,8 @@
       "id": "KEYWORD-INVALID-0180",
       "category": "keyword_invalid",
       "subject": "OUTPUT",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1483,8 +1483,8 @@
       "id": "KEYWORD-INVALID-0182",
       "category": "keyword_invalid",
       "subject": "OVERRIDE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1499,8 +1499,8 @@
       "id": "KEYWORD-INVALID-0184",
       "category": "keyword_invalid",
       "subject": "PARAMETER",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1515,8 +1515,8 @@
       "id": "KEYWORD-INVALID-0186",
       "category": "keyword_invalid",
       "subject": "PATH",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1531,8 +1531,8 @@
       "id": "KEYWORD-INVALID-0188",
       "category": "keyword_invalid",
       "subject": "PATTERN",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1547,8 +1547,8 @@
       "id": "KEYWORD-INVALID-0190",
       "category": "keyword_invalid",
       "subject": "PERCENTAGE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1563,8 +1563,8 @@
       "id": "KEYWORD-INVALID-0192",
       "category": "keyword_invalid",
       "subject": "PHASE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1579,8 +1579,8 @@
       "id": "KEYWORD-INVALID-0194",
       "category": "keyword_invalid",
       "subject": "PREFER",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1595,8 +1595,8 @@
       "id": "KEYWORD-INVALID-0196",
       "category": "keyword_invalid",
       "subject": "PRESERVE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1611,8 +1611,8 @@
       "id": "KEYWORD-INVALID-0198",
       "category": "keyword_invalid",
       "subject": "PRIORITY",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1627,8 +1627,8 @@
       "id": "KEYWORD-INVALID-0200",
       "category": "keyword_invalid",
       "subject": "PROPERTY",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1643,8 +1643,8 @@
       "id": "KEYWORD-INVALID-0202",
       "category": "keyword_invalid",
       "subject": "PROVENANCE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1659,8 +1659,8 @@
       "id": "KEYWORD-INVALID-0204",
       "category": "keyword_invalid",
       "subject": "REF",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1675,8 +1675,8 @@
       "id": "KEYWORD-INVALID-0206",
       "category": "keyword_invalid",
       "subject": "REFERENCE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1691,8 +1691,8 @@
       "id": "KEYWORD-INVALID-0208",
       "category": "keyword_invalid",
       "subject": "REGEX",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1707,8 +1707,8 @@
       "id": "KEYWORD-INVALID-0210",
       "category": "keyword_invalid",
       "subject": "REQUIRED",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1723,8 +1723,8 @@
       "id": "KEYWORD-INVALID-0212",
       "category": "keyword_invalid",
       "subject": "REQUIRE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1739,8 +1739,8 @@
       "id": "KEYWORD-INVALID-0214",
       "category": "keyword_invalid",
       "subject": "RESULT",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1755,8 +1755,8 @@
       "id": "KEYWORD-INVALID-0216",
       "category": "keyword_invalid",
       "subject": "RETRY",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1771,8 +1771,8 @@
       "id": "KEYWORD-INVALID-0218",
       "category": "keyword_invalid",
       "subject": "ROUND",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1787,8 +1787,8 @@
       "id": "KEYWORD-INVALID-0220",
       "category": "keyword_invalid",
       "subject": "SCHEMA",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1803,8 +1803,8 @@
       "id": "KEYWORD-INVALID-0222",
       "category": "keyword_invalid",
       "subject": "SCOPE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1819,8 +1819,8 @@
       "id": "KEYWORD-INVALID-0224",
       "category": "keyword_invalid",
       "subject": "SEQUENCE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1835,8 +1835,8 @@
       "id": "KEYWORD-INVALID-0226",
       "category": "keyword_invalid",
       "subject": "SET",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1851,8 +1851,8 @@
       "id": "KEYWORD-INVALID-0228",
       "category": "keyword_invalid",
       "subject": "SIDE_EFFECT",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1867,8 +1867,8 @@
       "id": "KEYWORD-INVALID-0230",
       "category": "keyword_invalid",
       "subject": "SOURCE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1883,8 +1883,8 @@
       "id": "KEYWORD-INVALID-0232",
       "category": "keyword_invalid",
       "subject": "SPECIFICATION",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1899,8 +1899,8 @@
       "id": "KEYWORD-INVALID-0234",
       "category": "keyword_invalid",
       "subject": "STATE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1915,8 +1915,8 @@
       "id": "KEYWORD-INVALID-0236",
       "category": "keyword_invalid",
       "subject": "STATUS",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1931,8 +1931,8 @@
       "id": "KEYWORD-INVALID-0238",
       "category": "keyword_invalid",
       "subject": "STEP",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1947,8 +1947,8 @@
       "id": "KEYWORD-INVALID-0240",
       "category": "keyword_invalid",
       "subject": "STRING",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1963,8 +1963,8 @@
       "id": "KEYWORD-INVALID-0242",
       "category": "keyword_invalid",
       "subject": "SUCCESS",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1979,8 +1979,8 @@
       "id": "KEYWORD-INVALID-0244",
       "category": "keyword_invalid",
       "subject": "SUM",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -1995,8 +1995,8 @@
       "id": "KEYWORD-INVALID-0246",
       "category": "keyword_invalid",
       "subject": "TASK",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -2011,8 +2011,8 @@
       "id": "KEYWORD-INVALID-0248",
       "category": "keyword_invalid",
       "subject": "TARGET",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -2027,8 +2027,8 @@
       "id": "KEYWORD-INVALID-0250",
       "category": "keyword_invalid",
       "subject": "TERM",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -2043,8 +2043,8 @@
       "id": "KEYWORD-INVALID-0252",
       "category": "keyword_invalid",
       "subject": "TEST",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -2059,8 +2059,8 @@
       "id": "KEYWORD-INVALID-0254",
       "category": "keyword_invalid",
       "subject": "THEN",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -2075,8 +2075,8 @@
       "id": "KEYWORD-INVALID-0256",
       "category": "keyword_invalid",
       "subject": "TIME",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -2091,8 +2091,8 @@
       "id": "KEYWORD-INVALID-0258",
       "category": "keyword_invalid",
       "subject": "TOLERANCE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -2107,8 +2107,8 @@
       "id": "KEYWORD-INVALID-0260",
       "category": "keyword_invalid",
       "subject": "TRUE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -2123,8 +2123,8 @@
       "id": "KEYWORD-INVALID-0262",
       "category": "keyword_invalid",
       "subject": "TYPE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -2139,8 +2139,8 @@
       "id": "KEYWORD-INVALID-0264",
       "category": "keyword_invalid",
       "subject": "UNIT",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -2155,8 +2155,8 @@
       "id": "KEYWORD-INVALID-0266",
       "category": "keyword_invalid",
       "subject": "UNKNOWN",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -2171,8 +2171,8 @@
       "id": "KEYWORD-INVALID-0268",
       "category": "keyword_invalid",
       "subject": "URI",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -2187,8 +2187,8 @@
       "id": "KEYWORD-INVALID-0270",
       "category": "keyword_invalid",
       "subject": "VALIDATE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -2203,8 +2203,8 @@
       "id": "KEYWORD-INVALID-0272",
       "category": "keyword_invalid",
       "subject": "VALUE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -2219,8 +2219,8 @@
       "id": "KEYWORD-INVALID-0274",
       "category": "keyword_invalid",
       "subject": "VERIFY",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -2235,8 +2235,8 @@
       "id": "KEYWORD-INVALID-0276",
       "category": "keyword_invalid",
       "subject": "VERSION",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -2251,8 +2251,8 @@
       "id": "KEYWORD-INVALID-0278",
       "category": "keyword_invalid",
       "subject": "WHEN",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -2267,8 +2267,8 @@
       "id": "KEYWORD-INVALID-0280",
       "category": "keyword_invalid",
       "subject": "WINNER",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -2283,8 +2283,8 @@
       "id": "KEYWORD-INVALID-0282",
       "category": "keyword_invalid",
       "subject": "WORKSPACE",
-      "requirement": "Reject wrong case and at least one illegal placement.",
-      "expected": "error.keyword.case or contextual schema error",
+      "requirement": "Reject a mixed-case spelling of this registered word outside STRING or data text: mixed-case tokens are not legal identifiers. Exact lowercase spellings in identifier-admitting positions remain identifiers.",
+      "expected": "error.keyword.case",
       "source": "keywords_v0.1.0.json"
     },
     {
@@ -2835,7 +2835,7 @@
       "id": "TYPE-VALID-0351",
       "category": "type_valid",
       "subject": "REGEX",
-      "requirement": "Accept the conservative ECMAScript subset with an optional unique canonical-order i/m/s flags STRING.",
+      "requirement": "Accept exactly the frozen closed LCL REGEX 0.1.0 grammar, complete-string Boolean matching, ASCII-only i folding, and optional unique canonical-order i/m/s flags STRING.",
       "expected": "same typed value",
       "source": "types_v0.1.0.json"
     },
@@ -2843,7 +2843,7 @@
       "id": "TYPE-INVALID-0352",
       "category": "type_invalid",
       "subject": "REGEX",
-      "requirement": "Reject malformed patterns, lookbehind, Unicode property escapes, and unknown, duplicate, stateful, u, or out-of-order flags.",
+      "requirement": "Reject every pattern outside the closed grammar, including lookaround, backreferences, Unicode property escapes, unlisted escapes, and unknown, duplicate, stateful, u, or out-of-order flags.",
       "expected": "type/value error",
       "source": "types_v0.1.0.json"
     },
@@ -4499,7 +4499,7 @@
       "id": "OPERATION-BINDING-0559",
       "category": "operation_binding",
       "subject": "core.calculate",
-      "requirement": "Bind exact target and named parameters including defaults.",
+      "requirement": "Bind exact target and named parameters including defaults. Apply operators_and_functions_v0.1.0.json evaluation_contract, including EXISTS and skipped-operand exceptions, and reject required final MISSING or UNKNOWN results.",
       "expected": "accept exact contract",
       "source": "operations_v0.1.0.json"
     },
@@ -4507,7 +4507,7 @@
       "id": "OPERATION-EFFECTS-0560",
       "category": "operation_effects",
       "subject": "core.calculate",
-      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions.",
+      "requirement": "Enforce the registered determinism category and source, possible dependency set, possible effect set, invocation-level resolution rule, preconditions, and postconditions. Apply operators_and_functions_v0.1.0.json evaluation_contract, including EXISTS and skipped-operand exceptions, and reject required final MISSING or UNKNOWN results.",
       "expected": "only registered determinism, dependencies, and observable effects",
       "source": "operations_v0.1.0.json"
     },
@@ -4515,7 +4515,7 @@
       "id": "OPERATION-ERRORS-0561",
       "category": "operation_errors",
       "subject": "core.calculate",
-      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path, including unresolved expression REFERENCE, division operand, zero, non-termination, exact-unit mismatch, declared-bound, host-capacity, MISSING operand outside == or !=, and required UNKNOWN-result diagnostics.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Exercise every registered failure path, including unresolved expression REFERENCE, division operand, zero, non-termination, exact-unit mismatch, declared-bound, host-capacity, MISSING/UNKNOWN demanded operands under evaluation_contract, and required UNKNOWN-result diagnostics. Apply operators_and_functions_v0.1.0.json evaluation_contract, including EXISTS and skipped-operand exceptions, and reject required final MISSING or UNKNOWN results.",
       "expected": "exact registered error",
       "source": "operations_v0.1.0.json"
     },
@@ -5307,7 +5307,7 @@
       "id": "OPERATION-ERRORS-0660",
       "category": "operation_errors",
       "subject": "core.retry",
-      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Reject limit outside 0..100 with error.value.out_of_range. Exercise ACTION resolution before inheritance; error.required.missing or error.value.unknown for a MISSING or UNKNOWN required when condition; then union every applicable error of the resolved wrapped ACTION. Every ACTION that resolves exactly once remains syntactically eligible under its explicit bounded RETRY declaration; no separate retryable marker exists. The wrapped ACTION RETRY block is the only attempt bound, total attempts are exactly 1 + that LIMIT, and a resolved limit unequal to that LIMIT or a wrapped ACTION with no RETRY block uses error.operation.precondition. An additional attempt after known effects requires exact safe repetition, resumption, or reconciliation evidence and an indeterminate attempt requires reconciliation first. Missing safety proof uses error.required.missing, UNKNOWN proof uses error.value.unknown, and proved-unsafe repetition uses error.operation.precondition. Retain every attempt result and diagnostic in attempt order. Emit error.retry.exhausted only after every permitted attempt was actually made and failed; a safety-blocked unmade attempt is not exhaustion.",
+      "requirement": "Reject omission of TARGET when this row marks it required, omission of any named parameter that this row marks required, any positional argument, any duplicate named parameter, and any unregistered named parameter with error.operation.parameter. Reject limit outside 0..100 with error.value.out_of_range. Exercise ACTION resolution before inheritance; error.required.missing or error.value.unknown for a MISSING or UNKNOWN required when condition; then union every applicable error of the resolved wrapped ACTION. Every ACTION that resolves exactly once remains syntactically eligible under its explicit bounded RETRY declaration; no separate retryable marker exists. The wrapped ACTION RETRY block is the only attempt bound, total attempts are at most 1 + that LIMIT and stop after the first success, and a resolved limit unequal to that LIMIT or a wrapped ACTION with no RETRY block uses error.operation.precondition. An additional attempt after known effects requires exact safe repetition, resumption, or reconciliation evidence and an indeterminate attempt requires reconciliation first. Missing safety proof uses error.required.missing, UNKNOWN proof uses error.value.unknown, and proved-unsafe repetition uses error.operation.precondition. Retain every attempt result and diagnostic in attempt order. Emit error.retry.exhausted only after 1 + LIMIT actual unsuccessful attempts; a safety-blocked unmade attempt is not exhaustion. RETRY is inline ACTION-only; STEP.RETRY, retry delay and when parameters are forbidden. RETRY.WHEN defaults TRUE and DELAY defaults zero; false WHEN preserves the prior failure without count exhaustion.",
       "expected": "exact local retry safety error or inherited ACTION error with ordered attempt evidence",
       "source": "operations_v0.1.0.json"
     },
@@ -6395,15 +6395,15 @@
       "id": "DIAGNOSTIC-POLICY-0796",
       "category": "diagnostic_policy",
       "subject": "core.error_selection",
-      "requirement": "Resolve complete metadata for all 77 errors from the closed diagnostic_selection contract. Use exactly one severity, error. Evaluate the seven registered stages in order and emit every independent unsuppressed diagnostic at the earliest failing stage. Apply supersession only to the same cause, canonical locus, stage, producer, iteration, and retry attempt; suppress exact duplicate keys; and order by stage, canonical source or declared execution-path location, iteration, retry-attempt index, severity, specificity, and identifier without discovery-time influence. After permitted declared-handler recovery, select the first unhandled diagnostic as primary, retain every other unhandled diagnostic as secondary, and retain handled or retried diagnostics as ordered secondary evidence. When every diagnostic is recovered, select no primary.",
-      "expected": "deterministic unhandled primary and ordered unhandled, handled, and retried secondary evidence with exact same-cause suppression",
+      "requirement": "Resolve complete metadata for all 77 errors from the closed diagnostic_selection contract. Use exactly one severity, error. Evaluate the seven registered stages in order and emit every independent unsuppressed diagnostic at the earliest failing stage. Apply supersession only to the same cause, canonical locus, stage, producer, iteration, and retry attempt; suppress exact duplicate keys; and order by stage, canonical source or declared execution-path location, iteration, retry-attempt index, severity, specificity, and identifier without discovery-time influence. After permitted declared-handler recovery, select the first unhandled diagnostic as primary, retain every other unhandled diagnostic as secondary, and retain handled diagnostics and successful-substitution locals as ordered evidence; a merely retried failed diagnostic remains unhandled. When every applicable diagnostic is recovered or belongs to a successful local substitution, select no primary. Apply the exact expression_demand_resolution map only to eligible value-domain failures of statically valid demanded expressions; preserve source-validation classification for all excluded triggers.",
+      "expected": "deterministic unhandled primary and ordered unhandled, handled, and successful-substitution local evidence with exact same-cause suppression",
       "source": "statuses_and_errors_v0.1.0.json"
     },
     {
       "id": "FAILURE-LIFECYCLE-0797",
       "category": "failure_lifecycle",
       "subject": "core.failure_lifecycle",
-      "requirement": "Resolve allowed failure phases for every error from stage defaults and exact overrides, measuring phase at the exposed result producer while retaining local child and retry-attempt evidence. Enforce error.dependency.unsatisfied and error.scope.violation as pre_effect; resolve error.execution.order and error.required.missing from observed producer timing; and cover every additional mixed-phase identifier. Let the primary unhandled diagnostic's registered default status control, promote the first remaining unhandled diagnostic after recovery, and permit a handler result to control only after every applicable diagnostic is recovered. Keep status, effect_state, observed effects, and OUTPUT binding independent; require exact phase/effect/output evidence; fail closed for indeterminate state; and permit another retry after known effects only with exact safe repetition, resumption, or reconciliation evidence. A safety-blocked unmade attempt is not retry exhaustion.",
+      "requirement": "Resolve allowed failure phases for every error from stage defaults and exact overrides, measuring phase at the exposed result producer while retaining local child and retry-attempt evidence. Enforce error.dependency.unsatisfied and error.scope.violation as pre_effect; resolve error.execution.order and error.required.missing from observed producer timing; and cover every additional mixed-phase identifier. Let the primary unhandled diagnostic's resolved default status after expression_demand_resolution control, promote the first remaining unhandled diagnostic after recovery, and permit a handler result to control only after every applicable diagnostic is recovered or retained only as evidence of a successful local substitution. Keep status, effect_state, observed effects, and OUTPUT binding independent; require exact phase/effect/output evidence; fail closed for indeterminate state; and permit another retry after known effects only with exact safe repetition, resumption, or reconciliation evidence. A safety-blocked unmade attempt is not retry exhaustion. A blocked invocation result is terminal; a later explicit invocation is distinct. An active aggregate may resolve a failed child attempt through a selected handler before committing its own outcome.",
       "expected": "exact producer-relative phase, status, effect, OUTPUT, evidence, indeterminate, and retry-safety behavior",
       "source": "statuses_and_errors_v0.1.0.json"
     },
@@ -6411,8 +6411,8 @@
       "id": "EVENT-MODEL-0798",
       "category": "event_model",
       "subject": "event_model",
-      "requirement": "Raise an event only from an emitted diagnostic, never from a timer, host signal, external notification, or successful completion. Resolve a total event field over every registered error, non-null exactly when the error permits declared handler recovery, forming a bijection between the handler-recoverable errors and the closed event vocabulary. Raise each surviving diagnostic's event once, after supersession and duplicate suppression and before the primary/secondary partition. Activate handlers only through the closed attachment set TASK.HANDLER, STEP.HANDLER, RETRY.HANDLER, DEPENDENCY.HANDLER, and FAILURE.HANDLER, ordering candidates by attachment proximity, then source declaration order, then handler ID. Match on EVENT equality with an absent or TRUE WHEN, run exactly the first matching candidate, and leave the diagnostic unhandled when none matches. Recover exactly when the handler invocation records status.succeeded, never erasing the original diagnostic. Do not re-enter handler selection for diagnostics raised while selecting or executing a handler for the same originating diagnostic.",
-      "expected": "deterministic single-handler activation from a total, bijective diagnostic-to-event mapping with acyclic, terminating selection",
+      "requirement": "Raise an event only from an emitted diagnostic, never from a timer, host signal, external notification, or successful completion. Resolve a total event field over every registered error, non-null exactly when the error permits declared handler recovery, forming a bijection between the handler-recoverable errors and the closed event vocabulary. Raise each eligible surviving diagnostic's non-null event once, after supersession and duplicate suppression and before the primary/secondary partition. Select event handlers only through the closed attachment set TASK.HANDLER, STEP.HANDLER, RETRY.HANDLER, DEPENDENCY.HANDLER, and FAILURE.HANDLER, ordering candidates by attachment proximity, then source declaration order, then handler ID. Match on EVENT equality with an absent or TRUE WHEN, run exactly the first matching candidate, and leave the diagnostic unhandled when none matches. Recover exactly when the handler invocation records status.succeeded, never erasing the original diagnostic. Do not re-enter handler selection for diagnostics raised while selecting or executing a handler for the same originating diagnostic. Aliases resolve to canonical events before selection. At most one event-selected handler activation occurs; direct acyclic FALLBACK invocations may follow without selecting another event. Unattached handlers are callable only through such direct references. Control targets identify the active invocation aggregate, while failed attempt evidence remains immutable.",
+      "expected": "deterministic single event-selected handler activation, with direct acyclic fallback calls, from a total bijective diagnostic-to-event mapping",
       "source": "statuses_and_errors_v0.1.0.json"
     },
     {

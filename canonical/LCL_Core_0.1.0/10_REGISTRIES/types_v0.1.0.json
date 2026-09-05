@@ -1,6 +1,32 @@
 {
   "language": "LCL",
   "version": "0.1.0",
+  "source_type_contract": {
+    "grammar": "04_GRAMMAR/10_COMPLETE_EBNF.ebnf#/TYPE_EXPRESSION",
+    "defined_type_form": "REF(identifier), resolving exactly once to DEFINE KIND kind.type; bare identifiers are not source types.",
+    "null_designator": "NULL denotes the NULL type in a type-required field or type argument; elsewhere it is the material NULL literal. It has only the LITERAL derivation in an ordinary expression.",
+    "materiality": "A type designator is not a first-class material value. It is legal only where the receiving field or operation parameter explicitly requires a type.",
+    "alias": "A kind.type definition with a built-in scalar, collection, or REF(kind.type) BASE is a transparent alias: it introduces no new value identity, coercion, refinement, or comparison rule. Alias resolution is acyclic.",
+    "enum": "A kind.type definition with BASE ENUM defines a distinct closed enum domain identified by that definition. Its distinct ITEM simple identifiers are values of that domain. An unqualified ITEM resolves only against one expected concrete enum domain; a type alias preserves the original domain. Bare ENUM is a definition base or an operation-contract-constrained enum annotation, not an unconstrained material enum domain.",
+    "object": "OBJECT[REF(identifier)] requires a kind.type whose resolved BASE is OBJECT and uses its exact schema. A type alias preserves that schema.",
+    "reference": "REFERENCE[REF(identifier)] constrains the referenced declaration identity, or the value type when identifier names kind.type. It never changes the referenced declaration or reads its value implicitly.",
+    "errors": {
+      "unresolved": "error.reference.unresolved",
+      "wrong_kind": "error.reference.kind",
+      "cycle": "error.reference.cycle",
+      "invalid_type": "error.field.type"
+    }
+  },
+  "reference_context_contract": {
+    "resolution": "REF(identifier) resolves exactly one declaration or loop-local binding by exact identity before its receiving context is applied. Unresolved identities use error.reference.unresolved; incompatible reference kinds use error.reference.kind; prohibited cycles use error.reference.cycle.",
+    "identity_contexts": "A field-signature reference or reference-list slot, a source type or schema slot, an explicitly REFERENCE-typed value slot, and an operation target or argument whose contract explicitly names a REFERENCE alternative or an addressable-identity metatype retain the referenced identity. Merely admitting all material values through meta.material_value does not select identity mode; such a slot reads a value-bearing REF once. An explicit identity alternative takes precedence when the same receiving slot also admits material values. The rule applies recursively to the members of a reference-typed collection.",
+    "value_contexts": "Every other occurrence is a value context, including ordinary operator and function operands, conditions, collection iteration, and material VALUE or DEFAULT expressions. It reads exactly one bound value of INPUT, DATA, CONTEXT, MEMORY, STATE, OUTPUT, DEFINE kind.constant, or a loop-local binding. VALIDATE and VERIFY read their Boolean check result. Other declaration kinds remain reference identities. A value that is itself REFERENCE is retained without a second dereference.",
+    "context_boundary": "A receiving identity context applies to a direct REF expression, including parentheses around it, or to the members of a reference-typed collection. It does not change the evaluation rules inside another operator, function call, property access, or index access. Those constructs evaluate their own operands under their registered contracts and pass their result to the receiving slot.",
+    "binding_state": "Reading an absent optional or not-yet-bound value yields MISSING; a binding known to exist whose value cannot be determined yields UNKNOWN. Existing REQUIRED, DEFAULT, dependency-order, and special-value rules then apply. Reading never starts an action or changes execution order. A VALIDATE or VERIFY read uses the result of its check at its declared evaluation point; it does not execute an operation or rerun the check.",
+    "declaration_property": "A reserved uppercase property immediately after REF(identifier), allowing parentheses around that REF, selects a registered field of the resolved declaration before any bound-value read. The field is evaluated under its own field contract. An absent optional field yields MISSING; an unregistered field uses error.operator.operand. Multiple occurrences yield a LIST of their field values in source occurrence order; one occurrence yields that value. A block-valued field yields the declared block reference or LIST of references, not an inferred object.",
+    "value_property": "A lowercase property selects the exact field of the evaluated OBJECT value. It never selects declaration metadata. A property access on another family uses error.operator.operand.",
+    "equality": "Equality compares the values produced by these rules. When both produced values are REFERENCE, equality compares resolved declaration or loop-instance binding identity. Reading a reference-typed binding once therefore permits reference-identity comparison without recursive dereference."
+  },
   "collection_value_syntax": {
     "LIST": {
       "forms": [
@@ -22,7 +48,7 @@
   },
   "pattern_profiles": {
     "GLOB": {
-      "style": "workspace-relative minimatch/gitignore-style subset",
+      "style": "closed_lcl_glob_0_1_0",
       "workspace_relative": true,
       "path_separator": "/",
       "tokens": {
@@ -35,10 +61,25 @@
       "parent_escape_allowed": false,
       "brace_expansion": false,
       "match_semantics": "full_workspace_relative_path",
-      "resource_limit_error": "error.pattern.resource_limit"
+      "resource_limit_error": "error.pattern.resource_limit",
+      "closed": true,
+      "decoded_text": "The constructor first decodes the LCL STRING exactly once. This profile then consumes that complete decoded text; no source-string or pattern escape is decoded twice.",
+      "segments": "A pattern is one or more nonempty slash-separated segments. A segment is either exactly ** or one or more ordinary tokens. Leading/trailing slash, empty segments, literal . or .. segments, and adjacent stars in an ordinary segment are invalid. ** is legal only as one whole segment.",
+      "literal": "An ordinary token is one Unicode scalar other than /, *, ?, [, ], backslash, {, or }, or one of the wildcard, character-class, or escape tokens defined here. Literal comparison is scalar-exact and case-sensitive; leading dot has no special treatment.",
+      "escape": "A backslash escapes exactly one of * ? [ ] backslash { } ! ^ or -. It matches that literal scalar; another escaped character or a trailing backslash is invalid.",
+      "character_class": "A class is [ followed by optional ! negation, one or more members, and ]. A member is a literal scalar or an inclusive ascending scalar range a-z. A range endpoint must be one literal scalar, not a class or wildcard. Unescaped - is literal only first or last; ] and backslash require escaping. [ is not a nested-class opener and must be escaped. / cannot occur in a class. Negation complements the class over Unicode scalars excluding /. Empty, unclosed, descending, or malformed classes are invalid.",
+      "matching": "Each ordinary pattern segment matches one complete nonempty input segment: * consumes zero or more scalars, ? exactly one scalar, and a class exactly one member scalar. ** consumes zero or more complete nonempty segments. The complete pattern must consume the complete input segment sequence. There is no filesystem traversal or implicit directory expansion in this value-level relation.",
+      "input": "A STRING operand denotes either the empty relative path or nonempty slash-separated segments, with no empty, . or .. segment and no leading or trailing slash. A PATH operand requires an explicit WORKSPACE root retained by that value or its declared context and is compared using its normalized relative segment sequence. An input that cannot supply this form uses error.operator.operand; no root is inferred.",
+      "examples": {
+        "src/**/*.py matches src/main.py": true,
+        "** matches empty relative path": true,
+        "* matches .hidden": true,
+        "a/* matches a/b/c": false
+      },
+      "invalid_pattern_error": "error.literal.invalid"
     },
     "REGEX": {
-      "syntax": "conservative_ecmascript_compatible_subset",
+      "syntax": "closed_lcl_regex_0_1_0",
       "allowed_flags": [
         "i",
         "m",
@@ -53,11 +94,55 @@
       "user_unicode_flag_allowed": false,
       "forbidden_features": [
         "lookbehind",
-        "unicode_property_escapes"
+        "unicode_property_escapes",
+        "lookahead",
+        "backreferences",
+        "named_groups",
+        "inline_flags",
+        "conditional_groups",
+        "reluctant_quantifiers",
+        "possessive_quantifiers",
+        "unlisted_escapes"
       ],
       "match_semantics": "full_string",
       "full_match_implementation": "semantic_boundary_check_not_multiline_anchors",
-      "resource_limit_error": "error.pattern.resource_limit"
+      "resource_limit_error": "error.pattern.resource_limit",
+      "closed": true,
+      "decoded_text": "The constructor first decodes the LCL STRING exactly once. This profile then consumes that complete decoded text; no source-string or pattern escape is decoded twice.",
+      "grammar": {
+        "notation": "ISO 14977: comma concatenates, vertical bar alternates, braces repeat zero or more times, square brackets enclose an optional part, question marks delimit a defined special sequence.",
+        "start_symbol": "REGEX_PATTERN",
+        "productions": [
+          "REGEX_PATTERN = ALTERNATION ;",
+          "ALTERNATION = CONCATENATION , { \"|\" , CONCATENATION } ;",
+          "CONCATENATION = { PIECE } ;",
+          "PIECE = ASSERTION | ATOM , [ QUANTIFIER ] ;",
+          "ASSERTION = \"^\" | \"$\" ;",
+          "ATOM = REGEX_LITERAL | ESCAPE | \".\" | CHARACTER_CLASS | \"(\" , ALTERNATION , \")\" | \"(?:\" , ALTERNATION , \")\" ;",
+          "QUANTIFIER = \"*\" | \"+\" | \"?\" | \"{\" , COUNT , \"}\" | \"{\" , COUNT , \",\" , [ COUNT ] , \"}\" ;",
+          "COUNT = \"0\" | NONZERO_DIGIT , { DIGIT } ;",
+          "REGEX_LITERAL = ? one Unicode scalar other than . ^ $ | U+003F * + ( ) [ ] { } or backslash ? ;",
+          "ESCAPE = ? one complete escape admitted by the escape table ? ;",
+          "CHARACTER_CLASS = ? one complete class admitted by character_class ? ;",
+          "DIGIT = ? one ASCII digit 0 through 9 ? ;",
+          "NONZERO_DIGIT = ? one ASCII digit 1 through 9 ? ;"
+        ]
+      },
+      "escape": {
+        "literal": "A backslash followed by exactly one of . ^ $ | ? * + ( ) [ ] { } backslash / or - denotes that literal scalar.",
+        "control": "\\n is U+000A, \\r is U+000D, and \\t is U+0009.",
+        "classes": "\\d denotes ASCII 0-9; \\w denotes ASCII A-Z, a-z, 0-9, and underscore; \\s denotes exactly U+0009 through U+000D and U+0020. Uppercase \\D, \\W, and \\S are their complements over Unicode scalars.",
+        "invalid": "Every unlisted escape, including numeric backreferences, \\b, \\u, \\x, \\p, and \\P, is invalid. Literal Unicode scalars may be supplied directly by the decoded LCL STRING."
+      },
+      "character_class": "A class is [ followed by optional ^ negation, one or more members, and ]. A member is a literal scalar, an admitted escape, or an inclusive ascending scalar range a-z. Range endpoints must each denote one literal scalar; class escapes cannot be endpoints. Unescaped - is literal only first or last. Literal [, ], and backslash require escaping. Unescaped ^ is literal except in the initial negation position. All other regex metacharacters are literal inside a class. Negation complements the union of members over Unicode scalars. Empty, unclosed, descending, nested, or malformed classes are invalid.",
+      "quantifiers": "* repeats zero or more times, + one or more, ? zero or one, {n} exactly n, {n,} at least n, and {n,m} from n through m inclusive with n <= m. Counts are exact nonnegative integers without leading zeroes. An assertion cannot be quantified. More than one quantifier on an atom is invalid. Repetition has the mathematical finite-concatenation meaning even when its atom accepts empty text; no implementation strategy, capture state, or greedy/reluctant preference changes Boolean acceptance.",
+      "flags_semantics": {
+        "i": "ASCII case-insensitive comparison only: A-Z and a-z are equivalent pairs. For classes, first close the positive member set under these pairs, then apply any class negation. Other Unicode scalars remain distinct; no locale or external Unicode case-folding table participates.",
+        "m": "^ also accepts a position immediately after U+000A; $ also accepts a position immediately before U+000A. Without m they accept only the start and end respectively. No implicit pre-final-newline match exists.",
+        "s": "Dot accepts every Unicode scalar. Without s dot excludes exactly U+000A, U+000D, U+2028, and U+2029."
+      },
+      "matching": "Matching is a Boolean relation over a sequence of Unicode scalars. A literal/class/dot consumes one scalar; concatenation consumes consecutive substrings; alternation accepts any branch; grouping changes only precedence; anchors consume no scalar. Empty concatenation accepts the empty substring. Success requires one derivation consuming the entire input from its first boundary through its final boundary. The m flag never relaxes this full-string requirement. Captures and matched substrings are not exposed.",
+      "invalid_pattern_error": "error.literal.invalid"
     }
   },
   "numeric_profile": {
@@ -112,7 +197,7 @@
     "PATH": "Absolute path or path relative to an explicit WORKSPACE; a resolved workspace-relative path cannot escape its WORKSPACE root.",
     "URI": "Absolute URI with a scheme under the RFC 3986 absolute-URI profile; relative references are invalid.",
     "GLOB": "Workspace-relative file-selection pattern under the closed LCL GLOB profile.",
-    "REGEX": "Regular-expression pattern under the conservative ECMAScript-compatible LCL REGEX profile.",
+    "REGEX": "Regular-expression pattern under the frozen, closed LCL REGEX 0.1.0 grammar and matching rules.",
     "DATE": "RFC 3339 full-date value.",
     "TIME": "RFC 3339 partial-time with an optional offset; an omitted offset means UTC.",
     "DATETIME": "RFC 3339 full-date and partial-time with an optional offset; an omitted offset means UTC.",

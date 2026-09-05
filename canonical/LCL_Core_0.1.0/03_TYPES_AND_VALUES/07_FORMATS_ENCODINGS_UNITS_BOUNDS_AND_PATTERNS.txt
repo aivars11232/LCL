@@ -11,20 +11,81 @@ absolute and non-negative; it validates a permitted numeric difference and never
 selects arithmetic precision or rounds a quotient. PATTERN is GLOB or REGEX and
 does not silently coerce the target to STRING.
 
-GLOB is a workspace-relative minimatch/gitignore-style subset. Patterns use "/"
-as the path separator and may contain `*` for zero or more non-separator
-characters, `**` for zero or more complete path segments, `?` for one
-non-separator character, and `[...]` for one non-separator character selected by
-a character class. Absolute patterns, parent escape, and brace expansion are not
-legal. Matching covers the entire workspace-relative path.
+GLOB and REGEX are frozen LCL 0.1.0 languages defined completely by
+10_REGISTRIES/types_v0.1.0.json#/pattern_profiles. The constructor decodes its LCL
+STRING once, then consumes all of that decoded pattern text. Pattern escapes are
+processed once by their own profile. Similarity to another pattern language does
+not import additional syntax, matching behavior, or a version-dependent feature.
 
-REGEX is a conservative ECMAScript-compatible subset. Lookbehind and Unicode
-property escapes such as `\p{...}` are not legal. Its optional flags STRING may
-contain `i`, `m`, and `s`, each at most once and only in canonical `ims` order;
-the default is the empty STRING. Unknown, duplicate, stateful, and other
-unsupported flags are invalid. Unicode text handling is always enabled
-independently, and `u` is not a user flag. REGEX matching covers the entire
-STRING through a semantic boundary check, not by adding multiline anchors.
+GLOB uses slash-separated, nonempty pattern segments. A segment is exactly **,
+or a sequence of ordinary tokens. In an ordinary segment, * consumes zero or more
+non-separator scalars, ? consumes exactly one, and [...] consumes one member of
+its character class. ** consumes zero or more complete nonempty path segments
+and is legal only as one whole pattern segment. Leading/trailing slash, empty
+segments, literal . or .. segments, adjacent stars inside an ordinary segment,
+and unescaped braces are invalid. There is no brace expansion.
+
+A GLOB class has one or more literal members or ascending inclusive Unicode
+scalar ranges. Initial ! complements the class over scalars other than slash.
+An unescaped hyphen is literal only first or last; literal brackets and backslash
+must be escaped. A class cannot contain slash. A backslash outside or inside a
+class escapes exactly *, ?, [, ], backslash, {, }, !, ^, or hyphen; other escapes
+are invalid. Wildcards have no special meaning as literal class members. Empty,
+unclosed, descending, or malformed classes are invalid. Matching is case-sensitive
+and leading dot has no special behavior.
+
+A GLOB STRING input is empty for the relative root, or consists of nonempty
+slash-separated segments without . or .., leading slash, or trailing slash.
+A PATH input requires an explicit WORKSPACE root retained by the value or its
+declared context; its normalized relative segments are used. An operand unable
+to supply this form uses error.operator.operand. No root or filesystem expansion
+is inferred. The whole pattern must consume the whole relative segment sequence.
+Thus src/**/*.py matches src/main.py; ** matches the empty relative path; *
+matches .hidden; and a/* does not match a/b/c.
+
+REGEX admits literal Unicode scalars, dot, character classes, alternation with |,
+ordinary (...) or non-capturing (?:...) grouping, anchors ^ and $, and one optional
+quantifier per consuming atom. The registry contains the exact grammar. Empty
+concatenation, including an empty pattern or branch, matches the empty substring.
+Grouping supplies precedence only; captures and matched substrings are not exposed.
+
+Quantifiers are *, +, ?, {n}, {n,}, and {n,m}: respectively zero or more, one or
+more, zero or one, exactly n, at least n, or between n and m repetitions inclusive.
+Counts are exact nonnegative integers without leading zeroes and require n <= m.
+Anchors cannot be quantified. Repeated quantifiers, reluctant or possessive forms,
+lookaround, backreferences, named groups, inline flags, conditional groups, Unicode
+property escapes, and every unlisted syntax are invalid. Repetition means finite
+concatenation mathematically, including when its atom accepts empty text; no
+greediness or implementation strategy changes Boolean acceptance.
+
+REGEX backslash escapes its metacharacters, slash, and hyphen literally. It also
+admits \n, \r, and \t for U+000A, U+000D, and U+0009; \d for ASCII digits;
+\w for ASCII letters, digits, and underscore; and \s for exactly U+0009 through
+U+000D and U+0020. \D, \W, and \S are the corresponding Unicode-scalar
+complements. Unlisted escapes, including \b, \u, \x, \p, and \P, are invalid.
+Literal Unicode may be supplied directly through the already decoded LCL STRING.
+
+A REGEX class contains one or more literal scalars, admitted escapes, or ascending
+inclusive scalar ranges, with optional initial ^ negation. Range endpoints each
+denote one scalar, so class escapes cannot be endpoints. Unescaped hyphen is
+literal only first or last. Literal brackets and backslash require escaping.
+Other metacharacters are literal in a class, with ^ literal except initially.
+Empty, unclosed, descending, nested, and malformed classes are invalid.
+
+The optional flags STRING contains i, m, and s at most once, in canonical ims
+order; omission means the empty STRING. i equates ASCII A-Z with a-z only. For a
+class, close the positive member set under those pairs before applying negation.
+Other Unicode scalars remain distinct; no locale or external case-folding table
+participates. Without m, ^ and $ assert the input's initial and final boundaries.
+With m, they additionally assert positions after and before U+000A respectively.
+There is no implicit pre-final-newline match. Dot excludes U+000A, U+000D, U+2028,
+and U+2029 unless s is present; with s it accepts every scalar. Unicode scalar
+matching is always enabled and u is not a user flag.
+
+REGEX matching succeeds iff one derivation consumes the complete input between
+its first and final boundaries. Anchors consume no characters. m never relaxes
+the complete-input requirement. Unknown, duplicate, stateful, out-of-order, or
+otherwise unsupported flags are invalid.
 
 Invalid pattern syntax or flags produce error.literal.invalid. Exhausting a
 declared finite resource limit while compiling or matching either profile

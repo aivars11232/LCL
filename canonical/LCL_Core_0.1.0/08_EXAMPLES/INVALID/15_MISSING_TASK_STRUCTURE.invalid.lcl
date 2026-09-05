@@ -3,9 +3,48 @@ LCL:
 
 SPECIFICATION:
     ID: invalid.task
-    NAME: "Missing task"
+    NAME: "Task document without its EXECUTE root"
     VERSION: "1.0.0"
     KIND: kind.task
+    DOMAIN: "mathematics"
 
-EXECUTE:
-    REFERENCE: REF(task.none)
+INPUT:
+    ID: input.value
+    TYPE: INTEGER
+    VALUE: 4
+
+OUTPUT:
+    ID: output.value
+    TYPE: INTEGER
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.double
+    ASSERT: REF(output.value) == 8
+
+ACTION:
+    ID: action.calculate
+    OPERATION: core.calculate
+    TARGET: REF(input.value)
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "REF(input.value) * 2"
+    OUTPUT: REF(output.value)
+
+VERIFY:
+    ID: verify.value
+    ASSERT: REF(output.value) == 8
+
+SUCCESS:
+    ID: success.double
+    ALL: [REF(verify.value)]
+
+TASK:
+    ID: task.double
+    GOAL: REF(goal.double)
+    INPUT: REF(input.value)
+    ACTION: REF(action.calculate)
+    OUTPUT: REF(output.value)
+    SUCCESS: REF(success.double)

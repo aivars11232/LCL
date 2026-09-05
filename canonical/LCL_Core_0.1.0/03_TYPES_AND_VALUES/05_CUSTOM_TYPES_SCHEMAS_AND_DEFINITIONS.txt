@@ -12,8 +12,23 @@ kind.term
 kind.constant
     TYPE and VALUE required.
 kind.type
-    BASE required and is one TYPE_EXPRESSION or one REF resolving to a
-    kind.type definition; OBJECT base requires one or more FIELD.
+    BASE required and is one TYPE_EXPRESSION, including REF(identifier)
+    resolving to kind.type. A direct BASE OBJECT requires one or more FIELD
+    and defines their exact object schema. A direct BASE ENUM requires one or
+    more distinct ITEM simple identifiers and defines a concrete enum domain.
+    Every other BASE is a transparent alias of its resolved type, including
+    the same enum domain or object schema when aliasing a defined type. FIELD
+    is legal only with direct BASE OBJECT; ITEM only with direct BASE ENUM.
+    An alias cannot add fields, members, refinements, or conversion rules.
+    REF(type.id) selects that type wherever a source type is required;
+    OBJECT[REF(type.id)] additionally requires an object schema.
+    Enum ITEM values resolve against the one concrete enum type required by
+    the containing typed value or operator operand. The same ITEM spelling in
+    different enum domains denotes different typed values. Without one
+    expected enum domain, an unqualified enum ITEM is not resolved by guessing.
+    A nonmember or ambiguous enum value uses error.type.mismatch. Bare ENUM
+    is legal as this definition base or when an operation contract supplies
+    one exact enum domain; it cannot declare an unconstrained material value.
 kind.operation
     MEANING, SIDE_EFFECT, DETERMINISTIC required; optional DEPENDENCY; zero or
     more PARAMETER and at most one RESULT. SIDE_EFFECT, DEPENDENCY, and
@@ -49,7 +64,14 @@ kind.format
     or the ID of a kind.format definition. ENCODING is one core registered
     encoding.
 kind.event, kind.status, kind.error
-    MEANING required.
+    MEANING and BASE required. BASE names one core identifier of the same
+    domain or one acyclic same-kind alias. These definitions are aliases,
+    not additional core events, statuses, or errors. Resolve BASE transitively
+    to its canonical core identity before event matching, diagnostic metadata
+    and ranking, status transitions, or equality. Every core metadata and
+    lifecycle property is inherited without modification. An unresolved BASE
+    uses error.reference.unresolved, a wrong-domain BASE error.reference.kind,
+    and an alias cycle error.reference.cycle.
 
 Definitions are immutable and may reference earlier or later definitions so long
 as resolution is acyclic. Anonymous SCHEMA is local to its containing value.

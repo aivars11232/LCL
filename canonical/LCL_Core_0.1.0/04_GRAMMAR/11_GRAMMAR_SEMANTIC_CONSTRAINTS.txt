@@ -12,9 +12,27 @@ DATE: 2026-08-30
 5. Branch bodies contain STEP, IF, FOR EACH, or COMMENT.
 6. ELSE immediately follows and aligns with its IF.
 7. Multiline delimiters align with their declaration.
-8. TYPE parameterization is only LIST[type], SET[type], OBJECT[REF(type)], and
-   REFERENCE[REF(kind_or_type)].
-9. Function/constructor arity follows standard library.
+8. Source types follow TYPE_EXPRESSION: a built-in type, REF to kind.type,
+   LIST[type], SET[type], OBJECT[REF(type)], or REFERENCE[REF(kind_or_type)].
+   NULL and REF primaries in a type-required field denote types under
+   types_v0.1.0.json#/source_type_contract; elsewhere they retain value semantics.
+   A bare identifier is never a type. A type designator is not a material value.
+9. Function/constructor arity follows standard library. Expression-call
+   arguments are positional only; named expression-call arguments are invalid.
 10. REF argument is an identifier, not a string.
+    Its identity or one-bound-value interpretation follows the receiving-context
+    contract in types_v0.1.0.json#/reference_context_contract. Uppercase properties
+    immediately after REF select registered declaration fields; lowercase
+    properties select fields of the evaluated OBJECT value.
 11. Expressions are side-effect free.
 12. Any syntax not defined here is invalid rather than implementation-defined.
+13. A kind.type alias adds no FIELD or ITEM declarations. Direct BASE OBJECT
+    defines FIELD schema entries; direct BASE ENUM defines distinct ITEM members.
+    ENUM values require one exact expected enum domain; no spelling-based domain
+    search or implicit nominal conversion exists.
+14. LIST indexing is zero-based and accepts INTEGER only; every out-of-range
+    integer produces MISSING. OBJECT string indexes must select a statically
+    known key. SET/STRING indexing and source nullable/union notation are absent.
+15. Lowercase identifier spellings are not case-insensitive keywords. Wrong-case
+    keyword diagnostics follow the contextual lexical rule, preserving legal
+    lowercase identifiers and object keys.

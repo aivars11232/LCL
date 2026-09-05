@@ -2,12 +2,42 @@ LEARNED COMPUTING LANGUAGE (LCL)
 TITLE: Extension Contract
 LANGUAGE VERSION: 0.1.0
 STATUS: NORMATIVE
-DATE: 2026-08-30
+DATE: 2026-09-05
 
 
 An extension is kind.extension and may contain IMPORT, DEFINE, DATA, COMMENT,
 and EXAMPLE only. It may define lowercase namespaced terms, constants, types,
-operations, formats, events, statuses, and errors. The Core 0.1.0 unit registry
-is closed. An extension cannot add uppercase reserved keywords, alter grammar/
-precedence/core meanings, add hidden rules/tasks, replace built-ins, or execute.
-Domain operations require exact parameter/result/effect/determinism definitions.
+operations, formats, and aliases for core events, statuses, and errors. The Core
+0.1.0 unit registry is closed. An extension cannot add uppercase reserved
+keywords, alter grammar/precedence/core meanings, add hidden rules/tasks,
+replace built-ins, or execute. Domain operations require exact parameter/result/
+effect/determinism definitions.
+
+DEFINE with KIND kind.error, kind.event, or kind.status requires both MEANING
+and BASE. BASE is a qualified identifier naming a core identifier in that same
+domain or another DEFINE of the same KIND. It is not a free-form description,
+type expression, new lifecycle state, independent event source, or new error
+classification. Resolve the BASE chain transitively and acyclically to exactly
+one core identifier. A BASE that resolves to the wrong domain or DEFINE KIND
+uses error.reference.kind; an unresolved BASE uses error.reference.unresolved;
+a cycle uses error.reference.cycle. A missing required BASE uses
+error.field.required. Each of these is an ordinary source diagnostic at its
+registered stage and prevents the alias from being used.
+
+The alias denotes its canonical core BASE for every semantic use, including
+equality, status transition, terminal/non-success restrictions, diagnostic
+selection and ordering, error default status, event mapping, and handler EVENT
+matching. MEANING may explain domain usage but cannot override inherited
+semantics. A status alias inherits terminal, allowed_next, and scope; an error
+alias inherits stage, severity, specificity, supersession, recoverability,
+event, default_status, and failure-phase rules; an event alias inherits its
+canonical error source and carries no new payload or trigger. The closed
+diagnostic-to-event bijection is over canonical identifiers, irrespective of
+how many aliases name one identifier. Recorded diagnostic and status identities
+are canonical; source alias spellings may remain in source-location evidence.
+
+These rules apply equally to local definitions, imported definitions, and
+definitions loaded through EXTENSION. Alias IDs remain ordinary user IDs and
+must obey reserved-prefix, namespace-ownership, and uniqueness rules. Aliases
+cannot redefine a core identifier or change the set of core statuses, errors,
+or events.

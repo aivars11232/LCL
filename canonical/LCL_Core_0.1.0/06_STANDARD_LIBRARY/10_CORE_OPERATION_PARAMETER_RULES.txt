@@ -15,17 +15,18 @@ result_schema selects that contract. OUTPUT PROPERTY projection may narrow the
 operation-owned result fields but never changes the operation's status,
 diagnostics, resolved effects, or field availability.
 
-Every type string in those two registries is written in one closed machine-
+Every target, parameter, and result-schema type string in those two registries
+is written in one closed machine-
 readable notation defined by
 10_REGISTRIES/operations_v0.1.0.json#/contract_type_notation. That notation fixes
 its grammar, its atom classes and the exact registry each atom resolves against,
 union and duplicate-member rules, permitted nesting, whitespace, and its closed
 list of invalid forms, so one contract type string has exactly one reading. It is
-a specification notation, not LCL source syntax: no form it defines is admissible
-in a source TYPE field, and source type syntax remains governed by
-04_GRAMMAR/10_COMPLETE_EBNF.ebnf TYPE_EXPRESSION and by the value kinds of
-10_REGISTRIES/field_signatures_v0.1.0.json. Where both cite the same designator
-they share that one definition and never share syntax. A contract type string
+a specification notation that never extends source syntax. A spelling may be
+used in a source TYPE field only if the independent TYPE_EXPRESSION grammar and
+field signature also admit it. Shared built-in type names retain the same meaning;
+registry-only unions, metatypes, and result-schema names are not source forms.
+A contract type string
 that does not parse, or whose atom resolves against no declared source, is a
 defect in this specification and is repaired in the registry; it is never a
 document diagnostic and selects no registered error.
@@ -219,13 +220,14 @@ either operation produces error.type.mismatch before effects.
 For core.select and core.filter, a required predicate result of MISSING produces
 error.required.missing and UNKNOWN produces error.value.unknown. The same mapping
 applies to the required grouping key in core.group. core.calculate uses
-error.required.missing for a MISSING operand outside == or != and
-error.value.unknown when its required result is UNKNOWN. core.return distinguishes
+the common expression sentinel rules, including ==, !=, and EXISTS exceptions;
+a required final MISSING result uses error.required.missing and UNKNOWN uses
+error.value.unknown. core.return distinguishes
 an unresolved REFERENCE from one resolved to a non-material sentinel: unresolved
 uses error.reference.unresolved, MISSING uses error.required.missing, and UNKNOWN
 uses error.value.unknown.
 
-core.compare evaluates each criterion under the registered operator and sentinel
+core.compare evaluates one criterion under the registered operator and sentinel
 rules. Omitted criteria selects ==. That equality form accepts MISSING and UNKNOWN
 as singleton sentinels and produces material BOOLEAN. A supplied non-==/!=
 criterion that encounters MISSING uses error.required.missing; a criterion whose
@@ -250,8 +252,8 @@ core.retry resolves the wrapped ACTION before retrying. An unresolved ACTION
 uses error.reference.unresolved, a prohibited wrapped-ACTION reference cycle uses
 error.reference.cycle before inheritance. Every ACTION that resolves exactly
 once may be retried under its explicit bounded RETRY declaration; no separate
-retryable marker exists. Before each additional attempt, the resolved when
-expression is a required BOOLEAN condition; MISSING uses
+retryable marker exists. Before each additional attempt, RETRY.WHEN
+is a required BOOLEAN condition; MISSING uses
 error.required.missing and UNKNOWN uses error.value.unknown. After successful
 resolution, the determinism category and source, dependency set, effect set, and
 applicable errors, including any wrapped operation or profile precondition, are
@@ -283,3 +285,62 @@ a missing, ambiguous, incomplete, or out-of-bounds key-operation profile use
 error.operation.precondition. direction defaults to ascending; descending reverses
 primary order but not original LIST source order among equal-key members. The
 result value and result.collection items are LIST[T].
+
+Expression fragments and exact parameter forms
+
+operations_v0.1.0.json#/expression_fragment_contract closes calculation and
+predicate STRING syntax: after STRING decoding, exactly one existing EXPRESSION
+is completely consumed. No alternate expression language, declaration, statement,
+or operation invocation is admitted. core.calculate also accepts REF to a
+kind.constant STRING containing that same fragment. Its bindings OBJECT uses
+simple names and cannot shadow visible declaration IDs, their simple names,
+registered words, or target. Bare fragment names read only these local bindings
+and the provided reserved names; document values require REF. The reserved target
+is the resolved TARGET value,
+or MISSING on omission. core.select/core.filter STRING predicates receive the
+reserved item value separately for each member. Malformed fragments and invalid
+binding names use error.operation.parameter; valid fragments retain ordinary
+expression diagnostics, including error.reference.unresolved for unknown names.
+
+core.compare criteria is one registered binary comparison token STRING, or a
+closed OBJECT with required operator and optional left and right property_path
+strings, or REF to a declared value of either form. Omitted paths select whole
+operands. Allowed operators are ==, !=, <, <=, >, >=, IN, CONTAINS, MATCHES.
+Malformed criteria uses error.operation.parameter; missing projected values obey
+the selected operator's sentinel rule and incompatible operands use
+error.operator.operand. result.value.value is exactly one BOOLEAN; FALSE is a
+successful comparison result.
+
+core.group STRING key is one property_path, following the same exact property
+selection as core.sort. A malformed or unregistered path uses
+error.operation.precondition. result.value.value is a LIST of closed OBJECT
+records with exactly key and items, where items is LIST[T]. Strict == groups
+keys, first key occurrence orders the groups, and source order is preserved
+within each group. Empty input returns an empty LIST of that record schema.
+
+RETRY is an inline ACTION-only block. STEP has no RETRY field. Its LIMIT is the
+only budget: at most 1 + LIMIT attempts, stopping at the first success. core.retry
+registers only limit, which must equal that block's LIMIT; delay and when are not
+operation parameters. RETRY.WHEN defaults to TRUE and RETRY.DELAY defaults to
+DURATION(0, unit.second); negative delay uses error.value.out_of_range. A false
+condition or safety refusal prevents another attempt and preserves the prior
+failure without creating exhaustion or success. Count exhaustion requires
+1 + LIMIT actual unsuccessful attempts. All handlers share the ACTION invocation
+budget; a separate ACTION invocation has a fresh budget.
+
+core.continue requests the exact declared successor while a selected handler is
+handling the originating event. Recovery and advancement commit only after that
+handler, including a successful FALLBACK, succeeds. No failed handler advances.
+
+An injected handler-context target identifies the active invocation aggregate
+that owns the originating diagnostic, not the immutable failed attempt result.
+The aggregate stays active while handler resolution completes. core.retry consumes
+that same ACTION invocation's existing budget and is invalid outside its selected
+handler context. core.continue likewise requires its selected same-origin handler
+context; a missing or mismatched context uses error.operation.precondition.
+Explicit targets otherwise obey the selected operation's own contract. In
+particular, core.cancel remains legal outside a handler when the authority and
+registered transition permit it. core.stop on an internal target requires
+status.stopped in that active target's allowed_next; otherwise it uses
+error.execution.order. Completed attempts and terminal aggregate results are
+never resumed or mutated by these controls.

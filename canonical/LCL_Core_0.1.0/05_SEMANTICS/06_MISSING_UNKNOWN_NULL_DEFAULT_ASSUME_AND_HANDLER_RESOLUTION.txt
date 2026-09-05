@@ -2,7 +2,7 @@ LEARNED COMPUTING LANGUAGE (LCL)
 TITLE: Missing, Unknown, Null, Default, Assume, and Handler Resolution
 LANGUAGE VERSION: 0.1.0
 STATUS: NORMATIVE
-DATE: 2026-08-30
+DATE: 2026-09-05
 
 
 MISSING: no value/source exists. UNKNOWN: value exists but cannot be determined.
@@ -30,21 +30,33 @@ create a second contract.
 Emitting a diagnostic is the only thing that raises an event. No timer, host
 signal, external notification, or successful completion raises one. Every
 registered error declares an exact event: one registered event identifier, or
-null meaning the diagnostic raises no event and can never be recovered by a
-declared handler. That mapping is total over the closed error registry, and it
+null meaning the diagnostic raises no event and cannot select a declared
+recovery handler. Successful retry or FALLBACK completion may retain a local
+failed invocation only as substitution evidence under the rules below; that
+does not select a new handler for its diagnostics. The mapping is total over
+the closed error registry, and it
 is a bijection between the handler-recoverable errors and the closed event
 vocabulary, so every registered event has exactly one source and every
 recoverable error has exactly one trigger.
 
-A surviving diagnostic raises its event once, at the producer that emitted it,
-after supersession and duplicate suppression and before the primary/secondary
-partition. Suppressed and duplicate-merged diagnostics raise nothing further.
+Error, event, and status aliases resolve to their canonical core identifiers
+under 07_VERSIONING_AND_EXTENSIONS/03_EXTENSION_CONTRACT.txt before diagnostic
+selection, event matching, or status evaluation. They add no distinct error,
+event, or lifecycle state; the bijection is over canonical core identifiers.
 
-A HANDLER is declared at top level and activates only where a HANDLER field
-references it. The closed attachment set is TASK.HANDLER, STEP.HANDLER,
+A surviving diagnostic with a non-null event mapping raises its event once, at
+the producer that emitted it, after supersession and duplicate suppression and
+before the primary/secondary partition, unless handler non-reentrancy below
+suppresses the event. A null mapping, suppressed diagnostic, or duplicate-merged
+diagnostic raises nothing further.
+
+A HANDLER is declared at top level and is selected for an event only where a
+HANDLER field references it. The closed attachment set is TASK.HANDLER, STEP.HANDLER,
 RETRY.HANDLER, DEPENDENCY.HANDLER, and FAILURE.HANDLER. A declared but
-unattached HANDLER never activates. RETRY.HANDLER is in scope only for
-diagnostics raised by an attempt of the execution unit declaring that RETRY,
+unattached HANDLER is never selected by an event attachment; a direct FALLBACK
+reference may still invoke it under the separate acyclic fallback rule.
+RETRY.HANDLER is in scope only for
+diagnostics raised by an attempt of the ACTION declaring that RETRY,
 including the first attempt; STEP.HANDLER for that STEP and the execution units
 it reaches; TASK.HANDLER for that TASK's whole reachable graph;
 DEPENDENCY.HANDLER only while resolving that DEPENDENCY; FAILURE.HANDLER only
@@ -57,22 +69,27 @@ TASK; then by source declaration order within the referenced list; then by
 handler ID in Unicode scalar order. That order is total and has no tie. A
 candidate matches when its EVENT equals the raised event and its WHEN is absent
 or evaluates TRUE; a WHEN evaluating MISSING or UNKNOWN does not match and
-raises nothing further. Exactly the first matching candidate runs, so one
-diagnostic causes at most one handler invocation. When nothing matches, the
+raises nothing further. Exactly the first matching candidate is selected, so one
+diagnostic causes at most one event-selected handler activation. Direct acyclic
+FALLBACK invocations are permitted within that activation and select no new
+event. When nothing matches, the
 diagnostic stays unhandled and the unchanged diagnostic-selection contract
 partitions it; an unmatched event is not itself a diagnostic.
 
 The originating diagnostic is recovered exactly when the selected handler's
-invocation records status.succeeded. Any other outcome leaves it unhandled, and
-the handler's own diagnostics are recorded independently at their registered
-stages. Recovery never erases the original diagnostic or its evidence. Status
-remains governed by the failure-lifecycle contract; event selection never
-reorders, suppresses, or re-ranks diagnostics.
+invocation, including its permitted FALLBACK substitution, records
+status.succeeded. Any other outcome leaves it unhandled. The handler's own
+diagnostics retain their registered metadata, resolved expression-demand stages
+when applicable, and local producer paths. Recovery
+never erases the original diagnostic or its evidence. Status remains governed
+by the failure-lifecycle contract; event selection never reorders, suppresses,
+or re-ranks diagnostics.
 
 Handler selection is not re-entered for a diagnostic raised while evaluating a
 candidate WHEN, resolving a handler invocation contract, or executing a handler
 invocation or its FALLBACK for the same originating diagnostic. Those
-diagnostics raise no event, which makes handler activation acyclic and
+diagnostics raise no event. The FALLBACK reference graph is also acyclic under
+the rule below; together with bounded RETRY this makes handler activation
 terminating.
 
 HANDLER resolution:
@@ -88,12 +105,29 @@ WHEN condition, and OPERATION never participates in that selection.
 
 HANDLER.TARGET supplies the invocation target. Exactly one omission is
 permitted, the handler-context binding: when the selected operation's registered
-target type is REFERENCE[ACTION] or REFERENCE[meta.execution_unit] and TARGET is
-omitted, the target binds to the execution unit that raised the handled event,
-resolving to the ACTION itself for REFERENCE[ACTION] and to the failing
-execution unit for REFERENCE[meta.execution_unit]. That binding is declared by
-this rule, never by host convention, and applies to no other target type. Any
-other omission of a required TARGET uses error.operation.parameter.
+target type admits REFERENCE[ACTION] or REFERENCE[meta.execution_unit] and TARGET
+is omitted, the target binds to the still-active invocation aggregate that owns
+the originating failed attempt or demanding evaluation. REFERENCE[ACTION]
+requires that aggregate to be the same ACTION invocation whose attempt failed;
+REFERENCE[meta.execution_unit] binds the corresponding active execution-unit
+aggregate. This injected target never names another invocation or a terminal
+attempt. An explicit TARGET follows its operation's own contract; operations
+such as core.retry and core.continue that require the originating aggregate use
+error.operation.precondition for a different invocation or terminal attempt.
+Other authorized explicit targets remain legal where the operation permits
+them, including core.cancel. If REFERENCE[ACTION] is the only admitted
+contextual type and the owning aggregate is not an ACTION, use
+error.reference.kind. That binding is declared by this rule, never by host
+convention, and supplies no PATH, STRING, or other alternative in a target-type
+union. Any other omission of a required TARGET uses error.operation.parameter.
+
+Event evidence retains the failed attempt's immutable local result, identifier,
+and attempt index. The owning aggregate stays active during event selection,
+the selected handler, and its fallback chain; it finalizes only after that
+resolution finishes. A control operation therefore never resumes or mutates a
+terminal attempt result. core.retry uses the owning ACTION invocation's existing
+budget, core.continue requests its declared successor, and core.stop acts only
+on the active aggregate when its own operation preconditions are satisfied.
 
 HANDLER.PARAMETER blocks supply named parameters. HANDLER.LIMIT is exactly the
 limit named parameter of the selected operation and is legal only when that
@@ -101,11 +135,39 @@ operation registers a limit parameter; supplying LIMIT to an operation without a
 registered limit parameter, or supplying both LIMIT and a PARAMETER named limit,
 uses error.operation.parameter.
 
-FALLBACK names the behavior used only when the primary handler operation cannot
-execute. It is a second invocation site with no target or parameter surface of
-its own, so it admits exactly two forms. One REF resolving to a HANDLER carries
-that handler's own complete invocation data. One operation identifier is legal
-only when the operation registers no required named parameter and its required
-target, if any, is supplied by the handler-context binding above. An operation
-identifier that cannot satisfy its contract under those limits uses
-error.operation.parameter and never executes with an unsatisfied contract.
+FALLBACK is eligible only after the primary handler invocation passes lexical,
+grammar/schema, resolution, type, and required static validation and then either
+cannot proceed because a dynamic operation precondition is unsatisfied or ends
+with status.failed or status.blocked. It never repairs invalid source or an
+invalid invocation contract, and never runs after success, cancellation, a
+declared stop, or a skipped invocation. It is a second invocation site with no
+target or parameter surface of its own, so it admits exactly two forms. One REF
+resolving to a HANDLER carries that handler's own complete invocation data;
+its EVENT and WHEN do not select another event or gate this direct invocation.
+One operation identifier is legal only when the operation registers no required
+named parameter and its required target, if any, is supplied by the original
+handler-context binding above. An operation identifier that cannot satisfy its
+contract under those limits uses error.operation.parameter and never executes
+with an unsatisfied contract. Every direct FALLBACK reference edge participates
+in the acyclic reference graph; a cycle uses error.reference.cycle during
+resolution, before any primary or fallback effects.
+
+At most one fallback invocation follows each eligible primary refusal or
+failure. A referenced handler may have its own fallback under the same rules,
+but the finite acyclic chain never repeats a handler. A successful fallback
+substitutes its success for the failed primary in the selected handler's result
+and recovers the original diagnostic. The failed primary's diagnostics remain
+local evidence; they do not independently control the successful selected
+handler result. This is invocation-outcome substitution, not a new event or
+permission to recover a structurally invalid document. Without successful
+substitution the original diagnostic stays unhandled, and applicable unhandled
+handler diagnostics participate in the ordinary diagnostic-selection rule.
+Every attempted primary and fallback effect remains part of the aggregate
+effect and failure-phase evidence, irrespective of substitution.
+
+core.continue in a selected handler requests the exact declared successor of
+the failing execution unit. It requires a current originating event and an
+unambiguous declared successor, not a diagnostic already marked recovered.
+After the selected handler successfully completes, commit recovery and advance
+to that successor. A failed handler does not advance. No continuation invents a
+successor, repeats the failed unit, or expands reachability or permissions.

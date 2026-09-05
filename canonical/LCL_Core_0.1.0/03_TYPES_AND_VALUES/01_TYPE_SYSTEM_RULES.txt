@@ -9,6 +9,28 @@ Every value has exactly one static type. Assignment does not exist. DEFINE value
 and parsed source are immutable. No implicit coercion occurs except exact
 INTEGER-to-DECIMAL promotion in mixed numeric arithmetic/comparison.
 
+Source type designators follow types_v0.1.0.json#/source_type_contract and the
+TYPE_EXPRESSION grammar. A defined type is written REF(identifier), never as a
+bare identifier. Type references resolve acyclically before value checking.
+NULL denotes the NULL type in a type-required field or type argument and denotes
+the material NULL value elsewhere. A type designator is not a material value.
+Unresolved type references use error.reference.unresolved, wrong definition
+kinds use error.reference.kind, and cycles use error.reference.cycle.
+
+A kind.type definition whose BASE resolves to an existing scalar or collection
+type is a transparent alias. It creates no nominal subtype, new material value,
+implicit conversion, refinement, or additional operator overload. An alias of a
+defined enum preserves that enum's exact domain; an alias of a defined object
+preserves its exact schema. BASE ENUM instead introduces a concrete enum domain
+identified by the defining ID. BASE OBJECT with FIELD declarations introduces
+the exact declared object schema. Invalid type forms use error.field.type.
+
+REFERENCE is a material type distinct from its referent's value type. Evaluating
+REF in an ordinary value context may read a binding; this is the explicit REF
+evaluation rule in types_v0.1.0.json#/reference_context_contract, not a type coercion.
+Reading a binding whose stored value is REFERENCE retains that reference value
+without dereferencing it again.
+
 The static result of INTEGER/DECIMAL division is DECIMAL for every scalar operand
 pair, independent of operand values. MEASURE divided by INTEGER or DECIMAL is
 MEASURE; MEASURE divided by a MEASURE with the same exact UNIT is DECIMAL.
@@ -17,5 +39,8 @@ BOOLEAN accepts only TRUE/FALSE. NULL, MISSING, and UNKNOWN are distinct special
 states and are not false. Collection element types are invariant. OBJECT field
 legality follows its schema. An unordered SET remains a legal value even when its
 members are not order-compatible. Direct FOR EACH over such a SET produces
-error.type.mismatch before iteration or side effects; core.sort may instead produce
-the LIST required for iteration. A type mismatch invalidates before side effects.
+error.type.mismatch before that iteration begins or produces effects; core.sort
+may instead produce the LIST required for iteration. A static type-family mismatch
+invalidates before execution. When a statically well-typed SET becomes available
+only after preflight, failure of its actual-member order check uses the narrow
+expression_demand_resolution rule; it never erases earlier producer effects.

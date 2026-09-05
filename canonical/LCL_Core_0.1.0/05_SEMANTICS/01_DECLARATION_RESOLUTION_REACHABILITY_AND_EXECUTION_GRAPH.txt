@@ -9,8 +9,31 @@ Definitions and source structure are immutable during one execution. Forward
 references are valid after full-document resolution; unresolved or cyclic
 prohibited references invalidate before effects.
 
+Resolution uses the complete lexical namespace environment of each declaring
+document. Imported full IDs receive the exact importing prefix; namespace
+ownership and collision rules are in
+02_LEXICAL/03_IDENTIFIERS_NAMESPACES_AND_RESERVED_NAMES.txt. Forward resolution
+does not evaluate a referenced value or start a referenced execution unit.
+
+Static checking establishes identity, type, legal fields, and dependency order.
+Value-dependent expressions are evaluated only at their declared point of
+reachability or demand. Assertions concerning OUTPUT are not evaluated before
+the producing actions merely because their references resolve statically.
+REF reads follow types_v0.1.0.json#/reference_context_contract. An ordinary read
+of a not-yet-bound OUTPUT yields MISSING; it never starts that OUTPUT's producer.
+A metadata read such as REF(output.copy).TARGET reads the declaration field
+without requiring the OUTPUT's result binding.
+
+VALIDATE and VERIFY expose the Boolean result of their declared check in value
+context. SUCCESS expressions therefore consume their check results rather than
+their reference identities. Resolving such a REF does not rerun the check or
+execute an operation. The check's registered handling of MISSING, UNKNOWN, and
+diagnostics applies before a required Boolean result can establish success.
+
 EXECUTE identifies one root. Reachability follows TASK/PHASE/SEQUENCE/STEP/
 ACTION references, TRUE branches, and applicable handlers. Unreachable ACTION
 and ALLOW declarations do not execute. Reachability does not expand SCOPE or
-permission. Each declaration evaluates at most once except bounded loop runtime
-instances and explicit RETRY attempts.
+permission. Each declaration evaluates at most once per declared evaluation
+point except bounded loop instances and explicit RETRY attempts. Distinct loop
+instances have distinct local binding identities; source declaration identity
+and imported namespace ownership remain fixed.

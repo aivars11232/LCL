@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 
-SCOPES = ("filesystem", "text", "structured", "grammar", "registry", "catalog", "integrity")
+SCOPES = ("filesystem", "text", "structured", "grammar", "registry", "catalog", "integrity", "release")
 TEXT_SUFFIXES = {".txt", ".ebnf", ".lcl", ".json", ".py", ".md"}
 INTEGRITY_FILES = {"MANIFEST.json", "VALIDATION_REPORT.txt", "SHA256SUMS.txt"}
 RESULT_STATUSES = ("PASS", "FAIL", "BLOCKED", "OUT_OF_SCOPE")
@@ -171,6 +171,7 @@ def check_text(root: Path, results: Results) -> None:
             "10_ACCEPTED_CORE_PROFILES.lcl",
             "11_EXACT_DIVISION_AND_ROUNDING.lcl",
             "12_SET_SORTING.lcl",
+            "13_TYPES_AND_REFERENCE_VALUES.lcl",
         }
         expected_invalid_names = {
             "01_WRONG_KEYWORD_CASE.invalid.lcl",
@@ -267,7 +268,7 @@ def check_text(root: Path, results: Results) -> None:
             "13_PERCENT_SYMBOL.invalid.lcl.expected.txt": "error.symbol.invalid",
             "14_SINGLE_QUOTED_STRING.invalid.lcl.expected.txt": "error.symbol.invalid",
             "15_MISSING_TASK_STRUCTURE.invalid.lcl.expected.txt": (
-                "error.reference.unresolved"
+                "error.block.required"
             ),
         }
         focused_hashes = {
@@ -308,10 +309,10 @@ def check_text(root: Path, results: Results) -> None:
                 "d1c146089a9cc71189e6f7036d273250b62ed0050cc2db7886035b94976df558"
             ),
             "15_MISSING_TASK_STRUCTURE.invalid.lcl": (
-                "47c8dca2ac65dac33de8a516e87d5133be28171a06e6237367d55c71172196db"
+                "ab2be39a6975376d4759d095d23ce271ac2617abfc2815a33f159fa8dc4d7086"
             ),
             "15_MISSING_TASK_STRUCTURE.invalid.lcl.expected.txt": (
-                "b1366c605cf9cfb9df0d0d837657128cd3caac0b817c45ffa647029d12d8517f"
+                "58f7697e48bf979f2bd7228f01f63df028d1582b7a7fbf7a8451a64bbde4c710"
             ),
         }
         for name, expected_hash in focused_hashes.items():
@@ -375,8 +376,12 @@ def check_text(root: Path, results: Results) -> None:
             re.findall(r"^\s+ID: ([a-z][a-z0-9_.-]*)$", unresolved_text, re.MULTILINE)
         )
         referenced_ids = set(re.findall(r"REF\(([a-z][a-z0-9_.-]*)\)", unresolved_text))
-        assert referenced_ids - declared_ids == {"task.none"}, (
-            "unresolved-reference example no longer isolates task.none"
+        assert not referenced_ids - declared_ids, "missing-root fixture has unresolved references"
+        assert "\nEXECUTE:" not in unresolved_text and "\nTASK:" in unresolved_text, (
+            "missing-task-structure example no longer isolates an absent EXECUTE root"
+        )
+        assert validate_source(unresolved_text.encode("utf-8")) == "error.block.required", (
+            "bounded source check does not identify the missing required root"
         )
 
         index_text = (root / "INDEX.txt").read_text(encoding="utf-8")
@@ -548,9 +553,16 @@ TASK_0002_NAMED_VALUE_KIND_DEFINITIONS = {
     "string_uri_or_evidence_reference": (
         "One STRING, URI, or REF resolving to EVIDENCE."
     ),
+    "type_expression": (
+        "One TYPE_EXPRESSION under types_v0.1.0.json#/source_type_contract; a "
+        "defined type is REF(identifier) resolving to DEFINE kind.type, never a "
+        "bare identifier."
+    ),
     "type_or_format_base": (
-        "For DEFINE kind.type, one TYPE_EXPRESSION or one REF resolving to DEFINE "
-        "kind.type; for DEFINE kind.format, one qualified_identifier(format)."
+        "For DEFINE kind.type, one TYPE_EXPRESSION; for kind.format, one "
+        "qualified_identifier(format); for kind.error, kind.event, or kind.status, "
+        "one qualified identifier in the corresponding domain. Defined BASE aliases "
+        "resolve acyclically to a registered base in the same domain."
     ),
 }
 TASK_0002_QUALIFIED_IDENTIFIER_DOMAINS = {
@@ -596,6 +608,7 @@ TASK_0002_QUALIFIED_IDENTIFIER_DOMAINS = {
         "source": "10_REGISTRIES/statuses_and_errors_v0.1.0.json",
         "pointer": "/statuses",
         "selection": "object_keys",
+        "defined_kind": "kind.status",
     },
     "terminal_non_success_status": {
         "source": "10_REGISTRIES/statuses_and_errors_v0.1.0.json",
@@ -603,6 +616,11 @@ TASK_0002_QUALIFIED_IDENTIFIER_DOMAINS = {
         "selection": "object_keys_where",
         "where": {"terminal": True},
         "exclude": ["status.succeeded"],
+        "defined_kind": "kind.status",
+        "defined_kind_filter": (
+            "Resolve the alias first, then apply where and exclude to its canonical "
+            "core status."
+        ),
     },
 }
 TASK_0002_REFERENCE_DOMAINS = {
@@ -739,7 +757,7 @@ def resolve_qualified_identifier_domains(
             errors.append(f"qualified-identifier domain {domain} must be an object")
             continue
         required = {"source", "pointer", "selection"}
-        optional = {"where", "exclude", "defined_kind"}
+        optional = {"where", "exclude", "defined_kind", "defined_kind_filter"}
         if not required <= set(contract) or set(contract) - required - optional:
             errors.append(
                 f"qualified-identifier domain {domain} has invalid contract keys {sorted(contract)}"
@@ -749,6 +767,16 @@ def resolve_qualified_identifier_domains(
         pointer = contract["pointer"]
         selection = contract["selection"]
         defined_kind = contract.get("defined_kind")
+        alias_filter = contract.get("defined_kind_filter")
+        if alias_filter is not None and (
+            defined_kind != "kind.status"
+            or selection != "object_keys_where"
+            or alias_filter != TASK_0002_QUALIFIED_IDENTIFIER_DOMAINS[
+                "terminal_non_success_status"
+            ]["defined_kind_filter"]
+        ):
+            errors.append(f"qualified-identifier domain {domain} has invalid alias filtering")
+            continue
         if selection != "object_keys_where" and "where" in contract:
             errors.append(
                 f"qualified-identifier domain {domain} uses where with selection {selection!r}"
@@ -1561,7 +1589,7 @@ def constructor_pattern_contract_violations(
     )
 
     expected_glob = {
-        "style": "workspace-relative minimatch/gitignore-style subset",
+        "style": "closed_lcl_glob_0_1_0",
         "workspace_relative": True,
         "path_separator": "/",
         "tokens": {
@@ -1577,7 +1605,7 @@ def constructor_pattern_contract_violations(
         "resource_limit_error": "error.pattern.resource_limit",
     }
     expected_regex = {
-        "syntax": "conservative_ecmascript_compatible_subset",
+        "syntax": "closed_lcl_regex_0_1_0",
         "allowed_flags": ["i", "m", "s"],
         "canonical_flag_order": "ims",
         "default_flags": "",
@@ -1586,14 +1614,122 @@ def constructor_pattern_contract_violations(
         "stateful_flags_allowed": False,
         "unicode_text_handling": "always_enabled_independently_of_user_flags",
         "user_unicode_flag_allowed": False,
-        "forbidden_features": ["lookbehind", "unicode_property_escapes"],
+        "forbidden_features": [
+            "lookbehind", "unicode_property_escapes", "lookahead", "backreferences",
+            "named_groups", "inline_flags", "conditional_groups", "reluctant_quantifiers",
+            "possessive_quantifiers", "unlisted_escapes",
+        ],
         "match_semantics": "full_string",
         "full_match_implementation": "semantic_boundary_check_not_multiline_anchors",
         "resource_limit_error": "error.pattern.resource_limit",
     }
     profiles = types.get("pattern_profiles", {})
-    expect(profiles.get("GLOB") == expected_glob, "GLOB pattern profile is not exact")
-    expect(profiles.get("REGEX") == expected_regex, "REGEX pattern profile is not exact")
+    glob_profile = profiles.get("GLOB", {})
+    regex_profile = profiles.get("REGEX", {})
+    glob_extra = {"closed", "decoded_text", "segments", "literal", "escape",
+                  "character_class", "matching", "input", "examples", "invalid_pattern_error"}
+    regex_extra = {"closed", "decoded_text", "grammar", "escape", "character_class",
+                   "quantifiers", "flags_semantics", "matching", "invalid_pattern_error"}
+    expect(set(profiles) == {"GLOB", "REGEX"}, "pattern profile names are not closed")
+    for name, profile, base, extra in (
+        ("GLOB", glob_profile, expected_glob, glob_extra),
+        ("REGEX", regex_profile, expected_regex, regex_extra),
+    ):
+        expect(isinstance(profile, dict) and set(profile) == set(base) | extra,
+               f"{name} profile fields are not exact")
+        expect(all(profile.get(key) == value for key, value in base.items()),
+               f"{name} primitive flags, tokens, or matching boundary differ")
+        expect(profile.get("closed") is True and profile.get("invalid_pattern_error")
+               == "error.literal.invalid", f"{name} is not closed with a precise invalid-pattern error")
+        expect("decodes the LCL STRING exactly once" in profile.get("decoded_text", ""),
+               f"{name} does not define its single decoding boundary")
+    expect(glob_profile.get("examples") == {
+        "src/**/*.py matches src/main.py": True,
+        "** matches empty relative path": True,
+        "* matches .hidden": True,
+        "a/* matches a/b/c": False,
+    }, "GLOB zero-segment, hidden-name, or separator witness differs")
+    semantic_tokens = {
+        "GLOB": {
+            "segments": ("one or more nonempty", "whole segment", "literal . or .."),
+            "character_class": ("optional ! negation", "ascending scalar range", "excluding /"),
+            "matching": ("zero or more complete nonempty segments", "complete input segment sequence"),
+            "input": ("empty relative path", "no root is inferred", "error.operator.operand"),
+        },
+        "REGEX": {
+            "character_class": ("optional ^ negation", "ascending scalar range", "class escapes cannot"),
+            "quantifiers": ("n <= m", "without leading zeroes", "finite-concatenation", "assertion cannot"),
+            "matching": ("entire input", "m flag never relaxes", "Captures and matched substrings are not exposed"),
+        },
+    }
+    for name, clauses in semantic_tokens.items():
+        for clause, tokens in clauses.items():
+            value = profiles.get(name, {}).get(clause, "")
+            expect(isinstance(value, str) and all(token in value for token in tokens),
+                   f"{name}.{clause} omits a required closed semantic boundary")
+    escapes = regex_profile.get("escape", {})
+    expect(set(escapes) == {"literal", "control", "classes", "invalid"},
+           "REGEX escape categories are not closed")
+    expect("Every unlisted escape" in escapes.get("invalid", "") and
+           "ASCII 0-9" in escapes.get("classes", "") and
+           "U+0009 through U+000D and U+0020" in escapes.get("classes", ""),
+           "REGEX escape classes or rejection boundary differ")
+    flags = regex_profile.get("flags_semantics", {})
+    expect(set(flags) == {"i", "m", "s"} and
+           "ASCII case-insensitive" in flags.get("i", "") and
+           "no locale or external Unicode" in flags.get("i", "") and
+           "U+000A" in flags.get("m", "") and
+           "No implicit pre-final-newline match" in flags.get("m", "") and
+           "U+000A, U+000D, U+2028, and U+2029" in flags.get("s", ""),
+           "REGEX flag semantics are not independent of locale and host regex dialect")
+    grammar = regex_profile.get("grammar", {})
+    expect(set(grammar) == {"notation", "start_symbol", "productions"}
+           and grammar.get("start_symbol") == "REGEX_PATTERN",
+           "REGEX grammar fields or start symbol differ")
+    # Reuse the existing EBNF metagrammar checker; this does not parse LCL programs
+    # or execute regular expressions and writes no temporary files.
+    ebnf = runpy.run_path(str(Path(__file__).with_name("validate_ebnf.py")))
+    productions = ebnf["Parser"](ebnf["tokenize"]("\n".join(grammar.get("productions", [])))).parse()
+    expected_names = {"REGEX_PATTERN", "ALTERNATION", "CONCATENATION", "PIECE",
+                      "ASSERTION", "ATOM", "QUANTIFIER", "COUNT", "REGEX_LITERAL",
+                      "ESCAPE", "CHARACTER_CLASS", "DIGIT", "NONZERO_DIGIT"}
+    expect(set(productions) == expected_names, "REGEX grammar production names are not exact")
+    # Pin the reviewed grammar forms directly as well as checking their graph.
+    # Merely having productive named rules must not admit an added regex dialect.
+    expected_regex_productions = [
+        'REGEX_PATTERN = ALTERNATION ;',
+        'ALTERNATION = CONCATENATION , { "|" , CONCATENATION } ;',
+        'CONCATENATION = { PIECE } ;',
+        'PIECE = ASSERTION | ATOM , [ QUANTIFIER ] ;',
+        'ASSERTION = "^" | "$" ;',
+        'ATOM = REGEX_LITERAL | ESCAPE | "." | CHARACTER_CLASS | "(" , ALTERNATION , ")" | "(?:" , ALTERNATION , ")" ;',
+        'QUANTIFIER = "*" | "+" | "?" | "{" , COUNT , "}" | "{" , COUNT , "," , [ COUNT ] , "}" ;',
+        'COUNT = "0" | NONZERO_DIGIT , { DIGIT } ;',
+        'REGEX_LITERAL = ? one Unicode scalar other than . ^ $ | U+003F * + ( ) [ ] { } or backslash ? ;',
+        'ESCAPE = ? one complete escape admitted by the escape table ? ;',
+        'CHARACTER_CLASS = ? one complete class admitted by character_class ? ;',
+        'DIGIT = ? one ASCII digit 0 through 9 ? ;',
+        'NONZERO_DIGIT = ? one ASCII digit 1 through 9 ? ;',
+    ]
+    expect(grammar.get("productions") == expected_regex_productions,
+           "REGEX grammar forms widen or alter the frozen language")
+    references = set().union(*(ebnf["references"](node) for node in productions.values()))
+    expect(references <= set(productions), "REGEX grammar contains undefined nonterminals")
+    reachable = {"REGEX_PATTERN"}; nullable = set(); productive = set()
+    changed = True
+    while changed:
+        before = (len(reachable), len(nullable), len(productive))
+        for name, node in productions.items():
+            if name in reachable:
+                reachable.update(ebnf["references"](node) & set(productions))
+            if ebnf["is_nullable"](node, nullable): nullable.add(name)
+            if ebnf["is_productive"](node, productive): productive.add(name)
+        changed = before != (len(reachable), len(nullable), len(productive))
+    expect(reachable == set(productions) and productive == set(productions),
+           "REGEX grammar has unreachable or unproductive productions")
+    expect(not ebnf["find_cycles"]({name: ebnf["leading_references"](node, nullable)
+                                   & set(productions) for name, node in productions.items()}),
+           "REGEX grammar is left recursive")
     expect(constructors.get("GLOB", {}).get("profile") == "types.pattern_profiles.GLOB", "GLOB constructor profile link is wrong")
     expect(constructors.get("REGEX", {}).get("profile") == "types.pattern_profiles.REGEX", "REGEX constructor profile link is wrong")
     expect(constructors.get("REGEX", {}).get("second_parameter") == "canonical flags string", "REGEX flags parameter is not declared")
@@ -2439,14 +2575,17 @@ def set_sort_contract_violations(
             "default_status": "status.invalid",
         },
         "error.reference.unresolved": {
-            "meaning": "REF does not resolve to exactly one declaration/binding.",
+            "meaning": ("REF or an error/event/status alias BASE does not resolve to exactly "
+                        "one declaration, binding, or permitted canonical core identifier."),
             "stage": "resolution",
             "recoverable_with_declared_handler": False,
             "event": None,
             "default_status": "status.invalid",
         },
         "error.reference.kind": {
-            "meaning": "Reference resolves to a declaration kind illegal in that field.",
+            "meaning": ("A reference resolves to a declaration kind illegal in that field, an "
+                        "error/event/status alias BASE resolves outside its own domain, or a "
+                        "handler-context ACTION target binds a producer that is not an ACTION."),
             "stage": "resolution",
             "recoverable_with_declared_handler": False,
             "event": None,
@@ -2462,7 +2601,9 @@ def set_sort_contract_violations(
             "default_status": "status.blocked",
         },
         "error.value.unknown": {
-            "meaning": "A required value is UNKNOWN and no valid handler resolves it.",
+            "meaning": ("A required value remains UNKNOWN after applicable explicit value, source, "
+                        "DEFAULT, and ASSUME resolution. Emit this diagnostic before selecting "
+                        "any eligible handler; successful handler recovery retains it as evidence."),
             "stage": "static_or_expression",
             "recoverable_with_declared_handler": True,
             "event": "event.unknown",
@@ -2516,8 +2657,8 @@ def set_sort_contract_violations(
         ],
         "03_TYPES_AND_VALUES/01_TYPE_SYSTEM_RULES.txt": [
             "An unordered SET remains a legal value",
-            "error.type.mismatch before iteration or side effects",
-            "core.sort may instead produce",
+            "error.type.mismatch before that iteration begins or produces effects",
+            "may instead produce the LIST required for iteration",
         ],
         "03_TYPES_AND_VALUES/02_BUILT_IN_TYPE_REFERENCE.txt": [
             "intrinsically",
@@ -2548,8 +2689,8 @@ def set_sort_contract_violations(
         ],
         "05_SEMANTICS/08_PHASE_SEQUENCE_STEP_BRANCH_LOOP_RETRY_AND_CONCURRENCY.txt": [
             "SET is intrinsically unordered",
-            "error.type.mismatch before any iteration or side effect",
-            "returned LIST instead",
+            "iteration produces error.type.mismatch before that iteration or any of its",
+            "iterate its returned LIST",
         ],
         "05_SEMANTICS/12_OPERATOR_FUNCTION_AND_SPECIAL_VALUE_SEMANTICS.txt": [
             "sole natural-order source for SET",
@@ -2575,112 +2716,12 @@ def set_sort_contract_violations(
         ],
     }
     for relative_path, required_text in prose_requirements.items():
-        prose = (root / relative_path).read_text(encoding="utf-8")
-        missing = [token for token in required_text if token not in prose]
+        prose = " ".join((root / relative_path).read_text(encoding="utf-8").split())
+        missing = [token for token in required_text if " ".join(token.split()) not in prose]
         expect(not missing, f"{relative_path} is missing SET/sort text: {missing}")
 
-    readme = (root / "README.txt").read_text(encoding="utf-8")
-    stale_readme_claims = [
-        "unresolved value-kind combinators",
-        "field value-kind templates remain unresolved",
-        "SET sorting",
-        "division, SET",
-    ]
-    present_stale_claims = [claim for claim in stale_readme_claims if claim in readme]
-    expect(
-        not present_stale_claims,
-        f"README still reports resolved Task-0002/0003 work: {present_stale_claims}",
-    )
-    expect(
-        "closed block, field-signature, value-kind, and parameterized-template contracts"
-        in readme,
-        "README does not report the closed Task-0002 value-kind contract",
-    )
-
-    release_status_requirements = {
-        "00_RELEASE/00_CANONICAL_SOURCE_AND_PROVENANCE.txt": [
-            "Accepted Tasks 0001 through 0006",
-            "operation/result-contract",
-            "result-binding portion of",
-            "LCL-AUDIT-007",
-            "012, 014, 015",
-            "LCL-AUDIT-016",
-            "outside the bare-language package scope",
-            "deterministic diagnostic selection",
-            "producer-relative failure lifecycle and retry-safety rules",
-            "BARE_SPECIFICATION_COMPLETE",
-            "regenerated MANIFEST.json, VALIDATION_REPORT.txt, and SHA256SUMS.txt",
-            "BARE_LANGUAGE_RELEASE",
-            "the release archive is created outside the package root",
-            "OUT_OF_SCOPE, never as PASS",
-        ],
-        "00_RELEASE/01_RELEASE_STATUS_AND_BOUNDARY.txt": [
-            "Accepted Tasks 0001 through 0006",
-            "operation/result-contract portions of LCL-AUDIT-013",
-            "result-binding portion of",
-            "LCL-AUDIT-007",
-            "LCL-AUDIT-014 and 015",
-            "LCL-AUDIT-016",
-            "outside the bare-language scope",
-            "BARE_SPECIFICATION_COMPLETE",
-            "LCL-TASK-0007 statically revalidated this tree",
-            "BARE_LANGUAGE_RELEASE",
-            "parser-verified, executed, or runtime-tested",
-        ],
-    }
-    for relative_path, required_text in release_status_requirements.items():
-        release_status = (root / relative_path).read_text(encoding="utf-8")
-        missing = [token for token in required_text if token not in release_status]
-        expect(not missing, f"{relative_path} has stale Task status: {missing}")
-        expect(
-            "value-kind closure, 011" not in release_status,
-            f"{relative_path} still lists resolved value-kind/division/SET work as blocked",
-        )
-        stale_task_0005_claims = [
-            "Accepted Tasks 0001 through 0004",
-            "cardinality/output portion of LCL-AUDIT-013",
-            "result-schema cardinality/output",
-        ]
-        present_stale_task_0005_claims = [
-            claim for claim in stale_task_0005_claims if claim in release_status
-        ]
-        expect(
-            not present_stale_task_0005_claims,
-            f"{relative_path} still reports resolved Task-0005 work: "
-            f"{present_stale_task_0005_claims}",
-        )
-        stale_task_0006_claims = [
-            "Accepted Tasks 0001 through 0005",
-            "LCL-AUDIT-014 and 015 remain",
-            "LCL-AUDIT-014 remains",
-            "LCL-AUDIT-015 remains",
-            "Task 0006 remains",
-            "diagnostic selection remains unresolved",
-            "failure lifecycle remains unresolved",
-        ]
-        present_stale_task_0006_claims = [
-            claim for claim in stale_task_0006_claims if claim in release_status
-        ]
-        expect(
-            not present_stale_task_0006_claims,
-            f"{relative_path} still reports resolved Task-0006 work: "
-            f"{present_stale_task_0006_claims}",
-        )
-        stale_task_0007_claims = [
-            "deliberately frozen and stale",
-            "no repair archive is produced",
-            "not release-ready",
-            "unpublished candidate",
-            "until the corrected final release task",
-        ]
-        present_stale_task_0007_claims = [
-            claim for claim in stale_task_0007_claims if claim in release_status
-        ]
-        expect(
-            not present_stale_task_0007_claims,
-            f"{relative_path} still reports the pre-release frozen-integrity state: "
-            f"{present_stale_task_0007_claims}",
-        )
+    # Candidate/release claims are checked independently by check_release_state.
+    # They cannot change the truth of the SET and sorting language contract.
 
     grammar = (root / "04_GRAMMAR/10_COMPLETE_EBNF.ebnf").read_text(encoding="utf-8")
     for_each_segment = grammar[
@@ -2869,7 +2910,7 @@ EXPECTED_RESULT_CONTRACT_FINGERPRINT = (
     "21de485d9d618aee571d0204f49d03a32be41871350766c6709713237f4e36e4"
 )
 EXPECTED_RESULT_STATUS_FINGERPRINT = (
-    "cafd53e48444e124f2ca3f6d3c84df2c438da558f852644d5c09f1932366376a"
+    "8af74a8ae04ba81d68306e2fc6f8eebb716403059e9841885b9909e2187340c9"
 )
 EXPECTED_RESULT_SCHEMA_FINGERPRINTS = {
     "result.value": "65fb266615cff90c8dbbcf1fb09f7de165277b3809e1ed314b5359ad673be652",
@@ -3430,19 +3471,23 @@ def result_contract_violations(
     return violations
 
 
+# These reviewed-row pins detect unexpected drift; the structural, semantic,
+# cross-registry, and prose checks below establish the actual contract evidence.
+# Completion decisions revised only calculate, compare, select, filter, group,
+# retry, continue, stop, and cancel. All other original row pins remain unchanged.
 EXPECTED_OPERATION_CONTRACT_FINGERPRINT = (
-    "8b13d92230d9df6656350f43083ce748207f257d1b70ae9b6a75da9c565265db"
+    "6c17ddef00c05ae178d80339c34ad0caef25aeac3e1242f4e966f4d143a83591"
 )
 EXPECTED_OPERATION_ROW_FINGERPRINTS = {
     "core.inspect": "fc2ae5ad368d5bba7e4599740b68d627471585b039834d2ad5b5f766beeaf234",
     "core.read": "975035d5c3e583d40855be013677235b3d8caa5e6eb3cad1739e589291161302",
     "core.analyze": "ecbce69889d9ac22c0065186bd1f62fbac626983189e63c5c8d0fcb51ad4d462",
-    "core.calculate": "e78dd9482b2da25f174e0122550c638554b1fe52dd2aa1d6ee576d1c9d0f222d",
-    "core.compare": "7ffa852f5df6ce98c71081b3b671fd702b55985f5063b549f55e702c04e4fb57",
-    "core.select": "3ce6c33c6be8e90455942b2c9393835b5024fdd827d0f428de1ed2ba7530f8ec",
-    "core.filter": "991fe9e140f143eae9d592d51d63519d77888fef1f633e2224550ea164119880",
+    "core.calculate": "d79ad6fe8a8b1c9059edf89f849f1e6b94037114c89734322ea90bbe18c539c3",
+    "core.compare": "4dad19f69cfc5db996ec2fb413f3d227e418182233ee75a3d01b14f8c15ba500",
+    "core.select": "04e33977164f92e814ba8180ae0ccc3b85c71ae624256253f062acf42a1531db",
+    "core.filter": "3c5a731ca7e09d6efebab3ba6860382f8af932a970df0d4f2e6dd52218755861",
     "core.sort": "bf13927bbed4cd17d1a9f8a03d5249b8779768cd24d671677f7ba1bc0e3f2b16",
-    "core.group": "353fd0c5ac6784a824a3e41508fb13034e230ad119c0e6e2500fe3fed43e6e04",
+    "core.group": "48f3dc2c76ad0b86f7a2c3579202385599a9a2a3895b55b50aab11c3c9535400",
     "core.validate": "9746a344ec76fb63f32dd5a00b7b85c722e96829461e3dadc2403a375ac41754",
     "core.verify": "b8fb7cac6c5218ca5022ba73468ab7eea0a97c87c2cf4dcd45849a51be08e1ca",
     "core.test": "5d3d3927b3295c9eab0fed287f15b4364051af0dc7216b36eac1cfcb85996400",
@@ -3462,7 +3507,7 @@ EXPECTED_OPERATION_ROW_FINGERPRINTS = {
     "core.install": "b9df3d850ef7e1de21223bd4cc078e27cf07ba0bc509953611eb6ee03f3997a4",
     "core.uninstall": "0e2db0cdbf6f4a6ce38c6b13fbde3d62df013528a103d8b79d5606a2a2f35dbf",
     "core.start": "73d937f8ea0bb2762624bd6e95f3cd16ef398dce01c17490fefa45f0051ba2d1",
-    "core.stop": "7fde87485da7e426998cb08d85e41f2389074d2b59f6e831286e3bbf70e3e452",
+    "core.stop": "17576100931c3a8ff80acc72a160eeae6a87c6b85d0dcc44c372d7c7df7baed2",
     "core.send": "fdae1894d136becbd31b3b40bc90f1618210e08ce612d925bbe610e638c1a3f6",
     "core.publish": "b94bb753e139d22511823f2afc588d91f6be4174425ebaa94ef0d2c07ff9af12",
     "core.upload": "c7efd0b692d5ccd9a818da3b87e0b4d9e5e9345841d278927d5dd3c3ea3193d4",
@@ -3470,9 +3515,9 @@ EXPECTED_OPERATION_ROW_FINGERPRINTS = {
     "core.memory_write": "79c11d4767f792c59c0c502b6d8d33826b1a34670985f6269316c75c95323bfe",
     "core.state_update": "fd6f0d9d8c543e42125b67de2c3fe540d3de8fc2cbab48f572cbf85c4836ed12",
     "core.ask": "6e519747a5402e50996d39a21644770c4fc4a17425056e22ee904cc3a0fcb2fd",
-    "core.retry": "3ad6b96ad514076169ea344140febf443ad5e67d1af10bb1db76a9dc936cba55",
-    "core.continue": "2639da73903e268cab43da10e8d1385290c2d31aec88f56918368f006cd3ea06",
-    "core.cancel": "e93170aea13204ec59ae5f49bb154382e60c39a1faa7ea116db9579f426a0c9e",
+    "core.retry": "8d5e1b231ca2cf4f64a16af062cced0013f0551a53d4eea4fb6a127184351047",
+    "core.continue": "645575b7863319b9382c3b70d56adf7e4bad03a91561d6bca977dabe180ba5b0",
+    "core.cancel": "72abf2f349ef8fff29757b27f6dc329c08b1c5d4f8276ed416b533565ca0f8d1",
 }
 
 
@@ -3521,6 +3566,7 @@ def operation_contract_violations(
         "parameter_default_encoding",
         "contract_type_notation",
         "axis_contract",
+        "expression_fragment_contract",
         "contracts",
     }
     expect(
@@ -3801,7 +3847,8 @@ def operation_contract_violations(
         "default_status": "status.failed",
     }
     expected_cycle_error = {
-        "meaning": "Immutable definitions contain a prohibited dependency cycle.",
+        "meaning": ("Immutable definitions, execution-unit references, same-domain error/event/status "
+                    "aliases, or direct HANDLER FALLBACK references contain a prohibited dependency cycle."),
         "stage": "resolution",
         "recoverable_with_declared_handler": False,
         "event": None,
@@ -3880,6 +3927,7 @@ def operation_contract_violations(
     }
     base_fields = set(required_fields)
     error_resolution_rows = {
+        "core.calculate",
         "core.select",
         "core.filter",
         "core.sort",
@@ -4129,7 +4177,7 @@ def operation_contract_violations(
         expected_row_fingerprint = EXPECTED_OPERATION_ROW_FINGERPRINTS.get(name)
         expect(
             actual_row_fingerprint == expected_row_fingerprint,
-            f"{name} Task-0004 approved contract differs: {actual_row_fingerprint}",
+            f"{name} reviewed contract pin differs: {actual_row_fingerprint}",
         )
 
     expect(
@@ -4308,6 +4356,8 @@ def operation_contract_violations(
             == (
                 "Union the local errors with every applicable error of the referenced "
                 f"{parameter_name} operation when a {parameter_name} REFERENCE is selected."
+                + (" A STRING predicate retains all applicable expression diagnostics."
+                   if parameter_name == "predicate" else "")
             ),
             f"{name} does not propagate referenced {parameter_name} errors",
         )
@@ -4479,11 +4529,12 @@ def operation_contract_violations(
         == ["target is LIST[T] and key is defined for every T member"]
         and group_contract.get("postconditions")
         == [
-            "every input member occurs in exactly one group",
-            (
-                "groups follow first key occurrence and members within each group retain "
-                "LIST source order"
-            ),
+            "result.value.value is a LIST of closed OBJECT records containing exactly key "
+            "and items; key is the evaluated material grouping key and items is LIST[T].",
+            "Group keys are compared by the registered strict == equality, with no coercion; "
+            "every input member occurrence appears in exactly one items LIST.",
+            "Groups follow first key occurrence and members within each group retain LIST "
+            "source order; an empty input yields an empty LIST with the same group-record schema.",
         ]
         and "error.type.mismatch" in group_contract.get("errors", [])
         and "error.required.missing" in group_contract.get("errors", [])
@@ -4511,10 +4562,10 @@ def operation_contract_violations(
     expect(
         "error.required.missing" in calculate_contract.get("errors", [])
         and "error.value.unknown" in calculate_contract.get("errors", [])
-        and "MISSING operand used outside == or != produces error.required.missing"
-        in calculate_resolution
-        and "required UNKNOWN result produces error.value.unknown"
-        in calculate_resolution,
+        and "operators_and_functions_v0.1.0.json#/evaluation_contract" in calculate_resolution
+        and "including ==, !=, and EXISTS exceptions" in calculate_resolution
+        and "required final MISSING result produces error.required.missing" in calculate_resolution
+        and "UNKNOWN produces error.value.unknown" in calculate_resolution,
         "core.calculate does not apply the registered MISSING/UNKNOWN expression rules",
     )
 
@@ -4982,6 +5033,8 @@ def operation_contract_violations(
     retry = retry_value if isinstance(retry_value, dict) else {}
     expect(
         row_category("core.retry") == "inherited"
+        and set(retry.get("parameters", {})) == {"limit"}
+        and retry.get("target") == {"type": "REFERENCE[ACTION]", "required": True}
         and retry.get("possible_dependencies") == ["inherited"]
         and retry.get("possible_effects") == ["inherited"]
         and "error.required.missing" in retry.get("errors", [])
@@ -4990,6 +5043,8 @@ def operation_contract_violations(
         and "error.operation.precondition" in retry.get("errors", [])
         and retry.get("preconditions")
         == [
+            "The selected handler is handling an event of this same active ACTION invocation "
+            "aggregate; its failed attempt is immutable evidence and the existing RETRY budget is consumed.",
             "wrapped ACTION resolves exactly once before any retry decision",
             "wrapped ACTION declares a RETRY block whose LIMIT equals the resolved limit",
             "before an additional attempt after known effects, exact retained evidence "
@@ -5003,10 +5058,12 @@ def operation_contract_violations(
             "every attempt and its local diagnostics, phase, effects, and OUTPUT binding "
             "are evidenced in attempt-index order",
             "aggregate failure phase and effects account for every attempt made",
+            "A successful attempt ends retrying; a false condition or safety refusal is not "
+            "count exhaustion and does not turn a failed attempt into success.",
         ]
         and "limit outside 0..100 produces error.value.out_of_range"
         in str(retry.get("invocation_resolution", ""))
-        and "Before each additional attempt, evaluate when as a required BOOLEAN condition"
+        and "Before each additional attempt, evaluate RETRY.WHEN (default TRUE) as a required BOOLEAN condition"
         in str(retry.get("invocation_resolution", ""))
         and "A prior pre_effect attempt with effect_state none requires no additional "
         "effect-safety proof" in str(retry.get("invocation_resolution", ""))
@@ -5020,6 +5077,18 @@ def operation_contract_violations(
         in str(retry.get("error_resolution", "")),
         "core.retry does not inherit all three axes",
     )
+    expect(all(token in str(operations.get("core.continue", {}).get("invocation_resolution", ""))
+               for token in ("selected handler", "recovery and advancement commit together",
+                             "error.operation.precondition", "error.execution.order")),
+           "core.continue does not enforce selected-context and successor constraints")
+    expect(all(token in str(operations.get("core.stop", {}).get("invocation_resolution", ""))
+               for token in ("active invocation aggregate", "allowed_next", "status.stopped",
+                             "error.execution.order")),
+           "core.stop does not enforce active-aggregate transition legality")
+    expect(all(token in str(operations.get("core.cancel", {}).get("invocation_resolution", ""))
+               for token in ("active invocation aggregate", "never a completed attempt",
+                             "Explicit cancellation outside a handler remains permitted")),
+           "core.cancel does not distinguish explicit targets from injected handler targets")
     out_of_range_rows = sorted(
         name
         for name, contract in operations.items()
@@ -5062,7 +5131,7 @@ def operation_contract_violations(
     actual_fingerprint = operation_contract_fingerprint(operations)
     expect(
         actual_fingerprint == EXPECTED_OPERATION_CONTRACT_FINGERPRINT,
-        "Task-0004 complete contract differs from the approved 39-row matrix: "
+        "Reviewed complete 39-row contract pin differs: "
         f"{actual_fingerprint}",
     )
     return violations
@@ -5220,9 +5289,9 @@ def operation_prose_contract_violations(
             "passing SET directly to",
             "error.type.mismatch before effects",
             "For core.select and core.filter, a required predicate result of MISSING",
-            "core.compare evaluates each criterion under the registered operator",
+            "core.compare evaluates one criterion under the registered operator",
             "Every core.ask option must be compatible with expected_type",
-            "Before each additional attempt, the resolved",
+            "Before each additional attempt, RETRY.WHEN",
             "rule always includes the process effect because the invocation runs the",
             "normalized transitive union rule",
             "core.retry resolves the wrapped ACTION",
@@ -5264,10 +5333,10 @@ def operation_prose_contract_violations(
 
 
 EXPECTED_DIAGNOSTIC_SELECTION_FINGERPRINT = (
-    "0c52f53d57e540c034838a05640bc0f16e816c5ca5393dc513db7fd2a1ced7c2"
+    "cdef5c0a8c1e6f532f1a16e2b95c5ed7262cd107fbb2638136e566328a36f1fe"
 )
 EXPECTED_FAILURE_LIFECYCLE_FINGERPRINT = (
-    "a6e247aa8fc0278e2514e0fbced9958f50cce14ae243815ef171e43b4ce85afe"
+    "2570a4234deec0a0378c182f784fd65956f7674cb44d5d6d2abb525024097904"
 )
 DIAGNOSTIC_SELECTION_VECTOR_COUNT = 12
 
@@ -5307,8 +5376,46 @@ def diagnostic_selection_contract_violations(
         "location_rule",
         "primary_rule",
         "secondary_rule",
+        "expression_demand_resolution",
     }
     expect(set(selection) == expected_selection_fields, "diagnostic_selection fields differ")
+    demand = selection.get("expression_demand_resolution", {})
+    expect(set(demand) == {"context", "eligible_errors", "resolved_stage", "default_status",
+                          "default_status_overrides", "resolution_rule", "exclusion_rule", "phase_rule"},
+           "expression-demand metadata fields are not exact")
+    eligible = demand.get("eligible_errors", {})
+    expected_eligible = {
+        "error.literal.invalid", "error.numeric.division_by_zero", "error.numeric.non_terminating",
+        "error.numeric.unit_mismatch", "error.operator.operand", "error.pattern.mismatch",
+        "error.pattern.resource_limit", "error.value.out_of_range", "error.required.missing",
+        "error.value.unknown", "error.type.mismatch",
+    }
+    expect(set(eligible) == expected_eligible and set(eligible) <= set(errors),
+           "expression-demand eligibility is not the closed eleven-error map")
+    expect(all(isinstance(text, str) and text.strip() for text in eligible.values()),
+           "expression-demand eligibility requires an exact trigger for every identifier")
+    expect(demand.get("resolved_stage") == "execution" and demand.get("default_status") == "status.failed"
+           and demand.get("default_status_overrides") == {
+               "error.required.missing": "status.blocked", "error.value.unknown": "status.blocked"},
+           "expression-demand stage/status overrides are not exact")
+    demand_tokens = {
+        "context": ("statically valid", "actually demanded", "skipped Boolean operand", "Preflight-required"),
+        "resolution_rule": ("before supersession", "duplicate suppression", "phase lookup", "inherited unchanged"),
+        "exclusion_rule": ("No source structure", "signature arity", "receiving-type", "Discovery time alone never"),
+        "phase_rule": ("pre_effect, post_effect, or indeterminate", "producer-relative effect evidence"),
+    }
+    for field, tokens in demand_tokens.items():
+        expect(all(token in demand.get(field, "") for token in tokens),
+               f"expression-demand {field} loses static/dynamic separation")
+    expect(all(token in eligible.get("error.literal.invalid", "") for token in
+               ("well-typed", "never malformed source tokens", "unsupported constructor signature")),
+           "dynamic literal.invalid improperly admits malformed source syntax")
+    expect(all(token in eligible.get("error.operator.operand", "") for token in
+               ("Only a registered SUM, MIN, or MAX", "arity, operand-family, property-schema", "never qualify")),
+           "dynamic operator.operand improperly admits type or signature errors")
+    expect(all(token in eligible.get("error.type.mismatch", "") for token in
+               ("direct FOR EACH", "statically valid SET", "before any iteration", "receiving-type")),
+           "dynamic type.mismatch admits more than the actual-member SET ordering failure")
     expected_stage_order = [
         "lexical",
         "grammar_or_schema",
@@ -5493,8 +5600,10 @@ def diagnostic_selection_contract_violations(
         ),
         "secondary_rule": (
             "Every other unhandled",
-            "handled or retried diagnostic",
-            "never controls status",
+            "unsuccessful retry attempt",
+            "superseded by successful retry or FALLBACK",
+            "never controls that successful aggregate result",
+            "Merely attempting a retry does not handle",
         ),
     }
     for field, tokens in selection_tokens.items():
@@ -5691,7 +5800,7 @@ def diagnostic_selection_contract_violations(
             "one diagnostic severity, error",
             "first unhandled diagnostic in",
             "every other unhandled diagnostic is secondary",
-            "retried diagnostics remain ordered secondary evidence",
+            "retry or FALLBACK completion remain ordered local evidence",
             "at a distinct locus",
         ),
     }
@@ -5735,6 +5844,8 @@ def failure_lifecycle_contract_violations(
             "retry_safety",
             "evidence_requirements",
             "indeterminate_state_rule",
+            "terminal_invocation_rule",
+            "failure_mapping_rule",
         },
         "failure_lifecycle fields differ",
     )
@@ -5867,7 +5978,7 @@ def failure_lifecycle_contract_violations(
         "phase_scope": ("exposed result producer", "retry attempt", "aggregate producer"),
         "status_rule": (
             "primary unhandled diagnostic",
-            "secondary diagnostics never override",
+            "secondary diagnostics and FAILURE mappings never override",
             "first remaining diagnostic",
             "every applicable diagnostic is recovered",
             "failure_phase never changes status",
@@ -5882,12 +5993,38 @@ def failure_lifecycle_contract_violations(
             isinstance(value, str) and all(token in value for token in tokens),
             f"{field} lacks required lifecycle terms",
         )
+    for field, tokens in {
+        "terminal_invocation_rule": ("status.blocked", "terminal outcome", "no outgoing transition",
+                                     "status.ready to status.skipped", "forbidden for an execution root"),
+        "failure_mapping_rule": ("no primary unhandled diagnostic", "first whose WHEN is TRUE",
+                                 "does not emit a diagnostic or event", "without adding generic error.success.unsatisfied",
+                                 "Execution roots cannot select status.skipped"),
+    }.items():
+        expect(all(token in lifecycle.get(field, "") for token in tokens),
+               f"{field} loses the terminal outcome or failure-mapping boundary")
+    status_rows = statuses.get("statuses", {})
+    expect(status_rows.get("status.blocked", {}).get("terminal") is True
+           and status_rows.get("status.blocked", {}).get("allowed_next") == []
+           and "status.skipped" in status_rows.get("status.ready", {}).get("allowed_next", []),
+           "blocked terminality or explicit non-root ready-to-skipped transition differs")
+    demand = statuses.get("diagnostic_selection", {}).get("expression_demand_resolution", {})
+    expect(all(token in resolution_rule for token in
+               ("expression_demand_resolution", "resolved execution stage", "local failure phases")),
+           "dynamic-demand phase lookup does not precede registered-stage fallback")
+    expect(demand.get("resolved_stage") == "execution"
+           and resolution.get("defaults_by_stage", {}).get(demand.get("resolved_stage"))
+           == ["pre_effect", "post_effect", "indeterminate"]
+           and resolved_phases("error.numeric.division_by_zero") == ["pre_effect"]
+           and errors.get("error.numeric.division_by_zero", {}).get("default_status") == "status.invalid",
+           "dynamic-demand phases do not retain the separate static invalid-source contract")
     retry_value = lifecycle.get("retry_safety", {})
     retry = retry_value if isinstance(retry_value, dict) else {}
     expect(
         set(retry)
         == {
             "eligibility_rule",
+            "attempt_bound_rule",
+            "condition_delay_rule",
             "pre_effect_rule",
             "known_effect_rule",
             "indeterminate_rule",
@@ -5908,10 +6045,16 @@ def failure_lifecycle_contract_violations(
     )
     retry_tokens = {
         "eligibility_rule": ("Every ACTION", "syntactically eligible", "adds no authority"),
+        "attempt_bound_rule": ("at most 1 + LIMIT", "stops on its first success", "does not reset",
+                               "separate loop instances", "must equal RETRY.LIMIT"),
+        "condition_delay_rule": ("only source of WHEN and DELAY", "Omitted WHEN is TRUE",
+                                  "DURATION(0, unit.second)", "preserves the previous failure without exhaustion",
+                                  "establish safety before applying DELAY"),
         "pre_effect_rule": ("pre_effect", "effect_state none", "declared retry count"),
         "known_effect_rule": ("applied or partial", "exact evidence", "non-idempotent"),
         "indeterminate_rule": ("prohibits another attempt", "exact reconciliation"),
-        "exhaustion_rule": ("actually made and failed", "does not satisfy exhaustion"),
+        "exhaustion_rule": ("exactly 1 + RETRY.LIMIT", "actually made and all failed",
+                            "FALSE WHEN before budget consumption", "does not satisfy exhaustion"),
         "evidence_rule": ("attempt-index order", "does not erase", "folds phase"),
     }
     for field, tokens in retry_tokens.items():
@@ -5924,7 +6067,7 @@ def failure_lifecycle_contract_violations(
     evidence = evidence_value if isinstance(evidence_value, dict) else {}
     expect(set(evidence) == {"common"} | expected_baseline, "evidence requirement keys differ")
     expected_common_evidence = [
-        "error identifier and registered stage",
+        "canonical error identifier, registered stage, and resolved expression-demand stage when applicable",
         "producer declaration or invocation path",
         "canonical source locus or declared execution event",
         "iteration and retry-attempt indexes when applicable",
@@ -6368,12 +6511,12 @@ def invocation_site_contract_violations(
         "05_SEMANTICS/06_MISSING_UNKNOWN_NULL_DEFAULT_ASSUME_AND_HANDLER_RESOLUTION.txt": (
             "A HANDLER is an invocation site",
             "handler-context binding",
-            "FALLBACK names the behavior",
+            "FALLBACK is eligible only after",
         ),
         "05_SEMANTICS/08_PHASE_SEQUENCE_STEP_BRANCH_LOOP_RETRY_AND_CONCURRENCY.txt": (
             "only source of attempt bounds",
-            "Total attempts are exactly 1 + LIMIT",
-            "never opens a",
+            "Total attempts are at most 1 + LIMIT",
+            "opens a second, independent attempt budget and never multiplies attempts",
         ),
     }
     for relative_path, tokens in surfaces.items():
@@ -7367,6 +7510,16 @@ def check_registry(root: Path, results: Results) -> None:
     )
 
 
+    language_checker = runpy.run_path(str(root / "09_CONFORMANCE/TOOLS/validate_language_contracts.py"))
+    language_result = language_checker["validate"](root)
+    if not isinstance(language_result, dict) or not isinstance(language_result.get("violations"), list):
+        raise ValueError("language contract checker returned no structured violation list")
+    results.add(
+        "registry", "language_decision_contracts",
+        "FAIL" if language_result["violations"] else "PASS", **language_result,
+    )
+
+
 def check_catalog(root: Path, results: Results) -> None:
     def operation() -> dict[str, Any]:
         catalog = load_json_strict(root / "09_CONFORMANCE/CASES/core_conformance_cases_v0.1.0.json")
@@ -7496,6 +7649,16 @@ def check_catalog(root: Path, results: Results) -> None:
 
         exact_subjects("keyword_valid", set(keywords))
         exact_subjects("keyword_invalid", set(keywords))
+        for case in cases:
+            if case.get("category") == "keyword_invalid":
+                assert case.get("expected") == "error.keyword.case", (
+                    f"{case.get('id')} has an ambiguous keyword-case expectation"
+                )
+                requirement = case.get("requirement", "")
+                assert all(token in requirement for token in
+                           ("mixed-case spelling", "not legal identifiers", "remain identifiers")), (
+                    f"{case.get('id')} does not preserve lowercase identifier contexts"
+                )
         exact_subjects("symbol_valid", set(symbols))
         exact_subjects("symbol_invalid", set(symbols))
         exact_subjects("type_valid", set(types))
@@ -7540,7 +7703,7 @@ def check_catalog(root: Path, results: Results) -> None:
             "TYPE-VALID-0345": ("WORKSPACE", "containment"),
             "TYPE-VALID-0347": ("RFC 3986", "scheme"),
             "TYPE-VALID-0349": ("workspace-relative", "**"),
-            "TYPE-VALID-0351": ("ECMAScript", "canonical-order"),
+            "TYPE-VALID-0351": ("frozen closed LCL REGEX", "ASCII-only i folding", "canonical-order"),
             "TYPE-VALID-0353": ("RFC 3339",),
             "TYPE-VALID-0355": ("RFC 3339", "UTC"),
             "TYPE-VALID-0357": ("RFC 3339", "UTC"),
@@ -7570,10 +7733,7 @@ def check_catalog(root: Path, results: Results) -> None:
                 "not an override",
             ),
             "KEYWORD-INVALID-0062": (
-                "DETERMINISTIC TRUE",
-                "nondeterministic",
-                "error.determinism.mismatch",
-                "never treat TRUE as an override",
+                "mixed-case spelling", "not legal identifiers", "remain identifiers",
             ),
             "OPERATION-BINDING-0565": (
                 "DETERMINISTIC TRUE",
@@ -7595,8 +7755,9 @@ def check_catalog(root: Path, results: Results) -> None:
                 "error.value.out_of_range",
             ),
             "OPERATION-ERRORS-0561": (
-                "MISSING operand outside == or !=",
-                "required UNKNOWN-result",
+                "evaluation_contract",
+                "EXISTS and skipped-operand exceptions",
+                "required final MISSING or UNKNOWN",
             ),
             "OPERATION-EFFECTS-0563": (
                 "Omitted criteria uses ==",
@@ -7820,7 +7981,7 @@ def check_catalog(root: Path, results: Results) -> None:
             ), f"{identifier} is not Task-0004-specific"
         expected_task_0004_outcomes = {
             "KEYWORD-VALID-0061": "accept after successful contract validation",
-            "KEYWORD-INVALID-0062": "error.determinism.mismatch; status.invalid",
+            "KEYWORD-INVALID-0062": "error.keyword.case",
             "ERROR-CONTRACT-0727": (
                 "execution; non-recoverable; status.failed before effects"
             ),
@@ -7879,8 +8040,10 @@ def check_catalog(root: Path, results: Results) -> None:
                 sort_keys=True,
             ).encode("utf-8")
         ).hexdigest()
+        # Reviewed completion revisions: keyword-case witness 0062, expression
+        # demand 0561, and bounded retry 0660. Structural coverage above remains.
         assert task_0004_catalog_sha256 == (
-            "a4fb9a99f4f13680e22d5caef1278915dc933491b13e1637515414a190f30073"
+            "7bb5f2b4663f9908aaea4a3d7e1a6ed98a42e701bfddc5e48a49ef6883a5c735"
         ), "Task-0004 catalog cases differ from the approved contract"
 
         task_0005_subjects = {
@@ -8028,12 +8191,15 @@ def check_catalog(root: Path, results: Results) -> None:
                     "without discovery-time influence",
                     "permitted declared-handler recovery",
                     "first unhandled diagnostic as primary",
-                    "handled or retried diagnostics as ordered secondary evidence",
+                    "successful-substitution locals as ordered evidence",
+                    "merely retried failed diagnostic remains unhandled",
+                    "expression_demand_resolution",
+                    "preserve source-validation classification",
                     "select no primary",
                 ),
                 "expected": (
                     "deterministic unhandled primary and ordered unhandled, handled, and "
-                    "retried secondary evidence with exact same-cause suppression"
+                    "successful-substitution local evidence with exact same-cause suppression"
                 ),
             },
             "FAILURE-LIFECYCLE-0797": {
@@ -8045,7 +8211,7 @@ def check_catalog(root: Path, results: Results) -> None:
                     "error.dependency.unsatisfied and error.scope.violation as pre_effect",
                     "error.execution.order and error.required.missing",
                     "every additional mixed-phase identifier",
-                    "primary unhandled diagnostic's registered default status control",
+                    "primary unhandled diagnostic's resolved default status after expression_demand_resolution control",
                     "promote the first remaining unhandled diagnostic after recovery",
                     "every applicable diagnostic is recovered",
                     "OUTPUT binding independent",
@@ -8097,8 +8263,10 @@ def check_catalog(root: Path, results: Results) -> None:
                 sort_keys=True,
             ).encode("utf-8")
         ).hexdigest()
+        # Reviewed demand-stage and successful-substitution corrections; both
+        # complete policy cases remain checked against their precise contracts.
         assert task_0006_catalog_sha256 == (
-            "beec1b7929d41617b0accf83e0ecbc8695cf2030728ef3df3a4c39f226f864b3"
+            "0994998cc913eb1b639582255e830c604b9b200fb06bec620b8d3c93cc2310be"
         ), "Task-0006 catalog cases differ from the approved contract"
 
         operation_axis_case_count = 0
@@ -8192,6 +8360,72 @@ def check_integrity(root: Path, results: Results) -> None:
     results.guarded("integrity", "checksum_set_and_hash", checksum_operation)
 
 
+def check_release_state(root: Path, results: Results) -> None:
+    """Keep language quality evidence separate from permission to assert release."""
+    ledger_path = root / "00_RELEASE/05_LANGUAGE_CLOSURE.json"
+    if not ledger_path.is_file():
+        results.add("release", "language_decisions_and_release_state", "BLOCKED",
+                    reason="The language-decision closure ledger is absent.")
+        return
+    ledger = load_json_strict(ledger_path)
+    assert isinstance(ledger, dict) and set(ledger) == {
+        "language", "version", "scope", "decisions", "release_gate_permitted"
+    }, "language closure ledger fields are not exact"
+    assert ledger["language"] == "LCL" and ledger["version"] == "0.1.0"
+    assert ledger["scope"] == "bare_language"
+    assert type(ledger["release_gate_permitted"]) is bool
+    decisions = ledger["decisions"]
+    assert isinstance(decisions, list) and decisions, "language decision ledger is empty"
+    ids = []
+    for decision in decisions:
+        assert isinstance(decision, dict) and set(decision) == {"id", "status", "summary"}
+        assert isinstance(decision["id"], str) and decision["id"]
+        assert decision["status"] in {"closed", "pending"}
+        assert isinstance(decision["summary"], str) and decision["summary"].strip()
+        ids.append(decision["id"])
+    assert len(ids) == len(set(ids)), "language decision IDs are duplicated"
+    assert set(ids) == {
+        "types_and_references", "expressions_and_functions", "patterns", "library_parameters",
+        "control_and_diagnostics", "host_surface_boundary", "normative_alignment",
+        "independent_review", "static_validation",
+    }, "language decision inventory omits or adds an unreviewed closure area"
+    pending = [item["id"] for item in decisions if item["status"] != "closed"]
+    reasons = []
+    if pending: reasons.append("Language decisions remain pending.")
+    if not ledger["release_gate_permitted"]:
+        reasons.append("The language decision ledger has not permitted the final release gate.")
+    status_text = (root / "00_RELEASE/01_RELEASE_STATUS_AND_BOUNDARY.txt").read_text(encoding="utf-8")
+    active_lines = set(status_text.splitlines())
+    language_lines = [line for line in active_lines if line.startswith("LANGUAGE_STATUS:")]
+    package_lines = [line for line in active_lines if line.startswith("PACKAGE_STATUS:")]
+    assert len(language_lines) <= 1 and len(package_lines) <= 1, "conflicting active release status lines"
+    assert not language_lines or language_lines[0] in {
+        "LANGUAGE_STATUS: INCOMPLETE", "LANGUAGE_STATUS: BARE_SPECIFICATION_COMPLETE"
+    }, "unregistered active language status"
+    assert not package_lines or package_lines[0] in {
+        "PACKAGE_STATUS: UNRELEASED_CANDIDATE", "PACKAGE_STATUS: BARE_LANGUAGE_RELEASE"
+    }, "unregistered active package status"
+    active_complete = "LANGUAGE_STATUS: BARE_SPECIFICATION_COMPLETE" in active_lines
+    active_release = "PACKAGE_STATUS: BARE_LANGUAGE_RELEASE" in active_lines
+    # Historical occurrences in prose never count as active status declarations.
+    if (pending or not ledger["release_gate_permitted"]) and (active_complete or active_release):
+        results.add("release", "language_decisions_and_release_state", "FAIL",
+                    pending_decisions=pending,
+                    reason="Active completion/release claims precede closure of language decisions.")
+        return
+    if not active_complete or not active_release:
+        reasons.append("Current status metadata still identifies an unreleased candidate.")
+    manifest = load_json_strict(root / "MANIFEST.json")
+    if not (manifest.get("status") == "bare_language_release"
+            and manifest.get("release_ready") is True
+            and manifest.get("package_scope") == "bare_language_specification"):
+        reasons.append("Manifest release metadata is not in its final bare-language release state.")
+    results.add("release", "language_decisions_and_release_state",
+                "BLOCKED" if reasons else "PASS", pending_decisions=pending,
+                decision_count=len(decisions), release_gate_permitted=ledger["release_gate_permitted"],
+                reasons=reasons, integrity_verified_by="separate integrity scope")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
@@ -8208,6 +8442,7 @@ def main() -> int:
         "registry": check_registry,
         "catalog": check_catalog,
         "integrity": check_integrity,
+        "release": check_release_state,
     }
     if sys.flags.optimize:
         results.add(
@@ -8239,7 +8474,10 @@ def main() -> int:
         for status_value in RESULT_STATUSES
     }
     scope_ready = counts["FAIL"] == 0 and counts["BLOCKED"] == 0
-    release_ready = arguments.scope == "all" and scope_ready
+    release_ready = arguments.scope == "all" and scope_ready and any(
+        check["check"] == "language_decisions_and_release_state" and check["status"] == "PASS"
+        for check in results.checks
+    )
     output = {
         "tool": "validate_release.py",
         "root": str(root),

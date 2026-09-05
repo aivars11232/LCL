@@ -21,11 +21,28 @@ indeterminate-state, and retry-safety contracts.
 TOOLS/validate_source_fixtures.py executes the concrete SOURCE_FIXTURES lexical
 and document-kind expectations. TOOLS/validate_ebnf.py validates static grammar
 structure. The static_example_contracts gate in TOOLS/validate_release.py checks
-the 12 valid examples for bounded source hygiene, closes all 21 invalid
+the 13 valid examples for bounded source hygiene, closes all 21 invalid
 expectation pairs against the error/status/phase registries, and pins seven
 focused primary diagnostics together with their exact example bytes. These
 checks do not parse or execute the examples. None of the tools is a type
 checker, evaluator, or executor.
+
+CASES/language_decision_cases_v0.1.0.json adds descriptive witnesses for source
+types and aliases, reference/value contexts, positional calls, zero-based indexes,
+keyword case, expression demand, empty collections, quantifiers, reductions,
+calculation fragments, comparison and grouping shapes, retry budgets, diagnostic
+aliases, continuation, fallback, lifecycle endpoints, and frozen pattern syntax.
+These witnesses state expected language results; they have not been executed.
+Their own case_count records their current inventory independently of the
+799-entry registry coverage index.
+
+TOOLS/validate_language_contracts.py checks agreement between grammar, registry
+fields, block prose, lifecycle metadata, expression truth tables, and descriptive
+witness coverage. Representative mutations of those contracts must fail this
+check. This is static specification evidence, not an executable LCL evaluator.
+The release gate also requires every decision in
+00_RELEASE/05_LANGUAGE_CLOSURE.json to be closed, explicit current release status,
+and fresh integrity. Historical release assertions cannot satisfy that gate.
 
 A source-conforming implementation must pass lexical, grammar, block, and field
 cases. A semantics-conforming implementation must additionally pass type,

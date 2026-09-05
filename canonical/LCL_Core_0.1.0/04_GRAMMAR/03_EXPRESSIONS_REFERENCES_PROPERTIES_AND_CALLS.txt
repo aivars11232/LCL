@@ -7,9 +7,27 @@ DATE: 2026-08-30
 
 Expressions contain literals, identifiers, REF/typed constructors, pure
 functions, LIST and SET bracket literals, property/index access, arithmetic,
-comparisons, and Boolean operators. Function arguments are positional unless a
-function defines named arguments. Property access requires a statically known
-property.
+comparisons, and Boolean operators. All Core 0.1.0 expression function and
+constructor arguments are positional only, in their registered overload order.
+Named, mixed positional/named, and variadic calls are invalid syntax. Operation
+PARAMETER blocks have their separate named-parameter contract; they are not
+expression calls. Property access requires a statically known property.
 
-Every expression is side-effect free. ACTION is the only construct that invokes
-an operation with effects.
+REF evaluation follows types_v0.1.0.json#/reference_context_contract. Explicit
+identity/reference receiving slots retain declaration identity; ordinary value
+contexts read one bound value. A reserved uppercase property immediately after
+REF selects declaration metadata before that read. A lowercase property selects
+an evaluated OBJECT field. Reading a reference-typed binding once leaves a
+REFERENCE value and does not recursively read its referent.
+
+Brackets denote LIST unless an exact receiving type requires SET. Empty and
+nested collections require a unique member type supplied by their context;
+otherwise members must have identical static types. LIST indexes are zero-based
+and out-of-range integers yield MISSING. OBJECT indexes are statically known
+STRING keys. SET and STRING index access is invalid. Complete collection and
+evaluation rules are operators_and_functions_v0.1.0.json#/collection_expression
+and #/evaluation_contract.
+
+Every expression is side-effect free. ACTION, HANDLER, and FALLBACK are operation
+invocation sites under their registered contracts. An expression never invokes
+one, implicitly starts an action, or changes the execution graph.

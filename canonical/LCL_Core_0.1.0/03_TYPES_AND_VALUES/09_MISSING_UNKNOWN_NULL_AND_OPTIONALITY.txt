@@ -6,6 +6,10 @@ NULL
     NULL is a material value of type NULL. It means a known, explicit absence. It
     may be stored, returned, and placed in a collection only where the declared
     type is NULL or a schema explicitly permits NULL.
+    In a source schema this requires FIELD.TYPE NULL; REQUIRED FALSE permits an
+    absent field, not NULL at another type. Source nullable/union notation is
+    not defined. A registered core result schema may separately admit NULL in
+    an explicitly declared contract union.
 
 MISSING
     MISSING is a non-material evaluation sentinel meaning that no binding or field
@@ -18,7 +22,11 @@ UNKNOWN
     UNKNOWN is a non-material evaluation sentinel meaning that a binding exists
     but its value cannot presently be determined. It has no storable user type.
     It may appear literally only in equality/inequality tests, conditions,
-    handlers, assumptions, or conformance cases. It cannot be persisted.
+    handlers, assumptions, the immediate bracket argument consumed by ALL,
+    ANY, or NONE, or conformance cases. It cannot be persisted. Such a
+    quantifier argument is transient: it never constructs a material or
+    storable LIST containing UNKNOWN. The function consumes its Boolean or
+    UNKNOWN observations under strong Kleene logic.
 
     A transient result record may contain UNKNOWN only in a schema-local field
     whose registered type explicitly includes UNKNOWN. Core 0.1.0 permits this

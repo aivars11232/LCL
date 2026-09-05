@@ -27,9 +27,9 @@ packaging:
 - required conformance cases covering every closed registry entry;
 - valid and deliberately invalid examples with registered expected diagnostics.
 
-This package meets that bare-specification boundary through Accepted Tasks 0001
-through 0006. BARE_SPECIFICATION_COMPLETE does not by itself mean packaged or
-release-ready. Release completeness additionally requires:
+The current candidate must freshly establish every criterion above; historical
+task acceptance does not establish current completeness. BARE_SPECIFICATION_COMPLETE
+does not by itself mean packaged or release-ready. Release completeness additionally requires:
 
 - a documented cryptographic integrity model covering every distributed payload,
   with any unavoidable manifest/checksum self-exclusions stated explicitly;
@@ -48,8 +48,8 @@ only after Gates 1 through 9 all pass with no release blocker.
 A gate whose only evidence would be a lexer, parser, interpreter, compiler,
 runtime, or semantic execution engine is outside this package's scope. Such a
 gate is reported as OUT_OF_SCOPE, is never reported as PASS, and never blocks
-release. LCL-TASK-0007 satisfied the release-completeness requirements above and
-classified this package BARE_LANGUAGE_RELEASE.
+release. LCL-TASK-0007 classified an earlier snapshot BARE_LANGUAGE_RELEASE;
+that historical classification does not apply to this modified candidate.
 
 A candidate with an unresolved language contradiction, undefined contract, invalid
 positive example, or unexpected applicable conformance result is not

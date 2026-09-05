@@ -5,16 +5,54 @@ STATUS: NORMATIVE
 DATE: 2026-08-30
 
 
-ABS(number) -> same numeric family
+ABS(integer_decimal_duration_or_measure) -> same family with absolute magnitude
 COUNT(value) -> INTEGER
-SUM(collection) -> compatible numeric
-MIN(collection) / MAX(collection) -> member type
+SUM(nonempty_collection) -> exact registered member family
+MIN(nonempty_collection) / MAX(nonempty_collection) -> member type
 ROUND(decimal_or_measure, nonnegative_integer_fractional_digits) -> same family
     using half-even; a MEASURE keeps its exact UNIT. A direct division first
     argument is rounded once from its exact mathematical quotient.
 EXISTS(value_or_reference) -> BOOLEAN
-EMPTY(string_or_collection) -> BOOLEAN
-ALL(list_boolean) / ANY(list_boolean) / NONE(list_boolean) -> BOOLEAN
+EMPTY(string_list_set_object_or_byte_count) -> BOOLEAN or UNKNOWN
+ALL(boolean_sequence) / ANY(boolean_sequence) / NONE(boolean_sequence)
+    -> BOOLEAN or UNKNOWN
 
 Functions are pure, validate arity/types, and never perform I/O or side effects.
-COUNT(STRING) counts Unicode code points. MIN/MAX on empty collection is invalid.
+All arguments are positional and evaluate left to right. No pure function invokes
+an operation. Exact overloads and signature terms are registered in
+10_REGISTRIES/operators_and_functions_v0.1.0.json, including common sentinel
+lifting and errors; an unlisted overload uses error.operator.operand.
+
+COUNT(STRING) counts Unicode scalar values, COUNT(LIST) counts occurrences,
+COUNT(SET) counts unique members, and COUNT(OBJECT) counts present properties.
+COUNT(BYTES(n)) is INTEGER n; BYTES is a count rather than content. EMPTY returns
+TRUE iff this count is zero. Neither function accepts NULL. A typed empty
+collection is valid for COUNT/EMPTY. An untyped [] must first obtain one unique
+member type from its immediate context; otherwise error.type.mismatch applies.
+
+SUM, MIN, and MAX reject an already typed empty collection with
+error.operator.operand. SUM uses exact addition in the member family: INTEGER,
+DECIMAL, normalized DURATION, or MEASURE with one exact common unit. It never
+invents an empty-sum unit. MIN and MAX require mutually order-compatible material
+members and return their least or greatest semantic value. SET iteration order
+has no effect on these mathematical reductions.
+
+EXISTS evaluates its argument once under ordinary reference-value reading. It is
+FALSE only for MISSING, including an absent optional binding, and TRUE for every
+other result including NULL and UNKNOWN. It does not suppress a diagnostic in an
+evaluated subexpression or make an unresolved declaration legal.
+
+ALL, ANY, and NONE accept a material LIST[BOOLEAN], or one immediate bracket
+argument of Boolean expressions with UNKNOWN observations. Parentheses around
+that immediate argument are allowed. Every member is evaluated left to right
+before reduction. MISSING emits error.required.missing; an incompatible material
+member emits error.operator.operand. A sequence containing UNKNOWN is transient
+argument data only and cannot escape this call into material data or another
+function. This immediate quantifier argument explicitly permits UNKNOWN literals
+even outside another condition; it does not permit a material UNKNOWN collection.
+
+ALL is FALSE when any member is FALSE, otherwise UNKNOWN when any member is
+UNKNOWN, otherwise TRUE. ANY is TRUE when any member is TRUE, otherwise UNKNOWN
+when any member is UNKNOWN, otherwise FALSE. NONE is NOT of ANY. ALL([]) and
+NONE([]) are TRUE; ANY([]) is FALSE. These immediate empty arguments have BOOLEAN
+context. Whole-argument UNKNOWN propagates, and whole-argument MISSING errors.

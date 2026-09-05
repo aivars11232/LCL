@@ -1,17 +1,21 @@
-LCL CORE 0.1.0 BARE LANGUAGE SPECIFICATION RELEASE
+LCL CORE 0.1.0 BARE LANGUAGE SPECIFICATION CANDIDATE
 CHANGE CONTROL
 NORMATIVE
 
-Published release bytes are immutable and may never retain the same checksum
-after an edit. This tree is the packaged BARE_LANGUAGE_RELEASE of LCL Core 0.1.0
-produced by LCL-TASK-0007. Its bytes are now fixed: any later correction is a new
-version with freshly generated integrity metadata, never an in-place edit of
-these released bytes. The owner adjudicated that the accepted Tasks 0001 through
-0006 repairs close an unpublished 0.1.0 candidate rather than change the meaning
-of an established release, so the version remains 0.1.0. Corrections that change no meaning require a
-patch release. Added backward-compatible features require a minor release.
-Breaking lexical, grammar, type, or semantic changes require a major release.
-Every packaged candidate or release receives freshly generated integrity metadata
-in its own release task. Tasks 0001 through 0006 deliberately left the integrity
-artifacts frozen; LCL-TASK-0007 regenerated them from the released bytes and
-produced the archive.
+Published release artifacts are immutable. The current working tree is an
+unpublished completion candidate under the owner's instruction to finish
+LCL Core 0.1.0; existing historical trees and archives remain unchanged. A new
+candidate may not claim the checksum, validation results, or completeness of a
+previous snapshot. The version remains 0.1.0 while this candidate is completed.
+
+For an established release, corrections that change no meaning require a patch
+release, added backward-compatible features require a minor release, and breaking
+lexical, grammar, type, or semantic changes require a major release. Candidate
+corrections must document their decisions and align every normative surface
+before final release validation.
+
+Integrity metadata is regenerated only at the final release stage, after language
+decisions and static consistency checks are complete. Generate the manifest,
+validation report, and checksums in their documented acyclic order, run the full
+release gate, and bind any new archive to those exact bytes. Never reuse an older
+archive name to overwrite retained historical evidence.

@@ -5,8 +5,9 @@ NORMATIVE RELEASE METADATA
 1. CANONICAL SOURCE
 
 This package root is the only canonical source tree for LCL Core 0.1.0. It
-originates from the repair candidate produced by LCL-REPAIR-0001 and was closed
-and packaged by Accepted Tasks 0001 through 0007. Language meaning is determined by
+originates from the repair candidate produced by LCL-REPAIR-0001. Earlier
+snapshots were packaged and subsequently repaired by Tasks 0001 through 0010.
+The current completion work is an unpublished candidate. Language meaning is determined by
 the artifacts inside this tree under
 00_RELEASE/02_NORMATIVE_AUTHORITY_ORDER.txt. Files
 outside this package root are not normative inputs to the language.
@@ -45,13 +46,14 @@ nine closed result-schema contracts, deterministic diagnostic selection, and
 producer-relative failure lifecycle and retry-safety rules.
 Parser/runtime/executable-semantic evidence under LCL-AUDIT-007 and LCL-AUDIT-016
 is outside the bare-language package scope and is not a release blocker. The
-language-definition scope is BARE_SPECIFICATION_COMPLETE. LCL-TASK-0007
-regenerated MANIFEST.json, VALIDATION_REPORT.txt, and SHA256SUMS.txt from the
-released bytes in that acyclic order, so the integrity metadata is current for
-this tree. This package root is therefore the packaged BARE_LANGUAGE_RELEASE of
-LCL Core 0.1.0, and the release archive is created outside the package root.
+current language-definition scope is INCOMPLETE and package state is
+UNRELEASED_CANDIDATE. LCL-TASK-0007 regenerated MANIFEST.json,
+VALIDATION_REPORT.txt, and SHA256SUMS.txt and created an archive for an earlier
+snapshot. Those retained artifacts are historical and do not validate this
+modified tree. The release archive is created outside the package root only
+after all current language decisions and the final release gate are complete.
 
-This is a release of the language definition only. It must never be represented
+This is a candidate for the language definition only. It must never be represented
 as containing, requiring, or having been validated by a lexer, parser,
 interpreter, compiler, runtime, semantic execution engine, UI, IDE, provider
 integration, or deployment tooling. Parser and executable-semantic evidence is

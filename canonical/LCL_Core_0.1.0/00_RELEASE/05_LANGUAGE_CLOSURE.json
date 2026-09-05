@@ -1,0 +1,53 @@
+{
+  "language": "LCL",
+  "version": "0.1.0",
+  "scope": "bare_language",
+  "decisions": [
+    {
+      "id": "types_and_references",
+      "status": "pending",
+      "summary": "Close source types, aliases, enum domains, value reads, metadata access, positional calls and indexing."
+    },
+    {
+      "id": "expressions_and_functions",
+      "status": "pending",
+      "summary": "Close evaluation order, sentinel propagation, collections, quantifiers, reductions and signature notation."
+    },
+    {
+      "id": "patterns",
+      "status": "pending",
+      "summary": "Close frozen GLOB and REGEX syntax and matching behavior."
+    },
+    {
+      "id": "library_parameters",
+      "status": "pending",
+      "summary": "Close calculation fragments, predicates, comparison criteria and group results."
+    },
+    {
+      "id": "control_and_diagnostics",
+      "status": "pending",
+      "summary": "Close retry, fallback, continuation, lifecycle, diagnostic aliases and dynamic expression demand."
+    },
+    {
+      "id": "host_surface_boundary",
+      "status": "pending",
+      "summary": "Owner decision pending: retain abstract host-facing contracts or remove them from Core under the requested bare-language boundary."
+    },
+    {
+      "id": "normative_alignment",
+      "status": "pending",
+      "summary": "Align registries, grammar, prose, examples and both descriptive conformance catalogs."
+    },
+    {
+      "id": "independent_review",
+      "status": "pending",
+      "summary": "Resolve all definite findings from an independent review of the changed language contracts."
+    },
+    {
+      "id": "static_validation",
+      "status": "pending",
+      "summary": "Pass focused static checks and demonstrate detection of representative contract mutations."
+    }
+  ],
+  "release_gate_permitted": false
+}

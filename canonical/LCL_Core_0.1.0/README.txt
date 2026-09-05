@@ -1,8 +1,8 @@
-LCL CORE 0.1.0 BARE LANGUAGE SPECIFICATION RELEASE
+LCL CORE 0.1.0 BARE LANGUAGE SPECIFICATION CANDIDATE
 
 Formal language version: 0.1.0
-Language-definition state: BARE_SPECIFICATION_COMPLETE through LCL-TASK-0006
-Package state: BARE_LANGUAGE_RELEASE packaged by LCL-TASK-0007
+Language-definition state: INCOMPLETE; language-contract closure is in progress
+Package state: UNRELEASED_CANDIDATE; Task-0007 integrity and archive are historical
 Package scope: bare language specification only
 
 LCL (Learned Computing Language) is a declarative technical-English language for
@@ -30,15 +30,16 @@ THIS PACKAGE CONTAINS
 - versioning and extension rules;
 - examples and normative conformance requirements.
 
-SCOPE BOUNDARIES OF THIS RELEASE
+SCOPE AND VALIDATION BOUNDARY
 
 - the 799-entry catalog is a descriptive requirements index, not an executed
   semantic suite; executable semantic evidence is outside the bare-language
   package scope and its absence is not a release blocker;
-- MANIFEST.json, VALIDATION_REPORT.txt, and SHA256SUMS.txt were regenerated in
-  that acyclic order from the released bytes and validate this tree;
-- the release archive is created outside this package root, so no archive file
-  is a member of the tree that it packages.
+- MANIFEST.json, VALIDATION_REPORT.txt, and SHA256SUMS.txt describe the earlier
+  Task-0007 snapshot; subsequent language repairs have made them stale;
+- the existing release archive is an earlier snapshot and does not represent
+  this candidate. Final release validation and integrity regeneration follow
+  language-decision closure and agreement of every normative surface.
 
 THIS PACKAGE DOES NOT CONTAIN
 
@@ -54,6 +55,6 @@ artifact is plain UTF-8 text, EBNF, JSON, or LCL source.
 
 Begin with 00_RELEASE/00_CANONICAL_SOURCE_AND_PROVENANCE.txt,
 00_RELEASE/01_RELEASE_STATUS_AND_BOUNDARY.txt, and INDEX.txt. VALIDATION_REPORT.txt
-is the current in-package validation snapshot bound to the exact MANIFEST.json
-hash; the external report under reports/ records the final checksum and archive
-evidence.
+is the historical Task-0007 snapshot bound to that snapshot's MANIFEST.json
+hash. Current task reports under reports/tasks/ describe subsequent repairs;
+neither the historical snapshot nor the earlier archive validates this candidate.

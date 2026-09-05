@@ -30,7 +30,7 @@ ACTION:
         NAME: expression
         TYPE: STRING
         REQUIRED: TRUE
-        VALUE: "input.value * 2"
+        VALUE: "REF(input.value) * 2"
     OUTPUT: REF(output.value)
 
 VERIFY:

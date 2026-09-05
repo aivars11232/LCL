@@ -39,6 +39,7 @@
       "allowed_next": [
         "status.running",
         "status.succeeded",
+        "status.skipped",
         "status.blocked",
         "status.stopped",
         "status.cancelled"
@@ -60,15 +61,10 @@
       "scope": "execution_root_declaration_or_result"
     },
     "status.blocked": {
-      "meaning": "Execution cannot proceed because required external data, permission, dependency, or host capability is unavailable.",
-      "result_meaning": "The producer cannot presently proceed because required external data, permission, dependency, or host capability is unavailable; failure_phase and effect_state record whether anything began.",
-      "terminal": false,
-      "allowed_next": [
-        "status.ready",
-        "status.failed",
-        "status.stopped",
-        "status.cancelled"
-      ],
+      "meaning": "This invocation terminated because required data, permission, dependency, or declared capability was unavailable. A later explicit invocation is separate and never changes this terminal result.",
+      "result_meaning": "The producer invocation ended without being able to proceed; failure_phase and effect_state record whether anything began. A later explicit invocation may use newly available inputs while retaining this result as evidence.",
+      "terminal": true,
+      "allowed_next": [],
       "scope": "execution_root_declaration_or_result"
     },
     "status.stopped": {
@@ -107,7 +103,7 @@
       "scope": "execution_root_declaration_or_result"
     },
     "status.skipped": {
-      "meaning": "A non-root declaration did not apply because WHEN was FALSE or it was optional and omitted.",
+      "meaning": "A non-root declaration transitions from ready without beginning its operation because WHEN is FALSE or it is optional and omitted. An execution root cannot be skipped.",
       "result_meaning": "The producer invocation did not apply; no domain outcome or effect exists and any selected OUTPUT remains unbound.",
       "terminal": true,
       "allowed_next": [],
@@ -228,7 +224,7 @@
       "default_status": "status.failed"
     },
     "error.execution.order": {
-      "meaning": "Ordering constraints form a cycle or are violated.",
+      "meaning": "Ordering constraints form a cycle or are violated, a required continuation path is absent or ambiguous, or a requested lifecycle transition is not permitted by allowed_next and status scope.",
       "stage": "execution",
       "recoverable_with_declared_handler": false,
       "event": null,
@@ -291,7 +287,7 @@
       "default_status": "status.blocked"
     },
     "error.id.duplicate": {
-      "meaning": "Two declarations define the same ID in one namespace.",
+      "meaning": "Two declarations define the same ID in one namespace, two imports or extensions claim the same namespace prefix, or a local declaration ID occupies an import-owned first identifier segment.",
       "stage": "resolution",
       "recoverable_with_declared_handler": false,
       "event": null,
@@ -354,7 +350,7 @@
       "default_status": "status.invalid"
     },
     "error.keyword.case": {
-      "meaning": "A reserved keyword or literal uses incorrect case.",
+      "meaning": "A case-insensitive match to a registered word has incorrect case in a syntax-required block/field key outside object data, required connector/operator, registered callable before its opening parenthesis, or built-in type position; a mixed-case token matching a registered word also uses this error. A legal lowercase identifier is never promoted to a keyword by case folding. String content and lowercase object data keys are unaffected.",
       "stage": "lexical",
       "recoverable_with_declared_handler": false,
       "event": null,
@@ -403,7 +399,7 @@
       "default_status": "status.invalid"
     },
     "error.namespace.invalid": {
-      "meaning": "Namespace is absent, reserved, malformed, or duplicated.",
+      "meaning": "Namespace is absent, reserved, or malformed, or a declaration identifier begins with a reserved namespace. Omission of the required NAMESPACE field uses the earlier specific schema diagnostic error.field.required; duplicate or overlapping prefix ownership uses error.id.duplicate.",
       "stage": "resolution",
       "recoverable_with_declared_handler": false,
       "event": null,
@@ -508,21 +504,21 @@
       "default_status": "status.failed"
     },
     "error.reference.cycle": {
-      "meaning": "Immutable definitions contain a prohibited dependency cycle.",
+      "meaning": "Immutable definitions, execution-unit references, same-domain error/event/status aliases, or direct HANDLER FALLBACK references contain a prohibited dependency cycle.",
       "stage": "resolution",
       "recoverable_with_declared_handler": false,
       "event": null,
       "default_status": "status.invalid"
     },
     "error.reference.kind": {
-      "meaning": "Reference resolves to a declaration kind illegal in that field.",
+      "meaning": "A reference resolves to a declaration kind illegal in that field, an error/event/status alias BASE resolves outside its own domain, or a handler-context ACTION target binds a producer that is not an ACTION.",
       "stage": "resolution",
       "recoverable_with_declared_handler": false,
       "event": null,
       "default_status": "status.invalid"
     },
     "error.reference.unresolved": {
-      "meaning": "REF does not resolve to exactly one declaration/binding.",
+      "meaning": "REF or an error/event/status alias BASE does not resolve to exactly one declaration, binding, or permitted canonical core identifier.",
       "stage": "resolution",
       "recoverable_with_declared_handler": false,
       "event": null,
@@ -536,7 +532,7 @@
       "default_status": "status.blocked"
     },
     "error.retry.exhausted": {
-      "meaning": "Initial attempt and all allowed retries failed.",
+      "meaning": "Exactly 1 + RETRY.LIMIT attempts of the same ACTION invocation were actually made and every attempt failed. A false WHEN or refused safety check before the count is consumed is not exhaustion.",
       "stage": "execution",
       "recoverable_with_declared_handler": true,
       "event": "event.execution_error",
@@ -627,7 +623,7 @@
       "default_status": "status.invalid"
     },
     "error.value.unknown": {
-      "meaning": "A required value is UNKNOWN and no valid handler resolves it.",
+      "meaning": "A required value remains UNKNOWN after applicable explicit value, source, DEFAULT, and ASSUME resolution. Emit this diagnostic before selecting any eligible handler; successful handler recovery retains it as evidence.",
       "stage": "static_or_expression",
       "recoverable_with_declared_handler": true,
       "event": "event.unknown",
@@ -665,6 +661,31 @@
       "execution",
       "verification_or_completion"
     ],
+    "expression_demand_resolution": {
+      "context": "A statically valid expression is actually demanded after the document's preflight checks, during a reachable invocation, condition, verification, or completion step. A skipped Boolean operand is not demanded. Preflight-required expression demands retain registered source-validation classification.",
+      "eligible_errors": {
+        "error.literal.invalid": "A well-typed registered constructor rejects a dynamically supplied material value under its declared value-domain constraint; never malformed source tokens, string escapes, delimiters, literal spelling, or an unsupported constructor signature.",
+        "error.numeric.division_by_zero": "A demanded, well-typed division or ROUND quotient has a zero denominator.",
+        "error.numeric.non_terminating": "A demanded, well-typed exact division has no finite base-10 result outside its permitted direct ROUND context.",
+        "error.numeric.unit_mismatch": "Dynamically supplied MEASURE values or constructor unit values violate the exact registered unit rule after their operand families passed static checking.",
+        "error.operator.operand": "Only a registered SUM, MIN, or MAX reduction receives an empty material collection whose member type and function signature are already valid; arity, operand-family, property-schema, and unsupported-overload defects never qualify.",
+        "error.pattern.mismatch": "A dynamically supplied value fails a declared GLOB or REGEX value constraint; ordinary MATCHES non-match remains FALSE.",
+        "error.pattern.resource_limit": "Compiling or matching a demanded, well-typed GLOB or REGEX exhausts its declared finite pattern-resource limit.",
+        "error.type.mismatch": "Only direct FOR EACH over a statically valid SET whose actual members fail the registered pairwise order-compatibility check when the iteration is demanded. Check before any iteration or its effects, retaining effects of already completed producers. Static operand-family, receiving-type, schema-type, and unresolved collection-type defects never qualify.",
+        "error.value.out_of_range": "A dynamically supplied material value violates an exact registered bound after its static family passed checking.",
+        "error.required.missing": "An actually demanded required operand, source, condition, or bound-value read yields MISSING under the existing special-value rules.",
+        "error.value.unknown": "An actually demanded required material value or condition yields UNKNOWN under the existing special-value rules."
+      },
+      "resolved_stage": "execution",
+      "default_status": "status.failed",
+      "default_status_overrides": {
+        "error.required.missing": "status.blocked",
+        "error.value.unknown": "status.blocked"
+      },
+      "resolution_rule": "Canonicalize any same-domain error alias, establish the exact eligible trigger and demand context, then resolve stage and default_status before supersession, duplicate suppression, ordering, event selection, primary selection, and phase lookup. Retain the canonical error identifier, registered source-stage metadata, resolved demand stage, and demand locus in evidence. All other error metadata, including event and recoverability, is inherited unchanged.",
+      "exclusion_rule": "No source structure, token, name resolution, type-family, signature arity, receiving-type, or required static-validation defect qualifies. Eligible identifiers used for any trigger outside the exact map retain their registered stage and default_status. Discovery time alone never changes classification.",
+      "phase_rule": "A resolved execution-stage demand failure uses the execution-stage failure-phase family and producer-relative effect evidence. It may be pre_effect, post_effect, or indeterminate according to the exposed producer, without pretending a prior effect did not occur."
+    },
     "severity": {
       "closed_values": [
         "error"
@@ -718,7 +739,7 @@
       }
     },
     "selection_scope": "one exposed result producer or one source validation run",
-    "earliest_stage_rule": "Evaluate stages in stage_order. When a stage has one or more diagnostics, emit that stage's independent unsuppressed diagnostics and do not evaluate later stages for the failed source unit or invocation path. Diagnostics already recorded for independent units or completed child paths remain evidence.",
+    "earliest_stage_rule": "Resolve expression_demand_resolution before stage selection. Evaluate stages in stage_order. At a stage with diagnostics, emit its independent unsuppressed diagnostics and apply only permitted recovery at that producer. If any applicable diagnostic remains unhandled, do not evaluate later stages for that failed source unit or invocation path. Recovery never bypasses an unrelated source-invalid diagnostic. Diagnostics already recorded for independent units or completed child paths remain evidence.",
     "multiplicity_rule": "Emit every independent applicable diagnostic at the selected stage. Distinct source loci, declaration paths, invocation paths, iteration indexes, or retry-attempt indexes are independent even when their identifiers match.",
     "supersession_rule": "A supersedes edge suppresses its target only when both diagnostics describe the same cause at the same canonical locus, stage, producer path, iteration index, and retry-attempt index. It never suppresses an independent occurrence. Supersession is applied transitively before duplicate suppression and ordering.",
     "duplicate_key": [
@@ -741,22 +762,26 @@
       "error identifier by Unicode scalar value ascending"
     ],
     "location_rule": "Every source byte offset is zero-based. A source diagnostic for present bytes uses its first offending UTF-8 byte offset. An omitted field or child block uses the zero-width byte position at the first following nonblank line whose indentation is not greater than the parent block header; when no such line exists, it uses the end-of-file offset equal to the source byte length. An omitted required top-level block uses that end-of-file offset. error.source.final_line_feed uses the end-of-file offset equal to the non-empty source byte length because the required byte is absent. An execution diagnostic uses the declaration order of the producer path and then the declared iteration and retry-attempt indexes. Host completion or discovery time is never an ordering key.",
-    "primary_rule": "After suppression, stable_order, and permitted declared-handler recovery, the first unhandled diagnostic is primary. If every diagnostic is recovered, no diagnostic is primary and all handled diagnostics remain ordered evidence.",
-    "secondary_rule": "Every other unhandled emitted diagnostic is secondary and remains in stable_order. A handled or retried diagnostic remains ordered secondary evidence and never controls status while handled."
+    "primary_rule": "After canonical alias resolution, suppression, stable_order, and permitted declared-handler recovery or successful FALLBACK outcome substitution, the first unhandled diagnostic is primary. If every applicable diagnostic is recovered or retained only as substituted local invocation evidence, no diagnostic is primary and all prior diagnostics remain ordered evidence.",
+    "secondary_rule": "Every other unhandled emitted diagnostic is secondary and remains in stable_order. A handled diagnostic or a diagnostic belonging to an unsuccessful retry attempt or primary invocation superseded by successful retry or FALLBACK completion remains ordered local evidence and never controls that successful aggregate result. Merely attempting a retry does not handle a diagnostic."
   },
   "event_model": {
     "event_source": "Emission of a diagnostic is the only producer of an event in Core 0.1.0. No timer, host signal, external notification, or successful completion raises an event. An event exists only as the activation condition of a declared HANDLER and carries no value of its own.",
-    "diagnostic_event_mapping": "Every registered error declares an exact event field. A null event means the diagnostic raises no event and can never be recovered by a declared handler. The mapping is total over the closed error registry and is a bijection between the handler-recoverable errors and the closed event vocabulary.",
+    "diagnostic_event_mapping": "Every registered error declares an exact event field. A null event means the diagnostic raises no event and cannot select a declared recovery handler. The mapping is total over the closed error registry and is a bijection between the handler-recoverable errors and the closed canonical core event vocabulary. Successful FALLBACK or retry outcome substitution retains local failed-invocation evidence without raising a new event.",
     "mapping_invariant": "event is non-null exactly when recoverable_with_declared_handler is true, and every registered event is the image of exactly one registered error. An error whose registered stage precedes execution may carry an event only where a normative rule states that the condition is recoverable before effects; error.value.unknown is the only such identifier in Core 0.1.0.",
-    "raise_rule": "A diagnostic raises its registered event once, at the producer that emitted it, after supersession and duplicate suppression and before the primary/secondary partition. Suppressed and duplicate-merged diagnostics raise no additional event. Each surviving diagnostic raises exactly one event, and distinct diagnostics raise distinct event occurrences even when the event identifier is equal.",
-    "attachment_sites": "A HANDLER is declared at top level and activates only where a HANDLER field references it. The closed attachment set is TASK.HANDLER, STEP.HANDLER, RETRY.HANDLER, DEPENDENCY.HANDLER, and FAILURE.HANDLER. A declared but unattached HANDLER never activates.",
-    "handler_scope": "RETRY.HANDLER is in scope only for diagnostics raised by an attempt of the execution unit declaring that RETRY, including the first attempt. STEP.HANDLER is in scope for diagnostics raised by that STEP and by execution units it reaches. TASK.HANDLER is in scope for diagnostics raised anywhere in that TASK's reachable execution graph. DEPENDENCY.HANDLER is in scope only for diagnostics raised while resolving that DEPENDENCY. FAILURE.HANDLER is in scope only for diagnostics raised while evaluating that FAILURE clause. Scope is determined by the declared producer path, never by host call order.",
+    "raise_rule": "A surviving diagnostic with a non-null mapping raises its registered event once, at the producer that emitted it, after supersession and duplicate suppression and before the primary/secondary partition, unless non_reentrancy_rule suppresses that event. Null-event, suppressed, and duplicate-merged diagnostics raise no additional event. Distinct eligible diagnostics raise distinct event occurrences even when the canonical event identifier is equal.",
+    "attachment_sites": "A HANDLER is declared at top level and is selected for an event only where a HANDLER field references it. The closed attachment set is TASK.HANDLER, STEP.HANDLER, RETRY.HANDLER, DEPENDENCY.HANDLER, and FAILURE.HANDLER. A declared but unattached HANDLER is never selected by an event attachment; a direct acyclic FALLBACK reference may still invoke it without selecting a new event.",
+    "handler_scope": "RETRY.HANDLER is in scope only for diagnostics raised by an attempt of the ACTION declaring that RETRY, including the first attempt. STEP.HANDLER is in scope for diagnostics raised by that STEP and by execution units it reaches. TASK.HANDLER is in scope for diagnostics raised anywhere in that TASK's reachable execution graph. DEPENDENCY.HANDLER is in scope only for diagnostics raised while resolving that DEPENDENCY. FAILURE.HANDLER is in scope only for diagnostics raised while evaluating that FAILURE clause. Scope is determined by the declared producer path, never by host call order.",
     "selection_order": "Candidate handlers are ordered by an exact three-key sequence: first by attachment proximity along the declared producer path, innermost to outermost, using the closed rank order DEPENDENCY or FAILURE local scope, then RETRY, then STEP from innermost to outermost, then TASK; then by the source declaration order of the HANDLER reference list at that attachment site; then by handler ID in Unicode scalar order. The order is total and contains no tie.",
-    "match_rule": "A candidate handler matches a raised event when its EVENT field equals the raised event identifier and its WHEN field is absent or evaluates TRUE. WHEN evaluating MISSING or UNKNOWN does not match and raises no further event.",
-    "multiplicity_rule": "At most one handler runs for one raised event: the first matching candidate under selection_order. Later matching candidates never run for that occurrence. One diagnostic therefore causes at most one handler invocation.",
+    "match_rule": "A candidate handler matches a raised event when its EVENT field, after same-domain alias resolution, equals the canonical raised event identifier and its WHEN field is absent or evaluates TRUE. WHEN evaluating MISSING or UNKNOWN does not match and raises no further event.",
+    "multiplicity_rule": "At most one event-selected handler activation occurs for one raised diagnostic: the first matching candidate under selection_order. Later matching candidates are not selected for that occurrence. Direct acyclic FALLBACK handler invocations are permitted within the selected activation and do not select another event.",
+    "context_target_rule": "For an omitted registered REFERENCE[ACTION] or REFERENCE[meta.execution_unit] target, handler-context binding selects the still-active invocation aggregate owning the originating failed attempt or demanding evaluation. ACTION requires that same ACTION invocation; another aggregate kind uses error.reference.kind. This injected target never identifies another invocation or a terminal attempt. An explicit TARGET follows its operation's own contract: core.retry and core.continue require the originating active aggregate and use error.operation.precondition for a mismatch, while operations such as core.cancel may admit other authorized explicit targets. Event evidence retains the immutable failed attempt result and index. The aggregate remains active through selection, handler execution, and its fallback chain, and finalizes only after that resolution. No control operation resumes or mutates a terminal attempt. core.retry consumes the owning ACTION invocation's existing budget; core.continue requests its declared successor; core.stop remains subject to its operation preconditions.",
     "no_match_rule": "When no candidate matches, the diagnostic remains unhandled and is partitioned as primary or secondary by the unchanged diagnostic_selection contract. A raised event that matches no handler is not itself a diagnostic and adds no identifier.",
-    "recovery_rule": "The selected handler invokes its OPERATION under the invocation-site contract. The originating diagnostic is recovered exactly when that handler invocation's own result records status.succeeded. Any other handler outcome leaves the originating diagnostic unhandled, and every diagnostic emitted by the handler invocation is recorded independently at its own registered stage. Recovery never erases the originating diagnostic or its evidence; a recovered diagnostic remains ordered secondary evidence.",
-    "non_reentrancy_rule": "Handler selection is not re-entered for any diagnostic raised while evaluating a candidate WHEN condition, while resolving a handler's invocation contract, or while executing a handler invocation or its FALLBACK for the same originating diagnostic. Those diagnostics raise no event. This makes handler activation acyclic and terminating.",
+    "recovery_rule": "The selected handler invokes its OPERATION under the invocation-site contract. The originating diagnostic is recovered exactly when that handler invocation's own result, including permitted successful FALLBACK substitution, records status.succeeded. Any other handler outcome leaves the originating diagnostic unhandled. Every diagnostic emitted by a primary, retry, or fallback invocation retains its registered metadata, resolved expression-demand stage when applicable, and local producer path. Recovery and outcome substitution never erase diagnostics or evidence.",
+    "non_reentrancy_rule": "Handler selection is not re-entered for any diagnostic raised while evaluating a candidate WHEN condition, while resolving a handler's invocation contract, or while executing a handler invocation or its FALLBACK for the same originating diagnostic. Those diagnostics raise no event. Direct FALLBACK references must additionally form a finite acyclic graph; a cycle uses error.reference.cycle during resolution. Together with bounded RETRY this makes handler activation terminating.",
+    "fallback_rule": "After a structurally valid and statically valid primary invocation, FALLBACK is eligible on a dynamic operation-precondition refusal or status.failed or status.blocked, never on invalid source or invocation data, success, cancellation, stop, or skipped applicability. Invoke at most one declared fallback using the original handler context. A HANDLER reference supplies that handler's invocation data and permitted fallback chain; its EVENT and WHEN do not select or gate a new event. A successful fallback substitutes its result for the unsuccessful primary at the selected-handler boundary; retain primary diagnostics as local evidence without making them control that successful result. Without successful substitution, the original diagnostic and applicable handler diagnostics remain unhandled. Every primary and fallback effect remains in aggregate evidence.",
+    "continue_rule": "core.continue in a selected handler requests the exact declared successor of the failing execution unit. It requires the current originating event and one unambiguous declared successor, not a previously recovered diagnostic. Commit recovery and advancement only when the selected handler, including permitted FALLBACK substitution, succeeds. Failure never advances; continuation creates no successor, repeated execution, reachability, or authority.",
+    "alias_rule": "DEFINE kind.error, kind.event, and kind.status are same-domain aliases with required BASE and MEANING. Resolve BASE acyclically to one core identifier in the matching domain before diagnostics, event matching, status transitions, and equality. Wrong-domain BASE uses error.reference.kind, unresolved BASE uses error.reference.unresolved, and a cycle uses error.reference.cycle. Aliases inherit every canonical metadata field and add no new core diagnostic, event, or lifecycle state. The exact source contract is 07_VERSIONING_AND_EXTENSIONS/03_EXTENSION_CONTRACT.txt.",
     "status_interaction": "This contract determines only whether a diagnostic is handled. Status remains governed by failure_lifecycle.status_rule and diagnostic_selection; event selection never reorders, suppresses, or re-ranks diagnostics."
   },
   "failure_lifecycle": {
@@ -802,7 +827,7 @@
           "indeterminate"
         ]
       },
-      "resolution_rule": "Each error inherits the list for its registered stage unless an exact identifier override exists. This resolves complete allowed-failure-phase metadata for every registered error. none is not an allowed failure phase when an error exists."
+      "resolution_rule": "Each error inherits the list for its registered stage unless an exact identifier override exists. For an eligible post-preflight expression demand, first apply diagnostic_selection.expression_demand_resolution and use its resolved execution stage and phase_rule. This resolves complete allowed-failure-phase metadata for every registered error and permitted demand context. none is not an allowed failure phase when an unhandled error exists at that producer; diagnostics retained only as successful recovery or substitution evidence keep their local failure phases."
     },
     "baseline_error_profiles": {
       "error.dependency.unsatisfied": "pre_effect only: required dependencies resolve at processing step 7 before the first authorized effect",
@@ -823,11 +848,15 @@
       "error.value.unknown": "ordinary static use is pre_effect; a retry condition or other aggregate decision may become UNKNOWN after a prior child or attempt effect",
       "error.verification.failed": "verification may fail after an effect-free producer, after known effects, or when effect observations are indeterminate"
     },
-    "status_rule": "The primary unhandled diagnostic contributes its registered default_status; secondary diagnostics never override it. If recovery handles that diagnostic while another remains unhandled, the first remaining diagnostic under stable_order becomes primary. Only when every applicable diagnostic is recovered may the declared handler result control status. failure_phase never changes status, and status never infers failure_phase.",
+    "status_rule": "The primary unhandled diagnostic contributes its default_status after canonical alias resolution and any exact expression-demand override; secondary diagnostics and FAILURE mappings never override it. If recovery handles that diagnostic while another remains unhandled, the first remaining diagnostic under stable_order becomes primary. Only when every applicable diagnostic is recovered or belongs solely to a successfully substituted local invocation may the declared handler result control status. failure_phase never changes status, and status never infers failure_phase.",
+    "failure_mapping_rule": "When no primary unhandled diagnostic fixes status, evaluate applicable FAILURE clauses in source declaration order and select the first whose WHEN is TRUE. FALSE does not select; a required MISSING or UNKNOWN condition emits error.required.missing or error.value.unknown and follows ordinary recovery before a later clause is considered. The selected canonical STATUS must be terminal, non-success, and present in the current invocation state's allowed_next; an illegal requested transition uses error.execution.order. Required evidence must resolve. Optional ERROR classifies that declared failure and does not emit a diagnostic or event. A selected legal mapping prevents success without adding generic error.success.unsatisfied. Without an existing primary diagnostic or selected mapping, unsatisfied SUCCESS emits error.success.unsatisfied. Execution roots cannot select status.skipped, including through an alias; that request also uses error.execution.order.",
+    "terminal_invocation_rule": "Every exposed invocation ends with one terminal status. status.blocked is a terminal outcome with no outgoing transition; later availability permits only a separate explicit invocation, retaining the prior result. A non-root declaration with FALSE applicability or optional omission may transition from status.ready to status.skipped without beginning its operation. That transition is forbidden for an execution root. A failed attempt's result is immutable; its owning aggregate remains active until event selection, handler execution, and any fallback chain finish. Injected handler control targets bind that aggregate under event_model.context_target_rule, never a terminal attempt. Terminal child outcomes therefore do not prevent a still-active aggregate from applying its declared recovery contract.",
     "effect_state_rule": "pre_effect requires effect_state none and an empty observed_effects list. post_effect requires at least one known begun effect and preserves applied, partial, or independently proven indeterminate effect truth. indeterminate failure_phase requires effect_state indeterminate unless independent evidence proves the exact effect_state.",
     "output_binding_rule": "pre_effect leaves OUTPUT unbound and forbids partial OUTPUT. post_effect does not bind OUTPUT merely because an effect or schema-local effect-truth field exists. Partial OUTPUT is permitted only where the selected result schema explicitly declares it. Indeterminate phase binds only a value whose existence, type, and provenance are independently proven under that schema.",
     "retry_safety": {
-      "eligibility_rule": "Every ACTION resolving exactly once remains syntactically eligible for an explicit RETRY; no separate retryable marker is introduced and retry adds no authority, scope, dependency, determinism, or effect capability.",
+      "eligibility_rule": "Every ACTION resolving exactly once remains syntactically eligible for an explicit inline RETRY; STEP has no RETRY and a RETRY block cannot be referenced. The block declares eligibility and one budget; a selected core.retry handler authorizes additional attempts. No separate retryable marker is introduced and retry adds no authority, scope, dependency, determinism, or effect capability.",
+      "attempt_bound_rule": "RETRY.LIMIT is the maximum number of additional attempts, 0 through 100. One ACTION invocation makes at most 1 + LIMIT attempts and stops on its first success. Re-entering core.retry does not reset this budget; separate loop instances have separate invocation budgets. core.retry.limit must equal RETRY.LIMIT and no RETRY block means error.operation.precondition.",
+      "condition_delay_rule": "RETRY is the only source of WHEN and DELAY. Omitted WHEN is TRUE and omitted DELAY is DURATION(0, unit.second). DELAY is nonnegative or uses error.value.out_of_range. After an unsuccessful attempt, first check the remaining count, then WHEN. FALSE ends retrying and preserves the previous failure without exhaustion; MISSING uses error.required.missing and UNKNOWN uses error.value.unknown, each without another attempt. For TRUE, establish safety before applying DELAY and starting the next attempt.",
       "pre_effect_rule": "A failed attempt proven pre_effect with effect_state none may be attempted again only when the declared retry count and WHEN condition permit it.",
       "known_effect_rule": "After applied or partial effects, another attempt is permitted only when exact evidence proves the observed state and proves that repetition, resumption, or reconciliation cannot duplicate a non-idempotent effect or exceed the wrapped action's original authority, scope, and post-state.",
       "indeterminate_rule": "An attempt with indeterminate phase or effects prohibits another attempt until exact reconciliation evidence resolves the relevant state.",
@@ -836,12 +865,12 @@
         "UNKNOWN proof or condition": "error.value.unknown",
         "proved unsafe": "error.operation.precondition"
       },
-      "exhaustion_rule": "error.retry.exhausted is emitted only when the initial attempt and every retry permitted by the declared count and conditions were actually made and failed. A safety-blocked unmade attempt does not satisfy exhaustion.",
+      "exhaustion_rule": "error.retry.exhausted is emitted only when exactly 1 + RETRY.LIMIT attempts of this ACTION invocation were actually made and all failed. A successful attempt, a FALSE WHEN before budget consumption, or a safety-blocked unmade attempt does not satisfy exhaustion.",
       "evidence_rule": "Every attempt result and diagnostic remains in attempt-index order. Recovery does not erase prior evidence. The retry producer folds phase and effect observations across all attempts under phase_scope."
     },
     "evidence_requirements": {
       "common": [
-        "error identifier and registered stage",
+        "canonical error identifier, registered stage, and resolved expression-demand stage when applicable",
         "producer declaration or invocation path",
         "canonical source locus or declared execution event",
         "iteration and retry-attempt indexes when applicable",

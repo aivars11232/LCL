@@ -5,6 +5,10 @@ NORMATIVE
 LIST[T]
     Ordered and homogeneous. Duplicates are permitted. Inline and multiline values
     use bracket syntax. Iteration preserves source order.
+    Indexes are zero-based: for length n, index i selects a member exactly when
+    0 <= i < n. Every other INTEGER index yields MISSING, including negative
+    indexes; negative indexes never count from the end. A non-INTEGER index uses
+    error.operator.operand. Neither SET nor STRING supports index access.
 
 SET[T]
     Homogeneous and unique under strict equality. Inline and multiline values use
@@ -18,13 +22,23 @@ SET[T]
 OBJECT
     An object uses an indented VALUE block containing unique lowercase property
     names. Property order has no semantic effect. When SCHEMA is present, every
-    required schema field must occur exactly once and no undeclared field is legal
-    unless that schema explicitly declares openness.
+    required schema field must occur exactly once and no undeclared field is legal.
+    All source-declared schemas are closed; Core 0.1.0 has no openness field.
+    A schema-free object infers each present field's exact static type from its
+    value. Lowercase property access and STRING indexing use the exact key.
+    An absent optional schema field or absent schema-free object key yields
+    MISSING. A field outside a closed schema uses error.operator.operand.
+    A selected key must be statically known so the result has one exact field
+    type; an incompatible index family uses error.operator.operand.
 
 ENUM
     A user enum is defined by DEFINE with KIND kind.type, BASE ENUM, and one or more
-    ITEM identifiers. Its member set and declaration order are closed. Equality is
-    exact identifier equality. Ordered comparison of enum members is forbidden, and
+    distinct ITEM simple identifiers. Select this type with REF(type.id).
+    Its member set and declaration order are closed. The enum domain is the
+    defining declaration identity; a transparent type alias preserves it.
+    ITEM values resolve only against one expected concrete enum domain.
+    Equality requires the same enum domain and member identifier. Ordered
+    comparison of enum members is forbidden, and
     declaration order has no comparison, iteration, or sorting significance. Sorting
     enum values requires an approved key extractor returning a registered ordered
     type.
@@ -35,5 +49,19 @@ SCHEMA
     REQUIRED defaults only where its block signature says so. Recursive value
     schemas are forbidden in Core 0.1.0.
 
-MISSING and UNKNOWN are never material collection members. NULL is permitted only
-when the declared member/field type permits NULL.
+BRACKET VALUE TYPING
+    Brackets denote LIST unless the receiving contract uniquely requires SET[T].
+    An exact expected member type supplies the context for empty and nested
+    literals. Otherwise every member must have one identical static type; no
+    INTEGER-to-DECIMAL promotion occurs merely to make a collection homogeneous.
+    An empty bracket literal without one expected member type uses
+    error.type.mismatch. The same error applies to incompatible member types.
+    The exact contract is operators_and_functions_v0.1.0.json#/collection_expression.
+    ALL, ANY, and NONE supply BOOLEAN context to their immediate bracket argument;
+    its UNKNOWN members are transient observations consumed by that function and
+    never a material collection value. Their empty bracket argument is well-typed.
+
+MISSING and UNKNOWN are never material collection members. A source member or
+field admits NULL only when its declared type is NULL. Source nullable unions
+are not defined; REQUIRED FALSE permits absence, not NULL at another type.
+Registered core result schemas may separately admit NULL in exact contract unions.

@@ -14,7 +14,7 @@
       "10_REGISTRIES/built_in_groups_and_results_v0.1.0.json#/result_contract/effect_schemas/*/fields/*/type",
       "10_REGISTRIES/built_in_groups_and_results_v0.1.0.json#/result_schemas/*/fields/*/type"
     ],
-    "separation_from_source_syntax": "This notation is not LCL source syntax and no form defined here is admissible in a source TYPE field. Source type syntax is governed by 04_GRAMMAR/10_COMPLETE_EBNF.ebnf TYPE_EXPRESSION and by field_signatures_v0.1.0.json value kinds. The two notations share definitions where they name the same thing, and they never share syntax.",
+    "separation_from_source_syntax": "This registry notation does not extend LCL source syntax. A spelling is admissible in a source TYPE field only when the independent TYPE_EXPRESSION grammar in 04_GRAMMAR/10_COMPLETE_EBNF.ebnf and the field-signature value kind admit it. Shared built-in names denote the same types in both notations; registry-only unions, metatypes, and schema names do not become source forms.",
     "grammar": {
       "notation_profile": "ISO 14977 profile identical to 04_GRAMMAR/10_COMPLETE_EBNF.ebnf: comma concatenates, vertical bar alternates, braces repeat zero or more times, square brackets enclose an optional part, and question marks delimit a special sequence.",
       "productions": [
@@ -494,7 +494,7 @@
       "possible_effects": [
         "none"
       ],
-      "invocation_resolution": "Use only the declared target value, expression, bindings, and declared snapshots. A MISSING operand used outside == or != produces error.required.missing; a required UNKNOWN result produces error.value.unknown. A host-capacity failure is error.host.constraint and does not change the dependency class.",
+      "invocation_resolution": "Use only the declared target value, expression, bindings, and declared snapshots. Evaluate MISSING and UNKNOWN under operators_and_functions_v0.1.0.json#/evaluation_contract, including ==, !=, and EXISTS exceptions; a required final MISSING result produces error.required.missing and UNKNOWN produces error.value.unknown. A host-capacity failure is error.host.constraint and does not change the dependency class. Parse and bind the exact expression_fragment_contract; no alternate calculation language is admitted.",
       "target": {
         "type": "meta.material_value",
         "required": false
@@ -504,15 +504,19 @@
           "type": "STRING|REFERENCE",
           "required": true,
           "default": null,
-          "meaning": "Exact expression or defined calculation.",
-          "constraints": []
+          "meaning": "One expression fragment STRING, or REF to a DEFINE kind.constant whose declared value is such a STRING.",
+          "constraints": [
+            "Follow expression_fragment_contract; a REFERENCE must resolve exactly once to DEFINE kind.constant with TYPE STRING."
+          ]
         },
         "bindings": {
           "type": "OBJECT",
           "required": false,
           "default": {},
           "meaning": "Named expression bindings.",
-          "constraints": []
+          "constraints": [
+            "Follow expression_fragment_contract bindings; no reserved or declaration-name shadowing."
+          ]
         }
       },
       "positional_parameters": false,
@@ -533,8 +537,10 @@
         "error.value.out_of_range",
         "error.host.constraint",
         "error.required.missing",
-        "error.value.unknown"
-      ]
+        "error.value.unknown",
+        "error.reference.kind"
+      ],
+      "error_resolution": "Union local errors with every applicable diagnostic of the decoded expression; wrong reference declaration kind uses error.reference.kind."
     },
     "core.compare": {
       "meaning": "Compare artifacts or values against exact criteria.",
@@ -550,7 +556,7 @@
       "possible_effects": [
         "none"
       ],
-      "invocation_resolution": "Resolve host or network independently for the target and against operands; material-value-only comparison resolves declared_state_only. When criteria is omitted, use the registered == exact strict-equality comparison over the resolved operands. Evaluate every criterion under the registered operator and sentinel rules: a non-==/!= criterion encountering MISSING produces error.required.missing, and any criterion whose result remains UNKNOWN produces error.value.unknown because a successful result.value must contain a material value. The invocation has no effects.",
+      "invocation_resolution": "Resolve host or network independently for the target and against operands; material-value-only comparison resolves declared_state_only. When criteria is omitted, use the registered == exact strict-equality comparison over the resolved operands. Evaluate the single criterion under the registered operator and sentinel rules: a non-==/!= criterion encountering MISSING produces error.required.missing, and a criterion whose result remains UNKNOWN produces error.value.unknown because a successful result.value must contain a material value. The invocation has no effects.",
       "target": {
         "type": "meta.material_value|meta.addressable",
         "required": true
@@ -568,7 +574,12 @@
           "required": false,
           "default": "==",
           "meaning": "Exact comparison criteria; omission selects the registered == strict-equality comparison.",
-          "constraints": []
+          "constraints": [
+            "One STRING is exactly one of ==, !=, <, <=, >, >=, IN, CONTAINS, MATCHES.",
+            "One OBJECT is closed with required operator (one permitted STRING token), optional left (property_path STRING), and optional right (property_path STRING). Omitted paths select the complete corresponding operand; supplied paths project through exact registered OBJECT fields.",
+            "One REFERENCE resolves once to a declared STRING or OBJECT value satisfying the same contract; it never invokes an operation.",
+            "Unknown keys, malformed paths, absent operator, and an unregistered token produce error.operation.parameter. A missing projected value is MISSING and follows the selected operator sentinel rules; an incompatible operand pair produces error.operator.operand."
+          ]
         }
       },
       "positional_parameters": false,
@@ -577,7 +588,7 @@
         "both operands are accessible and criteria are type-valid"
       ],
       "postconditions": [
-        "every resolved criterion is evaluated exactly, including the default == criterion when selected, and a successful comparison yields a material value"
+        "Exactly one comparison is evaluated and result.value.value is its BOOLEAN result; FALSE is a successful comparison result, not an operation failure."
       ],
       "errors": [
         "error.operation.parameter",
@@ -618,7 +629,8 @@
           "default": null,
           "meaning": "Boolean member predicate.",
           "constraints": [
-            "A REFERENCE resolves exactly once to a kind.operation with SIDE_EFFECT FALSE, DETERMINISTIC TRUE, a fully resolved dependency set of exactly declared_state_only, exactly one PARAMETER accepting the member type, and exactly one BOOLEAN RESULT."
+            "A REFERENCE resolves exactly once to a kind.operation with SIDE_EFFECT FALSE, DETERMINISTIC TRUE, a fully resolved dependency set of exactly declared_state_only, exactly one PARAMETER accepting the member type, and exactly one BOOLEAN RESULT.",
+            "A STRING follows expression_fragment_contract with the reserved item binding and must produce BOOLEAN; final MISSING and UNKNOWN retain their registered errors."
           ]
         }
       },
@@ -642,7 +654,7 @@
         "error.reference.kind",
         "error.operation.precondition"
       ],
-      "error_resolution": "Union the local errors with every applicable error of the referenced predicate operation when a predicate REFERENCE is selected."
+      "error_resolution": "Union the local errors with every applicable error of the referenced predicate operation when a predicate REFERENCE is selected. A STRING predicate retains all applicable expression diagnostics."
     },
     "core.filter": {
       "meaning": "Return all members of one LIST that satisfy a predicate, preserving source order.",
@@ -669,7 +681,8 @@
           "default": null,
           "meaning": "Boolean member predicate.",
           "constraints": [
-            "A REFERENCE resolves exactly once to a kind.operation with SIDE_EFFECT FALSE, DETERMINISTIC TRUE, a fully resolved dependency set of exactly declared_state_only, exactly one PARAMETER accepting the member type, and exactly one BOOLEAN RESULT."
+            "A REFERENCE resolves exactly once to a kind.operation with SIDE_EFFECT FALSE, DETERMINISTIC TRUE, a fully resolved dependency set of exactly declared_state_only, exactly one PARAMETER accepting the member type, and exactly one BOOLEAN RESULT.",
+            "A STRING follows expression_fragment_contract with the reserved item binding and must produce BOOLEAN; final MISSING and UNKNOWN retain their registered errors."
           ]
         }
       },
@@ -692,7 +705,7 @@
         "error.reference.kind",
         "error.operation.precondition"
       ],
-      "error_resolution": "Union the local errors with every applicable error of the referenced predicate operation when a predicate REFERENCE is selected."
+      "error_resolution": "Union the local errors with every applicable error of the referenced predicate operation when a predicate REFERENCE is selected. A STRING predicate retains all applicable expression diagnostics."
     },
     "core.sort": {
       "meaning": "Return LIST[T] in one declared deterministic total order from LIST[T] or SET[T].",
@@ -782,7 +795,7 @@
       "possible_effects": [
         "none"
       ],
-      "invocation_resolution": "Resolve the key to fixed declared data, a deterministic side-effect-free expression, or a kind.operation whose fully resolved dependency set is exactly declared_state_only. A key result of MISSING produces error.required.missing and UNKNOWN produces error.value.unknown. No invocation may add a dependency or effect.",
+      "invocation_resolution": "Resolve STRING key as exactly one property_path under field_signatures_v0.1.0.json, or REFERENCE as the registered deterministic side-effect-free key operation with dependencies exactly declared_state_only. A key result of MISSING produces error.required.missing and UNKNOWN produces error.value.unknown. No invocation may add a dependency or effect.",
       "target": {
         "type": "LIST[T]",
         "required": true
@@ -794,7 +807,8 @@
           "default": null,
           "meaning": "Exact grouping key.",
           "constraints": [
-            "A REFERENCE resolves exactly once to a kind.operation with SIDE_EFFECT FALSE, DETERMINISTIC TRUE, a fully resolved dependency set of exactly declared_state_only, exactly one PARAMETER accepting the member type, and exactly one material RESULT usable as a grouping key."
+            "A REFERENCE resolves exactly once to a kind.operation with SIDE_EFFECT FALSE, DETERMINISTIC TRUE, a fully resolved dependency set of exactly declared_state_only, exactly one PARAMETER accepting the member type, and exactly one material RESULT usable as a grouping key.",
+            "A STRING is exactly one property_path defined for every member; malformed or statically unregistered paths produce error.operation.precondition."
           ]
         }
       },
@@ -804,8 +818,9 @@
         "target is LIST[T] and key is defined for every T member"
       ],
       "postconditions": [
-        "every input member occurs in exactly one group",
-        "groups follow first key occurrence and members within each group retain LIST source order"
+        "result.value.value is a LIST of closed OBJECT records containing exactly key and items; key is the evaluated material grouping key and items is LIST[T].",
+        "Group keys are compared by the registered strict == equality, with no coercion; every input member occurrence appears in exactly one items LIST.",
+        "Groups follow first key occurrence and members within each group retain LIST source order; an empty input yields an empty LIST with the same group-record schema."
       ],
       "errors": [
         "error.operation.parameter",
@@ -1975,7 +1990,7 @@
         "process",
         "state"
       ],
-      "invocation_resolution": "Resolve process for a path, process, or service and state for an internal execution-unit reference; remote-control mode of the selected stop profile adds network dependency.",
+      "invocation_resolution": "Resolve process for a path, process, or service and state for an internal execution-unit reference; remote-control mode of the selected stop profile adds network dependency. For an internal execution-unit target, select the active invocation aggregate, not an immutable completed child attempt; its current allowed_next must include status.stopped or error.execution.order results. An implicit handler-context target is the originating active aggregate.",
       "target": {
         "type": "PATH|STRING|REFERENCE[meta.execution_unit]",
         "required": true
@@ -1999,7 +2014,8 @@
       "positional_parameters": false,
       "result_schema": "result.operation",
       "preconditions": [
-        "target is running or active"
+        "target is running or active",
+        "An internal target must allow status.stopped in its current registered allowed_next set."
       ],
       "postconditions": [
         "target is stopped",
@@ -2013,7 +2029,8 @@
         "error.host.constraint",
         "error.operation.precondition",
         "error.operation.postcondition",
-        "error.execution.action"
+        "error.execution.action",
+        "error.execution.order"
       ]
     },
     "core.send": {
@@ -2461,7 +2478,7 @@
       "possible_effects": [
         "inherited"
       ],
-      "invocation_resolution": "Resolve the wrapped ACTION first, then copy its exact determinism, dependency set, effect set, and applicable errors. A limit outside 0..100 produces error.value.out_of_range. Before each additional attempt, evaluate when as a required BOOLEAN condition; MISSING produces error.required.missing and UNKNOWN produces error.value.unknown. A prior pre_effect attempt with effect_state none requires no additional effect-safety proof. After known effects, exact retained evidence must prove safe repetition, resumption, or reconciliation within the wrapped action's original authority, scope, and post-state; missing proof produces error.required.missing, UNKNOWN proof produces error.value.unknown, and proved-unsafe repetition produces error.operation.precondition. An indeterminate prior attempt prohibits another attempt until reconciled. Retry adds no authority and no dependency or effect class. The wrapped ACTION's RETRY block is the only attempt bound: this row authorizes that declared RETRY rather than opening a second budget, total attempts are exactly 1 + that LIMIT, and a resolved limit unequal to it or a wrapped ACTION declaring no RETRY block produces error.operation.precondition.",
+      "invocation_resolution": "Resolve the wrapped ACTION first, then copy its exact determinism, dependency set, effect set, and applicable errors. A limit outside 0..100 produces error.value.out_of_range. Before each additional attempt, evaluate RETRY.WHEN (default TRUE) as a required BOOLEAN condition; MISSING produces error.required.missing and UNKNOWN produces error.value.unknown. A prior pre_effect attempt with effect_state none requires no additional effect-safety proof. After known effects, exact retained evidence must prove safe repetition, resumption, or reconciliation within the wrapped action's original authority, scope, and post-state; missing proof produces error.required.missing, UNKNOWN proof produces error.value.unknown, and proved-unsafe repetition produces error.operation.precondition. An indeterminate prior attempt prohibits another attempt until reconciled. Retry adds no authority and no dependency or effect class. The wrapped ACTION's RETRY block is the only attempt bound: this row authorizes that declared RETRY rather than opening a second budget, total attempts are at most 1 + that LIMIT, and a resolved limit unequal to it or a wrapped ACTION declaring no RETRY block produces error.operation.precondition. Stop after the first successful attempt. RETRY.DELAY alone supplies a nonnegative delay, default DURATION(0, unit.second); a negative delay produces error.value.out_of_range. A false RETRY.WHEN preserves the previous failure and prevents another attempt. Count exhaustion requires 1 + LIMIT actual unsuccessful attempts. The budget is shared by all handler invocations for this ACTION invocation and resets only for a separate ACTION invocation.",
       "target": {
         "type": "REFERENCE[ACTION]",
         "required": true
@@ -2475,25 +2492,12 @@
           "constraints": [
             "0..100"
           ]
-        },
-        "delay": {
-          "type": "DURATION",
-          "required": false,
-          "default": "DURATION(0, unit.second)",
-          "meaning": "Delay between attempts.",
-          "constraints": []
-        },
-        "when": {
-          "type": "boolean_expression",
-          "required": false,
-          "default": true,
-          "meaning": "Retry condition.",
-          "constraints": []
         }
       },
       "positional_parameters": false,
       "result_schema": "result.operation",
       "preconditions": [
+        "The selected handler is handling an event of this same active ACTION invocation aggregate; its failed attempt is immutable evidence and the existing RETRY budget is consumed.",
         "wrapped ACTION resolves exactly once before any retry decision",
         "wrapped ACTION declares a RETRY block whose LIMIT equals the resolved limit",
         "before an additional attempt after known effects, exact retained evidence proves safe repetition, resumption, or reconciliation within inherited authority, scope, and post-state",
@@ -2502,7 +2506,8 @@
       "postconditions": [
         "attempt count never exceeds 1+limit",
         "every attempt and its local diagnostics, phase, effects, and OUTPUT binding are evidenced in attempt-index order",
-        "aggregate failure phase and effects account for every attempt made"
+        "aggregate failure phase and effects account for every attempt made",
+        "A successful attempt ends retrying; a false condition or safety refusal is not count exhaustion and does not turn a failed attempt into success."
       ],
       "errors": [
         "error.operation.parameter",
@@ -2518,7 +2523,7 @@
       "error_resolution": "Before inheritance, use error.reference.unresolved when the wrapped ACTION does not resolve exactly once and error.reference.cycle when its reference graph contains a prohibited cycle. For an additional attempt, use error.required.missing for missing safety proof, error.value.unknown for UNKNOWN safety proof or condition, and error.operation.precondition for proved-unsafe repetition; a safety-blocked unmade attempt is not exhaustion. Otherwise union the local retry errors with every applicable error of the wrapped ACTION contract, including any wrapped operation or profile precondition error."
     },
     "core.continue": {
-      "meaning": "Continue a bounded path after a handled event.",
+      "meaning": "Request continuation at the declared successor after the selected handler successfully handles its originating event.",
       "category": "control",
       "determinism": {
         "category": "deterministic",
@@ -2530,7 +2535,7 @@
       "possible_effects": [
         "state"
       ],
-      "invocation_resolution": "Resolve only the referenced execution-unit state and its exact declared successor.",
+      "invocation_resolution": "Resolve the originating execution unit and its exact declared successor in the currently selected handler context. Record the continuation request; recovery and advancement commit together only after the selected handler, including any successful FALLBACK, succeeds. An absent or mismatched selected-handler context produces error.operation.precondition; an invalid declared successor uses error.execution.order.",
       "target": {
         "type": "REFERENCE[meta.execution_unit]",
         "required": true
@@ -2539,15 +2544,16 @@
       "positional_parameters": false,
       "result_schema": "result.operation",
       "preconditions": [
-        "current event is handled and continuation path exists"
+        "The selected handler is handling the current event of this same active originating invocation aggregate, and an exact declared continuation path exists."
       ],
       "postconditions": [
-        "execution resumes at exact declared successor"
+        "On successful handler completion, the originating diagnostic is handled and execution resumes at the exact declared successor; a failed handler never advances."
       ],
       "errors": [
         "error.operation.parameter",
         "error.reference.unresolved",
-        "error.execution.order"
+        "error.execution.order",
+        "error.operation.precondition"
       ]
     },
     "core.cancel": {
@@ -2563,7 +2569,7 @@
       "possible_effects": [
         "state"
       ],
-      "invocation_resolution": "Resolve only the referenced internal execution-unit state, require its registered allowed_next set to contain status.cancelled, and record the exact reason.",
+      "invocation_resolution": "Resolve only the referenced internal execution-unit state, require its registered allowed_next set to contain status.cancelled, and record the exact reason. A supplied target is an active invocation aggregate, never a completed attempt; an implicit handler-context target is the originating active aggregate. Explicit cancellation outside a handler remains permitted under the registered authority and transition checks.",
       "target": {
         "type": "REFERENCE[meta.execution_unit]",
         "required": true
@@ -2595,5 +2601,14 @@
         "error.cancelled"
       ]
     }
+  },
+  "expression_fragment_contract": {
+    "syntax": "After STRING decoding, consume exactly one EXPRESSION from 04_GRAMMAR/10_COMPLETE_EBNF.ebnf, followed only by optional whitespace. No declarations, statements, operation invocation, or named expression-call argument is admitted.",
+    "lexical_profile": "Use the source character, string, identifier, and token rules. The fragment is one logical expression and introduces no indentation blocks.",
+    "environment": "REF references resolve in the enclosing document and read values under types_v0.1.0.json#/reference_context_contract. Bare names in fragments denote only declared local bindings, reserved target or item where provided, or contextual enum/qualified-identifier data. They never implicitly read a document declaration; use REF for that value read. Bindings are immutable snapshots; an unknown binding name produces error.reference.unresolved.",
+    "bindings": "core.calculate bindings is a closed OBJECT with simple-identifier keys; keys must not collide with any visible declaration ID or its simple name, any registered reserved word, or target. The reserved target binding is the resolved TARGET value, or MISSING when TARGET is omitted.",
+    "predicate": "core.select and core.filter STRING predicates use the same fragment syntax with exactly one additional reserved binding item, the current member value. Each member is evaluated independently; there is no implicit index or external binding object.",
+    "diagnostics": "Malformed fragment syntax and invalid bindings produce error.operation.parameter. Valid fragments retain the normal expression diagnostics; a required final result of MISSING produces error.required.missing and UNKNOWN produces error.value.unknown.",
+    "evaluation": "Use operators_and_functions_v0.1.0.json expression evaluation and special-value rules. Static checks cover the complete fragment; dynamic errors arise only from evaluated subexpressions."
   }
 }

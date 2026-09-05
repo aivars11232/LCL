@@ -23,7 +23,8 @@ DATE: 2026-08-30
     MEASURE(1920, unit.pixel)
 
 The constructor registry defines the exact accepted overloads; calls are never
-variadic. PATH accepts one STRING, or one WORKSPACE reference followed by one
+variadic. Arguments are positional only and named arguments are invalid syntax.
+PATH accepts one STRING, or one WORKSPACE reference followed by one
 relative STRING. A one-STRING relative PATH is legal only as IMPORT.SOURCE or
 EXTENSION.SOURCE and resolves from the importing document; otherwise that form
 requires an absolute path. The WORKSPACE form must resolve to the workspace root
@@ -44,3 +45,39 @@ number and any registered unit, including a Time-category unit, unless a more
 specific normative field or operation contract narrows it.
 
 REF accepts an identifier, not a quoted string, and resolves exactly once.
+Its complete contextual contract is
+10_REGISTRIES/types_v0.1.0.json#/reference_context_contract.
+
+An explicit reference field, reference-typed value, source type/schema, or
+operation target/argument explicitly naming a REFERENCE alternative or an
+addressable-identity metatype retains the resolved identity. A broad
+meta.material_value slot alone does not select identity mode; it reads a
+value-bearing REF once. An explicit identity alternative takes precedence if
+that receiving slot also admits material values. The context applies to a direct
+REF, parentheses around
+it, or members of a reference-typed collection; it does not change the operand
+rules inside another function, operator, property access, or index access.
+
+Every other occurrence is a value context. REF reads exactly one bound value
+of INPUT, DATA, CONTEXT, MEMORY, STATE, OUTPUT, DEFINE kind.constant, or a
+loop-local binding. REF to VALIDATE or VERIFY reads its Boolean check result.
+Other declarations remain reference identities. A stored REFERENCE remains a
+reference value after that one read; there is no recursive dereference. Thus
+REF(input.number) + 1 reads the number, whereas a REFERENCE-typed VALUE:
+REF(input.number) stores its declaration identity. Equality between two stored
+reference values compares their referent identities.
+
+A reserved uppercase property immediately following REF, allowing parentheses
+around REF, reads the declaration's registered field before reading its bound
+value. REF(output.copy).TARGET therefore reads the declared TARGET even before
+OUTPUT has a result. A lowercase property instead reads the evaluated OBJECT
+value: REF(output.image).width selects the result's width property. An absent
+optional declared field yields MISSING. An unregistered declared field or a
+property on an incompatible value family uses error.operator.operand. Repeated
+declaration fields yield their values as a LIST in source occurrence order;
+block-valued fields yield references to the blocks, never inferred objects.
+
+Reading an absent or not-yet-bound value yields MISSING. Reading an existing
+binding whose value cannot be determined yields UNKNOWN. REQUIRED, DEFAULT,
+and dependency-order rules then apply. A read does not invoke an operation,
+start a producer, reorder execution, or rerun a VALIDATE/VERIFY check.

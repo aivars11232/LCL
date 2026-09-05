@@ -2,6 +2,67 @@
   "language": "LCL",
   "version": "0.1.0",
   "closed": true,
+  "signature_notation": {
+    "scope": "Only constructor, operator, and pure-function signatures in this registry. This is specification notation, never source TYPE syntax; operation/result contract notation is separately closed by operations_v0.1.0.json#/contract_type_notation.",
+    "structure": "A parameters array lists positional parameters. Each operands-array entry is an alternative complete operand tuple: commas separate operands, vertical bars form alternatives within an operand, and square brackets bind a collection element domain. A single compatibility designator denotes the whole binary tuple. Bare LIST and SET accept any one material member type. T binds one identical static type throughout one signature application. Built-in names have their types_v0.1.0.json meanings. No unnamed overload, coercion, named function argument, or additional type variable is admitted.",
+    "operand_designators": {
+      "numeric": "INTEGER or DECIMAL only.",
+      "same_unit_MEASURE": "MEASURE; every MEASURE operand in the tuple must carry the same exact unit identifier.",
+      "same_unit_MEASURE_collection": "LIST[MEASURE] or SET[MEASURE] whose members all carry the same exact unit identifier.",
+      "ordered": "Material values mutually order-compatible under ordered_types and ordered_type_rules; same static type except INTEGER/DECIMAL comparison, and identical unit for MEASURE.",
+      "nonempty_collection[ordered]": "A LIST or SET with at least one material member, with every pair of members order-compatible.",
+      "equality_compatible": "Any two material values or permitted singleton sentinels. Different material static types are unequal except INTEGER/DECIMAL numeric promotion. Two REFERENCE values compare identity. Same-type values compare under the registered structural equality rules.",
+      "order_compatible": "Two ordered values of the same static type, or an INTEGER/DECIMAL pair; MEASURE requires the same exact unit. Sentinel handling follows evaluation_contract.",
+      "property_name": "One grammar PROPERTY_ACCESS name; lowercase selects an evaluated OBJECT field, while a reserved uppercase name directly following REF selects declaration metadata under types_v0.1.0.json#/reference_context_contract.",
+      "any_expression_or_reference": "One expression evaluated once under the ordinary value-read reference rules, including a permitted MISSING or UNKNOWN sentinel.",
+      "LIST[BOOLEAN|UNKNOWN]": "A material LIST[BOOLEAN], or the non-material immediate Boolean argument sequence defined by quantifier_argument; never a source union type.",
+      "qualified_identifier(unit)": "One exact identifier in formats_encodings_units_v0.1.0.json#/units, subject to the constructor's declared unit restriction.",
+      "REFERENCE[WORKSPACE]": "One reference identity resolving to a WORKSPACE declaration; this explicit constructor receiving context retains identity."
+    },
+    "result_designators": {
+      "same_numeric_family": "INTEGER for INTEGER, DECIMAL for DECIMAL, or MEASURE with the operand's exact unit and numeric-component family.",
+      "promoted_numeric_or_measure": "INTEGER for two INTEGER operands, DECIMAL when either scalar numeric operand is DECIMAL, or MEASURE with its original unit and numeric component promoted by the same scalar rule.",
+      "promoted_family": "Scalar numeric promotion as above, normalized DURATION for two DURATION operands, or same-unit MEASURE with scalar promotion of its numeric components.",
+      "same_family_nonnegative": "The operand's static family with exact absolute magnitude; DURATION remains normalized and MEASURE preserves its exact unit and numeric-component family.",
+      "promoted_member_family": "INTEGER for INTEGER members, DECIMAL for DECIMAL members, normalized DURATION for DURATION members, or MEASURE with the common exact unit and DECIMAL numeric component iff any member has a DECIMAL component.",
+      "member_type": "The collection's exact static member type; for OBJECT index access, the selected field's declared or inferred type.",
+      "declared_property_type": "The selected OBJECT or declaration field's registered or inferred static type, with repeated declaration fields handled by reference_context_contract."
+    },
+    "sentinel_lifting": "A result signature states its normal material family. evaluation_contract may additionally yield a permitted non-material sentinel; that does not introduce a storable sentinel type."
+  },
+  "evaluation_contract": {
+    "static_validation": "Resolve names, arity, receiving contexts, and operand types before evaluation. Every subexpression is statically checked, including a branch that Boolean short-circuit will skip. Wrong operator/function arity or operand family uses error.operator.operand. Unknown references retain error.reference.unresolved; unresolved collection type uses error.type.mismatch.",
+    "order": "Evaluate operator operands, constructor arguments, function arguments, collection members, and postfix bases/indices in source order from left to right. Stop evaluation at the first diagnostic. The only lazy forms are AND and OR; evaluating an immediate quantifier argument evaluates all of its member expressions before reduction.",
+    "short_circuit": "AND evaluates its right operand unless the left result is FALSE; OR evaluates its right operand unless the left result is TRUE. UNKNOWN on the left never skips the right. NOT, AND, and OR use the complete strong Kleene truth tables in unknown_logic.",
+    "missing": "A consumed MISSING operand emits error.required.missing except for ==, !=, and EXISTS. Property or index access may itself produce MISSING when an otherwise valid selection is absent. An operand in a skipped Boolean branch is not consumed.",
+    "unknown": "After evaluating all required operands and checking MISSING, any UNKNOWN operand yields UNKNOWN for a constructor, arithmetic operation, ordered comparison, membership, containment, pattern match, ordinary pure function, property access, or index access. Equality, EXISTS, Boolean logic, and quantifier reduction use their explicit special rules. A concrete evaluation diagnostic is never hidden by another operand's UNKNOWN. A required material receiving site rejects UNKNOWN with error.value.unknown.",
+    "equality": "== always yields a BOOLEAN and != is its Boolean negation. MISSING and UNKNOWN are distinct singleton values for equality only: each equals itself, each differs from the other and every material value. Different material static types are unequal except INTEGER/DECIMAL promotion. MEASURE equality requires both the identical unit identifier and exact equal numeric magnitude; different units yield FALSE rather than a unit error. Same-unit restrictions on ordered comparison and arithmetic remain in force. No other implicit coercion exists.",
+    "reference_read": "Apply types_v0.1.0.json#/reference_context_contract before using the resulting operand. Ordinary functions and operators read a value-bearing REF once; a stored REFERENCE value is not recursively dereferenced.",
+    "errors": [
+      "error.operator.operand",
+      "error.type.mismatch",
+      "error.reference.unresolved",
+      "error.reference.kind",
+      "error.reference.cycle",
+      "error.required.missing",
+      "error.value.unknown"
+    ],
+    "error_union": "Each row's errors add to these common evaluation errors and applicable errors of evaluated subexpressions; a row's short list is not an exemption from the common rules."
+  },
+  "collection_expression": {
+    "default_family": "An ordinary bracket literal denotes LIST unless its immediate expected type is one exact SET[T]; that context selects SET and strict-equal duplicate source values collapse after member evaluation.",
+    "member_type": "One exact expected collection member type supplies the type of every member, including nested empty literals. Otherwise every material member must have the same static type, which becomes T. No numeric promotion occurs merely to construct a collection.",
+    "empty": "An empty bracket literal is valid only when its immediate context supplies one unique member type. An unconstrained SUM([]), MIN([]), MAX([]), COUNT([]), or EMPTY([]) has no unique member type and uses error.type.mismatch. ALL([]), ANY([]), and NONE([]) supply BOOLEAN context. An already typed empty collection is a valid COUNT/EMPTY argument, but the nonempty reductions reject it with error.operator.operand.",
+    "materiality": "Every ordinary collection member is material. MISSING and UNKNOWN cannot become material collection members. quantifier_argument is the sole immediate Boolean sequence exception and produces no material collection."
+  },
+  "quantifier_argument": {
+    "forms": "ALL, ANY, and NONE accept one material LIST[BOOLEAN] or one immediate bracket sequence, allowing parentheses around that sequence, whose members evaluate to BOOLEAN or UNKNOWN.",
+    "evaluation": "Every immediate member is statically Boolean-compatible, and is evaluated left to right before reduction. MISSING emits error.required.missing; another material family emits error.operator.operand. The empty immediate sequence has BOOLEAN context.",
+    "boundary": "An immediate sequence containing UNKNOWN is a transient argument sequence, not LIST material data. It cannot be assigned, returned, indexed, nested as collection data, persisted, or passed through another function. This immediate quantifier-argument position explicitly permits UNKNOWN literals, including outside another condition; it permits no escape of the sequence into material data. Whole-argument UNKNOWN propagates; whole-argument MISSING errors.",
+    "all": "FALSE if any member is FALSE; otherwise UNKNOWN if any member is UNKNOWN; otherwise TRUE, including empty input.",
+    "any": "TRUE if any member is TRUE; otherwise UNKNOWN if any member is UNKNOWN; otherwise FALSE, including empty input.",
+    "none": "NOT of the ANY reduction; TRUE for empty input."
+  },
   "numeric_promotion": {
     "INTEGER+INTEGER": "INTEGER",
     "INTEGER+DECIMAL": "DECIMAL",
@@ -37,11 +98,27 @@
   "non_material_ordering": "MISSING and UNKNOWN are not orderable values.",
   "string_order": "lexicographic by Unicode scalar value",
   "unknown_logic": {
+    "NOT FALSE": "TRUE",
+    "NOT TRUE": "FALSE",
     "NOT UNKNOWN": "UNKNOWN",
+    "FALSE AND FALSE": "FALSE",
+    "FALSE AND TRUE": "FALSE",
     "FALSE AND UNKNOWN": "FALSE",
+    "TRUE AND FALSE": "FALSE",
+    "TRUE AND TRUE": "TRUE",
     "TRUE AND UNKNOWN": "UNKNOWN",
+    "UNKNOWN AND FALSE": "FALSE",
+    "UNKNOWN AND TRUE": "UNKNOWN",
+    "UNKNOWN AND UNKNOWN": "UNKNOWN",
+    "FALSE OR FALSE": "FALSE",
+    "FALSE OR TRUE": "TRUE",
     "FALSE OR UNKNOWN": "UNKNOWN",
-    "TRUE OR UNKNOWN": "TRUE"
+    "TRUE OR FALSE": "TRUE",
+    "TRUE OR TRUE": "TRUE",
+    "TRUE OR UNKNOWN": "TRUE",
+    "UNKNOWN OR FALSE": "UNKNOWN",
+    "UNKNOWN OR TRUE": "TRUE",
+    "UNKNOWN OR UNKNOWN": "UNKNOWN"
   },
   "constructors": {
     "PATH": {
@@ -428,6 +505,7 @@
         "T,LIST[T]|SET[T]"
       ],
       "result": "BOOLEAN|UNKNOWN",
+      "semantics": "TRUE iff the left value is strict-equal to at least one member of the right collection; FALSE for an empty collection.",
       "precedence": 40,
       "associativity": "none"
     },
@@ -439,6 +517,7 @@
         "OBJECT,STRING"
       ],
       "result": "BOOLEAN|UNKNOWN",
+      "semantics": "STRING containment is exact contiguous Unicode-scalar substring occurrence, including the empty substring. Collection containment is reversed IN. OBJECT containment tests exact presence of the STRING key without reading its value.",
       "precedence": 40,
       "associativity": "none"
     },
@@ -483,6 +562,7 @@
         "OBJECT|REFERENCE,property_name"
       ],
       "result": "declared_property_type|MISSING",
+      "semantics": "Lowercase selects the exact OBJECT property. A known required field must be present; an absent optional field yields MISSING. A field absent from a closed schema is error.operator.operand; an absent field of a schema-free OBJECT yields MISSING. A reserved uppercase property directly following REF selects declaration metadata under types_v0.1.0.json#/reference_context_contract; no other uppercase value property is admitted.",
       "precedence": 90,
       "associativity": "left"
     },
@@ -493,6 +573,7 @@
         "OBJECT,STRING"
       ],
       "result": "member_type|MISSING",
+      "semantics": "LIST indices are zero-based exact INTEGER values. Every index below zero or greater than or equal to the member count yields MISSING, with no negative-index wrapping. OBJECT STRING indices select exact property names under the same presence rules as lowercase property access. The selected OBJECT key must be statically known so its result has one exact field type; a runtime-varying key uses error.operator.operand. SET and STRING indexing and all other index families produce error.operator.operand.",
       "precedence": 90,
       "associativity": "left"
     }
@@ -512,6 +593,7 @@
         "STRING|LIST|SET|OBJECT|BYTES"
       ],
       "result": "INTEGER",
+      "semantics": "STRING counts Unicode scalar values; LIST counts occurrences; SET counts unique members; OBJECT counts present properties; BYTES(n) returns the exact INTEGER n. Empty values have count zero.",
       "errors": [
         "error.operator.operand"
       ]
@@ -521,6 +603,8 @@
         "LIST[numeric]|SET[numeric]|LIST[DURATION]|SET[DURATION]|same_unit_MEASURE_collection"
       ],
       "result": "promoted_member_family",
+      "minimum_count": 1,
+      "semantics": "Require at least one member, then return the exact mathematical sum in promoted_member_family. SET order has no effect on this exact sum. MEASURE members require one exact unit. An empty typed collection produces error.operator.operand; no zero value or unit is inferred.",
       "errors": [
         "error.operator.operand",
         "error.numeric.unit_mismatch"
@@ -531,6 +615,8 @@
         "nonempty_collection[ordered]"
       ],
       "result": "member_type",
+      "minimum_count": 1,
+      "semantics": "Return the least semantic value under the registered total-order profile. Equal canonical keys denote the same semantic value. An empty typed collection produces error.operator.operand.",
       "errors": [
         "error.operator.operand"
       ]
@@ -540,6 +626,8 @@
         "nonempty_collection[ordered]"
       ],
       "result": "member_type",
+      "minimum_count": 1,
+      "semantics": "Return the greatest semantic value under the registered total-order profile. Equal canonical keys denote the same semantic value. An empty typed collection produces error.operator.operand.",
       "errors": [
         "error.operator.operand"
       ]
@@ -587,6 +675,7 @@
         "STRING|LIST|SET|OBJECT|BYTES"
       ],
       "result": "BOOLEAN|UNKNOWN",
+      "semantics": "For every admitted material family, return TRUE iff COUNT(value) is zero; FALSE otherwise. BYTES(0) is empty, while NULL is an invalid operand.",
       "errors": [
         "error.operator.operand"
       ]
@@ -597,6 +686,8 @@
       ],
       "result": "BOOLEAN|UNKNOWN",
       "logic": "strong Kleene conjunction",
+      "empty_result": true,
+      "argument_contract": "quantifier_argument",
       "errors": [
         "error.operator.operand"
       ]
@@ -607,6 +698,8 @@
       ],
       "result": "BOOLEAN|UNKNOWN",
       "logic": "strong Kleene disjunction",
+      "empty_result": false,
+      "argument_contract": "quantifier_argument",
       "errors": [
         "error.operator.operand"
       ]
@@ -617,6 +710,8 @@
       ],
       "result": "BOOLEAN|UNKNOWN",
       "logic": "NOT ANY(values)",
+      "empty_result": true,
+      "argument_contract": "quantifier_argument",
       "errors": [
         "error.operator.operand"
       ]

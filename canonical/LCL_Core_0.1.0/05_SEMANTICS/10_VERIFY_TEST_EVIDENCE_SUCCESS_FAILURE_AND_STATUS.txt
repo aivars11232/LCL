@@ -2,7 +2,7 @@ LEARNED COMPUTING LANGUAGE (LCL)
 TITLE: Verify, Test, Evidence, Success, Failure, and Status
 LANGUAGE VERSION: 0.1.0
 STATUS: NORMATIVE
-DATE: 2026-08-30
+DATE: 2026-09-05
 
 
 VALIDATE observes preconditions. VERIFY observes postconditions. TEST compares
@@ -14,7 +14,35 @@ SUCCESS evaluates ALL, ANY, or NONE after execution/checks. At the execution
 root, status.succeeded is legal only when SUCCESS is TRUE, all required outputs
 are fully bound and valid, all hard rules hold, and all required evidence
 exists. status.partial is explicitly non-success. FAILURE blocks may map exact
-WHEN conditions to terminal non-success statuses.
+WHEN conditions to terminal non-success statuses. Resolve status and error
+aliases to their canonical core identifiers before evaluating these contracts;
+an alias inherits the exact terminal and non-success restrictions of its BASE.
+
+An existing primary unhandled diagnostic always fixes status by its resolved
+default_status, including any exact expression-demand override. A FAILURE
+mapping cannot override that diagnostic. Otherwise
+evaluate applicable FAILURE clauses in source declaration order and select the
+first whose WHEN is TRUE. FALSE does not select a clause. MISSING or UNKNOWN is
+a required-condition failure using error.required.missing or error.value.unknown
+and follows ordinary diagnostic handling before a later clause is considered.
+The selected clause requests its terminal non-success STATUS, which must occur
+in the current invocation state's allowed_next. An illegal requested transition
+uses error.execution.order. Its optional ERROR
+is a classification of that declared failure, not emission of a new diagnostic
+at an arbitrary stage, and therefore raises no event by itself. Its required
+EVIDENCE must still resolve. A selected declared failure prevents success even
+when other SUCCESS conditions are TRUE. If no primary diagnostic or declared
+failure fixes a non-success outcome and SUCCESS is unsatisfied, use
+error.success.unsatisfied. No additional generic success diagnostic replaces an
+already selected declared failure. A root FAILURE mapping cannot select
+status.skipped, even through an alias; that status has non-root scope and the
+illegal request uses error.execution.order.
+
+status.blocked is terminal for one invocation; a later explicit invocation has
+its own lifecycle and retains the earlier result as evidence. Only non-root
+declarations may move from status.ready to status.skipped when applicability is
+FALSE or they are optional and omitted. Neither blocked nor skipped denotes
+successful completion of required work.
 
 A result record's status is instead scoped to the producer invocation. Producer
 status.succeeded means that invocation completed its contract; its domain

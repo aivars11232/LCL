@@ -1,0 +1,67 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: example.type_values
+    NAME: "Defined types and exact value reads"
+    VERSION: "1.0.0"
+    KIND: kind.library
+
+DEFINE:
+    ID: type.counter
+    KIND: kind.type
+    BASE: INTEGER
+
+DEFINE:
+    ID: type.delivery_state
+    KIND: kind.type
+    BASE: ENUM
+    ITEM: ready
+    ITEM: done
+
+DEFINE:
+    ID: type.delivery_alias
+    KIND: kind.type
+    BASE: REF(type.delivery_state)
+
+DEFINE:
+    ID: constant.counter
+    KIND: kind.constant
+    TYPE: REF(type.counter)
+    VALUE: 2
+
+DEFINE:
+    ID: constant.state
+    KIND: kind.constant
+    TYPE: REF(type.delivery_alias)
+    VALUE: ready
+
+DEFINE:
+    ID: constant.null
+    KIND: kind.constant
+    TYPE: NULL
+    VALUE: NULL
+
+DEFINE:
+    ID: constant.counter_reference
+    KIND: kind.constant
+    TYPE: REFERENCE[REF(constant.counter)]
+    VALUE: REF(constant.counter)
+
+DEFINE:
+    ID: constant.doubled
+    KIND: kind.constant
+    TYPE: INTEGER
+    VALUE: REF(constant.counter) * 2
+
+DEFINE:
+    ID: constant.first
+    KIND: kind.constant
+    TYPE: INTEGER
+    VALUE: [10, 20][0]
+
+DEFINE:
+    ID: constant.byte_count
+    KIND: kind.constant
+    TYPE: INTEGER
+    VALUE: COUNT(BYTES(8))

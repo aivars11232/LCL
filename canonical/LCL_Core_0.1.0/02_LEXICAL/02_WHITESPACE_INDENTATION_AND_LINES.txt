@@ -25,6 +25,19 @@ TOKENIZATION
 - A reserved word is complete only when neither adjacent source character is an
   ASCII letter, digit, or underscore. An unregistered uppercase run is one invalid
   token and is not split into shorter reserved words.
+- Incorrect case uses error.keyword.case only when a case-insensitive match to
+  a registered word occurs in a syntax-required position: a block or field key
+  outside object data, a required connector or operator, a registered callable
+  immediately before its opening parenthesis, or a built-in type position.
+  A mixed-case token matching a registered word also uses error.keyword.case,
+  because mixed-case identifiers are forbidden. The matching word is not silently
+  corrected. An all-uppercase unregistered word uses error.keyword.unknown.
+- Where a lowercase identifier is permitted, its case-folded spelling never
+  selects a keyword or literal. Thus an object key status and ID example.count
+  remain identifiers; VALUE: true contains an identifier rather than TRUE and
+  receives the ordinary domain or type diagnostic if incompatible. String
+  content is never checked for keyword case. This contextual lexical decision
+  precedes grammar diagnostics at the same locus and requires no name lookup.
 - A lowercase identifier is consumed maximally. If it contains one or more complete
   dot-separated lowercase segments, the whole sequence is one QUALIFIED_IDENTIFIER;
   otherwise it is one SIMPLE_IDENTIFIER. Consequently a bare `a.b` is a qualified

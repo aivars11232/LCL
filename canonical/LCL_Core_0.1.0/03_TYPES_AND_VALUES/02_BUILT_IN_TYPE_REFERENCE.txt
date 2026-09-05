@@ -24,7 +24,8 @@ NULL
     Explicit known absence.
 
 LIST[T]
-    Ordered collection using bracket value syntax; duplicates allowed.
+    Ordered collection using bracket value syntax; duplicates allowed. INTEGER
+    indexes are zero-based and out-of-range indexes return MISSING.
 
 SET[T]
     Homogeneous collection unique under strict equality and intrinsically
@@ -38,10 +39,13 @@ OBJECT
     Keyed value checked by an explicit schema when provided.
 
 ENUM
-    Closed set of exact declared values.
+    Closed domain of exact ITEM values introduced by DEFINE BASE ENUM and
+    selected as REF(type.id). A transparent alias preserves the domain.
 
 REFERENCE[T]
-    Exact typed reference expressed with REF(identifier).
+    Exact typed reference expressed with REF(identifier). Source notation is
+    REFERENCE[REF(identifier)]; contextual identity versus bound-value reads
+    follow types_v0.1.0.json#/reference_context_contract.
 
 PATH
     Absolute path or path relative to an explicit WORKSPACE; a resolved
@@ -55,8 +59,8 @@ GLOB
     Workspace-relative file-selection pattern under the closed LCL GLOB profile.
 
 REGEX
-    Regular-expression pattern under the conservative ECMAScript-compatible LCL
-    REGEX profile.
+    Regular-expression pattern under the frozen closed LCL REGEX 0.1.0 grammar
+    and matching rules in types_v0.1.0.json#/pattern_profiles/REGEX.
 
 DATE
     RFC 3339 full-date value.

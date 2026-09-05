@@ -2,12 +2,22 @@ LEARNED COMPUTING LANGUAGE (LCL)
 TITLE: Validation, Execution, Failure, and Termination
 LANGUAGE VERSION: 0.1.0
 STATUS: NORMATIVE
-DATE: 2026-08-30
+DATE: 2026-09-05
 
 
-All lexical, grammar, reference, type, dependency, rule-conflict, scope, and
-required VALIDATE checks complete before first side effect. Invalid source ends
+All lexical, grammar, reference-name, static type, dependency, rule-conflict,
+scope, and required VALIDATE checks complete before first side effect. Static
+checking does not demand future OUTPUT values. Invalid source ends
 status.invalid. Missing external data/capability can yield status.blocked.
+
+status.blocked is terminal for that invocation and has no outgoing transition.
+Later availability permits a separate explicit invocation with its own identity
+and result; the prior blocked result remains evidence. A still-active parent
+producer may recover a child's terminal result through its declared handler,
+retry, or fallback contract without modifying that child's result. A non-root
+declaration with FALSE applicability or optional omission transitions from
+status.ready to status.skipped without beginning its operation. An execution
+root cannot take this transition.
 
 During execution, failure of a required action invokes applicable handler/retry;
 otherwise status.failed. core.stop yields status.stopped unless another declared
@@ -47,10 +57,26 @@ The complete per-error phase metadata is resolved from
 exposed result producer. A child operation or retry attempt records its local
 phase and effects in ordered evidence, while an aggregate producer accounts for
 every effect begun within its whole invocation. The first unhandled diagnostic
-in stable order supplies its registered default_status; secondary diagnostics do
+in stable order supplies its resolved default_status; secondary diagnostics do
 not override it. Recovery promotes the first remaining unhandled diagnostic to
-primary. Only recovery of every applicable diagnostic permits the declared
-handler result to control status. Phase does not alter status.
+primary. Only recovery of every applicable diagnostic or successful substitution
+of a local unsuccessful primary/retry invocation permits the declared handler
+result to control status. A substituted invocation's diagnostics remain local
+evidence, and all its effects remain part of the aggregate effect record.
+Substitution never turns invalid source into valid source. Phase does not alter
+status. Error and status aliases resolve to canonical core identifiers before
+these rules; aliases cannot change default_status, recoverability, or phase.
+
+The exact expression_demand_resolution map in the diagnostic-selection registry
+distinguishes preflight source checks from value-domain failures of statically
+valid expressions actually demanded after preflight. Only its listed triggers
+may resolve to execution stage and status.failed, with required MISSING and
+UNKNOWN retaining status.blocked. The exact identifier and inherited event and
+recoverability remain unchanged. Apply this resolution before suppression,
+ordering, primary selection, and phase lookup. The execution-stage phase family
+then accounts for earlier effects of the exposed producer. Unreachable or
+short-circuited values are not demanded, and source structure, name, arity, and
+static type defects can never be reclassified by this rule.
 
 error.dependency.unsatisfied and error.scope.violation are pre_effect only:
 dependency availability and effective scope resolve before the first authorized
@@ -71,7 +97,8 @@ operation's effects; its aggregate producer may have earlier child effects.
 Likewise, a verification or completion failure after effect-free work remains
 pre_effect, while one after known effects is post_effect.
 
-Every failure record retains the error identifier, registered stage, producer
+Every failure record retains the canonical error identifier, registered stage,
+resolved expression-demand stage when applicable, producer
 path, canonical source locus or declared execution event, applicable iteration
 and attempt indexes, and the observations supporting phase, effects, and OUTPUT
 binding. The four baseline errors also retain the exact dependency state,
@@ -80,14 +107,22 @@ target/effective-scope relation specified by the registry. Absence of evidence
 never proves absence of effects or OUTPUT.
 
 Every ACTION that resolves exactly once remains syntactically eligible for an
-explicit bounded RETRY. A proven pre_effect attempt with no effects may be tried
-again when LIMIT and WHEN permit it. After known applied or partial effects,
+explicit inline bounded RETRY; STEP has no RETRY and RETRY cannot be referenced.
+One ACTION invocation makes at most 1 + LIMIT attempts and ends retrying on the
+first successful attempt. The RETRY block declares the sole budget and its
+selected core.retry handler authorizes additional attempts. Omitted WHEN is
+TRUE and omitted DELAY is DURATION(0, unit.second). A FALSE WHEN before the count
+is consumed preserves the preceding failure without exhaustion. A proven
+pre_effect attempt with no effects may be tried again when LIMIT and WHEN
+permit it. After known applied or partial effects,
 another attempt additionally requires exact evidence that repetition,
 resumption, or reconciliation cannot duplicate a non-idempotent effect or exceed
 the wrapped action's authority, scope, and post-state. Indeterminate phase or
 effects prohibit another attempt until reconciled. Missing proof, UNKNOWN proof,
 and proof that retry is unsafe use error.required.missing,
 error.value.unknown, and error.operation.precondition respectively.
-error.retry.exhausted applies only after every permitted attempt was actually
-made and failed; a safety-blocked unmade attempt is not exhaustion. All attempt
-results and diagnostics remain as ordered evidence.
+error.retry.exhausted applies only after exactly 1 + LIMIT attempts were actually
+made and all failed; a safety-blocked unmade attempt is not exhaustion. All
+attempt results and diagnostics remain as ordered evidence. The exact count,
+condition, safety, and delay order is in
+08_PHASE_SEQUENCE_STEP_BRANCH_LOOP_RETRY_AND_CONCURRENCY.txt.

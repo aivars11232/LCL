@@ -2,10 +2,17 @@ LCL CORE 0.1.0 RELEASE CANDIDATE
 CORE ERROR IDENTIFIERS
 NORMATIVE
 
-The complete closed set of 77 error identifiers, meanings, detection stage,
-handler recoverability, and default terminal/blocking status is defined in
+The complete closed set of 77 error identifiers, meanings, registered stage,
+handler recoverability, and default terminal status is defined in
 10_REGISTRIES/statuses_and_errors_v0.1.0.json. No unregistered error identifier
 may be emitted as an LCL Core error.
+
+DEFINE kind.error requires BASE and MEANING and is an acyclic same-domain alias
+of an existing canonical core error. Resolve aliases before diagnostic selection,
+event matching, or status evaluation; aliases inherit all metadata, including
+the exact expression-demand resolution contract, and introduce no new error.
+Wrong-domain BASE uses error.reference.kind, unresolved BASE uses
+error.reference.unresolved, and a cyclic chain uses error.reference.cycle.
 
 error.determinism.mismatch is emitted only during contract validation when a
 kind.operation declares DETERMINISTIC TRUE but its fully resolved operation or
@@ -26,13 +33,47 @@ an earlier child or retry-attempt effect, so its aggregate failure_phase is
 derived from retained observations rather than from this identifier.
 
 error.operation.parameter applies to every core operation. It is emitted during
-static/expression checking when an ACTION omits TARGET while the selected
-operation marks it required, omits a named parameter that the operation marks
-required, supplies any positional argument, duplicates a named parameter, or
-supplies an unregistered named parameter. A declared parameter value rejected by
-its type or semantic constraint uses the general or row-specific error and is
-not remapped to error.operation.parameter.
+static/expression checking when an ACTION, HANDLER, or FALLBACK invocation site
+omits TARGET while the selected operation marks it required and no
+handler-context binding supplies it, omits a required named parameter, supplies
+any positional argument, duplicates a named parameter, or supplies an
+unregistered named parameter. A bare FALLBACK operation identifier may require
+no named parameter, and any required target must be supplied by the original
+handler context. A declared parameter value rejected by its type or semantic
+constraint uses the general or row-specific error and is not remapped to
+error.operation.parameter. Invalid invocation data never activates FALLBACK.
+
+error.reference.cycle also covers prohibited execution-unit cycles and direct
+HANDLER FALLBACK cycles, all rejected during resolution before effects.
+error.reference.kind covers a handler-context ACTION target whose owning active
+aggregate is not an ACTION; the language never invents an ACTION target from a
+different execution-unit kind. For an operation requiring its originating
+aggregate, including core.retry and core.continue, an explicit target naming
+another invocation or a terminal attempt uses error.operation.precondition.
+Other explicit targets remain governed by their operation's own contract.
+
+error.execution.order covers cyclic or violated ordering constraints, an absent
+or ambiguous required continuation path, and a requested lifecycle transition
+forbidden by allowed_next or status scope. In particular, a FAILURE mapping
+cannot invent a transition or select status.skipped for an execution root.
+
+error.id.duplicate covers duplicate declaration IDs, duplicate import/extension
+namespace ownership, and local IDs occupying an import-owned first identifier
+segment. Reserved or malformed prefixes use error.namespace.invalid. Omission
+of a required NAMESPACE field retains the earlier error.field.required.
+
+error.keyword.case applies to an incorrect-case registered word in a
+syntax-required position or to a mixed-case token matching a registered word.
+It never promotes a valid lowercase identifier to a keyword by case folding.
+Lowercase object data keys and string content are unaffected; an all-uppercase
+unregistered word uses error.keyword.unknown. The exact contextual positions
+are closed by 02_LEXICAL/02_WHITESPACE_INDENTATION_AND_LINES.txt.
 
 error.permission.denied is emitted when required access or an effect is
 unauthorized or prohibited. It applies to read authorization as well as effect
 authorization, is nonrecoverable, and defaults to status.failed.
+
+error.value.unknown is emitted when a required value remains UNKNOWN after
+applicable explicit value, source, DEFAULT, and ASSUME resolution, before the
+eligible handler is selected. Its canonical event is event.unknown; successful
+handler recovery retains the original diagnostic as evidence.

@@ -68,21 +68,23 @@ STEP
     Contexts: SEQUENCE, PHASE, IF, FOR_EACH, ELSE
     Occurrence: one_or_more
     Required: ID
-    Optional: ACTION, SEQUENCE, PHASE, TASK, BEFORE, AFTER, WHEN, REQUIRED, RETRY, HANDLER, DESCRIPTION
+    Optional: ACTION, SEQUENCE, PHASE, TASK, BEFORE, AFTER, WHEN, REQUIRED, HANDLER, DESCRIPTION
     Repeatable: none
     Rule: Exactly one ACTION, SEQUENCE, PHASE, or TASK.
     Rule: SEQUENCE and PHASE fields are reference/list-only; inline SEQUENCE or PHASE blocks are forbidden.
 
 RETRY
-    Contexts: ACTION, STEP
+    Contexts: ACTION
     Occurrence: zero_or_one
     Required: LIMIT
     Optional: WHEN, DELAY, HANDLER, DESCRIPTION
     Repeatable: none
     Rule: LIMIT counts additional attempts and is 0 through 100.
-    Rule: This block is the only source of attempt bounds for its execution unit; total attempts are exactly 1 + LIMIT.
+    Rule: This inline ACTION block is the only source of attempt bounds; total attempts are at most 1 + LIMIT and the first successful attempt ends retrying.
     Rule: A handler using core.retry authorizes this declared RETRY and its resolved limit must equal this LIMIT.
-    Rule: RETRY.HANDLER is in scope only for diagnostics raised by an attempt of the execution unit declaring this RETRY, including the first attempt.
+    Rule: RETRY.WHEN defaults to TRUE and RETRY.DELAY defaults to DURATION(0, unit.second). A false condition or a refused safety check prevents another attempt without manufacturing count exhaustion or success.
+    Rule: Count exhaustion occurs only after 1 + LIMIT actual unsuccessful attempts.
+    Rule: RETRY.HANDLER is in scope only for diagnostics raised by an attempt of the ACTION declaring this RETRY, including the first attempt.
 
 HANDLER
     Contexts: top_level
@@ -95,6 +97,8 @@ HANDLER
     Rule: A required TARGET may be omitted only under the handler-context binding for REFERENCE[ACTION] or REFERENCE[meta.execution_unit] targets.
     Rule: LIMIT is exactly the limit named parameter of the selected operation and is legal only when that operation registers it.
     Rule: FALLBACK admits one REF to a HANDLER, or one operation identifier that requires no named parameter and whose required TARGET the handler-context binding supplies.
+    Rule: An injected handler-context target identifies the active owning invocation aggregate; the failed child attempt remains immutable evidence. Explicit targets follow the selected operation contract.
+    Rule: At most one handler is selected through event attachments; direct acyclic FALLBACK calls may invoke another HANDLER without a second event selection.
 
 OUTPUT
     Contexts: top_level
@@ -155,6 +159,8 @@ FAILURE
     Optional: ERROR, HANDLER, EVIDENCE, DESCRIPTION
     Repeatable: none
     Rule: STATUS is terminal non-success.
+    Rule: Resolve status aliases first. A selected STATUS must be legal in the active producer current allowed_next set and scope; an illegal transition produces error.execution.order, and an execution root cannot select status.skipped.
+    Rule: The first TRUE FAILURE in source order maps status only when no primary unhandled diagnostic fixes it; ERROR is classification metadata and does not emit an arbitrary new diagnostic.
 
 ASSUME
     Contexts: top_level

@@ -10,12 +10,30 @@ members. SET is intrinsically unordered: source or insertion order has no semant
 meaning, equal source members collapse under strict equality, and SET equality
 requires the same element type and the same unique members. OBJECT equality
 requires equal schema/field set and recursively equal values; field source order
-does not affect equality. ENUM values compare by exact identifier.
+does not affect equality. ENUM values compare by exact enum-domain identity and
+member identifier; the same member spelling in different domains is unequal.
+Transparent type aliases preserve the original value type, domain, and schema.
 
 STRING equality is code-point exact. Numeric equality allows INTEGER-to-DECIMAL
 promotion only. DATE equality uses the same Gregorian date. TIME and DATETIME
 equality use the same offset-normalized chronological value, and DURATION equality
 uses the same exact normalized elapsed-time magnitude. Thus equal canonical order
 keys within one declared ordered type are strict-equal values and collapse as SET
-duplicates before ordering. MEASURE comparison requires the same UNIT; no implicit
-unit conversion. REFERENCE equality compares resolved declaration identity.
+duplicates before ordering. MEASURE equality requires the same exact UNIT and
+equal exact numeric magnitude; different units yield FALSE, without conversion
+or a unit error. Ordered MEASURE comparison and the same-unit arithmetic
+overloads still require identical UNIT identifiers. REFERENCE equality compares
+resolved declaration identity.
+
+Equality accepts any two material values and the permitted special sentinels.
+Different material static types compare FALSE, except for the exact
+INTEGER-to-DECIMAL comparison above. In particular NULL is equal only to NULL,
+and LIST[INTEGER] and LIST[DECIMAL] are unequal despite equal numeric members.
+Inequality is the Boolean inverse of equality. Sentinel equality follows
+09_MISSING_UNKNOWN_NULL_AND_OPTIONALITY.txt, never an unknown comparison result.
+
+The operands first follow types_v0.1.0.json#/reference_context_contract.
+REF(input.a) == REF(input.b) therefore compares their bound values. When those
+values are stored references, their referent identities are compared after one
+read; neither referent is read again. References to non-value declarations also
+retain identity. A loop-local reference identity includes its iteration binding.

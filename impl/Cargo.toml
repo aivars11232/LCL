@@ -4,7 +4,11 @@
 # It never writes to, modifies, or is packaged with `canonical/`.
 #
 # Milestone M0 scope: spec authority loader, diagnostics skeleton, conformance
-# skeleton. No lexer, parser, evaluator, or runtime is present or implied.
+# skeleton.
+#
+# Milestone M1 scope: adds `lcl-lexer`, a deterministic non-executing lexer.
+# No parser, AST, resolver, type checker, evaluator, or runtime is present or
+# implied.
 #
 # Dependency policy: std only. The spec authority loader is the trust root for
 # every later layer, so it carries no third-party supply-chain surface.
@@ -15,6 +19,7 @@ members = [
     "crates/lcl-spec",
     "crates/lcl-diagnostics",
     "crates/lcl-conformance",
+    "crates/lcl-lexer",
 ]
 
 [workspace.package]

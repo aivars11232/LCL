@@ -18,5 +18,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "lcl-lexer"
+version = "0.0.0"
+dependencies = [
+ "lcl-diagnostics",
+ "lcl-spec",
+]
+
+[[package]]
 name = "lcl-spec"
 version = "0.0.0"

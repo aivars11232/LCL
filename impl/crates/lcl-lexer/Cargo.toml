@@ -1,0 +1,11 @@
+[package]
+name = "lcl-lexer"
+description = "Deterministic, non-executing lexer for LCL Core 0.1.0. Produces tokens with exact byte spans or canonical lexical diagnostics."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lcl-spec = { path = "../lcl-spec" }
+lcl-diagnostics = { path = "../lcl-diagnostics" }

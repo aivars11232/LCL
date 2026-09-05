@@ -45,7 +45,7 @@ OVERRIDE:
 
 HANDLER:
     ID: handler.download
-    EVENT: event.execution_error
+    EVENT: event.host_constraint
     OPERATION: core.retry
     FALLBACK: core.stop
     LIMIT: 2

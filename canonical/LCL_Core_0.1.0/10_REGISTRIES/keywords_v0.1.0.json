@@ -239,7 +239,7 @@
     },
     "EVENT": {
       "category": "field",
-      "meaning": "Name the exact event that activates a handler.",
+      "meaning": "Name the exact registered event that activates a handler. An event is raised only by an emitted diagnostic whose registered error declares that event.",
       "contexts": "Defined by grammar and block schemas.",
       "case_sensitive": true
     },
@@ -341,7 +341,7 @@
     },
     "HANDLER": {
       "category": "block/field",
-      "meaning": "Declare or reference deterministic behavior for one named event. A HANDLER block is an invocation site whose OPERATION is invoked under the ACTION operation contract.",
+      "meaning": "Declare or reference deterministic behavior for one named event. A HANDLER block is an invocation site whose OPERATION is invoked under the ACTION operation contract, selected by the closed event model from EVENT and any WHEN condition.",
       "contexts": "Defined by grammar and block schemas.",
       "case_sensitive": true
     },

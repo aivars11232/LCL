@@ -2,7 +2,7 @@
   "language": "LCL",
   "version": "0.1.0",
   "normative": true,
-  "case_count": 797,
+  "case_count": 798,
   "category_counts": {
     "block_extra": 41,
     "block_minimum": 41,
@@ -10,6 +10,7 @@
     "diagnostic_policy": 1,
     "enum_groups": 22,
     "error_contract": 77,
+    "event_model": 1,
     "failure_lifecycle": 1,
     "function_invalid": 11,
     "function_valid": 11,
@@ -6081,8 +6082,8 @@
       "id": "ENUM-GROUPS-0757",
       "category": "enum_groups",
       "subject": "events",
-      "requirement": "Resolve and enforce the complete closed identifier contract.",
-      "expected": "exact registered behavior",
+      "requirement": "Enforce exactly the closed event vocabulary reachable from the registered diagnostic-to-event mapping. Every listed event is raised by exactly one registered error, and every handler-recoverable error raises exactly one listed event; an identifier with no source error is not a registered event.",
+      "expected": "exact reachable event vocabulary closed under the diagnostic-to-event bijection",
       "source": "built_in_groups_and_results_v0.1.0.json"
     },
     {
@@ -6403,6 +6404,14 @@
       "subject": "core.failure_lifecycle",
       "requirement": "Resolve allowed failure phases for every error from stage defaults and exact overrides, measuring phase at the exposed result producer while retaining local child and retry-attempt evidence. Enforce error.dependency.unsatisfied and error.scope.violation as pre_effect; resolve error.execution.order and error.required.missing from observed producer timing; and cover every additional mixed-phase identifier. Let the primary unhandled diagnostic's registered default status control, promote the first remaining unhandled diagnostic after recovery, and permit a handler result to control only after every applicable diagnostic is recovered. Keep status, effect_state, observed effects, and OUTPUT binding independent; require exact phase/effect/output evidence; fail closed for indeterminate state; and permit another retry after known effects only with exact safe repetition, resumption, or reconciliation evidence. A safety-blocked unmade attempt is not retry exhaustion.",
       "expected": "exact producer-relative phase, status, effect, OUTPUT, evidence, indeterminate, and retry-safety behavior",
+      "source": "statuses_and_errors_v0.1.0.json"
+    },
+    {
+      "id": "EVENT-MODEL-0798",
+      "category": "event_model",
+      "subject": "event_model",
+      "requirement": "Raise an event only from an emitted diagnostic, never from a timer, host signal, external notification, or successful completion. Resolve a total event field over every registered error, non-null exactly when the error permits declared handler recovery, forming a bijection between the handler-recoverable errors and the closed event vocabulary. Raise each surviving diagnostic's event once, after supersession and duplicate suppression and before the primary/secondary partition. Activate handlers only through the closed attachment set TASK.HANDLER, STEP.HANDLER, RETRY.HANDLER, DEPENDENCY.HANDLER, and FAILURE.HANDLER, ordering candidates by attachment proximity, then source declaration order, then handler ID. Match on EVENT equality with an absent or TRUE WHEN, run exactly the first matching candidate, and leave the diagnostic unhandled when none matches. Recover exactly when the handler invocation records status.succeeded, never erasing the original diagnostic. Do not re-enter handler selection for diagnostics raised while selecting or executing a handler for the same originating diagnostic.",
+      "expected": "deterministic single-handler activation from a total, bijective diagnostic-to-event mapping with acyclic, terminating selection",
       "source": "statuses_and_errors_v0.1.0.json"
     }
   ]

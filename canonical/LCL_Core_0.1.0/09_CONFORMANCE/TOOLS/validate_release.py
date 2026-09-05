@@ -1618,6 +1618,7 @@ def constructor_pattern_contract_violations(
         ),
         "stage": "static_or_expression",
         "recoverable_with_declared_handler": False,
+        "event": None,
         "default_status": "status.invalid",
     }
     all_errors = statuses.get("errors", {})
@@ -1774,6 +1775,7 @@ def division_contract_violations(
             ),
             "stage": "static_or_expression",
             "recoverable_with_declared_handler": False,
+            "event": None,
             "default_status": "status.invalid",
         },
         "error.numeric.division_by_zero": {
@@ -1783,6 +1785,7 @@ def division_contract_violations(
             ),
             "stage": "static_or_expression",
             "recoverable_with_declared_handler": False,
+            "event": None,
             "default_status": "status.invalid",
         },
         "error.numeric.non_terminating": {
@@ -1792,6 +1795,7 @@ def division_contract_violations(
             ),
             "stage": "static_or_expression",
             "recoverable_with_declared_handler": False,
+            "event": None,
             "default_status": "status.invalid",
         },
         "error.numeric.unit_mismatch": {
@@ -1802,18 +1806,21 @@ def division_contract_violations(
             ),
             "stage": "static_or_expression",
             "recoverable_with_declared_handler": False,
+            "event": None,
             "default_status": "status.invalid",
         },
         "error.value.out_of_range": {
             "meaning": "A value violates an exact bound.",
             "stage": "static_or_expression",
             "recoverable_with_declared_handler": False,
+            "event": None,
             "default_status": "status.invalid",
         },
         "error.host.constraint": {
             "meaning": "A host/provider limitation outside portable LCL prevents execution.",
             "stage": "execution",
             "recoverable_with_declared_handler": True,
+            "event": "event.host_constraint",
             "default_status": "status.blocked",
         },
     }
@@ -2423,18 +2430,21 @@ def set_sort_contract_violations(
             ),
             "stage": "static_or_expression",
             "recoverable_with_declared_handler": False,
+            "event": None,
             "default_status": "status.invalid",
         },
         "error.reference.unresolved": {
             "meaning": "REF does not resolve to exactly one declaration/binding.",
             "stage": "resolution",
             "recoverable_with_declared_handler": False,
+            "event": None,
             "default_status": "status.invalid",
         },
         "error.reference.kind": {
             "meaning": "Reference resolves to a declaration kind illegal in that field.",
             "stage": "resolution",
             "recoverable_with_declared_handler": False,
+            "event": None,
             "default_status": "status.invalid",
         },
         "error.required.missing": {
@@ -2443,12 +2453,14 @@ def set_sort_contract_violations(
             ),
             "stage": "execution",
             "recoverable_with_declared_handler": True,
+            "event": "event.missing",
             "default_status": "status.blocked",
         },
         "error.value.unknown": {
             "meaning": "A required value is UNKNOWN and no valid handler resolves it.",
             "stage": "static_or_expression",
             "recoverable_with_declared_handler": True,
+            "event": "event.unknown",
             "default_status": "status.blocked",
         },
         "error.operation.precondition": {
@@ -2458,6 +2470,7 @@ def set_sort_contract_violations(
             ),
             "stage": "execution",
             "recoverable_with_declared_handler": False,
+            "event": None,
             "default_status": "status.failed",
         },
         "error.type.mismatch": {
@@ -2467,6 +2480,7 @@ def set_sort_contract_violations(
             ),
             "stage": "static_or_expression",
             "recoverable_with_declared_handler": False,
+            "event": None,
             "default_status": "status.invalid",
         },
     }
@@ -3759,6 +3773,7 @@ def operation_contract_violations(
         ),
         "stage": "validation",
         "recoverable_with_declared_handler": False,
+        "event": None,
         "default_status": "status.invalid",
     }
     expected_precondition_error = {
@@ -3768,18 +3783,21 @@ def operation_contract_violations(
         ),
         "stage": "execution",
         "recoverable_with_declared_handler": False,
+        "event": None,
         "default_status": "status.failed",
     }
     expected_permission_error = {
         "meaning": "Required access or an effect is unauthorized or prohibited.",
         "stage": "execution",
         "recoverable_with_declared_handler": False,
+        "event": None,
         "default_status": "status.failed",
     }
     expected_cycle_error = {
         "meaning": "Immutable definitions contain a prohibited dependency cycle.",
         "stage": "resolution",
         "recoverable_with_declared_handler": False,
+        "event": None,
         "default_status": "status.invalid",
     }
 
@@ -6187,6 +6205,129 @@ def custom_operation_declaration_violations(
     return violations, checked_definitions
 
 
+def event_model_violations(
+    root: Path,
+    statuses: dict[str, Any],
+    groups_and_results: dict[str, Any],
+    formats_registry: dict[str, Any],
+    operations: dict[str, Any],
+) -> tuple[list[str], int]:
+    """Verify the closed event model that makes declared-handler activation computable.
+
+    This is a static contract check. It computes the diagnostic-to-event mapping invariants
+    directly from the registries instead of comparing against a duplicated literal, proves the
+    event vocabulary is identical on every surface, and resolves every shipped HANDLER event
+    against the operations that handler can guard. It does not parse or execute LCL; the
+    reachability test uses operation identifiers declared outside HANDLER blocks, because the
+    non-reentrancy rule stops handler-side diagnostics from raising events.
+    """
+    violations: list[str] = []
+    errors = statuses.get("errors", {})
+    model = statuses.get("event_model", {})
+
+    for key in (
+        "event_source", "diagnostic_event_mapping", "mapping_invariant", "raise_rule",
+        "attachment_sites", "handler_scope", "selection_order", "match_rule",
+        "multiplicity_rule", "no_match_rule", "recovery_rule", "non_reentrancy_rule",
+        "status_interaction",
+    ):
+        value = model.get(key)
+        if not isinstance(value, str) or not value.strip():
+            violations.append(f"event_model.{key} is absent or empty")
+
+    # 1. The mapping must be total over the closed error registry.
+    absent = sorted(name for name, entry in errors.items() if "event" not in entry)
+    if absent:
+        violations.append(f"errors carrying no event field: {absent}")
+
+    # 2. event is non-null exactly when the error is handler-recoverable.
+    for name, entry in errors.items():
+        if "event" not in entry:
+            continue
+        raises = entry["event"] is not None
+        recoverable = bool(entry.get("recoverable_with_declared_handler"))
+        if raises != recoverable:
+            violations.append(
+                f"{name} declares event={entry['event']!r} but "
+                f"recoverable_with_declared_handler={recoverable}"
+            )
+
+    # 3. The event vocabulary must be identical on every surface.
+    group_events = list(groups_and_results.get("enum_groups", {}).get("events", []))
+    builtin_events = list(formats_registry.get("builtins", {}).get("events", []))
+    if group_events != builtin_events:
+        violations.append("event vocabulary differs between the two closed registries")
+    prose = (root / "06_STANDARD_LIBRARY/08_BUILT_IN_IDENTIFIER_GROUPS.txt").read_text(
+        encoding="utf-8"
+    )
+    section = prose.split("EVENTS", 1)[-1].split("RESERVED_NAMESPACES", 1)[0]
+    prose_events = [
+        line.strip() for line in section.split("\n") if line.strip().startswith("event.")
+    ]
+    if prose_events != group_events:
+        violations.append(
+            f"06_STANDARD_LIBRARY/08 event list {prose_events} differs from the registry"
+        )
+
+    # 4. The mapping must be a bijection onto the registered vocabulary.
+    image = [entry["event"] for entry in errors.values() if entry.get("event")]
+    if len(image) != len(set(image)):
+        violations.append("two registered errors map to the same event")
+    if set(image) != set(group_events):
+        violations.append(
+            f"event image {sorted(set(image))} is not exactly the registered "
+            f"vocabulary {sorted(group_events)}"
+        )
+
+    # 5. Every shipped HANDLER must name a registered event its own document can raise.
+    checked_handlers = 0
+    for path in sorted((root / "08_EXAMPLES/VALID").glob("*.lcl")):
+        lines = path.read_text(encoding="utf-8").split("\n")
+        # Operations a handler guards exclude handler-side operations: by the
+        # non-reentrancy rule, diagnostics raised while executing a handler
+        # invocation or its FALLBACK raise no event.
+        named_operations: set[str] = set()
+        current_block = ""
+        for line in lines:
+            if line and not line.startswith(" ") and line.endswith(":"):
+                current_block = line[:-1]
+            elif line.strip().startswith("OPERATION: ") and current_block != "HANDLER":
+                named_operations.add(line.strip()[len("OPERATION: "):])
+        raisable: set[str] = set()
+        for operation_name in named_operations:
+            for error_name in operations.get(operation_name, {}).get("errors", []):
+                event = errors.get(error_name, {}).get("event")
+                if event:
+                    raisable.add(event)
+        for index, line in enumerate(lines):
+            if line != "HANDLER:":
+                continue
+            checked_handlers += 1
+            declared_event = None
+            declared_id = str(checked_handlers)
+            for candidate in lines[index + 1:]:
+                if candidate and not candidate.startswith(" "):
+                    break
+                stripped = candidate.strip()
+                if stripped.startswith("EVENT: "):
+                    declared_event = stripped[len("EVENT: "):]
+                elif stripped.startswith("ID: "):
+                    declared_id = stripped[len("ID: "):]
+            location = f"{path.name} HANDLER {declared_id}"
+            if declared_event is None:
+                violations.append(f"{location} omits required EVENT")
+            elif declared_event not in group_events:
+                violations.append(f"{location} names unregistered event {declared_event}")
+            elif declared_event not in raisable:
+                violations.append(
+                    f"{location} names {declared_event}, which no operation named by this "
+                    f"document can raise; raisable events are {sorted(raisable)}"
+                )
+    if checked_handlers == 0:
+        violations.append("no shipped HANDLER declaration was checked")
+    return violations, checked_handlers
+
+
 HANDLER_CONTEXT_TARGET_TYPES = ("REFERENCE[ACTION]", "REFERENCE[meta.execution_unit]")
 
 
@@ -6764,6 +6905,32 @@ def check_registry(root: Path, results: Results) -> None:
         blocked_by=[],
     )
 
+    event_violations, event_handler_count = event_model_violations(
+        root, statuses, groups_and_results, formats_registry, operations
+    )
+    results.add(
+        "registry",
+        "event_model_contract",
+        "FAIL" if event_violations else "PASS",
+        event_model_violations=event_violations,
+        registered_event_count=len(
+            groups_and_results.get("enum_groups", {}).get("events", [])
+        ),
+        event_raising_error_count=sum(
+            1 for entry in statuses.get("errors", {}).values() if entry.get("event")
+        ),
+        mapped_error_count=len(statuses.get("errors", {})),
+        checked_shipped_handlers=event_handler_count,
+        policy_fingerprint=canonical_contract_fingerprint(statuses.get("event_model", {})),
+        static_limit=(
+            "Computes mapping totality, the event/recoverability invariant, cross-surface "
+            "vocabulary agreement, bijection onto the registered vocabulary, and shipped "
+            "HANDLER event reachability from the guarded operations of the same document; no LCL "
+            "document is parsed or executed."
+        ),
+        blocked_by=[],
+    )
+
     custom_violations, custom_definition_count = custom_operation_declaration_violations(
         root, fields, blocks, operation_registry, groups_and_results
     )
@@ -6869,6 +7036,7 @@ def check_catalog(root: Path, results: Results) -> None:
             "diagnostic_policy": 1,
             "enum_groups": 22,
             "error_contract": 77,
+            "event_model": 1,
             "failure_lifecycle": 1,
             "function_invalid": 11,
             "function_valid": 11,
@@ -6894,6 +7062,7 @@ def check_catalog(root: Path, results: Results) -> None:
             "diagnostic_policy": "statuses_and_errors_v0.1.0.json",
             "enum_groups": "built_in_groups_and_results_v0.1.0.json",
             "error_contract": "statuses_and_errors_v0.1.0.json",
+            "event_model": "statuses_and_errors_v0.1.0.json",
             "failure_lifecycle": "statuses_and_errors_v0.1.0.json",
             "function_invalid": "operators_and_functions_v0.1.0.json",
             "function_valid": "operators_and_functions_v0.1.0.json",
@@ -6913,7 +7082,7 @@ def check_catalog(root: Path, results: Results) -> None:
             "type_valid": "types_v0.1.0.json",
         }
         assert catalog.get("category_counts") == expected_category_counts, (
-            "catalog category_counts are not the exact 23-category contract"
+            "catalog category_counts are not the exact 24-category contract"
         )
         for index, case in enumerate(cases, start=1):
             assert isinstance(case, dict), f"catalog case {index} is not an object"
@@ -6933,7 +7102,7 @@ def check_catalog(root: Path, results: Results) -> None:
             assert case["source"] == expected_sources.get(case["category"]), (
                 f"catalog case {index} source/category mapping differs"
             )
-        assert catalog["case_count"] == len(cases) == 797, "case_count mismatch"
+        assert catalog["case_count"] == len(cases) == 798, "case_count mismatch"
         identifiers = [case["id"] for case in cases]
         assert len(identifiers) == len(set(identifiers)), "duplicate case IDs"
         counts: dict[str, int] = {}
@@ -6985,6 +7154,7 @@ def check_catalog(root: Path, results: Results) -> None:
         exact_subjects("result_schemas", set(groups_and_results["result_schemas"]))
         exact_subjects("reserved_namespaces", set(groups_and_results["reserved_namespaces"]))
         exact_subjects("diagnostic_policy", {"core.error_selection"})
+        exact_subjects("event_model", {"event_model"})
         exact_subjects("failure_lifecycle", {"core.failure_lifecycle"})
 
         by_id = {case["id"]: case for case in cases}

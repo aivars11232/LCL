@@ -3,7 +3,7 @@ CONFORMANCE REQUIREMENTS
 NORMATIVE
 
 The catalog CASES/core_conformance_cases_v0.1.0.json is a requirements index. It
-contains 797 descriptive normative requirements covering keywords, symbols,
+contains 798 descriptive normative requirements covering keywords, symbols,
 types, blocks, field signatures, operators, pure functions, core operations,
 statuses, errors, diagnostic selection, failure lifecycle, enum groups, result
 schemas, and reserved namespaces. Its presence, shape, and count are structural

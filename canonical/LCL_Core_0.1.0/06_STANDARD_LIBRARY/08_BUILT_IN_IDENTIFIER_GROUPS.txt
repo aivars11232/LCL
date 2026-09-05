@@ -36,13 +36,9 @@ EVENTS
 
     event.missing
     event.unknown
-    event.conflict
-    event.validation_error
     event.dependency_failure
     event.execution_error
-    event.verification_failure
     event.host_constraint
-    event.cancelled
 
 RESERVED_NAMESPACES
 

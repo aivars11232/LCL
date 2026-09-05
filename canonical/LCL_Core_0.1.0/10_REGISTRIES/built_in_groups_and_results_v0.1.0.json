@@ -30,13 +30,9 @@
     "events": [
       "event.missing",
       "event.unknown",
-      "event.conflict",
-      "event.validation_error",
       "event.dependency_failure",
       "event.execution_error",
-      "event.verification_failure",
-      "event.host_constraint",
-      "event.cancelled"
+      "event.host_constraint"
     ],
     "formats": [
       "format.plain_text",

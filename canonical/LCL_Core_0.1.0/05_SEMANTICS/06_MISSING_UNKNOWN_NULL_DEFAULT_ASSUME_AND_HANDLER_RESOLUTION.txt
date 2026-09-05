@@ -14,12 +14,66 @@ Resolution order:
 2. resolved SOURCE/INPUT/STATE/MEMORY/CONTEXT;
 3. DEFAULT only for MISSING;
 4. applicable explicit ASSUME;
-5. matching HANDLER;
+5. matching HANDLER selected by the event model below;
 6. required item blocks/fails; optional item remains absent.
 
 DEFAULT never replaces NULL/UNKNOWN unless a rule explicitly maps them first.
 ASSUME is conditional, cannot override explicit data, and must be recorded as
 evidence. No silent guessing is permitted.
+
+EVENT MODEL:
+
+The complete closed event contract is
+10_REGISTRIES/statuses_and_errors_v0.1.0.json#/event_model. This prose does not
+create a second contract.
+
+Emitting a diagnostic is the only thing that raises an event. No timer, host
+signal, external notification, or successful completion raises one. Every
+registered error declares an exact event: one registered event identifier, or
+null meaning the diagnostic raises no event and can never be recovered by a
+declared handler. That mapping is total over the closed error registry, and it
+is a bijection between the handler-recoverable errors and the closed event
+vocabulary, so every registered event has exactly one source and every
+recoverable error has exactly one trigger.
+
+A surviving diagnostic raises its event once, at the producer that emitted it,
+after supersession and duplicate suppression and before the primary/secondary
+partition. Suppressed and duplicate-merged diagnostics raise nothing further.
+
+A HANDLER is declared at top level and activates only where a HANDLER field
+references it. The closed attachment set is TASK.HANDLER, STEP.HANDLER,
+RETRY.HANDLER, DEPENDENCY.HANDLER, and FAILURE.HANDLER. A declared but
+unattached HANDLER never activates. RETRY.HANDLER is in scope only for
+diagnostics raised by an attempt of the execution unit declaring that RETRY,
+including the first attempt; STEP.HANDLER for that STEP and the execution units
+it reaches; TASK.HANDLER for that TASK's whole reachable graph;
+DEPENDENCY.HANDLER only while resolving that DEPENDENCY; FAILURE.HANDLER only
+while evaluating that FAILURE clause.
+
+Candidate handlers are ordered by attachment proximity along the declared
+producer path, innermost to outermost, using the closed rank order local
+DEPENDENCY or FAILURE scope, then RETRY, then STEP innermost to outermost, then
+TASK; then by source declaration order within the referenced list; then by
+handler ID in Unicode scalar order. That order is total and has no tie. A
+candidate matches when its EVENT equals the raised event and its WHEN is absent
+or evaluates TRUE; a WHEN evaluating MISSING or UNKNOWN does not match and
+raises nothing further. Exactly the first matching candidate runs, so one
+diagnostic causes at most one handler invocation. When nothing matches, the
+diagnostic stays unhandled and the unchanged diagnostic-selection contract
+partitions it; an unmatched event is not itself a diagnostic.
+
+The originating diagnostic is recovered exactly when the selected handler's
+invocation records status.succeeded. Any other outcome leaves it unhandled, and
+the handler's own diagnostics are recorded independently at their registered
+stages. Recovery never erases the original diagnostic or its evidence. Status
+remains governed by the failure-lifecycle contract; event selection never
+reorders, suppresses, or re-ranks diagnostics.
+
+Handler selection is not re-entered for a diagnostic raised while evaluating a
+candidate WHEN, resolving a handler invocation contract, or executing a handler
+invocation or its FALLBACK for the same originating diagnostic. Those
+diagnostics raise no event, which makes handler activation acyclic and
+terminating.
 
 HANDLER resolution:
 
@@ -29,7 +83,8 @@ named parameter the selected operation marks required must be satisfied, no
 positional argument is permitted, no named parameter may be duplicated, and no
 unregistered named parameter may be supplied. Violations use
 error.operation.parameter. HANDLER.OPERATION is neither a bare reference nor a
-handler selector; EVENT alone selects the handler.
+handler selector; the event model above selects the handler from EVENT and any
+WHEN condition, and OPERATION never participates in that selection.
 
 HANDLER.TARGET supplies the invocation target. Exactly one omission is
 permitted, the handler-context binding: when the selected operation's registered

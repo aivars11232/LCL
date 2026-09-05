@@ -82,6 +82,7 @@ RETRY
     Rule: LIMIT counts additional attempts and is 0 through 100.
     Rule: This block is the only source of attempt bounds for its execution unit; total attempts are exactly 1 + LIMIT.
     Rule: A handler using core.retry authorizes this declared RETRY and its resolved limit must equal this LIMIT.
+    Rule: RETRY.HANDLER is in scope only for diagnostics raised by an attempt of the execution unit declaring this RETRY, including the first attempt.
 
 HANDLER
     Contexts: top_level
@@ -90,6 +91,7 @@ HANDLER
     Optional: TARGET, PARAMETER, WHEN, FALLBACK, LIMIT, DESCRIPTION
     Repeatable: PARAMETER
     Rule: HANDLER is an invocation site; OPERATION selects and invokes one operation under the ACTION contract.
+    Rule: EVENT names the event this handler activates on; the closed event model in statuses_and_errors_v0.1.0.json#/event_model raises events only from emitted diagnostics and selects at most one handler per raised diagnostic.
     Rule: A required TARGET may be omitted only under the handler-context binding for REFERENCE[ACTION] or REFERENCE[meta.execution_unit] targets.
     Rule: LIMIT is exactly the limit named parameter of the selected operation and is legal only when that operation registers it.
     Rule: FALLBACK admits one REF to a HANDLER, or one operation identifier that requires no named parameter and whose required TARGET the handler-context binding supplies.
@@ -101,6 +103,8 @@ OUTPUT
     Optional: TARGET, SCHEMA, ENCODING, REQUIRED, DEFAULT, PROPERTY, DESCRIPTION
     Repeatable: PROPERTY
     Rule: TARGET is destination, not produced VALUE.
+    Rule: Zero PROPERTY occurrences select the applicable default result; one selects a scalar field; two or more select a closed OBJECT in declaration order.
+    Rule: Every PROPERTY is unique and must name an available projectable result field.
 
 VALIDATE
     Contexts: top_level

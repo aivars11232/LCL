@@ -41,7 +41,9 @@ establish that fact. Status, effect_state, observed effects, and OUTPUT binding
 remain separate axes under the result-schema contract.
 
 A handler may recover only an error whose registry entry permits declared
-handler recovery. Recovery and retry never erase the original diagnostic or its
+handler recovery. Such an error declares exactly one registered event, and the
+closed event model selects at most one handler for each raised diagnostic; an
+error declaring no event raises nothing and is never recoverable. Recovery and retry never erase the original diagnostic or its
 evidence. A retry after known effects requires exact repetition, resumption, or
 reconciliation safety evidence; indeterminate effects prohibit another attempt
 until reconciled. Missing, UNKNOWN, and proved-unsafe safety facts map to the

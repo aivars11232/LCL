@@ -1,0 +1,10 @@
+[package]
+name = "lcl-diagnostics"
+description = "Diagnostics skeleton for LCL Core: registered errors, stages, and statuses loaded from the canonical registries."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lcl-spec = { path = "../lcl-spec" }

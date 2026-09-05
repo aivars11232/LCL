@@ -1,0 +1,9 @@
+[package]
+name = "lcl-spec"
+description = "Spec authority loader for canonical LCL Core. Verifies package integrity and loads closed registries as data."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]

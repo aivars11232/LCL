@@ -1,0 +1,13 @@
+[package]
+name = "lcl-conformance"
+description = "Conformance skeleton for LCL Core: descriptive requirement index and decision witnesses. Indexes requirements; executes nothing."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lcl-spec = { path = "../lcl-spec" }
+
+[dev-dependencies]
+lcl-diagnostics = { path = "../lcl-diagnostics" }

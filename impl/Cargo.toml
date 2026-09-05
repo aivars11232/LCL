@@ -1,0 +1,24 @@
+# LCL implementation workspace.
+#
+# This workspace is a CONSUMER of the canonical LCL Core 0.1.0 specification.
+# It never writes to, modifies, or is packaged with `canonical/`.
+#
+# Milestone M0 scope: spec authority loader, diagnostics skeleton, conformance
+# skeleton. No lexer, parser, evaluator, or runtime is present or implied.
+#
+# Dependency policy: std only. The spec authority loader is the trust root for
+# every later layer, so it carries no third-party supply-chain surface.
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/lcl-spec",
+    "crates/lcl-diagnostics",
+    "crates/lcl-conformance",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.75"
+publish = false

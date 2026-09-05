@@ -44,7 +44,25 @@ fn main() -> ExitCode {
     );
     println!("Package status    : {}", r.status);
     println!("Release ready     : {}", r.release_ready);
-    println!("Integrity         : {}\n", r.summary());
+    println!("Internal integrity: {}", r.summary());
+    println!();
+    println!("-- trust boundary --");
+    println!("  authority        : {}", pkg.authority());
+    println!("  approved package : {}", lcl_spec::APPROVED_PACKAGE.label);
+    println!(
+        "  anchor identity  : {}",
+        lcl_spec::APPROVED_PACKAGE.identity_digest
+    );
+    println!("  actual identity  : {}", pkg.identity_digest());
+    println!(
+        "  anchor match     : {}",
+        if pkg.identity_digest() == lcl_spec::APPROVED_PACKAGE.identity_digest {
+            "yes"
+        } else {
+            "NO"
+        }
+    );
+    println!();
 
     println!("-- component counts (declared vs observed) --");
     let declared = pkg.declared_component_counts();

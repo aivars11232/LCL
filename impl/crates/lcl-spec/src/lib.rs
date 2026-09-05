@@ -25,8 +25,11 @@
 //! `09_CONFORMANCE/01_CONFORMANCE_REQUIREMENTS.txt`, parser and runtime evidence
 //! is separate evidence that this milestone does not produce.
 
+pub mod anchor;
 pub mod json;
 pub mod sha256;
+
+pub use anchor::{TrustAnchor, APPROVED_PACKAGE};
 
 use json::Json;
 use std::collections::BTreeMap;
@@ -115,6 +118,22 @@ pub enum SpecError {
     IntegrityFailed(Box<IntegrityReport>),
     /// A path in an integrity record was unsafe or non-package-relative.
     UnsafePath(String),
+    /// The package is internally self-consistent but is NOT the approved
+    /// package. This is the forgery case: regenerating `MANIFEST.json` and
+    /// `SHA256SUMS.txt` satisfies internal verification but cannot satisfy an
+    /// external anchor.
+    TrustAnchorMismatch {
+        label: &'static str,
+        expected: &'static str,
+        actual: String,
+        internally_consistent: bool,
+    },
+    /// The package file count disagrees with the anchor.
+    TrustAnchorFileCount {
+        label: &'static str,
+        expected: usize,
+        actual: usize,
+    },
 }
 
 impl fmt::Display for SpecError {
@@ -131,6 +150,24 @@ impl fmt::Display for SpecError {
                 write!(f, "package integrity verification FAILED with {} defect(s)", r.defects.len())
             }
             SpecError::UnsafePath(p) => write!(f, "unsafe path in integrity record: {p:?}"),
+            SpecError::TrustAnchorMismatch { label, expected, actual, internally_consistent } => {
+                writeln!(f, "TRUST ANCHOR MISMATCH: this is not the approved package.")?;
+                writeln!(f, "  approved          : {label}")?;
+                writeln!(f, "  expected identity : {expected}")?;
+                writeln!(f, "  actual identity   : {actual}")?;
+                if *internally_consistent {
+                    write!(
+                        f,
+                        "  note              : this package IS internally self-consistent. Its manifest and checksums agree with its bytes, so internal verification alone would have accepted it. Only the external anchor rejects it."
+                    )
+                } else {
+                    write!(f, "  note              : this package is also internally inconsistent.")
+                }
+            }
+            SpecError::TrustAnchorFileCount { label, expected, actual } => write!(
+                f,
+                "TRUST ANCHOR MISMATCH: approved package {label} has {expected} files, this package has {actual}"
+            ),
         }
     }
 }
@@ -187,7 +224,41 @@ impl fmt::Display for Defect {
     }
 }
 
+/// How much trust a loaded package carries.
+///
+/// The distinction is deliberately not a boolean flag buried in a struct: an
+/// `Unverified` package must never be mistaken for the approved release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Authority {
+    /// Internally consistent AND matches the external trust anchor. This is the
+    /// only state in which the package is the approved specification.
+    Authoritative,
+    /// Loaded without anchor checking. NON-AUTHORITATIVE: internal consistency
+    /// says only that the package agrees with its own metadata, which a forger
+    /// can arrange. Use for drift reporting and diagnosis, never as normative
+    /// input.
+    Unverified,
+}
+
+impl Authority {
+    pub fn is_authoritative(self) -> bool {
+        matches!(self, Authority::Authoritative)
+    }
+}
+
+impl fmt::Display for Authority {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Authority::Authoritative => f.write_str("AUTHORITATIVE"),
+            Authority::Unverified => f.write_str("UNVERIFIED (non-authoritative)"),
+        }
+    }
+}
+
 /// Outcome of verifying the package against its own integrity records.
+///
+/// Note the scope: this reports **internal** consistency only. It is necessary
+/// but not sufficient for authority; see [`Authority`].
 #[derive(Debug, Clone)]
 pub struct IntegrityReport {
     pub package_root: PathBuf,
@@ -204,6 +275,8 @@ pub struct IntegrityReport {
     pub manifest_verified: usize,
     /// Files whose bytes were hashed and matched a checksum record.
     pub checksum_verified: usize,
+    /// Domain-separated digest over the complete file inventory.
+    pub identity_digest: String,
     pub defects: Vec<Defect>,
 }
 
@@ -213,8 +286,11 @@ impl IntegrityReport {
     }
 
     pub fn summary(&self) -> String {
+        // Deliberately not the word "VERIFIED": this report covers internal
+        // consistency only, which is necessary but not sufficient for
+        // authority. See `Authority`.
         let verdict = if self.is_verified() {
-            "VERIFIED"
+            "INTERNALLY CONSISTENT"
         } else {
             "FAILED"
         };
@@ -254,6 +330,7 @@ pub struct SpecPackage {
     registries: BTreeMap<String, Json>,
     catalogs: BTreeMap<String, Json>,
     integrity: IntegrityReport,
+    authority: Authority,
 }
 
 /// Concise on purpose: a derived `Debug` would dump the entire specification
@@ -265,32 +342,84 @@ impl fmt::Debug for SpecPackage {
             .field("formal_version", &self.integrity.formal_version)
             .field("registries", &self.registries.len())
             .field("catalogs", &self.catalogs.len())
-            .field("verified", &self.integrity.is_verified())
+            .field("authority", &self.authority)
+            .field("internally_consistent", &self.integrity.is_verified())
             .field("defects", &self.integrity.defects.len())
             .finish()
     }
 }
 
 impl SpecPackage {
-    /// Open and fully verify the package at `root`.
+    /// Open the approved package at `root` and establish full authority.
     ///
-    /// Fails closed on version mismatch or any integrity defect.
+    /// Three independent gates, all of which must pass:
+    ///
+    /// 1. **Version pin** — the package declares [`PINNED_FORMAL_VERSION`].
+    /// 2. **Internal integrity** — every byte agrees with `MANIFEST.json` and
+    ///    `SHA256SUMS.txt`, with no missing, extra or miscounted file.
+    /// 3. **External trust anchor** — the package identity digest equals
+    ///    [`APPROVED_PACKAGE`], which is compiled into this crate and therefore
+    ///    outside the reach of the package's own metadata.
+    ///
+    /// Gate 3 is what makes gates 1 and 2 meaningful. Without it, an altered
+    /// package whose manifest and checksums were regenerated to match would
+    /// pass, because it would be perfectly self-consistent.
+    ///
+    /// Fails closed on any gate.
     pub fn open(root: impl AsRef<Path>) -> Result<Self, SpecError> {
-        let pkg = Self::open_unverified(root)?;
-        if pkg.integrity.formal_version != PINNED_FORMAL_VERSION {
+        Self::open_with_anchor(root, &APPROVED_PACKAGE)
+    }
+
+    /// As [`SpecPackage::open`], against an explicitly supplied anchor.
+    ///
+    /// Exists so that a future approved release can be pinned without weakening
+    /// the default, and so tests can exercise anchor behaviour. It does not
+    /// accept an anchor read from the package.
+    pub fn open_with_anchor(
+        root: impl AsRef<Path>,
+        anchor: &'static TrustAnchor,
+    ) -> Result<Self, SpecError> {
+        let mut pkg = Self::open_unverified(root)?;
+
+        if pkg.integrity.formal_version != anchor.formal_version {
             return Err(SpecError::VersionMismatch {
                 found: pkg.integrity.formal_version.clone(),
-                expected: PINNED_FORMAL_VERSION,
+                expected: anchor.formal_version,
             });
         }
         if !pkg.integrity.is_verified() {
             return Err(SpecError::IntegrityFailed(Box::new(pkg.integrity)));
         }
+        if pkg.integrity.files_on_disk != anchor.package_file_count {
+            return Err(SpecError::TrustAnchorFileCount {
+                label: anchor.label,
+                expected: anchor.package_file_count,
+                actual: pkg.integrity.files_on_disk,
+            });
+        }
+        if pkg.integrity.identity_digest != anchor.identity_digest {
+            return Err(SpecError::TrustAnchorMismatch {
+                label: anchor.label,
+                expected: anchor.identity_digest,
+                actual: pkg.integrity.identity_digest.clone(),
+                // Reaching here means internal verification already passed.
+                internally_consistent: true,
+            });
+        }
+
+        pkg.authority = Authority::Authoritative;
         Ok(pkg)
     }
 
-    /// Load the package and compute its integrity report without failing on
-    /// defects. Intended for drift reporting only.
+    /// Load a package **without** anchor checking.
+    ///
+    /// The result is [`Authority::Unverified`] and is NOT the approved
+    /// specification, whatever its internal integrity report says. Internal
+    /// consistency proves only that the package agrees with metadata it
+    /// carries itself, which anyone altering the package can regenerate.
+    ///
+    /// Intended for drift diagnosis and for reporting on a package that fails
+    /// [`SpecPackage::open`]. Never use the result as normative input.
     pub fn open_unverified(root: impl AsRef<Path>) -> Result<Self, SpecError> {
         let root = root.as_ref().to_path_buf();
         if !root.is_dir() {
@@ -323,7 +452,23 @@ impl SpecPackage {
             registries,
             catalogs,
             integrity,
+            authority: Authority::Unverified,
         })
+    }
+
+    /// Trust level of this handle.
+    pub fn authority(&self) -> Authority {
+        self.authority
+    }
+
+    /// True only when the external trust anchor matched.
+    pub fn is_authoritative(&self) -> bool {
+        self.authority.is_authoritative()
+    }
+
+    /// Domain-separated digest over the complete file inventory.
+    pub fn identity_digest(&self) -> &str {
+        &self.integrity.identity_digest
     }
 
     pub fn root(&self) -> &Path {
@@ -602,6 +747,17 @@ fn verify(
         }
     }
 
+    // Identity digest covers EVERY file, including the three integrity
+    // artifacts. Nothing is self-excluded, because this digest is not stored
+    // in the package. BTreeMap iteration is ascending by path, which is the
+    // order the digest definition requires.
+    let mut ident = anchor::IdentityBuilder::new();
+    for (path, (hash, _)) in &actual {
+        ident.push(path, hash);
+    }
+    debug_assert!(!ident.is_out_of_order());
+    let identity_digest = ident.finish();
+
     Ok(IntegrityReport {
         package_root: root.to_path_buf(),
         formal_version: manifest
@@ -623,8 +779,33 @@ fn verify(
         checksum_records: checksums.len(),
         manifest_verified,
         checksum_verified,
+        identity_digest,
         defects,
     })
+}
+
+/// Compute a package's identity digest without loading or verifying it.
+///
+/// Used to mint an anchor value for a newly approved package, and by tooling
+/// that needs to report what a package *is* before deciding whether to trust it.
+pub fn compute_identity_digest(root: impl AsRef<Path>) -> Result<(String, usize), SpecError> {
+    let root = root.as_ref();
+    let files = walk(root)?;
+    let mut b = anchor::IdentityBuilder::new();
+    for rel in &files {
+        let bytes = std::fs::read(root.join(rel)).map_err(|e| SpecError::Io {
+            path: root.join(rel),
+            source: e,
+        })?;
+        b.push(rel, &sha256::hex_digest(&bytes));
+    }
+    if b.is_out_of_order() {
+        return Err(SpecError::Structure(
+            "inventory was not in ascending path order".into(),
+        ));
+    }
+    let n = b.file_count();
+    Ok((b.finish(), n))
 }
 
 // ---------------------------------------------------------------------------

@@ -587,6 +587,65 @@ fn keyword_case_in_a_built_in_type_position() {
     assert!(errors("DATA:\n    VALUE: string\n").is_empty());
 }
 
+/// `NON_NULL_TYPE_EXPRESSION` names exactly four bracketed forms — `LIST[`,
+/// `SET[`, `OBJECT[`, `REFERENCE[`. After any other type word a `[` is
+/// `INDEX_ACCESS`, whose content is an ordinary EXPRESSION, so a lowercase
+/// identifier there is legal.
+#[test]
+fn only_the_four_ebnf_forms_open_type_argument_context() {
+    // The reported defect: NULL is a value literal here and `[status]` is
+    // postfix index syntax. Whether NULL may be indexed is a later static
+    // check, not a lexical keyword-case error.
+    let l = lex("DATA:\n    VALUE: NULL[status]\n");
+    assert_well_formed(&l, "NULL[status]");
+    assert!(l.diagnostics().is_empty(), "{:?}", ids(&l));
+    assert_eq!(
+        line("NULL[status]"),
+        vec![
+            s(ReservedWord, "NULL"),
+            s(Symbol, "["),
+            s(SimpleIdentifier, "status"),
+            s(Symbol, "]"),
+        ]
+    );
+
+    // Every other type word behaves the same way before `[`.
+    for word in [
+        "STRING", "BOOLEAN", "DECIMAL", "ENUM", "DATE", "URI", "PATH",
+    ] {
+        assert!(
+            errors(&format!("DATA:\n    VALUE: {word}[status]\n")).is_empty(),
+            "{word}"
+        );
+    }
+
+    // The four that do open it still report the lowercase argument.
+    for word in lexicon().type_argument_words() {
+        assert_eq!(
+            errors(&format!("DATA:\n    VALUE: {word}[status]\n")),
+            vec!["error.keyword.case"],
+            "{word}"
+        );
+    }
+
+    // The specified type expression keeps its diagnostic, with its exact span.
+    let l = lex("DATA:\n    TYPE: LIST[boolean]\n");
+    assert_well_formed(&l, "LIST[boolean]");
+    assert_eq!(ids(&l), vec![("error.keyword.case".to_string(), 21)]);
+    let d = l.primary().unwrap();
+    assert_eq!(d.span, lcl_lexer::Span::new(21, 28));
+    assert_eq!(d.span.slice(l.source()), Some("boolean"));
+    assert_eq!(d.cause.as_str(), "keyword_case");
+    assert_eq!(l.terminal_status(), Some("status.invalid"));
+
+    // Type-argument context closes with its bracket, and nests.
+    assert_eq!(
+        errors("DATA:\n    TYPE: LIST[SET[string]]\n"),
+        vec!["error.keyword.case"]
+    );
+    assert!(errors("DATA:\n    VALUE: LIST[STRING][status]\n").is_empty());
+}
+
 #[test]
 fn lowercase_object_keys_and_identifiers_stay_legal() {
     // An OBJECT VALUE containing a field named `status`, and other keys that

@@ -156,6 +156,26 @@ pub struct LiteralConstructor {
     pub literal_arities: BTreeSet<usize>,
 }
 
+/// The reserved words that open a type-argument bracket, from the four
+/// bracketed alternatives of `04_GRAMMAR/10_COMPLETE_EBNF.ebnf#/NON_NULL_TYPE_EXPRESSION`:
+///
+/// ```text
+/// NON_NULL_TYPE_EXPRESSION = SCALAR_TYPE |
+///     "LIST", "[", TYPE_EXPRESSION, "]" |
+///     "SET", "[", TYPE_EXPRESSION, "]" |
+///     "OBJECT", "[", REFERENCE_CALL, "]" |
+///     "REFERENCE", "[", REFERENCE_CALL, "]" ;
+/// ```
+///
+/// This is a strict subset of the `type` keyword category: after every other
+/// type word a `[` is `INDEX_ACCESS`, not a type argument. The set is a
+/// grammar production, not a registry table, and the package exposes the EBNF
+/// as text rather than as data, so it is named here and cross-checked against
+/// the shipped EBNF by `tests/lexicon_authority.rs`. [`Lexicon::load`] still
+/// fails closed if the keyword registry stops registering one of the four as a
+/// type word.
+const TYPE_ARGUMENT_WORDS: [&str; 4] = ["LIST", "OBJECT", "REFERENCE", "SET"];
+
 /// The closed lexical vocabulary of LCL Core 0.1.0.
 pub struct Lexicon {
     formal_version: String,
@@ -167,9 +187,11 @@ pub struct Lexicon {
     /// Registered words of a literal category: the sentinel and Boolean
     /// literals that end an operand.
     literal_words: BTreeSet<String>,
-    /// Registered words of a type category: the words a type-argument `[`
-    /// may follow.
+    /// Registered words of a type category.
     type_words: BTreeSet<String>,
+    /// The exact subset of `type_words` that a type-argument `[` may follow:
+    /// [`TYPE_ARGUMENT_WORDS`].
+    type_argument_words: BTreeSet<String>,
     /// The 41 block names of `field_signatures_v0.1.0.json#/blocks`.
     block_names: BTreeSet<String>,
     /// `(block, field)` pairs whose indented form is object data.
@@ -272,6 +294,19 @@ impl Lexicon {
                 )));
             }
             reserved_words.insert(word.clone());
+        }
+
+        // The four bracketed type constructors of the EBNF must all still be
+        // registered type words; a registry that dropped one would silently
+        // stop opening type-argument context.
+        let mut type_argument_words = BTreeSet::new();
+        for word in TYPE_ARGUMENT_WORDS {
+            if !type_words.contains(word) {
+                return Err(LexiconError::Malformed(format!(
+                    "type-argument word {word} is not a registered type-category keyword"
+                )));
+            }
+            type_argument_words.insert(word.to_string());
         }
 
         // --- Symbols --------------------------------------------------------
@@ -586,6 +621,7 @@ impl Lexicon {
             callables,
             literal_words,
             type_words,
+            type_argument_words,
             block_names,
             object_data_fields,
             type_position_fields,
@@ -645,6 +681,19 @@ impl Lexicon {
 
     pub fn is_type_word(&self, word: &str) -> bool {
         self.type_words.contains(word)
+    }
+
+    /// The four words a type-argument `[` may follow, per
+    /// [`TYPE_ARGUMENT_WORDS`]: `LIST`, `OBJECT`, `REFERENCE`, `SET`.
+    pub fn type_argument_words(&self) -> impl Iterator<Item = &str> {
+        self.type_argument_words.iter().map(String::as_str)
+    }
+
+    /// True only for `LIST`, `SET`, `OBJECT` and `REFERENCE`. After any other
+    /// type word — `NULL`, `STRING`, `BOOLEAN` and the rest — a `[` is
+    /// `INDEX_ACCESS`, which takes an `EXPRESSION`, not a type argument.
+    pub fn is_type_argument_word(&self, word: &str) -> bool {
+        self.type_argument_words.contains(word)
     }
 
     /// The block names of `field_signatures_v0.1.0.json#/blocks`.

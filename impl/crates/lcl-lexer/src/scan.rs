@@ -887,7 +887,10 @@ impl Scan<'_> {
             "[" => {
                 self.delimiters.push((b'[', at));
                 // `LIST[`, `SET[`, `OBJECT[`, `REFERENCE[`: a type argument.
-                if adjacent_word.is_some_and(|w| self.lexicon.is_type_word(w)) {
+                // Those four exactly, per `NON_NULL_TYPE_EXPRESSION`; after any
+                // other word — `NULL[status]`, `STRING[0]` — the `[` is
+                // `INDEX_ACCESS`, whose content is an ordinary EXPRESSION.
+                if adjacent_word.is_some_and(|w| self.lexicon.is_type_argument_word(w)) {
                     self.type_brackets.push(self.delimiters.len());
                 }
             }
@@ -1672,17 +1675,59 @@ fn has_unescaped_triple_quote(line: &str) -> bool {
 // Literal constructor arguments
 // ---------------------------------------------------------------------------
 
+/// Diagnostics after which a `STRING` lexeme has no decoded value.
+///
+/// Two families, both of which make the token's `value` a partial decode:
+///
+/// * the raw-source character rules of `02_LEXICAL/01`, whose rejected bytes
+///   are quarantined out of the decoded text by `scan_single_line_string` and
+///   `decode_region`;
+/// * the literal rules of `02_LEXICAL/07` that abandon part of the literal —
+///   a malformed escape, or a literal with no closing delimiter.
+///
+/// Everything else — a delimiter, indentation, keyword-case or symbol defect —
+/// leaves the string itself intact and does not disqualify it.
+fn destroys_decoded_value(id: LexicalError) -> bool {
+    matches!(
+        id,
+        LexicalError::EncodingInvalid
+            | LexicalError::LiteralEscape
+            | LexicalError::LiteralUnclosed
+            | LexicalError::NewlineInvalid
+            | LexicalError::SourceBom
+            | LexicalError::SourceControlCharacter
+            | LexicalError::SourceNonAsciiOutsideString
+            | LexicalError::SourceTab
+            | LexicalError::SourceTrailingSpace
+    )
+}
+
 impl Scan<'_> {
     /// Validate the literal `STRING` arguments of registered constructors that
     /// carry a closed literal profile and stage `error.literal.invalid` as
     /// lexical: REGEX (pattern and flags), GLOB, DATE, TIME, DATETIME, URI.
     ///
-    /// This is token-context validation, not evaluation. Only a call whose
-    /// arity is a registered all-`STRING` overload and whose every argument is
-    /// one `STRING` token is checked; an argument that is a reference,
-    /// expression or other constructor is dynamically supplied material whose
-    /// value-domain check belongs to `expression_demand_resolution`, and a
-    /// wrong arity is `error.operator.operand` at the static stage.
+    /// This is token-context validation, not evaluation, and it is decided one
+    /// *argument position* at a time:
+    ///
+    /// * The call's argument count must be a registered all-`STRING` overload;
+    ///   a wrong arity is `error.operator.operand` at the static stage, and
+    ///   this pass judges nothing in that call.
+    /// * A position holding exactly one clean literal `STRING` token is
+    ///   source-known, so it is checked here — whatever its siblings are.
+    /// * Every other position (a `REF`, an expression, a nested call) is
+    ///   dynamically supplied material whose value-domain check belongs to
+    ///   `expression_demand_resolution`, and is left unjudged. A dynamic
+    ///   sibling never suppresses a literal one.
+    /// * A `STRING` whose bytes already carry a raw-source, escape or
+    ///   unclosed-literal diagnostic has no valid decoded value at all, so it
+    ///   is skipped rather than re-judged on a partial decode; see
+    ///   [`Scan::has_prior_lexical_defect`].
+    ///
+    /// The walk advances one token at a time, so a constructor nested inside
+    /// another call's arguments is visited on its own head token, exactly once.
+    /// A defect in an inner constructor therefore survives an outer call whose
+    /// arity or argument types this pass declines to judge.
     fn validate_constructor_literals(&mut self) {
         let mut index = 0usize;
         while index < self.tokens.len() {
@@ -1706,60 +1751,84 @@ impl Scan<'_> {
             };
             let profile = constructor.profile;
             let arities = constructor.literal_arities.clone();
-            let Some((arguments, close)) = self.call_arguments(index.saturating_add(2)) else {
-                index = index.saturating_add(1);
-                continue;
-            };
-            let literal_form = arities.contains(&arguments.len())
-                && arguments.iter().all(|arg| {
-                    arg.len() == 1 && self.token_kind(arg[0]) == Some(TokenKind::String)
-                });
-            if literal_form {
-                for (position, argument) in arguments.iter().enumerate() {
-                    let Some(token) = self.tokens.get(argument[0]) else {
-                        continue;
-                    };
-                    let value = token.value.clone().unwrap_or_default();
-                    let span = token.span;
-                    let verdict = match (profile, position) {
-                        (LiteralProfile::Regex, 0) => literal::regex_pattern(&value)
-                            .map_err(|e| format!("REGEX pattern: {e}")),
-                        (LiteralProfile::Regex, _) => {
-                            literal::regex_flags(&value, self.lexicon.regex_flags())
-                                .map_err(|e| format!("REGEX flags: {e}"))
-                        }
-                        (LiteralProfile::Glob, _) => {
-                            literal::glob_pattern(&value).map_err(|e| format!("GLOB pattern: {e}"))
-                        }
-                        (LiteralProfile::Date, _) => {
-                            literal::date(&value).map_err(|e| format!("DATE: {e}"))
-                        }
-                        (LiteralProfile::Time, _) => {
-                            literal::time(&value).map_err(|e| format!("TIME: {e}"))
-                        }
-                        (LiteralProfile::Datetime, _) => {
-                            literal::datetime(&value).map_err(|e| format!("DATETIME: {e}"))
-                        }
-                        (LiteralProfile::Uri, _) => {
-                            literal::uri(&value).map_err(|e| format!("URI: {e}"))
-                        }
-                    };
-                    if let Err(detail) = verdict {
-                        self.push(
-                            LexicalError::LiteralInvalid,
-                            span,
-                            "constructor_literal",
-                            detail,
-                        );
+            if let Some((arguments, _close)) = self.call_arguments(index.saturating_add(2)) {
+                if arities.contains(&arguments.len()) {
+                    for (position, argument) in arguments.iter().enumerate() {
+                        self.validate_literal_argument(profile, position, argument);
                     }
                 }
             }
-            index = close.saturating_add(1);
+            // One step, not past the closing `)`: a nested constructor inside
+            // these arguments is a call in its own right and gets its own visit.
+            index = index.saturating_add(1);
         }
     }
 
-    fn token_kind(&self, index: usize) -> Option<TokenKind> {
-        self.tokens.get(index).map(|t| t.kind)
+    /// Judge one argument position, if and only if it is exactly one clean
+    /// literal `STRING` token.
+    fn validate_literal_argument(
+        &mut self,
+        profile: LiteralProfile,
+        position: usize,
+        argument: &[usize],
+    ) {
+        let [only] = *argument else { return };
+        let Some(token) = self.tokens.get(only) else {
+            return;
+        };
+        if token.kind != TokenKind::String {
+            return;
+        }
+        let span = token.span;
+        if self.has_prior_lexical_defect(span) {
+            return;
+        }
+        let value = token.value.clone().unwrap_or_default();
+        let verdict = match (profile, position) {
+            (LiteralProfile::Regex, 0) => {
+                literal::regex_pattern(&value).map_err(|e| format!("REGEX pattern: {e}"))
+            }
+            (LiteralProfile::Regex, _) => literal::regex_flags(&value, self.lexicon.regex_flags())
+                .map_err(|e| format!("REGEX flags: {e}")),
+            (LiteralProfile::Glob, _) => {
+                literal::glob_pattern(&value).map_err(|e| format!("GLOB pattern: {e}"))
+            }
+            (LiteralProfile::Date, _) => literal::date(&value).map_err(|e| format!("DATE: {e}")),
+            (LiteralProfile::Time, _) => literal::time(&value).map_err(|e| format!("TIME: {e}")),
+            (LiteralProfile::Datetime, _) => {
+                literal::datetime(&value).map_err(|e| format!("DATETIME: {e}"))
+            }
+            (LiteralProfile::Uri, _) => literal::uri(&value).map_err(|e| format!("URI: {e}")),
+        };
+        if let Err(detail) = verdict {
+            self.push(
+                LexicalError::LiteralInvalid,
+                span,
+                "constructor_literal",
+                detail,
+            );
+        }
+    }
+
+    /// True when bytes of `span` are already covered by a diagnostic that
+    /// destroys the decoded `STRING` value: a raw-source character rejected by
+    /// part 2, a malformed escape, or an unclosed literal.
+    ///
+    /// The scanner still emits a token for such a string — `finish` withdraws
+    /// it once the diagnostic set is final — but its `value` is a *partial*
+    /// decode with the offending bytes dropped. Validating a closed literal
+    /// profile against that partial text manufactures a second, unrelated
+    /// `error.literal.invalid` for one defect, which
+    /// `specificity_rule`/`supersession_rule` never intended: the literal has no
+    /// decoded value to judge, not a wrong one. Diagnostics at genuinely
+    /// different loci are untouched, because only bytes of *this* token count.
+    fn has_prior_lexical_defect(&self, span: Span) -> bool {
+        self.raw.iter().any(|r| {
+            destroys_decoded_value(r.id)
+                && !r.span.is_empty()
+                && r.span.start < span.end
+                && span.start < r.span.end
+        })
     }
 
     /// The argument groups of a call whose `(` precedes `from`, as indices of

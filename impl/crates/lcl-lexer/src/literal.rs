@@ -21,6 +21,7 @@
 //! depends on the receiving field and on resolution.
 
 use crate::lexicon::RegexFlagContract;
+use std::cmp::Ordering;
 
 // ---------------------------------------------------------------------------
 // REGEX flags
@@ -188,7 +189,7 @@ impl RegexParser<'_> {
                             return Err("counted quantifier is not closed by `}`".to_string());
                         }
                         self.advance(1);
-                        if n > m {
+                        if count_cmp(&n, &m) == Ordering::Greater {
                             return Err(format!("counted quantifier {{{n},{m}}} requires n <= m"));
                         }
                         Ok(())
@@ -201,7 +202,12 @@ impl RegexParser<'_> {
     }
 
     /// `COUNT = "0" | NONZERO_DIGIT , { DIGIT } ;`
-    fn count(&mut self) -> Result<u64, String> {
+    ///
+    /// `pattern_profiles.REGEX.quantifiers`: "Counts are exact nonnegative
+    /// integers without leading zeroes." The production admits an unbounded
+    /// digit run, so the count is kept as its canonical decimal digits and
+    /// never narrowed to a fixed-width integer; see [`count_cmp`].
+    fn count(&mut self) -> Result<String, String> {
         let start = self.pos;
         while matches!(self.peek(), Some(c) if c.is_ascii_digit()) {
             self.advance(1);
@@ -213,7 +219,7 @@ impl RegexParser<'_> {
         if digits.len() > 1 && digits.starts_with('0') {
             return Err(format!("quantifier count `{digits}` has a leading zero"));
         }
-        Ok(digits.parse::<u64>().unwrap_or(u64::MAX))
+        Ok(digits)
     }
 
     /// `ATOM = REGEX_LITERAL | ESCAPE | "." | CHARACTER_CLASS | "(" , ALTERNATION , ")" | "(?:" , ALTERNATION , ")" ;`
@@ -329,6 +335,20 @@ impl RegexParser<'_> {
             }
         }
     }
+}
+
+/// Order two `COUNT` lexemes exactly, with no fixed-width limit.
+///
+/// `COUNT = "0" | NONZERO_DIGIT , { DIGIT }` admits an unbounded digit run, and
+/// `pattern_profiles.REGEX.quantifiers` requires `{n,m}` to satisfy `n <= m`
+/// over exact nonnegative integers. Both arguments have already passed the
+/// no-leading-zero rule of [`RegexParser::count`], so each is the canonical
+/// decimal spelling of its value: a longer digit sequence is the larger number,
+/// and equal lengths compare ASCII-lexicographically. Narrowing to `u64` would
+/// collapse every value above `u64::MAX` onto one saturated bound and lose the
+/// ordering of distinct large counts.
+fn count_cmp(n: &str, m: &str) -> Ordering {
+    n.len().cmp(&m.len()).then_with(|| n.cmp(m))
 }
 
 // ---------------------------------------------------------------------------

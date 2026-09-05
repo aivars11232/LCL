@@ -227,6 +227,56 @@ fn literal_and_type_words_come_from_keyword_categories() {
     assert!(!types.contains("REF"));
 }
 
+/// The words a `"["` follows in `NON_NULL_TYPE_EXPRESSION`.
+fn ebnf_type_argument_words() -> BTreeSet<String> {
+    let ebnf = std::fs::read_to_string(canonical_root().join("04_GRAMMAR/10_COMPLETE_EBNF.ebnf"))
+        .expect("ebnf");
+    let start = ebnf
+        .find("\nNON_NULL_TYPE_EXPRESSION =")
+        .expect("NON_NULL_TYPE_EXPRESSION not in EBNF");
+    let body = &ebnf[start..];
+    let body = &body[..body.find(';').expect("terminated")];
+    let mut out = BTreeSet::new();
+    for alternative in body.split('|') {
+        let mut quoted = alternative.split('"').skip(1).step_by(2);
+        if let (Some(word), Some("[")) = (quoted.next(), quoted.next()) {
+            out.insert(word.to_string());
+        }
+    }
+    out
+}
+
+/// Only `LIST`, `SET`, `OBJECT` and `REFERENCE` take a bracketed type
+/// argument. The lexer names them because the package ships the grammar as
+/// EBNF text rather than as registry data, so this test is what keeps the
+/// named set equal to the shipped production.
+#[test]
+fn type_argument_words_equal_the_grammar_bracketed_type_forms() {
+    let from_lexicon: BTreeSet<String> = lexicon()
+        .type_argument_words()
+        .map(str::to_string)
+        .collect();
+    let from_ebnf = ebnf_type_argument_words();
+    assert_eq!(
+        from_ebnf,
+        ["LIST", "OBJECT", "REFERENCE", "SET"]
+            .map(str::to_string)
+            .into_iter()
+            .collect::<BTreeSet<String>>()
+    );
+    assert_eq!(from_lexicon, from_ebnf);
+
+    // A strict subset of the type-keyword category: every other type word
+    // takes `INDEX_ACCESS` after `[`, not a type argument.
+    let types: BTreeSet<String> = lexicon().type_words().map(str::to_string).collect();
+    assert!(from_lexicon.is_subset(&types));
+    assert!(from_lexicon.len() < types.len());
+    for word in ["NULL", "STRING", "BOOLEAN", "ENUM", "DATE"] {
+        assert!(types.contains(word), "{word}");
+        assert!(!lexicon().is_type_argument_word(word), "{word}");
+    }
+}
+
 #[test]
 fn literal_constructor_contracts_come_from_the_registries() {
     let lexicon = lexicon();

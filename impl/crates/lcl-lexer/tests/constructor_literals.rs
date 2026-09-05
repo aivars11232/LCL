@@ -412,8 +412,10 @@ fn relative_references_and_malformed_uris_are_rejected() {
 
 #[test]
 fn dynamically_supplied_arguments_and_other_overloads_are_not_judged_here() {
-    // A reference or expression argument is execution-stage material.
-    accepted("REGEX(REF(pattern.x), \"mi\")");
+    // A reference or expression argument is execution-stage material. Its
+    // *literal* siblings are still source-known and still judged, so every
+    // case here keeps every literal argument valid.
+    accepted("REGEX(REF(pattern.x), \"ims\")");
     accepted("REGEX(\"a\", REF(flags.x))");
     accepted("DATE(REF(input.day))");
     accepted("GLOB(REF(a) + \"x\")");
@@ -489,4 +491,281 @@ fn the_thirteen_valid_examples_use_only_valid_literals() {
         constructor_calls >= 6,
         "the examples exercise the constructors"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Per-argument judgement in mixed calls
+// ---------------------------------------------------------------------------
+
+/// A dynamic sibling argument never suppresses a literal one: the literal is
+/// source-known, so the lexical stage decides it, position by position.
+#[test]
+fn a_known_literal_argument_is_judged_beside_a_dynamic_sibling() {
+    // Flags literal beside a REF pattern.
+    let l = lex(&document("REGEX(REF(pattern.x), \"mi\")"));
+    assert_well_formed(&l, "mixed flags");
+    assert_eq!(id_list(&l), vec!["error.literal.invalid"]);
+    let d = l.primary().unwrap();
+    assert_eq!(d.span, lcl_lexer::Span::new(39, 43));
+    assert_eq!(d.span.slice(l.source()), Some("\"mi\""));
+    assert_eq!(d.cause.as_str(), "constructor_literal");
+    assert!(d
+        .detail
+        .as_deref()
+        .unwrap()
+        .starts_with("REGEX flags: flag `i` is out of canonical `ims` order"));
+    assert_eq!(l.terminal_status(), Some("status.invalid"));
+
+    // Pattern literal beside a REF flags argument.
+    let l = lex(&document("REGEX(\"[a-z\", REF(flags.x))"));
+    assert_well_formed(&l, "mixed pattern");
+    assert_eq!(id_list(&l), vec!["error.literal.invalid"]);
+    let d = l.primary().unwrap();
+    assert_eq!(d.span, lcl_lexer::Span::new(23, 29));
+    assert_eq!(d.span.slice(l.source()), Some("\"[a-z\""));
+    assert_eq!(d.cause.as_str(), "constructor_literal");
+    assert!(d
+        .detail
+        .as_deref()
+        .unwrap()
+        .starts_with("REGEX pattern: unclosed character class"));
+
+    // The REF argument itself is never judged, and never yields a diagnostic
+    // of its own at either position.
+    accepted("REGEX(REF(pattern.x), \"ims\")");
+    accepted("REGEX(\"[a-z]\", REF(flags.x))");
+}
+
+// ---------------------------------------------------------------------------
+// Nested constructors
+// ---------------------------------------------------------------------------
+
+/// The traversal visits every registered constructor, including one nested in
+/// another call's arguments, exactly once.
+#[test]
+fn a_nested_constructor_is_visited_exactly_once() {
+    let l = lex(&document("REGEX(DATE(\"not-a-date\"))"));
+    assert_well_formed(&l, "nested date");
+    assert_eq!(id_list(&l), vec!["error.literal.invalid"]);
+    let d = l.primary().unwrap();
+    assert_eq!(d.span, lcl_lexer::Span::new(28, 40));
+    assert_eq!(d.span.slice(l.source()), Some("\"not-a-date\""));
+    assert_eq!(d.cause.as_str(), "constructor_literal");
+    assert!(d.detail.as_deref().unwrap().starts_with("DATE: "));
+    assert_eq!(l.terminal_status(), Some("status.invalid"));
+
+    // Two nesting levels still produce one diagnostic for the one defect.
+    let l = lex(&document("REGEX(REGEX(DATE(\"x\")))"));
+    assert_eq!(id_list(&l), vec!["error.literal.invalid"]);
+    assert_eq!(l.primary().unwrap().span, lcl_lexer::Span::new(34, 37));
+}
+
+/// Two nested constructors are two independent loci, in ascending offset order.
+#[test]
+fn sibling_nested_constructors_are_independent_loci() {
+    let l = lex(&document("REGEX(DATE(\"nope\"), GLOB(\"/abs\"))"));
+    assert_well_formed(&l, "sibling nested");
+    assert_eq!(
+        ids(&l),
+        vec![
+            ("error.literal.invalid".to_string(), 28),
+            ("error.literal.invalid".to_string(), 42),
+        ]
+    );
+    assert_eq!(l.diagnostics()[0].span, lcl_lexer::Span::new(28, 34));
+    assert_eq!(l.diagnostics()[0].span.slice(l.source()), Some("\"nope\""));
+    assert_eq!(l.diagnostics()[1].span, lcl_lexer::Span::new(42, 48));
+    assert_eq!(l.diagnostics()[1].span.slice(l.source()), Some("\"/abs\""));
+}
+
+/// An outer call this pass declines to judge — a wrong arity is
+/// `error.operator.operand` at the static stage — must not hide the inner
+/// constructor's lexical defect.
+#[test]
+fn an_outer_overload_problem_does_not_hide_an_inner_lexical_defect() {
+    let l = lex(&document("REGEX(DATE(\"not-a-date\"), \"mi\", \"extra\")"));
+    assert_well_formed(&l, "outer arity, inner defect");
+    assert_eq!(id_list(&l), vec!["error.literal.invalid"]);
+    let d = l.primary().unwrap();
+    assert_eq!(d.span, lcl_lexer::Span::new(28, 40));
+    assert_eq!(d.span.slice(l.source()), Some("\"not-a-date\""));
+}
+
+// ---------------------------------------------------------------------------
+// Strings that already carry a lexical diagnostic
+// ---------------------------------------------------------------------------
+
+/// A STRING with a malformed escape has no decoded value, so the constructor
+/// profile is not applied to its partial decode.
+#[test]
+fn a_malformed_escape_is_not_also_reported_as_an_invalid_literal() {
+    let l = lex(&document("DATE(\"\\q\")"));
+    assert_well_formed(&l, "escape in DATE");
+    assert_eq!(id_list(&l), vec!["error.literal.escape"]);
+    let d = l.primary().unwrap();
+    assert_eq!(d.span, lcl_lexer::Span::new(23, 25));
+    assert_eq!(d.span.slice(l.source()), Some("\\q"));
+    assert_eq!(d.cause.as_str(), "escape");
+    assert_eq!(l.terminal_status(), Some("status.invalid"));
+}
+
+/// A raw TAB inside a DATE string is `error.source.tab` and nothing else: the
+/// quarantined byte is dropped from the decoded text, so judging that text
+/// would manufacture a second diagnostic for one defect.
+#[test]
+fn a_raw_tab_in_a_constructor_string_is_not_also_an_invalid_literal() {
+    let l = lex(&document("DATE(\"2026-08-\t\")"));
+    assert_well_formed(&l, "tab in DATE");
+    assert_eq!(id_list(&l), vec!["error.source.tab"]);
+    let d = l.primary().unwrap();
+    assert_eq!(d.span, lcl_lexer::Span::new(31, 32));
+    assert_eq!(d.span.slice(l.source()), Some("\t"));
+    assert_eq!(d.cause.as_str(), "tab");
+    assert_eq!(l.terminal_status(), Some("status.invalid"));
+}
+
+/// Suppression is per token, not per document: a sibling literal at a
+/// genuinely different locus keeps its own diagnostic, and the two stay in
+/// `stable_order`.
+#[test]
+fn independent_loci_survive_a_quarantined_sibling() {
+    let l = lex(&document("[DATE(\"\\q\"), DATE(\"nope\")]"));
+    assert_well_formed(&l, "escape then invalid");
+    assert_eq!(
+        ids(&l),
+        vec![
+            ("error.literal.escape".to_string(), 24),
+            ("error.literal.invalid".to_string(), 35),
+        ]
+    );
+    assert_eq!(l.primary().unwrap().id.to_string(), "error.literal.escape");
+    assert_eq!(l.diagnostics()[0].span, lcl_lexer::Span::new(24, 26));
+    assert_eq!(l.diagnostics()[0].span.slice(l.source()), Some("\\q"));
+    assert_eq!(l.diagnostics()[1].span, lcl_lexer::Span::new(35, 41));
+    assert_eq!(l.diagnostics()[1].span.slice(l.source()), Some("\"nope\""));
+
+    let l = lex(&document("[DATE(\"2026-08-\t\"), DATE(\"nope\")]"));
+    assert_well_formed(&l, "tab then invalid");
+    assert_eq!(
+        ids(&l),
+        vec![
+            ("error.source.tab".to_string(), 32),
+            ("error.literal.invalid".to_string(), 42),
+        ]
+    );
+    assert_eq!(l.primary().unwrap().id.to_string(), "error.source.tab");
+    assert_eq!(l.diagnostics()[1].span, lcl_lexer::Span::new(42, 48));
+    assert_eq!(l.diagnostics()[1].span.slice(l.source()), Some("\"nope\""));
+}
+
+/// An unclosed literal produces no STRING token at all, and no derived
+/// `error.literal.invalid` either.
+#[test]
+fn an_unclosed_constructor_string_yields_no_derived_invalid_literal() {
+    let l = lex("DATA:\n    VALUE: DATE(\"not-a-date\n");
+    assert_well_formed(&l, "unclosed DATE");
+    assert_eq!(
+        id_list(&l),
+        vec!["error.delimiter.unclosed", "error.literal.unclosed"]
+    );
+    assert_eq!(l.diagnostics()[1].span, lcl_lexer::Span::new(22, 33));
+    assert_eq!(
+        l.diagnostics()[1].span.slice(l.source()),
+        Some("\"not-a-date")
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Unbounded REGEX quantifier counts
+// ---------------------------------------------------------------------------
+
+/// `COUNT = "0" | NONZERO_DIGIT , { DIGIT }` is an unbounded production, and
+/// `pattern_profiles.REGEX.quantifiers` requires `n <= m` over exact
+/// nonnegative integers. Narrowing to a fixed-width integer would saturate
+/// every large count onto one bound and lose the ordering.
+#[test]
+fn counted_quantifiers_compare_exactly_beyond_u64() {
+    let u64_max = u64::MAX.to_string();
+    let u64_max_plus_one = "18446744073709551616";
+    assert_eq!(u64_max, "18446744073709551615");
+
+    // A single count of any magnitude is well formed.
+    accepted(&format!("REGEX(\"a{{{u64_max}}}\")"));
+    accepted(&format!("REGEX(\"a{{{u64_max_plus_one}}}\")"));
+    accepted(&format!("REGEX(\"a{{{u64_max_plus_one},}}\")"));
+
+    // Equal at the u64 boundary, and one step above it.
+    accepted(&format!("REGEX(\"a{{{u64_max},{u64_max}}}\")"));
+    accepted(&format!(
+        "REGEX(\"a{{{u64_max_plus_one},{u64_max_plus_one}}}\")"
+    ));
+
+    // Ascending across the boundary.
+    accepted(&format!("REGEX(\"a{{{u64_max},{u64_max_plus_one}}}\")"));
+
+    // Descending across the boundary: the reported defect. A u64 that
+    // saturates both operands would read this as `n == m` and accept it.
+    let descending = format!("a{{{u64_max_plus_one},{u64_max}}}");
+    rejected(
+        &format!("REGEX(\"{descending}\")"),
+        &format!("\"{descending}\""),
+    );
+    let l = lex(&document(&format!("REGEX(\"{descending}\")")));
+    assert_eq!(
+        l.primary().unwrap().detail.as_deref(),
+        Some(
+            "REGEX pattern: counted quantifier \
+             {18446744073709551616,18446744073709551615} requires n <= m"
+        )
+    );
+}
+
+#[test]
+fn very_long_counted_quantifiers_compare_by_length_then_digits() {
+    let long_a = "1".to_string() + &"0".repeat(199); // 200 digits
+    let long_b = "2".to_string() + &"0".repeat(199); // 200 digits, larger
+    let short = "9".repeat(199); // 199 digits, smaller than both
+    assert_eq!(long_a.len(), 200);
+    assert_eq!(short.len(), 199);
+
+    // Equal, of equal length.
+    accepted(&format!("REGEX(\"a{{{long_a},{long_a}}}\")"));
+    // Ascending, same length: decided lexicographically.
+    accepted(&format!("REGEX(\"a{{{long_a},{long_b}}}\")"));
+    // Ascending, different length: decided by digit count.
+    accepted(&format!("REGEX(\"a{{{short},{long_a}}}\")"));
+
+    // Descending, same length.
+    let same_length = format!("a{{{long_b},{long_a}}}");
+    rejected(
+        &format!("REGEX(\"{same_length}\")"),
+        &format!("\"{same_length}\""),
+    );
+    // Descending, different length.
+    let different_length = format!("a{{{long_a},{short}}}");
+    rejected(
+        &format!("REGEX(\"{different_length}\")"),
+        &format!("\"{different_length}\""),
+    );
+}
+
+#[test]
+fn counted_quantifiers_reject_leading_zeros_before_any_comparison() {
+    for (pattern, digits) in [
+        ("a{01}", "01"),
+        ("a{00}", "00"),
+        ("a{0,01}", "01"),
+        ("a{01,2}", "01"),
+        ("a{1,00000000000000000000}", "00000000000000000000"),
+        ("a{018446744073709551616,1}", "018446744073709551616"),
+    ] {
+        let value = format!("REGEX(\"{pattern}\")");
+        rejected(&value, &format!("\"{pattern}\""));
+        let l = lex(&document(&value));
+        assert_eq!(
+            l.primary().unwrap().detail.as_deref(),
+            Some(format!("REGEX pattern: quantifier count `{digits}` has a leading zero").as_str()),
+            "{pattern}"
+        );
+    }
 }

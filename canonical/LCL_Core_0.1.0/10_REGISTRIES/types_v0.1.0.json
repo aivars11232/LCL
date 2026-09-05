@@ -25,7 +25,8 @@
     "binding_state": "Reading an absent optional or not-yet-bound value yields MISSING; a binding known to exist whose value cannot be determined yields UNKNOWN. Existing REQUIRED, DEFAULT, dependency-order, and special-value rules then apply. Reading never starts an action or changes execution order. A VALIDATE or VERIFY read uses the result of its check at its declared evaluation point; it does not execute an operation or rerun the check.",
     "declaration_property": "A reserved uppercase property immediately after REF(identifier), allowing parentheses around that REF, selects a registered field of the resolved declaration before any bound-value read. The field is evaluated under its own field contract. An absent optional field yields MISSING; an unregistered field uses error.operator.operand. Multiple occurrences yield a LIST of their field values in source occurrence order; one occurrence yields that value. A block-valued field yields the declared block reference or LIST of references, not an inferred object.",
     "value_property": "A lowercase property selects the exact field of the evaluated OBJECT value. It never selects declaration metadata. A property access on another family uses error.operator.operand.",
-    "equality": "Equality compares the values produced by these rules. When both produced values are REFERENCE, equality compares resolved declaration or loop-instance binding identity. Reading a reference-typed binding once therefore permits reference-identity comparison without recursive dereference."
+    "equality": "Equality compares the values produced by these rules. When both produced values are REFERENCE, equality compares resolved declaration or loop-instance binding identity. Reading a reference-typed binding once therefore permits reference-identity comparison without recursive dereference.",
+    "output_instance": "OUTPUT value reads obey built_in_groups_and_results_v0.1.0.json#/result_contract/output_projection: one producer source per declaration, instance-local loop scope, attempt-local retry binding and ordered publication. A value read never activates a producer; an unavailable binding yields MISSING."
   },
   "collection_value_syntax": {
     "LIST": {
@@ -205,5 +206,37 @@
     "PERCENTAGE": "DECIMAL from 0 through 100 inclusive.",
     "BYTES": "Non-negative exact byte count.",
     "MEASURE": "Number paired with one registered unit identifier; registered time-category units are permitted."
+  },
+  "string_literal_contract": {
+    "source": "02_LEXICAL/07_LITERALS_AND_ESCAPE_SEQUENCES.txt#STRING VALUE DECODING",
+    "decoding_passes": 1,
+    "unicode_normalization": "none",
+    "multiline_indent": "Strip exactly containing declaration indentation plus four spaces from nonblank content lines; keep extra indentation and each content-line LF. Opening LF and closing-line indentation are syntax.",
+    "unicode_escape": "Four hex digits denote one non-surrogate scalar, or an immediately adjacent high/low surrogate escape pair denotes its combined scalar. Lone or malformed surrogate escapes use error.literal.escape.",
+    "raw_controls": "Raw source forbids C0/C1 and DEL except LF; escaped decoded control scalars are legal STRING values."
+  },
+  "material_identity_contract": {
+    "scope": "Equality identities for valid constructed values; invalid constructors never produce values. Resource alias resolution for effects or containment is independent of value equality.",
+    "URI": "Exact decoded constructor STRING; no scheme/host case folding, percent-decoding, or resource-equivalence normalization.",
+    "GLOB": "Core pattern profile version and exact decoded pattern STRING.",
+    "REGEX": "Core pattern profile version, exact decoded pattern STRING, and canonical flags STRING; omitted flags equal empty flags. Equal accepted languages alone do not make patterns equal.",
+    "PATH": "Exact address-form identity: absolute form uses its exact decoded absolute STRING; WORKSPACE form uses the resolved workspace declaration identity and exact decoded relative STRING; import-relative form uses importing source-unit identity and exact decoded relative STRING. Different forms are unequal. Dot-segment, link, and resource equivalence do not alter this identity; containment must still be validated on the resolved target.",
+    "BOOLEAN": "Equal exactly when both are TRUE or both are FALSE.",
+    "BYTES": "Equal exactly when their nonnegative integer counts are equal; BYTES is not binary content.",
+    "PERCENTAGE": "Equal exactly when their exact numeric magnitudes are equal.",
+    "other_types": "STRING, INTEGER, DECIMAL, MEASURE, DATE, TIME, DATETIME, DURATION, NULL, REFERENCE, ENUM, LIST, SET, and OBJECT retain their explicitly defined equality rules; none consults ambient resource state."
+  },
+  "object_type_contract": {
+    "identity": "OBJECT types are structural: recursively equal field-name/type/requiredness maps identify the same object type regardless of defining ID or declaration order. Transparent aliases preserve this identity. Enum field types retain their distinct enum domain identities.",
+    "constraints": "Defaults and constraints govern construction/validation, not object type identity or equality after construction. Apply defaults before comparing values. Requiredness is part of type identity; an absent optional field and a present NULL field are distinct states.",
+    "anonymous": "A schema-free object has the structural type inferred from its exact fields, all required. Bare OBJECT denotes an object family at a receiving contract, not an additional nominal identity. Contextual object construction uses its supplied schema and rejects extra fields.",
+    "combined_schema": "When TYPE already selects an object schema, an additional SCHEMA must have an identical field/type/requiredness map and identical defaults and constraints after alias resolution; otherwise error.object.schema. No implicit merging or overriding of two schemas occurs."
+  },
+  "temporal_literal_contract": {
+    "date": "Exactly YYYY-MM-DD with year 0001..9999, month 01..12, and a valid day in the proleptic Gregorian calendar. Leap years are divisible by 4 except centuries not divisible by 400.",
+    "time": "Exactly HH:MM:SS with optional . followed by one or more decimal digits, then optional Z or signed HH:MM offset. Hours 00..23, minutes 00..59, seconds 00..59; leap-second 60 is excluded. Offset hours 00..23 and minutes 00..59. Only uppercase T and Z are accepted. -00:00 is excluded because it denotes an unknown offset; +00:00 and Z denote UTC. Omitted offset is UTC.",
+    "datetime": "Exactly DATE spelling, uppercase T, and TIME spelling under this profile.",
+    "normalization": "Fractions are exact rational seconds; trailing fractional zeros do not change value. TIME key is local seconds since nominal midnight minus signed offset seconds, without modulo-24-hour wrapping or a real calendar date. DATETIME key is exact Gregorian day count relative to 0001-01-01 times 86400 plus that TIME key. All days have exactly 86400 seconds; normalized comparison keys may cross the representable source-date endpoints.",
+    "error": "error.literal.invalid"
   }
 }

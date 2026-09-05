@@ -37,3 +37,47 @@ REF(input.a) == REF(input.b) therefore compares their bound values. When those
 values are stored references, their referent identities are compared after one
 read; neither referent is read again. References to non-value declarations also
 retain identity. A loop-local reference identity includes its iteration binding.
+
+CONSTRUCTED MATERIAL IDENTITIES
+
+Authority: 10_REGISTRIES/types_v0.1.0.json#/material_identity_contract
+
+SCOPE
+Equality identities for valid constructed values; invalid constructors never
+produce values. Resource alias resolution for effects or containment is
+independent of value equality.
+
+URI
+Exact decoded constructor STRING; no scheme/host case folding,
+percent-decoding, or resource-equivalence normalization.
+
+GLOB
+Core pattern profile version and exact decoded pattern STRING.
+
+REGEX
+Core pattern profile version, exact decoded pattern STRING, and canonical flags
+STRING; omitted flags equal empty flags. Equal accepted languages alone do not
+make patterns equal.
+
+PATH
+Exact address-form identity: absolute form uses its exact decoded absolute
+STRING; WORKSPACE form uses the resolved workspace declaration identity and
+exact decoded relative STRING; import-relative form uses importing source-unit
+identity and exact decoded relative STRING. Different forms are unequal.
+Dot-segment, link, and resource equivalence do not alter this identity;
+containment must still be validated on the resolved target.
+
+BOOLEAN
+Equal exactly when both are TRUE or both are FALSE.
+
+BYTES
+Equal exactly when their nonnegative integer counts are equal; BYTES is not
+binary content.
+
+PERCENTAGE
+Equal exactly when their exact numeric magnitudes are equal.
+
+OTHER TYPES
+STRING, INTEGER, DECIMAL, MEASURE, DATE, TIME, DATETIME, DURATION, NULL,
+REFERENCE, ENUM, LIST, SET, and OBJECT retain their explicitly defined equality
+rules; none consults ambient resource state.

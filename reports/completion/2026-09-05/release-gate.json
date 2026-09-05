@@ -1,0 +1,623 @@
+{
+  "checks": [
+    {
+      "check": "path_mode_and_cache_hygiene",
+      "details": {
+        "case_collision_count": 0,
+        "file_count": 176,
+        "symlink_count": 0
+      },
+      "scope": "filesystem",
+      "status": "PASS"
+    },
+    {
+      "check": "utf8_lf_and_control_hygiene",
+      "details": {
+        "clean_text_files": 163,
+        "intentional_invalid_fixtures_excluded": 13
+      },
+      "scope": "text",
+      "status": "PASS"
+    },
+    {
+      "check": "concrete_source_fixtures",
+      "details": {
+        "exit_code": 0,
+        "output": {
+          "failed_count": 0,
+          "fixture_count": 15,
+          "passed": true,
+          "passed_count": 15,
+          "results": [
+            {
+              "actual": "error.source.bom",
+              "expected": "error.source.bom",
+              "fixture": "invalid_bom.lcl",
+              "passed": true
+            },
+            {
+              "actual": "error.source.control_character",
+              "expected": "error.source.control_character",
+              "fixture": "invalid_control.lcl",
+              "passed": true
+            },
+            {
+              "actual": "error.newline.invalid",
+              "expected": "error.newline.invalid",
+              "fixture": "invalid_crlf.lcl",
+              "passed": true
+            },
+            {
+              "actual": "error.symbol.invalid",
+              "expected": "error.symbol.invalid",
+              "fixture": "invalid_hash.lcl",
+              "passed": true
+            },
+            {
+              "actual": "error.indentation.jump",
+              "expected": "error.indentation.jump",
+              "fixture": "invalid_indent_jump.lcl",
+              "passed": true
+            },
+            {
+              "actual": "error.indentation.width",
+              "expected": "error.indentation.width",
+              "fixture": "invalid_indent_width.lcl",
+              "passed": true
+            },
+            {
+              "actual": "error.source.final_line_feed",
+              "expected": "error.source.final_line_feed",
+              "fixture": "invalid_no_final_lf.lcl",
+              "passed": true
+            },
+            {
+              "actual": "error.symbol.invalid",
+              "expected": "error.symbol.invalid",
+              "fixture": "invalid_semicolon.lcl",
+              "passed": true
+            },
+            {
+              "actual": "error.symbol.invalid",
+              "expected": "error.symbol.invalid",
+              "fixture": "invalid_single_quote.lcl",
+              "passed": true
+            },
+            {
+              "actual": "error.source.tab",
+              "expected": "error.source.tab",
+              "fixture": "invalid_tab.lcl",
+              "passed": true
+            },
+            {
+              "actual": "error.source.trailing_space",
+              "expected": "error.source.trailing_space",
+              "fixture": "invalid_trailing_space.lcl",
+              "passed": true
+            },
+            {
+              "actual": "error.source.non_ascii_outside_string",
+              "expected": "error.source.non_ascii_outside_string",
+              "fixture": "invalid_typographic_quote.lcl",
+              "passed": true
+            },
+            {
+              "actual": "error.literal.unclosed",
+              "expected": "error.literal.unclosed",
+              "fixture": "invalid_unclosed_string.lcl",
+              "passed": true
+            },
+            {
+              "actual": "accept",
+              "expected": "accept",
+              "fixture": "valid_minimum.lcl",
+              "passed": true
+            },
+            {
+              "actual": "accept",
+              "expected": "accept",
+              "fixture": "valid_unicode_string.lcl",
+              "passed": true
+            }
+          ],
+          "scope": "lexical_source_hygiene_and_document_kind_boundary",
+          "semantic_execution": "UNVERIFIED",
+          "tool": "validate_source_fixtures.py"
+        }
+      },
+      "scope": "text",
+      "status": "PASS"
+    },
+    {
+      "check": "static_example_contracts",
+      "details": {
+        "bounded_valid_source_count": 13,
+        "expectation_pair_count": 21,
+        "focused_byte_fingerprint_count": 14,
+        "focused_primary_diagnostic_count": 7,
+        "invalid_example_count": 21,
+        "parser_execution": "OUT_OF_SCOPE",
+        "registered_expectation_count": 21,
+        "semantic_execution": "OUT_OF_SCOPE",
+        "valid_example_count": 13
+      },
+      "scope": "text",
+      "status": "PASS"
+    },
+    {
+      "check": "strict_json_parse",
+      "details": {
+        "duplicate_key_count": 0,
+        "json_file_count": 17
+      },
+      "scope": "structured",
+      "status": "PASS"
+    },
+    {
+      "check": "python_source_compile",
+      "details": {
+        "bytecode_written": false,
+        "python_file_count": 5
+      },
+      "scope": "structured",
+      "status": "PASS"
+    },
+    {
+      "check": "static_ebnf_graph",
+      "details": {
+        "exit_code": 0,
+        "output": {
+          "diagnostics": {
+            "left_recursive_cycles": [],
+            "undefined_nonterminals": [],
+            "unproductive_nonterminals": [],
+            "unreachable_nonterminals": []
+          },
+          "grammar": "/mnt/F/LCL/canonical/LCL_Core_0.1.0/04_GRAMMAR/10_COMPLETE_EBNF.ebnf",
+          "nullable_nonterminals": [],
+          "passed": true,
+          "production_count": 65,
+          "profile": "ISO/IEC 14977 subset declared by the grammar",
+          "start": "DOCUMENT",
+          "terminal_count": 211
+        }
+      },
+      "scope": "grammar",
+      "status": "PASS"
+    },
+    {
+      "check": "complete_example_parse_matrix",
+      "details": {
+        "classification": "BARE_LANGUAGE_IMPLEMENTATION_ARTIFACT",
+        "reason": "The bare language package does not include or require a parser or executable example matrix.",
+        "retired_package_task": "original LCL-TASK-0007 (reference lexer and parser)"
+      },
+      "scope": "grammar",
+      "status": "OUT_OF_SCOPE"
+    },
+    {
+      "check": "keyword_grammar_parity",
+      "details": {
+        "grammar_reserved_count": 141,
+        "keyword_count": 141,
+        "missing_from_grammar": [],
+        "missing_from_registry": []
+      },
+      "scope": "registry",
+      "status": "PASS"
+    },
+    {
+      "check": "block_field_schema_parity",
+      "details": {
+        "block_name_delta": [],
+        "block_schema_count": 41,
+        "contract_conflicts": [],
+        "field_signature_block_count": 41
+      },
+      "scope": "registry",
+      "status": "PASS"
+    },
+    {
+      "check": "collection_value_and_item_contract",
+      "details": {
+        "decision": "D-001",
+        "violations": []
+      },
+      "scope": "registry",
+      "status": "PASS"
+    },
+    {
+      "check": "field_value_kind_closure",
+      "details": {
+        "blocked_by": [],
+        "default_contract_errors": [],
+        "distinct_value_kind_count": 68,
+        "field_contract_violations": [],
+        "field_use_count": 334,
+        "named_value_kind_errors": [],
+        "qualified_identifier_domain_errors": [],
+        "qualified_identifier_domains": {
+          "definition_kind": {
+            "core_value_count": 8,
+            "defined_kind": null
+          },
+          "document_kind": {
+            "core_value_count": 5,
+            "defined_kind": null
+          },
+          "encoding": {
+            "core_value_count": 3,
+            "defined_kind": null
+          },
+          "error": {
+            "core_value_count": 77,
+            "defined_kind": "kind.error"
+          },
+          "event": {
+            "core_value_count": 5,
+            "defined_kind": "kind.event"
+          },
+          "format": {
+            "core_value_count": 14,
+            "defined_kind": "kind.format"
+          },
+          "mode": {
+            "core_value_count": 5,
+            "defined_kind": null
+          },
+          "status": {
+            "core_value_count": 12,
+            "defined_kind": "kind.status"
+          },
+          "terminal_non_success_status": {
+            "core_value_count": 7,
+            "defined_kind": "kind.status"
+          }
+        },
+        "reference_domain_errors": [],
+        "reference_domains": {
+          "execution_unit": [
+            "ACTION",
+            "PHASE",
+            "SEQUENCE",
+            "STEP",
+            "TASK",
+            "TEST"
+          ],
+          "rule_clause": [
+            "ALLOW",
+            "FORBID",
+            "OVERRIDE",
+            "PREFER",
+            "PRESERVE",
+            "REQUIRE"
+          ]
+        },
+        "registered_named_count": 30,
+        "registered_template_count": 8,
+        "resolved_named_count": 30,
+        "resolved_template_count": 38,
+        "template_contract_errors": [],
+        "unresolved_template_heads": [],
+        "unresolved_value_kinds": [],
+        "value_kind_shape_errors": []
+      },
+      "scope": "registry",
+      "status": "PASS"
+    },
+    {
+      "check": "nested_parent_closure",
+      "details": {
+        "accepted_contract_violations": [],
+        "blocked_by": [],
+        "decision": "D-004",
+        "forward_contradictions": [],
+        "reverse_contradictions": []
+      },
+      "scope": "registry",
+      "status": "PASS"
+    },
+    {
+      "check": "operation_reference_closure",
+      "details": {
+        "cross_registry_conflicts": [],
+        "errors_missing_from_group": [],
+        "undefined_errors": [],
+        "undefined_meta_types": [],
+        "undefined_results": [],
+        "unregistered_group_errors": []
+      },
+      "scope": "registry",
+      "status": "PASS"
+    },
+    {
+      "check": "priority_contract",
+      "details": {
+        "decision": "D-005",
+        "inheritance": "none",
+        "mandatory_omission_error": "error.field.required",
+        "optional_default": 0,
+        "violations": []
+      },
+      "scope": "registry",
+      "status": "PASS"
+    },
+    {
+      "check": "operation_contracts",
+      "details": {
+        "approved_contract_sha256": "f81a05efa9dfc2a24ff5fbdc31cc5a007584e78f157acbd127d0f2c95c388354",
+        "blocked_by": [],
+        "operation_contract_violations": [],
+        "operation_count": 39
+      },
+      "scope": "registry",
+      "status": "PASS"
+    },
+    {
+      "check": "operation_prose_contracts",
+      "details": {
+        "blocked_by": [],
+        "operation_count": 39,
+        "operation_prose_contract_violations": [],
+        "prose_file_count": 3
+      },
+      "scope": "registry",
+      "status": "PASS"
+    },
+    {
+      "check": "result_schema_cardinality_and_output_contracts",
+      "details": {
+        "approved_contract_sha256": "034d7c5954f35a71b8f5c7f72271ee786e07d80f4b18ca97c950d05bc6aca352",
+        "blocked_by": [],
+        "common_field_count": 6,
+        "operation_result_reference_count": 39,
+        "result_contract_violations": [],
+        "result_schema_count": 9
+      },
+      "scope": "registry",
+      "status": "PASS"
+    },
+    {
+      "check": "division_semantics",
+      "details": {
+        "blocked_by": [],
+        "division_contract_violations": [],
+        "division_result_mapping_unresolved": false
+      },
+      "scope": "registry",
+      "status": "PASS"
+    },
+    {
+      "check": "set_and_sort_semantics",
+      "details": {
+        "blocked_by": [],
+        "set_iteration_sort_key_unresolved": false,
+        "set_sort_contract_violations": []
+      },
+      "scope": "registry",
+      "status": "PASS"
+    },
+    {
+      "check": "constructor_and_pattern_profiles",
+      "details": {
+        "constructor_count": 11,
+        "decision": "D-002/D-003",
+        "pattern_profile_count": 2,
+        "violations": []
+      },
+      "scope": "registry",
+      "status": "PASS"
+    },
+    {
+      "check": "diagnostic_selection_contract",
+      "details": {
+        "blocked_by": [],
+        "closed_finding": "LCL-AUDIT-014",
+        "compatibility_note": "The original 46 error identifiers remain exact and 31 additional precise identifiers are present. Task 0006 closes same-stage selection and mixed failure timing through the diagnostic_selection and failure_lifecycle contracts without changing those identifiers.",
+        "diagnostic_selection_violations": [],
+        "error_metadata_resolved_count": 77,
+        "policy_fingerprint": "cdef5c0a8c1e6f532f1a16e2b95c5ed7262cd107fbb2638136e566328a36f1fe",
+        "selection_vector_count": 12,
+        "severity_values": [
+          "error"
+        ]
+      },
+      "scope": "registry",
+      "status": "PASS"
+    },
+    {
+      "check": "event_model_contract",
+      "details": {
+        "blocked_by": [],
+        "checked_shipped_handlers": 1,
+        "event_model_violations": [],
+        "event_raising_error_count": 5,
+        "mapped_error_count": 77,
+        "policy_fingerprint": "1ebc2c6e76c7583c4a394b0e6a451fa8b604d9bbe567f41dd92ef981e52a147e",
+        "registered_event_count": 5,
+        "static_limit": "Computes mapping totality, the event/recoverability invariant, cross-surface vocabulary agreement, bijection onto the registered vocabulary, and shipped HANDLER event reachability from the guarded operations of the same document; no LCL document is parsed or executed."
+      },
+      "scope": "registry",
+      "status": "PASS"
+    },
+    {
+      "check": "custom_operation_declaration_contract",
+      "details": {
+        "blocked_by": [],
+        "checked_shipped_definitions": 2,
+        "custom_operation_violations": [],
+        "declared_dependency_vocabulary": [
+          "declared_state_only",
+          "host",
+          "network",
+          "model",
+          "human"
+        ],
+        "declared_effect_vocabulary": [
+          "none",
+          "filesystem",
+          "network",
+          "process",
+          "package",
+          "message",
+          "memory",
+          "state"
+        ],
+        "static_limit": "Checks declarability, retired-claim absence, and shipped definition axis closure only; no LCL document is parsed or executed."
+      },
+      "scope": "registry",
+      "status": "PASS"
+    },
+    {
+      "check": "invocation_site_contract",
+      "details": {
+        "blocked_by": [],
+        "checked_shipped_handlers": 1,
+        "handler_context_target_types": [
+          "REFERENCE[ACTION]",
+          "REFERENCE[meta.execution_unit]"
+        ],
+        "invocation_site_violations": [],
+        "static_limit": "Checks invocation-site rule presence, HANDLER schema totality, core.retry composition, and shipped HANDLER/FALLBACK contract satisfaction only; no LCL document is parsed or executed."
+      },
+      "scope": "registry",
+      "status": "PASS"
+    },
+    {
+      "check": "mixed_phase_lifecycle_contracts",
+      "details": {
+        "additional_mixed_error_count": 11,
+        "baseline_error_count": 4,
+        "blocked_by": [],
+        "closed_finding": "LCL-AUDIT-015",
+        "error_phase_metadata_resolved_count": 77,
+        "mixed_phase_lifecycle_violations": [],
+        "policy_fingerprint": "2570a4234deec0a0378c182f784fd65956f7674cb44d5d6d2abb525024097904"
+      },
+      "scope": "registry",
+      "status": "PASS"
+    },
+    {
+      "check": "contract_type_notation",
+      "details": {
+        "atom_class_usage": {
+          "BLOCK_NAME": 17,
+          "DOMAIN_NAME": 10,
+          "ENUM_VALUE": 29,
+          "META_TYPE_NAME": 47,
+          "NAMED_VALUE_KIND": 9,
+          "RESULT_RECORD_NAME": 1,
+          "SCALAR_TYPE_NAME": 113,
+          "SPECIAL_VALUE_NAME": 5,
+          "TYPE_VARIABLE": 6
+        },
+        "blocked_by": [],
+        "checked_type_strings": 162,
+        "contract_type_notation_violations": [],
+        "distinct_type_strings": 65,
+        "observed_maximum_depth": 2,
+        "static_limit": "Parses every operation-contract and result-schema type string against the notation the registry itself declares and resolves every atom against the source that notation names; no LCL document is parsed or executed."
+      },
+      "scope": "registry",
+      "status": "PASS"
+    },
+    {
+      "check": "language_decision_contracts",
+      "details": {
+        "checks": 514,
+        "descriptive_witness_count": 66,
+        "executed_lcl_cases": 0,
+        "violations": []
+      },
+      "scope": "registry",
+      "status": "PASS"
+    },
+    {
+      "check": "requirements_index_integrity",
+      "details": {
+        "case_count": 799,
+        "category_count": 25,
+        "closed_registry_categories_checked": 23,
+        "concrete_case_count": 0,
+        "task_0001_requirements_checked": 19,
+        "task_0004_catalog_cases_checked": 129,
+        "task_0004_catalog_sha256": "7bb5f2b4663f9908aaea4a3d7e1a6ed98a42e701bfddc5e48a49ef6883a5c735",
+        "task_0004_operation_axis_cases_checked": 39,
+        "task_0004_requirements_checked": 46,
+        "task_0005_catalog_cases_checked": 9,
+        "task_0005_catalog_sha256": "2c65296a7da92f7d66c3fea373f20832976929476eb6e6f3c160185eba4dfb1d",
+        "task_0005_requirements_checked": 9,
+        "task_0006_catalog_cases_checked": 2,
+        "task_0006_catalog_sha256": "0994998cc913eb1b639582255e830c604b9b200fb06bec620b8d3c93cc2310be",
+        "task_0006_requirements_checked": 2
+      },
+      "scope": "catalog",
+      "status": "PASS"
+    },
+    {
+      "check": "semantic_case_execution",
+      "details": {
+        "classification": "BARE_LANGUAGE_IMPLEMENTATION_ARTIFACT",
+        "concrete_case_count": 0,
+        "reason": "The catalog is a descriptive requirements index; an executable semantic engine is outside package scope.",
+        "retired_package_tasks": [
+          "original LCL-TASK-0008 (reference semantic interpreter)",
+          "original LCL-TASK-0009 (executable conformance)"
+        ],
+        "semantic_implementation_present": false
+      },
+      "scope": "catalog",
+      "status": "OUT_OF_SCOPE"
+    },
+    {
+      "check": "manifest_set_size_hash",
+      "details": {
+        "manifest_sha256": "e79fbc7f9dab4fef30aa341056b4f6753aa2b2b2311e90031b9f397af45e7aea",
+        "record_count": 173
+      },
+      "scope": "integrity",
+      "status": "PASS"
+    },
+    {
+      "check": "checksum_set_and_hash",
+      "details": {
+        "checksum_file_sha256": "f4a119ed1b8418623d9265c77f61d9cffc5c5250ce486bbbe80e2102ba0943ab",
+        "record_count": 175
+      },
+      "scope": "integrity",
+      "status": "PASS"
+    },
+    {
+      "check": "language_decisions_and_release_state",
+      "details": {
+        "decision_count": 9,
+        "integrity_verified_by": "separate integrity scope",
+        "pending_decisions": [],
+        "reasons": [],
+        "release_gate_permitted": true
+      },
+      "scope": "release",
+      "status": "PASS"
+    }
+  ],
+  "counts": {
+    "BLOCKED": 0,
+    "FAIL": 0,
+    "OUT_OF_SCOPE": 2,
+    "PASS": 31
+  },
+  "release_ready": true,
+  "root": "/mnt/F/LCL/canonical/LCL_Core_0.1.0",
+  "scope_ready": true,
+  "selected_scopes": [
+    "filesystem",
+    "text",
+    "structured",
+    "grammar",
+    "registry",
+    "catalog",
+    "integrity",
+    "release"
+  ],
+  "tool": "validate_release.py"
+}

@@ -121,3 +121,11 @@ and DELAY, defaulting to TRUE and DURATION(0, unit.second). A FALSE WHEN before
 budget consumption leaves the prior failure unhandled without exhaustion.
 error.retry.exhausted requires exactly 1 + LIMIT actual failed attempts; it
 cannot be inferred from a safety refusal or merely reaching a handler.
+
+CHECK DIAGNOSTICS
+
+A required post-execution VERIFY or TEST assertion that is FALSE emits
+error.verification.failed. Required pre-effect VALIDATE failure emits
+error.validation.failed. Optional FALSE checks preserve their domain outcome.
+Check selection, prerequisites, demand and root completion follow
+statuses_and_errors_v0.1.0.json#/check_selection_contract.

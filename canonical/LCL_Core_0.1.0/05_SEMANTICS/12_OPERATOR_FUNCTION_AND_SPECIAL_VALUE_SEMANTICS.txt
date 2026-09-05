@@ -137,3 +137,10 @@ error.numeric.division_by_zero. Other non-terminating quotients produce
 error.numeric.non_terminating. Host limitations produce error.host.constraint
 without changing the required value; no overflow, wrap, saturation, Infinity,
 NaN, or underflow-to-zero result exists in LCL.
+
+COMMON UNIT CONSTRAINT
+
+Every arithmetic, ordered-comparison, SUM, MIN, or MAX overload that requires
+identical MEASURE units emits error.numeric.unit_mismatch for unequal concrete
+unit identifiers. Equality and inequality instead use their explicit different-
+unit FALSE/TRUE rules.

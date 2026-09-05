@@ -53,3 +53,12 @@ selected core.retry handler authorizes additional attempts.
 
 mode.parallel permits unspecified scheduling but requires declared independence;
 conflicting side effects invalidate. Completion semantics remain deterministic.
+
+GRAPH AND INVOCATION IDENTITY
+
+The execution_graph_contract in block_schemas_v0.1.0.json fixes candidate
+membership, source-field child order, unique activation, sibling order edges,
+parallel independence, loop instances and the unique continuation successor.
+OUTPUT ownership and loop/retry binding follow result_contract/output_projection
+in built_in_groups_and_results_v0.1.0.json. Neither a reference nor a check read
+adds execution membership or an ordering edge.

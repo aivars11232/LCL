@@ -1,45 +1,55 @@
-LCL CORE 0.1.0 BARE LANGUAGE SPECIFICATION CANDIDATE
+LCL CORE 0.1.0 BARE LANGUAGE SPECIFICATION
 RELEASE STATUS AND BOUNDARY
 NORMATIVE
 
 1. STATUS
 
-LANGUAGE_STATUS: INCOMPLETE
-PACKAGE_STATUS: UNRELEASED_CANDIDATE
+LANGUAGE_STATUS: BARE_SPECIFICATION_COMPLETE
+PACKAGE_STATUS: BARE_LANGUAGE_RELEASE
 
-This tree is the canonical LCL Core 0.1.0 completion candidate identified by
-00_CANONICAL_SOURCE_AND_PROVENANCE.txt. Current language-definition status is
-INCOMPLETE and package status is UNRELEASED_CANDIDATE. Completion requires closing
-all language decisions, aligning all normative surfaces, and then running the
-final release gate against fresh integrity metadata.
+This tree is the canonical LCL Core 0.1.0 bare-language specification identified
+by 00_CANONICAL_SOURCE_AND_PROVENANCE.txt. The completion decisions are closed
+in 05_LANGUAGE_CLOSURE.json. Current release evidence is the freshly generated
+MANIFEST.json, VALIDATION_REPORT.txt and SHA256SUMS.txt, with the final gate and
+archive binding recorded outside this package in reports/completion/2026-09-05.
+A modified tree must pass fresh validation; these declarations alone are not
+proof of correctness or integrity.
 
-Task reports and the existing archive describe earlier snapshots. In particular,
-LCL-TASK-0007's BARE_SPECIFICATION_COMPLETE and BARE_LANGUAGE_RELEASE assertions
-are historical and do not classify the current modified tree. MANIFEST.json,
-VALIDATION_REPORT.txt, and SHA256SUMS.txt remain historical until the final release
-stage; they must not be used to claim current integrity or completeness.
+Task reports and the older LCL_Core_0.1.0_Final.zip describe earlier snapshots.
+Their historical classifications and hashes do not validate this release.
+The current archive is LCL_Core_0.1.0_Bare_Language_2026-09-05.zip, created only
+after all applicable final release checks pass against the current tree.
 
 Parser/runtime/executable-semantic evidence is outside the bare-language scope
-and is not a release blocker. The release must never be described as
-parser-verified, executed, or runtime-tested.
+and is not a release blocker. This release is not parser-verified, executed or
+runtime-tested. Static checks and independent semantic review provide evidence
+within their documented scope; they are not a proof that no future defect exists.
 
 2. LANGUAGE BOUNDARY
 
-The language consists of the source notation, vocabulary, types, grammar,
-semantics, core contracts, versioning rules, and conformance requirements in this
-package. An implementation is not part of the language.
+The language consists of source notation, vocabulary, lexical rules, types and
+values, grammar, expressions, declarations, control flow, diagnostics, semantics,
+standard-library contracts, versioning and conformance requirements in this
+package. Every normative artifact needed to read the language is included.
 
-A UI, IDE, workspace manager, provider connector, database, parser executable,
-compiler, runtime, agent framework, and domain extension are separate products or
-implementations. Their absence does not make the language archive incomplete.
+WORKSPACE is a language declaration of an explicit path base and access bounds;
+it is not a workspace-management application. Filesystem, process and network
+operations have abstract target, parameter, dependency, effect, result and error
+contracts. Those contracts define observable language behavior without requiring
+this package to contain a host, product, provider or executable implementation.
+
+A UI, IDE, workspace/project manager, portal, desktop controller, provider
+connector, database implementation, agent framework, compiler, interpreter,
+parser, runtime or executable conformance engine is outside this completion.
+Their absence does not make the bare-language specification incomplete.
 
 3. INTERPRETATION INPUT
 
 A conforming LC may use only the LCL source and sources explicitly referenced by
-that source as normative task input. Unreferenced chat history, hidden memory, or
-provider defaults cannot alter LCL meaning.
+that source as normative task input. Unreferenced chat history, hidden memory,
+provider defaults and historical task packages cannot alter LCL meaning.
 
 4. UNKNOWN FEATURES
 
-Syntax, keywords, symbols, identifiers, fields, operations, or types absent from
+Syntax, keywords, symbols, identifiers, fields, operations or types absent from
 this version's closed registries are rejected. They are not guessed.

@@ -1,0 +1,51 @@
+{
+  "evidence_kind": "bounded_source_hygiene_probes",
+  "semantic_execution": false,
+  "validator_sha256": "acac475c07aa2eb8b49eec15050f778e8c10d53c8a053e61ca7962c52c9e9c1c",
+  "probes": [
+    {
+      "name": "multiline_extra_indentation",
+      "source": "LCL:\n    VERSION: \"0.1.0\"\nSPECIFICATION:\n    ID: spec.literal_probe\n    NAME: \"Literal probe\"\n    VERSION: \"0.1.0\"\n    KIND: kind.data\nDATA:\n    ID: data.text\n    TYPE: STRING\n    VALUE: \"\"\"\n         text\n    \"\"\"\n",
+      "expected": "accept",
+      "actual": "accept",
+      "passed": true
+    },
+    {
+      "name": "multiline_blank_line",
+      "source": "LCL:\n    VERSION: \"0.1.0\"\nSPECIFICATION:\n    ID: spec.literal_probe\n    NAME: \"Literal probe\"\n    VERSION: \"0.1.0\"\n    KIND: kind.data\nDATA:\n    ID: data.text\n    TYPE: STRING\n    VALUE: \"\"\"\n\n        text\n    \"\"\"\n",
+      "expected": "accept",
+      "actual": "accept",
+      "passed": true
+    },
+    {
+      "name": "unicode_separator_inside_string",
+      "source": "LCL:\n    VERSION: \"0.1.0\"\nSPECIFICATION:\n    ID: spec.literal_probe\n    NAME: \"Literal probe\"\n    VERSION: \"0.1.0\"\n    KIND: kind.data\nDATA:\n    ID: data.text\n    TYPE: STRING\n    VALUE: \"a\u2028b\"\n",
+      "expected": "accept",
+      "actual": "accept",
+      "passed": true
+    },
+    {
+      "name": "escaped_control",
+      "source": "LCL:\n    VERSION: \"0.1.0\"\nSPECIFICATION:\n    ID: spec.literal_probe\n    NAME: \"Literal probe\"\n    VERSION: \"0.1.0\"\n    KIND: kind.data\nDATA:\n    ID: data.text\n    TYPE: STRING\n    VALUE: \"\\u0001\"\n",
+      "expected": "accept",
+      "actual": "accept",
+      "passed": true
+    },
+    {
+      "name": "raw_C1_control",
+      "source": "LCL:\n    VERSION: \"0.1.0\"\nSPECIFICATION:\n    ID: spec.literal_probe\n    NAME: \"Literal probe\"\n    VERSION: \"0.1.0\"\n    KIND: kind.data\nDATA:\n    ID: data.text\n    TYPE: STRING\n    VALUE: \"a\u0085b\"\n",
+      "expected": "error.source.control_character",
+      "actual": "error.source.control_character",
+      "passed": true
+    },
+    {
+      "name": "raw_DEL",
+      "source": "LCL:\n    VERSION: \"0.1.0\"\nSPECIFICATION:\n    ID: spec.literal_probe\n    NAME: \"Literal probe\"\n    VERSION: \"0.1.0\"\n    KIND: kind.data\nDATA:\n    ID: data.text\n    TYPE: STRING\n    VALUE: \"a\u007fb\"\n",
+      "expected": "error.source.control_character",
+      "actual": "error.source.control_character",
+      "passed": true
+    }
+  ],
+  "passed_count": 6,
+  "total": 6
+}

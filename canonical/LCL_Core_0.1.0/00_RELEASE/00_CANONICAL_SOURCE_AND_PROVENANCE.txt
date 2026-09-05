@@ -7,8 +7,8 @@ NORMATIVE RELEASE METADATA
 This package root is the only canonical source tree for LCL Core 0.1.0. It
 originates from the repair candidate produced by LCL-REPAIR-0001. Earlier
 snapshots were packaged and subsequently repaired by Tasks 0001 through 0010.
-The current completion work is an unpublished candidate. Language meaning is determined by
-the artifacts inside this tree under
+The September 5, 2026 completion closes the current bare-language specification.
+Language meaning is determined by the artifacts inside this tree under
 00_RELEASE/02_NORMATIVE_AUTHORITY_ORDER.txt. Files
 outside this package root are not normative inputs to the language.
 
@@ -46,14 +46,19 @@ nine closed result-schema contracts, deterministic diagnostic selection, and
 producer-relative failure lifecycle and retry-safety rules.
 Parser/runtime/executable-semantic evidence under LCL-AUDIT-007 and LCL-AUDIT-016
 is outside the bare-language package scope and is not a release blocker. The
-current language-definition scope is INCOMPLETE and package state is
-UNRELEASED_CANDIDATE. LCL-TASK-0007 regenerated MANIFEST.json,
-VALIDATION_REPORT.txt, and SHA256SUMS.txt and created an archive for an earlier
-snapshot. Those retained artifacts are historical and do not validate this
-modified tree. The release archive is created outside the package root only
-after all current language decisions and the final release gate are complete.
+current language-definition status is BARE_SPECIFICATION_COMPLETE and package
+status is BARE_LANGUAGE_RELEASE, subject to fresh exact-byte integrity checks.
+The completion ledger records the nine closed decision areas and independent
+review. Fresh MANIFEST.json, VALIDATION_REPORT.txt and SHA256SUMS.txt bind this
+payload. External reports/completion/2026-09-05 records the final release gate,
+negative static probes, preserved-source comparison and archive binding.
 
-This is a candidate for the language definition only. It must never be represented
+LCL-TASK-0007's earlier archive and all historical task reports remain unchanged.
+The new archive LCL_Core_0.1.0_Bare_Language_2026-09-05.zip is created outside the
+package root only after current language closure and the final gate. Old archive
+names and checksums are never reused for these changed bytes.
+
+This release is the language definition only. It must never be represented
 as containing, requiring, or having been validated by a lexer, parser,
 interpreter, compiler, runtime, semantic execution engine, UI, IDE, provider
 integration, or deployment tooling. Parser and executable-semantic evidence is

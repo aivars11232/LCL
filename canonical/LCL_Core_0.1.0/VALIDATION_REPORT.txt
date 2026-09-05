@@ -1,99 +1,118 @@
 LCL CORE 0.1.0 BARE LANGUAGE SPECIFICATION - VALIDATION SNAPSHOT
 
-TASK: LCL-TASK-0007
+COMPLETION DATE: 2026-09-05
 PACKAGE SCOPE: BARE LANGUAGE SPECIFICATION ONLY
 LANGUAGE-DEFINITION STATUS: BARE_SPECIFICATION_COMPLETE
 PACKAGE STATUS: BARE_LANGUAGE_RELEASE
-RESULT: PASS
+SNAPSHOT RESULT: PASS (focused checks preceding final integrity verification)
 FORMAL VERSION: 0.1.0
-SNAPSHOT UTC: 2026-09-04T17:38:32Z
-MANIFEST SHA-256: c725aaac186323dbfb855063f66422ddc84be0290846008b091ab6458f47ed42
+SNAPSHOT UTC: 2026-09-05T17:05:17Z
+MANIFEST SHA-256: e79fbc7f9dab4fef30aa341056b4f6753aa2b2b2311e90031b9f397af45e7aea
 
-SCOPE STATEMENT
+LANGUAGE CLOSURE
 
-    This package defines the language only. A lexer, parser, interpreter,
-    compiler, runtime, semantic execution engine, UI, IDE, provider integration,
-    agent framework, and deployment tooling are outside its scope. A gate whose
-    only possible evidence is such an implementation is reported OUT_OF_SCOPE.
-    It is never reported PASS and never blocks release.
+All nine decision areas in 00_RELEASE/05_LANGUAGE_CLOSURE.json are closed.
+Fresh independent read-only reviews covered lexical/forms/type rules,
+expression/pattern/library contracts, and graph/check/lifecycle/OUTPUT semantics.
+Every definite finding was resolved and the affected areas re-reviewed.
+This is bounded semantic review and static consistency evidence, not a formal
+proof of absence of every possible defect.
 
-GATE 1 - FILESYSTEM AND PATH HYGIENE: PASS
-    172 files; zero symlinks, case collisions, cache/bytecode/backup/temporary
-    artifacts, or non-canonical file modes.
+The package contains lexical rules, EBNF, types and values, expressions,
+declarations, control flow, diagnostics, semantics and standard-library
+contracts. WORKSPACE retains only its language path-base/access contract.
+Host/product implementations, UI, IDE, agents, parser, compiler, interpreter,
+runtime and executable semantic conformance are outside this completion.
 
-GATE 2 - TEXT AND CONCRETE SOURCE FIXTURES: PASS
-    UTF-8/LF hygiene passed on 159 text files, excluding 13 intentional invalid
-    fixtures. validate_source_fixtures.py matched 15 of 15 expected outcomes.
-    This is lexical/document-boundary evidence, not semantic execution.
+FRESH FOCUSED CHECKS
 
-GATE 3 - STRUCTURED FORMATS AND TOOLS: PASS
-    All 15 JSON files parsed with duplicate-key rejection. Four Python
-    validation/generation tools compiled without bytecode output.
+Filesystem, text, structured formats, grammar, registry and catalog scopes:
+28 PASS, 0 FAIL, 0 BLOCKED, 2 OUT_OF_SCOPE.
 
-GATE 4 - GRAMMAR: PASS
-    Static EBNF graph check passed: 65 productions, 211 terminals, zero
-    undefined, unreachable, unproductive, nullable, or left-recursive entries.
-    A complete parser-driven example matrix is OUT_OF_SCOPE for this package.
+The following results are direct fresh validator output. Gate groups 1-8 cover
+path/text hygiene, JSON/tool syntax, grammar graph, registry/type/semantic
+contracts, static examples and descriptive conformance coverage. PASS applies
+only to each stated check, never to an executable LCL implementation.
 
-GATE 5 - REGISTRY AND TYPE CLOSURE: PASS
-    141 keywords match the grammar reserved set exactly. 41 block schemas match
-    41 field-signature blocks with zero contract conflicts. 334 field uses
-    resolve across 65 distinct value kinds with zero unresolved value kinds,
-    heads, templates, or default-contract errors. Zero nested-parent
-    contradictions. 11 typed constructors and two pattern profiles are closed.
-    39 operation contracts, 39 operation prose mirrors, and nine result schemas
-    with six common fields are closed and mutually consistent.
+FILESYSTEM
+    path_mode_and_cache_hygiene: PASS
 
-GATE 6 - SEMANTICS: PASS
-    Division result mapping and unordered-SET sorting are resolved. PRIORITY
-    omission is integer 0 without inheritance. Determinism, dependency, and
-    effect axes are closed across all 39 operations. Diagnostic selection is
-    closed over 77 errors with one severity and 12 executed selection vectors
-    (policy fingerprint 0c52f53d57e540c034838a05640bc0f16e816c5ca5393dc513db7fd2a1ced7c2).
-    Failure lifecycle is closed over 77 errors with four baseline and 11
-    additional mixed-phase profiles (policy fingerprint
-    a6e247aa8fc0278e2514e0fbced9958f50cce14ae243815ef171e43b4ce85afe).
-    These are static contract checks. Semantic execution is OUT_OF_SCOPE and is
-    not claimed.
+TEXT
+    utf8_lf_and_control_hygiene: PASS
+    concrete_source_fixtures: PASS
+    static_example_contracts: PASS
 
-GATE 7 - EXAMPLES: PASS
-    12 valid and 21 invalid examples, 21 registered expectation pairs, seven
-    focused primary diagnostics, and 14 pinned byte fingerprints. Every example
-    is listed exactly once in INDEX.txt. Checked against statically decidable
-    rules only; parser execution is OUT_OF_SCOPE.
+STRUCTURED
+    strict_json_parse: PASS
+    python_source_compile: PASS
 
-GATE 8 - CONFORMANCE: PASS
-    The 797-entry catalog spans 23 categories with unique IDs, consistent
-    category counts, and coverage of every closed registry category. It is a
-    normative descriptive requirements index. Executable semantic conformance is
-    OUT_OF_SCOPE and is reported as such rather than as PASS or BLOCKED.
+GRAMMAR
+    static_ebnf_graph: PASS
+    complete_example_parse_matrix: OUT_OF_SCOPE
 
-GATE 9 - PACKAGE INTEGRITY: MANIFEST PASS; CHECKSUMS GENERATED AFTER THIS REPORT
-    MANIFEST.json lists 169 stable payload records covering all 172 package
-    files except MANIFEST.json, VALIDATION_REPORT.txt, and SHA256SUMS.txt, and
-    every recorded size and SHA-256 matches the current bytes. SHA256SUMS.txt is
-    generated after this report and covers 171 files, excluding only itself.
-    External validation reports outside the package root record the final
-    checksum, archive, and Gate 9 evidence without creating an integrity cycle.
+REGISTRY
+    keyword_grammar_parity: PASS
+    block_field_schema_parity: PASS
+    collection_value_and_item_contract: PASS
+    field_value_kind_closure: PASS
+    nested_parent_closure: PASS
+    operation_reference_closure: PASS
+    priority_contract: PASS
+    operation_contracts: PASS
+    operation_prose_contracts: PASS
+    result_schema_cardinality_and_output_contracts: PASS
+    division_semantics: PASS
+    set_and_sort_semantics: PASS
+    constructor_and_pattern_profiles: PASS
+    diagnostic_selection_contract: PASS
+    event_model_contract: PASS
+    custom_operation_declaration_contract: PASS
+    invocation_site_contract: PASS
+    mixed_phase_lifecycle_contracts: PASS
+    contract_type_notation: PASS
+    language_decision_contracts: PASS
 
-OUT-OF-SCOPE CHECKS (NOT BLOCKERS, NOT PASSES)
-    complete_example_parse_matrix   requires a reference lexer/parser
-    semantic_case_execution         requires a semantic execution engine
+CATALOG
+    requirements_index_integrity: PASS
+    semantic_case_execution: OUT_OF_SCOPE
 
-UNRESOLVED RELEASE-BLOCKING FINDINGS
-    None. LCL-AUDIT-001, 005, 010/K-003, 011, 012, 013, 014, and 015 are closed
-    by Accepted Tasks 0001 through 0006. The parser/runtime/executable-semantic
-    portions of LCL-AUDIT-007 and LCL-AUDIT-016 are outside the bare-language
-    package scope and are not release blockers.
+BOUNDARIES AND NEGATIVE PROBES
 
-AGGREGATE VALIDATOR RESULT
-    validate_release.py --scope all: 25 PASS, 0 FAIL, 0 BLOCKED, 2 OUT_OF_SCOPE.
+validate_language_contracts.py: 514 static checks, zero violations; 66 descriptive
+witnesses, zero executed LCL cases. The core catalog contains 799 descriptive
+requirements. Those counts do not represent executed semantic conformance.
 
-ARCHIVE
-    The release archive is created outside this package root, so no archive file
-    is a member of the tree it packages. Its path, size, SHA-256, member count,
-    and extraction comparison are recorded in the external validation report.
+All 15 source-hygiene fixtures matched their listed expectations; six additional
+bounded probes checked multiline indentation, an empty content line, Unicode
+line separators inside strings, escaped controls and prohibited raw C1/DEL.
+The helper is partial source hygiene, not a complete lexer or literal validator;
+unsupported escapes and full string-literal parsing are not verified by it.
 
-The package contains no interpreter, evaluator, executor, UI, environment, or
-database. Static specification evidence cannot substitute for runtime or
-semantic conformance evidence, and this report does not claim otherwise.
+Fourteen isolated contract mutations were detected, including wrong schema and
+append types, missing range bounds, ambiguous OUTPUT ownership, omitted optional
+validation, incorrect VERIFY applicability, weakened temporal profiles, omitted
+unit diagnostics, double decoding, altered multiline decoding, wrong UNKNOWN
+logic, missing early failure transitions, undefined schema merging and a
+registry/prose identity contradiction. The restored baseline passes. These are
+validator sensitivity experiments, not executions of LCL programs.
+
+GATE 9 - INTEGRITY AND FINAL RELEASE
+
+MANIFEST.json hashes 173 stable payload files out of
+176 package files, excluding itself, this report and SHA256SUMS.txt.
+This report binds the exact manifest hash above. SHA256SUMS.txt is generated
+next and hashes 175 files, excluding only itself. The full
+validate_release.py --scope all gate runs only after those steps. Its actual
+result and exact integrity hashes are recorded outside this package at:
+
+    reports/completion/2026-09-05/release-gate.json
+    reports/completion/2026-09-05/COMPLETION_REPORT.md
+
+The archive is created only after the full gate passes. Its hash, exact member
+set and byte comparison are externally recorded to avoid self-reference:
+
+    releases/LCL_Core_0.1.0_Bare_Language_2026-09-05.zip
+    reports/completion/2026-09-05/archive-verification.json
+
+Historical task reports and LCL_Core_0.1.0_Final.zip remain unchanged. They are
+lineage evidence and do not substitute for the fresh results of this release.

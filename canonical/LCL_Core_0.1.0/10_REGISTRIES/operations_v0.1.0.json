@@ -406,8 +406,12 @@
           "type": "OBJECT",
           "required": false,
           "default": null,
-          "meaning": "Exact bounded byte/line/item range.",
-          "constraints": []
+          "meaning": "Closed zero-based half-open selection in the target representation.",
+          "constraints": [
+            "When supplied, range is an OBJECT with exactly unit: STRING, start: INTEGER, and end: INTEGER. No other keys or defaults are admitted. unit is exactly scalar, line, item, or byte.",
+            "Resolve the exact target representation and any requested format before selecting the range. scalar requires STRING and indexes Unicode scalars; line requires STRING and indexes LF-terminated lines, retaining each selected line terminator and any final unterminated line. Empty STRING has zero lines. item requires LIST[T] and indexes elements. byte requires LIST[INTEGER] with every element in 0..255; BYTES is not content.",
+            "Require 0 <= start <= end <= sequence length; otherwise error.value.out_of_range. Return the same representation family containing exactly positions start through end-1; equal bounds produce the corresponding empty value. No clipping or ambient encoding conversion occurs. An incompatible unit/representation or wrong key/type uses error.operation.parameter."
+          ]
         }
       },
       "positional_parameters": false,
@@ -417,7 +421,7 @@
       ],
       "postconditions": [
         "target bytes/state unchanged",
-        "result is exact requested range"
+        "result is the exact requested representation, or its range selection under the closed range contract"
       ],
       "errors": [
         "error.operation.parameter",
@@ -425,7 +429,8 @@
         "error.permission.denied",
         "error.scope.violation",
         "error.host.constraint",
-        "error.operation.precondition"
+        "error.operation.precondition",
+        "error.value.out_of_range"
       ]
     },
     "core.analyze": {
@@ -855,12 +860,12 @@
       },
       "parameters": {
         "schema": {
-          "type": "REFERENCE|OBJECT",
+          "type": "REFERENCE",
           "required": false,
           "default": null,
           "meaning": "Schema to validate against.",
           "constraints": [
-            "A REFERENCE resolves exactly once to a kind.type definition whose BASE is OBJECT and whose schema applies to the target."
+            "The REFERENCE resolves exactly once, following transparent aliases, to a kind.type whose resolved type is OBJECT and whose schema applies to the target. Material OBJECT schema encodings are not admitted."
           ]
         },
         "rules": {
@@ -1253,11 +1258,13 @@
       },
       "parameters": {
         "content": {
-          "type": "STRING|BYTES|LIST[T]",
+          "type": "STRING|LIST[T]",
           "required": true,
           "default": null,
           "meaning": "Content appended at exact end.",
-          "constraints": []
+          "constraints": [
+            "Content and the selected mutable destination value have the same family: STRING appends exact Unicode scalars; LIST[T] appends elements of the identical element type T. No serialization or implicit conversion occurs; BYTES is a count and is not content."
+          ]
         }
       },
       "positional_parameters": false,
@@ -1267,7 +1274,7 @@
         "target exists and supports append"
       ],
       "postconditions": [
-        "pre-state is unchanged prefix and content is exact suffix"
+        "content is the exact suffix appended to the destination value under same-family concatenation; existing prefix and source content remain unchanged"
       ],
       "errors": [
         "error.operation.parameter",

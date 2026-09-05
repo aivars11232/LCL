@@ -70,7 +70,7 @@ def outside_string_mask(text: str) -> tuple[list[bool], bool]:
 
 
 def document_kind_error(text: str) -> str | None:
-    lines = text.splitlines()
+    lines = text.split("\n")
     top_level = [line[:-1] for line in lines if line and not line.startswith(" ") and line.endswith(":")]
     if len(top_level) < 2 or top_level[0] != "LCL" or top_level[1] != "SPECIFICATION":
         return "error.block.order"
@@ -115,9 +115,9 @@ def validate_source(data: bytes) -> str:
         return "error.encoding.invalid"
     if "\t" in text:
         return "error.source.tab"
-    if any(ord(char) < 0x20 and char != "\n" for char in text):
+    if any((ord(char) < 0x20 and char != "\n") or 0x7F <= ord(char) <= 0x9F for char in text):
         return "error.source.control_character"
-    if any(line.endswith(" ") for line in text.splitlines()):
+    if any(line.endswith(" ") for line in text.split("\n")):
         return "error.source.trailing_space"
 
     outside, unclosed_string = outside_string_mask(text)
@@ -125,8 +125,11 @@ def validate_source(data: bytes) -> str:
         return "error.source.non_ascii_outside_string"
 
     previous_indent = 0
-    for line in text.splitlines():
-        if not line:
+    offset = 0
+    for line in text.split("\n"):
+        in_normal_mode = offset < len(outside) and outside[offset]
+        offset += len(line) + 1
+        if not line or not in_normal_mode:
             continue
         indent = len(line) - len(line.lstrip(" "))
         if indent % 4:

@@ -75,3 +75,31 @@ kind.event, kind.status, kind.error
 
 Definitions are immutable and may reference earlier or later definitions so long
 as resolution is acyclic. Anonymous SCHEMA is local to its containing value.
+
+OBJECT TYPE EQUIVALENCE
+
+Authority: 10_REGISTRIES/types_v0.1.0.json#/object_type_contract
+
+IDENTITY
+OBJECT types are structural: recursively equal field-name/type/requiredness
+maps identify the same object type regardless of defining ID or declaration
+order. Transparent aliases preserve this identity. Enum field types retain
+their distinct enum domain identities.
+
+CONSTRAINTS
+Defaults and constraints govern construction/validation, not object type
+identity or equality after construction. Apply defaults before comparing
+values. Requiredness is part of type identity; an absent optional field and a
+present NULL field are distinct states.
+
+ANONYMOUS
+A schema-free object has the structural type inferred from its exact fields,
+all required. Bare OBJECT denotes an object family at a receiving contract, not
+an additional nominal identity. Contextual object construction uses its
+supplied schema and rejects extra fields.
+
+COMBINED SCHEMA
+When TYPE already selects an object schema, an additional SCHEMA must have an
+identical field/type/requiredness map and identical defaults and constraints
+after alias resolution; otherwise error.object.schema. No implicit merging or
+overriding of two schemas occurs.

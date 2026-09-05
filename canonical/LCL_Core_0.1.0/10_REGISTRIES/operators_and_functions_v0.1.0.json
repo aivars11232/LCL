@@ -36,7 +36,7 @@
     "short_circuit": "AND evaluates its right operand unless the left result is FALSE; OR evaluates its right operand unless the left result is TRUE. UNKNOWN on the left never skips the right. NOT, AND, and OR use the complete strong Kleene truth tables in unknown_logic.",
     "missing": "A consumed MISSING operand emits error.required.missing except for ==, !=, and EXISTS. Property or index access may itself produce MISSING when an otherwise valid selection is absent. An operand in a skipped Boolean branch is not consumed.",
     "unknown": "After evaluating all required operands and checking MISSING, any UNKNOWN operand yields UNKNOWN for a constructor, arithmetic operation, ordered comparison, membership, containment, pattern match, ordinary pure function, property access, or index access. Equality, EXISTS, Boolean logic, and quantifier reduction use their explicit special rules. A concrete evaluation diagnostic is never hidden by another operand's UNKNOWN. A required material receiving site rejects UNKNOWN with error.value.unknown.",
-    "equality": "== always yields a BOOLEAN and != is its Boolean negation. MISSING and UNKNOWN are distinct singleton values for equality only: each equals itself, each differs from the other and every material value. Different material static types are unequal except INTEGER/DECIMAL promotion. MEASURE equality requires both the identical unit identifier and exact equal numeric magnitude; different units yield FALSE rather than a unit error. Same-unit restrictions on ordered comparison and arithmetic remain in force. No other implicit coercion exists.",
+    "equality": "== always yields a BOOLEAN and != is its Boolean negation. MISSING and UNKNOWN are distinct singleton values for equality only: each equals itself, each differs from the other and every material value. Different material static types are unequal except INTEGER/DECIMAL promotion. MEASURE equality requires both the identical unit identifier and exact equal numeric magnitude; different units yield FALSE rather than a unit error. Same-unit restrictions on ordered comparison and arithmetic remain in force. No other implicit coercion exists. Constructed material identities are closed by types_v0.1.0.json#/material_identity_contract and OBJECT type equivalence by its object_type_contract.",
     "reference_read": "Apply types_v0.1.0.json#/reference_context_contract before using the resulting operand. Ordinary functions and operators read a value-bearing REF once; a stored REFERENCE value is not recursively dereferenced.",
     "errors": [
       "error.operator.operand",
@@ -45,9 +45,11 @@
       "error.reference.kind",
       "error.reference.cycle",
       "error.required.missing",
-      "error.value.unknown"
+      "error.value.unknown",
+      "error.numeric.unit_mismatch"
     ],
-    "error_union": "Each row's errors add to these common evaluation errors and applicable errors of evaluated subexpressions; a row's short list is not an exemption from the common rules."
+    "error_union": "Each row's errors add to these common evaluation errors and applicable errors of evaluated subexpressions; a row's short list is not an exemption from the common rules.",
+    "unit_constraint": "Every arithmetic, ordered-comparison, SUM, MIN, or MAX overload that requires identical MEASURE units emits error.numeric.unit_mismatch for unequal concrete unit identifiers. Equality and inequality instead use their explicit different-unit FALSE/TRUE rules."
   },
   "collection_expression": {
     "default_family": "An ordinary bracket literal denotes LIST unless its immediate expected type is one exact SET[T]; that context selects SET and strict-equal duplicate source values collapse after member evaluation.",
@@ -85,9 +87,9 @@
     "INTEGER": "mathematical numeric value",
     "DECIMAL": "mathematical numeric value",
     "STRING": "lexicographic by Unicode scalar value",
-    "DATE": "chronological Gregorian value of the RFC 3339 full-date",
-    "TIME": "subtract the declared offset, or +00:00 when omitted, from the RFC 3339 partial-time on a common nominal local date; retain signed previous-day or next-day displacement without modulo-24-hour wrapping and compare the resulting chronological value",
-    "DATETIME": "exact UTC instant after applying the RFC 3339 declared offset, or +00:00 when omitted",
+    "DATE": "chronological Gregorian value of the RFC 3339 full-date; exact validity and order keys are defined by types_v0.1.0.json#/temporal_literal_contract",
+    "TIME": "subtract the declared offset, or +00:00 when omitted, from the RFC 3339 partial-time on a common nominal local date; retain signed previous-day or next-day displacement without modulo-24-hour wrapping and compare the resulting chronological value; exact validity and order keys are defined by types_v0.1.0.json#/temporal_literal_contract",
+    "DATETIME": "exact UTC instant after applying the RFC 3339 declared offset, or +00:00 when omitted; exact validity and order keys are defined by types_v0.1.0.json#/temporal_literal_contract",
     "DURATION": "normalized exact elapsed-time magnitude under formats_encodings_units_v0.1.0.json#/duration_normalization",
     "PERCENTAGE": "exact numeric magnitude",
     "BYTES": "exact byte-count magnitude",
@@ -212,7 +214,7 @@
         }
       ],
       "result": "DATE",
-      "profile": "RFC 3339 full-date",
+      "profile": "RFC 3339 full-date narrowed exactly by types_v0.1.0.json#/temporal_literal_contract",
       "errors": [
         "error.operator.operand",
         "error.literal.invalid"
@@ -227,7 +229,7 @@
         }
       ],
       "result": "TIME",
-      "profile": "RFC 3339 partial-time with optional time-offset",
+      "profile": "RFC 3339 partial-time with optional time-offset narrowed exactly by types_v0.1.0.json#/temporal_literal_contract",
       "omitted_timezone": "UTC",
       "errors": [
         "error.operator.operand",
@@ -243,7 +245,7 @@
         }
       ],
       "result": "DATETIME",
-      "profile": "RFC 3339 full-date T partial-time with optional time-offset",
+      "profile": "RFC 3339 full-date T partial-time with optional time-offset narrowed exactly by types_v0.1.0.json#/temporal_literal_contract",
       "omitted_timezone": "UTC",
       "errors": [
         "error.operator.operand",

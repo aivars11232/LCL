@@ -152,3 +152,35 @@ result.message
 Required outputs that are MISSING, UNKNOWN, unbound, partial, or invalid prevent
 execution-root success. Output existence alone does not prove correctness;
 required VERIFY and EVIDENCE also apply.
+
+OUTPUT OWNERSHIP AND INVOCATION BINDING
+
+Authority: 10_REGISTRIES/built_in_groups_and_results_v0.1.0.json#/result_contract/output_projection
+
+PRODUCER OWNERSHIP
+Each selected OUTPUT has exactly one producing ACTION source declaration in the
+candidate invocation. Two distinct ACTION owners use error.execution.order
+before effects, including mutually exclusive branches. TASK and EXECUTE OUTPUT
+lists select requirements or exports; they do not produce or reassign values.
+
+INSTANCE BINDING
+An ACTION replicated by FOR EACH has a separate OUTPUT binding per full
+enclosing iteration-index path. Bound-value reads within that producer
+iteration resolve its binding, including descendant scopes. A bound-value
+reference outside a producer enclosing loop cannot select a unique instance and
+uses error.reference.unresolved during static resolution. No implicit
+last-value selection or collection aggregation exists. Root OUTPUT requirements
+and exports cannot select a loop-local output. Declaration metadata remains
+accessible without selecting a value instance.
+
+RETRY BINDING
+Each retry attempt starts with its own selected OUTPUT binding unbound. Prior
+attempt bindings remain ordered local evidence and are not reused as the next
+attempt output. The final selected attempt or permitted substitution publishes
+its projection under the existing schema bound, partial, or unbound policy;
+explicitly permitted partial output remains governed by that policy.
+
+READ ORDER
+An ordinary OUTPUT read does not execute its producer or add an ordering edge.
+Within a valid instance an output not yet bound yields MISSING. Required output
+checks retain their material-value and completion rules.

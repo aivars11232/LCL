@@ -1567,7 +1567,7 @@
           "required": false,
           "minimum_occurrences": 0,
           "maximum_occurrences": 1,
-          "value_kind": "reference_or_list(OUTPUT)",
+          "value_kind": "reference(OUTPUT)",
           "default": null
         },
         "SCOPE": {

@@ -1,0 +1,213 @@
+{
+  "evidence_kind": "isolated_static_contract_mutations",
+  "executed_lcl_cases": 0,
+  "checker_sha256": "c542adfc8ed54ab117b6333359c3583a70ae6d0f16273d581d1e0074cb813e37",
+  "baseline_checks": 514,
+  "mutation_count": 14,
+  "detected_count": 14,
+  "restored_baseline_pass": true,
+  "probes": [
+    {
+      "name": "multiline_value_drift",
+      "path": "10_REGISTRIES/types_v0.1.0.json",
+      "json_pointer": "/string_literal_contract/multiline_indent",
+      "original": "Strip exactly containing declaration indentation plus four spaces from nonblank content lines; keep extra indentation and each content-line LF. Opening LF and closing-line indentation are syntax.",
+      "mutation": "Preserve all syntactic indentation and include the opening LF in the value.",
+      "expected_detection": "string literal registry contract differs",
+      "detected": true,
+      "matched_violations": [
+        "string literal registry contract differs from reviewed decoding rules"
+      ],
+      "violation_count": 1
+    },
+    {
+      "name": "undefined_material_schema",
+      "path": "10_REGISTRIES/operations_v0.1.0.json",
+      "json_pointer": "/contracts/core.validate/parameters/schema/type",
+      "original": "REFERENCE",
+      "mutation": "REFERENCE|OBJECT",
+      "expected_detection": "undefined material schema encoding",
+      "detected": true,
+      "matched_violations": [
+        "undefined material schema encoding is admitted"
+      ],
+      "violation_count": 1
+    },
+    {
+      "name": "count_used_as_append_content",
+      "path": "10_REGISTRIES/operations_v0.1.0.json",
+      "json_pointer": "/contracts/core.append/parameters/content/type",
+      "original": "STRING|LIST[T]",
+      "mutation": "STRING|BYTES|LIST[T]",
+      "expected_detection": "BYTES count admitted",
+      "detected": true,
+      "matched_violations": [
+        "BYTES count admitted as append content"
+      ],
+      "violation_count": 1
+    },
+    {
+      "name": "read_range_omits_bounds",
+      "path": "10_REGISTRIES/operations_v0.1.0.json",
+      "json_pointer": "/contracts/core.read/parameters/range/constraints/2",
+      "original": "Require 0 <= start <= end <= sequence length; otherwise error.value.out_of_range. Return the same representation family containing exactly positions start through end-1; equal bounds produce the corresponding empty value. No clipping or ambient encoding conversion occurs. An incompatible unit/representation or wrong key/type uses error.operation.parameter.",
+      "mutation": "Return any selected positions.",
+      "expected_detection": "read range omits 0 <= start",
+      "detected": true,
+      "matched_violations": [
+        "read range omits 0 <= start <= end <= sequence length"
+      ],
+      "violation_count": 5
+    },
+    {
+      "name": "multiple_output_owners",
+      "path": "10_REGISTRIES/field_signatures_v0.1.0.json",
+      "json_pointer": "/blocks/ACTION/fields/OUTPUT/value_kind",
+      "original": "reference(OUTPUT)",
+      "mutation": "reference_or_list(OUTPUT)",
+      "expected_detection": "ACTION admits multiple OUTPUT",
+      "detected": true,
+      "matched_violations": [
+        "ACTION admits multiple OUTPUT declarations"
+      ],
+      "violation_count": 1
+    },
+    {
+      "name": "optional_validation_never_scheduled",
+      "path": "10_REGISTRIES/statuses_and_errors_v0.1.0.json",
+      "json_pointer": "/check_selection_contract/demand",
+      "original": "Every selected and applicable VALIDATE is evaluated before any effect. REQUIRED controls whether a FALSE result blocks, not whether a selected check runs. VERIFY follows its actually activated producers or observed targets. A TEST root executes only its explicit TASK or ACTION, if present, then evaluates ASSERT or EXPECTED/ACTUAL. Where WHEN exists, absence means TRUE and FALSE skips applicability. A skipped check has no result; an explicit required read of that absent result uses ordinary MISSING behavior, never implicit TRUE. Required demanded MISSING and UNKNOWN use error.required.missing and error.value.unknown. No WHEN field is invented for TEST.",
+      "mutation": "Only required VALIDATE runs.",
+      "expected_detection": "check demand omits Every selected",
+      "detected": true,
+      "matched_violations": [
+        "check demand omits Every selected and applicable VALIDATE"
+      ],
+      "violation_count": 5
+    },
+    {
+      "name": "candidate_only_verify_target",
+      "path": "10_REGISTRIES/statuses_and_errors_v0.1.0.json",
+      "json_pointer": "/check_selection_contract/selection",
+      "original": "Select VALIDATE, VERIFY, and FAILURE declarations in the EXECUTE root source document. A targetless clause applies to that invocation. For pre-effect VALIDATE, a resolved TARGET must name a candidate graph member, a data/output declaration explicitly referenced by that graph, or the exact material/address TARGET selected by a graph ACTION. Match declaration identity or material identity under types_v0.1.0.json#/material_identity_contract; never expand ambient resources. Targeted post-execution VERIFY applies only to an actually activated producer or an observed target of that invocation, not an unselected IF branch merely present in the candidate graph. Include check prerequisites explicitly referenced by selected checks or the root SUCCESS. Unrelated imported checks never run merely because their document was imported. TEST declarations are activated only as an explicit TEST root or operation target, never as ambient tasks.",
+      "mutation": "All candidate declarations are verified.",
+      "expected_detection": "check target selection omits actually activated",
+      "detected": true,
+      "matched_violations": [
+        "check target selection omits actually activated"
+      ],
+      "violation_count": 4
+    },
+    {
+      "name": "external_temporal_profile",
+      "path": "10_REGISTRIES/operators_and_functions_v0.1.0.json",
+      "json_pointer": "/constructors/TIME/profile",
+      "original": "RFC 3339 partial-time with optional time-offset narrowed exactly by types_v0.1.0.json#/temporal_literal_contract",
+      "mutation": "RFC 3339 partial-time with optional time-offset",
+      "expected_detection": "TIME profile is not narrowed",
+      "detected": true,
+      "matched_violations": [
+        "TIME profile is not narrowed"
+      ],
+      "violation_count": 1
+    },
+    {
+      "name": "missing_unit_diagnostic",
+      "path": "10_REGISTRIES/operators_and_functions_v0.1.0.json",
+      "json_pointer": "/evaluation_contract/errors",
+      "original": [
+        "error.operator.operand",
+        "error.type.mismatch",
+        "error.reference.unresolved",
+        "error.reference.kind",
+        "error.reference.cycle",
+        "error.required.missing",
+        "error.value.unknown",
+        "error.numeric.unit_mismatch"
+      ],
+      "mutation": [
+        "error.operator.operand"
+      ],
+      "expected_detection": "unit mismatch missing from common",
+      "detected": true,
+      "matched_violations": [
+        "unit mismatch missing from common diagnostics"
+      ],
+      "violation_count": 1
+    },
+    {
+      "name": "double_string_decoding",
+      "path": "10_REGISTRIES/types_v0.1.0.json",
+      "json_pointer": "/string_literal_contract/decoding_passes",
+      "original": 1,
+      "mutation": 2,
+      "expected_detection": "string decoding is not exactly once",
+      "detected": true,
+      "matched_violations": [
+        "string decoding is not exactly once without normalization"
+      ],
+      "violation_count": 2
+    },
+    {
+      "name": "unknown_logic_drift",
+      "path": "10_REGISTRIES/operators_and_functions_v0.1.0.json",
+      "json_pointer": "/unknown_logic/FALSE AND UNKNOWN",
+      "original": "FALSE",
+      "mutation": "UNKNOWN",
+      "expected_detection": "Boolean registry is not the complete",
+      "detected": true,
+      "matched_violations": [
+        "Boolean registry is not the complete strong Kleene table"
+      ],
+      "violation_count": 1
+    },
+    {
+      "name": "early_failure_unreachable",
+      "path": "10_REGISTRIES/statuses_and_errors_v0.1.0.json",
+      "json_pointer": "/statuses/status.ready/allowed_next",
+      "original": [
+        "status.running",
+        "status.succeeded",
+        "status.skipped",
+        "status.blocked",
+        "status.stopped",
+        "status.cancelled",
+        "status.failed"
+      ],
+      "mutation": [
+        "status.running",
+        "status.skipped"
+      ],
+      "expected_detection": "status.ready cannot represent early",
+      "detected": true,
+      "matched_violations": [
+        "status.ready cannot represent early execution failure"
+      ],
+      "violation_count": 1
+    },
+    {
+      "name": "undefined_combined_schema",
+      "path": "10_REGISTRIES/types_v0.1.0.json",
+      "json_pointer": "/object_type_contract/combined_schema",
+      "original": "When TYPE already selects an object schema, an additional SCHEMA must have an identical field/type/requiredness map and identical defaults and constraints after alias resolution; otherwise error.object.schema. No implicit merging or overriding of two schemas occurs.",
+      "mutation": "Merge any schemas freely.",
+      "expected_detection": "combined object schema omits error.object.schema",
+      "detected": true,
+      "matched_violations": [
+        "combined object schema omits error.object.schema"
+      ],
+      "violation_count": 2
+    },
+    {
+      "name": "prose_registry_uri_divergence",
+      "path": "03_TYPES_AND_VALUES/03_COLLECTIONS_OBJECTS_ENUMS_AND_EQUALITY.txt",
+      "mutation": "Replace no scheme/host case folding with scheme/host case folding is required",
+      "expected_detection": "does not mirror URI",
+      "detected": true,
+      "matched_violations": [
+        "03_TYPES_AND_VALUES/03_COLLECTIONS_OBJECTS_ENUMS_AND_EQUALITY.txt does not mirror URI"
+      ],
+      "violation_count": 1
+    }
+  ]
+}

@@ -5,11 +5,14 @@ NORMATIVE
 - Source encoding is UTF-8 without a byte-order mark.
 - U+000A LINE FEED is the only line terminator.
 - Every non-empty source ends with one LINE FEED.
-- U+0009 TAB, U+000D CARRIAGE RETURN, C0/C1 controls, surrogate code points,
+- U+0009 TAB, U+000D CARRIAGE RETURN, U+007F DELETE, C0/C1 controls other than the allowed
+  U+000A LINE FEED, surrogate code points,
   and invalid UTF-8 are forbidden.
 - Outside STRING and MULTILINE_STRING literals, only ASCII letters, digits,
   U+0020 SPACE, LINE FEED, and symbols in symbols_v0.1.0.json are legal.
 - Unicode scalar values are legal inside strings, subject to escape rules.
+  These character restrictions apply to raw source. A legal string escape may
+  produce a control scalar in the decoded STRING value.
 - An implementation must not silently repair, normalize, re-indent, re-quote,
   or otherwise rewrite source before validation.
 - A line cannot end in SPACE. A blank line contains only LINE FEED.

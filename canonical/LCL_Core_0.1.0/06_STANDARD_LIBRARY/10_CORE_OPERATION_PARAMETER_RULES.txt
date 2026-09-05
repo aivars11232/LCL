@@ -344,3 +344,35 @@ registered transition permit it. core.stop on an internal target requires
 status.stopped in that active target's allowed_next; otherwise it uses
 error.execution.order. Completed attempts and terminal aggregate results are
 never resumed or mutated by these controls.
+
+CLOSED RANGE SCHEMA AND APPEND CONTENT
+
+Authority: 10_REGISTRIES/operations_v0.1.0.json#/contracts
+
+CORE.READ.RANGE
+OBJECT. Closed zero-based half-open selection in the target representation.
+When supplied, range is an OBJECT with exactly unit: STRING, start: INTEGER,
+and end: INTEGER. No other keys or defaults are admitted. unit is exactly
+scalar, line, item, or byte. Resolve the exact target representation and any
+requested format before selecting the range. scalar requires STRING and indexes
+Unicode scalars; line requires STRING and indexes LF-terminated lines,
+retaining each selected line terminator and any final unterminated line. Empty
+STRING has zero lines. item requires LIST[T] and indexes elements. byte
+requires LIST[INTEGER] with every element in 0..255; BYTES is not content.
+Require 0 <= start <= end <= sequence length; otherwise
+error.value.out_of_range. Return the same representation family containing
+exactly positions start through end-1; equal bounds produce the corresponding
+empty value. No clipping or ambient encoding conversion occurs. An incompatible
+unit/representation or wrong key/type uses error.operation.parameter.
+
+CORE.VALIDATE.SCHEMA
+REFERENCE. Schema to validate against. The REFERENCE resolves exactly once,
+following transparent aliases, to a kind.type whose resolved type is OBJECT and
+whose schema applies to the target. Material OBJECT schema encodings are not
+admitted.
+
+CORE.APPEND.CONTENT
+STRING|LIST[T]. Content appended at exact end. Content and the selected mutable
+destination value have the same family: STRING appends exact Unicode scalars;
+LIST[T] appends elements of the identical element type T. No serialization or
+implicit conversion occurs; BYTES is a count and is not content.

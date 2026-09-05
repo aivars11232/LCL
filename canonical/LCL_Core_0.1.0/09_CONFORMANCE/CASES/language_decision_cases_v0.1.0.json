@@ -4,7 +4,7 @@
   "normative": true,
   "evidence_kind": "descriptive_language_decision_witnesses",
   "executed": false,
-  "case_count": 32,
+  "case_count": 66,
   "cases": [
     {
       "id": "CLOSURE-001",
@@ -57,8 +57,8 @@
     {
       "id": "CLOSURE-009",
       "contract": "keyword_case",
-      "witness": "VALUE: true in an identifier-admitting position",
-      "expected": "Treat true as an identifier, never as an alternate TRUE literal; unresolved name uses error.reference.unresolved."
+      "witness": "TYPE: BOOLEAN; VALUE: true",
+      "expected": "Treat true as a lowercase identifier, not TRUE; it is not a BOOLEAN value, so error.type.mismatch."
     },
     {
       "id": "CLOSURE-010",
@@ -197,6 +197,210 @@
       "contract": "pattern",
       "witness": "GLOB(\"src/**/test?.lcl\") against src/test1.lcl",
       "expected": "TRUE; standalone ** consumes zero or more complete path segments."
+    },
+    {
+      "id": "CLOSURE-033",
+      "contract": "literal",
+      "witness": "VALUE: [ followed by LF, one deeper indentation level with 1, then 2 on the next comma-separated line, closing ] aligned with VALUE",
+      "expected": "Valid multiline LIST literal under an expected LIST[INTEGER] type; no arbitrary expression line wrapping."
+    },
+    {
+      "id": "CLOSURE-034",
+      "contract": "literal",
+      "witness": "VALUE triple-quote at indent4; content a at indent8; closing triple-quote at indent4",
+      "expected": "Decoded STRING is a followed by one LF; opening LF and closing-line indentation contribute nothing."
+    },
+    {
+      "id": "CLOSURE-035",
+      "contract": "literal",
+      "witness": "Same multiline STRING with one extra space before a on the content line",
+      "expected": "Decoded STRING preserves that one extra leading space and the content-line LF; it is not a structural indentation violation."
+    },
+    {
+      "id": "CLOSURE-036",
+      "contract": "literal",
+      "witness": "VALUE: \"\\uD83D\\uDE00\"",
+      "expected": "One Unicode scalar U+1F600; COUNT is 1."
+    },
+    {
+      "id": "CLOSURE-037",
+      "contract": "literal",
+      "witness": "VALUE: \"\\uD800\"",
+      "expected": "error.literal.escape; lone surrogates are not STRING values."
+    },
+    {
+      "id": "CLOSURE-038",
+      "contract": "literal",
+      "witness": "VALUE: \"\\n\"",
+      "expected": "A legal decoded LF scalar, distinct from a forbidden raw line break inside single-line quotes."
+    },
+    {
+      "id": "CLOSURE-039",
+      "contract": "equality",
+      "witness": "REGEX(\"a\") == REGEX(\"[a]\")",
+      "expected": "FALSE; pattern representation identity, not accepted-language equivalence."
+    },
+    {
+      "id": "CLOSURE-040",
+      "contract": "equality",
+      "witness": "URI(\"https://EXAMPLE.invalid/\") == URI(\"https://example.invalid/\")",
+      "expected": "FALSE; exact decoded spelling is not URI resource equivalence."
+    },
+    {
+      "id": "CLOSURE-041",
+      "contract": "equality",
+      "witness": "PATH(\"/a/../b\") == PATH(\"/b\") for otherwise valid bounded resolved addresses",
+      "expected": "FALSE; address-form identity preserves decoded spelling while containment independently checks resolved targets."
+    },
+    {
+      "id": "CLOSURE-042",
+      "contract": "object_type",
+      "witness": "Two object definitions have identical field names/types/requiredness in different orders and the same populated values",
+      "expected": "Their structural types and values compare equal; definition IDs do not introduce nominal OBJECT domains."
+    },
+    {
+      "id": "CLOSURE-043",
+      "contract": "object_type",
+      "witness": "TYPE selects an object schema; SCHEMA selects a different required field map",
+      "expected": "error.object.schema; schemas are not implicitly merged."
+    },
+    {
+      "id": "CLOSURE-044",
+      "contract": "temporal",
+      "witness": "TIME(\"23:59:60Z\")",
+      "expected": "error.literal.invalid; Core seconds are 00..59."
+    },
+    {
+      "id": "CLOSURE-045",
+      "contract": "temporal",
+      "witness": "TIME(\"00:00:00+01:00\") compared with TIME(\"23:00:00Z\")",
+      "expected": "Unequal: keys are -3600 and 82800 seconds without day wrapping."
+    },
+    {
+      "id": "CLOSURE-046",
+      "contract": "temporal",
+      "witness": "DATETIME(\"2024-02-29T00:00:00Z\") and DATETIME(\"2023-02-29T00:00:00Z\")",
+      "expected": "First is valid Gregorian spelling; second uses error.literal.invalid."
+    },
+    {
+      "id": "CLOSURE-047",
+      "contract": "unit_error",
+      "witness": "MEASURE(1, unit.pixel) + MEASURE(1, unit.second)",
+      "expected": "error.numeric.unit_mismatch; unequal-unit == instead yields FALSE."
+    },
+    {
+      "id": "CLOSURE-048",
+      "contract": "read_range",
+      "witness": "core.read range {unit: \"scalar\", start: 1, end: 3} on STRING abcd",
+      "expected": "Returned STRING bc. End is exclusive and Unicode scalars are the indexing unit."
+    },
+    {
+      "id": "CLOSURE-049",
+      "contract": "read_range",
+      "witness": "core.read range {unit: \"line\", start: 0, end: 1} on STRING a LF b",
+      "expected": "Returned STRING a followed by LF; line terminators are retained."
+    },
+    {
+      "id": "CLOSURE-050",
+      "contract": "read_range",
+      "witness": "core.read range {unit: \"item\", start: 2, end: 1} on a LIST",
+      "expected": "error.value.out_of_range; negative, inverted, or excessive bounds are never clipped."
+    },
+    {
+      "id": "CLOSURE-051",
+      "contract": "validate_schema",
+      "witness": "core.validate schema supplied as an arbitrary OBJECT",
+      "expected": "error.operation.parameter; schema requires a reference to a resolved object-schema type, including aliases."
+    },
+    {
+      "id": "CLOSURE-052",
+      "contract": "append_content",
+      "witness": "core.append content BYTES(4)",
+      "expected": "error.operation.parameter; a byte count specifies no content to append."
+    },
+    {
+      "id": "CLOSURE-053",
+      "contract": "graph",
+      "witness": "TASK has ACTION field then PHASE field, each with a reference LIST",
+      "expected": "Children expand in that field order and left-to-right LIST order; sequential predecessor edges govern execution."
+    },
+    {
+      "id": "CLOSURE-054",
+      "contract": "graph",
+      "witness": "Two distinct STEP activation paths select the same ACTION source declaration",
+      "expected": "error.execution.order before effects; bounded loop/retry template replication remains allowed."
+    },
+    {
+      "id": "CLOSURE-055",
+      "contract": "graph",
+      "witness": "A sequential second sibling requests BEFORE the first sibling",
+      "expected": "error.execution.order; explicit ordering may not reverse the required sequential edge."
+    },
+    {
+      "id": "CLOSURE-056",
+      "contract": "output_owner",
+      "witness": "Two ACTION declarations select the same OUTPUT, including mutually exclusive branches",
+      "expected": "error.execution.order before effects; one producing ACTION declaration per OUTPUT per candidate invocation."
+    },
+    {
+      "id": "CLOSURE-057",
+      "contract": "output_owner",
+      "witness": "ACTION.OUTPUT is a LIST of two OUTPUT references",
+      "expected": "error.field.type; an ACTION selects at most one OUTPUT; TASK/EXECUTE export lists remain legal."
+    },
+    {
+      "id": "CLOSURE-058",
+      "contract": "output_instance",
+      "witness": "An OUTPUT producer is inside a FOR EACH body but its bound value is read outside that loop",
+      "expected": "error.reference.unresolved at static resolution; no implicit last-value or collection aggregation."
+    },
+    {
+      "id": "CLOSURE-059",
+      "contract": "retry_output",
+      "witness": "A failed attempt had permitted partial command output and another retry begins",
+      "expected": "The new attempt starts unbound. Old partial output remains ordered local evidence; selected final projection retains ordinary bound/partial/unbound policy."
+    },
+    {
+      "id": "CLOSURE-060",
+      "contract": "check_selection",
+      "witness": "An imported document contains an unrelated targetless VERIFY FALSE",
+      "expected": "Import alone does not activate the check. Explicit check prerequisites can select it."
+    },
+    {
+      "id": "CLOSURE-061",
+      "contract": "check_selection",
+      "witness": "A selected REQUIRED TRUE TEST assertion is FALSE",
+      "expected": "The enclosing required obligation uses error.verification.failed; core.test may independently produce a completed passed FALSE result."
+    },
+    {
+      "id": "CLOSURE-062",
+      "contract": "root_completion",
+      "witness": "EXECUTE selects an ACTION with no TASK SUCCESS field",
+      "expected": "Completion requires its applicable required graph/check/rule/evidence/OUTPUT obligations; no unavailable SUCCESS field is invented."
+    },
+    {
+      "id": "CLOSURE-063",
+      "contract": "status",
+      "witness": "Graph construction yields error.execution.order while the invocation is ready",
+      "expected": "Transition to status.failed is permitted before effects; failure_phase remains producer-relative pre_effect."
+    },
+    {
+      "id": "CLOSURE-064",
+      "contract": "check_selection",
+      "witness": "An optional VALIDATE is a prerequisite referenced by TASK SUCCESS.",
+      "expected": "Evaluate the selected applicable VALIDATE before effects; REQUIRED FALSE does not suppress evaluation or emit a required-check failure."
+    },
+    {
+      "id": "CLOSURE-065",
+      "contract": "check_selection",
+      "witness": "An ACTION acts on PATH(\"/a\"); a VERIFY observes the same PATH value.",
+      "expected": "The exact observed material target selects VERIFY, without requiring a DATA declaration or ambient resource expansion."
+    },
+    {
+      "id": "CLOSURE-066",
+      "contract": "check_selection",
+      "witness": "IF selects its first branch; targeted VERIFY names the unselected second branch producer.",
+      "expected": "That targeted VERIFY is inapplicable and has no result; an explicit required read of its result yields MISSING, not TRUE."
     }
   ]
 }

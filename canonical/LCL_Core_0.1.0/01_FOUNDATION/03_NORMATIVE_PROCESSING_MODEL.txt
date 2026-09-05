@@ -11,13 +11,20 @@ One specification has this normative processing order:
 2. Tokenize under the closed lexicon and symbol inventory.
 3. Parse the complete grammar and block schemas.
 4. Resolve exact LCL version, imports, extensions, namespaces, IDs, and REF.
+   Resolve structural candidate graph membership and branch/loop templates from
+   EXECUTE for check selection, without evaluating dynamic conditions or
+   starting actions.
 5. Statically check value families, expression names/arity/types, constructors,
    parameters, and schemas without demanding deferred expression values.
 6. Establish effective authority, priority, scope, condition contracts, and
    conflicts; evaluate each condition only when its values are required.
 7. Resolve input, state, memory, context, default, assumption, and dependencies.
-8. Run all applicable required VALIDATE checks before side effects.
-9. Build the candidate execution graph from EXECUTE and its declared edges.
+8. Run every selected and applicable VALIDATE check before side effects,
+   including optional checks and prerequisites. REQUIRED controls blocking
+   on FALSE; check selection and ordering follow check_selection_contract in
+   statuses_and_errors_v0.1.0.json.
+9. Finalize and check ordering edges of that resolved candidate graph before
+   effects; no check reference or value read adds graph membership or edges.
 10. Evaluate dynamic reachability conditions when reached and execute only
     reachable actions in declared order and authorization bounds.
 11. Run applicable VERIFY and TEST checks.
@@ -33,7 +40,7 @@ value under its operation, condition, check, or completion contract. A skipped
 Boolean operand is not demanded. An unbound OUTPUT yields MISSING only at an
 actual bound-value read; its existence as a reference during static checking
 does not emit error.required.missing. VERIFY, TEST, and SUCCESS observations of
-action outputs occur at their declared post-action demand point. A required
+action outputs occur at their declared post-action demand point. Every selected
 pre-effect VALIDATE check must resolve at step 8; it cannot depend on a future
 OUTPUT and silently defer itself past effects.
 

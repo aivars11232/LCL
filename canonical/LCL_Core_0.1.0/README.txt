@@ -1,8 +1,8 @@
-LCL CORE 0.1.0 BARE LANGUAGE SPECIFICATION CANDIDATE
+LCL CORE 0.1.0 BARE LANGUAGE SPECIFICATION
 
 Formal language version: 0.1.0
-Language-definition state: INCOMPLETE; language-contract closure is in progress
-Package state: UNRELEASED_CANDIDATE; Task-0007 integrity and archive are historical
+Language-definition state: BARE_SPECIFICATION_COMPLETE
+Package state: BARE_LANGUAGE_RELEASE; freshly bound September 5, 2026 payload
 Package scope: bare language specification only
 
 LCL (Learned Computing Language) is a declarative technical-English language for
@@ -35,11 +35,14 @@ SCOPE AND VALIDATION BOUNDARY
 - the 799-entry catalog is a descriptive requirements index, not an executed
   semantic suite; executable semantic evidence is outside the bare-language
   package scope and its absence is not a release blocker;
-- MANIFEST.json, VALIDATION_REPORT.txt, and SHA256SUMS.txt describe the earlier
-  Task-0007 snapshot; subsequent language repairs have made them stale;
-- the existing release archive is an earlier snapshot and does not represent
-  this candidate. Final release validation and integrity regeneration follow
-  language-decision closure and agreement of every normative surface.
+- 66 language-decision witnesses are descriptive; no LCL cases were executed;
+- 514 static language-contract checks and independent semantic reviews support
+  the closed decisions; bounded source-hygiene checks are not a complete lexer;
+- MANIFEST.json, VALIDATION_REPORT.txt and SHA256SUMS.txt bind the current payload;
+  final checks and the archive binding are in reports/completion/2026-09-05;
+- the older LCL_Core_0.1.0_Final.zip remains historical. The current archive is
+  LCL_Core_0.1.0_Bare_Language_2026-09-05.zip. A filename or status declaration
+  alone is never proof that its bytes satisfy the specification.
 
 THIS PACKAGE DOES NOT CONTAIN
 
@@ -50,11 +53,11 @@ THIS PACKAGE DOES NOT CONTAIN
 - a database implementation;
 - software, image, video, audio, or 3D domain extensions.
 
-No interpreter file is required to read this candidate tree. Every normative
+No interpreter file is required to read this specification tree. Every normative
 artifact is plain UTF-8 text, EBNF, JSON, or LCL source.
 
 Begin with 00_RELEASE/00_CANONICAL_SOURCE_AND_PROVENANCE.txt,
 00_RELEASE/01_RELEASE_STATUS_AND_BOUNDARY.txt, and INDEX.txt. VALIDATION_REPORT.txt
-is the historical Task-0007 snapshot bound to that snapshot's MANIFEST.json
-hash. Current task reports under reports/tasks/ describe subsequent repairs;
-neither the historical snapshot nor the earlier archive validates this candidate.
+records fresh focused checks bound to the current MANIFEST.json hash. Final
+integrity and release checks are recorded outside the package to avoid a hash
+cycle. Historical task packages and reports are provenance, not language inputs.

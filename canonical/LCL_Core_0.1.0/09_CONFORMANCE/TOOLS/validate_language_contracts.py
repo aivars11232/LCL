@@ -110,6 +110,98 @@ def validate(root: Path) -> dict:
     expect(operations["contracts"]["core.compare"]["parameters"]["criteria"]["default"] == "==", "comparison omission changes strict equality")
     expect("exactly key and items" in operations["contracts"]["core.group"]["postconditions"][0], "group result shape is open")
 
+    # Independently check the semantic repairs and their normative mirrors.
+    # These checks compare specification documents; none executes LCL.
+    normalize = lambda value: " ".join(value.split())
+    graph = registry("block_schemas")["execution_graph_contract"]
+    selected_checks = statuses["check_selection_contract"]
+    projection = registry("built_in_groups_and_results")["result_contract"]["output_projection"]
+    mirrors = [
+        (types["material_identity_contract"], "03_TYPES_AND_VALUES/03_COLLECTIONS_OBJECTS_ENUMS_AND_EQUALITY.txt"),
+        (types["object_type_contract"], "03_TYPES_AND_VALUES/05_CUSTOM_TYPES_SCHEMAS_AND_DEFINITIONS.txt"),
+        (types["temporal_literal_contract"], "03_TYPES_AND_VALUES/04_TYPED_CONSTRUCTORS_AND_REFERENCES.txt"),
+        (graph, "05_SEMANTICS/01_DECLARATION_RESOLUTION_REACHABILITY_AND_EXECUTION_GRAPH.txt"),
+        (selected_checks, "05_SEMANTICS/10_VERIFY_TEST_EVIDENCE_SUCCESS_FAILURE_AND_STATUS.txt"),
+        ({key: projection[key] for key in ("producer_ownership", "instance_binding", "retry_binding", "read_order")}, "05_SEMANTICS/05_INPUT_DATA_OUTPUT_RESULT_AND_FORMAT.txt"),
+    ]
+    for contract, path in mirrors:
+        text = normalize(read(path))
+        for key, value in contract.items():
+            expect(normalize(value) in text, f"{path} does not mirror {key}")
+    expect(set(types["material_identity_contract"]) == {"scope", "URI", "GLOB", "REGEX", "PATH", "BOOLEAN", "BYTES", "PERCENTAGE", "other_types"}, "material identity domain differs")
+    expect(set(types["object_type_contract"]) == {"identity", "constraints", "anonymous", "combined_schema"}, "object type contract is incomplete")
+    expect(set(types["temporal_literal_contract"]) == {"date", "time", "datetime", "normalization", "error"}, "temporal literal contract is incomplete")
+    expect(set(graph) == {"candidate_graph", "child_order", "activation_identity", "ordering", "parallel", "loop_instances", "successor"}, "execution graph contract is incomplete")
+    expect(set(selected_checks) == {"selection", "prerequisites", "demand", "failure", "domain_results", "root_success", "lifecycle"}, "check selection contract is incomplete")
+    expect(fields["blocks"]["ACTION"]["fields"]["OUTPUT"]["value_kind"] == "reference(OUTPUT)", "ACTION admits multiple OUTPUT declarations")
+    expect("output_projection" in types["reference_context_contract"]["output_instance"], "reference read omits OUTPUT instance scope")
+    for state in ("status.ready", "status.validating"):
+        expect("status.failed" in statuses["statuses"][state]["allowed_next"], f"{state} cannot represent early execution failure")
+    expect("TEST" in errors["error.verification.failed"]["meaning"], "required TEST failure is not classified")
+    for text, tokens, label in [
+        (graph["candidate_graph"], ("both IF", "never activate"), "graph activation"),
+        (graph["activation_identity"], ("error.execution.order", "error.reference.cycle"), "duplicate/cyclic activation"),
+        (graph["ordering"], ("error.execution.order", "sibling"), "order edges"),
+        (projection["producer_ownership"], ("one", "error.execution.order"), "OUTPUT ownership"),
+        (projection["instance_binding"], ("error.reference.unresolved", "No implicit last-value"), "OUTPUT instance scope"),
+        (selected_checks["demand"], ("Every selected and applicable VALIDATE", "before any effect", "REQUIRED controls", "skipped check has no result"), "check demand"),
+        (selected_checks["selection"], ("material/address TARGET", "actually activated", "not an unselected IF branch"), "check target selection"),
+        (types["object_type_contract"]["combined_schema"], ("error.object.schema",), "combined object schema"),
+        (types["temporal_literal_contract"]["date"], ("0001", "9999", "400"), "Gregorian date validity"),
+        (types["temporal_literal_contract"]["normalization"], ("86400",), "exact time normalization"),
+        (operators["evaluation_contract"]["unit_constraint"], ("error.numeric.unit_mismatch", "SUM", "MIN", "MAX"), "common unit constraint"),
+    ]:
+        for token in tokens:
+            expect(token in text, f"{label} omits {token}")
+    expect("error.numeric.unit_mismatch" in operators["evaluation_contract"]["errors"], "unit mismatch missing from common diagnostics")
+    for name in ("DATE", "TIME", "DATETIME"):
+        expect("temporal_literal_contract" in operators["constructors"][name]["profile"], f"{name} profile is not narrowed")
+        expect("temporal_literal_contract" in operators["ordered_type_rules"][name], f"{name} order ignores exact temporal keys")
+    literal = types["string_literal_contract"]
+    expect(literal["decoding_passes"] == 1 and literal["unicode_normalization"] == "none", "string decoding is not exactly once without normalization")
+    expected_literal = {
+        "source": "02_LEXICAL/07_LITERALS_AND_ESCAPE_SEQUENCES.txt#STRING VALUE DECODING",
+        "decoding_passes": 1,
+        "unicode_normalization": "none",
+        "multiline_indent": "Strip exactly containing declaration indentation plus four spaces from nonblank content lines; keep extra indentation and each content-line LF. Opening LF and closing-line indentation are syntax.",
+        "unicode_escape": "Four hex digits denote one non-surrogate scalar, or an immediately adjacent high/low surrogate escape pair denotes its combined scalar. Lone or malformed surrogate escapes use error.literal.escape.",
+        "raw_controls": "Raw source forbids C0/C1 and DEL except LF; escaped decoded control scalars are legal STRING values.",
+    }
+    expect(literal == expected_literal, "string literal registry contract differs from reviewed decoding rules")
+    literal_text = read("02_LEXICAL/07_LITERALS_AND_ESCAPE_SEQUENCES.txt")
+    for token in ("STRING VALUE DECODING", "surrogate", "LF", "error.literal.escape"):
+        expect(token in literal_text, f"literal prose omits {token}")
+    for clause in (
+        "The opening LF and closing-line indentation are syntax and contribute no value.",
+        "Each nonblank content line must begin with the declaration's indentation plus four ASCII spaces; strip exactly that prefix.",
+        "Preserve any additional spaces and the LF ending every content line.",
+        "A blank content line contributes one LF.",
+        "Adjacent opening and closing lines yield the empty STRING.",
+        "decode escapes exactly once from left to right.",
+        "No Unicode normalization is performed.",
+        "A high-surrogate escape in D800..DBFF must immediately be followed by a low-surrogate escape in DC00..DFFF",
+        "U+10000 + (high - D800) * 400 + (low - DC00)",
+        "An unpaired surrogate, an invalid pair, or any malformed or unsupported escape uses error.literal.escape.",
+    ):
+        expect(clause in normalize(literal_text), f"literal prose differs from reviewed rule: {clause}")
+    multiline = re.search(r"(?m)^MULTILINE_CHARACTER\s*=.*?;", read("04_GRAMMAR/10_COMPLETE_EBNF.ebnf"), re.S)
+    expect(multiline is not None and all(token in multiline.group() for token in ("LF", "backslash")), "multiline grammar admits an unclosed raw/escape boundary")
+    process = read("01_FOUNDATION/03_NORMATIVE_PROCESSING_MODEL.txt")
+    expect(process.index("structural candidate graph membership") < process.index("8. Run every selected"), "check selection precedes candidate membership")
+    expect("9. Finalize and check ordering edges" in process, "final graph ordering stage is undefined")
+    parameters = operations["contracts"]
+    expect(parameters["core.validate"]["parameters"]["schema"]["type"] == "REFERENCE", "undefined material schema encoding is admitted")
+    expect(parameters["core.append"]["parameters"]["content"]["type"] == "STRING|LIST[T]", "BYTES count admitted as append content")
+    read_range = parameters["core.read"]["parameters"]["range"]
+    range_text = " ".join(read_range["constraints"])
+    for token in ("exactly unit: STRING, start: INTEGER, and end: INTEGER", "scalar, line, item, or byte", "0 <= start <= end <= sequence length", "error.value.out_of_range", "error.operation.parameter", "No clipping", "LF-terminated", "0..255"):
+        expect(token in range_text, f"read range omits {token}")
+    expect("error.value.out_of_range" in parameters["core.read"]["errors"], "read range bound diagnostic is undeclared")
+    parameter_prose = normalize(read("06_STANDARD_LIBRARY/10_CORE_OPERATION_PARAMETER_RULES.txt"))
+    for operation, parameter in (("core.read", "range"), ("core.append", "content"), ("core.validate", "schema")):
+        for constraint in parameters[operation]["parameters"][parameter]["constraints"]:
+            expect(normalize(constraint) in parameter_prose, f"{operation}.{parameter} prose differs")
+
     # Cross-surface parity is stronger than merely pinning the source registry hash.
     block_prose = read("04_GRAMMAR/08_CORE_BLOCK_SCHEMAS_A.txt") + read("04_GRAMMAR/09_CORE_BLOCK_SCHEMAS_B.txt")
     for name, schema in schemas.items():
@@ -127,7 +219,7 @@ def validate(root: Path) -> dict:
     expect(cases["case_count"] == len(cases["cases"]), "decision witness count differs")
     identifiers = [case["id"] for case in cases["cases"]]
     expect(len(identifiers) == len(set(identifiers)), "duplicate decision witness ID")
-    required_contracts = {"source_type", "reference", "index", "call", "keyword_case", "evaluation", "quantifier", "reduction", "collection", "count", "fragment", "compare", "group", "retry", "alias", "continue", "fallback", "status", "pattern"}
+    required_contracts = {"source_type", "reference", "index", "call", "keyword_case", "evaluation", "quantifier", "reduction", "collection", "count", "fragment", "compare", "group", "retry", "alias", "continue", "fallback", "status", "pattern", "literal", "equality", "object_type", "temporal", "read_range", "check_selection", "graph", "output_instance", "output_owner", "retry_output", "validate_schema", "append_content", "unit_error", "root_completion"}
     expect(required_contracts <= {case["contract"] for case in cases["cases"]}, "decision witness coverage is incomplete")
     for case in cases["cases"]:
         expect(set(case) == {"id", "contract", "witness", "expected"}, f"{case['id']} witness shape differs")

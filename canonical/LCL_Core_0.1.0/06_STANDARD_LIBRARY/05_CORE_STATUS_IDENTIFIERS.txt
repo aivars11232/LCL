@@ -37,3 +37,11 @@ that status must be permitted by the current state's allowed_next. An illegal
 transition or root request for status.skipped uses error.execution.order. The
 complete mapping contract is failure_lifecycle.failure_mapping_rule in the
 registry. Phase and observed effects never silently change the chosen status.
+
+SEMANTIC RUNNING STATE
+
+status.running means that reachable execution, control, or completion checking
+has begun; it does not assert that a concrete side effect occurred. The ready
+and validating states may transition to failed for a registered execution-stage
+diagnostic discovered before effects. Producer-relative failure_phase and
+effect_state remain independently truthful.

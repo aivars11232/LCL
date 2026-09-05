@@ -1,12 +1,12 @@
-LCL CORE 0.1.0 BARE LANGUAGE SPECIFICATION CANDIDATE
+LCL CORE 0.1.0 BARE LANGUAGE SPECIFICATION
 CHANGE CONTROL
 NORMATIVE
 
-Published release artifacts are immutable. The current working tree is an
-unpublished completion candidate under the owner's instruction to finish
-LCL Core 0.1.0; existing historical trees and archives remain unchanged. A new
-candidate may not claim the checksum, validation results, or completeness of a
-previous snapshot. The version remains 0.1.0 while this candidate is completed.
+Published release artifacts are immutable. The September 5, 2026 completion
+under the owner's instruction retains Core version 0.1.0 and creates a distinct
+archive; existing historical trees and archives remain unchanged. A modified
+working tree may not claim the checksum, validation results or completeness of
+any previous snapshot. It requires a fresh decision review and release gate.
 
 For an established release, corrections that change no meaning require a patch
 release, added backward-compatible features require a minor release, and breaking

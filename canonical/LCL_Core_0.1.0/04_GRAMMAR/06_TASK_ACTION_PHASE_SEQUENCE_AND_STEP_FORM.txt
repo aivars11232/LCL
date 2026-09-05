@@ -14,5 +14,10 @@ blocks under its declared legal-parent contract; it may also add BEFORE/AFTER.
 A STEP selects exactly one execution structure. ACTION accepts a reference/list
 or one inline nested ACTION. SEQUENCE and PHASE accept references/lists only;
 TASK accepts one exact reference. mode.parallel is legal only when all included
-actions have disjoint side effects or explicit conflict-free output targets;
-otherwise validation fails.
+actions have proven independence, including no conflicting writes, read/write
+dependencies, shared mutable bindings, or conflicting output destinations.
+Disjoint output paths alone are insufficient; otherwise validation fails.
+The execution_graph_contract in block_schemas_v0.1.0.json defines exact child
+order, activation identity, dependency edges, loop instances, and successors.
+An ACTION selects at most one OUTPUT reference; TASK and EXECUTE may list output
+requirements or exports under the separate output-projection contract.

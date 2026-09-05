@@ -1549,15 +1549,15 @@ def constructor_pattern_contract_violations(
     uri = constructors.get("URI", {})
     expect(uri.get("profile") == "RFC 3986 absolute-URI with a scheme", "URI profile is not exact")
     expect(uri.get("relative_references_allowed") is False, "relative URI references are not rejected")
-    expect(constructors.get("DATE", {}).get("profile") == "RFC 3339 full-date", "DATE profile is not RFC 3339")
+    expect(constructors.get("DATE", {}).get("profile") == "RFC 3339 full-date narrowed exactly by types_v0.1.0.json#/temporal_literal_contract", "DATE profile is not RFC 3339")
     expect(
-        constructors.get("TIME", {}).get("profile") == "RFC 3339 partial-time with optional time-offset"
+        constructors.get("TIME", {}).get("profile") == "RFC 3339 partial-time with optional time-offset narrowed exactly by types_v0.1.0.json#/temporal_literal_contract"
         and constructors.get("TIME", {}).get("omitted_timezone") == "UTC",
         "TIME profile/default timezone is not exact",
     )
     expect(
         constructors.get("DATETIME", {}).get("profile")
-        == "RFC 3339 full-date T partial-time with optional time-offset"
+        == "RFC 3339 full-date T partial-time with optional time-offset narrowed exactly by types_v0.1.0.json#/temporal_literal_contract"
         and constructors.get("DATETIME", {}).get("omitted_timezone") == "UTC",
         "DATETIME profile/default timezone is not exact",
     )
@@ -2324,6 +2324,11 @@ def set_sort_contract_violations(
             "numeric component after requiring the same exact unit identifier"
         ),
     }
+    for temporal_type in ("DATE", "TIME", "DATETIME"):
+        expected_ordered_rules[temporal_type] += (
+            "; exact validity and order keys are defined by "
+            "types_v0.1.0.json#/temporal_literal_contract"
+        )
     expect(
         operator_functions.get("ordered_types") == expected_ordered_types,
         "operator ordered_types membership changed or is incomplete",
@@ -2907,10 +2912,10 @@ def set_sort_contract_violations(
 
 
 EXPECTED_RESULT_CONTRACT_FINGERPRINT = (
-    "21de485d9d618aee571d0204f49d03a32be41871350766c6709713237f4e36e4"
+    "034d7c5954f35a71b8f5c7f72271ee786e07d80f4b18ca97c950d05bc6aca352"
 )
 EXPECTED_RESULT_STATUS_FINGERPRINT = (
-    "8af74a8ae04ba81d68306e2fc6f8eebb716403059e9841885b9909e2187340c9"
+    "3cbfb6255538c404f89974caaa541e30d11880c288f745c0d71fe0edd5948bb7"
 )
 EXPECTED_RESULT_SCHEMA_FINGERPRINTS = {
     "result.value": "65fb266615cff90c8dbbcf1fb09f7de165277b3809e1ed314b5359ad673be652",
@@ -3474,13 +3479,15 @@ def result_contract_violations(
 # These reviewed-row pins detect unexpected drift; the structural, semantic,
 # cross-registry, and prose checks below establish the actual contract evidence.
 # Completion decisions revised only calculate, compare, select, filter, group,
-# retry, continue, stop, and cancel. All other original row pins remain unchanged.
+# retry, continue, stop, cancel, read, validate, and append. All other original
+# row pins remain unchanged. The closure checker independently verifies mirrors
+# and the newly closed schema, range, content, graph and result-binding rules.
 EXPECTED_OPERATION_CONTRACT_FINGERPRINT = (
-    "6c17ddef00c05ae178d80339c34ad0caef25aeac3e1242f4e966f4d143a83591"
+    "f81a05efa9dfc2a24ff5fbdc31cc5a007584e78f157acbd127d0f2c95c388354"
 )
 EXPECTED_OPERATION_ROW_FINGERPRINTS = {
     "core.inspect": "fc2ae5ad368d5bba7e4599740b68d627471585b039834d2ad5b5f766beeaf234",
-    "core.read": "975035d5c3e583d40855be013677235b3d8caa5e6eb3cad1739e589291161302",
+    "core.read": "27a880debe46225033572f7fc4ca294974835bed32819b92624c86315b4c2463",
     "core.analyze": "ecbce69889d9ac22c0065186bd1f62fbac626983189e63c5c8d0fcb51ad4d462",
     "core.calculate": "d79ad6fe8a8b1c9059edf89f849f1e6b94037114c89734322ea90bbe18c539c3",
     "core.compare": "4dad19f69cfc5db996ec2fb413f3d227e418182233ee75a3d01b14f8c15ba500",
@@ -3488,14 +3495,14 @@ EXPECTED_OPERATION_ROW_FINGERPRINTS = {
     "core.filter": "3c5a731ca7e09d6efebab3ba6860382f8af932a970df0d4f2e6dd52218755861",
     "core.sort": "bf13927bbed4cd17d1a9f8a03d5249b8779768cd24d671677f7ba1bc0e3f2b16",
     "core.group": "48f3dc2c76ad0b86f7a2c3579202385599a9a2a3895b55b50aab11c3c9535400",
-    "core.validate": "9746a344ec76fb63f32dd5a00b7b85c722e96829461e3dadc2403a375ac41754",
+    "core.validate": "da051fd361d9309d291ca9cdfff54e796a9277466e3ec43960b8e606070e6605",
     "core.verify": "b8fb7cac6c5218ca5022ba73468ab7eea0a97c87c2cf4dcd45849a51be08e1ca",
     "core.test": "5d3d3927b3295c9eab0fed287f15b4364051af0dc7216b36eac1cfcb85996400",
     "core.report": "466c758adf4a24ca72af7d10d178825b16dd670b3daeb3be9c7e8e14e0dbb5d1",
     "core.return": "d412141b34ad45433f840758063e378c35fdad07b3c341a796ee657aaedfdb9e",
     "core.create": "f0a0d85c6ef3b0b8eea603b16de509c81c2fb8a27f47b66518cfab361b6c5100",
     "core.write": "bbfe03cc64ef1aeb1c04d428b466dfef63dfe9153fb1f9e7a1f7309240df2041",
-    "core.append": "ac718cbb01a8732128ecf60bc9a7e4b548bbb35fa9ecd1f443c8d922ceda26a0",
+    "core.append": "a130f0faa4b60236d784a82da32cb8f610ca6a6e55397727b58323e66bccbe7b",
     "core.modify": "29ff3bf523f0ee1c1e6fbee835adaf95d10b707f7a9d17267d61e4535732969c",
     "core.copy": "6ec868b6929463235966b2a801161621083b0958ced852ff0ae47508e6f8eefa",
     "core.move": "dc33c95e763f2d25d34995b957a92dabde7bdb0345d3e5cab50d1c9b378517fa",
@@ -4422,13 +4429,14 @@ def operation_contract_violations(
     expect(
         validate_parameters.get("schema")
         == {
-            "type": "REFERENCE|OBJECT",
+            "type": "REFERENCE",
             "required": False,
             "default": None,
             "meaning": "Schema to validate against.",
             "constraints": [
-                "A REFERENCE resolves exactly once to a kind.type definition whose BASE is "
-                "OBJECT and whose schema applies to the target."
+                "The REFERENCE resolves exactly once, following transparent aliases, to a "
+                "kind.type whose resolved type is OBJECT and whose schema applies to the "
+                "target. Material OBJECT schema encodings are not admitted."
             ],
         }
         and validate_parameters.get("rules")
@@ -5096,7 +5104,7 @@ def operation_contract_violations(
         and "error.value.out_of_range" in contract.get("errors", [])
     )
     expect(
-        out_of_range_rows == ["core.calculate", "core.inspect", "core.retry"],
+        out_of_range_rows == ["core.calculate", "core.inspect", "core.read", "core.retry"],
         f"error.value.out_of_range operation coverage differs: {out_of_range_rows}",
     )
     inherited_rows = sorted(

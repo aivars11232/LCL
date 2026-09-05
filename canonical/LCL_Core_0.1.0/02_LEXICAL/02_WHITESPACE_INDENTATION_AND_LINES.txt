@@ -3,8 +3,11 @@ WHITESPACE, INDENTATION, AND LINES
 NORMATIVE
 
 - One indentation level is exactly four ASCII spaces.
-- A non-blank line begins with a number of spaces divisible by four.
-- Indentation may increase by exactly one level after a block-opening colon.
+- In NORMAL mode, a non-blank line begins with a number of spaces divisible by four.
+- Indentation may increase by exactly one level after a block-opening colon or
+  after the opening [ of MULTILINE_COLLECTION. Collection members are one level
+  deeper than their containing declaration; closing ] is on its own line aligned
+  with that declaration. This does not permit arbitrary expression line wrapping.
 - Dedentation closes all deeper blocks before processing the new line.
 - Empty blocks are invalid.
 - LINE FEED terminates inline declarations and expression statements.

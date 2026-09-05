@@ -49,7 +49,8 @@ A gate whose only evidence would be a lexer, parser, interpreter, compiler,
 runtime, or semantic execution engine is outside this package's scope. Such a
 gate is reported as OUT_OF_SCOPE, is never reported as PASS, and never blocks
 release. LCL-TASK-0007 classified an earlier snapshot BARE_LANGUAGE_RELEASE;
-that historical classification does not apply to this modified candidate.
+that historical classification does not establish this release. The current
+classification depends on its own closed decisions and fresh gate evidence.
 
 A candidate with an unresolved language contradiction, undefined contract, invalid
 positive example, or unexpected applicable conformance result is not

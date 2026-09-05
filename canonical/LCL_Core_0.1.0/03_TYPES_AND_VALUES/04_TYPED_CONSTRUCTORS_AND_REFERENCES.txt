@@ -33,7 +33,9 @@ textual prefix, so parent traversal, links, or equivalent indirection cannot
 escape the root. Escape produces error.value.out_of_range.
 
 URI accepts one STRING matching the RFC 3986 absolute-URI profile with a scheme;
-a relative URI reference is invalid. DATE is RFC 3339 full-date. TIME is RFC 3339
+a relative URI reference is invalid. Temporal constructors use the exact
+temporal_literal_contract below, a closed narrowing of the named RFC forms.
+DATE is RFC 3339 full-date. TIME is RFC 3339
 partial-time and DATETIME is RFC 3339 full-date, "T", and partial-time. TIME and
 DATETIME accept an optional offset; omission means UTC.
 
@@ -81,3 +83,41 @@ Reading an absent or not-yet-bound value yields MISSING. Reading an existing
 binding whose value cannot be determined yields UNKNOWN. REQUIRED, DEFAULT,
 and dependency-order rules then apply. A read does not invoke an operation,
 start a producer, reorder execution, or rerun a VALIDATE/VERIFY check.
+
+EXACT TEMPORAL PROFILE
+
+Authority: 10_REGISTRIES/types_v0.1.0.json#/temporal_literal_contract
+
+DATE
+Exactly YYYY-MM-DD with year 0001..9999, month 01..12, and a valid day in the
+proleptic Gregorian calendar. Leap years are divisible by 4 except centuries
+not divisible by 400.
+
+TIME
+Exactly HH:MM:SS with optional . followed by one or more decimal digits, then
+optional Z or signed HH:MM offset. Hours 00..23, minutes 00..59, seconds
+00..59; leap-second 60 is excluded. Offset hours 00..23 and minutes 00..59.
+Only uppercase T and Z are accepted. -00:00 is excluded because it denotes an
+unknown offset; +00:00 and Z denote UTC. Omitted offset is UTC.
+
+DATETIME
+Exactly DATE spelling, uppercase T, and TIME spelling under this profile.
+
+NORMALIZATION
+Fractions are exact rational seconds; trailing fractional zeros do not change
+value. TIME key is local seconds since nominal midnight minus signed offset
+seconds, without modulo-24-hour wrapping or a real calendar date. DATETIME key
+is exact Gregorian day count relative to 0001-01-01 times 86400 plus that TIME
+key. All days have exactly 86400 seconds; normalized comparison keys may cross
+the representable source-date endpoints.
+
+ERROR
+error.literal.invalid
+
+OUTPUT INSTANCE READS
+
+OUTPUT value reads obey
+built_in_groups_and_results_v0.1.0.json#/result_contract/output_projection: one
+producer source per declaration, instance-local loop scope, attempt-local retry
+binding and ordered publication. A value read never activates a producer; an
+unavailable binding yields MISSING.

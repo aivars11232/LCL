@@ -5,49 +5,49 @@
   "decisions": [
     {
       "id": "types_and_references",
-      "status": "pending",
-      "summary": "Close source types, aliases, enum domains, value reads, metadata access, positional calls and indexing."
+      "status": "closed",
+      "summary": "Closed exact source types, transparent aliases, nominal enum domains, structural OBJECT schema identity, reference value/identity contexts, metadata access, positional calls, indexes, and loop-local OUTPUT reads. String decoding, material identities and exact temporal values are closed in types_v0.1.0.json and mirrored prose."
     },
     {
       "id": "expressions_and_functions",
-      "status": "pending",
-      "summary": "Close evaluation order, sentinel propagation, collections, quantifiers, reductions and signature notation."
+      "status": "closed",
+      "summary": "Closed evaluation order, short circuit, sentinel propagation, strict equality, empty/duplicate collection behavior, quantifiers, reductions, signature metatypes, and common unit-mismatch diagnostics."
     },
     {
       "id": "patterns",
-      "status": "pending",
-      "summary": "Close frozen GLOB and REGEX syntax and matching behavior."
+      "status": "closed",
+      "summary": "Closed self-contained Core GLOB and REGEX profiles: syntax, decoded escapes, scalar classes, path segments, anchors, quantifiers, flags, whole-input matching, exact value identity and diagnostics; no unspecified external dialect is normative."
     },
     {
       "id": "library_parameters",
-      "status": "pending",
-      "summary": "Close calculation fragments, predicates, comparison criteria and group results."
+      "status": "closed",
+      "summary": "Closed expression fragments, predicate bindings, comparison criteria, group shape, read-range schema/units/bounds, reference-only validation schemas and same-family STRING/LIST append content; all 39 operation contracts and nine result schemas remain aligned."
     },
     {
       "id": "control_and_diagnostics",
-      "status": "pending",
-      "summary": "Close retry, fallback, continuation, lifecycle, diagnostic aliases and dynamic expression demand."
+      "status": "closed",
+      "summary": "Closed structural graph activation/order/cycles, sibling edges, parallel independence, loop instances, continuation, singular OUTPUT ownership, retry/fallback publication, selected check scheduling and concrete-target applicability, root completion, aliases, lifecycle and dynamic diagnostic demand."
     },
     {
       "id": "host_surface_boundary",
-      "status": "pending",
-      "summary": "Owner decision pending: retain abstract host-facing contracts or remove them from Core under the requested bare-language boundary."
+      "status": "closed",
+      "summary": "The owner authorized completion of the bare-language specification. Retain WORKSPACE solely as an explicit language path-base/access declaration and retain abstract standard-library effect contracts. UI, workspace/project applications, provider/agent products and every executable language implementation remain outside Core completion. No host implementation is a required normative artifact."
     },
     {
       "id": "normative_alignment",
-      "status": "pending",
-      "summary": "Align registries, grammar, prose, examples and both descriptive conformance catalogs."
+      "status": "closed",
+      "summary": "Registries, EBNF, lexical/type/semantic/library prose, examples and the 799-entry requirements catalog plus 66 descriptive decision witnesses agree under fresh focused checks. Cross-surface parity and explicit reviewed-rule checks are enforced by validate_language_contracts.py."
     },
     {
       "id": "independent_review",
-      "status": "pending",
-      "summary": "Resolve all definite findings from an independent review of the changed language contracts."
+      "status": "closed",
+      "summary": "Fresh read-only lexical/forms, expression/library, and graph/check/lifecycle/OUTPUT reviews resolved every definite finding. Follow-up review confirmed processing-order alignment and detection of the multiline literal registry/prose contradiction. No outstanding semantic blocker was identified in these bounded reviews."
     },
     {
       "id": "static_validation",
-      "status": "pending",
-      "summary": "Pass focused static checks and demonstrate detection of representative contract mutations."
+      "status": "closed",
+      "summary": "Fresh focused filesystem, text, structured, grammar, registry and catalog checks pass; 514 language-contract checks have no violations. Fourteen representative isolated static contract mutations are detected, 15 bounded source fixtures match, and six supplementary source-hygiene probes match. These checks do not execute LCL; final integrity and release validation follow closure."
     }
   ],
-  "release_gate_permitted": false
+  "release_gate_permitted": true
 }

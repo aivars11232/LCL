@@ -21,7 +21,8 @@
         "status.invalid",
         "status.ready",
         "status.blocked",
-        "status.cancelled"
+        "status.cancelled",
+        "status.failed"
       ],
       "scope": "execution_root_declaration_or_result"
     },
@@ -42,12 +43,13 @@
         "status.skipped",
         "status.blocked",
         "status.stopped",
-        "status.cancelled"
+        "status.cancelled",
+        "status.failed"
       ],
       "scope": "execution_root_declaration_or_result"
     },
     "status.running": {
-      "meaning": "At least one required action began and no terminal status exists.",
+      "meaning": "The semantic invocation has begun evaluating its reachable execution, control, or check contract and has no terminal status. Concrete effects are recorded separately.",
       "result_meaning": "The producer invocation began and has no terminal producer status; any begun effects are recorded separately.",
       "terminal": false,
       "allowed_next": [
@@ -630,7 +632,7 @@
       "default_status": "status.blocked"
     },
     "error.verification.failed": {
-      "meaning": "A required VERIFY assertion is FALSE.",
+      "meaning": "A required post-execution VERIFY or TEST assertion is FALSE.",
       "stage": "verification_or_completion",
       "recoverable_with_declared_handler": false,
       "event": null,
@@ -898,5 +900,14 @@
     },
     "indeterminate_state_rule": "Preserve every known observation, but do not infer an exact phase, exact effect extent, successful postcondition, or OUTPUT value from absence of evidence. Reconciliation may replace indeterminate only with exact retained evidence; until then no retry or success claim that depends on the unknown fact is permitted."
   },
-  "compatibility_note": "The original 46 error identifiers remain exact and 31 additional precise identifiers are present. Task 0006 closes same-stage selection and mixed failure timing through the diagnostic_selection and failure_lifecycle contracts without changing those identifiers."
+  "compatibility_note": "The original 46 error identifiers remain exact and 31 additional precise identifiers are present. Task 0006 closes same-stage selection and mixed failure timing through the diagnostic_selection and failure_lifecycle contracts without changing those identifiers.",
+  "check_selection_contract": {
+    "selection": "Select VALIDATE, VERIFY, and FAILURE declarations in the EXECUTE root source document. A targetless clause applies to that invocation. For pre-effect VALIDATE, a resolved TARGET must name a candidate graph member, a data/output declaration explicitly referenced by that graph, or the exact material/address TARGET selected by a graph ACTION. Match declaration identity or material identity under types_v0.1.0.json#/material_identity_contract; never expand ambient resources. Targeted post-execution VERIFY applies only to an actually activated producer or an observed target of that invocation, not an unselected IF branch merely present in the candidate graph. Include check prerequisites explicitly referenced by selected checks or the root SUCCESS. Unrelated imported checks never run merely because their document was imported. TEST declarations are activated only as an explicit TEST root or operation target, never as ambient tasks.",
+    "prerequisites": "Evaluate selected check-result prerequisites in stable topological order with source-unit namespace then source declaration order as tie-breakers. A prerequisite cycle uses error.reference.cycle. Check references observe one scheduled result rather than rerunning the check. Every selected pre-effect VALIDATE, including an optional check or prerequisite, must be evaluable before effects and cannot depend on future OUTPUT or a post-execution check.",
+    "demand": "Every selected and applicable VALIDATE is evaluated before any effect. REQUIRED controls whether a FALSE result blocks, not whether a selected check runs. VERIFY follows its actually activated producers or observed targets. A TEST root executes only its explicit TASK or ACTION, if present, then evaluates ASSERT or EXPECTED/ACTUAL. Where WHEN exists, absence means TRUE and FALSE skips applicability. A skipped check has no result; an explicit required read of that absent result uses ordinary MISSING behavior, never implicit TRUE. Required demanded MISSING and UNKNOWN use error.required.missing and error.value.unknown. No WHEN field is invented for TEST.",
+    "failure": "A required FALSE VALIDATE assertion uses error.validation.failed. A required post-execution FALSE VERIFY or TEST assertion uses error.verification.failed. Optional FALSE checks retain their Boolean domain outcome without emitting a required-check failure. An ERROR field is exact classification metadata; it does not emit a diagnostic with an unrelated stage or override the required-check diagnostic.",
+    "domain_results": "A core.test invocation can complete result production with passed FALSE. Its producer status and domain result remain independent. Any separate required TEST obligation belongs to the enclosing root or check invocation, not to fabrication of the result record.",
+    "root_success": "A TASK root evaluates its referenced SUCCESS. A TEST root evaluates ASSERT, or strict EXPECTED/ACTUAL equality when ASSERT is absent; if both are present they must both hold. PHASE, SEQUENCE and ACTION roots succeed when all applicable required graph, check, rule, evidence and OUTPUT obligations complete, without requiring an unavailable SUCCESS field. FALSE root completion uses error.success.unsatisfied unless a primary diagnostic or selected FAILURE already fixes the outcome.",
+    "lifecycle": "A root enters status.running before evaluating dynamic execution/control or post-execution completion even when its graph has no executed ACTION. Registered execution-stage diagnostics discovered before effects may take status.validating or status.ready to status.failed; this never changes their producer-relative failure_phase or creates effects."
+  }
 }

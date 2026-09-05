@@ -10,8 +10,8 @@ EXPECTED/ACTUAL or ASSERT. Required failed checks prevent success. EVIDENCE must
 be observable, typed, and traceable; declared required provenance/checksum must
 resolve.
 
-SUCCESS evaluates ALL, ANY, or NONE after execution/checks. At the execution
-root, status.succeeded is legal only when SUCCESS is TRUE, all required outputs
+SUCCESS evaluates ALL, ANY, or NONE after execution/checks. At a TASK execution
+root, status.succeeded is legal only when its SUCCESS is TRUE, all required outputs
 are fully bound and valid, all hard rules hold, and all required evidence
 exists. status.partial is explicitly non-success. FAILURE blocks may map exact
 WHEN conditions to terminal non-success statuses. Resolve status and error
@@ -58,3 +58,71 @@ observation only. It never binds OUTPUT and therefore cannot satisfy a required
 output or required Boolean success condition. A material FALSE remains a valid
 bound result value when the declared OUTPUT type permits BOOLEAN; its truth is
 then evaluated normally by any separate SUCCESS condition.
+
+CHECK SELECTION AND ROOT COMPLETION
+
+Authority: 10_REGISTRIES/statuses_and_errors_v0.1.0.json#/check_selection_contract
+
+SELECTION
+Select VALIDATE, VERIFY, and FAILURE declarations in the EXECUTE root source
+document. A targetless clause applies to that invocation. For pre-effect
+VALIDATE, a resolved TARGET must name a candidate graph member, a data/output
+declaration explicitly referenced by that graph, or the exact material/address
+TARGET selected by a graph ACTION. Match declaration identity or material
+identity under types_v0.1.0.json#/material_identity_contract; never expand
+ambient resources. Targeted post-execution VERIFY applies only to an actually
+activated producer or an observed target of that invocation, not an unselected
+IF branch merely present in the candidate graph. Include check prerequisites
+explicitly referenced by selected checks or the root SUCCESS. Unrelated
+imported checks never run merely because their document was imported. TEST
+declarations are activated only as an explicit TEST root or operation target,
+never as ambient tasks.
+
+PREREQUISITES
+Evaluate selected check-result prerequisites in stable topological order with
+source-unit namespace then source declaration order as tie-breakers. A
+prerequisite cycle uses error.reference.cycle. Check references observe one
+scheduled result rather than rerunning the check. Every selected pre-effect
+VALIDATE, including an optional check or prerequisite, must be evaluable before
+effects and cannot depend on future OUTPUT or a post-execution check.
+
+DEMAND
+Every selected and applicable VALIDATE is evaluated before any effect. REQUIRED
+controls whether a FALSE result blocks, not whether a selected check runs.
+VERIFY follows its actually activated producers or observed targets. A TEST
+root executes only its explicit TASK or ACTION, if present, then evaluates
+ASSERT or EXPECTED/ACTUAL. Where WHEN exists, absence means TRUE and FALSE
+skips applicability. A skipped check has no result; an explicit required read
+of that absent result uses ordinary MISSING behavior, never implicit TRUE.
+Required demanded MISSING and UNKNOWN use error.required.missing and
+error.value.unknown. No WHEN field is invented for TEST.
+
+FAILURE
+A required FALSE VALIDATE assertion uses error.validation.failed. A required
+post-execution FALSE VERIFY or TEST assertion uses error.verification.failed.
+Optional FALSE checks retain their Boolean domain outcome without emitting a
+required-check failure. An ERROR field is exact classification metadata; it
+does not emit a diagnostic with an unrelated stage or override the
+required-check diagnostic.
+
+DOMAIN RESULTS
+A core.test invocation can complete result production with passed FALSE. Its
+producer status and domain result remain independent. Any separate required
+TEST obligation belongs to the enclosing root or check invocation, not to
+fabrication of the result record.
+
+ROOT SUCCESS
+A TASK root evaluates its referenced SUCCESS. A TEST root evaluates ASSERT, or
+strict EXPECTED/ACTUAL equality when ASSERT is absent; if both are present they
+must both hold. PHASE, SEQUENCE and ACTION roots succeed when all applicable
+required graph, check, rule, evidence and OUTPUT obligations complete, without
+requiring an unavailable SUCCESS field. FALSE root completion uses
+error.success.unsatisfied unless a primary diagnostic or selected FAILURE
+already fixes the outcome.
+
+LIFECYCLE
+A root enters status.running before evaluating dynamic execution/control or
+post-execution completion even when its graph has no executed ACTION.
+Registered execution-stage diagnostics discovered before effects may take
+status.validating or status.ready to status.failed; this never changes their
+producer-relative failure_phase or creates effects.

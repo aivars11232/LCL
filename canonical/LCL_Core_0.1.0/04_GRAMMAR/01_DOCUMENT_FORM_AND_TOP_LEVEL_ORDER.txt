@@ -7,8 +7,9 @@ DATE: 2026-08-30
 
 First non-blank block: LCL with exact VERSION. Second: SPECIFICATION. IMPORT and
 EXTENSION are resolved before other declarations. Remaining top-level block
-order does not change meaning except lexical STEP order and explicit BEFORE/
-AFTER. kind.task and kind.test require exactly one EXECUTE. Other kinds forbid
+order does not change meaning except where a contract explicitly uses source
+order: lexical STEP order, ordered execution-child fields, FAILURE selection,
+handler candidate ordering, and explicit BEFORE/AFTER constraints. kind.task and kind.test require exactly one EXECUTE. Other kinds forbid
 EXECUTE.
 
 Top-level block legality by KIND is closed in the block-schema registry.

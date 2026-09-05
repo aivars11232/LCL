@@ -95,11 +95,11 @@ pub struct Token {
     /// Which lowercase identifiers case-fold to a registered reserved word.
     ///
     /// `02_LEXICAL/02` makes case folding never *select* a keyword where an
-    /// identifier is permitted, while `error.keyword.case` still applies in the
-    /// syntax-required positions the lexer cannot decide alone. Recording the
-    /// fold here lets the parser finish that decision without re-lexing, and
-    /// keeps the lexer from guessing. Always `None` unless `kind` is
-    /// `SimpleIdentifier`.
+    /// identifier is permitted: this token **is** a legal identifier (every
+    /// syntax-required position already raised `error.keyword.case` instead of
+    /// a token). The fold is recorded as information only, for tooling and
+    /// diagnostics that want to mention the near-miss. Always `None` unless
+    /// `kind` is `SimpleIdentifier`.
     ///
     /// The registry owns its spellings, so this is an owned copy of the
     /// registered word, not a borrow of a transcribed table.

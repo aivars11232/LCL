@@ -1,10 +1,11 @@
 //! `08_EXAMPLES`: the 13 valid and 21 invalid release examples.
 //!
 //! Valid examples must tokenize with no lexical diagnostic. For invalid
-//! examples the release pins one primary error each. Where that error is a
-//! token-formation defect the lexer's primary and terminal status must equal
-//! the pinned pair; where it belongs to a later stage, `earliest_stage_rule`
-//! requires the lexical stage to be clean, so the lexer must raise nothing.
+//! examples the release pins one primary error each. Where that error is
+//! registered at the lexical stage the lexer's primary and terminal status must
+//! equal the pinned pair, with no exception; where it belongs to a later stage,
+//! `earliest_stage_rule` requires the lexical stage to be clean, so the lexer
+//! must raise nothing.
 
 mod common;
 
@@ -112,13 +113,10 @@ fn invalid_examples_are_consistent_with_their_pinned_primary() {
         let lexed = lex_bytes(&std::fs::read(p).unwrap());
         assert_well_formed(&lexed, &name(p));
 
-        // 17_REGEX_FLAGS pins error.literal.invalid for `REGEX("[a-z]+", "mi")`:
-        // a registered-constructor value-domain rule (canonical `ims` order)
-        // that is lexical-stage in the registry but not token formation. Its
-        // tokens are well-formed; the check belongs to the constructor layer.
-        let token_formation = stage == Stage::Lexical && !name(p).starts_with("17_");
-
-        if token_formation {
+        // Every lexical-stage expectation is the lexer's to meet, without
+        // exception; every later-stage expectation requires a clean lexical
+        // stage.
+        if stage == Stage::Lexical {
             let got = lexed.primary().map(|d| d.id.to_string());
             assert_eq!(got.as_deref(), Some(want_error.as_str()), "{}", name(p));
             assert_eq!(
@@ -149,9 +147,10 @@ fn invalid_examples_are_consistent_with_their_pinned_primary() {
             "09_UNBOUNDED_WHILE.invalid.lcl",
             "13_PERCENT_SYMBOL.invalid.lcl",
             "14_SINGLE_QUOTED_STRING.invalid.lcl",
+            "17_REGEX_FLAGS.invalid.lcl",
         ]
     );
-    assert_eq!(clean_checked.len(), 14);
+    assert_eq!(clean_checked.len(), 13);
 }
 
 #[test]
@@ -190,6 +189,22 @@ fn lexical_invalid_examples_exact_diagnostics() {
     assert!(l
         .tokens_of(TokenKind::IntegerLiteral)
         .any(|t| l.lexeme(t) == Some("50")));
+
+    let l = get("17_REGEX_FLAGS.invalid.lcl");
+    assert_eq!(id_list(&l), vec!["error.literal.invalid"]);
+    let d = l.primary().unwrap();
+    assert_eq!(d.span.slice(l.source()), Some("\"mi\""));
+    assert_eq!((d.position.line, d.position.column), (13, 28));
+    assert_eq!(l.terminal_status(), Some("status.invalid"));
+    assert!(d.detail.as_deref().unwrap().contains("REGEX flags"));
+    // The pattern argument is well-formed and keeps its token; the flags
+    // argument is the rejected lexeme and yields none.
+    let strings: Vec<&str> = l
+        .tokens_of(TokenKind::String)
+        .filter_map(|t| t.value.as_deref())
+        .collect();
+    assert!(strings.contains(&"[a-z]+"));
+    assert!(!strings.contains(&"mi"));
 
     let l = get("14_SINGLE_QUOTED_STRING.invalid.lcl");
     assert_eq!(

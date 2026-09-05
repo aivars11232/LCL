@@ -119,7 +119,9 @@ fn main() {
 
     // ---- 08_EXAMPLES/INVALID ------------------------------------------------
     println!("== 08_EXAMPLES/INVALID (.expected.txt) ==");
-    println!("   lexical-stage expectation  -> lexer primary must equal it");
+    println!(
+        "   lexical-stage expectation  -> lexer primary and status must equal it (no exceptions)"
+    );
     println!("   later-stage expectation    -> lexer must raise nothing (earliest_stage_rule)");
     let diagnostics = lcl_diagnostics::DiagnosticRegistry::load(&spec).expect("diagnostics");
     let mut invalid_pass = 0usize;
@@ -136,7 +138,7 @@ fn main() {
             .unwrap_or_else(|| "?".into());
         let bytes = std::fs::read(&path).expect("example bytes");
         let lexed = lexer.lex(&bytes);
-        let (ok, note) = if stage == "lexical" && !is_token_formation_deferred(&want_error, &path) {
+        let (ok, note) = if stage == "lexical" {
             let got = lexed
                 .primary()
                 .map(|d| d.id.to_string())
@@ -149,7 +151,7 @@ fn main() {
         } else {
             (
                 lexed.outcome() == Outcome::Tokenized,
-                format!("lexically clean; {want_error} is {stage}-stage, not token formation"),
+                format!("lexically clean; {want_error} is {stage}-stage"),
             )
         };
         invalid_pass += usize::from(ok);
@@ -174,13 +176,6 @@ fn main() {
     if fixture_pass != entries.len() || valid_pass != valid_total || invalid_pass != invalid_total {
         std::process::exit(1);
     }
-}
-
-/// `17_REGEX_FLAGS` expects `error.literal.invalid`, which is registered at the
-/// lexical stage but is a constructor value-domain rule (canonical `ims` flag
-/// order), not token formation. Its tokens are all well-formed.
-fn is_token_formation_deferred(error: &str, path: &Path) -> bool {
-    error == "error.literal.invalid" && file_name(path).starts_with("17_")
 }
 
 fn sorted_lcl(dir: &Path) -> Vec<PathBuf> {

@@ -12,7 +12,15 @@
 //!    as *quarantined*, so part 3 steps over it without raising a second
 //!    diagnostic for the same byte.
 //! 3. **Tokenization** — NORMAL, STRING and MULTILINE_STRING modes, with
-//!    indentation structure, per `02_LEXICAL/02` and `02_LEXICAL/07`.
+//!    indentation structure, per `02_LEXICAL/02` and `02_LEXICAL/07`. The
+//!    scanner keeps the bounded token context the lexical rules need: one
+//!    context per indentation level (block, object data, collection), the
+//!    lexeme classes of the current line, and open type/`REF` brackets, so
+//!    every `error.keyword.case` position of `02_LEXICAL/02` is decided here.
+//! 4. **Literal constructor arguments** — a pass over the token stream that
+//!    checks the closed literal profiles (REGEX, GLOB, DATE, TIME, DATETIME,
+//!    URI) on literal `STRING` arguments, per `03_TYPES_AND_VALUES/04` and
+//!    `/07` and the `types` and `operators_and_functions` registries.
 //!
 //! ## Determinism
 //!
@@ -36,7 +44,8 @@
 //!   does not also report an empty block.
 
 use crate::diagnostic::{Cause, Diagnostic, LexicalError};
-use crate::lexicon::Lexicon;
+use crate::lexicon::{Lexicon, LiteralProfile};
+use crate::literal;
 use crate::span::{LineIndex, Span};
 use crate::token::{Token, TokenKind};
 use crate::Lexed;
@@ -97,7 +106,12 @@ pub(crate) fn lex(lexicon: &Lexicon, source: &[u8]) -> Lexed {
         tokens: Vec::new(),
         raw,
         levels: 0,
-        pending_opener: None,
+        line_end: LineEnd::Plain,
+        contexts: vec![Context::Structural],
+        line_classes: Vec::new(),
+        line_key: None,
+        type_brackets: Vec::new(),
+        ref_parens: Vec::new(),
         line_indent_spaces: 0,
         line_first_lexeme: start,
         line_token_start: 0,
@@ -113,6 +127,7 @@ pub(crate) fn lex(lexicon: &Lexicon, source: &[u8]) -> Lexed {
 
     // --- 3. Tokenization ----------------------------------------------------
     scan.tokenize(start);
+    scan.validate_constructor_literals();
 
     let Scan {
         tokens, raw, text, ..
@@ -210,9 +225,21 @@ struct Scan<'a> {
     raw: Vec<Raw>,
     /// Open indentation levels.
     levels: usize,
-    /// Set when the previous logical line ended with a block-opening `:` or the
-    /// `[` of a MULTILINE_COLLECTION; holds that symbol's span.
-    pending_opener: Option<Span>,
+    /// How the previous logical line ended, for this line's indentation and
+    /// context rules.
+    line_end: LineEnd,
+    /// One context per open indentation level, innermost last; always
+    /// `levels + 1` long. Decides whether a lowercase key is object data.
+    contexts: Vec<Context>,
+    /// Lexeme classes seen on the current line, in order, for the
+    /// required-connector rule.
+    line_classes: Vec<LexemeClass>,
+    /// The reserved word keying the current line (`KEY:` at its head).
+    line_key: Option<String>,
+    /// Delimiter depths at which a type-argument bracket (`LIST[`) opened.
+    type_brackets: Vec<usize>,
+    /// Delimiter depths at which a `REF(` opened.
+    ref_parens: Vec<usize>,
     /// Leading ASCII spaces of the current line, for multiline string prefixes.
     line_indent_spaces: usize,
     /// Offset of the first lexeme on the current line.
@@ -374,12 +401,10 @@ impl<'a> Scan<'a> {
                 continue;
             }
             let at = self.pos;
+            let tokens_before = self.tokens.len();
+            let raw_before = self.raw.len();
             self.scan_token();
-            let consumed_lexeme =
-                self.byte(at) != Some(b' ') && !self.quarantined.get(at).copied().unwrap_or(false);
-            if consumed_lexeme {
-                self.line_last_lexeme = Some(at);
-            }
+            self.record_lexeme(at, tokens_before, raw_before);
         }
         if !at_line_start {
             // Final line with no LINE FEED; already diagnosed by part 2.
@@ -440,7 +465,12 @@ impl<'a> Scan<'a> {
         }
 
         let previous_level = self.levels;
-        let licensed = previous_level.saturating_add(usize::from(self.pending_opener.is_some()));
+        let line_end = std::mem::replace(&mut self.line_end, LineEnd::Plain);
+        // An opener licenses one deeper level. So does an indeterminate line
+        // end: its opener was followed by a rejected byte, so whether a block
+        // opened is unknowable and neither reading may fabricate a diagnostic.
+        let licensed =
+            previous_level.saturating_add(usize::from(!matches!(line_end, LineEnd::Plain)));
         let indent_span = Span::new(line_start, whitespace_end);
 
         let level = if has_tab {
@@ -490,14 +520,21 @@ impl<'a> Scan<'a> {
         while self.levels > level {
             self.token(TokenKind::Dedent, Span::empty(dedent_at));
             self.levels = self.levels.saturating_sub(1);
+            if self.contexts.len() > 1 {
+                self.contexts.pop();
+            }
         }
         self.flush_blank_lines();
         if level > self.levels {
             self.token(TokenKind::Indent, Span::empty(whitespace_end));
             self.levels = level;
+            self.contexts.push(match &line_end {
+                LineEnd::Opener { child, .. } => child.clone(),
+                _ => Context::Indeterminate,
+            });
         }
 
-        if self.pending_opener.take().is_some() && level != previous_level.saturating_add(1) {
+        if matches!(line_end, LineEnd::Opener { .. }) && level != previous_level.saturating_add(1) {
             // `location_rule`: an omitted child block "uses the zero-width byte
             // position at the first following nonblank line whose indentation is
             // not greater than the parent block header".
@@ -513,6 +550,8 @@ impl<'a> Scan<'a> {
         self.line_first_lexeme = whitespace_end;
         self.line_token_start = self.tokens.len();
         self.line_last_lexeme = None;
+        self.line_classes.clear();
+        self.line_key = None;
         self.pos = whitespace_end;
         false
     }
@@ -524,7 +563,7 @@ impl<'a> Scan<'a> {
         }
     }
 
-    /// Decide whether this line opened a block, for the next line's rules.
+    /// Decide how this line ended, for the next line's rules.
     ///
     /// `02_LEXICAL/02`: "A colon followed immediately by LINE FEED opens an
     /// indented block", and indentation may also increase "after the opening
@@ -532,12 +571,18 @@ impl<'a> Scan<'a> {
     /// the line, not merely the last token: when a rejected lexeme followed
     /// the colon (`VERSION: '0.1.0'`), the colon introduced an inline value,
     /// and treating it as an opener would manufacture an empty-block cascade.
-    /// A trailing space between the opener and the LINE FEED is already
-    /// `error.source.trailing_space` and does not change the structural
-    /// reading here.
+    ///
+    /// Between the opener and the LINE FEED only ASCII spaces may stand. Those
+    /// are already `error.source.trailing_space` and do not change the
+    /// structural reading. A *quarantined* byte there — a TAB, CARRIAGE RETURN
+    /// or other control already rejected as raw source — means the colon was
+    /// not followed by LINE FEED and the line's end is not knowable: the
+    /// result is [`LineEnd::Indeterminate`], which neither demands nor forbids
+    /// a child block, so the one raw-source diagnostic stays the only one.
     fn close_line(&mut self) {
+        let newline_at = self.pos.min(self.text.len());
         let last_lexeme = self.line_last_lexeme;
-        self.pending_opener = self
+        let opener = self
             .tokens
             .get(self.line_token_start..)
             .unwrap_or(&[])
@@ -548,11 +593,121 @@ impl<'a> Scan<'a> {
             .filter(|t| Some(t.span.start) == last_lexeme)
             .filter(|t| matches!(t.span.slice(self.text), Some(":") | Some("[")))
             .map(|t| t.span);
+        let Some(span) = opener else {
+            self.line_end = LineEnd::Plain;
+            return;
+        };
+        let corrupted =
+            (span.end..newline_at).any(|at| self.quarantined.get(at).copied().unwrap_or(false));
+        if corrupted {
+            self.line_end = LineEnd::Indeterminate;
+            return;
+        }
+        let child = self.child_context(span);
+        self.line_end = LineEnd::Opener { span, child };
+    }
+
+    /// The context of the block a just-closed opener line introduces.
+    ///
+    /// * `[` opens a MULTILINE_COLLECTION: member lines are expressions.
+    /// * `KEY:` with a registered block name opens that block.
+    /// * `KEY:` whose `(enclosing block, KEY)` signature is
+    ///   `value_or_object_expression` opens object data ("VALUE contains an
+    ///   inline expression or an indented OBJECT-data body", `04_GRAMMAR/12`).
+    /// * A lowercase key inside object data opens nested object data.
+    /// * Everything else — a nested schema, a conditional or loop body, an
+    ///   `ELSE:` — is structural: only reserved words may head its lines.
+    fn child_context(&self, opener: Span) -> Context {
+        if opener.slice(self.text) == Some("[") {
+            return Context::Collection;
+        }
+        let line = self.tokens.get(self.line_token_start..).unwrap_or(&[]);
+        let Some(head) = line.first() else {
+            return Context::Structural;
+        };
+        if head.span.start != self.line_first_lexeme {
+            return Context::Structural;
+        }
+        let head_text = head.span.slice(self.text).unwrap_or("");
+        match head.kind {
+            TokenKind::ReservedWord => {
+                let bare_key = line.get(1).map(|t| t.span) == Some(opener);
+                if !bare_key {
+                    Context::Structural
+                } else if self.lexicon.is_block_name(head_text) {
+                    Context::Block(head_text.to_string())
+                } else if self
+                    .lexicon
+                    .is_object_data_field(self.enclosing_block(), head_text)
+                {
+                    Context::ObjectData
+                } else {
+                    Context::Structural
+                }
+            }
+            TokenKind::SimpleIdentifier | TokenKind::QualifiedIdentifier => {
+                match self.contexts.last() {
+                    Some(Context::ObjectData) => Context::ObjectData,
+                    Some(Context::Indeterminate) => Context::Indeterminate,
+                    _ => Context::Structural,
+                }
+            }
+            _ => Context::Structural,
+        }
+    }
+
+    /// The nearest enclosing registered block, if any.
+    fn enclosing_block(&self) -> Option<&str> {
+        self.contexts.iter().rev().find_map(|c| match c {
+            Context::Block(name) => Some(name.as_str()),
+            _ => None,
+        })
+    }
+
+    /// Record what the lexeme starting at `at` became, for the line rules.
+    fn record_lexeme(&mut self, at: usize, tokens_before: usize, raw_before: usize) {
+        if self.quarantined.get(at).copied().unwrap_or(false) {
+            return;
+        }
+        if self.byte(at) == Some(b' ') {
+            self.line_classes.push(LexemeClass::Space);
+            return;
+        }
+        self.line_last_lexeme = Some(at);
+        if self.tokens.len() > tokens_before {
+            let Some(token) = self.tokens.last() else {
+                return;
+            };
+            let lexeme = token.span.slice(self.text).unwrap_or("");
+            if token.kind == TokenKind::ReservedWord
+                && token.span.start == self.line_first_lexeme
+                && self.byte(token.span.end) == Some(b':')
+            {
+                self.line_key = Some(lexeme.to_string());
+            }
+            let class = match token.kind {
+                TokenKind::IntegerLiteral
+                | TokenKind::DecimalLiteral
+                | TokenKind::String
+                | TokenKind::MultilineString
+                | TokenKind::SimpleIdentifier
+                | TokenKind::QualifiedIdentifier => LexemeClass::Operand,
+                TokenKind::Symbol if matches!(lexeme, ")" | "]") => LexemeClass::Operand,
+                TokenKind::ReservedWord if self.lexicon.is_literal_word(lexeme) => {
+                    LexemeClass::Operand
+                }
+                _ => LexemeClass::Other,
+            };
+            self.line_classes.push(class);
+        } else if self.raw.len() > raw_before {
+            self.line_classes.push(LexemeClass::Diagnosed);
+        }
     }
 
     fn end_of_input(&mut self) {
         let eof = self.text.len();
-        if self.pending_opener.take().is_some() {
+        let line_end = std::mem::replace(&mut self.line_end, LineEnd::Plain);
+        if matches!(line_end, LineEnd::Opener { .. }) {
             self.push(
                 LexicalError::IndentationEmptyBlock,
                 Span::empty(eof),
@@ -681,8 +836,8 @@ impl Scan<'_> {
                         "`\\` is registered only inside a string literal".to_string(),
                     );
                 } else {
-                    self.token(TokenKind::Symbol, span);
                     self.track_delimiter(lexeme, at);
+                    self.token(TokenKind::Symbol, span);
                 }
                 self.pos = at.saturating_add(length);
             }
@@ -716,9 +871,26 @@ impl Scan<'_> {
     /// delimiter errors describe.
     fn track_delimiter(&mut self, lexeme: &str, at: usize) {
         let span = Span::new(at, at.saturating_add(lexeme.len()));
+        // The word immediately before this delimiter, with no space between.
+        let adjacent_word = self
+            .tokens
+            .last()
+            .filter(|t| t.kind == TokenKind::ReservedWord && t.span.end == at)
+            .and_then(|t| t.span.slice(self.text));
         match lexeme {
-            "(" => self.delimiters.push((b'(', at)),
-            "[" => self.delimiters.push((b'[', at)),
+            "(" => {
+                self.delimiters.push((b'(', at));
+                if adjacent_word == Some("REF") {
+                    self.ref_parens.push(self.delimiters.len());
+                }
+            }
+            "[" => {
+                self.delimiters.push((b'[', at));
+                // `LIST[`, `SET[`, `OBJECT[`, `REFERENCE[`: a type argument.
+                if adjacent_word.is_some_and(|w| self.lexicon.is_type_word(w)) {
+                    self.type_brackets.push(self.delimiters.len());
+                }
+            }
             ")" | "]" => {
                 let expected = if lexeme == ")" { b'(' } else { b'[' };
                 match self.delimiters.pop() {
@@ -738,6 +910,13 @@ impl Scan<'_> {
                         "delimiter",
                         format!("`{lexeme}` has no open delimiter"),
                     ),
+                }
+                let depth = self.delimiters.len();
+                while self.ref_parens.last().is_some_and(|&d| d > depth) {
+                    self.ref_parens.pop();
+                }
+                while self.type_brackets.last().is_some_and(|&d| d > depth) {
+                    self.type_brackets.pop();
                 }
             }
             _ => {}
@@ -913,37 +1092,103 @@ impl Scan<'_> {
         });
     }
 
-    /// The syntax-required positions for `error.keyword.case` that are decidable
-    /// **lexically**, with no name lookup and no schema.
+    /// The syntax-required positions of `error.keyword.case`, decided from
+    /// the token context this lexer already tracks and with no name lookup.
     ///
-    /// `02_LEXICAL/02` lists four: "a block or field key outside object data, a
-    /// required connector or operator, a registered callable immediately before
-    /// its opening parenthesis, or a built-in type position". Two of the four
-    /// are decidable here and are decided here:
+    /// `02_LEXICAL/02` lists four, and each is a fact of the grammar or a
+    /// registry, not a guess:
     ///
-    /// * A key at indentation level 0. `OBJECT_PROPERTY` occurs only inside
-    ///   `NESTED_BODY`, which is always inside an `INDENT`, so nothing at level
-    ///   0 can be object data. A key at level 0 is a block key, outside object
-    ///   data, by grammar and not by guess.
-    /// * A callable immediately before `(`. The grammar's `CALL` requires an
-    ///   uppercase `CALLABLE` before the parenthesis and offers no production
-    ///   where a lowercase identifier may abut one, so this cannot misfire.
+    /// * **A block or field key outside object data.** At the head of a line
+    ///   in a structural context the grammar admits only a reserved word
+    ///   (`FIELD_KEY`, `BLOCK_WORD`, `IF`, `FOR`, `ELSE`). Object data — the
+    ///   indented body of a `value_or_object_expression` field or of a nested
+    ///   lowercase key — is where `OBJECT_PROPERTY` keys are legal, and a
+    ///   MULTILINE_COLLECTION member line is an expression, so neither is
+    ///   checked. An indeterminate context (an opener line corrupted by a
+    ///   rejected byte) is not checked either.
+    /// * **A required connector or operator.** After a complete operand and a
+    ///   SPACE the grammar admits only an operator word or symbol
+    ///   (`OR_EXPRESSION`, `AND_EXPRESSION`, `COMPARISON`, `ADDITIVE`,
+    ///   `MULTIPLICATIVE`), `THEN` after a condition's `)`, or `IN` after a
+    ///   loop variable. No lowercase identifier is ever legal there.
+    /// * **A registered callable immediately before `(`.** `CALL` requires an
+    ///   uppercase `CALLABLE` before the parenthesis.
+    /// * **A built-in type position.** The inline value of a field whose
+    ///   signature is `type_expression` or `type_or_format_base`, and the
+    ///   argument of a type bracket (`LIST[`, `SET[`, `OBJECT[`,
+    ///   `REFERENCE[`). `TYPE_EXPRESSION` admits a lowercase identifier only
+    ///   inside `REF(...)`, which is excluded.
     ///
-    /// The other two need a containing schema or an expression context. They are
-    /// deliberately **not** decided here; `Token::case_folds_to` carries what the
-    /// parser needs to finish them. Guessing would break the companion rule that
-    /// "a lowercase spelling equal to a reserved word after case folding remains
-    /// a legal identifier where identifiers are permitted".
+    /// Everywhere else a lowercase identifier is permitted, and "its
+    /// case-folded spelling never selects a keyword or literal".
     fn required_keyword_position(&self, start: usize, word: &str) -> Option<&'static str> {
-        if self.levels == 0 && start == self.line_first_lexeme && self.byte(self.pos) == Some(b':')
-        {
-            return Some("a top-level block key position");
+        let head = start == self.line_first_lexeme;
+        let context = self.contexts.last().cloned().unwrap_or(Context::Structural);
+        if head && matches!(context, Context::Structural | Context::Block(_)) {
+            return Some("a block or field key position outside object data");
         }
         if self.byte(self.pos) == Some(b'(') && self.lexicon.is_callable(word) {
             return Some("a registered callable position before `(`");
         }
+        let n = self.line_classes.len();
+        if n >= 2
+            && self.line_classes[n - 1] == LexemeClass::Space
+            && self.line_classes[n - 2] == LexemeClass::Operand
+        {
+            return Some("a required connector or operator position");
+        }
+        let in_type_field = self
+            .line_key
+            .as_deref()
+            .is_some_and(|key| self.lexicon.is_type_position_field(key));
+        if self.ref_parens.is_empty() && (in_type_field || !self.type_brackets.is_empty()) {
+            return Some("a built-in type position");
+        }
         None
     }
+}
+
+/// What a line's opener licensed for the next line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LineEnd {
+    /// No block opened; the next line may not indent.
+    Plain,
+    /// A block-opening `:` or MULTILINE_COLLECTION `[` was the last lexeme and
+    /// reached the LINE FEED across spaces only.
+    Opener { span: Span, child: Context },
+    /// The opener was followed by a byte already rejected as raw source. The
+    /// next line may indent or not; neither raises a structural diagnostic.
+    Indeterminate,
+}
+
+/// The kind of body an indentation level holds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Context {
+    /// Top level, a conditional or loop body, an `ELSE:` body, a nested
+    /// schema: lines are statements headed by reserved words.
+    Structural,
+    /// The body of a registered block, by name.
+    Block(String),
+    /// Lowercase-key object data.
+    ObjectData,
+    /// MULTILINE_COLLECTION members: expression lines.
+    Collection,
+    /// Unknown, because the opener line was corrupted by a rejected byte.
+    Indeterminate,
+}
+
+/// What a lexeme on the current line was, for the connector rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LexemeClass {
+    /// Completes an operand: a literal, an identifier, `)`, `]`, or a literal
+    /// word such as `TRUE`.
+    Operand,
+    Space,
+    /// Any other token.
+    Other,
+    /// A lexeme that raised a diagnostic; breaks adjacency so a rejected
+    /// lexeme never manufactures a connector position.
+    Diagnosed,
 }
 
 fn is_word_byte(b: u8) -> bool {
@@ -1421,4 +1666,147 @@ fn has_unescaped_triple_quote(line: &str) -> bool {
         }
     }
     false
+}
+
+// ---------------------------------------------------------------------------
+// Literal constructor arguments
+// ---------------------------------------------------------------------------
+
+impl Scan<'_> {
+    /// Validate the literal `STRING` arguments of registered constructors that
+    /// carry a closed literal profile and stage `error.literal.invalid` as
+    /// lexical: REGEX (pattern and flags), GLOB, DATE, TIME, DATETIME, URI.
+    ///
+    /// This is token-context validation, not evaluation. Only a call whose
+    /// arity is a registered all-`STRING` overload and whose every argument is
+    /// one `STRING` token is checked; an argument that is a reference,
+    /// expression or other constructor is dynamically supplied material whose
+    /// value-domain check belongs to `expression_demand_resolution`, and a
+    /// wrong arity is `error.operator.operand` at the static stage.
+    fn validate_constructor_literals(&mut self) {
+        let mut index = 0usize;
+        while index < self.tokens.len() {
+            let Some(head) = self.tokens.get(index) else {
+                break;
+            };
+            let name = head.span.slice(self.text).unwrap_or("");
+            let is_call = head.kind == TokenKind::ReservedWord
+                && self
+                    .tokens
+                    .get(index.saturating_add(1))
+                    .is_some_and(|next| {
+                        next.kind == TokenKind::Symbol
+                            && next.span.start == head.span.end
+                            && next.span.slice(self.text) == Some("(")
+                    });
+            let Some(constructor) = self.lexicon.literal_constructor(name).filter(|_| is_call)
+            else {
+                index = index.saturating_add(1);
+                continue;
+            };
+            let profile = constructor.profile;
+            let arities = constructor.literal_arities.clone();
+            let Some((arguments, close)) = self.call_arguments(index.saturating_add(2)) else {
+                index = index.saturating_add(1);
+                continue;
+            };
+            let literal_form = arities.contains(&arguments.len())
+                && arguments.iter().all(|arg| {
+                    arg.len() == 1 && self.token_kind(arg[0]) == Some(TokenKind::String)
+                });
+            if literal_form {
+                for (position, argument) in arguments.iter().enumerate() {
+                    let Some(token) = self.tokens.get(argument[0]) else {
+                        continue;
+                    };
+                    let value = token.value.clone().unwrap_or_default();
+                    let span = token.span;
+                    let verdict = match (profile, position) {
+                        (LiteralProfile::Regex, 0) => literal::regex_pattern(&value)
+                            .map_err(|e| format!("REGEX pattern: {e}")),
+                        (LiteralProfile::Regex, _) => {
+                            literal::regex_flags(&value, self.lexicon.regex_flags())
+                                .map_err(|e| format!("REGEX flags: {e}"))
+                        }
+                        (LiteralProfile::Glob, _) => {
+                            literal::glob_pattern(&value).map_err(|e| format!("GLOB pattern: {e}"))
+                        }
+                        (LiteralProfile::Date, _) => {
+                            literal::date(&value).map_err(|e| format!("DATE: {e}"))
+                        }
+                        (LiteralProfile::Time, _) => {
+                            literal::time(&value).map_err(|e| format!("TIME: {e}"))
+                        }
+                        (LiteralProfile::Datetime, _) => {
+                            literal::datetime(&value).map_err(|e| format!("DATETIME: {e}"))
+                        }
+                        (LiteralProfile::Uri, _) => {
+                            literal::uri(&value).map_err(|e| format!("URI: {e}"))
+                        }
+                    };
+                    if let Err(detail) = verdict {
+                        self.push(
+                            LexicalError::LiteralInvalid,
+                            span,
+                            "constructor_literal",
+                            detail,
+                        );
+                    }
+                }
+            }
+            index = close.saturating_add(1);
+        }
+    }
+
+    fn token_kind(&self, index: usize) -> Option<TokenKind> {
+        self.tokens.get(index).map(|t| t.kind)
+    }
+
+    /// The argument groups of a call whose `(` precedes `from`, as indices of
+    /// their non-space tokens, plus the index of the closing `)`. `None` when
+    /// the call does not close on its line.
+    fn call_arguments(&self, from: usize) -> Option<(Vec<Vec<usize>>, usize)> {
+        let mut arguments: Vec<Vec<usize>> = vec![Vec::new()];
+        let mut depth = 0usize;
+        let mut index = from;
+        while let Some(token) = self.tokens.get(index) {
+            match token.kind {
+                TokenKind::Symbol => {
+                    let lexeme = token.span.slice(self.text).unwrap_or("");
+                    match lexeme {
+                        "(" | "[" => depth = depth.saturating_add(1),
+                        ")" if depth == 0 => {
+                            if arguments.len() == 1 && arguments[0].is_empty() {
+                                arguments.clear();
+                            }
+                            return Some((arguments, index));
+                        }
+                        ")" | "]" => depth = depth.saturating_sub(1),
+                        "," if depth == 0 => {
+                            arguments.push(Vec::new());
+                            index = index.saturating_add(1);
+                            continue;
+                        }
+                        _ => {}
+                    }
+                    if let Some(last) = arguments.last_mut() {
+                        last.push(index);
+                    }
+                }
+                TokenKind::Space => {}
+                TokenKind::Newline
+                | TokenKind::BlankLine
+                | TokenKind::Indent
+                | TokenKind::Dedent
+                | TokenKind::Eof => return None,
+                _ => {
+                    if let Some(last) = arguments.last_mut() {
+                        last.push(index);
+                    }
+                }
+            }
+            index = index.saturating_add(1);
+        }
+        None
+    }
 }

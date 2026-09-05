@@ -151,3 +151,160 @@ fn case_folding_is_total_over_the_registry() {
     }
     assert_eq!(lexicon.case_folded_word("must"), None);
 }
+
+#[test]
+fn block_names_equal_the_grammar_block_word_production() {
+    let from_registry: BTreeSet<String> = lexicon().block_names().map(str::to_string).collect();
+    assert_eq!(from_registry, ebnf_alternatives("BLOCK_WORD"));
+    assert_eq!(from_registry.len(), 41);
+}
+
+/// Independent re-derivation of the field contexts straight from the JSON,
+/// so the lexicon's reading of `field_signatures` is checked, not trusted.
+fn field_kinds() -> Vec<(String, String, String)> {
+    let text = std::fs::read_to_string(
+        canonical_root().join("10_REGISTRIES/field_signatures_v0.1.0.json"),
+    )
+    .unwrap();
+    let json = lcl_spec::json::parse(&text).unwrap();
+    let mut out = Vec::new();
+    for (block, body) in json.get("blocks").unwrap().as_object().unwrap() {
+        for (field, sig) in body.get("fields").unwrap().as_object().unwrap() {
+            let kind = sig.get("value_kind").unwrap().as_str().unwrap();
+            out.push((block.clone(), field.clone(), kind.to_string()));
+        }
+    }
+    out
+}
+
+#[test]
+fn object_data_fields_are_exactly_the_value_or_object_expression_signatures() {
+    let expected: BTreeSet<(String, String)> = field_kinds()
+        .into_iter()
+        .filter(|(_, _, k)| k == "value_or_object_expression")
+        .map(|(b, f, _)| (b, f))
+        .collect();
+    let actual: BTreeSet<(String, String)> = lexicon()
+        .object_data_fields()
+        .map(|(b, f)| (b.to_string(), f.to_string()))
+        .collect();
+    assert_eq!(actual, expected);
+    assert_eq!(actual.len(), 10);
+    assert!(actual.contains(&("DATA".to_string(), "VALUE".to_string())));
+    assert!(actual.contains(&("EXAMPLE".to_string(), "CONTENT".to_string())));
+    assert!(!actual.contains(&("COMMENT".to_string(), "CONTENT".to_string())));
+    assert!(lexicon().is_object_data_field(Some("MEMORY"), "VALUE"));
+    assert!(!lexicon().is_object_data_field(None, "VALUE"));
+    assert!(!lexicon().is_object_data_field(Some("INPUT"), "DEFAULT"));
+}
+
+#[test]
+fn type_position_fields_are_exactly_the_type_signatures() {
+    let expected: BTreeSet<String> = field_kinds()
+        .into_iter()
+        .filter(|(_, _, k)| k == "type_expression" || k == "type_or_format_base")
+        .map(|(_, f, _)| f)
+        .collect();
+    let actual: BTreeSet<String> = lexicon()
+        .type_position_fields()
+        .map(str::to_string)
+        .collect();
+    assert_eq!(actual, expected);
+    assert_eq!(actual, ["BASE".to_string(), "TYPE".to_string()].into());
+}
+
+#[test]
+fn literal_and_type_words_come_from_keyword_categories() {
+    let literal: BTreeSet<&str> = lexicon().literal_words().collect();
+    assert_eq!(
+        literal,
+        ["FALSE", "MISSING", "NULL", "TRUE", "UNKNOWN"].into()
+    );
+    let types: BTreeSet<&str> = lexicon().type_words().collect();
+    for w in ["LIST", "SET", "OBJECT", "REFERENCE", "STRING", "BOOLEAN"] {
+        assert!(types.contains(w), "{w}");
+    }
+    assert!(!types.contains("REF"));
+}
+
+#[test]
+fn literal_constructor_contracts_come_from_the_registries() {
+    let lexicon = lexicon();
+    let names: BTreeSet<&str> = lexicon
+        .literal_constructors()
+        .map(|c| c.name.as_str())
+        .collect();
+    assert_eq!(
+        names,
+        ["DATE", "DATETIME", "GLOB", "REGEX", "TIME", "URI"].into()
+    );
+    let regex = lexicon.literal_constructor("REGEX").unwrap();
+    assert_eq!(regex.profile, lcl_lexer::LiteralProfile::Regex);
+    assert_eq!(regex.literal_arities, [1usize, 2].into());
+    for name in ["DATE", "DATETIME", "GLOB", "TIME", "URI"] {
+        assert_eq!(
+            lexicon.literal_constructor(name).unwrap().literal_arities,
+            [1usize].into(),
+            "{name}"
+        );
+    }
+    // PATH has no closed literal profile; BYTES/PERCENTAGE/DURATION/MEASURE
+    // register range and unit errors, not error.literal.invalid.
+    for name in ["PATH", "BYTES", "PERCENTAGE", "DURATION", "MEASURE", "REF"] {
+        assert!(lexicon.literal_constructor(name).is_none(), "{name}");
+    }
+    let flags = lexicon.regex_flags();
+    assert_eq!(flags.allowed, vec!['i', 'm', 's']);
+    assert_eq!(flags.canonical_order, vec!['i', 'm', 's']);
+    assert!(!flags.duplicates_allowed);
+    assert!(!flags.unknown_allowed);
+}
+
+#[test]
+fn the_registry_regex_grammar_is_the_one_implemented() {
+    // The validator implements these thirteen productions; pin them so a
+    // grammar change in a future release fails here rather than drifting.
+    let text =
+        std::fs::read_to_string(canonical_root().join("10_REGISTRIES/types_v0.1.0.json")).unwrap();
+    let json = lcl_spec::json::parse(&text).unwrap();
+    let grammar = json
+        .get("pattern_profiles")
+        .and_then(|p| p.get("REGEX"))
+        .and_then(|r| r.get("grammar"))
+        .unwrap();
+    assert_eq!(
+        grammar.get("start_symbol").unwrap().as_str(),
+        Some("REGEX_PATTERN")
+    );
+    let productions: Vec<&str> = grammar
+        .get("productions")
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p.as_str().unwrap())
+        .collect();
+    assert_eq!(productions.len(), 13);
+    assert_eq!(productions[0], "REGEX_PATTERN = ALTERNATION ;");
+    assert_eq!(
+        productions[3],
+        "PIECE = ASSERTION | ATOM , [ QUANTIFIER ] ;"
+    );
+    assert_eq!(
+        productions[6],
+        "QUANTIFIER = \"*\" | \"+\" | \"?\" | \"{\" , COUNT , \"}\" | \"{\" , COUNT , \",\" , [ COUNT ] , \"}\" ;"
+    );
+    let glob = json
+        .get("pattern_profiles")
+        .and_then(|p| p.get("GLOB"))
+        .unwrap();
+    let tokens: BTreeSet<String> = glob
+        .get("tokens")
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .iter()
+        .map(|(k, _)| k.clone())
+        .collect();
+    assert_eq!(tokens, ["*", "**", "?", "[...]"].map(str::to_string).into());
+}

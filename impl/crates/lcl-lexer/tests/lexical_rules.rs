@@ -427,7 +427,7 @@ fn mixed_case_words_are_keyword_case_or_identifier_invalid() {
 fn lowercase_keyword_spellings_stay_identifiers_where_identifiers_are_permitted() {
     // `02_LEXICAL/03`: "count, status, and true do not become COUNT, STATUS, or
     // TRUE" where an identifier is permitted.
-    let l = lex("VALUE:\n    status: true\n");
+    let l = lex("DATA:\n    VALUE:\n        status: true\n");
     assert!(l.diagnostics().is_empty(), "{:?}", ids(&l));
     let idents: Vec<(&str, Option<&str>)> = l
         .tokens_of(SimpleIdentifier)
@@ -450,38 +450,290 @@ fn lowercase_keyword_spellings_stay_identifiers_where_identifiers_are_permitted(
 }
 
 #[test]
-fn keyword_case_is_decided_lexically_in_two_positions_only() {
-    // 1. A key at indentation level 0 can never be object data.
+fn keyword_case_in_a_block_or_field_key_position_outside_object_data() {
+    // The specified example: a lowercase field key under a block.
+    let l = lex("SPECIFICATION:\n    id: example.test\n");
+    assert_eq!(ids(&l), vec![("error.keyword.case".to_string(), 19)]);
+    let d = l.primary().unwrap();
+    assert_eq!(d.span, lcl_lexer::Span::new(19, 21));
+    assert_eq!(d.span.slice(l.source()), Some("id"));
+    assert_eq!(l.terminal_status(), Some("status.invalid"));
+    assert!(l.tokens_of(SimpleIdentifier).next().is_none());
+
+    // Top-level block keys.
     assert_eq!(errors("lcl:\n    ID: 1\n"), vec!["error.keyword.case"]);
     assert_eq!(
         errors("specification:\n    ID: 1\n"),
         vec!["error.keyword.case"]
     );
-    // A lowercase key deeper than level 0 may be an object property: no
-    // lexical decision, the fold is recorded for the parser.
-    let l = lex("VALUE:\n    version: 1\n");
-    assert!(l.diagnostics().is_empty());
+    // A nested block's key, and a key under a nested schema.
+    let l = lex("DEFINE:\n    FIELD:\n        name: x\n");
+    assert_eq!(ids(&l), vec![("error.keyword.case".to_string(), 27)]);
     assert_eq!(
-        l.tokens_of(SimpleIdentifier)
-            .next()
-            .unwrap()
-            .case_folds_to
-            .as_deref(),
-        Some("VERSION")
+        errors("DATA:\n    SCHEMA:\n        FIELD:\n            type: STRING\n"),
+        vec!["error.keyword.case"]
     );
-    // An unregistered lowercase key at level 0 is a legal identifier lexically.
+    // Statement heads that are not keys: `else:`, `for`, `if`.
+    assert_eq!(
+        errors("IF (TRUE) THEN:\n    STEP:\n        ID: a\nelse:\n    STEP:\n        ID: b\n"),
+        vec!["error.keyword.case"]
+    );
+    assert_eq!(
+        errors("for EACH x IN REF(y):\n    STEP:\n        ID: a\n"),
+        vec!["error.keyword.case"]
+    );
+    assert_eq!(
+        errors("if (TRUE) THEN:\n    STEP:\n        ID: a\n"),
+        vec!["error.keyword.case"]
+    );
+    // At the head of a structural line only a reserved word is admitted, so
+    // a bare `lcl` line is the same position.
+    assert_eq!(errors("lcl\n"), vec!["error.keyword.case"]);
+    // An unregistered lowercase key is a legal identifier lexically; the
+    // grammar rejects it later.
     assert!(errors("foo:\n    ID: 1\n").is_empty());
-    // A level-0 identifier not followed by `:` is not a key.
-    assert!(errors("lcl\n").is_empty());
+    assert!(errors("SPECIFICATION:\n    identifier: x\n").is_empty());
+}
 
-    // 2. A registered callable immediately before `(`.
-    assert_eq!(errors("ID: ref(a)\n"), vec!["error.keyword.case"]);
-    assert_eq!(errors("ID: count(a)\n"), vec!["error.keyword.case"]);
-    assert_eq!(errors("ID: path(\"/x\")\n"), vec!["error.keyword.case"]);
-    // A registered non-callable word before `(` is not a callable position.
-    assert!(errors("ID: version(a)\n").is_empty());
-    // With a space before `(` it is not "immediately before".
-    assert!(errors("ID: ref (a)\n").is_empty());
+#[test]
+fn keyword_case_in_a_required_connector_or_operator_position() {
+    // The specified example.
+    let l = lex("DATA:\n    ID: data.x\n    VALUE: TRUE and FALSE\n");
+    assert_eq!(ids(&l), vec![("error.keyword.case".to_string(), 37)]);
+    let d = l.primary().unwrap();
+    assert_eq!(d.span, lcl_lexer::Span::new(37, 40));
+    assert_eq!(d.span.slice(l.source()), Some("and"));
+    assert_eq!(l.terminal_status(), Some("status.invalid"));
+    // `then` after a condition's `)`.
+    let l = lex("IF (TRUE) then:\n    STEP:\n        ID: a\n");
+    assert_eq!(ids(&l), vec![("error.keyword.case".to_string(), 10)]);
+    assert_eq!(l.primary().unwrap().span.slice(l.source()), Some("then"));
+    // `in` after the loop variable.
+    let l = lex("FOR EACH x in REF(y):\n    STEP:\n        ID: a\n");
+    assert_eq!(ids(&l), vec![("error.keyword.case".to_string(), 11)]);
+    // Every registered operator word after an operand and a SPACE.
+    for expression in [
+        "TRUE or FALSE",
+        "1 contains 2",
+        "a matches b",
+        "a in b",
+        "1 and 2",
+        "REF(a) or b",
+        "[1] in x",
+        "\"a\" in x",
+        "1.5 or 2",
+        "NULL or x",
+    ] {
+        assert_eq!(
+            errors(&format!("DATA:\n    VALUE: {expression}\n")),
+            vec!["error.keyword.case"],
+            "{expression}"
+        );
+    }
+    // Any registered word in that position is a case defect, not only the
+    // operator words: no lowercase identifier is ever legal there.
+    assert_eq!(
+        errors("DATA:\n    VALUE: TRUE status FALSE\n"),
+        vec!["error.keyword.case"]
+    );
+
+    // Not a connector position: after a comma, after a control word, at the
+    // start of an operand, after a diagnosed lexeme.
+    assert!(errors("DATA:\n    VALUE: MEASURE(5, unit.second)\n").is_empty());
+    assert!(errors("FOR EACH file IN REF(input.files):\n    STEP:\n        ID: a\n").is_empty());
+    assert!(errors("DATA:\n    VALUE: not TRUE\n").is_empty());
+    assert!(errors("DATA:\n    VALUE: status\n").is_empty());
+    assert_eq!(
+        errors("DATA:\n    VALUE: 'a' status\n"),
+        vec!["error.symbol.invalid", "error.symbol.invalid"]
+    );
+}
+
+#[test]
+fn keyword_case_in_a_built_in_type_position() {
+    // The specified example.
+    let l = lex("DATA:\n    TYPE: boolean\n");
+    assert_eq!(ids(&l), vec![("error.keyword.case".to_string(), 16)]);
+    let d = l.primary().unwrap();
+    assert_eq!(d.span, lcl_lexer::Span::new(16, 23));
+    assert_eq!(d.span.slice(l.source()), Some("boolean"));
+    assert_eq!(l.terminal_status(), Some("status.invalid"));
+    // Every field whose signature is a type position, and a type argument.
+    for field in lexicon().type_position_fields() {
+        assert_eq!(
+            errors(&format!("DEFINE:\n    {field}: string\n")),
+            vec!["error.keyword.case"],
+            "{field}"
+        );
+    }
+    assert_eq!(
+        errors("INPUT:\n    TYPE: LIST[string]\n"),
+        vec!["error.keyword.case"]
+    );
+    assert_eq!(
+        errors("PARAMETER:\n    TYPE: set[STRING]\n"),
+        vec!["error.keyword.case"]
+    );
+    assert_eq!(
+        errors("DATA:\n    VALUE: LIST[string]\n"),
+        vec!["error.keyword.case"]
+    );
+    // `REF(...)` inside a type position takes an identifier.
+    assert!(errors("DATA:\n    TYPE: OBJECT[REF(type.status)]\n").is_empty());
+    assert!(errors("DATA:\n    TYPE: REF(status)\n").is_empty());
+    // A format definition's BASE is a qualified identifier, which never folds.
+    assert!(errors("DEFINE:\n    BASE: format.json\n").is_empty());
+    // A type word as a value elsewhere is an ordinary identifier lexically.
+    assert!(errors("DATA:\n    VALUE: string\n").is_empty());
+}
+
+#[test]
+fn lowercase_object_keys_and_identifiers_stay_legal() {
+    // An OBJECT VALUE containing a field named `status`, and other keys that
+    // spell reserved words after case folding.
+    let l = lex(
+        "MEMORY:\n    ID: memory.x\n    TYPE: OBJECT\n    VALUE:\n        status: \"ok\"\n        count: 3\n        true: FALSE\n",
+    );
+    assert!(l.diagnostics().is_empty(), "{:?}", ids(&l));
+    let keys: Vec<(&str, Option<&str>)> = l
+        .tokens_of(SimpleIdentifier)
+        .map(|t| (l.lexeme(t).unwrap(), t.case_folds_to.as_deref()))
+        .collect();
+    assert_eq!(
+        keys,
+        vec![
+            ("status", Some("STATUS")),
+            ("count", Some("COUNT")),
+            ("true", Some("TRUE"))
+        ]
+    );
+    // Nested object properties with their own bodies.
+    assert!(errors("DATA:\n    VALUE:\n        outer:\n            status: 1\n").is_empty());
+    // Every registered object-data field, including nested-block ones.
+    assert!(errors("ACTION:\n    PARAMETER:\n        VALUE:\n            status: 1\n").is_empty());
+    assert!(errors("DEFINE:\n    EXAMPLE:\n        CONTENT:\n            status: 1\n").is_empty());
+    for (block, field) in lexicon().object_data_fields() {
+        assert!(
+            errors(&format!("{block}:\n    {field}:\n        status: 1\n")).is_empty(),
+            "{block}.{field}"
+        );
+    }
+    // Identifier expressions: enum members, collection members, names.
+    assert!(errors("DEFINE:\n    ITEM: status\n").is_empty());
+    assert!(errors("DATA:\n    VALUE: [status, count]\n").is_empty());
+    assert!(errors("DATA:\n    VALUE: [\n        status,\n        count\n    ]\n").is_empty());
+    assert!(errors("DEFINE:\n    FIELD:\n        NAME: status\n").is_empty());
+    assert!(errors("DATA:\n    ID: example.count\n").is_empty());
+    // The same lowercase key outside object data is a key position.
+    assert_eq!(
+        errors("INPUT:\n    DEFAULT:\n        status: 1\n"),
+        vec!["error.keyword.case"]
+    );
+    assert_eq!(
+        errors("COMMENT:\n    CONTENT:\n        status: 1\n"),
+        vec!["error.keyword.case"]
+    );
+}
+
+#[test]
+fn a_rejected_byte_after_an_opener_makes_the_line_end_indeterminate() {
+    // A colon opens a block only when immediately followed by LINE FEED. When
+    // a byte already rejected as raw source stands between them, the colon
+    // is neither an opener nor an inline field: the one raw-source diagnostic
+    // is the complete list, with nothing fabricated either way.
+    for (source, id, at, byte) in [
+        (&b"TASK:\t\nGOAL: 1\n"[..], "error.source.tab", 5, b"\t"),
+        (
+            &b"TASK:\x01\nGOAL: 1\n"[..],
+            "error.source.control_character",
+            5,
+            b"\x01",
+        ),
+        (
+            &b"TASK:\r\nGOAL: 1\n"[..],
+            "error.newline.invalid",
+            5,
+            b"\r",
+        ),
+        (&b"VALUE: [\t\n1\n]\n"[..], "error.source.tab", 8, b"\t"),
+        (
+            &b"VALUE: [\x01\n1\n]\n"[..],
+            "error.source.control_character",
+            8,
+            b"\x01",
+        ),
+        (
+            &b"VALUE: [\r\n1\n]\n"[..],
+            "error.newline.invalid",
+            8,
+            b"\r",
+        ),
+    ] {
+        let l = lex_bytes(source);
+        assert_well_formed(&l, &format!("{source:?}"));
+        assert_eq!(ids(&l), vec![(id.to_string(), at)], "{source:?}");
+        let d = l.primary().unwrap();
+        assert_eq!(d.span, lcl_lexer::Span::new(at, at + 1), "{source:?}");
+        assert_eq!(&source[d.span.start..d.span.end], byte, "{source:?}");
+        assert_eq!(l.terminal_status(), Some("status.invalid"));
+        assert!(l.tokens_of(Indent).next().is_none(), "{source:?}");
+    }
+    // The corrupted opener does not forbid a child block either.
+    for (source, id) in [
+        (&b"TASK:\t\n    GOAL: 1\n"[..], "error.source.tab"),
+        (&b"TASK:\r\n    GOAL: 1\n"[..], "error.newline.invalid"),
+        (&b"VALUE: [\t\n    1\n]\n"[..], "error.source.tab"),
+    ] {
+        let l = lex_bytes(source);
+        assert_eq!(
+            ids(&l),
+            vec![(
+                id.to_string(),
+                source
+                    .iter()
+                    .position(|&b| b == b'\t' || b == b'\r')
+                    .unwrap()
+            )],
+            "{source:?}"
+        );
+        assert_eq!(l.tokens_of(Indent).count(), 1, "{source:?}");
+        assert_eq!(l.tokens_of(Dedent).count(), 1, "{source:?}");
+    }
+    // Nor is a lowercase key under it judged: the context is unknowable.
+    let l = lex_bytes(b"VALUE:\t\n    status: 1\n");
+    assert_eq!(ids(&l), vec![("error.source.tab".to_string(), 6)]);
+
+    // Legitimate empty blocks are still diagnosed, at the same loci as before.
+    let l = lex("TASK:\nGOAL: 1\n");
+    assert_eq!(
+        ids(&l),
+        vec![("error.indentation.empty_block".to_string(), 6)]
+    );
+    let l = lex("VALUE: [\n]\n");
+    assert_eq!(
+        ids(&l),
+        vec![("error.indentation.empty_block".to_string(), 9)]
+    );
+    // A rejected byte in the *next* line's indentation is that line's tab.
+    let l = lex_bytes(b"TASK:\n\tGOAL: 1\n");
+    assert_eq!(ids(&l), vec![("error.source.tab".to_string(), 6)]);
+
+    // The trailing-space recovery contract is unchanged: spaces between the
+    // opener and the LINE FEED keep the structural reading.
+    let l = lex("LCL: \n    VERSION: \"0.1.0\"\n");
+    assert_eq!(
+        ids(&l),
+        vec![("error.source.trailing_space".to_string(), 4)]
+    );
+    assert_eq!(l.tokens_of(Indent).count(), 1);
+    let l = lex("TASK: \nGOAL: 1\n");
+    assert_eq!(
+        ids(&l),
+        vec![
+            ("error.source.trailing_space".to_string(), 5),
+            ("error.indentation.empty_block".to_string(), 7)
+        ]
+    );
 }
 
 #[test]
@@ -1019,7 +1271,9 @@ fn there_is_no_comment_syntax() {
 
 #[test]
 fn object_keys_are_lowercase_identifiers() {
-    let l = lex("VALUE:\n    spelling: \"British English\"\n    maximum_characters: 300\n");
+    let l = lex(
+        "MEMORY:\n    VALUE:\n        spelling: \"British English\"\n        maximum_characters: 300\n",
+    );
     assert!(l.diagnostics().is_empty(), "{:?}", ids(&l));
     let keys: Vec<&str> = l
         .tokens_of(SimpleIdentifier)

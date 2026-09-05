@@ -17,8 +17,14 @@
 //!
 //! The rules implemented are those of `02_LEXICAL/01`, `02`, `03`, `07`, `08`,
 //! `09`, `10` and `12`, the terminals of `04_GRAMMAR/10_COMPLETE_EBNF.ebnf`,
-//! and the `diagnostic_selection` contract of `statuses_and_errors_v0.1.0.json`
-//! restricted to one source-validation run.
+//! the closed literal profiles of `03_TYPES_AND_VALUES/04` and `/07` for
+//! literal constructor arguments, and the `diagnostic_selection` contract of
+//! `statuses_and_errors_v0.1.0.json` restricted to one source-validation run.
+//!
+//! Where a lexical decision needs context — whether a lowercase key sits in
+//! object data, whether a word follows a complete operand, whether a field is a
+//! type position — the scanner keeps exactly that bounded token context
+//! itself. Nothing is parsed into a tree and nothing is resolved.
 //!
 //! ## What a result means
 //!
@@ -41,21 +47,23 @@
 //! ## Not in M1
 //!
 //! No parser, AST, resolver, type checker, evaluator, capability kernel,
-//! runtime, CLI or UI. Two lexical-stage decisions that need grammar or schema
-//! context are explicitly left to the parser and documented at their sites:
-//! the non-lexically-decidable `error.keyword.case` positions
-//! ([`Token::case_folds_to`]), and constructor value-domain checks such as
-//! REGEX flag order, which are registered as `error.literal.invalid` but are
-//! not token formation.
+//! runtime, CLI or UI. Every rule the registry stages as lexical is decided
+//! here; nothing lexical is deferred. Value-domain checks on *dynamically
+//! supplied* constructor arguments (a `REF`, an expression) are execution-stage
+//! by `expression_demand_resolution` and are not attempted.
 
 pub mod diagnostic;
 pub mod lexicon;
+mod literal;
 mod scan;
 pub mod span;
 pub mod token;
 
 pub use diagnostic::{Cause, Diagnostic, LexicalError};
-pub use lexicon::{Lexicon, LexiconError, RegisteredLexicalError};
+pub use lexicon::{
+    Lexicon, LexiconError, LiteralConstructor, LiteralProfile, RegexFlagContract,
+    RegisteredLexicalError,
+};
 pub use span::{Position, Span};
 pub use token::{Token, TokenKind};
 

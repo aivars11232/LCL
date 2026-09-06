@@ -1,0 +1,12 @@
+[package]
+name = "lcl-parser"
+description = "Deterministic, non-executing parser for LCL Core 0.1.0. Produces a source-faithful syntax tree with exact byte spans or canonical grammar and schema diagnostics."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lcl-spec = { path = "../lcl-spec" }
+lcl-diagnostics = { path = "../lcl-diagnostics" }
+lcl-lexer = { path = "../lcl-lexer" }

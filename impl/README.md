@@ -1,4 +1,4 @@
-# LCL implementation — milestones M0 (foundation) and M1 (lexer)
+# LCL implementation — milestones M0 (foundation), M1 (lexer), M2 (parser) and M3 (resolver)
 
 This directory is a **consumer** of the canonical specification at
 `../canonical/LCL_Core_0.1.0`. It is not part of the release, is not listed in
@@ -6,8 +6,7 @@ This directory is a **consumer** of the canonical specification at
 
 Building this does not change the release's status. The `complete_example_parse_matrix`
 and `semantic_case_execution` gates remain `OUT_OF_SCOPE` for LCL Core 0.1.0;
-implementation conformance is separate evidence, and M1 produces **lexical**
-evidence only.
+implementation conformance is separate evidence.
 
 ## Crates
 
@@ -17,6 +16,8 @@ evidence only.
 | `lcl-diagnostics` | M0 | Diagnostics skeleton. The 7 normative stages, 12 statuses and 77 errors, loaded and closure-checked. |
 | `lcl-conformance` | M0 | Conformance skeleton. Indexes the 799 descriptive requirements and 66 decision witnesses. Executes nothing. |
 | `lcl-lexer` | M1 | Deterministic, non-executing lexer. Source bytes in; tokens with exact byte spans or stable-ordered registered lexical diagnostics out, including every contextual `error.keyword.case` position and the closed literal profiles of constructor arguments. |
+| `lcl-parser` | M2 | Deterministic, non-executing parser. M1 tokens in; a source-faithful syntax tree with exact byte spans or registered grammar-and-schema diagnostics out. |
+| `lcl-resolver` | M3 | Deterministic, non-executing resolver. Parsed units plus an explicit source provider in; version, import, extension, namespace, ID and `REF` bindings and the structural candidate graph, or registered resolution diagnostics, out. |
 
 ## Trust boundary (M0.1)
 
@@ -176,19 +177,112 @@ opener line is indeterminate) while independent defects are all reported, per
   canonical files, every prefix/suffix and single-byte mutation of every
   fixture, deep nesting, 100k-byte runs).
 
+## M3 — `lcl-resolver`
+
+Canonical processing step 4: "Resolve exact LCL version, imports, extensions,
+namespaces, IDs, and REF. Resolve structural candidate graph membership and
+branch/loop templates from EXECUTE for check selection, without evaluating
+dynamic conditions or starting actions."
+
+### API
+
+```rust
+let rules    = lcl_resolver::Rules::load(&spec, &grammar)?;
+let resolver = lcl_resolver::Resolver::new(&rules, &grammar, &lexicon);
+let resolved = resolver.resolve(&root_unit, &provider)?;   // Err = an earlier stage failed
+
+resolved.units()        // every loaded source unit, with its SHA-256 digest
+resolved.paths()        // every unit reached by every exact import path
+resolved.imports()      // each IMPORT/EXTENSION and what happened to it
+resolved.declarations() // every declared identity, fully qualified
+resolved.bindings()     // every REF and what it resolved to
+resolved.graph()        // the structural candidate graph
+resolved.diagnostics()  // registered resolution diagnostics, in stable_order
+resolved.outcome()      // Resolved | Rejected
+```
+
+### The source boundary
+
+`05_SEMANTICS/02` is categorical: "Ambient current directory and implied nearby
+files do not exist in portable LCL." Every byte reaches the resolver through
+`SourceProvider`, which has **one** method and no enumeration, listing, globbing,
+search-path or default-unit capability — so a source the document did not name
+has no interface through which to enter. The crate performs no I/O at all; the
+report and the tests read files and hand bytes to an in-memory provider.
+
+Identity is per *import path*, not per unit: "Distinct acyclic import paths do
+not override one another", and nested imports "prepend each prefix in order", so
+one library imported under two prefixes is loaded once and contributes two sets
+of fully qualified IDs.
+
+### Rules implemented, by normative source
+
+| Source | Rules |
+| --- | --- |
+| `01_FOUNDATION/03` | Step 4 in full; stage monotonicity — a unit that failed the lexical or grammar stage has no resolution verdict, and the signature enforces it. |
+| `07_VERSIONING_AND_EXTENSIONS/01`, `/05` | `LCL.VERSION` must equal the exact supported version, read from the `LCL.VERSION` block schema's own `exact_string` argument (`error.version.unsupported`). An unsupported version stops that unit resolving further rather than reinterpreting it. |
+| `07_VERSIONING_AND_EXTENSIONS/02` | `IMPORT VERSION` must equal the imported `SPECIFICATION.VERSION` (`error.version.mismatch`); `sha256:<64 lowercase hex>` checksums verified against the exact loaded bytes (`error.import.checksum`); unresolvable sources (`error.import.not_found`); cycles (`error.import.cycle`); mandatory, lowercase, non-reserved namespaces (`error.namespace.invalid`); prefix ownership against other imports and against local declaration IDs (`error.id.duplicate`). |
+| `07_VERSIONING_AND_EXTENSIONS/03` | An `EXTENSION` must load a `kind.extension` document that adds definitions only (`error.extension.invalid`); alias `BASE` chains resolve transitively and acyclically to one core identifier of the same domain. |
+| `02_LEXICAL/03` | IDs unique within one namespace; the nine reserved built-in namespaces refused as a declaration's first segment; unqualified references resolve the local namespace only; loop-local bindings resolve inside their `FOR EACH` body and nowhere else. |
+| `types_v0.1.0.json#/reference_context_contract`, `#/source_type_contract` | Every `REF` binds to exactly one declaration or loop-local binding (`error.reference.unresolved`); a reference in a slot with a registered target set must match it (`error.reference.kind`); the receiving context reaches through parentheses and reference-typed collection members but not into another operator, call, property or index access. |
+| `field_signatures#/value_kind_registry` | `operation_identifier` binds to a core operation or a `DEFINE kind.operation` (`error.operation.undefined`). |
+| `block_schemas#/execution_graph_contract`, `05_SEMANTICS/01` | The structural candidate graph from `EXECUTE`: TASK execution fields in source field order with reference lists expanded left to right, PHASE and SEQUENCE children in lexical order, the STEP arm, both `IF` branches and each `FOR EACH` body as templates; `TARGET`, `OUTPUT` reads, check references, `BEFORE` and `AFTER` activate nothing; structural cycles use `error.reference.cycle`. |
+
+### Deliberately not decided here
+
+Two registered `stage: resolution` identifiers are **not** emitted, because
+deciding them needs effective authority and priority — step 6 of the processing
+model, after this stage:
+
+* `error.conflict.hard` — M5 semantic preflight;
+* `error.override.invalid` — M5 semantic preflight. `OVERRIDE.WINNER` and
+  `LOSER` are still bound here as `reference(rule_clause)` slots.
+
+`error.execution.order` is registered at `stage: execution` and is likewise
+decided before effects, by the M5 ordering layer. This milestone builds the node
+set and child order that layer will order; it adds no ordering edges.
+
+`lcl_resolver::DEFERRED` names both deferred identifiers with their owner, and a
+test asserts no canonical input ever produces one.
+
+### Proof
+
+* `08_EXAMPLES/VALID`: all 13 resolve with no diagnostic, including the import
+  of `02_IMPORT_LIBRARY.lcl` by `03_IMPORTING_TASK.lcl` through the provider.
+* `08_EXAMPLES/INVALID`: all 21 consistent — 12 owned by an earlier stage, 3
+  raised here (`error.id.duplicate`, `error.reference.unresolved`,
+  `error.version.unsupported`), 1 deferred and reported as deferred, 5
+  resolving cleanly as `earliest_stage_rule` requires.
+* Determinism: a provider whose backing store enumerates in the opposite order
+  produces a byte-identical fingerprint of units, paths, declarations,
+  bindings, graph and diagnostics; repeated resolution is identical; units the
+  document never names never load.
+* Totality: sampled truncations and byte mutations of every valid example, plus
+  adversarial shapes, resolve without panicking.
+
 ## Not yet implemented
 
-No parser, AST, resolver, type checker, evaluator, capability kernel, runtime,
-CLI or UI. M2 has not been started. Value-domain checks on dynamically supplied
-constructor arguments, and the diagnostic *selection* algorithm beyond one
-source-validation run (`expression_demand_resolution`, producer paths,
-iteration and retry indexes), remain data, not code.
+No type checker, evaluator, capability kernel, runtime, CLI or UI. M4 has not
+been started. Value-domain checks on dynamically supplied constructor
+arguments, and the diagnostic *selection* algorithm beyond one source-validation
+run (`expression_demand_resolution`, producer paths, iteration and retry
+indexes), remain data, not code.
+
+### Known limitation outside M3
+
+`lcl_parser::Parser::parse` builds its syntax tree recursively, so an expression
+nested a few hundred levels deep exhausts the stack instead of producing a
+diagnostic. `lcl-resolver`'s own expression walk is iterative and adds no depth,
+but it cannot run on a tree the parser could not build. This is an M2 defect and
+is deliberately not repaired under the M3 task.
 
 ## Use
 
 ```bash
-cargo test --offline --workspace --all-targets                # 159 tests (51 M0 + 108 M1)
+cargo test --offline --workspace --all-targets                # M0 + M1 + M2 + M3
 cargo run --offline -p lcl-lexer --example m1_report          # lexer report over all canonical inputs
+cargo run --offline -p lcl-parser --example m2_report         # parser report over all canonical inputs
+cargo run --offline -p lcl-resolver --example m3_report       # resolver report over all canonical inputs
 cargo run --offline -p lcl-conformance --example m0_report    # foundation report
 cargo run --offline -p lcl-spec --example mint_anchor         # compute a package identity
 cargo clippy --offline --workspace --all-targets -- -D warnings

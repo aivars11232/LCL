@@ -123,7 +123,9 @@ impl ResolutionError {
 
     /// The identifiers this milestone does emit.
     pub fn emitted() -> impl Iterator<Item = ResolutionError> {
-        ResolutionError::ALL.into_iter().filter(|e| !e.is_deferred())
+        ResolutionError::ALL
+            .into_iter()
+            .filter(|e| !e.is_deferred())
     }
 }
 

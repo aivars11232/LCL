@@ -68,8 +68,9 @@
 
 pub mod declarations;
 pub mod diagnostic;
+mod field;
 pub mod graph;
-mod imports;
+pub mod imports;
 pub mod references;
 pub mod rules;
 pub mod source;
@@ -77,6 +78,7 @@ pub mod source;
 pub use declarations::{Declaration, DeclarationIndex, FullId};
 pub use diagnostic::{Cause, Diagnostic, ResolutionError, DEFERRED};
 pub use graph::{CandidateGraph, GraphNode, NodeKind};
+pub use imports::{ImportKind, ImportOutcome, ImportRecord, NamespaceOwner, UnitPath};
 pub use references::{Binding, BindingTarget};
 pub use rules::{RefTarget, ReferenceSlot, Rules, RulesLoadError};
 pub use source::{
@@ -142,6 +144,7 @@ impl<'a> Resolver<'a> {
 
         let mut resolved = Resolved {
             root: root.id().clone(),
+            paths: vec![UnitPath::root(root.id().clone())],
             order,
             units,
             imports: Vec::new(),
@@ -155,7 +158,7 @@ impl<'a> Resolver<'a> {
         let mut raw = Vec::new();
         imports::resolve_sources(self, provider, &mut resolved, &mut raw);
         declarations::index(self, &mut resolved, &mut raw);
-        imports::check_versions(self, &mut resolved, &mut raw);
+        imports::check_contracts(self, &mut resolved, &mut raw);
         references::bind(self, &mut resolved, &mut raw);
         graph::build(self, &mut resolved, &mut raw);
 
@@ -164,7 +167,7 @@ impl<'a> Resolver<'a> {
     }
 
     /// Lex and parse one unit, recording whichever earlier stage failed.
-    fn stage(&self, unit: &SourceUnit) -> ResolvedUnit {
+    pub(crate) fn stage(&self, unit: &SourceUnit) -> ResolvedUnit {
         let lexed = Lexer::new(self.lexicon).lex(unit.bytes());
         if let Some(primary) = lexed.primary() {
             let failure = UnitStageFailure {
@@ -178,6 +181,7 @@ impl<'a> Resolver<'a> {
                 lexed,
                 parsed: None,
                 stage_failure: Some(failure),
+                version_rejected: false,
             };
         }
         let parsed = Parser::new(self.grammar).parse(&lexed).ok();
@@ -194,11 +198,60 @@ impl<'a> Resolver<'a> {
             lexed,
             parsed,
             stage_failure,
+            version_rejected: false,
         }
     }
 
     pub(crate) fn grammar(&self) -> &'a Grammar {
         self.grammar
+    }
+}
+
+/// Builds registered diagnostics against the units they belong to.
+///
+/// Every diagnostic carries the registry's own `meaning`, `default_status` and
+/// `specificity_rank`, so a diagnostic is self-describing without a second
+/// lookup and cannot drift from the canonical metadata.
+pub(crate) struct Emitter<'a> {
+    rules: &'a Rules,
+    units: &'a BTreeMap<SourceId, ResolvedUnit>,
+}
+
+impl<'a> Emitter<'a> {
+    pub(crate) fn new(rules: &'a Rules, units: &'a BTreeMap<SourceId, ResolvedUnit>) -> Self {
+        Emitter { rules, units }
+    }
+
+    pub(crate) fn emit(
+        &self,
+        raw: &mut Vec<Diagnostic>,
+        id: ResolutionError,
+        source: &SourceId,
+        span: Span,
+        cause: &str,
+        detail: String,
+    ) {
+        debug_assert!(
+            !id.is_deferred(),
+            "{id} is deferred to a later milestone and must not be emitted here"
+        );
+        let registered = self.rules.error(id);
+        let text = self
+            .units
+            .get(source)
+            .map(ResolvedUnit::source)
+            .unwrap_or("");
+        raw.push(Diagnostic {
+            id,
+            source: source.clone(),
+            span,
+            position: diagnostic::position(text, span.start),
+            meaning: registered.meaning.clone(),
+            default_status: registered.default_status.clone(),
+            specificity_rank: registered.specificity_rank,
+            cause: Cause(cause.to_string()),
+            detail: Some(detail),
+        });
     }
 }
 
@@ -246,6 +299,11 @@ pub struct ResolvedUnit {
     lexed: Lexed,
     parsed: Option<Parsed>,
     stage_failure: Option<UnitStageFailure>,
+    /// Set when the unit declares an LCL version this build does not support.
+    /// Its declarations may not enter resolution: `07/05` permits validating
+    /// "only exact supported language versions", so reading them under 0.1.0
+    /// semantics would be a guess.
+    pub(crate) version_rejected: bool,
 }
 
 impl ResolvedUnit {
@@ -280,10 +338,16 @@ impl ResolvedUnit {
         self.stage_failure.as_ref()
     }
 
-    /// True when this unit passed the lexical and grammar stages, so its
-    /// declarations may take part in resolution.
+    /// True when this unit declares an unsupported LCL version.
+    pub fn version_rejected(&self) -> bool {
+        self.version_rejected
+    }
+
+    /// True when this unit passed the lexical and grammar stages and declares a
+    /// supported language version, so its declarations may take part in
+    /// resolution.
     pub fn is_usable(&self) -> bool {
-        self.stage_failure.is_none() && self.parsed.is_some()
+        self.stage_failure.is_none() && self.parsed.is_some() && !self.version_rejected
     }
 }
 
@@ -314,13 +378,16 @@ impl fmt::Display for Outcome {
 #[derive(Debug)]
 pub struct Resolved {
     pub(crate) root: SourceId,
+    /// Every unit reached by every exact import path, in deterministic
+    /// depth-first declaration order. The root is always first.
+    pub(crate) paths: Vec<UnitPath>,
     /// Units in the deterministic order they were loaded: the root, then each
     /// import in source-declaration order, depth first.
     pub(crate) order: Vec<SourceId>,
     pub(crate) units: BTreeMap<SourceId, ResolvedUnit>,
-    pub(crate) imports: Vec<imports::ImportRecord>,
+    pub(crate) imports: Vec<ImportRecord>,
     /// Namespace prefix -> the import or extension that owns it, per unit.
-    pub(crate) namespaces: BTreeMap<(SourceId, String), imports::NamespaceOwner>,
+    pub(crate) namespaces: BTreeMap<(SourceId, String), NamespaceOwner>,
     pub(crate) declarations: DeclarationIndex,
     pub(crate) bindings: Vec<Binding>,
     pub(crate) graph: CandidateGraph,
@@ -347,8 +414,18 @@ impl Resolved {
     }
 
     /// Every resolved import and extension, in source-declaration order.
-    pub fn imports(&self) -> &[imports::ImportRecord] {
+    pub fn imports(&self) -> &[ImportRecord] {
         &self.imports
+    }
+
+    /// Every unit path, in deterministic order. The root is first.
+    pub fn paths(&self) -> &[UnitPath] {
+        &self.paths
+    }
+
+    /// Which import or extension owns one namespace prefix in one unit.
+    pub fn namespace_owner(&self, source: &SourceId, prefix: &str) -> Option<&NamespaceOwner> {
+        self.namespaces.get(&(source.clone(), prefix.to_string()))
     }
 
     /// The declaration index across every usable unit.

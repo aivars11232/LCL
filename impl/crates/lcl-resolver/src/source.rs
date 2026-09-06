@@ -239,7 +239,7 @@ impl MemoryProvider {
     /// join unresolvable rather than reaching for anything outside.
     fn sibling_key(origin: &SourceId, path: &str) -> Option<String> {
         if path.starts_with('/') {
-            return Some(normalize(path.trim_start_matches('/'))?);
+            return normalize(path.trim_start_matches('/'));
         }
         let base = match origin.as_str().rfind('/') {
             Some(i) => &origin.as_str()[..i],

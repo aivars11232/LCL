@@ -126,7 +126,10 @@ pub enum RulesLoadError {
     },
     /// A reference target this build cannot map to a block or a registered
     /// reference domain. Unknown material fails closed.
-    UnknownReferenceTarget { value_kind: String, target: String },
+    UnknownReferenceTarget {
+        value_kind: String,
+        target: String,
+    },
     /// A `#/value_kind_registry` sentence a derivation depends on is no longer
     /// present. The rule is not reinterpreted; the load refuses.
     RegistryTextChanged {
@@ -135,7 +138,10 @@ pub enum RulesLoadError {
     },
     /// The exact supported LCL version disagrees between the block schema and
     /// the package's own formal version.
-    VersionAuthorityConflict { schema: String, package: String },
+    VersionAuthorityConflict {
+        schema: String,
+        package: String,
+    },
 }
 
 impl fmt::Display for RulesLoadError {
@@ -410,9 +416,9 @@ impl Rules {
         let mut supersedes = BTreeMap::new();
         for id in ResolutionError::ALL {
             let key = id.as_registry_str();
-            let def = registered
-                .get(key)
-                .ok_or_else(|| RulesLoadError::Malformed(format!("{key} vanished from registry")))?;
+            let def = registered.get(key).ok_or_else(|| {
+                RulesLoadError::Malformed(format!("{key} vanished from registry"))
+            })?;
             let rank = rank_overrides
                 .iter()
                 .find(|(k, _)| k == key)
@@ -580,13 +586,17 @@ fn reference_targets(
         // "a defined type is REF(identifier) resolving to DEFINE kind.type"
         "type_expression" => {
             return Ok(Some(
-                [RefTarget::Definition("kind.type".into())].into_iter().collect(),
+                [RefTarget::Definition("kind.type".into())]
+                    .into_iter()
+                    .collect(),
             ))
         }
         // "One REF resolving to a defined OBJECT type"
         "schema_reference_or_nested_schema" => {
             return Ok(Some(
-                [RefTarget::Definition("kind.type".into())].into_iter().collect(),
+                [RefTarget::Definition("kind.type".into())]
+                    .into_iter()
+                    .collect(),
             ))
         }
         // "One STRING, URI, or REF resolving to EVIDENCE."

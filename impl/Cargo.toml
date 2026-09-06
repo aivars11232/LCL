@@ -9,8 +9,11 @@
 # Milestone M1 scope: adds `lcl-lexer`, a deterministic non-executing lexer.
 #
 # Milestone M2 scope: adds `lcl-parser`, a deterministic non-executing parser
-# over M1 tokens. No resolver, type checker, evaluator, or runtime is present or
-# implied.
+# over M1 tokens.
+#
+# Milestone M3 scope: adds `lcl-resolver`, a deterministic non-executing
+# resolver over M2 syntax trees and explicit source units. No type checker,
+# evaluator, or runtime is present or implied.
 #
 # Dependency policy: std only. The spec authority loader is the trust root for
 # every later layer, so it carries no third-party supply-chain surface.
@@ -23,6 +26,7 @@ members = [
     "crates/lcl-conformance",
     "crates/lcl-lexer",
     "crates/lcl-parser",
+    "crates/lcl-resolver",
 ]
 
 [workspace.package]

@@ -1,0 +1,14 @@
+[package]
+name = "lcl-checker"
+description = "Deterministic, non-executing static and type checker for LCL Core 0.1.0. Resolved program graph in; statically typed annotations and demand obligations, or canonical static_or_expression diagnostics, out."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lcl-spec = { path = "../lcl-spec" }
+lcl-diagnostics = { path = "../lcl-diagnostics" }
+lcl-lexer = { path = "../lcl-lexer" }
+lcl-parser = { path = "../lcl-parser" }
+lcl-resolver = { path = "../lcl-resolver" }

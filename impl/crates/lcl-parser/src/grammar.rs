@@ -333,6 +333,12 @@ impl Occurrence {
     }
 }
 
+/// The registered error metadata and the supersession edges between them.
+type ErrorTables = (
+    BTreeMap<GrammarError, RegisteredGrammarError>,
+    BTreeMap<GrammarError, BTreeSet<GrammarError>>,
+);
+
 /// Registry facts about one grammar-or-schema error identifier.
 #[derive(Debug, Clone)]
 pub struct RegisteredGrammarError {
@@ -472,7 +478,9 @@ impl Grammar {
                 .find(|(k, _)| k == name)
                 .map(|(_, v)| v)
                 .ok_or_else(|| {
-                    GrammarLoadError::Malformed(format!("block {name} missing from field_signatures"))
+                    GrammarLoadError::Malformed(format!(
+                        "block {name} missing from field_signatures"
+                    ))
                 })?;
             schemas.insert(name.clone(), Self::block(name, bs, fs, &template_forms)?);
         }
@@ -585,9 +593,8 @@ impl Grammar {
             GrammarLoadError::Malformed(format!("{name}: unknown occurrence {bs_occurrence:?}"))
         })?;
 
-        let repeatable: BTreeSet<String> = string_array(bs, "repeatable", name)?
-            .into_iter()
-            .collect();
+        let repeatable: BTreeSet<String> =
+            string_array(bs, "repeatable", name)?.into_iter().collect();
 
         let field_obj = fs
             .get("fields")
@@ -613,15 +620,23 @@ impl Grammar {
                 return Err(GrammarLoadError::RegistryParity {
                     block: name.to_string(),
                     field: "repeatable",
-                    block_schemas: format!("{field_name} repeatable={}", repeatable.contains(field_name)),
+                    block_schemas: format!(
+                        "{field_name} repeatable={}",
+                        repeatable.contains(field_name)
+                    ),
                     field_signatures: format!("{field_name} unbounded={unbounded}"),
                 });
             }
             fields.push(FieldSignature {
                 name: field_name.clone(),
-                required: body.get("required").and_then(Json::as_bool).ok_or_else(|| {
-                    GrammarLoadError::Malformed(format!("{name}.{field_name}: missing required"))
-                })?,
+                required: body
+                    .get("required")
+                    .and_then(Json::as_bool)
+                    .ok_or_else(|| {
+                        GrammarLoadError::Malformed(format!(
+                            "{name}.{field_name}: missing required"
+                        ))
+                    })?,
                 minimum_occurrences: body
                     .get("minimum_occurrences")
                     .and_then(Json::as_u64)
@@ -717,15 +732,7 @@ impl Grammar {
         Ok(out)
     }
 
-    fn errors(
-        spec: &SpecPackage,
-    ) -> Result<
-        (
-            BTreeMap<GrammarError, RegisteredGrammarError>,
-            BTreeMap<GrammarError, BTreeSet<GrammarError>>,
-        ),
-        GrammarLoadError,
-    > {
+    fn errors(spec: &SpecPackage) -> Result<ErrorTables, GrammarLoadError> {
         let registry = lcl_diagnostics::DiagnosticRegistry::load(spec)
             .map_err(GrammarLoadError::Diagnostics)?;
 
@@ -749,9 +756,9 @@ impl Grammar {
         let raw = spec
             .registry("statuses_and_errors")
             .ok_or(GrammarLoadError::MissingRegistry("statuses_and_errors"))?;
-        let selection = raw.get("diagnostic_selection").ok_or_else(|| {
-            GrammarLoadError::Malformed("missing diagnostic_selection".into())
-        })?;
+        let selection = raw
+            .get("diagnostic_selection")
+            .ok_or_else(|| GrammarLoadError::Malformed("missing diagnostic_selection".into()))?;
 
         let rank = selection.get("specificity_rank").ok_or_else(|| {
             GrammarLoadError::Malformed("missing diagnostic_selection.specificity_rank".into())
@@ -829,6 +836,21 @@ impl Grammar {
         SCALAR_TYPE_WORDS.contains(&word)
     }
 
+    /// The `SCALAR_TYPE` alternatives this build implements.
+    pub fn scalar_types(&self) -> impl Iterator<Item = &'static str> {
+        SCALAR_TYPE_WORDS.into_iter()
+    }
+
+    /// The four bracketed `NON_NULL_TYPE_EXPRESSION` constructors.
+    pub fn bracket_types(&self) -> impl Iterator<Item = &'static str> {
+        BRACKET_TYPE_WORDS.into_iter()
+    }
+
+    /// The word-shaped `LITERAL` alternatives.
+    pub fn literal_words(&self) -> impl Iterator<Item = &'static str> {
+        LITERAL_WORDS.into_iter()
+    }
+
     /// True for one of the four bracketed type constructors.
     pub fn is_bracket_type(&self, word: &str) -> bool {
         BRACKET_TYPE_WORDS.contains(&word)
@@ -896,7 +918,9 @@ fn str_field(body: &Json, key: &str, owner: &str) -> Result<String, GrammarLoadE
     body.get(key)
         .and_then(Json::as_str)
         .map(str::to_string)
-        .ok_or_else(|| GrammarLoadError::Malformed(format!("{owner}: missing string field {key:?}")))
+        .ok_or_else(|| {
+            GrammarLoadError::Malformed(format!("{owner}: missing string field {key:?}"))
+        })
 }
 
 fn string_array(body: &Json, key: &str, owner: &str) -> Result<Vec<String>, GrammarLoadError> {

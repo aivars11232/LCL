@@ -62,15 +62,8 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    pub(crate) fn at(&self, kind: TokenKind) -> bool {
-        self.peek_kind() == Some(kind)
-    }
-
     pub(crate) fn at_end(&self) -> bool {
-        match self.peek_kind() {
-            None | Some(TokenKind::Eof) => true,
-            _ => false,
-        }
+        matches!(self.peek_kind(), None | Some(TokenKind::Eof))
     }
 
     /// The span to blame when the expected token is absent: the current
@@ -84,10 +77,6 @@ impl<'a> Cursor<'a> {
 
     pub(crate) fn index(&self) -> usize {
         self.index
-    }
-
-    pub(crate) fn reset(&mut self, index: usize) {
-        self.index = index.min(self.tokens.len());
     }
 }
 
@@ -182,7 +171,9 @@ pub(crate) fn omission_locus(lexed: &Lexed, header_indent: usize, after: usize) 
         let line = text.get(offset..line_end).unwrap_or("");
         let trimmed = line.trim_end_matches(['\n', '\r']);
         if !trimmed.trim().is_empty() {
-            let indent = trimmed.len().saturating_sub(trimmed.trim_start_matches(' ').len());
+            let indent = trimmed
+                .len()
+                .saturating_sub(trimmed.trim_start_matches(' ').len());
             if indent <= header_indent {
                 return Span::empty(offset);
             }

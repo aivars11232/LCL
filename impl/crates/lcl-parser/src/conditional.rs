@@ -154,14 +154,31 @@ pub(crate) const IMPLEMENTED: &[(&str, &str, Rule)] = &[
 ];
 
 /// Requirements this milestone deliberately does not enforce, with the layer
-/// that owns each. Listed so the boundary is explicit rather than accidental.
+/// that owns each. Listed so the boundary is explicit rather than accidental,
+/// and exposed through [`crate::deferred_requirements`] so a consumer can read
+/// what M2 does not decide instead of inferring it.
 pub(crate) const DEFERRED: &[(&str, &str)] = &[
-    ("authority, priority and override outcomes", "M5 semantic preflight"),
-    ("declared defaults and their application", "M5 semantic preflight"),
-    ("execution ordering, retry budgets and handler selection", "M6 runtime"),
-    ("operation parameter and result contracts", "M7 standard library"),
+    (
+        "authority, priority and override outcomes",
+        "M5 semantic preflight",
+    ),
+    (
+        "declared defaults and their application",
+        "M5 semantic preflight",
+    ),
+    (
+        "execution ordering, retry budgets and handler selection",
+        "M6 runtime",
+    ),
+    (
+        "operation parameter and result contracts",
+        "M7 standard library",
+    ),
     ("evidence and status lifecycle", "M8 completion"),
-    ("value domains, ranges and reference targets", "M3 resolution and M4 static checking"),
+    (
+        "value domains, ranges and reference targets",
+        "M3 resolution and M4 static checking",
+    ),
 ];
 
 impl SchemaChecker<'_, '_> {
@@ -192,9 +209,8 @@ impl SchemaChecker<'_, '_> {
         text: &str,
         rule: Rule,
     ) {
-        let present = |names: &[&str]| -> usize {
-            names.iter().filter(|n| counts.contains_key(**n)).count()
-        };
+        let present =
+            |names: &[&str]| -> usize { names.iter().filter(|n| counts.contains_key(**n)).count() };
         match rule {
             Rule::ExactlyOneOf(names) => {
                 if present(names) != 1 {
@@ -211,9 +227,10 @@ impl SchemaChecker<'_, '_> {
             Rule::AtLeastOneOf(names) => {
                 // A control form satisfies the PHASE and SEQUENCE variants, so
                 // an IF or FOR EACH child counts as a present member.
-                let control = block.body.iter().any(|s| {
-                    matches!(s, Statement::Conditional(_) | Statement::ForEach(_))
-                });
+                let control = block
+                    .body
+                    .iter()
+                    .any(|s| matches!(s, Statement::Conditional(_) | Statement::ForEach(_)));
                 if present(names) == 0 && !control {
                     self.requirement(block, schema, text);
                 }

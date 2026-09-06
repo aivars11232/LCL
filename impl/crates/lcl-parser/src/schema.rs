@@ -29,7 +29,7 @@
 //! value: see `grammar` for the exact split and its canonical evidence.
 
 use crate::diagnostic::GrammarError;
-use crate::grammar::{BlockSchema, FieldSignature, FormSet, Grammar, Occurrence};
+use crate::grammar::{BlockSchema, FieldSignature, FormSet, Grammar};
 use crate::parse::{omission_locus, Emitter};
 use crate::syntax::*;
 use lcl_lexer::{Lexed, Span};
@@ -112,8 +112,10 @@ impl<'a> SchemaChecker<'a, '_> {
                         GrammarError::BlockContext,
                         span,
                         "document_order",
-                        format!("`{name}` is the {} top-level block; found `{found}`",
-                            if position == 0 { "first" } else { "second" }),
+                        format!(
+                            "`{name}` is the {} top-level block; found `{found}`",
+                            if position == 0 { "first" } else { "second" }
+                        ),
                     );
                 }
                 None => {
@@ -265,7 +267,10 @@ impl<'a> SchemaChecker<'a, '_> {
 
         // Containment. `top_level_first` and `top_level_second` are checked by
         // document order, so a block legal only there is not re-reported here.
-        let positional = schema.parents.iter().any(|p| p == TOP_LEVEL_FIRST || p == TOP_LEVEL_SECOND);
+        let positional = schema
+            .parents
+            .iter()
+            .any(|p| p == TOP_LEVEL_FIRST || p == TOP_LEVEL_SECOND);
         if !schema.accepts_parent(context) && !(positional && context == TOP_LEVEL) {
             let span = block.key.span;
             let name = block.key.text.clone();
@@ -305,7 +310,9 @@ impl<'a> SchemaChecker<'a, '_> {
                         GrammarError::FieldForbidden,
                         span,
                         "lowercase_key",
-                        format!("`{key}` is a lowercase key; `{name}` admits only registered fields"),
+                        format!(
+                            "`{key}` is a lowercase key; `{name}` admits only registered fields"
+                        ),
                     );
                 }
                 Statement::Conditional(c) => {

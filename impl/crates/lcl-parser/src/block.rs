@@ -288,7 +288,9 @@ impl<'a> BlockParser<'a, '_> {
             && c.peek_at(1).map(|t| t.kind) == Some(TokenKind::Newline);
         let mut exprs = self.exprs();
         if multiline {
-            return exprs.multiline_collection(c).map(Value::MultilineCollection);
+            return exprs
+                .multiline_collection(c)
+                .map(Value::MultilineCollection);
         }
         exprs.expression(c).map(Value::Expression)
     }
@@ -332,9 +334,9 @@ impl<'a> BlockParser<'a, '_> {
 
         // "ELSE is optional and aligned with its IF." — 04_GRAMMAR/04
         let mut else_body = None;
-        if c.peek().is_some_and(|t| {
-            t.kind == TokenKind::ReservedWord && self.text(t.span) == "ELSE"
-        }) {
+        if c.peek()
+            .is_some_and(|t| t.kind == TokenKind::ReservedWord && self.text(t.span) == "ELSE")
+        {
             let else_span = c.peek()?.span;
             c.bump();
             self.expect_colon(c, "ELSE")?;
@@ -495,9 +497,9 @@ impl<'a> BlockParser<'a, '_> {
     // -- token expectations ------------------------------------------------
 
     fn expect_colon(&mut self, c: &mut Cursor<'a>, owner: &str) -> Option<()> {
-        if c.peek().is_some_and(|t| {
-            t.kind == TokenKind::Symbol && self.text(t.span) == ":"
-        }) {
+        if c.peek()
+            .is_some_and(|t| t.kind == TokenKind::Symbol && self.text(t.span) == ":")
+        {
             c.bump();
             return Some(());
         }
@@ -520,9 +522,9 @@ impl<'a> BlockParser<'a, '_> {
     }
 
     fn expect_word(&mut self, c: &mut Cursor<'a>, word: &str) -> Option<()> {
-        if c.peek().is_some_and(|t| {
-            t.kind == TokenKind::ReservedWord && self.text(t.span) == word
-        }) {
+        if c.peek()
+            .is_some_and(|t| t.kind == TokenKind::ReservedWord && self.text(t.span) == word)
+        {
             c.bump();
             return Some(());
         }
@@ -532,9 +534,9 @@ impl<'a> BlockParser<'a, '_> {
     }
 
     fn expect_symbol(&mut self, c: &mut Cursor<'a>, symbol: &str, cause: &str) -> Option<()> {
-        if c.peek().is_some_and(|t| {
-            t.kind == TokenKind::Symbol && self.text(t.span) == symbol
-        }) {
+        if c.peek()
+            .is_some_and(|t| t.kind == TokenKind::Symbol && self.text(t.span) == symbol)
+        {
             c.bump();
             return Some(());
         }

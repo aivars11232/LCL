@@ -526,10 +526,9 @@ impl TypeExpr {
     pub fn span(&self) -> Span {
         match self {
             TypeExpr::Scalar(w) => w.span,
-            TypeExpr::List(b)
-            | TypeExpr::Set(b)
-            | TypeExpr::Object(b)
-            | TypeExpr::Reference(b) => b.span,
+            TypeExpr::List(b) | TypeExpr::Set(b) | TypeExpr::Object(b) | TypeExpr::Reference(b) => {
+                b.span
+            }
         }
     }
 
@@ -538,10 +537,9 @@ impl TypeExpr {
     pub fn word(&self) -> &Word {
         match self {
             TypeExpr::Scalar(w) => w,
-            TypeExpr::List(b)
-            | TypeExpr::Set(b)
-            | TypeExpr::Object(b)
-            | TypeExpr::Reference(b) => &b.word,
+            TypeExpr::List(b) | TypeExpr::Set(b) | TypeExpr::Object(b) | TypeExpr::Reference(b) => {
+                &b.word
+            }
         }
     }
 }

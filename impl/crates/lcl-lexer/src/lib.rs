@@ -46,8 +46,9 @@
 //!
 //! ## Not in M1
 //!
-//! No parser, AST, resolver, type checker, evaluator, capability kernel,
-//! runtime, CLI or UI. Every rule the registry stages as lexical is decided
+//! No resolver, type checker, evaluator, capability kernel, runtime, CLI or
+//! UI. The grammar and block schemas are M2's, in `lcl-parser`, which consumes
+//! this crate's output. Every rule the registry stages as lexical is decided
 //! here; nothing lexical is deferred. Value-domain checks on *dynamically
 //! supplied* constructor arguments (a `REF`, an expression) are execution-stage
 //! by `expression_demand_resolution` and are not attempted.

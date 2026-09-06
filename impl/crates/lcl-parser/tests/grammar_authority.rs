@@ -40,7 +40,10 @@ fn grammar_error_set_equals_the_registered_stage() {
     );
     // Round-trips, and nothing outside the set is accepted.
     for e in GrammarError::ALL {
-        assert_eq!(GrammarError::from_registry_str(e.as_registry_str()), Some(e));
+        assert_eq!(
+            GrammarError::from_registry_str(e.as_registry_str()),
+            Some(e)
+        );
     }
     assert_eq!(GrammarError::from_registry_str("error.grammar"), None);
     assert_eq!(GrammarError::from_registry_str("error.source.tab"), None);
@@ -73,7 +76,10 @@ fn specificity_and_supersession_match_the_registry() {
         .get("default_for_every_error")
         .and_then(Json::as_u64)
         .expect("default rank");
-    let overrides = rank.get("overrides").and_then(Json::as_object).unwrap_or(&[]);
+    let overrides = rank
+        .get("overrides")
+        .and_then(Json::as_object)
+        .unwrap_or(&[]);
     for id in GrammarError::ALL {
         let expected = overrides
             .iter()
@@ -137,7 +143,10 @@ fn every_registered_block_loads_with_its_exact_signature() {
 
     for (name, body) in blocks {
         let schema = g.schema(name).unwrap_or_else(|| panic!("{name} loads"));
-        let fields = body.get("fields").and_then(Json::as_object).expect("fields");
+        let fields = body
+            .get("fields")
+            .and_then(Json::as_object)
+            .expect("fields");
         assert_eq!(schema.fields.len(), fields.len(), "{name}");
         for (field_name, spec) in fields {
             let sig = schema
@@ -150,7 +159,9 @@ fn every_registered_block_loads_with_its_exact_signature() {
             );
             assert_eq!(
                 sig.minimum_occurrences,
-                spec.get("minimum_occurrences").and_then(Json::as_u64).unwrap(),
+                spec.get("minimum_occurrences")
+                    .and_then(Json::as_u64)
+                    .unwrap(),
                 "{name}.{field_name}"
             );
             assert_eq!(
@@ -172,14 +183,24 @@ fn the_two_registries_agree_on_containment_and_occurrence() {
     // `Grammar::load` fails closed on a parity break; this test proves the
     // property holds for the shipped release and names what is compared.
     let g = grammar();
-    let bs = registry("block_schemas").get("schemas").cloned().expect("schemas");
-    let fs = registry("field_signatures").get("blocks").cloned().expect("blocks");
+    let bs = registry("block_schemas")
+        .get("schemas")
+        .cloned()
+        .expect("schemas");
+    let fs = registry("field_signatures")
+        .get("blocks")
+        .cloned()
+        .expect("blocks");
     let bs = bs.as_object().expect("object");
     let fs = fs.as_object().expect("object");
     assert_eq!(bs.len(), fs.len());
 
     for (name, b) in bs {
-        let f = fs.iter().find(|(k, _)| k == name).map(|(_, v)| v).expect(name);
+        let f = fs
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v)
+            .expect(name);
         let contexts: Vec<&str> = b
             .get("contexts")
             .and_then(Json::as_array)
@@ -356,7 +377,10 @@ fn document_kind_blocks_are_closed_and_registered() {
 #[test]
 fn the_two_headers_are_position_pinned_blocks() {
     let g = grammar();
-    assert_eq!(g.schema("LCL").expect("LCL").parents, vec!["top_level_first"]);
+    assert_eq!(
+        g.schema("LCL").expect("LCL").parents,
+        vec!["top_level_first"]
+    );
     assert_eq!(
         g.schema("SPECIFICATION").expect("SPECIFICATION").parents,
         vec!["top_level_second"]
@@ -400,7 +424,11 @@ fn defaults_are_recorded_but_never_applied_here() {
         })
         .collect();
     assert!(!with_defaults.is_empty());
-    let spec_authority = g.schema("SPECIFICATION").unwrap().field("AUTHORITY").unwrap();
+    let spec_authority = g
+        .schema("SPECIFICATION")
+        .unwrap()
+        .field("AUTHORITY")
+        .unwrap();
     assert!(spec_authority.has_default);
     assert!(!spec_authority.required);
 }

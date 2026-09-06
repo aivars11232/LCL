@@ -440,12 +440,12 @@ impl<'a> ExprParser<'a, '_> {
                     c.bump();
                     if c.eat(TokenKind::Space).is_none() {
                         self.emitter.emit(
-                                GrammarError::GrammarInvalid,
-                                comma,
-                                "member_separator",
-                                "one SPACE must follow a collection comma",
-                            );
-                            return None;
+                            GrammarError::GrammarInvalid,
+                            comma,
+                            "member_separator",
+                            "one SPACE must follow a collection comma",
+                        );
+                        return None;
                     }
                     continue;
                 }
@@ -467,12 +467,12 @@ impl<'a> ExprParser<'a, '_> {
         c.bump(); // NEWLINE, already established by the caller's lookahead.
         if c.eat(TokenKind::Indent).is_none() {
             self.emitter.emit(
-                    GrammarError::GrammarInvalid,
-                    open,
-                    "multiline_collection",
-                    "a multiline collection opens one indented level",
-                );
-                return None;
+                GrammarError::GrammarInvalid,
+                open,
+                "multiline_collection",
+                "a multiline collection opens one indented level",
+            );
+            return None;
         }
         let mut members = Vec::new();
         loop {
@@ -482,12 +482,12 @@ impl<'a> ExprParser<'a, '_> {
                 if c.eat(TokenKind::Newline).is_none() {
                     let locus = c.locus(self.source.len());
                     self.emitter.emit(
-                            GrammarError::GrammarInvalid,
-                            locus,
-                            "multiline_collection",
-                            "a NEWLINE must follow each multiline member comma",
-                        );
-                        return None;
+                        GrammarError::GrammarInvalid,
+                        locus,
+                        "multiline_collection",
+                        "a NEWLINE must follow each multiline member comma",
+                    );
+                    return None;
                 }
                 continue;
             }
@@ -496,22 +496,22 @@ impl<'a> ExprParser<'a, '_> {
         if c.eat(TokenKind::Newline).is_none() {
             let locus = c.locus(self.source.len());
             self.emitter.emit(
-                    GrammarError::GrammarInvalid,
-                    locus,
-                    "multiline_collection",
-                    "the final multiline member is followed by a NEWLINE",
-                );
-                return None;
+                GrammarError::GrammarInvalid,
+                locus,
+                "multiline_collection",
+                "the final multiline member is followed by a NEWLINE",
+            );
+            return None;
         }
         if c.eat(TokenKind::Dedent).is_none() {
             let locus = c.locus(self.source.len());
             self.emitter.emit(
-                    GrammarError::GrammarInvalid,
-                    locus,
-                    "multiline_collection",
-                    "a multiline collection closes its indented level before `]`",
-                );
-                return None;
+                GrammarError::GrammarInvalid,
+                locus,
+                "multiline_collection",
+                "a multiline collection closes its indented level before `]`",
+            );
+            return None;
         }
         let close = self.expect_symbol(c, "]", "multiline_collection")?;
         Some(Collection {

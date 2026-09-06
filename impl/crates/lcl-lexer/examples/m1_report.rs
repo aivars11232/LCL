@@ -171,7 +171,7 @@ fn main() {
     println!(
         "Scope: lexical stage only. No parse, resolution, type or execution result is implied."
     );
-    println!("M2 (parser) has not been started.");
+    println!("M2 (parser) is implemented in `lcl-parser`; see its `m2_report`.");
 
     if fixture_pass != entries.len() || valid_pass != valid_total || invalid_pass != invalid_total {
         std::process::exit(1);

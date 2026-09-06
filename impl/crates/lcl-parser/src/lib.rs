@@ -83,6 +83,32 @@ pub use grammar::{
 };
 pub use syntax::Document;
 
+/// Conditional requirements the grammar stage deliberately leaves to a later
+/// layer, each paired with the layer that owns it.
+///
+/// `field_signatures_v0.1.0.json` states 88 conditional requirements as prose.
+/// The structurally decidable ones are enforced here; the rest state semantics
+/// this milestone must not decide. Exposing the list keeps that boundary
+/// legible rather than implicit.
+/// See [`enforced_requirements`] for the complement.
+pub fn deferred_requirements() -> &'static [(&'static str, &'static str)] {
+    conditional::DEFERRED
+}
+
+/// The conditional requirements this stage does enforce, as
+/// `(block, exact registry string)`.
+///
+/// Each string is quoted verbatim from
+/// `field_signatures_v0.1.0.json#/blocks/<block>/conditional_requirements`, so
+/// a caller — or a test — can confirm that what is enforced is what the
+/// specification currently states.
+pub fn enforced_requirements() -> Vec<(&'static str, &'static str)> {
+    conditional::IMPLEMENTED
+        .iter()
+        .map(|(block, text, _)| (*block, *text))
+        .collect()
+}
+
 use lcl_lexer::{Lexed, Span};
 use std::fmt;
 

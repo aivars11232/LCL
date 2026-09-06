@@ -79,6 +79,78 @@ pub fn id_list(parsed: &Parsed) -> Vec<String> {
         .collect()
 }
 
+/// Structural invariants every parse result must satisfy, whatever the input.
+pub fn assert_well_formed(parsed: &Parsed, source_len: usize, label: &str) {
+    let document = parsed.document();
+    assert_eq!(
+        document.span.start, 0,
+        "{label}: a document starts at byte 0"
+    );
+    assert_eq!(
+        document.span.end, source_len,
+        "{label}: a document ends at the source length"
+    );
+
+    // Spans are inside the source, ordered, and nested within their parents.
+    for item in &document.items {
+        assert_span_tree(item.span(), document.span, source_len, label);
+    }
+
+    for d in parsed.diagnostics() {
+        assert!(d.span.start <= d.span.end, "{label}: inverted span: {d}");
+        assert!(d.span.end <= source_len, "{label}: span past end: {d}");
+        assert_eq!(d.default_status, "status.invalid", "{label}: {d}");
+        assert_eq!(
+            d.stage(),
+            lcl_diagnostics::Stage::GrammarOrSchema,
+            "{label}"
+        );
+        assert!(d.specificity_rank >= 100, "{label}: rank from registry");
+        assert!(!d.meaning.is_empty(), "{label}: meaning from registry");
+    }
+
+    // stable_order: offset ascending, specificity descending, identifier ascending.
+    let keys: Vec<(usize, std::cmp::Reverse<u64>, String)> = parsed
+        .diagnostics()
+        .iter()
+        .map(|d| {
+            (
+                d.span.start,
+                std::cmp::Reverse(d.specificity_rank),
+                d.id.to_string(),
+            )
+        })
+        .collect();
+    let mut sorted = keys.clone();
+    sorted.sort();
+    assert_eq!(keys, sorted, "{label}: diagnostics must be in stable_order");
+
+    // duplicate_key: no two survivors share identifier, locus and cause.
+    let mut seen = std::collections::BTreeSet::new();
+    for d in parsed.diagnostics() {
+        assert!(
+            seen.insert((d.id, d.span, d.cause.clone())),
+            "{label}: duplicate diagnostic survived suppression: {d}"
+        );
+    }
+
+    // The primary is the first in stable_order, or none.
+    assert_eq!(
+        parsed.primary().map(|d| (d.id, d.span)),
+        parsed.diagnostics().first().map(|d| (d.id, d.span)),
+        "{label}"
+    );
+}
+
+fn assert_span_tree(span: lcl_lexer::Span, parent: lcl_lexer::Span, len: usize, label: &str) {
+    assert!(span.start <= span.end, "{label}: inverted node span");
+    assert!(span.end <= len, "{label}: node span past end");
+    assert!(
+        span.start >= parent.start && span.end <= parent.end,
+        "{label}: node escapes its parent"
+    );
+}
+
 /// The minimal legal document header for one document kind, so a test can
 /// focus on a single block.
 pub fn header(kind: &str) -> String {

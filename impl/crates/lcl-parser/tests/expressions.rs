@@ -144,7 +144,10 @@ fn additive_and_multiplicative_are_left_associative() {
     let e = value("1 - 2 - 3");
     let (left, op, right) = binary(&e);
     assert_eq!(op, BinaryOp::Subtract);
-    assert!(matches!(right, Expr::Literal(_)), "the tail is the last term");
+    assert!(
+        matches!(right, Expr::Literal(_)),
+        "the tail is the last term"
+    );
     let (_, inner, _) = binary(left);
     assert_eq!(inner, BinaryOp::Subtract, "grouping is left to right");
 }
@@ -238,7 +241,10 @@ fn a_reference_call_carries_its_identifier() {
     match value("REF(input.value)") {
         Expr::Call(c) => {
             assert!(c.is_reference());
-            assert_eq!(c.reference_target().map(|i| i.text.as_str()), Some("input.value"));
+            assert_eq!(
+                c.reference_target().map(|i| i.text.as_str()),
+                Some("input.value")
+            );
         }
         other => panic!("{other:?}"),
     }
@@ -282,7 +288,10 @@ fn property_and_index_access_chain_on_a_postfix() {
     match value("REF(a.b).NAME") {
         Expr::Property(p) => {
             assert_eq!(p.name, "NAME");
-            assert!(p.reserved, "an uppercase property selects declaration metadata");
+            assert!(
+                p.reserved,
+                "an uppercase property selects declaration metadata"
+            );
         }
         other => panic!("{other:?}"),
     }
@@ -323,7 +332,12 @@ fn type_expressions_cover_every_alternative() {
             "DATA:\n    ID: data.x\n    TYPE: {src}\n    VALUE: \"v\"\n"
         ));
         let parsed = parse(&text);
-        assert_eq!(parsed.outcome(), Outcome::Parsed, "{src}: {:?}", ids(&parsed));
+        assert_eq!(
+            parsed.outcome(),
+            Outcome::Parsed,
+            "{src}: {:?}",
+            ids(&parsed)
+        );
         parsed
             .document()
             .block("DATA")
@@ -340,8 +354,14 @@ fn type_expressions_cover_every_alternative() {
         other => panic!("{other:?}"),
     }
     // The four bracketed forms.
-    assert!(matches!(type_of("LIST[STRING]"), Expr::Type(TypeExpr::List(_))));
-    assert!(matches!(type_of("SET[STRING]"), Expr::Type(TypeExpr::Set(_))));
+    assert!(matches!(
+        type_of("LIST[STRING]"),
+        Expr::Type(TypeExpr::List(_))
+    ));
+    assert!(matches!(
+        type_of("SET[STRING]"),
+        Expr::Type(TypeExpr::Set(_))
+    ));
     assert!(matches!(
         type_of("OBJECT[REF(type.t)]"),
         Expr::Type(TypeExpr::Object(_))

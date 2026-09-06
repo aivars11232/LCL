@@ -13,7 +13,11 @@ fn a_minimal_document_parses_to_its_two_headers() {
     assert_eq!(parsed.outcome(), Outcome::Parsed, "{:?}", ids(&parsed));
     let items = &parsed.document().items;
     assert_eq!(items.len(), 2);
-    let names: Vec<&str> = parsed.document().blocks().map(|b| b.key.text.as_str()).collect();
+    let names: Vec<&str> = parsed
+        .document()
+        .blocks()
+        .map(|b| b.key.text.as_str())
+        .collect();
     assert_eq!(names, ["LCL", "SPECIFICATION"]);
 }
 

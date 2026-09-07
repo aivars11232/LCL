@@ -144,16 +144,20 @@ pub enum Type {
     List(Box<Type>),
     Set(Box<Type>),
     Object(ObjectType),
+    /// Bare `OBJECT`. `types_v0.1.0.json#/object_type_contract/anonymous`:
+    /// "Bare OBJECT denotes an object family at a receiving contract, not an
+    /// additional nominal identity." It admits any object; it is not itself an
+    /// object type, and it never becomes one.
+    ObjectFamily,
     Enum(EnumDomain),
     Reference(Box<RefTarget>),
 }
 
 impl Type {
-    /// The built-in scalar named by one `SCALAR_TYPE` word, if that word names
-    /// one. `OBJECT` and `ENUM` are deliberately absent: bare `OBJECT` "denotes
-    /// an object family at a receiving contract, not an additional nominal
-    /// identity", and bare `ENUM` "cannot declare an unconstrained material
-    /// value".
+    /// The built-in type named by one `SCALAR_TYPE` word, if that word names
+    /// one. `ENUM` is deliberately absent: bare `ENUM` "cannot declare an
+    /// unconstrained material value", so it is legal only as a definition base
+    /// or where an operation contract supplies one exact domain.
     pub fn scalar(word: &str) -> Option<Type> {
         Some(match word {
             "STRING" => Type::String,
@@ -172,6 +176,7 @@ impl Type {
             "PERCENTAGE" => Type::Percentage,
             "BYTES" => Type::Bytes,
             "MEASURE" => Type::Measure(None),
+            "OBJECT" => Type::ObjectFamily,
             _ => return None,
         })
     }
@@ -198,7 +203,7 @@ impl Type {
             Type::Measure(_) => "MEASURE",
             Type::List(_) => "LIST",
             Type::Set(_) => "SET",
-            Type::Object(_) => "OBJECT",
+            Type::Object(_) | Type::ObjectFamily => "OBJECT",
             Type::Enum(_) => "ENUM",
             Type::Reference(_) => "REFERENCE",
         }
@@ -231,6 +236,8 @@ impl Type {
             (Type::Measure(None), Type::Measure(_)) | (Type::Measure(_), Type::Measure(None)) => {
                 true
             }
+            // Bare OBJECT is a receiving family: it admits any object value.
+            (Type::ObjectFamily, Type::Object(_) | Type::ObjectFamily) => true,
             (Type::List(a), Type::List(b)) | (Type::Set(a), Type::Set(b)) => a.accepts(b),
             (Type::Reference(a), Type::Reference(b)) => match (a.as_ref(), b.as_ref()) {
                 (RefTarget::Any, _) | (_, RefTarget::Any) => true,

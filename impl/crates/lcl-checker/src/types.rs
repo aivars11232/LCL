@@ -40,7 +40,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// What one `DEFINE KIND kind.type` introduces.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Definition {
+pub enum Definition {
     /// A transparent alias, an enum domain, or an object schema — all of which
     /// are just the resolved [`Type`].
     Type(Type),
@@ -177,11 +177,7 @@ impl TypeCatalog {
     }
 
     /// Resolve one source `TYPE_EXPRESSION` to a static type.
-    pub(crate) fn resolve(
-        &self,
-        source: &SourceId,
-        expr: &Expr,
-    ) -> Result<Type, TypeDefect> {
+    pub(crate) fn resolve(&self, source: &SourceId, expr: &Expr) -> Result<Type, TypeDefect> {
         match expr {
             Expr::Type(type_expr) => self.resolve_type_expr(source, type_expr),
             // `TYPE_EXPRESSION = NON_NULL_TYPE_EXPRESSION | REFERENCE_CALL |
@@ -189,9 +185,7 @@ impl TypeCatalog {
             // a literal, because both derivations are shared with ordinary
             // expressions.
             Expr::Call(call) if call.is_reference() => self.resolve_reference_type(source, call),
-            Expr::Literal(literal)
-                if literal.kind == lcl_parser::syntax::LiteralKind::Null =>
-            {
+            Expr::Literal(literal) if literal.kind == lcl_parser::syntax::LiteralKind::Null => {
                 Ok(Type::Null)
             }
             _ => Err(TypeDefect::NotAType),
@@ -381,10 +375,7 @@ fn is_type_definition(declaration: &Declaration) -> bool {
 }
 
 /// The syntax block that declares one declaration.
-pub(crate) fn declaration_block<'a>(
-    resolved: &'a Resolved,
-    declaration: usize,
-) -> Option<&'a Block> {
+pub(crate) fn declaration_block(resolved: &Resolved, declaration: usize) -> Option<&Block> {
     let decl = resolved.declarations().get(declaration)?;
     let unit = resolved.unit(&decl.source)?;
     let document = unit.document()?;
@@ -545,9 +536,10 @@ pub(crate) fn reference_spans(expr: &Expr) -> Vec<Span> {
                 stack.push(&index.index);
             }
             Expr::Type(type_expr) => match type_expr {
-                TypeExpr::List(b) | TypeExpr::Set(b) | TypeExpr::Object(b) | TypeExpr::Reference(b) => {
-                    stack.push(&b.argument)
-                }
+                TypeExpr::List(b)
+                | TypeExpr::Set(b)
+                | TypeExpr::Object(b)
+                | TypeExpr::Reference(b) => stack.push(&b.argument),
                 TypeExpr::Scalar(_) => {}
             },
             Expr::Literal(_) | Expr::Identifier(_) => {}

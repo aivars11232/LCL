@@ -65,10 +65,16 @@ pub enum ContractsLoadError {
     },
     /// A signature designator this build cannot read. Unknown material fails
     /// closed rather than being treated as permissive.
-    UnknownDesignator { owner: String, designator: String },
+    UnknownDesignator {
+        owner: String,
+        designator: String,
+    },
     /// A contract type string that does not parse under
     /// `#/contract_type_notation`.
-    UnreadableContractType { owner: String, text: String },
+    UnreadableContractType {
+        owner: String,
+        text: String,
+    },
     /// A registry sentence a derivation depends on is no longer present. The
     /// rule is not reinterpreted; the load refuses.
     RegistryTextChanged {
@@ -364,6 +370,9 @@ const REGISTRY_ANCHORS: &[(&str, &str, &str)] = &[
 
 /// The closed static-checking vocabulary of LCL Core 0.1.0.
 pub struct Contracts {
+    /// The registered diagnostic model, kept so an identifier outside this
+    /// stage can still be reported with its own registered stage and status.
+    diagnostics: DiagnosticRegistry,
     errors: BTreeMap<StaticError, RegisteredStaticError>,
     supersedes: BTreeMap<StaticError, BTreeSet<StaticError>>,
     type_rows: BTreeSet<String>,
@@ -383,6 +392,8 @@ pub struct Contracts {
     unknown_logic: BTreeMap<String, String>,
     /// `#/numeric_promotion`, e.g. `INTEGER+DECIMAL` -> `DECIMAL`.
     numeric_promotion: BTreeMap<String, String>,
+    /// `built_in_groups_and_results_v0.1.0.json#/enum_groups`, each closed.
+    enum_groups: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl fmt::Debug for Contracts {
@@ -430,7 +441,9 @@ impl Contracts {
         let units_reg = registry(spec, "formats_encodings_units")?;
         let statuses = registry(spec, "statuses_and_errors")?;
 
-        let (errors, supersedes) = static_errors(spec, statuses)?;
+        let diagnostics =
+            DiagnosticRegistry::load(spec).map_err(ContractsLoadError::Diagnostics)?;
+        let (errors, supersedes) = static_errors(&diagnostics, statuses)?;
 
         let type_rows: BTreeSet<String> = types
             .get("types")
@@ -495,7 +508,9 @@ impl Contracts {
                     .get("value_kind")
                     .and_then(Json::as_str)
                     .ok_or_else(|| {
-                        ContractsLoadError::Malformed(format!("{block}.{field}: value_kind missing"))
+                        ContractsLoadError::Malformed(format!(
+                            "{block}.{field}: value_kind missing"
+                        ))
                     })?;
                 value_kinds.insert((block.clone(), field.clone()), kind.to_string());
                 if signature
@@ -508,10 +523,27 @@ impl Contracts {
             }
         }
 
+        let groups = registry(spec, "built_in_groups_and_results")?;
+        let mut enum_groups: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for (name, values) in members(groups, "enum_groups")? {
+            let Some(entries) = values.as_array() else {
+                continue;
+            };
+            enum_groups.insert(
+                name.clone(),
+                entries
+                    .iter()
+                    .filter_map(Json::as_str)
+                    .map(str::to_string)
+                    .collect(),
+            );
+        }
+
         let unknown_logic = object_map(opfn, "unknown_logic")?;
         let numeric_promotion = object_map(opfn, "numeric_promotion")?;
 
         Ok(Contracts {
+            diagnostics,
             errors,
             supersedes,
             type_rows,
@@ -527,6 +559,7 @@ impl Contracts {
             required_fields,
             unknown_logic,
             numeric_promotion,
+            enum_groups,
         })
     }
 
@@ -534,6 +567,11 @@ impl Contracts {
         self.errors
             .get(&id)
             .expect("every mirrored identifier is loaded")
+    }
+
+    /// The registered diagnostic model, for identifiers outside this stage.
+    pub fn diagnostics(&self) -> &DiagnosticRegistry {
+        &self.diagnostics
     }
 
     pub(crate) fn supersedes(&self) -> &BTreeMap<StaticError, BTreeSet<StaticError>> {
@@ -640,6 +678,21 @@ impl Contracts {
         self.unknown_logic.len()
     }
 
+    /// True when `id` is a member of one closed enum group, e.g. an
+    /// `effect_classes` or `dependency_classes` identifier.
+    pub fn is_enum_group_member(&self, group: &str, id: &str) -> bool {
+        self.enum_groups
+            .get(group)
+            .is_some_and(|members| members.contains(id))
+    }
+
+    /// The members of one closed enum group, in registry order.
+    pub fn enum_group(&self, group: &str) -> Option<impl Iterator<Item = &str>> {
+        self.enum_groups
+            .get(group)
+            .map(|members| members.iter().map(String::as_str))
+    }
+
     /// One row of `#/numeric_promotion`, e.g. `INTEGER+DECIMAL`.
     pub fn numeric_promotion(&self, left: &str, right: &str) -> Option<&str> {
         self.numeric_promotion
@@ -657,10 +710,7 @@ fn registry<'a>(spec: &'a SpecPackage, name: &'static str) -> Result<&'a Json, C
         .ok_or(ContractsLoadError::MissingRegistry(name))
 }
 
-fn members<'a>(
-    node: &'a Json,
-    key: &str,
-) -> Result<&'a [(String, Json)], ContractsLoadError> {
+fn members<'a>(node: &'a Json, key: &str) -> Result<&'a [(String, Json)], ContractsLoadError> {
     node.get(key)
         .and_then(Json::as_object)
         .ok_or_else(|| ContractsLoadError::Malformed(format!("{key} missing or not an object")))
@@ -679,11 +729,9 @@ type StaticErrorTables = (
 );
 
 fn static_errors(
-    spec: &SpecPackage,
+    registry_errors: &DiagnosticRegistry,
     statuses: &Json,
 ) -> Result<StaticErrorTables, ContractsLoadError> {
-    let registry_errors =
-        DiagnosticRegistry::load(spec).map_err(ContractsLoadError::Diagnostics)?;
     let registered: BTreeSet<String> = registry_errors
         .errors_by_stage(Stage::StaticOrExpression)
         .into_iter()
@@ -758,11 +806,10 @@ fn static_errors(
 }
 
 fn operator_row(name: &str, row: &Json) -> Result<OperatorRow, ContractsLoadError> {
-    let arity = row
-        .get("arity")
-        .and_then(Json::as_u64)
-        .ok_or_else(|| ContractsLoadError::Malformed(format!("operator {name}: arity missing")))?
-        as usize;
+    let arity =
+        row.get("arity").and_then(Json::as_u64).ok_or_else(|| {
+            ContractsLoadError::Malformed(format!("operator {name}: arity missing"))
+        })? as usize;
     let precedence = row.get("precedence").and_then(Json::as_u64).unwrap_or(0);
     let mut overloads = Vec::new();
 
@@ -794,9 +841,12 @@ fn operator_row(name: &str, row: &Json) -> Result<OperatorRow, ContractsLoadErro
         }
     } else {
         let result = result_contract(name, row.get("result").and_then(Json::as_str).unwrap_or(""))?;
-        let tuples = row.get("operands").and_then(Json::as_array).ok_or_else(|| {
-            ContractsLoadError::Malformed(format!("operator {name}: operands missing"))
-        })?;
+        let tuples = row
+            .get("operands")
+            .and_then(Json::as_array)
+            .ok_or_else(|| {
+                ContractsLoadError::Malformed(format!("operator {name}: operands missing"))
+            })?;
         for tuple in tuples {
             let text = tuple.as_str().unwrap_or("");
             let mut parameters = Vec::new();
@@ -888,13 +938,17 @@ fn constructor_row(name: &str, row: &Json) -> Result<ConstructorRow, ContractsLo
     let result_name = row.get("result").and_then(Json::as_str).ok_or_else(|| {
         ContractsLoadError::Malformed(format!("constructor {name}: result missing"))
     })?;
-    let result = Type::scalar(result_name).ok_or_else(|| ContractsLoadError::UnknownDesignator {
-        owner: format!("constructor {name}"),
-        designator: result_name.to_string(),
-    })?;
-    let rows = row.get("overloads").and_then(Json::as_array).ok_or_else(|| {
-        ContractsLoadError::Malformed(format!("constructor {name}: overloads missing"))
-    })?;
+    let result =
+        Type::scalar(result_name).ok_or_else(|| ContractsLoadError::UnknownDesignator {
+            owner: format!("constructor {name}"),
+            designator: result_name.to_string(),
+        })?;
+    let rows = row
+        .get("overloads")
+        .and_then(Json::as_array)
+        .ok_or_else(|| {
+            ContractsLoadError::Malformed(format!("constructor {name}: overloads missing"))
+        })?;
     let mut overloads = Vec::new();
     for entry in rows {
         overloads.push(Overload {
@@ -1118,7 +1172,10 @@ fn operation_contract(
             ParameterSpec {
                 name: name.clone(),
                 ty: contract_type(&format!("operation {id} parameter {name}"), text)?,
-                required: spec.get("required").and_then(Json::as_bool).unwrap_or(false),
+                required: spec
+                    .get("required")
+                    .and_then(Json::as_bool)
+                    .unwrap_or(false),
                 has_default: !matches!(spec.get("default"), None | Some(Json::Null)),
                 constraints: spec
                     .get("constraints")

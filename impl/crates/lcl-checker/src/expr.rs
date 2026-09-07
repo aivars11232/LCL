@@ -28,20 +28,20 @@
 //! arity, or operand family is invalid; implementations do not infer extra
 //! overloads."
 
-use crate::contracts::{ConstructorRow, Designator, FunctionRow, Operand, OperatorRow, ResultSpec};
+use crate::contracts::{
+    ConstructorRow, Designator, FunctionRow, Operand, OperatorRow, Overload, ResultSpec,
+};
 use crate::numeric::{Decimal, DivisionDefect, Rational};
-use crate::pattern::{self, PatternKind};
+use crate::pattern::PatternKind;
 use crate::schema::Schema;
-use crate::ty::{EnumDomain, ObjectField, ObjectType, RefTarget, Type, UnitId};
+use crate::ty::{RefTarget, Type, UnitId};
 use crate::types::{TypeCatalog, TypeDefect};
 use crate::{
-    Annotation, Cause, Contracts, DemandKind, DemandObligation, Diagnostic, EarlierStageDefect,
-    Emitter, Static, StaticError,
+    Annotation, Contracts, DemandKind, DemandObligation, Diagnostic, EarlierStageDefect, Emitter,
+    Static, StaticError,
 };
 use lcl_lexer::Span;
-use lcl_parser::syntax::{
-    BinaryOp, Call, Collection, Expr, LiteralKind, PropertyAccess, UnaryOp,
-};
+use lcl_parser::syntax::{BinaryOp, Call, Collection, Expr, LiteralKind, PropertyAccess, UnaryOp};
 use lcl_resolver::{BindingTarget, Resolved, SourceId};
 use std::collections::BTreeMap;
 
@@ -155,12 +155,26 @@ pub(crate) enum Expected {
     Identifier(String),
     /// The immediate bracket argument of `ALL`, `ANY` or `NONE`.
     Quantifier,
+    /// A member position of a collection whose item type is declared.
+    ///
+    /// `error.collection.heterogeneous` is registered as "A LIST or SET contains
+    /// a member incompatible with its **declared** item type", while
+    /// `03_TYPES_AND_VALUES/10` gives `error.type.mismatch` to "incompatible
+    /// member types" where no item type was declared. The two cases have
+    /// different identifiers, so they have different receiving contracts.
+    Member(Type),
+    /// A `DEFAULT` slot of this declared type. `03_TYPES_AND_VALUES/09` admits
+    /// the literal `MISSING` here — "It may appear literally only in an
+    /// equality/inequality test, DEFAULT, ASSUME condition, handler condition,
+    /// or conformance case" — and `DEFAULT` "replaces MISSING only", so it
+    /// never admits `UNKNOWN`.
+    Default(Type),
 }
 
 impl Expected {
     fn ty(&self) -> Option<&Type> {
         match self {
-            Expected::Type(ty) => Some(ty),
+            Expected::Type(ty) | Expected::Default(ty) | Expected::Member(ty) => Some(ty),
             _ => None,
         }
     }
@@ -189,10 +203,22 @@ pub(crate) struct Check<'a> {
     /// True only while checking `IMPORT.SOURCE` or `EXTENSION.SOURCE`, the two
     /// slots where a one-STRING relative `PATH` is legal.
     pub(crate) relative_path_allowed: bool,
+    /// True only during the constant pre-pass, which learns statically known
+    /// values. Every one of those expressions is checked again, with
+    /// diagnostics, by the walk, so reporting them twice would be a duplicate,
+    /// not a second defect.
+    pub(crate) silent: bool,
     pub(crate) raw: Vec<Diagnostic>,
     pub(crate) annotations: BTreeMap<(SourceId, Span), Annotation>,
     /// Statically known values, by the exact locus that produced them.
     pub(crate) values: BTreeMap<(SourceId, Span), Const>,
+    /// Memoized `(declaration, field)` static types for declaration-property
+    /// reads.
+    pub(crate) field_types: BTreeMap<(usize, String), Option<Type>>,
+    /// The `(declaration, field)` pairs currently being resolved, so a field
+    /// that reads itself terminates.
+    pub(crate) resolving: std::collections::BTreeSet<(usize, String)>,
+    pub(crate) property_depth: usize,
     pub(crate) deferred: Vec<DemandObligation>,
     pub(crate) earlier: Vec<EarlierStageDefect>,
 }
@@ -206,6 +232,9 @@ impl Check<'_> {
         cause: &str,
         detail: String,
     ) {
+        if self.silent {
+            return;
+        }
         let mut raw = std::mem::take(&mut self.raw);
         self.emitter.emit(&mut raw, id, source, span, cause, detail);
         self.raw = raw;
@@ -218,12 +247,21 @@ impl Check<'_> {
         kind: DemandKind,
         detail: String,
     ) {
+        if self.silent {
+            return;
+        }
         self.deferred.push(DemandObligation {
             source: source.clone(),
             span,
             kind,
             detail,
         });
+    }
+
+    /// Record a resolved type designator without judging it again.
+    pub(crate) fn record_designator(&mut self, source: &SourceId, span: Span, ty: Type) {
+        let outcome = Static::TypeDesignator(ty);
+        self.record(source, span, &outcome);
     }
 
     fn record(&mut self, source: &SourceId, span: Span, outcome: &Static) {
@@ -245,12 +283,187 @@ impl Check<'_> {
         expected: &Expected,
     ) -> Judgement {
         let judgement = self.judge(source, expr, expected);
+        let judgement = self.receive(source, expr.span(), expected, judgement);
         self.record(source, expr.span(), &judgement.outcome);
         if let Some(value) = &judgement.value {
             self.values
                 .insert((source.clone(), expr.span()), value.clone());
         }
         judgement
+    }
+
+    /// Judge one expression against the contract that receives it.
+    ///
+    /// `01_FOUNDATION/03`: every expression has "its names, arity, operand
+    /// families, and receiving contract checked before effects". The first
+    /// three are the signature's; this is the receiving contract.
+    fn receive(
+        &mut self,
+        source: &SourceId,
+        span: Span,
+        expected: &Expected,
+        judgement: Judgement,
+    ) -> Judgement {
+        if judgement.is_rejected() {
+            return judgement;
+        }
+        match expected {
+            // A member incompatible with its declared item type has its own
+            // registered identifier.
+            Expected::Member(declared) => match &judgement.outcome {
+                Static::Value(actual) | Static::Identity(actual) => {
+                    if declared.accepts(actual) {
+                        judgement
+                    } else {
+                        let (actual, declared) = (actual.clone(), declared.clone());
+                        self.emit(
+                            StaticError::CollectionHeterogeneous,
+                            source,
+                            span,
+                            "collection_member",
+                            format!(
+                                "this member is {actual}, not the declared item type {declared}"
+                            ),
+                        );
+                        Judgement::rejected()
+                    }
+                }
+                // A sentinel is never a material collection member, and each has
+                // its own registered rule.
+                Static::Missing => {
+                    self.emit(
+                        StaticError::TypeMismatch,
+                        source,
+                        span,
+                        "collection_member",
+                        "MISSING is a non-material sentinel and cannot be a collection member"
+                            .to_string(),
+                    );
+                    Judgement::rejected()
+                }
+                Static::Unknown => {
+                    self.emit(
+                        StaticError::ValueUnknown,
+                        source,
+                        span,
+                        "collection_member",
+                        "UNKNOWN is a non-material sentinel and cannot be a collection member"
+                            .to_string(),
+                    );
+                    Judgement::rejected()
+                }
+                _ => judgement,
+            },
+            // `DEFAULT` admits the literal MISSING it exists to replace.
+            Expected::Default(_) if matches!(judgement.outcome, Static::Missing) => judgement,
+            Expected::Type(declared) | Expected::Default(declared) => {
+                match &judgement.outcome {
+                    Static::Value(actual) | Static::Identity(actual) => {
+                        if declared.accepts(actual) {
+                            judgement
+                        } else {
+                            self.emit(
+                                StaticError::TypeMismatch,
+                                source,
+                                span,
+                                "declared_type",
+                                format!("this value is {actual}, not the declared type {declared}"),
+                            );
+                            Judgement::rejected()
+                        }
+                    }
+                    // "MISSING … has no storable user type."
+                    Static::Missing => {
+                        self.emit(
+                            StaticError::TypeMismatch,
+                            source,
+                            span,
+                            "sentinel_placement",
+                            format!("MISSING has no storable type and cannot satisfy {declared}"),
+                        );
+                        Judgement::rejected()
+                    }
+                    // "A required material destination rejects UNKNOWN with
+                    // error.value.unknown."
+                    Static::Unknown => {
+                        self.emit(
+                            StaticError::ValueUnknown,
+                            source,
+                            span,
+                            "sentinel_placement",
+                            format!("UNKNOWN cannot bind a required {declared} destination"),
+                        );
+                        Judgement::rejected()
+                    }
+                    Static::Identifier(name) => {
+                        self.emit(
+                            StaticError::TypeMismatch,
+                            source,
+                            span,
+                            "declared_type",
+                            format!("`{name}` is a registered identifier, not a {declared} value"),
+                        );
+                        Judgement::rejected()
+                    }
+                    Static::TypeDesignator(_) => {
+                        // "A type designator is not a first-class material value."
+                        self.emit(
+                        StaticError::TypeMismatch,
+                        source,
+                        span,
+                        "type_designator",
+                        format!("a type designator cannot stand where a {declared} value is required"),
+                    );
+                        Judgement::rejected()
+                    }
+                    Static::Opaque | Static::Rejected => judgement,
+                }
+            }
+            // "boolean_expression: Expression statically producing BOOLEAN or
+            // UNKNOWN under special-value rules."
+            Expected::Boolean => match &judgement.outcome {
+                Static::Value(Type::Boolean) | Static::Unknown => judgement,
+                Static::Value(other) => {
+                    let other = other.clone();
+                    self.emit(
+                        StaticError::TypeMismatch,
+                        source,
+                        span,
+                        "boolean_condition",
+                        format!("a condition is BOOLEAN, not {other}"),
+                    );
+                    Judgement::rejected()
+                }
+                Static::Missing => {
+                    self.emit(
+                        StaticError::TypeMismatch,
+                        source,
+                        span,
+                        "boolean_condition",
+                        "MISSING is not a condition".to_string(),
+                    );
+                    Judgement::rejected()
+                }
+                _ => judgement,
+            },
+            Expected::TypeExpression => match &judgement.outcome {
+                Static::TypeDesignator(_) | Static::Identity(_) => judgement,
+                _ => {
+                    self.emit(
+                        StaticError::TypeMismatch,
+                        source,
+                        span,
+                        "type_expression",
+                        "this slot requires a source type expression".to_string(),
+                    );
+                    Judgement::rejected()
+                }
+            },
+            Expected::None
+            | Expected::Identity
+            | Expected::Identifier(_)
+            | Expected::Quantifier => judgement,
+        }
     }
 
     fn judge(&mut self, source: &SourceId, expr: &Expr, expected: &Expected) -> Judgement {
@@ -322,10 +535,10 @@ impl Check<'_> {
         identifier: &str,
         detail: String,
     ) {
-        if let Some(defect) = self
-            .emitter
-            .earlier_stage(source, span, identifier, detail)
-        {
+        if self.silent {
+            return;
+        }
+        if let Some(defect) = self.emitter.earlier_stage(source, span, identifier, detail) {
             if !self.earlier.iter().any(|existing| {
                 existing.identifier == defect.identifier
                     && existing.source == defect.source
@@ -342,7 +555,7 @@ impl Check<'_> {
 
     fn literal(
         &mut self,
-        source: &SourceId,
+        _source: &SourceId,
         literal: &lcl_parser::syntax::Literal,
         expected: &Expected,
     ) -> Judgement {
@@ -442,18 +655,28 @@ impl Check<'_> {
         // "Brackets denote LIST unless the receiving contract uniquely requires
         // SET[T]."
         let as_set = matches!(expected.ty(), Some(Type::Set(_)));
-        let member_expectation = expected
-            .member()
-            .cloned()
-            .map(Expected::Type)
-            .unwrap_or(Expected::None);
+        // "The rule applies recursively to the members of a reference-typed
+        // collection", so an identity slot's bracket members are identities too.
+        let identities = matches!(expected, Expected::Identity);
+        let member_expectation = if identities {
+            Expected::Identity
+        } else {
+            expected
+                .member()
+                .cloned()
+                .map(Expected::Member)
+                .unwrap_or(Expected::None)
+        };
         let quantifier = matches!(expected, Expected::Quantifier);
 
         let mut member_types: Vec<(Type, Span)> = Vec::new();
         let mut rejected = false;
         for member in &collection.members {
+            // The immediate quantifier sequence "explicitly permits UNKNOWN
+            // literals, including outside another condition", so its members
+            // are not judged against a required material BOOLEAN destination.
             let expectation = if quantifier {
-                Expected::Type(Type::Boolean)
+                Expected::Quantifier
             } else {
                 member_expectation.clone()
             };
@@ -501,6 +724,9 @@ impl Check<'_> {
                     rejected = true;
                 }
                 Static::Rejected => rejected = true,
+                // A declared field's own contract governs it; its membership is
+                // judged where that contract is judged.
+                Static::Opaque => {}
                 Static::TypeDesignator(_) | Static::Identifier(_) => {
                     self.emit(
                         StaticError::TypeMismatch,
@@ -524,6 +750,14 @@ impl Check<'_> {
         if rejected {
             return Judgement::rejected();
         }
+        // A reference list carries one identity per member and has no material
+        // member type to unify: which targets the slot admits is the resolution
+        // stage's verdict, already given.
+        if identities {
+            return Judgement::value(Type::List(Box::new(Type::Reference(Box::new(
+                RefTarget::Any,
+            )))));
+        }
 
         let member_type = match expected.member() {
             Some(ty) => ty.clone(),
@@ -546,7 +780,7 @@ impl Check<'_> {
                 for (ty, span) in &member_types[1..] {
                     if *ty != first {
                         self.emit(
-                            StaticError::CollectionHeterogeneous,
+                            StaticError::TypeMismatch,
                             source,
                             *span,
                             "collection_member",
@@ -559,20 +793,8 @@ impl Check<'_> {
             }
         };
 
-        // With an expected member type, each member was already judged against
-        // it by `expression`; anything incompatible has been reported there.
-        for (ty, span) in &member_types {
-            if !member_type.accepts(ty) {
-                self.emit(
-                    StaticError::CollectionHeterogeneous,
-                    source,
-                    *span,
-                    "collection_member",
-                    format!("this member is {ty}, not the declared member type {member_type}"),
-                );
-                return Judgement::rejected();
-            }
-        }
+        // Each member was already judged against the item type by
+        // `expression`, which owns that identifier.
 
         let ty = if as_set {
             Type::Set(Box::new(member_type))
@@ -600,6 +822,10 @@ impl Check<'_> {
         let Some(result) = self.apply(source, &row, &arguments, unary.span) else {
             return Judgement::rejected();
         };
+        let result = Judgement {
+            value: fold_unary(unary.operator, &arguments[0].0),
+            outcome: result.outcome,
+        };
         // "DURATION is non-negative. Unary negation does not accept DURATION."
         if unary.operator == UnaryOp::Negate {
             if let Some(Type::Duration) = arguments[0].0.ty() {
@@ -626,15 +852,17 @@ impl Check<'_> {
             self.unregistered(source, binary.span, name);
             return Judgement::rejected();
         };
-        let arguments = vec![
-            (left, binary.left.span()),
-            (right, binary.right.span()),
-        ];
+        let arguments = vec![(left, binary.left.span()), (right, binary.right.span())];
         if binary.operator == BinaryOp::Divide {
             return self.divide(source, binary, &row, &arguments, false);
         }
-        self.apply(source, &row, &arguments, binary.span)
-            .unwrap_or_else(Judgement::rejected)
+        match self.apply(source, &row, &arguments, binary.span) {
+            Some(result) => Judgement {
+                value: fold_binary(binary.operator, &arguments[0].0, &arguments[1].0),
+                outcome: result.outcome,
+            },
+            None => Judgement::rejected(),
+        }
     }
 
     /// `/`, with its exactness contract.
@@ -670,15 +898,16 @@ impl Check<'_> {
                     return result;
                 }
                 match rational.to_terminating_decimal() {
-                    Ok(value) => Judgement {
-                        outcome: result.outcome,
-                        value: Some(match result.ty() {
-                            Some(Type::Measure(Some(unit))) => {
-                                Const::Quantity(value, unit.clone())
-                            }
+                    Ok(value) => {
+                        let carried = match result.ty() {
+                            Some(Type::Measure(Some(unit))) => Const::Quantity(value, unit.clone()),
                             _ => Const::Number(value),
-                        }),
-                    },
+                        };
+                        Judgement {
+                            outcome: result.outcome,
+                            value: Some(carried),
+                        }
+                    }
                     Err(DivisionDefect::NonTerminating) => {
                         self.emit(
                             StaticError::NumericNonTerminating,
@@ -748,10 +977,7 @@ impl Check<'_> {
                         source,
                         property.name_span,
                         "object_property",
-                        format!(
-                            "`{}` is not a field of this object schema",
-                            property.name
-                        ),
+                        format!("`{}` is not a field of this object schema", property.name),
                     );
                     Judgement::rejected()
                 }
@@ -798,9 +1024,11 @@ impl Check<'_> {
             );
             return Judgement::rejected();
         };
-        self.record(source, base.span(), &Static::Identity(Type::Reference(Box::new(
-            RefTarget::Any,
-        ))));
+        self.record(
+            source,
+            base.span(),
+            &Static::Identity(Type::Reference(Box::new(RefTarget::Any))),
+        );
         let Some(index) = self.catalog.binding(source, identifier.span) else {
             return Judgement::rejected();
         };
@@ -819,9 +1047,52 @@ impl Check<'_> {
             );
             return Judgement::rejected();
         }
-        // The field's own contract decides its type; this stage records that the
-        // read is legal and leaves the field value to its own contract.
-        Judgement::plain(Static::Value(Type::Reference(Box::new(RefTarget::Any))))
+        // "declared_property_type: The selected … declaration field's registered
+        // or inferred static type." The field's own expression carries it, so
+        // it is resolved here rather than guessed.
+        match self.declaration_field_type(index, &property.name) {
+            Some(ty) => Judgement::value(ty),
+            // A field whose own type this stage cannot infer is left to its own
+            // contract rather than given an invented one.
+            None => Judgement::plain(Static::Opaque),
+        }
+    }
+
+    /// The static type of one declaration's registered field, from that field's
+    /// own expression.
+    ///
+    /// Memoized and depth-bounded, so a field that reads another declaration's
+    /// field terminates whatever the source does.
+    fn declaration_field_type(&mut self, declaration: usize, field: &str) -> Option<Type> {
+        let key = (declaration, field.to_string());
+        if let Some(known) = self.field_types.get(&key) {
+            return known.clone();
+        }
+        if self.property_depth >= 8 || !self.resolving.insert(key.clone()) {
+            return None;
+        }
+        self.property_depth += 1;
+
+        let resolved = (|| {
+            let block = crate::types::declaration_block(self.resolved, declaration)?;
+            let source = self
+                .resolved
+                .declarations()
+                .get(declaration)?
+                .source
+                .clone();
+            let expr = crate::types::inline_expression(&block.field(field)?.body)?;
+            let silent = self.silent;
+            self.silent = true;
+            let judgement = self.judge(&source, expr, &Expected::None);
+            self.silent = silent;
+            judgement.ty().cloned()
+        })();
+
+        self.property_depth -= 1;
+        self.resolving.remove(&key);
+        self.field_types.insert(key, resolved.clone());
+        resolved
     }
 
     fn index(&mut self, source: &SourceId, index: &lcl_parser::syntax::IndexAccess) -> Judgement {
@@ -922,7 +1193,8 @@ impl Check<'_> {
             self.arity(source, call, &row.name, &row.arities());
             return Judgement::rejected();
         }
-        let Some(result) = self.apply_overloads(source, &row.overloads, &arguments, call.span, &row.name)
+        let Some(result) =
+            self.apply_overloads(source, &row.overloads, &arguments, call.span, &row.name)
         else {
             return Judgement::rejected();
         };
@@ -979,10 +1251,7 @@ impl Check<'_> {
             self.unregistered(source, binary.span, "/");
             return Judgement::rejected();
         };
-        let arguments = vec![
-            (left, binary.left.span()),
-            (right, binary.right.span()),
-        ];
+        let arguments = vec![(left, binary.left.span()), (right, binary.right.span())];
         let judgement = self.divide(source, binary, &row, &arguments, true);
         self.record(source, argument.span(), &judgement.outcome);
         // Keep the operands' exact values so ROUND can materialize the quotient.
@@ -1130,9 +1399,794 @@ impl Check<'_> {
         );
     }
 
+    /// The statically known value recorded at one exact locus, if any.
+    pub(crate) fn value_at(&self, source: &SourceId, span: Span) -> Option<Const> {
+        self.values.get(&(source.clone(), span)).cloned()
+    }
+
     /// The statically known value already recorded at one locus.
     fn annotation_value(&mut self, source: &SourceId, expr: &Expr) -> Option<Const> {
         self.values.get(&(source.clone(), expr.span())).cloned()
+    }
+
+    // -----------------------------------------------------------------------
+    // Overload selection
+    // -----------------------------------------------------------------------
+
+    /// Apply one operator row to its arguments.
+    fn apply(
+        &mut self,
+        source: &SourceId,
+        row: &OperatorRow,
+        arguments: &[(Judgement, Span)],
+        span: Span,
+    ) -> Option<Judgement> {
+        if arguments.len() != row.arity {
+            self.emit(
+                StaticError::OperatorOperand,
+                source,
+                span,
+                "arity",
+                format!(
+                    "`{}` takes {} operand(s); found {}",
+                    row.name,
+                    row.arity,
+                    arguments.len()
+                ),
+            );
+            return None;
+        }
+        self.apply_overloads(source, &row.overloads, arguments, span, &row.name)
+    }
+
+    /// Select the first registered overload that admits these operands.
+    ///
+    /// "An unregistered name, arity, or operand family is invalid;
+    /// implementations do not infer extra overloads."
+    fn apply_overloads(
+        &mut self,
+        source: &SourceId,
+        overloads: &[Overload],
+        arguments: &[(Judgement, Span)],
+        span: Span,
+        name: &str,
+    ) -> Option<Judgement> {
+        // An operand that already failed carries no type, so no overload can be
+        // judged and no second diagnostic is invented for the same defect.
+        if arguments
+            .iter()
+            .any(|(judgement, _)| judgement.is_rejected())
+        {
+            return None;
+        }
+
+        for overload in overloads {
+            if overload.parameters.len() != arguments.len() {
+                continue;
+            }
+            let mut bindings: BTreeMap<char, Type> = BTreeMap::new();
+            let matched =
+                overload
+                    .parameters
+                    .iter()
+                    .zip(arguments)
+                    .all(|(operand, (judgement, _))| {
+                        self.operand_admits(operand, judgement, &mut bindings)
+                    });
+            if !matched {
+                continue;
+            }
+            return self.overload_result(source, overload, arguments, span, name, &bindings);
+        }
+
+        // No overload matched. A sentinel operand is a placement defect with its
+        // own identifier; anything else is an unregistered operand family.
+        for (judgement, argument_span) in arguments {
+            match judgement.outcome {
+                Static::Unknown => {
+                    // "A required material receiving site rejects UNKNOWN with
+                    // error.value.unknown."
+                    self.emit(
+                        StaticError::ValueUnknown,
+                        source,
+                        *argument_span,
+                        "sentinel_placement",
+                        format!("`{name}` has no registered overload that admits UNKNOWN here"),
+                    );
+                    return None;
+                }
+                Static::Missing => {
+                    // MISSING "has no storable user type"; only ==, != and
+                    // EXISTS admit it, and those admit it through their own
+                    // registered designators.
+                    self.emit(
+                        StaticError::TypeMismatch,
+                        source,
+                        *argument_span,
+                        "sentinel_placement",
+                        format!("`{name}` has no registered overload that admits MISSING here"),
+                    );
+                    return None;
+                }
+                _ => {}
+            }
+        }
+        let families: Vec<String> = arguments
+            .iter()
+            .map(|(judgement, _)| judgement.outcome.to_string())
+            .collect();
+        self.emit(
+            StaticError::OperatorOperand,
+            source,
+            span,
+            "operand_family",
+            format!(
+                "no registered `{name}` overload accepts ({})",
+                families.join(", ")
+            ),
+        );
+        None
+    }
+
+    /// True when one operand position admits this judgement.
+    fn operand_admits(
+        &self,
+        operand: &Operand,
+        judgement: &Judgement,
+        bindings: &mut BTreeMap<char, Type>,
+    ) -> bool {
+        operand
+            .alternatives()
+            .iter()
+            .any(|designator| self.designator_admits(designator, judgement, bindings))
+    }
+
+    fn designator_admits(
+        &self,
+        designator: &Designator,
+        judgement: &Judgement,
+        bindings: &mut BTreeMap<char, Type>,
+    ) -> bool {
+        // The two whole-application designators admit sentinels explicitly.
+        match designator {
+            Designator::EqualityCompatible => {
+                return matches!(
+                    judgement.outcome,
+                    Static::Value(_) | Static::Identity(_) | Static::Missing | Static::Unknown
+                )
+            }
+            Designator::AnyExpressionOrReference => {
+                return !matches!(
+                    judgement.outcome,
+                    Static::Rejected | Static::TypeDesignator(_)
+                )
+            }
+            Designator::Unknown => return matches!(judgement.outcome, Static::Unknown),
+            Designator::Missing => return matches!(judgement.outcome, Static::Missing),
+            Designator::UnitIdentifier => {
+                return match &judgement.outcome {
+                    Static::Identifier(id) => self.contracts.is_unit(id),
+                    _ => false,
+                }
+            }
+            Designator::WorkspaceReference => {
+                return matches!(judgement.outcome, Static::Identity(_))
+            }
+            Designator::AnyReference => {
+                return matches!(
+                    judgement.outcome,
+                    Static::Identity(_) | Static::Value(Type::Reference(_))
+                )
+            }
+            _ => {}
+        }
+
+        let Some(ty) = judgement.ty() else {
+            return false;
+        };
+        if matches!(judgement.outcome, Static::TypeDesignator(_)) {
+            return false;
+        }
+        self.type_admits(designator, ty, bindings)
+    }
+
+    fn type_admits(
+        &self,
+        designator: &Designator,
+        ty: &Type,
+        bindings: &mut BTreeMap<char, Type>,
+    ) -> bool {
+        match designator {
+            Designator::Exact(expected) => expected.accepts(ty),
+            Designator::AnyList => matches!(ty, Type::List(_)),
+            Designator::AnySet => matches!(ty, Type::Set(_)),
+            Designator::AnyObject => matches!(ty, Type::Object(_)),
+            Designator::List(inner) => match ty {
+                Type::List(member) => self.type_admits(inner, member, bindings),
+                _ => false,
+            },
+            Designator::Set(inner) => match ty {
+                Type::Set(member) => self.type_admits(inner, member, bindings),
+                _ => false,
+            },
+            // "T binds one identical static type throughout one signature
+            // application."
+            Designator::Variable(name) => match bindings.get(name) {
+                Some(bound) => bound.accepts(ty) || ty.accepts(bound),
+                None => {
+                    bindings.insert(*name, ty.clone());
+                    true
+                }
+            },
+            Designator::Numeric => ty.is_numeric(),
+            Designator::SameUnitMeasure => matches!(ty, Type::Measure(_)),
+            Designator::SameUnitMeasureCollection => matches!(ty.member(), Some(Type::Measure(_))),
+            // "Material values mutually order-compatible under ordered_types
+            // and ordered_type_rules".
+            Designator::Ordered | Designator::OrderCompatible => {
+                self.contracts.is_ordered_family(ty.family())
+            }
+            Designator::NonemptyOrderedCollection => ty
+                .member()
+                .is_some_and(|member| self.contracts.is_ordered_family(member.family())),
+            Designator::BooleanSequence => matches!(ty.member(), Some(Type::Boolean)),
+            Designator::AnyReference => matches!(ty, Type::Reference(_)),
+            Designator::Unknown
+            | Designator::Missing
+            | Designator::EqualityCompatible
+            | Designator::AnyExpressionOrReference
+            | Designator::UnitIdentifier
+            | Designator::WorkspaceReference
+            | Designator::PropertyName => false,
+        }
+    }
+
+    /// The result of one matched overload, with its cross-operand constraints.
+    fn overload_result(
+        &mut self,
+        source: &SourceId,
+        overload: &Overload,
+        arguments: &[(Judgement, Span)],
+        span: Span,
+        name: &str,
+        bindings: &BTreeMap<char, Type>,
+    ) -> Option<Judgement> {
+        // "Every arithmetic, ordered-comparison, SUM, MIN, or MAX overload that
+        // requires identical MEASURE units emits error.numeric.unit_mismatch for
+        // unequal concrete unit identifiers."
+        if self.requires_same_unit(overload) && !self.same_units(source, arguments, span, name)? {
+            return None;
+        }
+        // "order_compatible: Two ordered values of the same static type, or an
+        // INTEGER/DECIMAL pair."
+        if overload.parameters.iter().any(|operand| {
+            operand
+                .alternatives()
+                .contains(&Designator::OrderCompatible)
+        }) && !self.order_compatible(source, arguments, span, name)
+        {
+            return None;
+        }
+
+        let ty = self.result_type(&overload.result.spec, overload, arguments, bindings);
+        match ty {
+            Some(ty) => Some(Judgement::value(ty)),
+            None => {
+                self.emit(
+                    StaticError::OperatorOperand,
+                    source,
+                    span,
+                    "result_family",
+                    format!("`{name}` has no registered result family for these operands"),
+                );
+                None
+            }
+        }
+    }
+
+    fn requires_same_unit(&self, overload: &Overload) -> bool {
+        overload.constraint.as_deref() == Some("same_exact_unit")
+            || overload.parameters.iter().any(|operand| {
+                operand.alternatives().iter().any(|designator| {
+                    matches!(
+                        designator,
+                        Designator::SameUnitMeasure | Designator::SameUnitMeasureCollection
+                    )
+                })
+            })
+    }
+
+    /// Every `MEASURE` operand carries the same exact unit, or the check is the
+    /// demanding layer's because a unit is not statically known.
+    fn same_units(
+        &mut self,
+        source: &SourceId,
+        arguments: &[(Judgement, Span)],
+        span: Span,
+        name: &str,
+    ) -> Option<bool> {
+        let mut known: Option<(UnitId, Span)> = None;
+        let mut unknown = false;
+        for (judgement, argument_span) in arguments {
+            let unit = match judgement.ty() {
+                Some(Type::Measure(unit)) => unit.clone(),
+                Some(other) => match other.member() {
+                    Some(Type::Measure(unit)) => unit.clone(),
+                    _ => continue,
+                },
+                None => continue,
+            };
+            let Some(unit) = unit else {
+                unknown = true;
+                continue;
+            };
+            match &known {
+                None => known = Some((unit, *argument_span)),
+                Some((first, _)) if *first == unit => {}
+                Some((first, _)) => {
+                    self.emit(
+                        StaticError::NumericUnitMismatch,
+                        source,
+                        *argument_span,
+                        "measure_unit",
+                        format!("`{name}` requires one exact unit; found {first} and {unit}"),
+                    );
+                    return Some(false);
+                }
+            }
+        }
+        if unknown {
+            self.defer(
+                source,
+                span,
+                DemandKind::MeasureUnit,
+                format!("`{name}` requires one exact MEASURE unit"),
+            );
+        }
+        Some(true)
+    }
+
+    fn order_compatible(
+        &mut self,
+        source: &SourceId,
+        arguments: &[(Judgement, Span)],
+        span: Span,
+        name: &str,
+    ) -> bool {
+        let types: Vec<&Type> = arguments
+            .iter()
+            .filter_map(|(judgement, _)| judgement.ty())
+            .collect();
+        let (Some(left), Some(right)) = (types.first(), types.get(1)) else {
+            return true;
+        };
+        let numeric_pair = left.is_numeric() && right.is_numeric();
+        if numeric_pair || left.accepts(right) {
+            return true;
+        }
+        self.emit(
+            StaticError::OperatorOperand,
+            source,
+            span,
+            "order_compatible",
+            format!("`{name}` compares two values of one ordered type; found {left} and {right}"),
+        );
+        false
+    }
+
+    /// The registered result designator, resolved against these operands.
+    fn result_type(
+        &self,
+        spec: &ResultSpec,
+        overload: &Overload,
+        arguments: &[(Judgement, Span)],
+        bindings: &BTreeMap<char, Type>,
+    ) -> Option<Type> {
+        let first = arguments.first().and_then(|(j, _)| j.ty());
+        let second = arguments.get(1).and_then(|(j, _)| j.ty());
+        match spec {
+            ResultSpec::Exact(ty) => Some(match (ty, &overload.unit) {
+                // `MEASURE / INTEGER` keeps the numerator's exact unit.
+                (Type::Measure(_), Some(rule)) if rule == "preserve_left_exact_unit" => {
+                    first.cloned().unwrap_or(Type::Measure(None))
+                }
+                (Type::Measure(_), Some(rule)) if rule == "preserve_exact_unit" => {
+                    first.cloned().unwrap_or(Type::Measure(None))
+                }
+                _ => ty.clone(),
+            }),
+            ResultSpec::SameNumericFamily | ResultSpec::SameFamilyNonnegative => first.cloned(),
+            ResultSpec::PromotedFamily | ResultSpec::PromotedNumericOrMeasure => {
+                self.promote(first?, second?)
+            }
+            ResultSpec::PromotedMemberFamily => {
+                let member = first?.member()?;
+                Some(member.clone())
+            }
+            ResultSpec::MemberType => match first? {
+                Type::List(member) | Type::Set(member) => Some(member.as_ref().clone()),
+                _ => bindings.get(&'T').cloned(),
+            },
+            // Property and index access compute their own result from the
+            // selected field, so the designator is never resolved here.
+            ResultSpec::DeclaredPropertyType => None,
+        }
+    }
+
+    /// `#/numeric_promotion`, plus the same-family rules for the non-scalar
+    /// numeric families.
+    fn promote(&self, left: &Type, right: &Type) -> Option<Type> {
+        if left.is_numeric() && right.is_numeric() {
+            let promoted = self
+                .contracts
+                .numeric_promotion(left.family(), right.family())?;
+            return Type::scalar(promoted);
+        }
+        match (left, right) {
+            (Type::Duration, Type::Duration) => Some(Type::Duration),
+            // "same-unit MEASURE with scalar promotion of its numeric
+            // components" — the unit is the one both operands carry.
+            (Type::Measure(a), Type::Measure(b)) => {
+                Some(Type::Measure(a.clone().or_else(|| b.clone())))
+            }
+            _ => None,
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // References
+    // -----------------------------------------------------------------------
+
+    /// `REF(identifier)` under `#/reference_context_contract`.
+    fn reference(&mut self, source: &SourceId, call: &Call, expected: &Expected) -> Judgement {
+        let Some(identifier) = call.reference_target() else {
+            // `REFERENCE_CALL = "REF", "(", IDENTIFIER, ")"` — the grammar stage
+            // owns any other shape.
+            return Judgement::rejected();
+        };
+        let Some(binding) = self
+            .resolved
+            .bindings()
+            .iter()
+            .find(|b| b.source == *source && b.span == identifier.span)
+        else {
+            return Judgement::rejected();
+        };
+
+        let identity_context = matches!(expected, Expected::Identity | Expected::TypeExpression)
+            || matches!(expected.ty(), Some(Type::Reference(_)));
+
+        match &binding.target {
+            // "Loop-local identifiers exist only in their FOR EACH body."
+            BindingTarget::LoopLocal { .. } => {
+                match self
+                    .locals
+                    .iter()
+                    .rev()
+                    .find(|(name, _)| *name == identifier.text)
+                {
+                    Some((_, ty)) => {
+                        let ty = ty.clone();
+                        if identity_context {
+                            Judgement::plain(Static::Identity(Type::Reference(Box::new(
+                                RefTarget::Value(Box::new(ty)),
+                            ))))
+                        } else {
+                            Judgement::value(ty)
+                        }
+                    }
+                    None => Judgement::rejected(),
+                }
+            }
+            BindingTarget::Declaration(index) => {
+                let index = *index;
+                let Some(declaration) = self.resolved.declarations().get(index) else {
+                    return Judgement::rejected();
+                };
+                let block = declaration.block.clone();
+                let kind = declaration.definition_kind.clone();
+                let id = declaration.id.clone();
+
+                if identity_context {
+                    let target = match self.catalog.definition(index) {
+                        Some(crate::types::Definition::Type(ty)) => {
+                            RefTarget::Value(Box::new(ty.clone()))
+                        }
+                        _ => RefTarget::Declaration(id),
+                    };
+                    return Judgement::plain(Static::Identity(Type::Reference(Box::new(target))));
+                }
+
+                // "Every other occurrence is a value context. REF reads exactly
+                // one bound value of INPUT, DATA, CONTEXT, MEMORY, STATE,
+                // OUTPUT, DEFINE kind.constant, or a loop-local binding. REF to
+                // VALIDATE or VERIFY reads its Boolean check result. Other
+                // declarations remain reference identities."
+                match block.as_str() {
+                    "INPUT" | "DATA" | "CONTEXT" | "MEMORY" | "STATE" | "OUTPUT" => {
+                        match self.declaration_types.get(&index).cloned() {
+                            Some(ty) => Judgement::value(ty),
+                            // The declaration's own TYPE field failed to
+                            // resolve; its diagnostic is recorded there.
+                            None => Judgement::rejected(),
+                        }
+                    }
+                    "VALIDATE" | "VERIFY" => Judgement::value(Type::Boolean),
+                    "DEFINE" if kind.as_deref() == Some("kind.constant") => {
+                        match self.declaration_types.get(&index).cloned() {
+                            Some(ty) => Judgement {
+                                outcome: Static::Value(ty),
+                                value: self.constants.get(&index).cloned(),
+                            },
+                            None => Judgement::rejected(),
+                        }
+                    }
+                    _ => Judgement::plain(Static::Identity(Type::Reference(Box::new(
+                        RefTarget::Declaration(id),
+                    )))),
+                }
+            }
+            BindingTarget::Unresolved => Judgement::rejected(),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Constructors
+    // -----------------------------------------------------------------------
+
+    /// The constructed value's declared value-domain constraints.
+    ///
+    /// M1 owns every closed *literal profile* — REGEX, GLOB, DATE, TIME,
+    /// DATETIME and URI text is already validated at the lexical stage. What is
+    /// left is the numeric and unit domains the registry states as row fields,
+    /// and the `PATH` form legality M1 explicitly deferred because it "depends
+    /// on the receiving field and on resolution".
+    fn constructed_value(
+        &mut self,
+        source: &SourceId,
+        call: &Call,
+        row: &ConstructorRow,
+        arguments: &[(Judgement, Span)],
+        result: Judgement,
+    ) -> Judgement {
+        let first = arguments.first();
+        let known = first.and_then(|(judgement, _)| judgement.value.clone());
+
+        // A unit argument narrowed by category, e.g. DURATION's Time units.
+        if let Some(category) = &row.unit_category {
+            if let Some((judgement, span)) = arguments.get(1) {
+                if let Static::Identifier(unit) = &judgement.outcome {
+                    if !self.contracts.unit_in_category(unit, category) {
+                        self.emit(
+                            StaticError::NumericUnitMismatch,
+                            source,
+                            *span,
+                            "unit_category",
+                            format!(
+                                "`{}` requires a {category}-category unit; `{unit}` is not one",
+                                row.name
+                            ),
+                        );
+                        return Judgement::rejected();
+                    }
+                }
+            }
+        }
+
+        // An inclusive declared bound over a statically known number.
+        if row.minimum.is_some() || row.maximum.is_some() {
+            match known.as_ref().and_then(Const::number) {
+                Some(value) => {
+                    if let Some(minimum) = row.minimum {
+                        if value.compare(&Decimal::from_integer(crate::numeric::Integer::from_u64(
+                            minimum.unsigned_abs(),
+                        ))) == std::cmp::Ordering::Less
+                            || (minimum == 0 && value.is_negative())
+                        {
+                            self.out_of_range(source, call.span, &row.name, "minimum", minimum);
+                            return Judgement::rejected();
+                        }
+                    }
+                    if let Some(maximum) = row.maximum {
+                        if maximum >= 0
+                            && value.compare(&Decimal::from_integer(
+                                crate::numeric::Integer::from_u64(maximum.unsigned_abs()),
+                            )) == std::cmp::Ordering::Greater
+                        {
+                            self.out_of_range(source, call.span, &row.name, "maximum", maximum);
+                            return Judgement::rejected();
+                        }
+                    }
+                }
+                None => self.defer(
+                    source,
+                    call.span,
+                    DemandKind::DeclaredBound,
+                    format!("`{}` bounds its constructed value", row.name),
+                ),
+            }
+        }
+
+        // BYTES "accepts only a non-negative INTEGER".
+        if row.name == "BYTES" {
+            if let Some(Type::Decimal) = first.and_then(|(judgement, _)| judgement.ty()) {
+                self.emit(
+                    StaticError::OperatorOperand,
+                    source,
+                    call.span,
+                    "operand_family",
+                    "BYTES accepts a non-negative INTEGER".to_string(),
+                );
+                return Judgement::rejected();
+            }
+        }
+
+        match row.name.as_str() {
+            "MEASURE" | "DURATION" => {
+                let unit = arguments
+                    .get(1)
+                    .and_then(|(judgement, _)| match &judgement.outcome {
+                        Static::Identifier(id) => Some(UnitId(id.clone())),
+                        _ => None,
+                    });
+                let value = known.as_ref().and_then(Const::number).cloned();
+                let ty = match (&row.result, &unit) {
+                    (Type::Measure(_), Some(unit)) => Type::Measure(Some(unit.clone())),
+                    _ => row.result.clone(),
+                };
+                Judgement {
+                    outcome: Static::Value(ty),
+                    value: match (value, unit) {
+                        (Some(value), Some(unit)) => Some(Const::Quantity(value, unit)),
+                        _ => None,
+                    },
+                }
+            }
+            "REGEX" | "GLOB" => {
+                let kind = if row.name == "REGEX" {
+                    PatternKind::Regex
+                } else {
+                    PatternKind::Glob
+                };
+                let flags = arguments
+                    .get(1)
+                    .and_then(|(judgement, _)| judgement.value.as_ref())
+                    .and_then(Const::text)
+                    .unwrap_or_default()
+                    .to_string();
+                match known.as_ref().and_then(Const::text) {
+                    Some(text) => Judgement {
+                        outcome: result.outcome,
+                        value: Some(Const::Pattern {
+                            kind,
+                            pattern: text.to_string(),
+                            flags,
+                        }),
+                    },
+                    None => {
+                        self.defer(
+                            source,
+                            call.span,
+                            DemandKind::ConstructorValue,
+                            format!("`{}` compiles a pattern from its argument", row.name),
+                        );
+                        result
+                    }
+                }
+            }
+            "PATH" => self.path_value(source, call, arguments, result),
+            _ => {
+                if known.is_none() {
+                    self.defer(
+                        source,
+                        call.span,
+                        DemandKind::ConstructorValue,
+                        format!("`{}` validates its material argument", row.name),
+                    );
+                }
+                Judgement {
+                    outcome: result.outcome,
+                    value: known,
+                }
+            }
+        }
+    }
+
+    fn out_of_range(&mut self, source: &SourceId, span: Span, name: &str, bound: &str, value: i64) {
+        self.emit(
+            StaticError::ValueOutOfRange,
+            source,
+            span,
+            "declared_bound",
+            format!("`{name}` declares an inclusive {bound} of {value}"),
+        );
+    }
+
+    /// `PATH`'s form legality.
+    ///
+    /// "A one-STRING relative PATH is legal only as IMPORT.SOURCE or
+    /// EXTENSION.SOURCE and resolves from the importing document; otherwise
+    /// that form requires an absolute path."
+    fn path_value(
+        &mut self,
+        source: &SourceId,
+        call: &Call,
+        arguments: &[(Judgement, Span)],
+        result: Judgement,
+    ) -> Judgement {
+        // The two-argument form is the WORKSPACE form, whose relative string is
+        // required; containment is checked on the resolved target, which is not
+        // a static question.
+        if arguments.len() > 1 {
+            return result;
+        }
+        let Some(text) = arguments
+            .first()
+            .and_then(|(judgement, _)| judgement.value.as_ref())
+            .and_then(Const::text)
+        else {
+            self.defer(
+                source,
+                call.span,
+                DemandKind::ConstructorValue,
+                "`PATH` requires an absolute form outside IMPORT.SOURCE and EXTENSION.SOURCE"
+                    .to_string(),
+            );
+            return result;
+        };
+        if text.starts_with('/') || self.relative_path_allowed {
+            return result;
+        }
+        self.earlier_defect(
+            source,
+            call.span,
+            "error.literal.invalid",
+            "a one-STRING relative PATH is legal only as IMPORT.SOURCE or EXTENSION.SOURCE"
+                .to_string(),
+        );
+        Judgement::rejected()
+    }
+}
+
+/// The exact value of a unary operator over a statically known operand.
+///
+/// Only the exactly specified arithmetic is folded. Nothing here decides a
+/// language rule: it makes the value available so the rules that need one — a
+/// declared bound, a zero denominator — can be applied at this stage instead of
+/// being deferred unnecessarily.
+fn fold_unary(operator: UnaryOp, operand: &Judgement) -> Option<Const> {
+    match (operator, operand.value.as_ref()?) {
+        (UnaryOp::Negate, Const::Number(value)) => Some(Const::Number(value.negated())),
+        (UnaryOp::Negate, Const::Quantity(value, unit)) => {
+            Some(Const::Quantity(value.negated(), unit.clone()))
+        }
+        (UnaryOp::Not, Const::Boolean(value)) => Some(Const::Boolean(!value)),
+        _ => None,
+    }
+}
+
+/// The exact value of an arithmetic operator over two statically known
+/// operands. `INTEGER` and `DECIMAL` "never wrap, saturate, or overflow", so
+/// the arithmetic is the exact one.
+fn fold_binary(operator: BinaryOp, left: &Judgement, right: &Judgement) -> Option<Const> {
+    let (left, right) = (left.value.as_ref()?, right.value.as_ref()?);
+    let apply = |a: &Decimal, b: &Decimal| match operator {
+        BinaryOp::Add => Some(a.add(b)),
+        BinaryOp::Subtract => Some(a.sub(b)),
+        BinaryOp::Multiply => Some(a.mul(b)),
+        _ => None,
+    };
+    match (left, right) {
+        (Const::Number(a), Const::Number(b)) => apply(a, b).map(Const::Number),
+        // A same-unit MEASURE keeps that exact unit; a different one is a unit
+        // mismatch the overload already reported.
+        (Const::Quantity(a, unit), Const::Quantity(b, other)) if unit == other => {
+            apply(a, b).map(|value| Const::Quantity(value, unit.clone()))
+        }
+        (Const::Quantity(a, unit), Const::Number(b)) if operator == BinaryOp::Multiply => {
+            apply(a, b).map(|value| Const::Quantity(value, unit.clone()))
+        }
+        _ => None,
     }
 }
 

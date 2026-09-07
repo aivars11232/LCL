@@ -69,8 +69,12 @@
 //! * **Non-executing.** No evaluation of a binding, no I/O, no environment.
 
 pub mod contracts;
+mod declarations;
 pub mod diagnostic;
+mod expr;
 mod numeric;
+mod operation;
+mod pattern;
 mod schema;
 pub mod ty;
 mod types;
@@ -116,6 +120,11 @@ pub enum Static {
     /// status, event, error or unit — received by a slot whose value kind names
     /// that domain. It is a registered name, not a material value.
     Identifier(String),
+    /// Statically well formed, with no static type available at this stage
+    /// because the value is a registered declaration field governed by its own
+    /// field contract. Claiming a type here would be a guess and rejecting the
+    /// expression would be a false diagnostic, so neither is done.
+    Opaque,
     /// A diagnostic was emitted here. No type is claimed, so nothing downstream
     /// can cascade off an invented one.
     Rejected,
@@ -126,7 +135,11 @@ impl Static {
     pub fn ty(&self) -> Option<&Type> {
         match self {
             Static::Value(t) | Static::TypeDesignator(t) | Static::Identity(t) => Some(t),
-            Static::Missing | Static::Unknown | Static::Identifier(_) | Static::Rejected => None,
+            Static::Missing
+            | Static::Unknown
+            | Static::Identifier(_)
+            | Static::Opaque
+            | Static::Rejected => None,
         }
     }
 
@@ -144,6 +157,7 @@ impl fmt::Display for Static {
             Static::Missing => f.write_str("MISSING"),
             Static::Unknown => f.write_str("UNKNOWN"),
             Static::Identifier(id) => write!(f, "identifier {id}"),
+            Static::Opaque => f.write_str("declared field"),
             Static::Rejected => f.write_str("rejected"),
         }
     }
@@ -185,6 +199,9 @@ pub enum DemandKind {
     /// A required material site fed by a value that may be `MISSING` or
     /// `UNKNOWN` only at demand.
     RequiredValue,
+    /// A registered constructor whose material value arrives only at demand:
+    /// `error.literal.invalid` under `expression_demand_resolution`.
+    ConstructorValue,
 }
 
 impl DemandKind {
@@ -198,6 +215,7 @@ impl DemandKind {
             DemandKind::SetMemberOrder => "error.type.mismatch",
             DemandKind::NonemptyReduction => "error.operator.operand",
             DemandKind::RequiredValue => "error.required.missing",
+            DemandKind::ConstructorValue => "error.literal.invalid",
         }
     }
 }
@@ -217,6 +235,50 @@ pub struct DemandObligation {
     pub kind: DemandKind,
     /// Non-normative human detail.
     pub detail: String,
+}
+
+/// A registered defect this stage detects whose registered stage is earlier.
+///
+/// A registered stage is a classification, not a schedule. Two defects are only
+/// decidable once every static type is resolved, yet carry an identifier the
+/// registry stages earlier:
+///
+/// * `error.reference.cycle` for a `kind.type` `BASE` chain that resolves to
+///   itself — `03_TYPES_AND_VALUES/01` assigns exactly that identifier, and M3
+///   checks only the alias domains that resolve to a core identifier;
+/// * `error.literal.invalid` for a constructor value-domain constraint M1
+///   deliberately left to a later layer, because it "depends on the receiving
+///   field and on resolution".
+///
+/// Reporting them with their own identifier and stage keeps the canonical
+/// classification exact. They are kept out of [`Checked::diagnostics`] so no
+/// static-stage list ever contains a foreign identifier.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EarlierStageDefect {
+    /// The registered error identifier, verbatim.
+    pub identifier: String,
+    /// Its registered stage.
+    pub stage: lcl_diagnostics::Stage,
+    pub source: SourceId,
+    pub span: Span,
+    pub position: lcl_lexer::Position,
+    /// `errors.<id>.default_status`, verbatim from the registry.
+    pub default_status: String,
+    pub detail: String,
+}
+
+impl fmt::Display for EarlierStageDefect {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} ({} stage) at {}:{}: {}",
+            self.identifier,
+            self.stage.as_registry_str(),
+            self.source,
+            self.position,
+            self.detail
+        )
+    }
 }
 
 /// The static-stage verdict on one program.
@@ -311,16 +373,37 @@ impl<'a> Checker<'a> {
             });
         }
 
-        let mut checked = Checked {
-            root: resolved.root().clone(),
-            annotations: BTreeMap::new(),
+        let catalog = declarations::catalog(resolved);
+        let mut check = expr::Check {
+            contracts: self.contracts,
+            resolved,
+            catalog: &catalog,
+            emitter: Emitter::new(self.contracts, resolved),
             declaration_types: BTreeMap::new(),
+            constants: BTreeMap::new(),
+            schemas: BTreeMap::new(),
+            locals: Vec::new(),
+            relative_path_allowed: false,
+            silent: false,
+            raw: Vec::new(),
+            annotations: BTreeMap::new(),
+            values: BTreeMap::new(),
+            field_types: BTreeMap::new(),
+            resolving: std::collections::BTreeSet::new(),
+            property_depth: 0,
             deferred: Vec::new(),
-            diagnostics: Vec::new(),
+            earlier: Vec::new(),
         };
-        let raw = Vec::new();
-        checked.diagnostics = diagnostic::select(raw, self.contracts.supersedes());
-        Ok(checked)
+        declarations::check_program(&mut check);
+
+        Ok(Checked {
+            root: resolved.root().clone(),
+            annotations: check.annotations,
+            declaration_types: check.declaration_types,
+            deferred: check.deferred,
+            diagnostics: diagnostic::select(check.raw, self.contracts.supersedes()),
+            earlier: check.earlier,
+        })
     }
 }
 
@@ -340,6 +423,35 @@ impl<'a> Emitter<'a> {
             contracts,
             resolved,
         }
+    }
+
+    /// Build a defect for a registered identifier whose stage is earlier than
+    /// this one, reading its stage and status from the diagnostic registry.
+    ///
+    /// Returns `None` when the identifier is not registered, so an unregistered
+    /// spelling can never be reported.
+    pub(crate) fn earlier_stage(
+        &self,
+        source: &SourceId,
+        span: Span,
+        identifier: &str,
+        detail: String,
+    ) -> Option<EarlierStageDefect> {
+        let registered = self.contracts.diagnostics().error(identifier)?;
+        let text = self
+            .resolved
+            .unit(source)
+            .map(|unit| unit.source())
+            .unwrap_or("");
+        Some(EarlierStageDefect {
+            identifier: registered.id.clone(),
+            stage: registered.stage,
+            source: source.clone(),
+            span,
+            position: diagnostic::position(text, span.start),
+            default_status: registered.default_status.clone(),
+            detail,
+        })
     }
 
     pub(crate) fn emit(
@@ -386,6 +498,7 @@ pub struct Checked {
     pub(crate) declaration_types: BTreeMap<usize, Type>,
     pub(crate) deferred: Vec<DemandObligation>,
     pub(crate) diagnostics: Vec<Diagnostic>,
+    pub(crate) earlier: Vec<EarlierStageDefect>,
 }
 
 impl Checked {
@@ -433,8 +546,19 @@ impl Checked {
         self.diagnostics.first()
     }
 
+    /// Registered defects this stage detected whose registered stage is
+    /// earlier. See [`EarlierStageDefect`].
+    pub fn earlier_stage_defects(&self) -> &[EarlierStageDefect] {
+        &self.earlier
+    }
+
+    /// The static verdict.
+    ///
+    /// A cross-stage defect rejects the program too: it is a registered
+    /// diagnostic of an earlier stage, and `earliest_stage_rule` does not let a
+    /// later stage pass a source that failed an earlier one.
     pub fn outcome(&self) -> Outcome {
-        if self.diagnostics.is_empty() {
+        if self.diagnostics.is_empty() && self.earlier.is_empty() {
             Outcome::Checked
         } else {
             Outcome::Rejected
@@ -442,7 +566,12 @@ impl Checked {
     }
 
     /// Registered `default_status` of the primary diagnostic, if any.
+    ///
+    /// An earlier-stage defect takes precedence, because its stage is earlier.
     pub fn terminal_status(&self) -> Option<&str> {
-        self.primary().map(|d| d.default_status.as_str())
+        self.earlier
+            .first()
+            .map(|d| d.default_status.as_str())
+            .or_else(|| self.primary().map(|d| d.default_status.as_str()))
     }
 }

@@ -116,8 +116,8 @@ impl Integer {
 
     fn cmp_magnitude(a: &[u8], b: &[u8]) -> Ordering {
         a.len().cmp(&b.len()).then_with(|| {
-            for index in (0..a.len()).rev() {
-                match a[index].cmp(&b[index]) {
+            for (left, right) in a.iter().zip(b).rev() {
+                match left.cmp(right) {
                     Ordering::Equal => continue,
                     other => return other,
                 }
@@ -130,9 +130,8 @@ impl Integer {
         let mut out = Vec::with_capacity(a.len().max(b.len()) + 1);
         let mut carry = 0u8;
         for index in 0..a.len().max(b.len()) {
-            let sum = a.get(index).copied().unwrap_or(0)
-                + b.get(index).copied().unwrap_or(0)
-                + carry;
+            let sum =
+                a.get(index).copied().unwrap_or(0) + b.get(index).copied().unwrap_or(0) + carry;
             out.push(sum % 10);
             carry = sum / 10;
         }
@@ -146,9 +145,8 @@ impl Integer {
     fn sub_magnitude(a: &[u8], b: &[u8]) -> Vec<u8> {
         let mut out = Vec::with_capacity(a.len());
         let mut borrow = 0i8;
-        for index in 0..a.len() {
-            let mut digit =
-                a[index] as i8 - b.get(index).copied().unwrap_or(0) as i8 - borrow;
+        for (index, left) in a.iter().enumerate() {
+            let mut digit = *left as i8 - b.get(index).copied().unwrap_or(0) as i8 - borrow;
             if digit < 0 {
                 digit += 10;
                 borrow = 1;
@@ -403,10 +401,6 @@ impl Decimal {
         self.coefficient.is_negative()
     }
 
-    pub(crate) fn scale(&self) -> u32 {
-        self.scale
-    }
-
     pub(crate) fn negated(&self) -> Decimal {
         Decimal {
             coefficient: self.coefficient.negated(),
@@ -414,22 +408,11 @@ impl Decimal {
         }
     }
 
-    pub(crate) fn abs(&self) -> Decimal {
-        Decimal {
-            coefficient: self.coefficient.abs(),
-            scale: self.scale,
-        }
-    }
-
     /// Both values re-expressed at one common scale.
     fn aligned(&self, other: &Decimal) -> (Integer, Integer, u32) {
         let scale = self.scale.max(other.scale);
-        let left = self
-            .coefficient
-            .shift_left((scale - self.scale) as usize);
-        let right = other
-            .coefficient
-            .shift_left((scale - other.scale) as usize);
+        let left = self.coefficient.shift_left((scale - self.scale) as usize);
+        let right = other.coefficient.shift_left((scale - other.scale) as usize);
         (left, right, scale)
     }
 
@@ -465,11 +448,13 @@ impl Decimal {
     ///
     /// "Division evaluates the exact mathematical quotient with no fixed global
     /// precision and no implicit rounding."
+    #[cfg(test)]
     pub(crate) fn divide(&self, other: &Decimal) -> Result<Decimal, DivisionDefect> {
         Rational::of(self, other)?.to_terminating_decimal()
     }
 
     /// Round half-to-even to `digits` fractional digits.
+    #[cfg(test)]
     pub(crate) fn round(&self, digits: u32) -> Result<Decimal, DivisionDefect> {
         Rational::of(self, &Decimal::from_integer(Integer::from_u64(1)))?.round_half_even(digits)
     }
@@ -708,13 +693,19 @@ mod tests {
             Err(DivisionDefect::NonTerminating)
         );
         // …but 3/6 reduces to 1/2 and does terminate.
-        assert_eq!(integer("3").divide(&integer("6")).unwrap().to_string(), "0.5");
+        assert_eq!(
+            integer("3").divide(&integer("6")).unwrap().to_string(),
+            "0.5"
+        );
     }
 
     #[test]
     fn a_mathematical_zero_denominator_has_no_quotient() {
         // `19_DIVISION_BY_ZERO.invalid.lcl`.
-        assert_eq!(integer("1").divide(&integer("0")), Err(DivisionDefect::Zero));
+        assert_eq!(
+            integer("1").divide(&integer("0")),
+            Err(DivisionDefect::Zero)
+        );
         assert_eq!(
             integer("0").divide(&integer("0")),
             Err(DivisionDefect::Zero)
@@ -762,13 +753,16 @@ mod tests {
     fn negatives_and_comparison_are_exact() {
         assert_eq!(integer("1").negated().to_string(), "-1");
         assert_eq!(integer("0").negated().to_string(), "0");
-        assert_eq!(decimal("1.5").negated().abs().to_string(), "1.5");
         assert_eq!(
             integer("1").negated().divide(&integer("3")),
             Err(DivisionDefect::NonTerminating)
         );
         assert_eq!(
-            integer("1").negated().divide(&integer("4")).unwrap().to_string(),
+            integer("1")
+                .negated()
+                .divide(&integer("4"))
+                .unwrap()
+                .to_string(),
             "-0.25"
         );
         assert_eq!(integer("10").compare(&decimal("10.00")), Ordering::Equal);

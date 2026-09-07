@@ -46,7 +46,10 @@ fn every_mirrored_identifier_round_trips_through_its_registry_spelling() {
             Some(id)
         );
     }
-    assert_eq!(StaticError::from_registry_str("error.required.missing"), None);
+    assert_eq!(
+        StaticError::from_registry_str("error.required.missing"),
+        None
+    );
 }
 
 #[test]
@@ -272,7 +275,11 @@ fn units_formats_and_encodings_come_from_the_registry() {
     }
     assert!(!contracts.is_unit("unit.furlong"));
 
-    for (id, _) in reg.get("formats").and_then(Json::as_object).expect("formats") {
+    for (id, _) in reg
+        .get("formats")
+        .and_then(Json::as_object)
+        .expect("formats")
+    {
         assert!(contracts.is_format(id));
     }
     for (id, _) in reg

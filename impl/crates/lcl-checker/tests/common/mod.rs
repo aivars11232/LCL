@@ -115,9 +115,7 @@ pub fn ids(checked: &Checked) -> Vec<String> {
 
 /// The primary identifier and its byte offset, if any.
 pub fn primary(checked: &Checked) -> Option<(String, usize)> {
-    checked
-        .primary()
-        .map(|d| (d.id.to_string(), d.span.start))
+    checked.primary().map(|d| (d.id.to_string(), d.span.start))
 }
 
 /// A minimal `kind.data` document header.

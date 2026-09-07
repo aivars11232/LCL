@@ -135,19 +135,13 @@ impl StaticError {
     }
 }
 
-/// Registered static-stage identifiers this milestone does not decide, each
-/// with the layer that owns it.
+/// Registered static-stage identifiers this milestone does not decide.
 ///
-/// `error.pattern.resource_limit` is an implementation-capacity outcome of
-/// *matching*: `03_TYPES_AND_VALUES/07` raises it when a run "exhausts a
-/// declared finite resource limit while compiling or matching". This crate
-/// compiles a pattern only to judge a statically known value against a declared
-/// constraint, under a fixed bound it never exceeds, so the identifier has no
-/// static trigger; the evaluating layer owns it.
-pub const DEFERRED: &[(StaticError, &str)] = &[(
-    StaticError::PatternResourceLimit,
-    "M6 evaluation: pattern compilation and matching under host resource limits",
-)];
+/// Empty: every one of the twelve registered `static_or_expression` identifiers
+/// has a trigger this stage can reach, including
+/// `error.pattern.resource_limit`, which the closed pattern profiles reach
+/// through their own declared compilation and matching budgets.
+pub const DEFERRED: &[(StaticError, &str)] = &[];
 
 impl fmt::Display for StaticError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

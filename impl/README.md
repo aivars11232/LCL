@@ -1,4 +1,4 @@
-# LCL implementation — milestones M0 (foundation), M1 (lexer), M2 (parser) and M3 (resolver)
+# LCL implementation — milestones M0 (foundation), M1 (lexer), M2 (parser), M3 (resolver) and M4 (checker)
 
 This directory is a **consumer** of the canonical specification at
 `../canonical/LCL_Core_0.1.0`. It is not part of the release, is not listed in
@@ -18,6 +18,7 @@ implementation conformance is separate evidence.
 | `lcl-lexer` | M1 | Deterministic, non-executing lexer. Source bytes in; tokens with exact byte spans or stable-ordered registered lexical diagnostics out, including every contextual `error.keyword.case` position and the closed literal profiles of constructor arguments. |
 | `lcl-parser` | M2 | Deterministic, non-executing parser. M1 tokens in; a source-faithful syntax tree with exact byte spans or registered grammar-and-schema diagnostics out. |
 | `lcl-resolver` | M3 | Deterministic, non-executing resolver. Parsed units plus an explicit source provider in; version, import, extension, namespace, ID and `REF` bindings and the structural candidate graph, or registered resolution diagnostics, out. |
+| `lcl-checker` | M4 | Deterministic, non-executing static and type checker. A resolved program graph in; every declaration's type, every expression's static contract and the value obligations left to the demanding layer, or registered `static_or_expression` diagnostics, out. |
 
 ## Trust boundary (M0.1)
 
@@ -260,13 +261,109 @@ test asserts no canonical input ever produces one.
 * Totality: sampled truncations and byte mutations of every valid example, plus
   adversarial shapes, resolve without panicking.
 
+## M4 — `lcl-checker`
+
+Canonical processing step 5: "Statically check value families, expression
+names/arity/types, constructors, parameters, and schemas without demanding
+deferred expression values."
+
+### API
+
+```rust
+let contracts = lcl_checker::Contracts::load(&spec)?;
+let checker   = lcl_checker::Checker::new(&contracts);
+let checked   = checker.check(&resolved)?;   // Err = resolution did not succeed
+
+checked.declaration_types()      // every declaration's exact static type
+checked.annotations()            // every expression's static outcome, by exact span
+checked.deferred()               // the value obligations the demanding layer owns
+checked.diagnostics()            // registered static diagnostics, in stable_order
+checked.earlier_stage_defects()  // registered defects whose own stage is earlier
+checked.outcome()                // Checked | Rejected
+```
+
+### Type, then value
+
+Each expression yields its static outcome and, **only when it is statically
+knowable**, its value. A literal, a constructor over literals and a
+`DEFINE kind.constant` built from them are statically known; a read of `INPUT`,
+`OUTPUT`, `STATE`, `CONTEXT` or `MEMORY` is not, and none is guessed.
+
+That split is what the canonical examples require in both directions. `1 / 3` is
+`error.numeric.non_terminating` and `ROUND(1 / 0, 2)` is
+`error.numeric.division_by_zero` *here*, at `status.invalid`, before any effect —
+neither is decidable without the exact value. The same constraint over an operand
+that arrives at demand is recorded as a `DemandObligation` instead, which is what
+`expression_demand_resolution` describes. `INTEGER` and `DECIMAL` are unbounded,
+so the arithmetic is exact and carries its own base-10 magnitude rather than a
+machine number.
+
+### Rules implemented, by normative source
+
+| Source | Rules |
+| --- | --- |
+| `01_FOUNDATION/03` | Step 5 in full; stage monotonicity — a program that failed resolution has no static verdict, and the signature enforces it. A reference's declaration and static type are resolved without reading an `OUTPUT` before its producer binds it. |
+| `03_TYPES_AND_VALUES/01`, `/02`, `/05` | One static type per value; no coercion outside exact INTEGER-to-DECIMAL promotion; transparent aliases resolved away; enum domains identified by their defining declaration; acyclic type resolution. |
+| `03_TYPES_AND_VALUES/03`, `/10`, `types#/object_type_contract` | Structural object identity over field name, type and requiredness; closed schemas; combined `TYPE` + `SCHEMA` identity including defaults and constraints; bracket literals defaulting to `LIST` unless one exact `SET[T]` is expected; invariant member types; empty-literal context. |
+| `03_TYPES_AND_VALUES/04`, `/06`, `/07`, `operators_and_functions#/constructors` | Every registered constructor overload, arity and operand family; registered units and their declared categories; `PERCENTAGE` and `BYTES` bounds; exact division, the terminating-quotient rule and `ROUND`'s single materialization; `MEASURE` unit preservation and the same-unit constraint. |
+| `03_TYPES_AND_VALUES/09`, `types#/reference_context_contract` | `MISSING`, `UNKNOWN` and `NULL` placement; identity versus value contexts, including through parentheses and reference-typed collection members; declaration-property reads before any bound value; `VALIDATE`/`VERIFY` Boolean results; loop-local element types. |
+| `05_SEMANTICS/12`, `operators_and_functions` | All 19 operators, 11 functions and 11 constructors from the registry: names, arity, operand families, result families, promotion, three-valued logic, quantifier arguments and postfix access. Both operands of a short-circuit and both arms of a conditional are checked. |
+| `06_STANDARD_LIBRARY/10`, `operations` | All 39 operation contracts at `ACTION` and `HANDLER` invocation sites: required target with the handler-context exception, required, duplicate and unregistered named parameters — including a registered invocation field that *is* a named parameter, as `HANDLER.LIMIT` is `core.retry`'s `limit`. |
+| `types#/pattern_profiles` | The closed `GLOB` and `REGEX` matching profiles, applied to statically known values under a declared `PATTERN`, with declared finite compilation and matching budgets. |
+
+### Decided here under an earlier registered stage
+
+A registered stage is a classification, not a schedule. Two defects need every
+static type resolved before they can be seen, yet carry an identifier the
+registry stages earlier. They are reported with **their own** identifier and
+stage through `earlier_stage_defects()`, never as a static identifier:
+
+* `error.reference.cycle` — a `kind.type` `BASE` chain that resolves to itself.
+  M3 checks the four alias domains that resolve to a *core identifier*; a
+  `kind.type` chain resolves to a declaration, so every `REF` in it binds and the
+  resolution stage is clean.
+* `error.literal.invalid` — a one-STRING relative `PATH` outside `IMPORT.SOURCE`
+  and `EXTENSION.SOURCE`. M1 owns every other closed literal profile and
+  deliberately left this one, because it "depends on the receiving field and on
+  resolution".
+
+No registered `static_or_expression` identifier is deferred by this milestone:
+all twelve have a trigger this stage reaches.
+
+### Deliberately not decided here
+
+No authority, priority, override or conflict resolution; no runtime value
+demand; no `VALIDATE` execution; no effect. A field value kind that names a
+closed identifier domain — `FORMAT`, `ENCODING`, `MODE` and the like — is
+checked where value kinds are checked, and `error.field.type` is the grammar
+stage's identifier for it.
+
+### Proof
+
+* `08_EXAMPLES/VALID`: all 13 check with no static diagnostic, 751 expressions
+  annotated.
+* `08_EXAMPLES/INVALID`: all 21 consistent — 15 owned by an earlier stage, 5
+  raised here (`error.type.mismatch` twice, `error.numeric.non_terminating`,
+  `error.numeric.division_by_zero`, `error.operation.parameter`) each with its
+  pinned identifier, locus and `status.invalid`, and 1 left to M5.
+* Determinism: repeated and independently resolved checks produce a
+  byte-identical fingerprint of annotations, types, obligations and diagnostics.
+* Totality: sampled truncations of every valid example, deep collections,
+  expressions and alias chains, and a 200-link type chain all return without
+  panicking; a pattern shape that is catastrophic for a backtracking engine
+  completes.
+* 99 tests: registry authority, exact arithmetic, the two pattern profiles, the
+  type model, expressions, constructors, operation contracts, references and
+  special values.
+
 ## Not yet implemented
 
-No type checker, evaluator, capability kernel, runtime, CLI or UI. M4 has not
-been started. Value-domain checks on dynamically supplied constructor
-arguments, and the diagnostic *selection* algorithm beyond one source-validation
-run (`expression_demand_resolution`, producer paths, iteration and retry
-indexes), remain data, not code.
+No semantic preflight, evaluator, capability kernel, runtime, CLI or UI. M5 has
+not been started. Value-domain checks on operands that arrive only at demand are
+*recorded* as obligations rather than decided, and the diagnostic *selection*
+algorithm beyond one source-validation run (`expression_demand_resolution`
+applied at demand, producer paths, iteration and retry indexes) remains data,
+not code.
 
 ### Known limitation outside M3
 
@@ -279,10 +376,11 @@ is deliberately not repaired under the M3 task.
 ## Use
 
 ```bash
-cargo test --offline --workspace --all-targets                # M0 + M1 + M2 + M3
+cargo test --offline --workspace --all-targets                # M0 + M1 + M2 + M3 + M4
 cargo run --offline -p lcl-lexer --example m1_report          # lexer report over all canonical inputs
 cargo run --offline -p lcl-parser --example m2_report         # parser report over all canonical inputs
 cargo run --offline -p lcl-resolver --example m3_report       # resolver report over all canonical inputs
+cargo run --offline -p lcl-checker --example m4_report        # static and type checker report
 cargo run --offline -p lcl-conformance --example m0_report    # foundation report
 cargo run --offline -p lcl-spec --example mint_anchor         # compute a package identity
 cargo clippy --offline --workspace --all-targets -- -D warnings

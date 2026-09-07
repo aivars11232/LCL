@@ -1,4 +1,4 @@
-# LCL implementation — milestones M0 (foundation), M1 (lexer), M2 (parser), M3 (resolver) and M4 (checker)
+# LCL implementation — milestones M0 (foundation), M1 (lexer), M2 (parser), M3 (resolver), M4 (checker) and M5 (semantic preflight)
 
 This directory is a **consumer** of the canonical specification at
 `../canonical/LCL_Core_0.1.0`. It is not part of the release, is not listed in
@@ -19,6 +19,7 @@ implementation conformance is separate evidence.
 | `lcl-parser` | M2 | Deterministic, non-executing parser. M1 tokens in; a source-faithful syntax tree with exact byte spans or registered grammar-and-schema diagnostics out. |
 | `lcl-resolver` | M3 | Deterministic, non-executing resolver. Parsed units plus an explicit source provider in; version, import, extension, namespace, ID and `REF` bindings and the structural candidate graph, or registered resolution diagnostics, out. |
 | `lcl-checker` | M4 | Deterministic, non-executing static and type checker. A resolved program graph in; every declaration's type, every expression's static contract and the value obligations left to the demanding layer, or registered `static_or_expression` diagnostics, out. |
+| `lcl-semantics` | M5 | Deterministic, no-effect semantic preflight. A statically checked program plus explicit invocation data in; an authorized, dependency-resolved, prevalidated and ordered execution plan, or registered pre-effect diagnostics, out. |
 
 ## Trust boundary (M0.1)
 
@@ -373,14 +374,143 @@ diagnostic. `lcl-resolver`'s own expression walk is iterative and adds no depth,
 but it cannot run on a tree the parser could not build. This is an M2 defect and
 is deliberately not repaired under the M3 task.
 
+## M5 — `lcl-semantics`
+
+Canonical processing steps 6 through 9, as one no-effect pass:
+
+> 6. Establish effective authority, priority, scope, condition contracts, and
+>    conflicts; evaluate each condition only when its values are required.
+> 7. Resolve input, state, memory, context, default, assumption, and
+>    dependencies.
+> 8. Run every selected and applicable VALIDATE check before side effects,
+>    including optional checks and prerequisites.
+> 9. Finalize and check ordering edges of that resolved candidate graph before
+>    effects; no check reference or value read adds graph membership or edges.
+
+### API
+
+```rust
+let contracts = lcl_semantics::Contracts::load(&spec)?;   // refuses an unverified package
+let preflight = lcl_semantics::Preflight::new(&contracts);
+let invocation = lcl_semantics::Invocation::new()
+    .with("input.endpoint", lcl_semantics::Value::Text("...".into()));
+let planned = preflight.plan(&checked, &resolved, &invocation)?; // Err = an earlier stage failed
+
+planned.plan()                    // Option<&Plan> — None when rejected: nothing is authorized
+planned.partial_plan()            // &Plan — for reports and tests, accepted or not
+planned.diagnostics()             // &[Diagnostic] in the registry's stable order
+planned.primary()                 // first in stable_order
+planned.outcome()                 // Outcome::Planned | Outcome::Rejected
+planned.terminal_status()         // registered default_status of the primary
+planned.unused_invocation_data()  // supplied ids this document never declared
+```
+
+A `Plan` carries decisions, never expressions to re-derive them from: plan nodes
+with their resolved mode, `REQUIRED` contract and exact `Authorization`;
+ordering `Edge`s with the reason each exists; one stable topological `order`;
+every `Resolution` with the step of the canonical order that produced it; every
+selected `CheckResult`; the applied-assumption `EvidenceRecord`s; and every rule
+clause's effective authority and priority.
+
+### The effect boundary
+
+This is the last layer before effects exist, so "no effect has happened yet" is
+made structural rather than asserted:
+
+* the crate depends on no capability, host or I/O interface and performs no
+  filesystem, process, network or clock access;
+* every external datum arrives through `Invocation`, which has no method to
+  enumerate, search or default a value — the same closure `SourceProvider` puts
+  around source bytes. "Ambient current directory and implied nearby files do
+  not exist in portable LCL";
+* every diagnostic carries `FailurePhase::PreEffect`, because no other phase is
+  reachable from here.
+
+### A mixed-stage layer
+
+M1 to M4 each own exactly one registered stage. M5 does not, and the twelve
+identifiers it mirrors carry four:
+
+| Registered stage | Identifiers |
+| --- | --- |
+| `resolution` | `error.conflict.hard`, `error.override.invalid`, `error.reference.cycle` |
+| `static_or_expression` | `error.value.out_of_range`, `error.value.unknown` |
+| `validation` | `error.determinism.mismatch`, `error.validation.failed` |
+| `execution` | `error.dependency.unsatisfied`, `error.execution.order`, `error.permission.denied`, `error.required.missing`, `error.scope.violation` |
+
+A registered stage is a *classification*, not a schedule — the distinction M4
+already made with `EarlierStageDefect`. `05_SEMANTICS/09` states the execution
+group is pre-effect work ("error.dependency.unsatisfied and
+error.scope.violation are pre_effect only"), and decision witness `CLOSURE-063`
+states it for ordering. Every `Diagnostic` copies its stage from the registry,
+so nothing downstream has to guess.
+
+This closes M3's two named deferrals, `error.conflict.hard` and
+`error.override.invalid`, and decides `error.execution.order` before effects as
+M3's report said M5 would.
+
+### Preflight demands keep their registered classification
+
+`expression_demand_resolution` moves an eligible identifier to the execution
+stage only for a demand *after* preflight, and its own context excludes this
+layer: "Preflight-required expression demands retain registered
+source-validation classification." So M5 never applies that map, and
+`error.required.missing` and `error.value.unknown` carry `status.blocked` here
+because that is their registered default, not because an override was applied.
+
+### Rules implemented, by normative source
+
+| Source | Rules |
+| --- | --- |
+| `05_SEMANTICS/03` | `REQUIRE`/`ALLOW`/`FORBID`/`PREFER`/`PRESERVE`; a reachable required `ACTION` authorizes exactly its declared operation, target and parameters; `ALLOW` never causes execution and never defeats `FORBID` alone; a preference never implies permission. |
+| `05_SEMANTICS/04` | Effective authority 0..1000 with the document's own authority as a clause's default and the import ceiling applied to imported clauses; `PRIORITY` −1000..1000, defaulting to 0 and never inheriting; higher authority wins only where clauses conflict; equal hard contradictions are `error.conflict.hard` unless an exact `OVERRIDE` names winner and loser; a lower-authority winner is `error.override.invalid`. |
+| `05_SEMANTICS/02` | `SCOPE` as `INCLUDE` minus `EXCLUDE`; `WORKSPACE` containment by resolved segments, never textual prefix, with a resolved escape as `error.value.out_of_range`. |
+| `05_SEMANTICS/06` | The six-step resolution order; `DEFAULT` only for `MISSING`, never for `NULL` or `UNKNOWN`; `ASSUME` conditional, never overriding explicit data, always recorded as evidence. |
+| `05_SEMANTICS/05` | An unbound `OUTPUT` read yields `MISSING` and never starts its producer; one producing `ACTION` per selected `OUTPUT` per candidate invocation. |
+| `check_selection_contract` | Selection in the `EXECUTE` root document, targetless clauses applying to the invocation, targeted clauses matching a graph member, a referenced data/output declaration or an exact material target; prerequisites in stable topological order with a cycle as `error.reference.cycle`; absent `WHEN` meaning TRUE and FALSE leaving no result; `REQUIRED` controlling blocking, never running; no selected pre-effect check deferring itself past effects. |
+| `execution_graph_contract` | Membership copied unchanged from M3; sequential lexical order contributing predecessor edges; `MODE` defaulting to `mode.sequential`; `BEFORE`/`AFTER` adding edges and never reversing a sequential one; endpoints as distinct siblings in one container and iteration context; duplicate activation paths, ordering cycles and conflicting parallel writes as `error.execution.order`. |
+
+### Decision witnesses executed
+
+`CLOSURE-053`, `-054`, `-055`, `-056`, `-060`, `-062`, `-063`, `-064`, `-065`
+and `-066` are executed as tests rather than described.
+
+### Deferred by M5, with its owner named
+
+`error.determinism.mismatch` fires when "a kind.operation definition declares
+DETERMINISTIC TRUE, but its fully resolved operation or **selected profile set**
+is nondeterministic". Neither half is decidable before effects: a custom
+operation "selects no implementation profile", and `determinism_identity` is
+stated over *dependency snapshots*, so even a `model` or `human` dependency can
+satisfy it and no `DEFINE` is self-contradictory on its own. The selected
+profile set arrives with the capability kernel, so the identifier is deferred to
+**M7** by name — the same discipline M3 used when it deferred
+`error.conflict.hard` to M5. A test asserts it is never emitted here.
+
+### What M5 does not do
+
+No effect executes. No dynamic reachability condition is evaluated, no branch
+selected, no loop iterated, no retry attempted and no handler activated — those
+are M6's. No `VERIFY`, `TEST`, evidence, `SUCCESS`/`FAILURE` or terminal status
+is produced; those are M8's. `Outcome::Planned` means steps 6 through 9 found no
+reason to refuse, and nothing more.
+
+The evaluator is bounded on purpose: it answers only what is decidable from
+literals, resolved declarations and the registered operator, function and
+three-valued logic tables. Where a value is not decidable before effects it
+returns *no answer* rather than a guess, and the caller either leaves the
+obligation to the demanding layer or, for a selected pre-effect check that may
+not defer, fails with the registered identifier.
+
 ## Use
 
 ```bash
-cargo test --offline --workspace --all-targets                # M0 + M1 + M2 + M3 + M4
+cargo test --offline --workspace --all-targets                # M0 + M1 + M2 + M3 + M4 + M5
 cargo run --offline -p lcl-lexer --example m1_report          # lexer report over all canonical inputs
 cargo run --offline -p lcl-parser --example m2_report         # parser report over all canonical inputs
 cargo run --offline -p lcl-resolver --example m3_report       # resolver report over all canonical inputs
 cargo run --offline -p lcl-checker --example m4_report        # static and type checker report
+cargo run --offline -p lcl-semantics --example m5_report      # semantic preflight report
 cargo run --offline -p lcl-conformance --example m0_report    # foundation report
 cargo run --offline -p lcl-spec --example mint_anchor         # compute a package identity
 cargo clippy --offline --workspace --all-targets -- -D warnings

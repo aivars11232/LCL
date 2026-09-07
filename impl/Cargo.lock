@@ -56,5 +56,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lcl-semantics"
+version = "0.0.0"
+dependencies = [
+ "lcl-checker",
+ "lcl-diagnostics",
+ "lcl-lexer",
+ "lcl-parser",
+ "lcl-resolver",
+ "lcl-spec",
+]
+
+[[package]]
 name = "lcl-spec"
 version = "0.0.0"

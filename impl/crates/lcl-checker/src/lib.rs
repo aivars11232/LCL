@@ -72,7 +72,7 @@ pub mod contracts;
 mod declarations;
 pub mod diagnostic;
 mod expr;
-mod numeric;
+pub mod numeric;
 mod operation;
 mod pattern;
 mod schema;

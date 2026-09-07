@@ -30,20 +30,20 @@ use std::fmt;
 /// rendering and the factor-of-2-and-5 test exact and obvious; the operands are
 /// source literals, so schoolbook algorithms are the right size of tool.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Integer {
+pub struct Integer {
     negative: bool,
     digits: Vec<u8>,
 }
 
 impl Integer {
-    pub(crate) fn zero() -> Integer {
+    pub fn zero() -> Integer {
         Integer {
             negative: false,
             digits: Vec::new(),
         }
     }
 
-    pub(crate) fn from_u64(value: u64) -> Integer {
+    pub fn from_u64(value: u64) -> Integer {
         let mut digits = Vec::new();
         let mut rest = value;
         while rest > 0 {
@@ -58,7 +58,7 @@ impl Integer {
 
     /// Decode a run of ASCII decimal digits. Returns `None` for empty input or
     /// any non-digit byte.
-    pub(crate) fn parse_digits(text: &str) -> Option<Integer> {
+    pub fn parse_digits(text: &str) -> Option<Integer> {
         if text.is_empty() {
             return None;
         }
@@ -86,15 +86,15 @@ impl Integer {
         }
     }
 
-    pub(crate) fn is_zero(&self) -> bool {
+    pub fn is_zero(&self) -> bool {
         self.digits.is_empty()
     }
 
-    pub(crate) fn is_negative(&self) -> bool {
+    pub fn is_negative(&self) -> bool {
         self.negative
     }
 
-    pub(crate) fn negated(&self) -> Integer {
+    pub fn negated(&self) -> Integer {
         let mut out = self.clone();
         if !out.is_zero() {
             out.negative = !out.negative;
@@ -102,7 +102,7 @@ impl Integer {
         out
     }
 
-    pub(crate) fn abs(&self) -> Integer {
+    pub fn abs(&self) -> Integer {
         Integer {
             negative: false,
             digits: self.digits.clone(),
@@ -110,7 +110,7 @@ impl Integer {
     }
 
     /// The number of decimal digits in the magnitude; zero has none.
-    pub(crate) fn digit_count(&self) -> usize {
+    pub fn digit_count(&self) -> usize {
         self.digits.len()
     }
 
@@ -161,7 +161,7 @@ impl Integer {
         out
     }
 
-    pub(crate) fn add(&self, other: &Integer) -> Integer {
+    pub fn add(&self, other: &Integer) -> Integer {
         if self.negative == other.negative {
             let mut out = Integer {
                 negative: self.negative,
@@ -191,11 +191,11 @@ impl Integer {
         }
     }
 
-    pub(crate) fn sub(&self, other: &Integer) -> Integer {
+    pub fn sub(&self, other: &Integer) -> Integer {
         self.add(&other.negated())
     }
 
-    pub(crate) fn mul(&self, other: &Integer) -> Integer {
+    pub fn mul(&self, other: &Integer) -> Integer {
         if self.is_zero() || other.is_zero() {
             return Integer::zero();
         }
@@ -225,7 +225,7 @@ impl Integer {
     }
 
     /// Multiply by `10^power`.
-    pub(crate) fn shift_left(&self, power: usize) -> Integer {
+    pub fn shift_left(&self, power: usize) -> Integer {
         if self.is_zero() {
             return Integer::zero();
         }
@@ -241,7 +241,7 @@ impl Integer {
     ///
     /// Schoolbook long division in base 10: each step tries the ten possible
     /// quotient digits, so no estimate can be wrong.
-    pub(crate) fn divmod(&self, divisor: &Integer) -> Option<(Integer, Integer)> {
+    pub fn divmod(&self, divisor: &Integer) -> Option<(Integer, Integer)> {
         if divisor.is_zero() {
             return None;
         }
@@ -292,7 +292,7 @@ impl Integer {
         (value, count)
     }
 
-    pub(crate) fn gcd(&self, other: &Integer) -> Integer {
+    pub fn gcd(&self, other: &Integer) -> Integer {
         let mut a = self.abs();
         let mut b = other.abs();
         while !b.is_zero() {
@@ -305,7 +305,7 @@ impl Integer {
         a
     }
 
-    pub(crate) fn compare(&self, other: &Integer) -> Ordering {
+    pub fn compare(&self, other: &Integer) -> Ordering {
         match (self.negative, other.negative) {
             (false, true) => Ordering::Greater,
             (true, false) => Ordering::Less,
@@ -315,7 +315,7 @@ impl Integer {
     }
 
     /// The value as an `i64`, when it fits.
-    pub(crate) fn to_i64(&self) -> Option<i64> {
+    pub fn to_i64(&self) -> Option<i64> {
         let mut value: i64 = 0;
         for &digit in self.digits.iter().rev() {
             value = value.checked_mul(10)?.checked_add(digit as i64)?;
@@ -344,14 +344,14 @@ impl fmt::Display for Integer {
 
 /// An exact decimal: `coefficient * 10^-scale`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Decimal {
+pub struct Decimal {
     coefficient: Integer,
     scale: u32,
 }
 
 /// Why an exact quotient has no value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum DivisionDefect {
+pub enum DivisionDefect {
     /// `error.numeric.division_by_zero`.
     Zero,
     /// `error.numeric.non_terminating`.
@@ -368,7 +368,7 @@ pub(crate) enum DivisionDefect {
 const DIGIT_LIMIT: usize = 4096;
 
 impl Decimal {
-    pub(crate) fn from_integer(value: Integer) -> Decimal {
+    pub fn from_integer(value: Integer) -> Decimal {
         Decimal {
             coefficient: value,
             scale: 0,
@@ -376,12 +376,12 @@ impl Decimal {
     }
 
     /// Decode an `INTEGER_LITERAL` lexeme.
-    pub(crate) fn parse_integer(text: &str) -> Option<Decimal> {
+    pub fn parse_integer(text: &str) -> Option<Decimal> {
         Some(Decimal::from_integer(Integer::parse_digits(text)?))
     }
 
     /// Decode a `DECIMAL_LITERAL` lexeme: digits, `.`, one or more digits.
-    pub(crate) fn parse_decimal(text: &str) -> Option<Decimal> {
+    pub fn parse_decimal(text: &str) -> Option<Decimal> {
         let (whole, fraction) = text.split_once('.')?;
         if fraction.is_empty() {
             return None;
@@ -393,15 +393,15 @@ impl Decimal {
         })
     }
 
-    pub(crate) fn is_zero(&self) -> bool {
+    pub fn is_zero(&self) -> bool {
         self.coefficient.is_zero()
     }
 
-    pub(crate) fn is_negative(&self) -> bool {
+    pub fn is_negative(&self) -> bool {
         self.coefficient.is_negative()
     }
 
-    pub(crate) fn negated(&self) -> Decimal {
+    pub fn negated(&self) -> Decimal {
         Decimal {
             coefficient: self.coefficient.negated(),
             scale: self.scale,
@@ -416,7 +416,7 @@ impl Decimal {
         (left, right, scale)
     }
 
-    pub(crate) fn add(&self, other: &Decimal) -> Decimal {
+    pub fn add(&self, other: &Decimal) -> Decimal {
         let (left, right, scale) = self.aligned(other);
         Decimal {
             coefficient: left.add(&right),
@@ -424,7 +424,7 @@ impl Decimal {
         }
     }
 
-    pub(crate) fn sub(&self, other: &Decimal) -> Decimal {
+    pub fn sub(&self, other: &Decimal) -> Decimal {
         let (left, right, scale) = self.aligned(other);
         Decimal {
             coefficient: left.sub(&right),
@@ -432,14 +432,14 @@ impl Decimal {
         }
     }
 
-    pub(crate) fn mul(&self, other: &Decimal) -> Decimal {
+    pub fn mul(&self, other: &Decimal) -> Decimal {
         Decimal {
             coefficient: self.coefficient.mul(&other.coefficient),
             scale: self.scale.saturating_add(other.scale),
         }
     }
 
-    pub(crate) fn compare(&self, other: &Decimal) -> Ordering {
+    pub fn compare(&self, other: &Decimal) -> Ordering {
         let (left, right, _) = self.aligned(other);
         left.compare(&right)
     }
@@ -449,18 +449,18 @@ impl Decimal {
     /// "Division evaluates the exact mathematical quotient with no fixed global
     /// precision and no implicit rounding."
     #[cfg(test)]
-    pub(crate) fn divide(&self, other: &Decimal) -> Result<Decimal, DivisionDefect> {
+    pub fn divide(&self, other: &Decimal) -> Result<Decimal, DivisionDefect> {
         Rational::of(self, other)?.to_terminating_decimal()
     }
 
     /// Round half-to-even to `digits` fractional digits.
     #[cfg(test)]
-    pub(crate) fn round(&self, digits: u32) -> Result<Decimal, DivisionDefect> {
+    pub fn round(&self, digits: u32) -> Result<Decimal, DivisionDefect> {
         Rational::of(self, &Decimal::from_integer(Integer::from_u64(1)))?.round_half_even(digits)
     }
 
     /// True when this value is an exact whole number.
-    pub(crate) fn is_integral(&self) -> bool {
+    pub fn is_integral(&self) -> bool {
         if self.scale == 0 {
             return true;
         }
@@ -472,7 +472,7 @@ impl Decimal {
     }
 
     /// The value as an `i64`, when it is integral and fits.
-    pub(crate) fn to_i64(&self) -> Option<i64> {
+    pub fn to_i64(&self) -> Option<i64> {
         if !self.is_integral() {
             return None;
         }
@@ -504,7 +504,7 @@ impl fmt::Display for Decimal {
 
 /// An exact rational, used only between a division and its result.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Rational {
+pub struct Rational {
     numerator: Integer,
     /// Always positive.
     denominator: Integer,
@@ -512,7 +512,7 @@ pub(crate) struct Rational {
 
 impl Rational {
     /// `left / right`, reduced to lowest terms.
-    pub(crate) fn of(left: &Decimal, right: &Decimal) -> Result<Rational, DivisionDefect> {
+    pub fn of(left: &Decimal, right: &Decimal) -> Result<Rational, DivisionDefect> {
         if right.is_zero() {
             return Err(DivisionDefect::Zero);
         }
@@ -551,7 +551,7 @@ impl Rational {
     /// "After reducing the quotient to lowest terms, it has a finite base-10
     /// DECIMAL representation if and only if the denominator has no prime
     /// factors other than 2 and 5."
-    pub(crate) fn to_terminating_decimal(&self) -> Result<Decimal, DivisionDefect> {
+    pub fn to_terminating_decimal(&self) -> Result<Decimal, DivisionDefect> {
         if self.numerator.is_zero() {
             return Ok(Decimal::from_integer(Integer::zero()));
         }
@@ -579,7 +579,7 @@ impl Rational {
     /// evaluates the exact mathematical quotient and rounds it once; this is
     /// the only context in which an otherwise non-terminating quotient is
     /// materialized."
-    pub(crate) fn round_half_even(&self, digits: u32) -> Result<Decimal, DivisionDefect> {
+    pub fn round_half_even(&self, digits: u32) -> Result<Decimal, DivisionDefect> {
         if digits as usize > DIGIT_LIMIT {
             return Err(DivisionDefect::TooLarge);
         }

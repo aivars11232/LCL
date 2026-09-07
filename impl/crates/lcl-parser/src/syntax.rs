@@ -608,3 +608,174 @@ impl Executable {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Teardown
+// ---------------------------------------------------------------------------
+
+/// Dropping a deep tree must not recurse either.
+///
+/// The parser builds trees as deep as the source nests, and the compiler's
+/// generated glue for `Box<Expr>`, `Vec<Statement>` and `Vec<Executable>` is
+/// recursive: it walks one native frame per level. Without these impls the
+/// iterative parser would simply move the stack overflow from construction to
+/// teardown — measured at roughly 24,000 levels on a 2 MiB stack, which is a
+/// larger number and the same defect.
+///
+/// Each impl takes its children into an explicit worklist and drains it, so the
+/// deepest tree costs one heap `Vec` and a constant number of native frames.
+/// A node reached through the worklist has already had its children taken, so
+/// its own `drop` is shallow and does not re-enter.
+enum Debris {
+    Expr(Expr),
+    Statement(Statement),
+    Executable(Executable),
+}
+
+/// A childless `Expr`, cheap enough to swap into a box being emptied.
+///
+/// `String::new` does not allocate, so this costs nothing.
+fn leaf() -> Expr {
+    Expr::Identifier(Ident {
+        text: String::new(),
+        span: Span::new(0, 0),
+        qualified: false,
+    })
+}
+
+/// Move one boxed child out, leaving a leaf behind.
+fn take(boxed: &mut Box<Expr>, out: &mut Vec<Debris>) {
+    out.push(Debris::Expr(std::mem::replace(&mut **boxed, leaf())));
+}
+
+fn take_expr_children(expr: &mut Expr, out: &mut Vec<Debris>) {
+    match expr {
+        Expr::Group(node) => take(&mut node.inner, out),
+        Expr::Unary(node) => take(&mut node.operand, out),
+        Expr::Binary(node) => {
+            take(&mut node.left, out);
+            take(&mut node.right, out);
+        }
+        Expr::Property(node) => take(&mut node.base, out),
+        Expr::Index(node) => {
+            take(&mut node.base, out);
+            take(&mut node.index, out);
+        }
+        Expr::Call(node) => out.extend(
+            std::mem::take(&mut node.arguments)
+                .into_iter()
+                .map(Debris::Expr),
+        ),
+        Expr::Collection(node) => out.extend(
+            std::mem::take(&mut node.members)
+                .into_iter()
+                .map(Debris::Expr),
+        ),
+        Expr::Type(node) => match node {
+            TypeExpr::Scalar(_) => {}
+            TypeExpr::List(b) | TypeExpr::Set(b) | TypeExpr::Object(b) | TypeExpr::Reference(b) => {
+                take(&mut b.argument, out)
+            }
+        },
+        Expr::Literal(_) | Expr::Identifier(_) => {}
+    }
+}
+
+fn take_body_children(body: &mut Body, out: &mut Vec<Debris>) {
+    match body {
+        Body::Inline(Value::Expression(expr)) => {
+            out.push(Debris::Expr(std::mem::replace(expr, leaf())))
+        }
+        Body::Inline(Value::MultilineCollection(collection)) => out.extend(
+            std::mem::take(&mut collection.members)
+                .into_iter()
+                .map(Debris::Expr),
+        ),
+        Body::Nested(nested) => out.extend(
+            std::mem::take(&mut nested.statements)
+                .into_iter()
+                .map(Debris::Statement),
+        ),
+    }
+}
+
+fn take_conditional_children(node: &mut Conditional, out: &mut Vec<Debris>) {
+    take(&mut node.condition, out);
+    out.extend(
+        std::mem::take(&mut node.then_body)
+            .into_iter()
+            .map(Debris::Executable),
+    );
+    if let Some(arm) = &mut node.else_body {
+        out.extend(
+            std::mem::take(&mut arm.body)
+                .into_iter()
+                .map(Debris::Executable),
+        );
+    }
+}
+
+fn take_for_each_children(node: &mut ForEach, out: &mut Vec<Debris>) {
+    take(&mut node.collection, out);
+    out.extend(
+        std::mem::take(&mut node.body)
+            .into_iter()
+            .map(Debris::Executable),
+    );
+}
+
+fn take_statement_children(statement: &mut Statement, out: &mut Vec<Debris>) {
+    match statement {
+        Statement::Field(node) => take_body_children(&mut node.body, out),
+        Statement::Property(node) => take_body_children(&mut node.body, out),
+        Statement::Conditional(node) => take_conditional_children(node, out),
+        Statement::ForEach(node) => take_for_each_children(node, out),
+    }
+}
+
+fn take_executable_children(executable: &mut Executable, out: &mut Vec<Debris>) {
+    match executable {
+        Executable::Block(block) => out.extend(
+            std::mem::take(&mut block.body)
+                .into_iter()
+                .map(Debris::Statement),
+        ),
+        Executable::Conditional(node) => take_conditional_children(node, out),
+        Executable::ForEach(node) => take_for_each_children(node, out),
+    }
+}
+
+/// Drain a worklist of already-orphaned nodes.
+fn dismantle(mut work: Vec<Debris>) {
+    while let Some(item) = work.pop() {
+        match item {
+            Debris::Expr(mut node) => take_expr_children(&mut node, &mut work),
+            Debris::Statement(mut node) => take_statement_children(&mut node, &mut work),
+            Debris::Executable(mut node) => take_executable_children(&mut node, &mut work),
+        }
+    }
+}
+
+impl Drop for Expr {
+    fn drop(&mut self) {
+        let mut work = Vec::new();
+        take_expr_children(self, &mut work);
+        dismantle(work);
+    }
+}
+
+impl Drop for Statement {
+    fn drop(&mut self) {
+        let mut work = Vec::new();
+        take_statement_children(self, &mut work);
+        dismantle(work);
+    }
+}
+
+impl Drop for Executable {
+    fn drop(&mut self) {
+        let mut work = Vec::new();
+        take_executable_children(self, &mut work);
+        dismantle(work);
+    }
+}

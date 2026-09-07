@@ -179,6 +179,60 @@ opener line is indeterminate) while independent defects are all reported, per
   canonical files, every prefix/suffix and single-byte mutation of every
   fixture, deep nesting, 100k-byte runs).
 
+### M2 stack safety
+
+Every construct in the grammar nests without bound, and canonical LCL Core
+0.1.0 declares **no** maximum nesting depth for source syntax:
+`04_GRAMMAR/02` and the EBNF state the shape and no bound, and the only
+`maximum_depth` in the registries belongs to `contract_type_notation`, which
+says in terms that "This registry notation does not extend LCL source syntax".
+No registered diagnostic permits an implementation-defined nesting rejection
+either — the twelve `grammar_or_schema` errors are all structural-shape
+defects, and `error.pattern.resource_limit` is explicitly about `GLOB` and
+`REGEX`. So the depth a document may reach is not this implementation's to cap,
+and the repair could not be a limit.
+
+The parser originally paid native stack per nesting level and died by
+`SIGABRT` — not by a diagnostic — once a document exceeded it:
+
+| Path | Old limit (2 MiB stack) | Cost per level |
+| --- | --- | --- |
+| `(((…)))` groups | 175 | ~13.0 KiB |
+| `[[[…]]]` collections | 175 | ~13.0 KiB |
+| nested call arguments | 175 | ~13.0 KiB |
+| `NOT NOT …` chains | ~1,250 | ~1.7 KiB |
+| nested indented blocks | ~350 | ~6 KiB |
+| tree teardown (drop glue) | ~24,000 | ~85 B |
+
+Four paths, one root cause. All four are now iterative:
+
+* **`expr`** — the nine-function precedence cascade became one loop over an
+  explicit `Frame` stack. Each frame holds what a native frame held: the
+  operand and operator stacks of one expression level, its pending unary
+  prefixes, and what to do when the level closes.
+* **`block`** — the `block → indented_body → statements → statement →
+  body_after_colon` cycle became a stack of open containers, driven by the
+  `Indent` and `Dedent` tokens M1 already emits.
+* **`schema`** — the post-parse walks over blocks, control forms and object
+  data became a depth-first worklist. A nested body is now judged in place
+  through an `Anchor` carrying its two diagnostic spans, so the synthetic
+  `Block` the recursive version cloned per level is gone as well.
+* **`syntax`** — `Expr`, `Statement` and `Executable` have hand-written `Drop`
+  impls that dismantle a tree through a worklist. Without this the fix would
+  have moved the abort from construction to teardown.
+
+Depth now costs heap, which fails as an allocation rather than as an
+unrecoverable abort. `tests/robustness.rs` proves it on a deliberately small
+**256 KiB** stack — one eighth of the stack the old code died on — at 50,000
+levels of groups, collections, call arguments and unary prefixes, 4,000 levels
+of nested blocks, and the same depths for teardown, span exactness and
+malformed input.
+
+One consequence worth knowing: because `Expr`, `Statement` and `Executable`
+implement `Drop`, they can no longer be destructured by value. Borrowing,
+cloning and passing by value are unaffected, and every consumer in this
+workspace already borrows.
+
 ## M3 — `lcl-resolver`
 
 Canonical processing step 4: "Resolve exact LCL version, imports, extensions,
@@ -366,13 +420,13 @@ algorithm beyond one source-validation run (`expression_demand_resolution`
 applied at demand, producer paths, iteration and retry indexes) remains data,
 not code.
 
-### Known limitation outside M3
+### The M2 stack-safety defect, now closed
 
-`lcl_parser::Parser::parse` builds its syntax tree recursively, so an expression
-nested a few hundred levels deep exhausts the stack instead of producing a
-diagnostic. `lcl-resolver`'s own expression walk is iterative and adds no depth,
-but it cannot run on a tree the parser could not build. This is an M2 defect and
-is deliberately not repaired under the M3 task.
+M3 recorded a known limitation here: `lcl_parser::Parser::parse` built its
+syntax tree recursively, so an expression nested a few hundred levels deep
+exhausted the stack instead of producing a diagnostic. That defect was repaired
+under a corrective reopening of `LCL-TASK-0011`; see **M2 stack safety** below.
+`lcl-resolver`'s own expression walk was already iterative and is unchanged.
 
 ## M5 — `lcl-semantics`
 

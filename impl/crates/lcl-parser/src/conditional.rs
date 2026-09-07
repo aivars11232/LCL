@@ -15,6 +15,7 @@
 
 use crate::diagnostic::GrammarError;
 use crate::grammar::BlockSchema;
+use crate::schema::Anchor;
 use crate::schema::SchemaChecker;
 use crate::syntax::*;
 use lcl_lexer::Span;
@@ -185,7 +186,8 @@ impl SchemaChecker<'_, '_> {
     /// Apply every implemented conditional requirement for one block.
     pub(crate) fn conditional_requirements(
         &mut self,
-        block: &Block,
+        anchor: Anchor,
+        statements: &[Statement],
         schema: &BlockSchema,
         counts: &BTreeMap<&str, Vec<&Field>>,
     ) {
@@ -197,13 +199,14 @@ impl SchemaChecker<'_, '_> {
             if !schema.conditional_requirements.iter().any(|c| c == text) {
                 continue;
             }
-            self.apply(block, schema, counts, text, *rule);
+            self.apply(anchor, statements, schema, counts, text, *rule);
         }
     }
 
     fn apply(
         &mut self,
-        block: &Block,
+        anchor: Anchor,
+        statements: &[Statement],
         schema: &BlockSchema,
         counts: &BTreeMap<&str, Vec<&Field>>,
         text: &str,
@@ -214,30 +217,29 @@ impl SchemaChecker<'_, '_> {
         match rule {
             Rule::ExactlyOneOf(names) => {
                 if present(names) != 1 {
-                    self.requirement(block, schema, text);
+                    self.requirement(anchor, schema, text);
                 }
             }
             Rule::ExactlyOneOfUnlessDefault(names) => {
                 let relaxed = counts.contains_key("DEFAULT");
                 let count = present(names);
                 if (relaxed && count > 1) || (!relaxed && count != 1) {
-                    self.requirement(block, schema, text);
+                    self.requirement(anchor, schema, text);
                 }
             }
             Rule::AtLeastOneOf(names) => {
                 // A control form satisfies the PHASE and SEQUENCE variants, so
                 // an IF or FOR EACH child counts as a present member.
-                let control = block
-                    .body
+                let control = statements
                     .iter()
                     .any(|s| matches!(s, Statement::Conditional(_) | Statement::ForEach(_)));
                 if present(names) == 0 && !control {
-                    self.requirement(block, schema, text);
+                    self.requirement(anchor, schema, text);
                 }
             }
             Rule::AtMostOneOf(names) => {
                 if present(names) > 1 {
-                    self.requirement(block, schema, text);
+                    self.requirement(anchor, schema, text);
                 }
             }
             Rule::ReferenceOnly(names) => {
@@ -281,7 +283,7 @@ impl SchemaChecker<'_, '_> {
                     .flatten()
                     .any(|f| is_call_to(f, "URI"));
                 if uri_source && !counts.contains_key("CHECKSUM") {
-                    self.requirement(block, schema, text);
+                    self.requirement(anchor, schema, text);
                 }
             }
             Rule::ItemRequiresEnumBase => {
@@ -289,7 +291,7 @@ impl SchemaChecker<'_, '_> {
                     && !(has_inline_identifier(counts, "KIND", "kind.type")
                         && has_inline_word(counts, "BASE", "ENUM"))
                 {
-                    self.requirement(block, schema, text);
+                    self.requirement(anchor, schema, text);
                 }
             }
             Rule::FieldRequiresObjectBase => {
@@ -297,14 +299,14 @@ impl SchemaChecker<'_, '_> {
                     && !(has_inline_identifier(counts, "KIND", "kind.type")
                         && has_inline_word(counts, "BASE", "OBJECT"))
                 {
-                    self.requirement(block, schema, text);
+                    self.requirement(anchor, schema, text);
                 }
             }
         }
     }
 
-    fn requirement(&mut self, block: &Block, schema: &BlockSchema, text: &str) {
-        let span = block.key.span;
+    fn requirement(&mut self, anchor: Anchor, schema: &BlockSchema, text: &str) {
+        let span = anchor.key_span;
         let owner = schema.name.clone();
         self.emit_requirement(span, format!("`{owner}`: {text}"));
     }

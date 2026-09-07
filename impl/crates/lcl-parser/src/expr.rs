@@ -21,6 +21,32 @@
 //!
 //! Nothing here resolves an identifier, types an operand, or evaluates
 //! anything. `04_GRAMMAR/03`: "Every expression is side-effect free."
+//!
+//! ## Why this parser is iterative
+//!
+//! Every construct below nests without bound: a group inside a group, a
+//! collection inside a call argument inside an index. A recursive-descent
+//! implementation pays native stack per nesting level and dies by
+//! `SIGABRT` — not by a diagnostic — when the level count exceeds the
+//! thread's stack. Canonical LCL Core 0.1.0 declares **no** maximum nesting
+//! depth for source syntax (`04_GRAMMAR/02` and the EBNF state the shape and
+//! no bound; the only `maximum_depth` in the registries belongs to
+//! `contract_type_notation`, which says in terms "This registry notation does
+//! not extend LCL source syntax"), and no registered diagnostic permits an
+//! implementation-defined nesting rejection. So the depth a document may reach
+//! is not this implementation's to cap.
+//!
+//! This module therefore carries its own explicit stack. [`Frame`] holds
+//! exactly what a native frame used to hold — the operand and operator stacks
+//! of one expression level, its pending unary prefixes, and what to do when
+//! the level finishes — and [`ExprParser::expression`] drives them in one
+//! loop. Nesting costs heap, which fails as an allocation rather than as an
+//! unrecoverable abort.
+//!
+//! The grammar is unchanged. Operator precedence is the same cascade the EBNF
+//! spells, expressed as [`precedence`]; the operator-recognising helpers,
+//! [`ExprParser::binary`] and every diagnostic are the same code they were, so
+//! trees, spans and diagnostics are identical to the recursive version.
 
 use crate::diagnostic::GrammarError;
 use crate::grammar::Grammar;
@@ -49,6 +75,125 @@ const ADD_SYMBOLS: [(&str, BinaryOp); 2] = [("+", BinaryOp::Add), ("-", BinaryOp
 const MULTIPLY_SYMBOLS: [(&str, BinaryOp); 2] =
     [("*", BinaryOp::Multiply), ("/", BinaryOp::Divide)];
 
+/// Binary operator precedence, exactly the EBNF cascade.
+///
+/// `OR_EXPRESSION` is loosest and `MULTIPLICATIVE` is tightest, so a larger
+/// number binds tighter. Every operator is left-associative except the
+/// comparison band, which the grammar makes non-associative and which
+/// [`Frame::compare`] enforces.
+fn precedence(op: BinaryOp) -> u8 {
+    match op {
+        BinaryOp::Or => 1,
+        BinaryOp::And => 2,
+        BinaryOp::Equal
+        | BinaryOp::NotEqual
+        | BinaryOp::Less
+        | BinaryOp::LessOrEqual
+        | BinaryOp::Greater
+        | BinaryOp::GreaterOrEqual
+        | BinaryOp::In
+        | BinaryOp::Contains
+        | BinaryOp::Matches => COMPARE_PRECEDENCE,
+        BinaryOp::Add | BinaryOp::Subtract => 4,
+        BinaryOp::Multiply | BinaryOp::Divide => 5,
+    }
+}
+
+/// `COMPARISON = ADDITIVE, [ SPACE, COMPARE_OPERATOR, SPACE, ADDITIVE ]` — the
+/// one band the grammar declares non-associative.
+const COMPARE_PRECEDENCE: u8 = 3;
+
+/// What to do with one expression level's finished value.
+///
+/// Each variant is a construct that was open when its inner expression began,
+/// holding precisely the state the recursive version kept in a native frame.
+enum Continuation {
+    /// The outermost level: its value is the parsed expression.
+    Root,
+    /// `"(", EXPRESSION, ")"`
+    Group { open: Span },
+    /// `CALL = CALLABLE, "(", [ ARGUMENT, { ",", SPACE, ARGUMENT } ], ")"`
+    Call {
+        callable: Word,
+        arguments: Vec<Expr>,
+    },
+    /// `COLLECTION_LITERAL = "[", [ EXPRESSION, { ",", SPACE, EXPRESSION } ], "]"`
+    Collection { open: Span, members: Vec<Expr> },
+    /// `INDEX_ACCESS = "[", EXPRESSION, "]"`, over an already-parsed base.
+    Index { base: Expr },
+    /// A bracketed type's argument, e.g. `LIST[...]`.
+    TypeArgument { word: Word, name: String },
+}
+
+/// One expression level in progress.
+struct Frame {
+    /// Reduced operands awaiting their operators.
+    operands: Vec<Expr>,
+    /// Pending operators, innermost last, with their precedence.
+    operators: Vec<(BinaryOp, Span, u8)>,
+    /// Unary prefixes collected for the operand currently being built.
+    ///
+    /// `UNARY = (("NOT", SPACE) | "-"), UNARY | POSTFIX`, so prefixes apply
+    /// after the operand's postfix accessors and in reverse order.
+    prefixes: Vec<(UnaryOp, Span)>,
+    /// The locus of a comparison operator already consumed in the current
+    /// comparison group, if any.
+    ///
+    /// `COMPARISON` admits at most one operator, so a second one in the same
+    /// group is a grammar error rather than a nested tree. An `AND` or `OR`
+    /// begins a new group and clears this.
+    compare: Option<Span>,
+    cont: Continuation,
+}
+
+impl Frame {
+    fn new(cont: Continuation) -> Frame {
+        Frame {
+            operands: Vec::new(),
+            operators: Vec::new(),
+            prefixes: Vec::new(),
+            compare: None,
+            cont,
+        }
+    }
+}
+
+/// The driver's position within one level.
+enum State {
+    /// An operand is required next.
+    NeedOperand,
+    /// An operand is in hand. The flag records a type expression, which
+    /// "takes no trailing accessors".
+    HaveOperand(Expr, bool),
+}
+
+/// What applying postfix accessors produced.
+enum Accessed {
+    /// The operand, with every accessor applied.
+    Complete(Expr),
+    /// An `INDEX_ACCESS` opened; its base awaits the index expression.
+    Index(Expr),
+}
+
+/// What closing one level produced.
+enum Closed {
+    /// The whole expression is parsed.
+    Done(Expr),
+    /// A completed operand for the enclosing level. The flag suppresses
+    /// postfix accessors.
+    Operand(Expr, bool),
+    /// The same construct continues with another member or argument.
+    Continue(Continuation),
+}
+
+/// What opening an operand produced.
+enum Opened {
+    /// A complete operand. The flag suppresses postfix accessors.
+    Node(Expr, bool),
+    /// A nested construct was opened; parse its inner expression first.
+    Push(Continuation),
+}
+
 pub(crate) struct ExprParser<'a, 'b> {
     pub(crate) grammar: &'a Grammar,
     pub(crate) source: &'a str,
@@ -73,166 +218,297 @@ impl<'a> ExprParser<'a, '_> {
         None
     }
 
-    /// `EXPRESSION = OR_EXPRESSION`
+    /// `EXPRESSION = OR_EXPRESSION`, parsed with an explicit stack.
+    ///
+    /// Total in native stack: the loop's depth is constant, and one heap
+    /// [`Frame`] is pushed per open construct. A document may nest as deeply as
+    /// memory allows, because the language sets no limit and this parser may
+    /// not invent one.
     pub(crate) fn expression(&mut self, c: &mut Cursor<'a>) -> Option<Expr> {
-        self.or_expression(c)
-    }
+        let mut stack: Vec<Frame> = vec![Frame::new(Continuation::Root)];
+        let mut state = State::NeedOperand;
 
-    fn or_expression(&mut self, c: &mut Cursor<'a>) -> Option<Expr> {
-        let mut left = self.and_expression(c)?;
-        while let Some((op, op_span)) = self.spaced_word_operator(c, &[("OR", BinaryOp::Or)]) {
-            let right = self.and_expression(c)?;
-            left = Self::binary(left, op, op_span, right);
-        }
-        Some(left)
-    }
-
-    fn and_expression(&mut self, c: &mut Cursor<'a>) -> Option<Expr> {
-        let mut left = self.comparison(c)?;
-        while let Some((op, op_span)) = self.spaced_word_operator(c, &[("AND", BinaryOp::And)]) {
-            let right = self.comparison(c)?;
-            left = Self::binary(left, op, op_span, right);
-        }
-        Some(left)
-    }
-
-    /// `COMPARISON = ADDITIVE, [ SPACE, COMPARE_OPERATOR, SPACE, ADDITIVE ]`
-    ///
-    /// The bracket is optional-once, not repeated, so a second comparison
-    /// operator is a grammar error rather than a left-nested tree.
-    fn comparison(&mut self, c: &mut Cursor<'a>) -> Option<Expr> {
-        let left = self.additive(c)?;
-        let Some((op, op_span)) = self.spaced_compare_operator(c) else {
-            return Some(left);
-        };
-        let right = self.additive(c)?;
-        let node = Self::binary(left, op, op_span, right);
-        if let Some((_, second)) = self.peek_spaced_compare_operator(c) {
-            return self.fail(
-                second,
-                "comparison_chain",
-                format!(
-                    "`{}` chains a second comparison operator; COMPARISON admits at most one",
-                    self.text(second)
-                ),
-            );
-        }
-        Some(node)
-    }
-
-    fn additive(&mut self, c: &mut Cursor<'a>) -> Option<Expr> {
-        let mut left = self.multiplicative(c)?;
-        while let Some((op, op_span)) = self.spaced_symbol_operator(c, &ADD_SYMBOLS) {
-            let right = self.multiplicative(c)?;
-            left = Self::binary(left, op, op_span, right);
-        }
-        Some(left)
-    }
-
-    fn multiplicative(&mut self, c: &mut Cursor<'a>) -> Option<Expr> {
-        let mut left = self.unary(c)?;
-        while let Some((op, op_span)) = self.spaced_symbol_operator(c, &MULTIPLY_SYMBOLS) {
-            let right = self.unary(c)?;
-            left = Self::binary(left, op, op_span, right);
-        }
-        Some(left)
-    }
-
-    /// `UNARY = (("NOT", SPACE) | "-"), UNARY | POSTFIX`
-    fn unary(&mut self, c: &mut Cursor<'a>) -> Option<Expr> {
-        if let Some(t) = c.peek() {
-            if t.kind == TokenKind::ReservedWord && self.text(t.span) == "NOT" {
-                // `NOT` requires the following SPACE; the grammar spells it.
-                if c.peek_at(1).map(|n| n.kind) == Some(TokenKind::Space) {
-                    let op_span = t.span;
-                    c.bump();
-                    c.bump();
-                    let operand = self.unary(c)?;
-                    return Some(Expr::Unary(Unary {
-                        operator: UnaryOp::Not,
-                        operator_span: op_span,
-                        span: Span::new(op_span.start, operand.span().end),
-                        operand: Box::new(operand),
-                    }));
-                }
-                return self.fail(
-                    t.span,
-                    "not_without_space",
-                    "`NOT` must be followed by one SPACE".to_string(),
-                );
-            }
-            if t.kind == TokenKind::Symbol && self.text(t.span) == "-" {
-                let op_span = t.span;
-                c.bump();
-                let operand = self.unary(c)?;
-                return Some(Expr::Unary(Unary {
-                    operator: UnaryOp::Negate,
-                    operator_span: op_span,
-                    span: Span::new(op_span.start, operand.span().end),
-                    operand: Box::new(operand),
-                }));
-            }
-        }
-        self.postfix(c)
-    }
-
-    /// `POSTFIX = NON_NULL_TYPE_EXPRESSION | VALUE_PRIMARY, { PROPERTY_ACCESS | INDEX_ACCESS }`
-    ///
-    /// Concatenation binds tighter than alternation in ISO 14977, so a type
-    /// expression takes no trailing accessors.
-    fn postfix(&mut self, c: &mut Cursor<'a>) -> Option<Expr> {
-        if let Some(type_expr) = self.non_null_type_expression(c) {
-            return Some(Expr::Type(type_expr));
-        }
-        let mut node = self.value_primary(c)?;
         loop {
-            match c.peek() {
-                Some(t) if t.kind == TokenKind::Symbol && self.text(t.span) == "." => {
-                    c.bump();
-                    let Some(name) = c.peek() else {
-                        return self.fail(
-                            t.span,
-                            "property_access",
-                            "`.` must be followed by a property name".to_string(),
-                        );
+            match state {
+                State::NeedOperand => {
+                    self.collect_prefixes(c, stack.last_mut()?)?;
+                    match self.open_operand(c)? {
+                        Opened::Node(node, skip) => state = State::HaveOperand(node, skip),
+                        Opened::Push(cont) => {
+                            stack.push(Frame::new(cont));
+                            state = State::NeedOperand;
+                        }
+                    }
+                }
+
+                State::HaveOperand(node, skip) => {
+                    // `POSTFIX = NON_NULL_TYPE_EXPRESSION | VALUE_PRIMARY,
+                    //  { PROPERTY_ACCESS | INDEX_ACCESS }`
+                    let node = match self.accessors(c, node, skip)? {
+                        Accessed::Complete(node) => node,
+                        Accessed::Index(base) => {
+                            stack.push(Frame::new(Continuation::Index { base }));
+                            state = State::NeedOperand;
+                            continue;
+                        }
                     };
-                    let reserved = match name.kind {
-                        TokenKind::SimpleIdentifier => false,
-                        TokenKind::ReservedWord => true,
-                        _ => {
-                            let span = name.span;
+
+                    // A second comparison operator is a grammar error, and it
+                    // is detected before consuming anything.
+                    if let Some((_, second)) = self.peek_spaced_compare_operator(c) {
+                        if stack.last()?.compare.is_some() {
                             return self.fail(
-                                span,
-                                "property_access",
+                                second,
+                                "comparison_chain",
                                 format!(
-                                    "PROPERTY_ACCESS names a SIMPLE_IDENTIFIER or RESERVED_WORD, not {}",
-                                    name.kind
+                                    "`{}` chains a second comparison operator; COMPARISON admits at most one",
+                                    self.text(second)
                                 ),
                             );
                         }
+                    }
+
+                    let operator = self.next_binary_operator(c);
+
+                    let frame = stack.last_mut()?;
+                    let node = Self::apply_prefixes(&mut frame.prefixes, node);
+                    frame.operands.push(node);
+
+                    match operator {
+                        Some((op, span)) => {
+                            let prec = precedence(op);
+                            Self::reduce(frame, prec);
+                            if prec == COMPARE_PRECEDENCE {
+                                frame.compare = Some(span);
+                            } else if prec < COMPARE_PRECEDENCE {
+                                // `AND` and `OR` begin a new comparison group.
+                                frame.compare = None;
+                            }
+                            frame.operators.push((op, span, prec));
+                            state = State::NeedOperand;
+                        }
+                        None => {
+                            let mut frame = stack.pop()?;
+                            Self::reduce(&mut frame, 0);
+                            let value = frame.operands.pop()?;
+                            match self.close(c, frame.cont, value)? {
+                                Closed::Done(expr) => return Some(expr),
+                                Closed::Operand(node, skip) => {
+                                    state = State::HaveOperand(node, skip)
+                                }
+                                Closed::Continue(cont) => {
+                                    stack.push(Frame::new(cont));
+                                    state = State::NeedOperand;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Consume every `NOT` or `-` prefix at the cursor.
+    ///
+    /// The recursive version spelled this as `UNARY` calling itself; a chain of
+    /// prefixes is a list, so it is collected as one.
+    fn collect_prefixes(&mut self, c: &mut Cursor<'a>, frame: &mut Frame) -> Option<()> {
+        loop {
+            let Some(t) = c.peek() else { return Some(()) };
+            if t.kind == TokenKind::ReservedWord && self.text(t.span) == "NOT" {
+                // `NOT` requires the following SPACE; the grammar spells it.
+                if c.peek_at(1).map(|n| n.kind) != Some(TokenKind::Space) {
+                    let span = t.span;
+                    self.fail(
+                        span,
+                        "not_without_space",
+                        "`NOT` must be followed by one SPACE".to_string(),
+                    )?;
+                    return None;
+                }
+                let span = t.span;
+                c.bump();
+                c.bump();
+                frame.prefixes.push((UnaryOp::Not, span));
+                continue;
+            }
+            if t.kind == TokenKind::Symbol && self.text(t.span) == "-" {
+                let span = t.span;
+                c.bump();
+                frame.prefixes.push((UnaryOp::Negate, span));
+                continue;
+            }
+            return Some(());
+        }
+    }
+
+    /// Apply collected prefixes to an operand, innermost last.
+    fn apply_prefixes(prefixes: &mut Vec<(UnaryOp, Span)>, mut node: Expr) -> Expr {
+        while let Some((operator, operator_span)) = prefixes.pop() {
+            node = Expr::Unary(Unary {
+                operator,
+                operator_span,
+                span: Span::new(operator_span.start, node.span().end),
+                operand: Box::new(node),
+            });
+        }
+        node
+    }
+
+    /// Reduce pending operators at or above `min_prec`, left-associatively.
+    fn reduce(frame: &mut Frame, min_prec: u8) {
+        while let Some(&(_, _, prec)) = frame.operators.last() {
+            if prec < min_prec {
+                break;
+            }
+            let Some((op, span, _)) = frame.operators.pop() else {
+                return;
+            };
+            let (Some(right), Some(left)) = (frame.operands.pop(), frame.operands.pop()) else {
+                return;
+            };
+            frame.operands.push(Self::binary(left, op, span, right));
+        }
+    }
+
+    /// The next binary operator, or `None` when the expression ends here.
+    ///
+    /// Tried in cascade order over the same helpers the recursive version used,
+    /// each of which consumes only on a complete `SPACE, op, SPACE` triple.
+    fn next_binary_operator(&mut self, c: &mut Cursor<'a>) -> Option<(BinaryOp, Span)> {
+        if let Some(found) = self.spaced_word_operator(c, &[("OR", BinaryOp::Or)]) {
+            return Some(found);
+        }
+        if let Some(found) = self.spaced_word_operator(c, &[("AND", BinaryOp::And)]) {
+            return Some(found);
+        }
+        if let Some(found) = self.spaced_compare_operator(c) {
+            return Some(found);
+        }
+        if let Some(found) = self.spaced_symbol_operator(c, &ADD_SYMBOLS) {
+            return Some(found);
+        }
+        self.spaced_symbol_operator(c, &MULTIPLY_SYMBOLS)
+    }
+
+    /// `NON_NULL_TYPE_EXPRESSION | VALUE_PRIMARY`, opening a nested construct
+    /// rather than descending into one.
+    fn open_operand(&mut self, c: &mut Cursor<'a>) -> Option<Opened> {
+        if let Some(opened) = self.open_type_expression(c) {
+            return Some(opened);
+        }
+
+        let Some(token) = c.peek() else {
+            self.fail(
+                Span::empty(self.source.len()),
+                "missing_value",
+                "a value is required here".to_string(),
+            )?;
+            return None;
+        };
+        let span = token.span;
+        match token.kind {
+            TokenKind::String | TokenKind::MultilineString => {
+                let kind = if token.kind == TokenKind::String {
+                    LiteralKind::String
+                } else {
+                    LiteralKind::MultilineString
+                };
+                let text = token.value.clone().unwrap_or_default();
+                c.bump();
+                Some(Opened::Node(
+                    Expr::Literal(Literal { kind, span, text }),
+                    false,
+                ))
+            }
+            TokenKind::IntegerLiteral | TokenKind::DecimalLiteral => {
+                let kind = if token.kind == TokenKind::IntegerLiteral {
+                    LiteralKind::Integer
+                } else {
+                    LiteralKind::Decimal
+                };
+                let text = self.text(span).to_string();
+                c.bump();
+                Some(Opened::Node(
+                    Expr::Literal(Literal { kind, span, text }),
+                    false,
+                ))
+            }
+            TokenKind::SimpleIdentifier | TokenKind::QualifiedIdentifier => {
+                let text = self.text(span).to_string();
+                let qualified = token.kind == TokenKind::QualifiedIdentifier;
+                c.bump();
+                Some(Opened::Node(
+                    Expr::Identifier(Ident {
+                        text,
+                        span,
+                        qualified,
+                    }),
+                    false,
+                ))
+            }
+            TokenKind::ReservedWord => {
+                let text = self.text(span).to_string();
+                if self.grammar.is_literal_word(&text) {
+                    let kind = match text.as_str() {
+                        "TRUE" => LiteralKind::True,
+                        "FALSE" => LiteralKind::False,
+                        "NULL" => LiteralKind::Null,
+                        "MISSING" => LiteralKind::Missing,
+                        _ => LiteralKind::Unknown,
                     };
-                    let name_span = name.span;
-                    let text = self.text(name_span).to_string();
                     c.bump();
-                    node = Expr::Property(PropertyAccess {
-                        span: Span::new(node.span().start, name_span.end),
-                        base: Box::new(node),
-                        name: text,
-                        name_span,
-                        reserved,
-                    });
+                    return Some(Opened::Node(
+                        Expr::Literal(Literal { kind, span, text }),
+                        false,
+                    ));
                 }
-                Some(t) if t.kind == TokenKind::Symbol && self.text(t.span) == "[" => {
+                if self.grammar.is_callable(&text) {
+                    return self.open_call(c);
+                }
+                self.fail(
+                    span,
+                    "unexpected_word",
+                    format!("`{text}` is not a literal, a callable or a type in a value position"),
+                )?;
+                None
+            }
+            TokenKind::Symbol => match self.text(span) {
+                "(" => {
                     c.bump();
-                    let index = self.expression(c)?;
-                    let close = self.expect_symbol(c, "]", "index_access")?;
-                    node = Expr::Index(IndexAccess {
-                        span: Span::new(node.span().start, close.end),
-                        base: Box::new(node),
-                        index: Box::new(index),
-                    });
+                    Some(Opened::Push(Continuation::Group { open: span }))
                 }
-                _ => return Some(node),
+                "[" => {
+                    let open = span;
+                    c.bump();
+                    if self.at_symbol(c, "]") {
+                        let close = self.expect_symbol(c, "]", "collection")?;
+                        return Some(Opened::Node(
+                            Expr::Collection(Collection {
+                                span: Span::new(open.start, close.end),
+                                members: Vec::new(),
+                            }),
+                            false,
+                        ));
+                    }
+                    Some(Opened::Push(Continuation::Collection {
+                        open,
+                        members: Vec::new(),
+                    }))
+                }
+                other => {
+                    let detail = format!("`{other}` does not begin a value");
+                    self.fail(span, "unexpected_symbol", detail)?;
+                    None
+                }
+            },
+            other => {
+                self.fail(
+                    span,
+                    "unexpected_token",
+                    format!("{other} does not begin a value"),
+                )?;
+                None
             }
         }
     }
@@ -242,7 +518,7 @@ impl<'a> ExprParser<'a, '_> {
     /// A word that is a callable followed by `(` is a `CALL`, not a type: the
     /// constructor spelling wins over the scalar-type spelling for `PATH`,
     /// `REGEX`, `DATE` and the rest.
-    fn non_null_type_expression(&mut self, c: &mut Cursor<'a>) -> Option<TypeExpr> {
+    fn open_type_expression(&mut self, c: &mut Cursor<'a>) -> Option<Opened> {
         let token = c.peek()?;
         if token.kind != TokenKind::ReservedWord {
             return None;
@@ -264,177 +540,192 @@ impl<'a> ExprParser<'a, '_> {
             // LIST and SET take a TYPE_EXPRESSION; OBJECT and REFERENCE take a
             // REFERENCE_CALL. Both are parsed as an expression and the
             // alternative is checked, so the tree stays source-faithful.
-            let argument = self.expression(c)?;
-            let close = self.expect_symbol(c, "]", "type_argument")?;
-            let span = Span::new(word.span.start, close.end);
-            let bracket = BracketType {
-                word,
-                span,
-                argument: Box::new(argument),
-            };
-            return Some(match name.as_str() {
-                "LIST" => TypeExpr::List(bracket),
-                "SET" => TypeExpr::Set(bracket),
-                "OBJECT" => TypeExpr::Object(bracket),
-                _ => TypeExpr::Reference(bracket),
-            });
+            return Some(Opened::Push(Continuation::TypeArgument { word, name }));
         }
         if self.grammar.is_scalar_type(text) && !self.grammar.is_literal_word(text) {
             let word = self.word(token);
             c.bump();
-            return Some(TypeExpr::Scalar(word));
+            return Some(Opened::Node(Expr::Type(TypeExpr::Scalar(word)), true));
         }
         None
-    }
-
-    /// `VALUE_PRIMARY = LITERAL | IDENTIFIER | REFERENCE_CALL | CALL |
-    ///  COLLECTION_LITERAL | "(", EXPRESSION, ")"`
-    fn value_primary(&mut self, c: &mut Cursor<'a>) -> Option<Expr> {
-        let Some(token) = c.peek() else {
-            return self.fail(
-                Span::empty(self.source.len()),
-                "missing_value",
-                "a value is required here".to_string(),
-            );
-        };
-        let span = token.span;
-        match token.kind {
-            TokenKind::String | TokenKind::MultilineString => {
-                let kind = if token.kind == TokenKind::String {
-                    LiteralKind::String
-                } else {
-                    LiteralKind::MultilineString
-                };
-                let text = token.value.clone().unwrap_or_default();
-                c.bump();
-                Some(Expr::Literal(Literal { kind, span, text }))
-            }
-            TokenKind::IntegerLiteral | TokenKind::DecimalLiteral => {
-                let kind = if token.kind == TokenKind::IntegerLiteral {
-                    LiteralKind::Integer
-                } else {
-                    LiteralKind::Decimal
-                };
-                let text = self.text(span).to_string();
-                c.bump();
-                Some(Expr::Literal(Literal { kind, span, text }))
-            }
-            TokenKind::SimpleIdentifier | TokenKind::QualifiedIdentifier => {
-                let text = self.text(span).to_string();
-                let qualified = token.kind == TokenKind::QualifiedIdentifier;
-                c.bump();
-                Some(Expr::Identifier(Ident {
-                    text,
-                    span,
-                    qualified,
-                }))
-            }
-            TokenKind::ReservedWord => {
-                let text = self.text(span).to_string();
-                if self.grammar.is_literal_word(&text) {
-                    let kind = match text.as_str() {
-                        "TRUE" => LiteralKind::True,
-                        "FALSE" => LiteralKind::False,
-                        "NULL" => LiteralKind::Null,
-                        "MISSING" => LiteralKind::Missing,
-                        _ => LiteralKind::Unknown,
-                    };
-                    c.bump();
-                    return Some(Expr::Literal(Literal { kind, span, text }));
-                }
-                if self.grammar.is_callable(&text) {
-                    return self.call(c);
-                }
-                self.fail(
-                    span,
-                    "unexpected_word",
-                    format!("`{text}` is not a literal, a callable or a type in a value position"),
-                )
-            }
-            TokenKind::Symbol => match self.text(span) {
-                "(" => {
-                    c.bump();
-                    let inner = self.expression(c)?;
-                    let close = self.expect_symbol(c, ")", "group")?;
-                    Some(Expr::Group(Group {
-                        span: Span::new(span.start, close.end),
-                        inner: Box::new(inner),
-                    }))
-                }
-                "[" => self.collection(c).map(Expr::Collection),
-                other => self.fail(
-                    span,
-                    "unexpected_symbol",
-                    format!("`{other}` does not begin a value"),
-                ),
-            },
-            other => self.fail(
-                span,
-                "unexpected_token",
-                format!("{other} does not begin a value"),
-            ),
-        }
     }
 
     /// `CALL = CALLABLE, "(", [ ARGUMENT, { ",", SPACE, ARGUMENT } ], ")"`
     ///
     /// Arguments are positional only. `04_GRAMMAR/03`: "Named, mixed positional
     /// and named, and variadic calls are invalid syntax."
-    fn call(&mut self, c: &mut Cursor<'a>) -> Option<Expr> {
+    fn open_call(&mut self, c: &mut Cursor<'a>) -> Option<Opened> {
         let callable = self.word(c.peek()?);
         c.bump();
         let Some(open) = c.peek() else {
-            return self.fail(
+            self.fail(
                 callable.span,
                 "call",
                 format!("`{}` must be followed by `(`", callable.text),
-            );
+            )?;
+            return None;
         };
         if open.kind != TokenKind::Symbol || self.text(open.span) != "(" {
             let span = open.span;
-            return self.fail(
+            self.fail(
                 span,
                 "call",
                 format!("`{}` must be followed by `(`", callable.text),
-            );
+            )?;
+            return None;
         }
         c.bump();
-        let mut arguments = Vec::new();
-        if !self.at_symbol(c, ")") {
-            loop {
-                arguments.push(self.expression(c)?);
+        if self.at_symbol(c, ")") {
+            let close = self.expect_symbol(c, ")", "call")?;
+            return Some(Opened::Node(
+                Expr::Call(Call {
+                    span: Span::new(callable.span.start, close.end),
+                    callable,
+                    arguments: Vec::new(),
+                }),
+                false,
+            ));
+        }
+        Some(Opened::Push(Continuation::Call {
+            callable,
+            arguments: Vec::new(),
+        }))
+    }
+
+    /// `{ PROPERTY_ACCESS | INDEX_ACCESS }` over one operand.
+    ///
+    /// Property access is a loop. An index access opens a nested expression, so
+    /// it hands its base back to the driver instead of descending.
+    fn accessors(&mut self, c: &mut Cursor<'a>, mut node: Expr, skip: bool) -> Option<Accessed> {
+        if skip {
+            return Some(Accessed::Complete(node));
+        }
+        loop {
+            match c.peek() {
+                Some(t) if t.kind == TokenKind::Symbol && self.text(t.span) == "." => {
+                    let dot = t.span;
+                    c.bump();
+                    let Some(name) = c.peek() else {
+                        self.fail(
+                            dot,
+                            "property_access",
+                            "`.` must be followed by a property name".to_string(),
+                        )?;
+                        return None;
+                    };
+                    let reserved = match name.kind {
+                        TokenKind::SimpleIdentifier => false,
+                        TokenKind::ReservedWord => true,
+                        _ => {
+                            let span = name.span;
+                            let kind = name.kind;
+                            self.fail(
+                                span,
+                                "property_access",
+                                format!(
+                                    "PROPERTY_ACCESS names a SIMPLE_IDENTIFIER or RESERVED_WORD, not {kind}"
+                                ),
+                            )?;
+                            return None;
+                        }
+                    };
+                    let name_span = name.span;
+                    let text = self.text(name_span).to_string();
+                    c.bump();
+                    node = Expr::Property(PropertyAccess {
+                        span: Span::new(node.span().start, name_span.end),
+                        base: Box::new(node),
+                        name: text,
+                        name_span,
+                        reserved,
+                    });
+                }
+                Some(t) if t.kind == TokenKind::Symbol && self.text(t.span) == "[" => {
+                    c.bump();
+                    return Some(Accessed::Index(node));
+                }
+                _ => return Some(Accessed::Complete(node)),
+            }
+        }
+    }
+
+    /// Finish one level and hand its value to the construct that opened it.
+    fn close(&mut self, c: &mut Cursor<'a>, cont: Continuation, value: Expr) -> Option<Closed> {
+        match cont {
+            Continuation::Root => Some(Closed::Done(value)),
+            Continuation::Group { open } => {
+                let close = self.expect_symbol(c, ")", "group")?;
+                Some(Closed::Operand(
+                    Expr::Group(Group {
+                        span: Span::new(open.start, close.end),
+                        inner: Box::new(value),
+                    }),
+                    false,
+                ))
+            }
+            Continuation::Index { base } => {
+                let close = self.expect_symbol(c, "]", "index_access")?;
+                Some(Closed::Operand(
+                    Expr::Index(IndexAccess {
+                        span: Span::new(base.span().start, close.end),
+                        base: Box::new(base),
+                        index: Box::new(value),
+                    }),
+                    false,
+                ))
+            }
+            Continuation::TypeArgument { word, name } => {
+                let close = self.expect_symbol(c, "]", "type_argument")?;
+                let span = Span::new(word.span.start, close.end);
+                let bracket = BracketType {
+                    word,
+                    span,
+                    argument: Box::new(value),
+                };
+                let type_expr = match name.as_str() {
+                    "LIST" => TypeExpr::List(bracket),
+                    "SET" => TypeExpr::Set(bracket),
+                    "OBJECT" => TypeExpr::Object(bracket),
+                    _ => TypeExpr::Reference(bracket),
+                };
+                // Concatenation binds tighter than alternation in ISO 14977, so
+                // a type expression takes no trailing accessors.
+                Some(Closed::Operand(Expr::Type(type_expr), true))
+            }
+            Continuation::Call {
+                callable,
+                mut arguments,
+            } => {
+                arguments.push(value);
                 if self.at_symbol(c, ",") {
                     let comma = c.peek()?.span;
                     c.bump();
                     // The grammar spells `",", SPACE` between arguments.
                     if c.eat(TokenKind::Space).is_none() {
-                        return self.fail(
+                        self.fail(
                             comma,
                             "argument_separator",
                             "one SPACE must follow an argument comma".to_string(),
-                        );
+                        )?;
+                        return None;
                     }
-                    continue;
+                    return Some(Closed::Continue(Continuation::Call {
+                        callable,
+                        arguments,
+                    }));
                 }
-                break;
+                let close = self.expect_symbol(c, ")", "call")?;
+                Some(Closed::Operand(
+                    Expr::Call(Call {
+                        span: Span::new(callable.span.start, close.end),
+                        callable,
+                        arguments,
+                    }),
+                    false,
+                ))
             }
-        }
-        let close = self.expect_symbol(c, ")", "call")?;
-        Some(Expr::Call(Call {
-            span: Span::new(callable.span.start, close.end),
-            callable,
-            arguments,
-        }))
-    }
-
-    /// `COLLECTION_LITERAL = "[", [ EXPRESSION, { ",", SPACE, EXPRESSION } ], "]"`
-    fn collection(&mut self, c: &mut Cursor<'a>) -> Option<Collection> {
-        let open = c.peek()?.span;
-        c.bump();
-        let mut members = Vec::new();
-        if !self.at_symbol(c, "]") {
-            loop {
-                members.push(self.expression(c)?);
+            Continuation::Collection { open, mut members } => {
+                members.push(value);
                 if self.at_symbol(c, ",") {
                     let comma = c.peek()?.span;
                     c.bump();
@@ -447,16 +738,18 @@ impl<'a> ExprParser<'a, '_> {
                         );
                         return None;
                     }
-                    continue;
+                    return Some(Closed::Continue(Continuation::Collection { open, members }));
                 }
-                break;
+                let close = self.expect_symbol(c, "]", "collection")?;
+                Some(Closed::Operand(
+                    Expr::Collection(Collection {
+                        span: Span::new(open.start, close.end),
+                        members,
+                    }),
+                    false,
+                ))
             }
         }
-        let close = self.expect_symbol(c, "]", "collection")?;
-        Some(Collection {
-            span: Span::new(open.start, close.end),
-            members,
-        })
     }
 
     /// `MULTILINE_COLLECTION = "[", NEWLINE, INDENT, EXPRESSION,

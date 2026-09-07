@@ -57,7 +57,7 @@ fn literals_cover_every_alternative_of_the_literal_production() {
         ("MISSING", LiteralKind::Missing),
         ("UNKNOWN", LiteralKind::Unknown),
     ] {
-        match value(src) {
+        match &value(src) {
             Expr::Literal(l) => assert_eq!(l.kind, kind, "{src}"),
             other => panic!("{src}: expected a literal, got {other:?}"),
         }
@@ -201,18 +201,18 @@ fn a_binary_operator_requires_one_space_on_each_side() {
 
 #[test]
 fn unary_not_and_negation_nest() {
-    match value("NOT TRUE") {
+    match &value("NOT TRUE") {
         Expr::Unary(u) => {
             assert_eq!(u.operator, UnaryOp::Not);
             assert!(matches!(*u.operand, Expr::Literal(_)));
         }
         other => panic!("{other:?}"),
     }
-    match value("-4") {
+    match &value("-4") {
         Expr::Unary(u) => assert_eq!(u.operator, UnaryOp::Negate),
         other => panic!("{other:?}"),
     }
-    match value("NOT NOT FALSE") {
+    match &value("NOT NOT FALSE") {
         Expr::Unary(u) => assert!(matches!(*u.operand, Expr::Unary(_)), "UNARY recurses"),
         other => panic!("{other:?}"),
     }
@@ -220,7 +220,7 @@ fn unary_not_and_negation_nest() {
 
 #[test]
 fn calls_are_positional_and_comma_separated_by_one_space() {
-    match value("MEASURE(5, unit.second)") {
+    match &value("MEASURE(5, unit.second)") {
         Expr::Call(c) => {
             assert_eq!(c.callable.text, "MEASURE");
             assert_eq!(c.arguments.len(), 2);
@@ -238,7 +238,7 @@ fn calls_are_positional_and_comma_separated_by_one_space() {
 
 #[test]
 fn a_reference_call_carries_its_identifier() {
-    match value("REF(input.value)") {
+    match &value("REF(input.value)") {
         Expr::Call(c) => {
             assert!(c.is_reference());
             assert_eq!(
@@ -252,11 +252,11 @@ fn a_reference_call_carries_its_identifier() {
 
 #[test]
 fn collection_literals_parse_inline_and_multiline() {
-    match value("[1, 2, 3]") {
+    match &value("[1, 2, 3]") {
         Expr::Collection(c) => assert_eq!(c.members.len(), 3),
         other => panic!("{other:?}"),
     }
-    match value("[]") {
+    match &value("[]") {
         Expr::Collection(c) => assert!(c.members.is_empty()),
         other => panic!("{other:?}"),
     }
@@ -285,7 +285,7 @@ fn collection_literals_parse_inline_and_multiline() {
 fn property_and_index_access_chain_on_a_postfix() {
     // A dotted identifier is one lexeme, so property access shows up after a
     // call or an index.
-    match value("REF(a.b).NAME") {
+    match &value("REF(a.b).NAME") {
         Expr::Property(p) => {
             assert_eq!(p.name, "NAME");
             assert!(
@@ -295,14 +295,14 @@ fn property_and_index_access_chain_on_a_postfix() {
         }
         other => panic!("{other:?}"),
     }
-    match value("REF(a.b).field") {
+    match &value("REF(a.b).field") {
         Expr::Property(p) => {
             assert_eq!(p.name, "field");
             assert!(!p.reserved, "a lowercase property selects an OBJECT field");
         }
         other => panic!("{other:?}"),
     }
-    match value("[10, 20][0]") {
+    match &value("[10, 20][0]") {
         Expr::Index(i) => {
             assert!(matches!(*i.base, Expr::Collection(_)));
             assert!(matches!(*i.index, Expr::Literal(_)));
@@ -313,7 +313,7 @@ fn property_and_index_access_chain_on_a_postfix() {
 
 #[test]
 fn parentheses_are_retained_in_the_tree() {
-    match value("(1 + 2) * 3") {
+    match &value("(1 + 2) * 3") {
         Expr::Binary(b) => {
             assert_eq!(b.operator, BinaryOp::Multiply);
             assert!(
@@ -349,7 +349,7 @@ fn type_expressions_cover_every_alternative() {
     };
 
     // SCALAR_TYPE
-    match type_of("INTEGER") {
+    match &type_of("INTEGER") {
         Expr::Type(TypeExpr::Scalar(w)) => assert_eq!(w.text, "INTEGER"),
         other => panic!("{other:?}"),
     }
@@ -371,7 +371,7 @@ fn type_expressions_cover_every_alternative() {
         Expr::Type(TypeExpr::Reference(_))
     ));
     // Nesting.
-    match type_of("LIST[SET[INTEGER]]") {
+    match &type_of("LIST[SET[INTEGER]]") {
         Expr::Type(TypeExpr::List(b)) => {
             assert!(matches!(*b.argument, Expr::Type(TypeExpr::Set(_))));
         }
@@ -379,7 +379,7 @@ fn type_expressions_cover_every_alternative() {
     }
     // `TYPE_EXPRESSION = NON_NULL_TYPE_EXPRESSION | REFERENCE_CALL | "NULL"`.
     assert!(matches!(type_of("REF(type.t)"), Expr::Call(_)));
-    match type_of("NULL") {
+    match &type_of("NULL") {
         Expr::Literal(l) => assert_eq!(l.kind, LiteralKind::Null),
         other => panic!("{other:?}"),
     }

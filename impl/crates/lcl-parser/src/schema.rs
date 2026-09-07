@@ -64,12 +64,12 @@ impl<'a> SchemaChecker<'a, '_> {
             .unwrap_or(0)
     }
 
-    /// `location_rule` locus for something omitted from `block`.
-    fn omission(&self, block: &Block) -> Span {
+    /// `location_rule` locus for something omitted from the block at `anchor`.
+    fn omission(&self, anchor: Anchor) -> Span {
         omission_locus(
             self.lexed,
-            self.line_indent(block.key.span.start),
-            block.span.end,
+            self.line_indent(anchor.key_span.start),
+            anchor.span.end,
         )
     }
 
@@ -79,11 +79,56 @@ impl<'a> SchemaChecker<'a, '_> {
         self.top_level_kind_legality(doc, kind.as_deref());
         self.top_level_occurrence(doc, kind.as_deref());
 
-        for item in &doc.items {
+        // A worklist, not a recursion: blocks, control forms and object data
+        // all nest without bound, and the canonical language sets no depth
+        // limit, so this walk may not depend on the native stack either. The
+        // stack is popped last-in-first-out and children are pushed in reverse,
+        // which reproduces the depth-first pre-order the recursive version had.
+        let mut work: Vec<Work<'_>> = Vec::new();
+        for item in doc.items.iter().rev() {
+            work.push(match item {
+                TopLevel::Block(b) => Work::Block {
+                    block: b,
+                    context: TOP_LEVEL,
+                },
+                TopLevel::Conditional(c) => Work::Conditional { node: c },
+                TopLevel::ForEach(f) => Work::ForEach { node: f },
+            });
+        }
+        self.drain(work);
+    }
+
+    /// Run one worklist to exhaustion.
+    fn drain(&mut self, mut work: Vec<Work<'_>>) {
+        while let Some(item) = work.pop() {
             match item {
-                TopLevel::Block(b) => self.block(b, TOP_LEVEL),
-                TopLevel::Conditional(c) => self.conditional(c),
-                TopLevel::ForEach(f) => self.for_each(f),
+                Work::Block { block, context } => self.block(block, context, &mut work),
+                Work::Body {
+                    anchor,
+                    statements,
+                    schema,
+                } => self.body(anchor, statements, &schema, &mut work),
+                Work::ObjectData { nested, owner } => self.object_data(nested, &owner, &mut work),
+                Work::Conditional { node } => {
+                    for item in node
+                        .else_body
+                        .as_ref()
+                        .map(|arm| arm.body.as_slice())
+                        .unwrap_or(&[])
+                        .iter()
+                        .rev()
+                    {
+                        work.push(Self::executable(item, "ELSE"));
+                    }
+                    for item in node.then_body.iter().rev() {
+                        work.push(Self::executable(item, "IF"));
+                    }
+                }
+                Work::ForEach { node } => {
+                    for item in node.body.iter().rev() {
+                        work.push(Self::executable(item, "FOR_EACH"));
+                    }
+                }
             }
         }
     }
@@ -223,33 +268,17 @@ impl<'a> SchemaChecker<'a, '_> {
         }
     }
 
-    fn conditional(&mut self, node: &Conditional) {
-        for item in &node.then_body {
-            self.executable(item, "IF");
-        }
-        if let Some(arm) = &node.else_body {
-            for item in &arm.body {
-                self.executable(item, "ELSE");
-            }
-        }
-    }
-
-    fn for_each(&mut self, node: &ForEach) {
-        for item in &node.body {
-            self.executable(item, "FOR_EACH");
-        }
-    }
-
-    fn executable(&mut self, item: &Executable, context: &str) {
+    /// One `EXECUTABLE_STATEMENT` as a unit of work.
+    fn executable<'t>(item: &'t Executable, context: &'static str) -> Work<'t> {
         match item {
-            Executable::Block(b) => self.block(b, context),
-            Executable::Conditional(c) => self.conditional(c),
-            Executable::ForEach(f) => self.for_each(f),
+            Executable::Block(b) => Work::Block { block: b, context },
+            Executable::Conditional(c) => Work::Conditional { node: c },
+            Executable::ForEach(f) => Work::ForEach { node: f },
         }
     }
 
     /// Validate one block against its schema in `context`.
-    fn block(&mut self, block: &Block, context: &str) {
+    fn block<'t>(&mut self, block: &'t Block, context: &'static str, work: &mut Vec<Work<'t>>) {
         let Some(schema) = self.grammar.schema(&block.key.text).cloned() else {
             // The lexer's closed reserved-word list already rejects an
             // unregistered word, so a non-block registered word in block
@@ -288,14 +317,28 @@ impl<'a> SchemaChecker<'a, '_> {
             );
         }
 
-        self.body(block, &schema);
+        work.push(Work::Body {
+            anchor: Anchor::of(block),
+            statements: &block.body,
+            schema,
+        });
     }
 
     /// Field presence, cardinality, containment and value shape for one block.
-    fn body(&mut self, block: &Block, schema: &BlockSchema) {
-        let mut counts: BTreeMap<&str, Vec<&Field>> = BTreeMap::new();
+    fn body<'t>(
+        &mut self,
+        anchor: Anchor,
+        statements: &'t [Statement],
+        schema: &BlockSchema,
+        work: &mut Vec<Work<'t>>,
+    ) {
+        let mut counts: BTreeMap<&'t str, Vec<&'t Field>> = BTreeMap::new();
+        // Nested work is collected here and pushed in reverse at the end, so a
+        // child is still visited before this block's own later checks emit —
+        // the order the recursive version produced.
+        let mut nested: Vec<Work<'t>> = Vec::new();
 
-        for statement in &block.body {
+        for statement in statements {
             match statement {
                 Statement::Field(f) => {
                     counts.entry(f.key.text.as_str()).or_default().push(f);
@@ -317,11 +360,11 @@ impl<'a> SchemaChecker<'a, '_> {
                 }
                 Statement::Conditional(c) => {
                     self.control_legality(schema, c.keyword_span, "IF");
-                    self.conditional(c);
+                    nested.push(Work::Conditional { node: c });
                 }
                 Statement::ForEach(f) => {
                     self.control_legality(schema, f.keyword_span, "FOR EACH");
-                    self.for_each(f);
+                    nested.push(Work::ForEach { node: f });
                 }
             }
         }
@@ -333,13 +376,13 @@ impl<'a> SchemaChecker<'a, '_> {
             };
             self.cardinality(schema, sig, fields);
             for field in fields {
-                self.value(schema, sig, field);
+                self.value(schema, sig, field, &mut nested);
             }
         }
 
         for sig in &schema.fields {
             if sig.required && !counts.contains_key(sig.name.as_str()) {
-                let locus = self.omission(block);
+                let locus = self.omission(anchor);
                 let field = sig.name.clone();
                 let owner = schema.name.clone();
                 self.emit(
@@ -351,11 +394,11 @@ impl<'a> SchemaChecker<'a, '_> {
             }
         }
 
-        self.conditional_requirements(block, schema, &counts);
+        self.conditional_requirements(anchor, statements, schema, &counts);
 
         for required in &schema.required {
             if !counts.contains_key(required.as_str()) {
-                let locus = self.omission(block);
+                let locus = self.omission(anchor);
                 let child = required.clone();
                 let owner = schema.name.clone();
                 self.emit(
@@ -365,6 +408,10 @@ impl<'a> SchemaChecker<'a, '_> {
                     format!("`{owner}` requires a `{child}` child block"),
                 );
             }
+        }
+
+        for item in nested.into_iter().rev() {
+            work.push(item);
         }
     }
 
@@ -465,7 +512,13 @@ impl<'a> SchemaChecker<'a, '_> {
     }
 
     /// The value's *shape* against the field's registered value kind.
-    fn value(&mut self, schema: &BlockSchema, sig: &FieldSignature, field: &Field) {
+    fn value<'t>(
+        &mut self,
+        schema: &BlockSchema,
+        sig: &FieldSignature,
+        field: &'t Field,
+        work: &mut Vec<Work<'t>>,
+    ) {
         let observed = observed_forms(&field.body);
         if !observed.intersects(sig.forms) {
             let span = field.body.span();
@@ -485,16 +538,19 @@ impl<'a> SchemaChecker<'a, '_> {
         // A nested body under a field whose kind names a child block is that
         // block: validate it as one, so the whole tree is judged.
         if let (Some(nested), Some(child)) = (field.body.as_nested(), sig.nested_block.as_deref()) {
-            let child_block = Block {
-                key: Word {
-                    text: child.to_string(),
-                    span: field.key.span,
-                },
-                span: field.span,
-                body: nested.statements.clone(),
-            };
             if let Some(child_schema) = self.grammar.schema(child).cloned() {
-                self.body(&child_block, &child_schema);
+                // The child's statements are judged in place. The recursive
+                // version cloned them into a synthetic `Block` to reuse this
+                // signature; an anchor carries the two spans that synthetic
+                // block existed to supply, so nothing is copied.
+                work.push(Work::Body {
+                    anchor: Anchor {
+                        key_span: field.key.span,
+                        span: field.span,
+                    },
+                    statements: &nested.statements,
+                    schema: child_schema,
+                });
             }
             return;
         }
@@ -502,14 +558,18 @@ impl<'a> SchemaChecker<'a, '_> {
         // A nested body elsewhere is object data or a local schema; both admit
         // only what their contract allows.
         if let Some(nested) = field.body.as_nested() {
-            self.object_data(nested, &sig.name);
+            work.push(Work::ObjectData {
+                nested,
+                owner: sig.name.clone(),
+            });
         }
     }
 
     /// `04_GRAMMAR/12`: object data holds unique lowercase properties and is
     /// data-only; an executable or rule block inside it is `error.block.field`.
-    fn object_data(&mut self, nested: &Nested, owner: &str) {
+    fn object_data<'t>(&mut self, nested: &'t Nested, owner: &str, work: &mut Vec<Work<'t>>) {
         let mut seen: BTreeMap<&str, usize> = BTreeMap::new();
+        let mut inner_work: Vec<Work<'t>> = Vec::new();
         for statement in &nested.statements {
             match statement {
                 Statement::Property(p) => {
@@ -526,7 +586,10 @@ impl<'a> SchemaChecker<'a, '_> {
                         );
                     }
                     if let Some(inner) = p.body.as_nested() {
-                        self.object_data(inner, &p.key.text);
+                        inner_work.push(Work::ObjectData {
+                            nested: inner,
+                            owner: p.key.text.clone(),
+                        });
                     }
                 }
                 Statement::Field(f) => {
@@ -560,7 +623,60 @@ impl<'a> SchemaChecker<'a, '_> {
                 }
             }
         }
+        for item in inner_work.into_iter().rev() {
+            work.push(item);
+        }
     }
+}
+
+/// The two spans a block contributes to its own diagnostics.
+///
+/// `body` needs a locus for an omitted field and a locus for the block word.
+/// Carrying just those lets a *nested* body be judged in place, without the
+/// synthetic `Block` (and the deep statement clone) the recursive version
+/// built to satisfy a `&Block` parameter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Anchor {
+    pub(crate) key_span: Span,
+    pub(crate) span: Span,
+}
+
+impl Anchor {
+    fn of(block: &Block) -> Anchor {
+        Anchor {
+            key_span: block.key.span,
+            span: block.span,
+        }
+    }
+}
+
+/// One pending unit of schema work.
+///
+/// Every variant borrows the syntax tree, so the walk copies nothing and the
+/// worklist costs one small record per open node.
+enum Work<'t> {
+    /// Judge one block against its schema in `context`.
+    Block {
+        block: &'t Block,
+        context: &'static str,
+    },
+    /// Judge one block body's statements against `schema`.
+    Body {
+        anchor: Anchor,
+        statements: &'t [Statement],
+        schema: BlockSchema,
+    },
+    /// Judge one object-data body.
+    ObjectData {
+        nested: &'t Nested,
+        owner: String,
+    },
+    Conditional {
+        node: &'t Conditional,
+    },
+    ForEach {
+        node: &'t ForEach,
+    },
 }
 
 /// `SPECIFICATION.KIND`, when the document spells one inline.

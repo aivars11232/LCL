@@ -228,6 +228,14 @@ fn main() {
         println!("  {area} -> {owner}");
     }
     println!();
+    println!("Stack safety:");
+    println!("  expression nesting  : iterative (explicit frame stack)");
+    println!("  block nesting       : iterative (explicit open-body stack)");
+    println!("  schema walk         : iterative (explicit worklist)");
+    println!("  tree teardown       : iterative (explicit Drop worklist)");
+    println!("  No parser path's native stack depth is a function of source nesting depth,");
+    println!("  and the canonical language declares no maximum nesting depth to enforce.");
+    println!();
     println!(
         "Scope: grammar and schema stage only. No resolution, type, validation or execution \
          result is implied."

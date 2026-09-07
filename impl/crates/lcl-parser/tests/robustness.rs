@@ -222,3 +222,202 @@ fn results_are_identical_across_repeated_parsing() {
         assert_eq!(first.diagnostics(), again.diagnostics());
     }
 }
+
+// ---------------------------------------------------------------------------
+// Stack safety
+// ---------------------------------------------------------------------------
+//
+// The parser used to pay native stack per nesting level: roughly 13 KiB per
+// parenthesised group, which aborted the process — by `SIGABRT`, not by a
+// diagnostic — at about 160 levels on the 2 MiB stack a test thread has.
+//
+// Canonical LCL Core 0.1.0 sets no maximum nesting depth for source syntax and
+// registers no diagnostic for exceeding one, so the repair could not be a depth
+// limit; parsing, schema checking and teardown are all iterative instead.
+//
+// These tests therefore run on a **deliberately small** 256 KiB stack — one
+// eighth of the old failing stack — at depths hundreds of times past the old
+// limit. Running them on a large stack would prove nothing.
+
+/// The stack these tests give the parser: far smaller than the default, so a
+/// pass cannot be an artefact of stack size.
+const SMALL_STACK: usize = 256 * 1024;
+
+/// The old failure band was ~160-180 groups; every depth here is well past it.
+const DEEP: usize = 50_000;
+
+/// Run one parse on a small stack and return what it produced.
+fn on_small_stack<T: Send + 'static>(body: impl FnOnce() -> T + Send + 'static) -> T {
+    std::thread::Builder::new()
+        .stack_size(SMALL_STACK)
+        .spawn(body)
+        .expect("spawn")
+        .join()
+        .expect("the parser must not abort or panic")
+}
+
+fn data_document(value: &str) -> String {
+    data_doc(&format!(
+        "DATA:\n    ID: data.one\n    TYPE: BOOLEAN\n    VALUE: {value}\n"
+    ))
+}
+
+/// Parse a document on a small stack, requiring a clean lexical stage.
+fn parse_deep(source: String, label: &'static str) -> usize {
+    on_small_stack(move || {
+        let lexed = lex(&source);
+        assert!(
+            lexed.primary().is_none(),
+            "{label}: the fixture must be lexically clean"
+        );
+        let parsed = lcl_parser::Parser::new(grammar())
+            .parse(&lexed)
+            .expect("a clean lexical stage permits parsing");
+        parsed.diagnostics().len()
+    })
+}
+
+#[test]
+fn deeply_nested_groups_parse_on_a_small_stack() {
+    let source = data_document(&format!("{}TRUE{}", "(".repeat(DEEP), ")".repeat(DEEP)));
+    assert_eq!(parse_deep(source, "groups"), 0);
+}
+
+#[test]
+fn the_old_failure_band_parses() {
+    // The exact depths that used to abort the process.
+    for depth in [160usize, 180, 200, 1_000] {
+        let source = data_document(&format!("{}TRUE{}", "(".repeat(depth), ")".repeat(depth)));
+        assert_eq!(parse_deep(source, "old failure band"), 0, "depth {depth}");
+    }
+}
+
+#[test]
+fn deeply_nested_collections_parse_on_a_small_stack() {
+    let source = data_document(&format!("{}TRUE{}", "[".repeat(DEEP), "]".repeat(DEEP)));
+    assert_eq!(parse_deep(source, "collections"), 0);
+}
+
+#[test]
+fn deeply_nested_call_arguments_parse_on_a_small_stack() {
+    let source = data_document(&format!("{}TRUE{}", "NOT (".repeat(DEEP), ")".repeat(DEEP)));
+    assert_eq!(parse_deep(source, "call arguments"), 0);
+}
+
+#[test]
+fn a_deep_unary_chain_parses_on_a_small_stack() {
+    // `UNARY` used to call itself once per prefix.
+    let source = data_document(&format!("{}TRUE", "NOT ".repeat(DEEP)));
+    assert_eq!(parse_deep(source, "unary chain"), 0);
+}
+
+#[test]
+fn deeply_nested_blocks_parse_on_a_small_stack() {
+    // The second cycle: `block → indented_body → statements → statement →
+    // body_after_colon → indented_body`. Indentation makes the fixture grow
+    // quadratically, so the depth is smaller than DEEP while still being an
+    // order of magnitude past the old ~350-level block limit.
+    const BLOCK_DEEP: usize = 4_000;
+    let mut source = data_doc("DATA:\n    ID: data.one\n    TYPE: OBJECT\n    VALUE:\n");
+    for level in 0..BLOCK_DEEP {
+        source.push_str(&" ".repeat(8 + level * 4));
+        source.push_str(&format!("k{level}:\n"));
+    }
+    source.push_str(&" ".repeat(8 + BLOCK_DEEP * 4));
+    source.push_str("leaf: TRUE\n");
+    assert_eq!(parse_deep(source, "nested blocks"), 0);
+}
+
+#[test]
+fn malformed_deep_nesting_yields_a_registered_diagnostic_not_an_abort() {
+    // Deeply nested and lexically clean, but grammatically invalid at the core:
+    // `COMPARISON` admits at most one comparison operator.
+    let source = data_document(&format!(
+        "{}1 == 2 == 3{}",
+        "(".repeat(DEEP),
+        ")".repeat(DEEP)
+    ));
+    let primary = on_small_stack(move || {
+        let lexed = lex(&source);
+        assert!(lexed.primary().is_none());
+        let parsed = lcl_parser::Parser::new(grammar())
+            .parse(&lexed)
+            .expect("a clean lexical stage permits parsing");
+        parsed.primary().map(|d| d.id.to_string())
+    });
+    assert_eq!(primary, Some("error.grammar.invalid".to_string()));
+}
+
+#[test]
+fn an_unclosed_deep_group_is_reported_rather_than_aborting() {
+    // A depth of open groups that never close. M1 rejects an unbalanced
+    // bracket, so the grammar stage is correctly not evaluated — the point is
+    // that neither stage dies.
+    let source = data_document(&"(".repeat(DEEP));
+    on_small_stack(move || {
+        let lexed = lex(&source);
+        assert!(
+            lexed.primary().is_some(),
+            "an unclosed group is a lexical defect"
+        );
+        assert!(lcl_parser::Parser::new(grammar()).parse(&lexed).is_err());
+    });
+}
+
+#[test]
+fn a_deep_tree_is_also_dismantled_on_a_small_stack() {
+    // Teardown is the other half of the same defect: the compiler's generated
+    // drop glue for `Box<Expr>` recursed too, so an iterative parser alone
+    // would have moved the abort from construction to destruction.
+    let source = data_document(&format!("{}TRUE{}", "(".repeat(DEEP), ")".repeat(DEEP)));
+    on_small_stack(move || {
+        let lexed = lex(&source);
+        let parsed = lcl_parser::Parser::new(grammar())
+            .parse(&lexed)
+            .expect("parses");
+        // Dropping here, on this small stack, is the assertion.
+        drop(parsed);
+    });
+}
+
+#[test]
+fn deep_nesting_keeps_exact_spans() {
+    // Depth must not cost precision: the outermost group spans the whole
+    // construct and the innermost literal is exactly its own four bytes.
+    const DEPTH: usize = 5_000;
+    let value = format!("{}TRUE{}", "(".repeat(DEPTH), ")".repeat(DEPTH));
+    let prefix = data_doc("DATA:\n    ID: data.one\n    TYPE: BOOLEAN\n    VALUE: ");
+    let start = prefix.len();
+    let source = format!("{prefix}{value}\n");
+
+    let (outer, inner) = on_small_stack(move || {
+        let lexed = lex(&source);
+        let parsed = lcl_parser::Parser::new(grammar())
+            .parse(&lexed)
+            .expect("parses");
+        let document = parsed.document();
+        let data = document.block("DATA").expect("the DATA block");
+        let field = data.field("VALUE").expect("the VALUE field");
+        let mut expr = match &field.body {
+            lcl_parser::syntax::Body::Inline(lcl_parser::syntax::Value::Expression(e)) => e,
+            other => panic!("expected an inline expression, got {other:?}"),
+        };
+        let outer = expr.span();
+        // Walk to the innermost literal without recursing.
+        loop {
+            match expr {
+                lcl_parser::syntax::Expr::Group(g) => expr = &g.inner,
+                other => return (outer, other.span()),
+            }
+        }
+    });
+
+    assert_eq!(outer.start, start, "the outermost group starts at `(`");
+    assert_eq!(
+        outer.end,
+        start + value.len(),
+        "the outermost group ends at the last `)`"
+    );
+    assert_eq!(inner.start, start + DEPTH, "the literal follows every `(`");
+    assert_eq!(inner.end, start + DEPTH + 4, "`TRUE` is four bytes");
+}

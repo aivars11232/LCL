@@ -56,6 +56,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "lcl-runtime"
+version = "0.0.0"
+dependencies = [
+ "lcl-checker",
+ "lcl-diagnostics",
+ "lcl-lexer",
+ "lcl-parser",
+ "lcl-resolver",
+ "lcl-semantics",
+ "lcl-spec",
+]
+
+[[package]]
 name = "lcl-semantics"
 version = "0.0.0"
 dependencies = [

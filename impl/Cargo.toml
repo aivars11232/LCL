@@ -19,8 +19,13 @@
 #
 # Milestone M5 scope: adds `lcl-semantics`, a deterministic no-effect semantic
 # preflight over the M4 checked model plus explicit invocation data. It produces
-# an accepted execution plan or an exact pre-effect failure. No evaluator,
-# capability kernel, or runtime is present or implied.
+# an accepted execution plan or an exact pre-effect failure.
+#
+# Milestone M6 scope: adds `lcl-runtime`, the deterministic evaluator and
+# runtime over an accepted M5 plan. Every external effect leaves the language
+# through its `Host` capability boundary; the runtime core itself performs no
+# filesystem, process, network, provider or clock access. The complete
+# executable Core operation surface and its real host adapters are M7's.
 #
 # Dependency policy: std only. The spec authority loader is the trust root for
 # every later layer, so it carries no third-party supply-chain surface.
@@ -36,6 +41,7 @@ members = [
     "crates/lcl-resolver",
     "crates/lcl-checker",
     "crates/lcl-semantics",
+    "crates/lcl-runtime",
 ]
 
 [workspace.package]

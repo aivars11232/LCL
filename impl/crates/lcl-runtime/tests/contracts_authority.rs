@@ -120,8 +120,14 @@ fn two_identifiers_are_mirrored_but_decided_by_preflight() {
         ])
     );
     for (id, owner) in ELSEWHERE {
-        assert!(id.is_elsewhere(), "{id} must be marked as decided elsewhere");
-        assert!(owner.contains("M5"), "{id} must name its deciding milestone");
+        assert!(
+            id.is_elsewhere(),
+            "{id} must be marked as decided elsewhere"
+        );
+        assert!(
+            owner.contains("M5"),
+            "{id} must name its deciding milestone"
+        );
     }
     assert_eq!(
         RuntimeError::emitted().count(),
@@ -174,7 +180,9 @@ fn the_expression_demand_map_is_the_registrys() {
         assert!(!trigger.is_empty(), "{id} must carry its trigger sentence");
     }
     assert!(
-        demand.exclusion_rule.contains("never changes classification"),
+        demand
+            .exclusion_rule
+            .contains("never changes classification"),
         "the exclusion rule is kept verbatim"
     );
 }

@@ -16,6 +16,7 @@
 //! the registered metadata of the identifiers this layer emits.
 
 use crate::diagnostic::RuntimeError;
+use crate::order_profile::DurationProfile;
 use lcl_diagnostics::{DiagnosticRegistry, Stage};
 use lcl_semantics::{Contracts as PreflightContracts, PreflightContractsError};
 use lcl_spec::json::Json;
@@ -201,6 +202,8 @@ pub struct Contracts {
     demand: DemandResolution,
     schemas: BTreeMap<String, ResultSchema>,
     retry: RetryBounds,
+    /// The registry's `duration_normalization` factors.
+    duration: DurationProfile,
     /// The closed canonical event vocabulary: every registered non-null event.
     events: BTreeSet<String>,
 }
@@ -225,29 +228,34 @@ impl Contracts {
         if !matches!(spec.authority(), lcl_spec::Authority::Authoritative) {
             return Err(RuntimeContractsError::UnverifiedPackage(spec.authority()));
         }
-        let preflight =
-            PreflightContracts::load(spec).map_err(RuntimeContractsError::Preflight)?;
+        let preflight = PreflightContracts::load(spec).map_err(RuntimeContractsError::Preflight)?;
 
-        let statuses = spec
-            .registry("statuses_and_errors")
-            .ok_or(RuntimeContractsError::MissingRegistry("statuses_and_errors"))?;
-        let results = spec
-            .registry("built_in_groups_and_results")
-            .ok_or(RuntimeContractsError::MissingRegistry(
-                "built_in_groups_and_results",
-            ))?;
+        let statuses =
+            spec.registry("statuses_and_errors")
+                .ok_or(RuntimeContractsError::MissingRegistry(
+                    "statuses_and_errors",
+                ))?;
+        let results = spec.registry("built_in_groups_and_results").ok_or(
+            RuntimeContractsError::MissingRegistry("built_in_groups_and_results"),
+        )?;
         let signatures = spec
             .registry("field_signatures")
             .ok_or(RuntimeContractsError::MissingRegistry("field_signatures"))?;
+        let units = spec.registry("formats_encodings_units").ok_or(
+            RuntimeContractsError::MissingRegistry("formats_encodings_units"),
+        )?;
 
-        let selection = statuses
-            .get("diagnostic_selection")
-            .ok_or_else(|| RuntimeContractsError::Malformed("diagnostic_selection missing".into()))?;
+        let selection = statuses.get("diagnostic_selection").ok_or_else(|| {
+            RuntimeContractsError::Malformed("diagnostic_selection missing".into())
+        })?;
 
         let (errors, supersedes) = load_errors(preflight.diagnostics(), selection)?;
         let demand = load_demand(selection)?;
         let schemas = load_schemas(results)?;
         let retry = load_retry_bounds(signatures)?;
+        let duration = DurationProfile::load(units).ok_or_else(|| {
+            RuntimeContractsError::Malformed("duration_normalization is missing or empty".into())
+        })?;
         let events = preflight
             .diagnostics()
             .errors()
@@ -261,6 +269,7 @@ impl Contracts {
             demand,
             schemas,
             retry,
+            duration,
             events,
         })
     }
@@ -308,6 +317,11 @@ impl Contracts {
 
     pub fn retry_bounds(&self) -> &RetryBounds {
         &self.retry
+    }
+
+    /// The registry's `DURATION` normalization factors.
+    pub fn duration(&self) -> &DurationProfile {
+        &self.duration
     }
 
     /// The closed canonical event vocabulary.
@@ -420,9 +434,11 @@ fn load_errors(
 }
 
 fn load_demand(selection: &Json) -> Result<DemandResolution, RuntimeContractsError> {
-    let map = selection.get("expression_demand_resolution").ok_or_else(|| {
-        RuntimeContractsError::Malformed("expression_demand_resolution missing".into())
-    })?;
+    let map = selection
+        .get("expression_demand_resolution")
+        .ok_or_else(|| {
+            RuntimeContractsError::Malformed("expression_demand_resolution missing".into())
+        })?;
 
     let mut eligible = BTreeMap::new();
     let mut missing_from_build = Vec::new();
@@ -433,10 +449,7 @@ fn load_demand(selection: &Json) -> Result<DemandResolution, RuntimeContractsErr
     {
         match RuntimeError::from_registry_str(id) {
             Some(mirrored) => {
-                eligible.insert(
-                    mirrored,
-                    trigger.as_str().unwrap_or_default().to_string(),
-                );
+                eligible.insert(mirrored, trigger.as_str().unwrap_or_default().to_string());
             }
             None => missing_from_build.push(id.clone()),
         }
@@ -459,9 +472,7 @@ fn load_demand(selection: &Json) -> Result<DemandResolution, RuntimeContractsErr
     let default_status = map
         .get("default_status")
         .and_then(Json::as_str)
-        .ok_or_else(|| {
-            RuntimeContractsError::Malformed("demand default_status missing".into())
-        })?
+        .ok_or_else(|| RuntimeContractsError::Malformed("demand default_status missing".into()))?
         .to_string();
 
     let mut overrides = BTreeMap::new();
@@ -470,7 +481,8 @@ fn load_demand(selection: &Json) -> Result<DemandResolution, RuntimeContractsErr
         .and_then(Json::as_object)
         .unwrap_or(&[])
     {
-        if let (Some(mirrored), Some(status)) = (RuntimeError::from_registry_str(id), status.as_str())
+        if let (Some(mirrored), Some(status)) =
+            (RuntimeError::from_registry_str(id), status.as_str())
         {
             overrides.insert(mirrored, status.to_string());
         }
@@ -569,9 +581,7 @@ fn load_retry_bounds(signatures: &Json) -> Result<RetryBounds, RuntimeContractsE
         .get("LIMIT")
         .and_then(|l| l.get("value_kind"))
         .and_then(Json::as_str)
-        .ok_or_else(|| {
-            RuntimeContractsError::Malformed("RETRY.LIMIT.value_kind missing".into())
-        })?;
+        .ok_or_else(|| RuntimeContractsError::Malformed("RETRY.LIMIT.value_kind missing".into()))?;
     let (minimum_limit, maximum_limit) = parse_integer_range(kind).ok_or_else(|| {
         RuntimeContractsError::Malformed(format!(
             "RETRY.LIMIT.value_kind {kind:?} is not integer[min..max]"

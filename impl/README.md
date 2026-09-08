@@ -1,4 +1,4 @@
-# LCL implementation — milestones M0 (foundation), M1 (lexer), M2 (parser), M3 (resolver), M4 (checker) and M5 (semantic preflight)
+# LCL implementation — milestones M0 (foundation), M1 (lexer), M2 (parser), M3 (resolver), M4 (checker), M5 (semantic preflight) and M6 (runtime)
 
 This directory is a **consumer** of the canonical specification at
 `../canonical/LCL_Core_0.1.0`. It is not part of the release, is not listed in
@@ -20,6 +20,7 @@ implementation conformance is separate evidence.
 | `lcl-resolver` | M3 | Deterministic, non-executing resolver. Parsed units plus an explicit source provider in; version, import, extension, namespace, ID and `REF` bindings and the structural candidate graph, or registered resolution diagnostics, out. |
 | `lcl-checker` | M4 | Deterministic, non-executing static and type checker. A resolved program graph in; every declaration's type, every expression's static contract and the value obligations left to the demanding layer, or registered `static_or_expression` diagnostics, out. |
 | `lcl-semantics` | M5 | Deterministic, no-effect semantic preflight. A statically checked program plus explicit invocation data in; an authorized, dependency-resolved, prevalidated and ordered execution plan, or registered pre-effect diagnostics, out. |
+| `lcl-runtime` | M6 | Deterministic evaluator and runtime. An accepted execution plan plus an explicit host capability boundary in; canonical execution events, invocation results, state and diagnostics out. Every external effect leaves the language through `Host`; the runtime core performs no filesystem, process, network, provider or clock access. |
 
 ## Trust boundary (M0.1)
 
@@ -413,12 +414,9 @@ stage's identifier for it.
 
 ## Not yet implemented
 
-No semantic preflight, evaluator, capability kernel, runtime, CLI or UI. M5 has
-not been started. Value-domain checks on operands that arrive only at demand are
-*recorded* as obligations rather than decided, and the diagnostic *selection*
-algorithm beyond one source-validation run (`expression_demand_resolution`
-applied at demand, producer paths, iteration and retry indexes) remains data,
-not code.
+No capability kernel beyond the boundary and its deterministic mock, no
+executable Core operation surface, no `VERIFY`/`TEST`/evidence/completion layer,
+no CLI and no UI. M7 owns the first two, M8 the third, M9 the fourth.
 
 ### The M2 stack-safety defect, now closed
 
@@ -555,6 +553,169 @@ three-valued logic tables. Where a value is not decidable before effects it
 returns *no answer* rather than a guess, and the caller either leaves the
 obligation to the demanding layer or, for a selected pre-effect check that may
 not defer, fails with the registered identifier.
+
+## M6 — `lcl-runtime`
+
+Canonical processing step 10, and only step 10:
+
+> 10. Evaluate dynamic reachability conditions when reached and execute only
+>     reachable actions in declared order and authorization bounds.
+
+### API
+
+```rust
+let contracts = lcl_runtime::Contracts::load(&spec)?;   // refuses an unverified package
+let runtime = lcl_runtime::Runtime::new(&contracts);
+let mut host = lcl_runtime::MockHost::new();            // or a real adapter, in M7
+let execution = runtime.execute(&planned, &checked, &resolved, &mut host)?;
+
+execution.invocations()     // every invocation entered, in declared execution-path order
+execution.diagnostics()     // after supersession, duplicate suppression and stable_order
+execution.primary()         // the first *unhandled, unsubstituted* diagnostic
+execution.events()          // every raised event occurrence and what became of it
+execution.bindings()        // every OUTPUT binding, per producer instance
+execution.terminal_status() // the primary diagnostic's resolved default_status, or None
+execution.serialize()       // canonical, order-stable text for reports and comparison
+```
+
+`execute` returns `NotPlanned` when preflight rejected the program. That is the
+stage boundary made structural rather than documented: `Planned::plan` hands out
+`None` for a rejected preflight, so a refused program has no plan to run and no
+effect can be authorized.
+
+### The effect boundary
+
+Every external effect leaves the language through one trait, and it passes two
+independent gates first:
+
+> Host permission does not imply LCL authorization. LCL authorization does not
+> force host permission. Both gates must pass for an effect.
+
+`capability::request` is the only path from the runtime to a `Host`, and it
+checks the plan's authorization *and* the host's permission. Neither is derived
+from the other. A `Host` returns **observations** — fields, effects, and whether
+it can prove it caused none — and has no field to write a status or an error
+identifier into, so it cannot "smuggle hidden semantic decisions back into the
+runtime". The runtime chooses the canonical identifier, the status and the
+failure phase.
+
+The runtime core has no clock. `RETRY.DELAY` is a declared quantity handed to
+`Host::delay`; nothing here sleeps or reads time, which is what makes the
+deterministic scheduler exact rather than approximate.
+
+### Concurrency without threads
+
+`05_SEMANTICS/08` grants freedom in execution order and withholds it in
+observable order:
+
+> mode.parallel permits unspecified scheduling but requires declared
+> independence ... Completion semantics remain deterministic.
+
+> Result collection and diagnostics use declared child order, never finish
+> order. Independent eligible children may execute in any order.
+
+So parallelism is an explicit interleaving over one deterministic step queue,
+not OS threads. There is no scheduler timing to depend on. `Interleaving::ALL`
+gives three admissible orders, and the test suite runs every canonical example
+under all three and compares serialized output byte for byte.
+
+Independence itself is not re-derived here: M5 proves it before effects and
+refuses to plan a conflicting `mode.parallel` container.
+
+An unrecovered required failure halts what is *after* it — and "after" follows
+sequential edges only. `mode.parallel` "omits implicit sequential edges", so an
+independent sibling is not cancelled by a failure it does not depend on;
+cancelling it would make the observable result depend on which child the queue
+ran first.
+
+### The first layer allowed to reclassify a demand
+
+Every earlier milestone was forbidden to apply
+`diagnostic_selection.expression_demand_resolution`, because its own context
+says "Preflight-required expression demands retain registered source-validation
+classification". Step 10 is the other side of that door.
+
+A `Diagnostic` therefore carries both stages: `registered_stage` is what the
+registry declares and never changes, and `resolved_stage` is the demand-resolved
+stage when the closed eligible map applied. Evidence shows the reclassification
+instead of hiding it. Eligibility is read from the registry, never decided at a
+call site, so the `exclusion_rule` holds structurally.
+
+In practice this is also where the M4/M6 boundary becomes visible. M4 decides a
+value-domain defect it can see statically — `1 / 0`, `MEASURE(1, unit.meter) +
+MEASURE(1, unit.kilometer)`, `EMPTY(NULL)` — and M6 decides the same identifiers
+only when the value arrives at a demand, which is exactly what the map's own
+trigger sentences say ("a **dynamically supplied** material value", "actually
+demanded **after** preflight").
+
+### Rules implemented, by normative source
+
+| Source | Rules |
+| --- | --- |
+| `05_SEMANTICS/12` | Left-to-right operand order stopping at the first diagnostic; `AND`/`OR` short circuit with the registered strong-Kleene tables; MISSING consumption except `==`, `!=` and `EXISTS`; UNKNOWN propagation; `==` sentinel, cross-type and MEASURE-unit rules; `IN`/`CONTAINS` for collections, objects and strings; zero-based `LIST` indexing yielding MISSING out of range; `OBJECT` key access; the registered total-order profile; exact division with the direct-`ROUND` half-even exception; `MATCHES` over both closed pattern profiles. |
+| `types_v0.1.0.json#/pattern_profiles` | `closed_lcl_regex_0_1_0` compiled to a Thompson automaton and simulated as a state set, so "no implementation strategy ... changes Boolean acceptance" holds and an adversarial pattern is bounded rather than exponential; `closed_lcl_glob_0_1_0` with `**` whole-segment semantics; both with declared finite resource limits. |
+| `05_SEMANTICS/01` | `IF` evaluated once upon reachability with only the selected arm entered; `FOR EACH` snapshotting once and iterating sequentially with per-instance identity and per-instance `OUTPUT` binding; the declared successor as the unique next reachable sibling, ascending finished sequential containers. |
+| `05_SEMANTICS/05` | `OUTPUT` projection by zero, one or many `PROPERTY` occurrences against the schema's `default_property` and `projectable_fields`; MISSING and UNKNOWN never binding; each retry attempt starting unbound. |
+| `05_SEMANTICS/06` | The closed event model: a diagnostic is the only thing that raises an event; the three-key total selection order; at most one activation per diagnostic; non-reentrancy; the handler-context target binding; `FALLBACK` eligibility and single substitution. |
+| `05_SEMANTICS/08` | `RETRY` as a budget the declared block owns and a selected `core.retry` handler authorizes; budget then `WHEN` then safety then `DELAY`; `error.retry.exhausted` only after exactly `1 + LIMIT` actual failed attempts. |
+| `05_SEMANTICS/09` | `failure_phase`, `effect_state` and `output_binding` as three independent axes, with the registry's cross-axis invariants checked rather than assumed; the registered status lifecycle driven by `allowed_next`. |
+
+### Decision witnesses executed
+
+`CLOSURE-007`, `-011`, `-012`, `-013`, `-014`, `-015`, `-016`, `-017`, `-022`,
+`-023`, `-024`, `-027`, `-029`, `-030`, `-031`, `-032`, `-039`, `-045`, `-047`,
+`-058` and `-059` are executed as tests rather than described.
+
+### Deferred, with its owner named
+
+`error.dependency.unsatisfied` and `error.scope.violation` are registered at the
+execution stage but `05_SEMANTICS/09` states both are "pre_effect only". M5
+decides them. They are mirrored here so the set can be checked against the whole
+registered execution stage rather than a subset this build chose, and a test
+asserts the runtime never emits either — under a permissive host and under a
+hostile one.
+
+`error.determinism.mismatch` remains deferred to **M7** by name, exactly as M5
+deferred it.
+
+### How `DURATION` is told apart from `MEASURE`
+
+The two are different types with opposite comparison rules — `DURATION` compares
+by normalized magnitude, `MEASURE` requires "the identical unit identifier" —
+and the `MEASURE` constructor row admits Time-category units explicitly. M5's
+`Value::Quantity` spells both the same way.
+
+This layer resolves that without forking the value model: a `DURATION` is
+normalized at construction exactly as `duration_normalization` requires, and
+carries a unit identifier outside the `unit.` namespace, so it is not a
+registered unit and can never collide with a `MEASURE`. Two `DURATION`s then
+compare by magnitude, two `MEASURE`s keep their written units, and no `MEASURE`
+is ever equal to a `DURATION`.
+
+### What M6 does not do
+
+No `VERIFY`, no `TEST`, no evidence collection, no `SUCCESS`/`FAILURE`
+evaluation and no single terminal root status: those are canonical steps 11
+through 13 and belong to M8. `Execution::terminal_status` reports only the
+primary unhandled diagnostic's resolved `default_status`, and `None` means no
+diagnostic fixes a status — which is not a claim of success.
+
+The complete executable Core operation surface and its real filesystem, process,
+network and provider adapters belong to M7. This milestone ships the capability
+boundary itself, the four control operations that are pure execution-path
+control, and a deterministic mock host whose default observations have the
+registered shape of each result schema.
+
+### Proof
+
+```text
+cargo test --offline -p lcl-runtime      # 205 tests
+cargo run  --offline -p lcl-runtime --example m6_report
+```
+
+The report executes all 13 canonical valid examples, confirms all 21 invalid
+examples are owned by an earlier stage, and compares every valid example's
+serialized execution across all three admissible interleavings.
 
 ## Use
 

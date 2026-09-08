@@ -25,10 +25,18 @@
 pub mod capability;
 pub mod contracts;
 pub mod diagnostic;
+pub mod eval;
 pub mod event;
+pub mod execute;
+pub mod functions;
+pub mod handler;
 pub mod mock;
+pub mod order_profile;
+pub mod pattern;
 pub mod result;
+pub mod schedule;
 pub mod state;
+pub mod syntax;
 pub mod value;
 
 pub use capability::{
@@ -38,11 +46,16 @@ pub use contracts::{
     Contracts, DemandResolution, RegisteredError, ResultSchema, RetryBounds, RuntimeContractsError,
 };
 pub use diagnostic::{Cause, DemandContext, Diagnostic, RuntimeError, ELSEWHERE};
+pub use eval::{strict_equal, Demand, Evaluator, Fault};
 pub use event::{Disposition, EventLog, EventRecord};
+pub use execute::{Execution, InvocationRecord, NotPlanned, Runtime};
 pub use mock::MockHost;
+pub use order_profile::{DurationProfile, OrderKey, DURATION_UNIT};
+pub use pattern::{Flags, Glob, PatternFault, Regex};
 pub use result::{
     EffectClass, EffectState, FailurePhase, ObservedEffect, OutputBinding, RecordState,
     ResultRecord,
 };
+pub use schedule::{Interleaving, Queue, Step};
 pub use state::{Bindings, InvocationId, IterationPath, Lifecycle, TransitionRefusal};
 pub use value::Value;

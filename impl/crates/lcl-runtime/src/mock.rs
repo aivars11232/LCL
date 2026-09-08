@@ -21,9 +21,7 @@
 //! observed. A default observation here is a placeholder with the registered
 //! shape, never a claim about what `core.download` really does.
 
-use crate::capability::{
-    CapabilityOutcome, CapabilityRequest, Host, Observation, Permission,
-};
+use crate::capability::{CapabilityOutcome, CapabilityRequest, Host, Observation, Permission};
 use crate::result::{EffectClass, ObservedEffect, RecordState};
 use crate::value::Value;
 use lcl_checker::numeric::{Decimal, Integer};
@@ -182,7 +180,10 @@ impl MockHost {
                         .cloned()
                         .unwrap_or(Value::Null),
                 )
-                .with("bytes", Value::Bytes(Decimal::from_integer(Integer::zero()))),
+                .with(
+                    "bytes",
+                    Value::Bytes(Decimal::from_integer(Integer::zero())),
+                ),
             // An unregistered schema is not this host's to invent. It returns
             // no field, and the runtime's schema check reports the gap.
             _ => Observation::none(),

@@ -342,7 +342,8 @@ impl Bindings {
 
     /// Bind one `OUTPUT` for one producer instance.
     pub fn bind_output(&mut self, id: &str, iteration: &IterationPath, value: Value) {
-        self.outputs.insert((id.to_string(), iteration.clone()), value);
+        self.outputs
+            .insert((id.to_string(), iteration.clone()), value);
     }
 
     /// Clear one `OUTPUT` binding for one producer instance.

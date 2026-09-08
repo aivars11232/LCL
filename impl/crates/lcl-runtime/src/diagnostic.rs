@@ -240,6 +240,13 @@ impl fmt::Display for Cause {
 /// One emitted runtime diagnostic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Diagnostic {
+    /// A stable emission identity.
+    ///
+    /// Selection reorders and merges diagnostics, so a position in the final
+    /// list is not an identity. An event records the diagnostic it was raised
+    /// by, and recovery has to find that diagnostic again *after* selection —
+    /// which is only sound if the reference survives reordering.
+    pub sequence: usize,
     pub id: RuntimeError,
     /// `errors.<id>.stage`, verbatim from the registry. Never overwritten.
     pub registered_stage: Stage,
@@ -450,6 +457,6 @@ fn merge_duplicates(raw: Vec<Diagnostic>) -> Vec<Diagnostic> {
 /// which for equal keys is also declared order, since the engine walks the plan
 /// in its canonical order.
 fn order(mut diagnostics: Vec<Diagnostic>) -> Vec<Diagnostic> {
-    diagnostics.sort_by(|a, b| a.order_key().cmp(&b.order_key()));
+    diagnostics.sort_by_key(|d| d.order_key());
     diagnostics
 }

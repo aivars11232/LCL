@@ -100,7 +100,8 @@ fn blocked_is_terminal_with_no_outgoing_transition() {
     // transition."
     let registry = contracts().diagnostics();
     let mut life = Lifecycle::planned(true);
-    life.transition(registry, "status.blocked").expect("ready permits blocked");
+    life.transition(registry, "status.blocked")
+        .expect("ready permits blocked");
     assert!(life.is_terminal(registry));
     for status in [
         "status.running",
@@ -119,7 +120,7 @@ fn blocked_is_terminal_with_no_outgoing_transition() {
 fn an_execution_root_cannot_be_skipped() {
     // "An execution root cannot take this transition." A non-root may.
     let registry = contracts().diagnostics();
-    let mut root = Lifecycle::planned(true);
+    let root = Lifecycle::planned(true);
     assert!(matches!(
         root.refuse(registry, "status.skipped"),
         Some(TransitionRefusal::RootCannotSkip)
@@ -344,8 +345,18 @@ fn every_closed_axis_round_trips_through_its_registry_spelling() {
 // ---------------------------------------------------------------------------
 
 fn diagnostic(id: RuntimeError, offset: usize, producer: Option<InvocationId>) -> Diagnostic {
+    diagnostic_seq(id, offset, producer, 0)
+}
+
+fn diagnostic_seq(
+    id: RuntimeError,
+    offset: usize,
+    producer: Option<InvocationId>,
+    sequence: usize,
+) -> Diagnostic {
     let registered = contracts().error(id);
     Diagnostic {
+        sequence,
         id,
         registered_stage: registered.stage,
         resolved_stage: None,
@@ -496,7 +507,10 @@ fn a_demand_resolved_diagnostic_keeps_its_registered_stage_as_evidence() {
         .demand()
         .status_for(RuntimeError::NumericDivisionByZero)
         .to_string();
-    assert_eq!(demanded.registered_stage, registered, "registered stage is retained");
+    assert_eq!(
+        demanded.registered_stage, registered,
+        "registered stage is retained"
+    );
     assert_eq!(demanded.stage(), lcl_diagnostics::Stage::Execution);
     assert_eq!(demanded.default_status, "status.failed");
     assert!(format!("{demanded}").contains("demand-resolved"));

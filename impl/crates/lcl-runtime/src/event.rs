@@ -42,8 +42,10 @@ pub struct EventRecord {
     /// The canonical core event identifier, copied from the raising
     /// diagnostic's registered `event` field.
     pub event: String,
-    /// Index into the execution's diagnostic list of the diagnostic that raised
-    /// it. The event is provenance for that diagnostic and nothing else.
+    /// The [`crate::Diagnostic::sequence`] of the diagnostic that raised it.
+    ///
+    /// An emission identity rather than a list position, because selection
+    /// reorders the list and this reference must still resolve afterwards.
     pub diagnostic: usize,
     /// The producer that emitted the diagnostic. `handler_scope` is decided
     /// from the declared producer path, "never by host call order".
@@ -161,15 +163,16 @@ impl EventLog {
         self.records.is_empty()
     }
 
-    /// True when the diagnostic at `index` was recovered by a selected handler.
+    /// True when the diagnostic with emission identity `sequence` was
+    /// recovered by a selected handler.
     ///
     /// `recovery_rule`: "The originating diagnostic is recovered exactly when
     /// that handler invocation's own result, including permitted successful
     /// FALLBACK substitution, records status.succeeded. Any other handler
     /// outcome leaves the originating diagnostic unhandled."
-    pub fn recovered(&self, index: usize) -> bool {
+    pub fn recovered(&self, sequence: usize) -> bool {
         self.records.iter().any(|r| {
-            r.diagnostic == index
+            r.diagnostic == sequence
                 && matches!(
                     r.disposition,
                     Disposition::Selected {

@@ -58,7 +58,7 @@ pub use contracts::{
 pub use diagnostic::{Cause, DemandContext, Diagnostic, RuntimeError, ELSEWHERE};
 pub use eval::{strict_equal, Demand, Evaluator, Fault};
 pub use event::{Disposition, EventLog, EventRecord};
-pub use execute::{Execution, InvocationRecord, NotPlanned, Runtime};
+pub use execute::{position_of, Execution, InvocationRecord, NotPlanned, Runtime};
 pub use mock::MockHost;
 pub use operations::{DeferAll, Invocation, Operations, Resolution};
 pub use order_profile::{DurationProfile, OrderKey, DURATION_UNIT};

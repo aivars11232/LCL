@@ -33,6 +33,14 @@
 # the executable Core operation surface that maps the 39 registered rows to
 # pure logic or to bounded, authorized capability requests.
 #
+# Milestone M8 scope: adds `lcl-completion`, canonical processing steps 11
+# through 13 -- post-execution VERIFY and TEST, evidence resolution,
+# SUCCESS/FAILURE selection and exactly one terminal invocation status with its
+# declared outputs -- and turns `lcl-conformance` from a descriptive index into
+# an executable case runner. Completion observes an execution and performs no
+# effect of its own; a TEST root that executes a referenced graph does so
+# through the runtime's existing operation and host boundary.
+#
 # Dependency policy: std only. The spec authority loader is the trust root for
 # every later layer, so it carries no third-party supply-chain surface.
 
@@ -41,7 +49,6 @@ resolver = "2"
 members = [
     "crates/lcl-spec",
     "crates/lcl-diagnostics",
-    "crates/lcl-conformance",
     "crates/lcl-lexer",
     "crates/lcl-parser",
     "crates/lcl-resolver",
@@ -50,6 +57,10 @@ members = [
     "crates/lcl-runtime",
     "crates/lcl-capabilities",
     "crates/lcl-stdlib",
+    "crates/lcl-completion",
+    # Last: the conformance runner executes cases through every layer above, so
+    # it depends on all of them.
+    "crates/lcl-conformance",
 ]
 
 [workspace.package]

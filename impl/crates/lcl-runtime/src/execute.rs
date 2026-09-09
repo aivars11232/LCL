@@ -815,18 +815,31 @@ impl<'a> Engine<'a> {
             return;
         };
         let id = InvocationId::first(node, iteration);
-        // A container completes once its children have. Its own terminal status
-        // is the completion contract's, which is the next milestone's; what
-        // this milestone records is that the container finished running without
-        // its own failure.
+        // A container completes once its children have, and this milestone
+        // records that it finished running without its own failure.
+        //
+        // An execution *root* is the exception, and stays in `status.running`.
+        // `check_selection_contract/lifecycle`: "A root enters status.running
+        // before evaluating dynamic execution/control or post-execution
+        // completion." Post-execution completion is step 11 onward, so the root
+        // is still running when it begins — and `05_SEMANTICS/10` is explicit
+        // that "At a TASK execution root, status.succeeded is legal only when
+        // its SUCCESS is TRUE, all required outputs are fully bound and valid,
+        // all hard rules hold, and all required evidence exists." None of those
+        // has been evaluated here.
+        //
+        // Asserting `status.succeeded` for a root would also make every
+        // declared FAILURE mapping illegal, because `failure_mapping_rule`
+        // requires the requested status to be "present in the current
+        // invocation state's allowed_next" and a terminal status has none.
+        let is_root = planned.parent.is_none();
         if let Some(record) = self.records.get_mut(&id) {
-            if record.lifecycle.current() == "status.running" {
+            if !is_root && record.lifecycle.current() == "status.running" {
                 let _ = record
                     .lifecycle
                     .transition(self.contracts.diagnostics(), "status.succeeded");
             }
         }
-        let _ = planned;
     }
 
     // -----------------------------------------------------------------------
@@ -1763,7 +1776,13 @@ fn effect_state_of(effects: &[ObservedEffect], phase: FailurePhase) -> EffectSta
 
 /// A derived line/column for one byte offset. Presentation only; the byte
 /// offset stays authoritative.
-fn position_of(text: &str, offset: usize) -> lcl_lexer::Position {
+/// Derive a line and column from an exact byte offset.
+///
+/// Presentation only. `5.2 Source identity and spans`: "Source byte offsets
+/// remain authoritative. Derived line/column locations must not replace exact
+/// byte spans." Exported so the completion layer above derives the *same*
+/// position for the same offset instead of carrying a second implementation.
+pub fn position_of(text: &str, offset: usize) -> lcl_lexer::Position {
     let mut line = 1u32;
     let mut column = 1u32;
     for (index, ch) in text.char_indices() {

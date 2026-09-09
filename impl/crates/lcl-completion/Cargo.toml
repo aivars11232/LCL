@@ -1,0 +1,25 @@
+[package]
+name = "lcl-completion"
+description = "Canonical processing steps 11 to 13 for LCL Core 0.1.0: post-execution VERIFY and TEST, evidence resolution, SUCCESS and FAILURE selection, and exactly one terminal invocation status with its declared outputs. It observes an execution; it performs no effect of its own."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lcl-spec = { path = "../lcl-spec" }
+lcl-diagnostics = { path = "../lcl-diagnostics" }
+lcl-lexer = { path = "../lcl-lexer" }
+lcl-parser = { path = "../lcl-parser" }
+lcl-resolver = { path = "../lcl-resolver" }
+lcl-checker = { path = "../lcl-checker" }
+lcl-semantics = { path = "../lcl-semantics" }
+lcl-runtime = { path = "../lcl-runtime" }
+
+[dev-dependencies]
+# Tests only. Completion itself needs no operation surface: a TEST root's
+# referenced graph is executed in step 10, not here. But a completion test whose
+# ACTION resolved to a host placeholder would be asserting over a value the
+# language never produced, so the suites run the real Core operation surface.
+lcl-stdlib = { path = "../lcl-stdlib" }
+lcl-capabilities = { path = "../lcl-capabilities" }

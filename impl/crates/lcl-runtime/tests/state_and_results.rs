@@ -527,3 +527,67 @@ fn a_result_record_serializes_stably() {
     assert!(record.serialize().contains("exit_code=0"));
     assert!(record.serialize().contains("stdout=\"out\""));
 }
+
+#[test]
+fn an_execution_root_is_still_running_when_step_10_ends() {
+    // Regression. Step 10 used to move a finished root to `status.succeeded`,
+    // which pre-empted the completion contract in three ways at once:
+    //
+    // * `check_selection_contract/lifecycle` says "A root enters status.running
+    //   before evaluating dynamic execution/control or post-execution
+    //   completion", so the root must still be running when step 11 begins;
+    // * `05_SEMANTICS/10` says root `status.succeeded` "is legal only when its
+    //   SUCCESS is TRUE, all required outputs are fully bound and valid, all
+    //   hard rules hold, and all required evidence exists", none of which step
+    //   10 evaluates;
+    // * `failure_lifecycle.failure_mapping_rule` requires a declared FAILURE's
+    //   status to be "present in the current invocation state's allowed_next",
+    //   and a terminal status has an empty one — so an early `succeeded` made
+    //   every declared FAILURE mapping illegal.
+    //
+    // Non-root containers keep their own completion here, because their
+    // producer contract genuinely finishes in step 10.
+    let source = std::fs::read_to_string(
+        common::canonical_root().join("08_EXAMPLES/VALID/01_MINIMAL_TASK.lcl"),
+    )
+    .expect("the canonical example is readable");
+    let fixture = common::fixture(&source);
+    let mut host = lcl_runtime::MockHost::new();
+    let execution = lcl_runtime::Runtime::new(contracts())
+        .execute(
+            &fixture.planned,
+            &fixture.checked,
+            &fixture.resolved,
+            &mut host,
+        )
+        .expect("the example plans");
+
+    let plan = fixture.planned.plan().expect("accepted");
+    let root = execution
+        .invocations()
+        .iter()
+        .find(|record| {
+            plan.node(record.node)
+                .is_some_and(|node| node.parent.is_none())
+        })
+        .expect("the execution entered its root");
+    assert_eq!(
+        root.status(),
+        "status.running",
+        "the root's terminal status belongs to the completion contract, not to step 10"
+    );
+
+    let child = execution
+        .invocations()
+        .iter()
+        .find(|record| {
+            plan.node(record.node)
+                .is_some_and(|node| node.parent.is_some())
+        })
+        .expect("the example has a non-root producer");
+    assert_eq!(
+        child.status(),
+        "status.succeeded",
+        "a non-root producer still completes in step 10"
+    );
+}

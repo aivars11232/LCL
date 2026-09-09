@@ -22,11 +22,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "lcl-completion"
+version = "0.0.0"
+dependencies = [
+ "lcl-capabilities",
+ "lcl-checker",
+ "lcl-diagnostics",
+ "lcl-lexer",
+ "lcl-parser",
+ "lcl-resolver",
+ "lcl-runtime",
+ "lcl-semantics",
+ "lcl-spec",
+ "lcl-stdlib",
+]
+
+[[package]]
 name = "lcl-conformance"
 version = "0.0.0"
 dependencies = [
+ "lcl-capabilities",
+ "lcl-checker",
+ "lcl-completion",
  "lcl-diagnostics",
+ "lcl-lexer",
+ "lcl-parser",
+ "lcl-resolver",
+ "lcl-runtime",
+ "lcl-semantics",
  "lcl-spec",
+ "lcl-stdlib",
 ]
 
 [[package]]

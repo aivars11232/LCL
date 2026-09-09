@@ -290,21 +290,30 @@ impl Lifecycle {
     }
 }
 
-/// The values one execution knows: loop-local bindings and bound `OUTPUT`s.
+/// The values one execution knows: loop-local bindings, bound `OUTPUT`s, and
+/// the written `MEMORY` and `STATE` stores.
 ///
-/// Both are keyed by iteration path, because both are per-instance:
+/// The first two are keyed by iteration path, because both are per-instance:
 ///
 /// > The local binding is visible only within its body and resolves to that
 /// > exact instance.
 ///
 /// > An ACTION replicated by FOR EACH has a separate OUTPUT binding per full
 /// > enclosing iteration-index path.
+///
+/// The stores are not. `05_SEMANTICS/07` calls MEMORY "retained data" and STATE
+/// "mutable external/project data": a written value is the declaration's
+/// current value everywhere after the write, not a per-iteration shadow, so a
+/// value written inside a loop body is still the current value after the loop
+/// ends. Keying them by iteration would silently discard exactly that.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Bindings {
     /// `(binding name, iteration path)` -> the loop-local value.
     locals: BTreeMap<(String, IterationPath), Value>,
     /// `(OUTPUT declaration id, iteration path)` -> the bound projection.
     outputs: BTreeMap<(String, IterationPath), Value>,
+    /// `MEMORY` or `STATE` declaration id -> its current written value.
+    stores: BTreeMap<String, Value>,
 }
 
 impl Bindings {
@@ -370,5 +379,29 @@ impl Bindings {
     /// Every bound output, in id then iteration order.
     pub fn outputs(&self) -> impl Iterator<Item = (&(String, IterationPath), &Value)> {
         self.outputs.iter()
+    }
+
+    /// Write one `MEMORY` or `STATE` declaration's current value.
+    ///
+    /// `05_SEMANTICS/07`: "Writes require reachable core.memory_write or
+    /// core.state_update and applicable scope/authorization." Those two
+    /// operations are the only callers; nothing else in the engine writes a
+    /// declared store, so a store value always has a reachable authorized
+    /// producer behind it.
+    pub fn write_store(&mut self, id: &str, value: Value) {
+        self.stores.insert(id.to_string(), value);
+    }
+
+    /// Read one written store value.
+    ///
+    /// `None` means the declaration has never been written, and the reader
+    /// falls back to its declared value.
+    pub fn store(&self, id: &str) -> Option<&Value> {
+        self.stores.get(id)
+    }
+
+    /// Every written store, in declaration-id order.
+    pub fn stores(&self) -> impl Iterator<Item = (&String, &Value)> {
+        self.stores.iter()
     }
 }

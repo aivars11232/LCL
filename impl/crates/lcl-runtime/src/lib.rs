@@ -21,6 +21,15 @@
 //!
 //! Steps 11 through 13 — `VERIFY`, `TEST`, evidence, `SUCCESS`/`FAILURE` and
 //! one terminal root status — are the next milestone's and are absent here.
+//!
+//! ## Where the operation surface lives
+//!
+//! Executing a plan means invoking operations, and the closed Core operation
+//! surface is `lcl-stdlib`'s. This crate therefore carries the *seam* rather
+//! than the surface: [`operations::Operations`] is the trait a dispatcher
+//! implements, [`Runtime::execute_with`] is where one is supplied, and
+//! [`operations::DeferAll`] is the behavior of an engine assembled without one
+//! — every operation goes to the host, which is exactly what milestone 6 did.
 
 pub mod capability;
 pub mod contracts;
@@ -31,6 +40,7 @@ pub mod execute;
 pub mod functions;
 pub mod handler;
 pub mod mock;
+pub mod operations;
 pub mod order_profile;
 pub mod pattern;
 pub mod result;
@@ -50,6 +60,7 @@ pub use eval::{strict_equal, Demand, Evaluator, Fault};
 pub use event::{Disposition, EventLog, EventRecord};
 pub use execute::{Execution, InvocationRecord, NotPlanned, Runtime};
 pub use mock::MockHost;
+pub use operations::{DeferAll, Invocation, Operations, Resolution};
 pub use order_profile::{DurationProfile, OrderKey, DURATION_UNIT};
 pub use pattern::{Flags, Glob, PatternFault, Regex};
 pub use result::{

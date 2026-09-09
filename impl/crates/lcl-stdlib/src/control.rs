@@ -1,0 +1,583 @@
+//! Comparison, checking, and the rows that coordinate execution itself.
+//!
+//! ## Why the control rows are not all alike
+//!
+//! `control` is the registry's category for rows that "coordinate, delegate,
+//! stop, resume, retry, or cancel execution, or request authoritative input",
+//! and the five members reach five different places:
+//!
+//! * `core.retry` and `core.continue` are meaningful **only inside a selected
+//!   handler**, and the runtime already owns that context. Outside one, their
+//!   own contract makes them a precondition failure, which is decided here.
+//! * `core.cancel` and `core.stop` act on the runtime's lifecycle state, which
+//!   is the runtime's to transition.
+//! * `core.ask` reaches a person, and crosses the boundary like any other
+//!   external row.
+//! * `core.test` compares, and only delegates to a graph when its target names
+//!   one.
+
+use crate::contracts::OperationContract;
+use crate::{params, pure, schema, Stdlib};
+use lcl_runtime::diagnostic::RuntimeError;
+use lcl_runtime::operations::{Invocation, Resolution};
+use lcl_runtime::pattern::{Flags, Glob, Regex};
+use lcl_runtime::{capability::CapabilityRequest, order_profile, strict_equal, Value};
+use std::cmp::Ordering;
+use std::collections::BTreeMap;
+
+/// Resolve one invocation of a control row.
+pub(crate) fn invoke(
+    stdlib: &Stdlib,
+    cx: &mut Invocation<'_>,
+    request: &CapabilityRequest,
+    contract: &OperationContract,
+    parameters: &BTreeMap<String, Value>,
+) -> Resolution {
+    match contract.operation.as_str() {
+        // "core.retry consumes that same ACTION invocation's existing budget and
+        // is invalid outside its selected handler context." A reachable ACTION
+        // is not a handler, and the runtime resolves the handler case before a
+        // request is ever built.
+        "core.retry" => Resolution::failed(
+            RuntimeError::OperationPrecondition,
+            "handler_context",
+            "core.retry is valid only inside the selected handler of the ACTION whose \
+             RETRY it authorizes",
+        ),
+        // "core.continue likewise requires its selected same-origin handler
+        // context; a missing or mismatched context uses
+        // error.operation.precondition."
+        "core.continue" => Resolution::failed(
+            RuntimeError::OperationPrecondition,
+            "handler_context",
+            "core.continue is valid only while a selected handler is handling its \
+             originating event",
+        ),
+        "core.test" => test(stdlib, cx, request, contract, parameters),
+        // core.cancel, core.stop and core.ask reach the runtime's lifecycle or
+        // the host, neither of which this module decides.
+        _ => {
+            let mut resolved = request.clone();
+            resolved.parameters = parameters.clone();
+            Resolution::Host(Box::new(resolved))
+        }
+    }
+}
+
+/// `core.compare`: one declared criterion over two operands.
+///
+/// > core.compare evaluates one criterion under the registered operator and
+/// > sentinel rules. Omitted criteria selects ==. That equality form accepts
+/// > MISSING and UNKNOWN as singleton sentinels and produces material BOOLEAN.
+/// > A supplied non-==/!= criterion that encounters MISSING uses
+/// > error.required.missing; a criterion whose result remains UNKNOWN uses
+/// > error.value.unknown because successful result.value content is material.
+pub(crate) fn compare(
+    cx: &mut Invocation<'_>,
+    request: &CapabilityRequest,
+    _contract: &OperationContract,
+    parameters: &BTreeMap<String, Value>,
+) -> Resolution {
+    let Some(left) = request.target.as_ref().map(|t| pure::read_through(cx, t)) else {
+        return Resolution::failed(
+            RuntimeError::RequiredMissing,
+            "target",
+            "core.compare requires a TARGET",
+        );
+    };
+    let Some(right) = parameters.get("against").map(|v| pure::read_through(cx, v)) else {
+        return Resolution::failed(
+            RuntimeError::RequiredMissing,
+            "against",
+            "core.compare requires an against operand",
+        );
+    };
+
+    let (operator, left_path, right_path) = match criterion(parameters.get("criteria")) {
+        Ok(criterion) => criterion,
+        Err(resolution) => return resolution,
+    };
+
+    // "Omitted paths select the complete corresponding operand; supplied paths
+    // project through exact registered OBJECT fields."
+    let left = match project(&left, left_path.as_deref()) {
+        Some(value) => value,
+        None => Value::Missing,
+    };
+    let right = match project(&right, right_path.as_deref()) {
+        Some(value) => value,
+        None => Value::Missing,
+    };
+
+    // "That equality form accepts MISSING and UNKNOWN as singleton sentinels."
+    let equality = operator == "==" || operator == "!=";
+    if !equality && (left == Value::Missing || right == Value::Missing) {
+        return Resolution::failed(
+            RuntimeError::RequiredMissing,
+            "criteria",
+            format!("{operator} encountered a MISSING operand"),
+        );
+    }
+
+    match apply(&operator, &left, &right) {
+        Ok(Value::Unknown) => Resolution::failed(
+            RuntimeError::ValueUnknown,
+            "criteria",
+            "the comparison remained UNKNOWN, and successful result.value content is material",
+        ),
+        // "result.value.value is exactly one BOOLEAN; FALSE is a successful
+        // comparison result."
+        Ok(outcome) => Resolution::Completed(schema::value(outcome)),
+        Err(fault) => Resolution::failed(fault.0, "criteria", fault.1),
+    }
+}
+
+/// A registered comparison this module could not apply.
+struct CompareFault(RuntimeError, String);
+
+/// Read the declared criterion: a token, a closed OBJECT, or a reference to one.
+fn criterion(
+    declared: Option<&Value>,
+) -> Result<(String, Option<String>, Option<String>), Resolution> {
+    const OPERATORS: [&str; 9] = [
+        "==", "!=", "<", "<=", ">", ">=", "IN", "CONTAINS", "MATCHES",
+    ];
+    let malformed = |detail: String| {
+        Resolution::failed(RuntimeError::OperationPrecondition, "criteria", detail)
+    };
+
+    match declared {
+        // The registry default is "==", so an omitted criterion arrives here
+        // already defaulted.
+        None | Some(Value::Missing) => Ok(("==".to_string(), None, None)),
+        Some(Value::Text(token)) => {
+            if !OPERATORS.contains(&token.as_str()) {
+                return Err(malformed(format!("{token:?} is not a registered operator")));
+            }
+            Ok((token.clone(), None, None))
+        }
+        Some(Value::Object(fields)) => {
+            let Some(Value::Text(operator)) = fields.get("operator") else {
+                return Err(malformed(
+                    "a criteria OBJECT requires a STRING operator".to_string(),
+                ));
+            };
+            if !OPERATORS.contains(&operator.as_str()) {
+                return Err(malformed(format!(
+                    "{operator:?} is not a registered operator"
+                )));
+            }
+            // "Unknown keys ... produce error.operation.parameter", which the
+            // execution stage expresses through the row's own precondition.
+            for key in fields.keys() {
+                if !matches!(key.as_str(), "operator" | "left" | "right") {
+                    return Err(malformed(format!("{key:?} is not a criteria key")));
+                }
+            }
+            let path = |name: &str| match fields.get(name) {
+                Some(Value::Text(path)) => Some(path.clone()),
+                _ => None,
+            };
+            Ok((operator.clone(), path("left"), path("right")))
+        }
+        Some(other) => Err(malformed(format!(
+            "criteria must be a STRING, an OBJECT or a REFERENCE, found {}",
+            other.family()
+        ))),
+    }
+}
+
+/// Project one operand through an optional property path.
+fn project(operand: &Value, path: Option<&str>) -> Option<Value> {
+    match path {
+        None => Some(operand.clone()),
+        Some(path) => pure::property_path(operand, path),
+    }
+}
+
+/// Apply one registered comparison token.
+fn apply(operator: &str, left: &Value, right: &Value) -> Result<Value, CompareFault> {
+    match operator {
+        "==" => Ok(Value::Boolean(strict_equal(left, right))),
+        "!=" => Ok(Value::Boolean(!strict_equal(left, right))),
+        "<" | "<=" | ">" | ">=" => {
+            if left == &Value::Unknown || right == &Value::Unknown {
+                return Ok(Value::Unknown);
+            }
+            let Some(ordering) = order_profile::compare(left, right) else {
+                return Err(CompareFault(
+                    RuntimeError::OperatorOperand,
+                    format!(
+                        "{} and {} are not mutually order-compatible",
+                        left.family(),
+                        right.family()
+                    ),
+                ));
+            };
+            Ok(Value::Boolean(match operator {
+                "<" => ordering == Ordering::Less,
+                "<=" => ordering != Ordering::Greater,
+                ">" => ordering == Ordering::Greater,
+                _ => ordering != Ordering::Less,
+            }))
+        }
+        // "IN" asks whether the left operand is a member of the right.
+        "IN" => membership(right, left),
+        // "CONTAINS" is the same question with the operands the other way round.
+        "CONTAINS" => membership(left, right),
+        "MATCHES" => matches(left, right),
+        other => Err(CompareFault(
+            RuntimeError::OperatorOperand,
+            format!("{other} is not a registered comparison"),
+        )),
+    }
+}
+
+fn membership(collection: &Value, member: &Value) -> Result<Value, CompareFault> {
+    if collection == &Value::Unknown || member == &Value::Unknown {
+        return Ok(Value::Unknown);
+    }
+    match collection {
+        Value::List(members) | Value::Set(members) => Ok(Value::Boolean(
+            members.iter().any(|held| strict_equal(held, member)),
+        )),
+        // A STRING contains a substring.
+        Value::Text(haystack) => match member {
+            Value::Text(needle) => Ok(Value::Boolean(haystack.contains(needle.as_str()))),
+            other => Err(CompareFault(
+                RuntimeError::OperatorOperand,
+                format!("a STRING contains a STRING, not {}", other.family()),
+            )),
+        },
+        other => Err(CompareFault(
+            RuntimeError::OperatorOperand,
+            format!("membership requires a collection, found {}", other.family()),
+        )),
+    }
+}
+
+/// `MATCHES` against a compiled GLOB or REGEX.
+fn matches(subject: &Value, pattern: &Value) -> Result<Value, CompareFault> {
+    if subject == &Value::Unknown || pattern == &Value::Unknown {
+        return Ok(Value::Unknown);
+    }
+    let Value::Text(input) = subject else {
+        return Err(CompareFault(
+            RuntimeError::OperatorOperand,
+            format!(
+                "MATCHES requires a STRING subject, found {}",
+                subject.family()
+            ),
+        ));
+    };
+    let Value::Constructed { constructor, text } = pattern else {
+        return Err(CompareFault(
+            RuntimeError::OperatorOperand,
+            format!(
+                "MATCHES requires a GLOB or REGEX pattern, found {}",
+                pattern.family()
+            ),
+        ));
+    };
+    let outcome = match constructor.as_str() {
+        "GLOB" => Glob::compile(text).and_then(|glob| glob.matches(input)),
+        "REGEX" => {
+            // A REGEX literal carries its flags in its own text; the closed
+            // profile parses both together.
+            let (pattern, flags) = split_regex(text);
+            Regex::compile(&pattern, flags).and_then(|regex| regex.matches(input))
+        }
+        other => {
+            return Err(CompareFault(
+                RuntimeError::OperatorOperand,
+                format!("{other} is not a pattern constructor"),
+            ))
+        }
+    };
+    match outcome {
+        Ok(matched) => Ok(Value::Boolean(matched)),
+        // "MATCHES resource exhaustion uses error.pattern.resource_limit."
+        Err(lcl_runtime::PatternFault::ResourceLimit(detail)) => {
+            Err(CompareFault(RuntimeError::PatternResourceLimit, detail))
+        }
+        Err(fault) => Err(CompareFault(
+            RuntimeError::OperatorOperand,
+            format!("{fault:?}"),
+        )),
+    }
+}
+
+/// Split a REGEX value's stored text into its pattern and flags.
+///
+/// The lexer stores a two-argument `REGEX("p", "i")` as its pattern followed by
+/// a tab and its flags; a one-argument literal has no flags.
+fn split_regex(text: &str) -> (String, Flags) {
+    match text.split_once('\t') {
+        // An unparsable flag set is one the lexer would already have refused,
+        // so an empty set here is totality rather than a silent default.
+        Some((pattern, flags)) => (pattern.to_string(), Flags::parse(flags).unwrap_or_default()),
+        None => (text.to_string(), Flags::default()),
+    }
+}
+
+/// `core.validate`: whether the target satisfies its declared rules.
+///
+/// The `rules` parameter names `VALIDATE` declarations, and preflight already
+/// evaluated every selected check — "VALIDATE and VERIFY expose the Boolean
+/// result of their declared check in value context". Re-evaluating them here
+/// would be a second implementation of the same semantics, so this reads the
+/// outcomes the plan carries.
+pub(crate) fn validate(
+    cx: &mut Invocation<'_>,
+    _request: &CapabilityRequest,
+    _contract: &OperationContract,
+    parameters: &BTreeMap<String, Value>,
+) -> Resolution {
+    let mut errors = Vec::new();
+    if let Some(Value::List(rules)) = parameters.get("rules") {
+        for rule in rules {
+            let Some(id) = params::reference_id(rule) else {
+                return Resolution::failed(
+                    RuntimeError::ReferenceKind,
+                    "rules",
+                    "core.validate rules are references to VALIDATE declarations",
+                );
+            };
+            let Some(check) = cx.plan.checks().iter().find(|check| check.id == id) else {
+                return Resolution::failed(
+                    RuntimeError::ReferenceKind,
+                    "rules",
+                    format!("{id} is not a selected VALIDATE declaration"),
+                );
+            };
+            match &check.outcome {
+                Some(Value::Boolean(true)) => {}
+                // A FALSE check is a domain finding, and "valid FALSE requires
+                // at least one domain validation error".
+                Some(Value::Boolean(false)) => {
+                    errors.push(Value::Identifier("error.value.constraint".to_string()))
+                }
+                Some(Value::Unknown) => {
+                    return Resolution::failed(
+                        RuntimeError::ValueUnknown,
+                        "rules",
+                        format!("{id} resolved UNKNOWN"),
+                    )
+                }
+                // "A skipped check has no result", and an inapplicable rule
+                // contributes no finding.
+                _ => {}
+            }
+        }
+    }
+    Resolution::Completed(schema::validation(errors))
+}
+
+/// `core.verify`: whether one declared assertion held.
+///
+/// > core.verify is deterministic exactly when its immutable verification
+/// > profile is deterministic because its resolved assertion evaluation is
+/// > always deterministic.
+pub(crate) fn verify(
+    stdlib: &Stdlib,
+    cx: &mut Invocation<'_>,
+    request: &CapabilityRequest,
+    contract: &OperationContract,
+    parameters: &BTreeMap<String, Value>,
+) -> Resolution {
+    // "A missing, ambiguous, incomplete, or out-of-bounds required profile role
+    // emits error.operation.precondition and fails before effects." core.verify
+    // requires the `verification` role, so an engine with no verifier installed
+    // refuses rather than verifying by default.
+    let target_class = request
+        .target
+        .as_ref()
+        .map(|value| params::classify(cx, value))
+        .unwrap_or(lcl_capabilities::AddressClass::Material);
+    for role in stdlib.catalog().required_roles(&contract.operation, None) {
+        let selection = lcl_capabilities::Selection {
+            operation: &contract.operation,
+            role,
+            target_class,
+            implementation: None,
+        };
+        if let Err(fault) = stdlib.catalog().select(&selection) {
+            return crate::data::profile_failure(&fault);
+        }
+    }
+    let Some(assertion) = parameters.get("assertion") else {
+        return Resolution::failed(
+            RuntimeError::RequiredMissing,
+            "assertion",
+            "core.verify requires an assertion",
+        );
+    };
+    let observed = request
+        .target
+        .as_ref()
+        .map(|t| pure::read_through(cx, t))
+        .unwrap_or(Value::Missing);
+
+    match assertion_value(cx, assertion, contract, "assertion") {
+        Ok(Value::Boolean(held)) => Resolution::Completed(schema::verification(
+            Value::Boolean(held),
+            observed,
+            if held {
+                Vec::new()
+            } else {
+                vec![Value::Identifier("error.value.constraint".to_string())]
+            },
+        )),
+        // "verified ... UNKNOWN when [it] cannot be established."
+        Ok(Value::Unknown) => {
+            Resolution::Completed(schema::verification(Value::Unknown, observed, Vec::new()))
+        }
+        Ok(Value::Missing) => Resolution::failed(
+            RuntimeError::RequiredMissing,
+            "assertion",
+            "core.verify resolved a MISSING assertion",
+        ),
+        Ok(other) => Resolution::failed(
+            RuntimeError::OperatorOperand,
+            "assertion",
+            format!(
+                "core.verify requires a BOOLEAN assertion, found {}",
+                other.family()
+            ),
+        ),
+        Err(resolution) => resolution,
+    }
+}
+
+/// `core.test`: one declared comparison, after any referenced graph.
+fn test(
+    _stdlib: &Stdlib,
+    cx: &mut Invocation<'_>,
+    request: &CapabilityRequest,
+    contract: &OperationContract,
+    parameters: &BTreeMap<String, Value>,
+) -> Resolution {
+    // "A TASK or ACTION TARGET executes before the comparison." Executing a
+    // referenced graph is delegation, not comparison, so it crosses the
+    // boundary; a host with no graph executor reports a limitation rather than
+    // a comparison it did not make.
+    if let Some(id) = params::referenced_declaration(cx, "TARGET") {
+        if let Some(block) = params::declaring_block(cx, &id) {
+            if matches!(
+                block.as_str(),
+                "TASK" | "ACTION" | "PHASE" | "SEQUENCE" | "TEST"
+            ) {
+                let mut resolved = request.clone();
+                resolved.parameters = parameters.clone();
+                return Resolution::Host(Box::new(resolved));
+            }
+        }
+    }
+
+    let assertion = parameters.get("assertion");
+    let expected = parameters.get("expected");
+    let actual = parameters.get("actual");
+    let target = request.target.as_ref().map(|t| pure::read_through(cx, t));
+
+    // "Exactly one comparison form is required: assertion; or expected with
+    // exactly one actual source, either the actual parameter or a
+    // material-value TARGET."
+    match (assertion, expected) {
+        (Some(assertion), None) => {
+            if actual.is_some() || target.is_some() {
+                return Resolution::failed(
+                    RuntimeError::OperationPrecondition,
+                    "comparison_form",
+                    "an assertion cannot accompany an actual source",
+                );
+            }
+            match assertion_value(cx, assertion, contract, "assertion") {
+                Ok(Value::Boolean(held)) => {
+                    Resolution::Completed(schema::test(Value::Boolean(held), None, None))
+                }
+                Ok(Value::Unknown) => {
+                    Resolution::Completed(schema::test(Value::Unknown, None, None))
+                }
+                Ok(other) => Resolution::failed(
+                    RuntimeError::OperatorOperand,
+                    "assertion",
+                    format!(
+                        "core.test requires a BOOLEAN assertion, found {}",
+                        other.family()
+                    ),
+                ),
+                Err(resolution) => resolution,
+            }
+        }
+        (None, Some(expected)) => {
+            let sources = usize::from(actual.is_some()) + usize::from(target.is_some());
+            if sources != 1 {
+                return Resolution::failed(
+                    RuntimeError::OperationPrecondition,
+                    "comparison_form",
+                    "expected requires exactly one actual source: the actual parameter or a \
+                     material-value TARGET",
+                );
+            }
+            let actual = actual
+                .map(|value| pure::read_through(cx, value))
+                .or(target)
+                .unwrap_or(Value::Missing);
+            // "Expected-and-actual form always uses the registered ==
+            // strict-equality operator."
+            let passed = strict_equal(expected, &actual);
+            Resolution::Completed(schema::test(
+                Value::Boolean(passed),
+                Some(expected.clone()),
+                Some(actual),
+            ))
+        }
+        (Some(_), Some(_)) => Resolution::failed(
+            RuntimeError::OperationPrecondition,
+            "comparison_form",
+            "core.test takes an assertion or an expected value, never both",
+        ),
+        (None, None) => Resolution::failed(
+            RuntimeError::OperationPrecondition,
+            "comparison_form",
+            "core.test requires exactly one comparison form; TARGET alone is not a \
+             complete test",
+        ),
+    }
+}
+
+/// The Boolean an assertion parameter resolves to.
+///
+/// > An assertion REFERENCE resolves only a declared BOOLEAN value or
+/// > expression snapshot … neither invokes an operation or profile.
+fn assertion_value(
+    cx: &Invocation<'_>,
+    assertion: &Value,
+    contract: &OperationContract,
+    parameter: &str,
+) -> Result<Value, Resolution> {
+    match assertion {
+        Value::Reference(_) => {
+            let id = params::reference_id(assertion).unwrap_or_default();
+            // A VERIFY or VALIDATE declaration exposes its Boolean result; any
+            // other declaration exposes its value.
+            Ok(cx.declaration_value(id))
+        }
+        // The invocation site already demanded an inline boolean_expression.
+        other => {
+            if matches!(other, Value::Boolean(_) | Value::Unknown | Value::Missing) {
+                Ok(other.clone())
+            } else {
+                Err(Resolution::failed(
+                    RuntimeError::OperatorOperand,
+                    parameter,
+                    format!(
+                        "{} requires a BOOLEAN {parameter}, found {}",
+                        contract.operation,
+                        other.family()
+                    ),
+                ))
+            }
+        }
+    }
+}

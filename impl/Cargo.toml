@@ -27,6 +27,12 @@
 # filesystem, process, network, provider or clock access. The complete
 # executable Core operation surface and its real host adapters are M7's.
 #
+# Milestone M7 scope: adds `lcl-capabilities`, the host effect boundary --
+# implementation profiles, address classes, capability grants, resource bounds
+# and the real filesystem, process and network adapters -- and `lcl-stdlib`,
+# the executable Core operation surface that maps the 39 registered rows to
+# pure logic or to bounded, authorized capability requests.
+#
 # Dependency policy: std only. The spec authority loader is the trust root for
 # every later layer, so it carries no third-party supply-chain surface.
 
@@ -42,6 +48,8 @@ members = [
     "crates/lcl-checker",
     "crates/lcl-semantics",
     "crates/lcl-runtime",
+    "crates/lcl-capabilities",
+    "crates/lcl-stdlib",
 ]
 
 [workspace.package]

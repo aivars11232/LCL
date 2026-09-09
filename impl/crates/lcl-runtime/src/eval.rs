@@ -207,6 +207,14 @@ impl<'a> Evaluator<'a> {
         if let Some(value) = self.bindings.local(id, &self.iteration) {
             return value.clone();
         }
+        // A written MEMORY or STATE store supersedes the declared value the
+        // plan resolved. `05_SEMANTICS/07` calls MEMORY "retained data" and
+        // STATE "mutable external/project data"; reading the declared value
+        // after an authorized write would report the sample rather than the
+        // state.
+        if let Some(value) = self.bindings.store(id) {
+            return value.clone();
+        }
         if let Some(resolution) = self.plan.resolutions().iter().find(|r| r.id == id) {
             return resolution.value.clone();
         }
@@ -609,7 +617,7 @@ impl<'a> Evaluator<'a> {
             .map_err(|defect| self.division_defect(defect, span))
     }
 
-    fn division_defect(&self, defect: DivisionDefect, span: Span) -> Fault {
+    pub(crate) fn division_defect(&self, defect: DivisionDefect, span: Span) -> Fault {
         match defect {
             // "Mathematical-zero denominators always produce
             // error.numeric.division_by_zero."

@@ -1,0 +1,11 @@
+[package]
+name = "lcl-capabilities"
+description = "The LCL Core host effect boundary: implementation profiles, address classes, capability grants and resource bounds. Host policy and primitive adapters only; it holds no language semantics and no LCL value model."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lcl-spec = { path = "../lcl-spec" }
+lcl-diagnostics = { path = "../lcl-diagnostics" }

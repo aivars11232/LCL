@@ -34,6 +34,8 @@ pub(crate) fn apply(evaluator: &Evaluator, name: &str, arguments: &[Value], span
         "EXISTS" => exists(arguments, span, evaluator),
         "COUNT" => count(arguments, span, evaluator),
         "EMPTY" => empty(arguments, span, evaluator),
+        "ABS" => abs(evaluator, arguments, span),
+        "ROUND" => round(evaluator, arguments, span),
         "SUM" => reduce(evaluator, "SUM", arguments, span),
         "MIN" => reduce(evaluator, "MIN", arguments, span),
         "MAX" => reduce(evaluator, "MAX", arguments, span),
@@ -56,6 +58,113 @@ fn exists(arguments: &[Value], span: Span, evaluator: &Evaluator) -> Demand {
         Value::Unknown => Value::Boolean(true),
         other => Value::Boolean(other.is_material()),
     })
+}
+
+/// `ABS` returns the same family with absolute magnitude.
+///
+/// > ABS(integer_decimal_duration_or_measure) -> same family with absolute
+/// > magnitude
+///
+/// The registered parameter is `INTEGER|DECIMAL|DURATION|MEASURE`, and nothing
+/// else. PERCENTAGE and BYTES are numeric but unregistered here, so they take
+/// the `error.operator.operand` that "an unlisted overload" always takes.
+fn abs(evaluator: &Evaluator, arguments: &[Value], span: Span) -> Demand {
+    let [value] = arguments else {
+        return Err(evaluator.operand(span, "ABS takes exactly one argument"));
+    };
+    Ok(match value {
+        Value::Unknown => Value::Unknown,
+        Value::Integer(number) => Value::Integer(magnitude(number)),
+        Value::Decimal(number) => Value::Decimal(magnitude(number)),
+        // One arm covers DURATION and MEASURE alike: both are a quantity with
+        // an exact registered unit, and a magnitude keeps that unit.
+        Value::Quantity(number, unit) => Value::Quantity(magnitude(number), unit.clone()),
+        other => {
+            return Err(evaluator.operand(
+                span,
+                format!("ABS is not registered for {}", other.family()),
+            ))
+        }
+    })
+}
+
+/// `ROUND` returns the same family rounded half-to-even.
+///
+/// > ROUND(decimal_or_measure, nonnegative_integer_fractional_digits) -> same
+/// > family using half-even; a MEASURE keeps its exact UNIT.
+///
+/// The direct-division form never arrives here. `crate::eval` intercepts it
+/// before the arguments are evaluated, because "A direct division first
+/// argument is rounded once from its exact mathematical quotient" — the one
+/// context that materialises an otherwise non-terminating quotient. By the time
+/// a call reaches this function, its first argument is an exact value already.
+fn round(evaluator: &Evaluator, arguments: &[Value], span: Span) -> Demand {
+    let [value, digits] = arguments else {
+        return Err(evaluator.operand(span, "ROUND takes exactly two arguments"));
+    };
+    if value == &Value::Unknown || digits == &Value::Unknown {
+        return Ok(Value::Unknown);
+    }
+    // "a declared non-negative number of fractional digits"
+    let places = match digits {
+        Value::Integer(number) => number.to_i64().and_then(|v| u32::try_from(v).ok()),
+        _ => {
+            return Err(evaluator.operand(
+                span,
+                format!("ROUND digits must be INTEGER, found {}", digits.family()),
+            ))
+        }
+    };
+    let Some(places) = places else {
+        return Err(Fault::new(
+            evaluator.contracts,
+            RuntimeError::ValueOutOfRange,
+            span,
+            "ROUND digits",
+            "ROUND requires a non-negative number of fractional digits",
+        ));
+    };
+    Ok(match value {
+        Value::Decimal(number) => Value::Decimal(round_half_even(evaluator, number, places, span)?),
+        // "a MEASURE keeps its exact UNIT"
+        Value::Quantity(number, unit) => Value::Quantity(
+            round_half_even(evaluator, number, places, span)?,
+            unit.clone(),
+        ),
+        other => {
+            return Err(evaluator.operand(
+                span,
+                format!("ROUND is not registered for {}", other.family()),
+            ))
+        }
+    })
+}
+
+/// One exact value rounded half-to-even to `places` fractional digits.
+fn round_half_even(
+    evaluator: &Evaluator,
+    number: &Decimal,
+    places: u32,
+    span: Span,
+) -> Result<Decimal, Fault> {
+    // A value over one is the exact rational the value already is, so this
+    // reuses the same rounding the division form uses rather than a second one.
+    lcl_checker::numeric::Rational::of(number, &Decimal::from_integer(one()))
+        .and_then(|rational| rational.round_half_even(places))
+        .map_err(|defect| evaluator.division_defect(defect, span))
+}
+
+fn one() -> lcl_checker::numeric::Integer {
+    lcl_checker::numeric::Integer::from_u64(1)
+}
+
+/// The absolute magnitude of an exact number.
+fn magnitude(number: &Decimal) -> Decimal {
+    if number.is_negative() {
+        number.negated()
+    } else {
+        number.clone()
+    }
 }
 
 fn count(arguments: &[Value], span: Span, evaluator: &Evaluator) -> Demand {

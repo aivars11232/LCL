@@ -3,6 +3,14 @@
 version = 3
 
 [[package]]
+name = "lcl-capabilities"
+version = "0.0.0"
+dependencies = [
+ "lcl-diagnostics",
+ "lcl-spec",
+]
+
+[[package]]
 name = "lcl-checker"
 version = "0.0.0"
 dependencies = [
@@ -83,3 +91,18 @@ dependencies = [
 [[package]]
 name = "lcl-spec"
 version = "0.0.0"
+
+[[package]]
+name = "lcl-stdlib"
+version = "0.0.0"
+dependencies = [
+ "lcl-capabilities",
+ "lcl-checker",
+ "lcl-diagnostics",
+ "lcl-lexer",
+ "lcl-parser",
+ "lcl-resolver",
+ "lcl-runtime",
+ "lcl-semantics",
+ "lcl-spec",
+]

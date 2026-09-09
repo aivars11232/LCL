@@ -145,7 +145,114 @@ impl<'a> Parser<'a> {
         }
         Ok(parse::parse(self.grammar, lexed))
     }
+
+    /// Parse one **expression fragment**: exactly one `EXPRESSION`, followed
+    /// only by optional whitespace.
+    ///
+    /// `operations_v0.1.0.json#/expression_fragment_contract/syntax`:
+    ///
+    /// > After STRING decoding, consume exactly one EXPRESSION from
+    /// > `04_GRAMMAR/10_COMPLETE_EBNF.ebnf`, followed only by optional
+    /// > whitespace. No declarations, statements, operation invocation, or
+    /// > named expression-call argument is admitted.
+    ///
+    /// The fragment forms of `core.calculate`, `core.select` and `core.filter`
+    /// are the only callers. They exist here, in the crate that owns the
+    /// grammar, because "exactly one EXPRESSION from the EBNF" is a statement
+    /// about *this* parser: a fragment parser living anywhere else would be a
+    /// second, quietly diverging expression language.
+    ///
+    /// ## Why the fragment is lexed inside a field context
+    ///
+    /// A fragment is a decoded STRING, not a line of a document, and the
+    /// contract says so: "The fragment is one logical expression and introduces
+    /// no indentation blocks", lexed under "the source character, string,
+    /// identifier, and token rules".
+    ///
+    /// Lexing the bare text would apply a rule the fragment is not subject to.
+    /// A word at the start of a line is in a "syntax-required block/field key"
+    /// position, where `error.keyword.case` is exactly right for a document —
+    /// and the reserved fragment bindings the contract names, `item` and
+    /// `target`, are registered words in lower case. Presented as a line, the
+    /// two bindings the contract *requires* would be miscased keywords, while
+    /// the same names in the same expression inside a document lex cleanly:
+    /// "A legal lowercase identifier is never promoted to a keyword by case
+    /// folding."
+    ///
+    /// So the fragment is lexed where every expression in every document is
+    /// lexed: after a field key. [`FRAGMENT_CONTEXT`] is that key, the parse
+    /// starts after it, and the returned spans index the contextualised text —
+    /// subtract `FRAGMENT_CONTEXT.len()` for an offset into the author's own
+    /// fragment.
+    ///
+    /// Returns the parsed expression, or exactly why it is not one.
+    pub fn expression_fragment(
+        &self,
+        lexicon: &lcl_lexer::Lexicon,
+        fragment: &str,
+    ) -> Result<syntax::Expr, FragmentError> {
+        // "followed only by optional whitespace", and "Every non-empty source
+        // ends with one LINE FEED" for the text actually handed to the lexer.
+        let text = format!("{FRAGMENT_CONTEXT}{}\n", fragment.trim_end());
+        let lexed = lcl_lexer::Lexer::new(lexicon).lex_str(&text);
+        if let Some(primary) = lexed.primary() {
+            return Err(FragmentError::Lexical(StageSkipped {
+                lexical_primary: primary.id.to_string(),
+                span: primary.span,
+            }));
+        }
+        parse::expression_fragment(self.grammar, &lexed)
+    }
 }
+
+/// The field key one expression fragment is lexed after.
+///
+/// `VALUE` is the ordinary inline-expression field, so this places the fragment
+/// in the one position the lexer and grammar already treat as an expression.
+pub const FRAGMENT_CONTEXT: &str = "VALUE: ";
+
+/// Why one expression fragment is not exactly one expression.
+///
+/// Every variant is one defect the fragment contract names, and the standard
+/// library maps all of them to `error.operation.parameter`: "Malformed fragment
+/// syntax and invalid bindings produce error.operation.parameter." They stay
+/// distinct here because the detail an author needs differs, and because a
+/// caller that wanted to treat them alike can, while one that could not tell
+/// them apart never could.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FragmentError {
+    /// The fragment did not lex.
+    Lexical(StageSkipped),
+    /// The fragment lexed but did not parse as an expression.
+    Grammar(Vec<Diagnostic>),
+    /// One expression parsed, and something other than whitespace followed it.
+    Trailing(Span),
+    /// The fragment holds no expression at all.
+    Empty(Span),
+}
+
+impl fmt::Display for FragmentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FragmentError::Lexical(skipped) => write!(f, "{skipped}"),
+            FragmentError::Grammar(diagnostics) => {
+                let first = diagnostics
+                    .first()
+                    .map(|d| d.id.to_string())
+                    .unwrap_or_else(|| "a grammar defect".to_string());
+                write!(f, "the fragment is not one expression: {first}")
+            }
+            FragmentError::Trailing(span) => write!(
+                f,
+                "one expression parsed, and input remains at {span}; a fragment admits \
+                 exactly one expression followed only by whitespace"
+            ),
+            FragmentError::Empty(_) => f.write_str("the fragment holds no expression"),
+        }
+    }
+}
+
+impl std::error::Error for FragmentError {}
 
 /// The grammar stage was not evaluated because the lexical stage did not pass.
 #[derive(Debug, Clone, PartialEq, Eq)]

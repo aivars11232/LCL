@@ -194,6 +194,58 @@ pub(crate) fn parse(grammar: &Grammar, lexed: &Lexed) -> Parsed {
     Parsed::new(document, emitter.finish())
 }
 
+/// Parse one lexed expression fragment.
+///
+/// The fragment contract admits "exactly one EXPRESSION … followed only by
+/// optional whitespace", so this runs the ordinary expression parser and then
+/// insists that nothing but whitespace, line structure and end-of-input
+/// remains. A fragment that parses an expression and then continues — a second
+/// expression, a statement, an operation invocation — is rejected by that
+/// second half rather than silently truncated to its first expression.
+pub(crate) fn expression_fragment(
+    grammar: &Grammar,
+    lexed: &Lexed,
+) -> Result<crate::syntax::Expr, crate::FragmentError> {
+    let mut cursor = Cursor::new(lexed.tokens());
+    // Step over the field-key context the fragment was lexed inside: the key
+    // word, its colon, and the single space that separates them from the
+    // expression.
+    for _ in 0..3 {
+        cursor.bump();
+    }
+    let mut emitter = Emitter::new(grammar, lexed);
+    let parsed = {
+        let mut exprs = crate::expr::ExprParser {
+            grammar,
+            source: lexed.source(),
+            emitter: &mut emitter,
+        };
+        exprs.expression(&mut cursor)
+    };
+    let diagnostics = emitter.finish();
+    if !diagnostics.is_empty() {
+        return Err(crate::FragmentError::Grammar(diagnostics));
+    }
+    let Some(expression) = parsed else {
+        return Err(crate::FragmentError::Empty(Span::empty(lexed.source_len())));
+    };
+    // "followed only by optional whitespace"
+    while let Some(token) = cursor.peek() {
+        match token.kind {
+            TokenKind::Space
+            | TokenKind::Newline
+            | TokenKind::BlankLine
+            | TokenKind::Indent
+            | TokenKind::Dedent
+            | TokenKind::Eof => {
+                cursor.bump();
+            }
+            _ => return Err(crate::FragmentError::Trailing(token.span)),
+        }
+    }
+    Ok(expression)
+}
+
 /// Build the syntax tree, then judge it against the registries.
 ///
 /// Both halves run: a structural defect does not suppress independent schema

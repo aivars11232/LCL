@@ -86,6 +86,70 @@ EXECUTE:
     )
 }
 
+/// The same retry document, over a row that admits a filesystem effect.
+///
+/// `core.inspect` is `read_only`, and "read_only requires possible effects
+/// exactly {none}", so a host that reported a filesystem effect for it would be
+/// reporting one the invocation never resolved — which the boundary now
+/// refuses. A test whose subject is a failure *after known effects* therefore
+/// needs a row whose own contract admits the effect it is about to observe.
+fn writing_retry_document(limit: u32) -> String {
+    format!(
+        r#"LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: example.retry_write
+    NAME: "Retry over a write"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+INPUT:
+    ID: input.file
+    TYPE: PATH
+    VALUE: PATH("/srv/data/report.txt")
+
+GOAL:
+    ID: goal.retry
+    ASSERT: TRUE
+
+HANDLER:
+    ID: handler.retry
+    EVENT: event.host_constraint
+    OPERATION: core.retry
+    LIMIT: {limit}
+
+ACTION:
+    ID: action.fetch
+    OPERATION: core.write
+    TARGET: REF(input.file)
+    PARAMETER:
+        NAME: content
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "the written content"
+    RETRY:
+        LIMIT: {limit}
+        HANDLER: REF(handler.retry)
+
+SUCCESS:
+    ID: success.retry
+    ALL: [TRUE]
+
+TASK:
+    ID: task.retry
+    GOAL: REF(goal.retry)
+    INPUT: REF(input.file)
+    ACTION: REF(action.fetch)
+    HANDLER: REF(handler.retry)
+    SUCCESS: REF(success.retry)
+
+EXECUTE:
+    REFERENCE: REF(task.retry)
+"#
+    )
+}
+
 fn unavailable(reason: &str) -> CapabilityOutcome {
     CapabilityOutcome::Unavailable(reason.to_string())
 }
@@ -227,7 +291,7 @@ fn an_ordinary_failure_after_known_effects_authorizes_no_retry() {
     // A failure with known effects is `error.execution.action`, which raises no
     // event, so nothing can authorize another attempt over an applied effect.
     let host = MockHost::new().script(
-        "core.inspect",
+        "core.write",
         vec![
             CapabilityOutcome::Failed {
                 detail: "failed after writing".to_string(),
@@ -241,8 +305,8 @@ fn an_ordinary_failure_after_known_effects_authorizes_no_retry() {
             completed(),
         ],
     );
-    let (execution, host) = execute_with(&retry_document(2, None, "core.retry"), host);
-    assert_eq!(host.count("core.inspect"), 1);
+    let (execution, host) = execute_with(&writing_retry_document(2), host);
+    assert_eq!(host.count("core.write"), 1);
     assert_eq!(
         execution.primary().map(|d| d.id),
         Some(RuntimeError::ExecutionAction)

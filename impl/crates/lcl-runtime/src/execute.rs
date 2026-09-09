@@ -37,6 +37,7 @@ use crate::contracts::Contracts;
 use crate::diagnostic::{Cause, Diagnostic, RuntimeError};
 use crate::eval::{Evaluator, Fault};
 use crate::event::EventLog;
+use crate::operations::{Invocation, Operations, Resolution};
 use crate::result::{EffectState, FailurePhase, ObservedEffect, OutputBinding, ResultRecord};
 use crate::schedule::{Queue, Step};
 use crate::state::{Bindings, InvocationId, IterationPath, Lifecycle};
@@ -264,6 +265,25 @@ impl<'a> Runtime<'a> {
         resolved: &Resolved,
         host: &mut dyn Host,
     ) -> Result<Execution, NotPlanned> {
+        let mut operations = crate::operations::DeferAll;
+        self.execute_with(planned, checked, resolved, &mut operations, host)
+    }
+
+    /// Execute one accepted plan against a supplied operation surface.
+    ///
+    /// The dispatcher answers first. It may compute a result itself, select a
+    /// registered error from the operation's own contract, or hand back the
+    /// resolved request to cross the capability boundary — and only that third
+    /// answer reaches the host. `Operations` and `Host` stay separate because
+    /// the standard library decides language meaning and a host never may.
+    pub fn execute_with(
+        &self,
+        planned: &Planned,
+        checked: &Checked,
+        resolved: &Resolved,
+        operations: &mut dyn Operations,
+        host: &mut dyn Host,
+    ) -> Result<Execution, NotPlanned> {
         let Some(plan) = planned.plan() else {
             return Err(NotPlanned {
                 root: planned.root().clone(),
@@ -272,7 +292,7 @@ impl<'a> Runtime<'a> {
                     .map(|d| d.id.as_registry_str().to_string()),
             });
         };
-        let mut engine = Engine::new(self.contracts, plan, checked, resolved, host);
+        let mut engine = Engine::new(self.contracts, plan, checked, resolved, operations, host);
         engine.queue = crate::schedule::Queue::with_interleaving(self.interleaving);
         engine.run();
         Ok(engine.finish(planned.root().clone()))
@@ -286,6 +306,8 @@ pub(crate) struct Engine<'a> {
     pub(crate) checked: &'a Checked,
     pub(crate) resolved: &'a Resolved,
     pub(crate) host: &'a mut dyn Host,
+    /// The executable operation surface, when one was supplied.
+    pub(crate) operations: &'a mut dyn Operations,
     pub(crate) queue: Queue,
     pub(crate) bindings: Bindings,
     pub(crate) records: BTreeMap<InvocationId, InvocationRecord>,
@@ -332,6 +354,7 @@ impl<'a> Engine<'a> {
         plan: &'a Plan,
         checked: &'a Checked,
         resolved: &'a Resolved,
+        operations: &'a mut dyn Operations,
         host: &'a mut dyn Host,
     ) -> Engine<'a> {
         Engine {
@@ -340,6 +363,7 @@ impl<'a> Engine<'a> {
             checked,
             resolved,
             host,
+            operations,
             queue: Queue::new(),
             bindings: Bindings::new(),
             records: BTreeMap::new(),
@@ -1028,6 +1052,25 @@ impl<'a> Engine<'a> {
             }
         };
 
+        // `core.cancel` and `core.stop` over an internal execution unit change
+        // the runtime's own lifecycle state, which no host owns:
+        //
+        // > Resolve only the referenced internal execution-unit state, require
+        // > its registered allowed_next set to contain status.cancelled, and
+        // > record the exact reason.
+        //
+        // > Explicit cancellation outside a handler remains permitted under the
+        // > registered authority and transition checks.
+        //
+        // A `core.stop` whose target is a path, a command or a service is not
+        // an internal unit and continues to the boundary below.
+        if let Some(status) = internal_terminal_status(&operation) {
+            if let Some(unit) = self.internal_unit_target(&block) {
+                let record = self.request_terminal_status(planned, id, &unit, status);
+                return Some((record, None));
+            }
+        }
+
         let axes = self.contracts.preflight().operation_axes(&operation);
         let schema = self
             .contracts
@@ -1051,8 +1094,65 @@ impl<'a> Engine<'a> {
             span: planned.span,
         };
 
-        let outcome = capability::request(self.host, authorized, &request);
-        let (mut record, occurrence) = self.record_of(&schema, outcome, planned, id);
+        // The operation surface answers first. An unauthorized invocation is
+        // not offered to it at all: step 6 decided that before effects, and a
+        // dispatcher that could see an unauthorized request could act on one.
+        let (mut record, occurrence) = if authorized {
+            match self.dispatch(&request, planned, iteration) {
+                Resolution::Completed(observation) => self.record_of(
+                    &schema,
+                    Ok(CapabilityOutcome::Completed(observation)),
+                    planned,
+                    id,
+                ),
+                // The operation's own contract selected this identifier, before
+                // any effect and without asking a host.
+                Resolution::Failed {
+                    error,
+                    cause,
+                    detail,
+                } => {
+                    let fault = Fault::new(self.contracts, error, planned.span, cause, detail);
+                    let occurrence = self.fault(&fault, planned, id, FailurePhase::PreEffect);
+                    (self.pre_effect_failure(&schema, error), occurrence)
+                }
+                Resolution::Host(resolved_request) => {
+                    let outcome = capability::request(self.host, true, &resolved_request);
+                    // "A host may not report an effect outside it." The
+                    // invocation's resolved effect set is a language decision;
+                    // a host that reported a class outside it would be adding
+                    // meaning the document never authorized, so the claim is
+                    // refused rather than recorded.
+                    if let Some(class) = reported_outside(&outcome, &resolved_request) {
+                        let fault = Fault::new(
+                            self.contracts,
+                            RuntimeError::OperationPostcondition,
+                            planned.span,
+                            "observed_effect",
+                            format!(
+                                "the host reported a {class} effect, which {} did not resolve",
+                                resolved_request.operation
+                            ),
+                        );
+                        let occurrence =
+                            self.fault(&fault, planned, id, FailurePhase::Indeterminate);
+                        let mut record =
+                            self.pre_effect_failure(&schema, RuntimeError::OperationPostcondition);
+                        // The host says something happened and cannot say what,
+                        // so neither the phase nor the effect state is knowable:
+                        // "Absence of evidence never proves absence of effects."
+                        record.failure_phase = FailurePhase::Indeterminate;
+                        record.effect_state = EffectState::Indeterminate;
+                        (record, occurrence)
+                    } else {
+                        self.record_of(&schema, outcome, planned, id)
+                    }
+                }
+            }
+        } else {
+            let outcome = capability::request(self.host, false, &request);
+            self.record_of(&schema, outcome, planned, id)
+        };
 
         // Bind the selected OUTPUT from the producer result.
         if let Some(output) = syntax::field_expr(&block, "OUTPUT") {
@@ -1060,6 +1160,122 @@ impl<'a> Engine<'a> {
             self.bind_output(&output, &mut record, planned, id, iteration);
         }
         Some((record, occurrence))
+    }
+
+    /// The declaration one `TARGET` names, when it names an execution unit.
+    ///
+    /// `meta.execution_unit` is "TASK, PHASE, SEQUENCE, STEP, ACTION, or TEST
+    /// reference", read from the invocation site's own `REF(...)` rather than
+    /// from the value reading it produced.
+    fn internal_unit_target(&self, block: &DeclBlock<'_>) -> Option<String> {
+        let expr = syntax::field_expr(block, "TARGET")?;
+        let lcl_parser::syntax::Expr::Call(call) = expr else {
+            return None;
+        };
+        let id = call.reference_target()?.text.clone();
+        let declaration = self
+            .resolved
+            .declarations()
+            .all()
+            .iter()
+            .find(|d| d.id.qualified() == id)?;
+        matches!(
+            declaration.block.as_str(),
+            "TASK" | "PHASE" | "SEQUENCE" | "STEP" | "ACTION" | "TEST"
+        )
+        .then_some(id)
+    }
+
+    /// Request one terminal status for a named internal execution unit.
+    ///
+    /// The registered `allowed_next` set decides whether the transition is
+    /// permitted: "a current status that does not allow status.cancelled uses
+    /// error.execution.order".
+    fn request_terminal_status(
+        &mut self,
+        planned: &PlanNode,
+        id: &InvocationId,
+        unit: &str,
+        status: &str,
+    ) -> ResultRecord {
+        // The invocation record of the named unit, when it has one. A unit that
+        // has not run yet has no lifecycle to transition.
+        let target = self
+            .records
+            .iter()
+            .find(|(_, record)| record.declaration.as_deref() == Some(unit))
+            .map(|(key, record)| {
+                (
+                    key.clone(),
+                    record
+                        .lifecycle
+                        .permits(self.contracts.diagnostics(), status),
+                )
+            });
+        let Some((target_id, permitted)) = target else {
+            let fault = Fault::new(
+                self.contracts,
+                RuntimeError::ExecutionOrder,
+                planned.span,
+                "lifecycle transition",
+                format!("{unit} has no active invocation to move to {status}"),
+            );
+            self.fault(&fault, planned, id, FailurePhase::PreEffect);
+            return self.pre_effect_failure("result.operation", RuntimeError::ExecutionOrder);
+        };
+        if !permitted {
+            let fault = Fault::new(
+                self.contracts,
+                RuntimeError::ExecutionOrder,
+                planned.span,
+                "lifecycle transition",
+                format!("{unit} is in a state that does not permit {status}"),
+            );
+            self.fault(&fault, planned, id, FailurePhase::PreEffect);
+            return self.pre_effect_failure("result.operation", RuntimeError::ExecutionOrder);
+        }
+        self.set_status(&target_id, status);
+        let mut record = ResultRecord::new("result.operation", "status.succeeded")
+            .with_field("changed", Value::Boolean(true));
+        // `result.operation` requires its target exactly once.
+        record
+            .fields
+            .insert("target".to_string(), Value::Reference(unit.to_string()));
+        // The transition is a change to internal execution-unit state, which is
+        // exactly the `state` effect class.
+        record.observed_effects.push(ObservedEffect {
+            class: crate::result::EffectClass::State,
+            state: crate::result::RecordState::Applied,
+            target: Some(unit.to_string()),
+            evidence: Vec::new(),
+        });
+        record.effect_state = EffectState::Applied;
+        record
+    }
+
+    /// Ask the operation surface to resolve one request.
+    ///
+    /// Borrowing is why this is its own method: the dispatcher needs mutable
+    /// access to the bindings while the engine holds the rest of its state, and
+    /// splitting the borrow here keeps that disjointness local and obvious.
+    fn dispatch(
+        &mut self,
+        request: &CapabilityRequest,
+        planned: &PlanNode,
+        iteration: &IterationPath,
+    ) -> Resolution {
+        let mut cx = Invocation {
+            contracts: self.contracts,
+            resolved: self.resolved,
+            checked: self.checked,
+            plan: self.plan,
+            bindings: &mut self.bindings,
+            source: planned.source.clone(),
+            iteration: iteration.clone(),
+            span: planned.span,
+            declaration: planned.declaration,
+        };
+        self.operations.invoke(&mut cx, request)
     }
 
     /// Abandon everything reachable only *after* one failed invocation.
@@ -1565,5 +1781,35 @@ fn position_of(text: &str, offset: usize) -> lcl_lexer::Position {
         offset,
         line,
         column,
+    }
+}
+
+/// The first effect class a host reported outside the invocation's resolved set.
+///
+/// `CapabilityRequest::possible_effects` is documented as "The invocation's
+/// resolved possible-effect set. A host may not report an effect outside it."
+/// This is where that stops being documentation.
+fn reported_outside(
+    outcome: &Result<CapabilityOutcome, Refusal>,
+    request: &CapabilityRequest,
+) -> Option<String> {
+    let observation = match outcome {
+        Ok(CapabilityOutcome::Completed(observation)) => observation,
+        Ok(CapabilityOutcome::Failed { observation, .. }) => observation,
+        _ => return None,
+    };
+    observation
+        .effects
+        .iter()
+        .map(|effect| effect.class.as_registry_str().to_string())
+        .find(|class| !request.possible_effects.contains(class))
+}
+
+/// The terminal status one control operation requests, when it requests one.
+fn internal_terminal_status(operation: &str) -> Option<&'static str> {
+    match operation {
+        "core.cancel" => Some("status.cancelled"),
+        "core.stop" => Some("status.stopped"),
+        _ => None,
     }
 }

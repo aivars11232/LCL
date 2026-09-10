@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Shared MIME info for LCL Core 0.1.0 documents.
+
+  This file teaches a desktop to recognize a `.lcl` file. It changes no
+  language rule and cannot: LCL Core 0.1.0 registers `format.lcl` as "A
+  document conforming to an exact LCL version" and says nothing about file
+  names, extensions or media types. A document's meaning comes from its bytes
+  and the version it declares, never from where it is stored or what it is
+  called.
+
+  The magic rule is grounded rather than guessed. `04_GRAMMAR/01` requires that
+  "Every document starts with LCL then SPECIFICATION", and `02_LEXICAL/01`
+  requires UTF-8 with no byte-order mark, so the first four bytes of every
+  conforming document are exactly `LCL:`.
+
+  Install with ./install.sh, which writes only into the invoking user's own
+  ~/.local/share. Nothing here is installed by building the workspace.
+-->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="text/x-lcl">
+    <comment>LCL document</comment>
+    <comment xml:lang="en">Learned Computing Language document</comment>
+    <sub-class-of type="text/plain"/>
+    <glob pattern="*.lcl"/>
+    <magic priority="50">
+      <match type="string" value="LCL:" offset="0"/>
+    </magic>
+  </mime-type>
+</mime-info>

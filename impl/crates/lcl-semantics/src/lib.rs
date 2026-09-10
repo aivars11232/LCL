@@ -275,6 +275,40 @@ impl<'a> Preflight<'a> {
         engine.run();
         Ok(engine.finish())
     }
+
+    /// Evaluate one already-parsed expression to a material value, if it has
+    /// one, without planning anything.
+    ///
+    /// This is the same evaluation `DATA` and `INPUT` resolution performs at
+    /// step 7 — literally the same function — exposed so that a caller
+    /// supplying an invocation datum can obtain a [`Value`] the way the
+    /// language obtains one, rather than by writing a second literal reader
+    /// somewhere in a tool.
+    ///
+    /// It is pure. `05_SEMANTICS/05` and the evaluation path's own contract
+    /// hold: it reads only literals in the expression, the resolved values of
+    /// declarations, and the registered operator and function tables. It calls
+    /// no capability, starts no producer, and reads no `OUTPUT` binding.
+    ///
+    /// `None` means the expression resolves to no material value here — an
+    /// unresolvable reference, a property or index access whose receiver is not
+    /// bound before effects, or an operand family the fold does not accept. A
+    /// caller decides what to do about that; this function invents nothing.
+    ///
+    /// `source` is the identity the expression's spans index. An expression
+    /// that did not come from a document unit should carry its own identity, so
+    /// that no static annotation of a real unit can match it by accident.
+    pub fn value_of(
+        &self,
+        checked: &Checked,
+        resolved: &Resolved,
+        source: &SourceId,
+        expression: &lcl_parser::syntax::Expr,
+    ) -> Option<Value> {
+        let invocation = Invocation::new();
+        let engine = engine::Engine::new(self.contracts, checked, resolved, &invocation);
+        eval::literal_value(&engine, source, expression)
+    }
 }
 
 /// The result of one preflight run.

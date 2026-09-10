@@ -1,0 +1,20 @@
+[package]
+name = "lcl-cli"
+description = "The LCL command-line interface: check, validate, run and inspect an LCL document or project through the same engine any other consumer uses, with stable exit codes, human rendering and machine-readable JSON. It contains no language semantics of its own."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "lcl"
+path = "src/main.rs"
+
+[dependencies]
+lcl-protocol = { path = "../lcl-protocol" }
+lcl-project = { path = "../lcl-project" }
+lcl-capabilities = { path = "../lcl-capabilities" }
+lcl-stdlib = { path = "../lcl-stdlib" }
+lcl-spec = { path = "../lcl-spec" }
+lcl-resolver = { path = "../lcl-resolver" }
+lcl-lexer = { path = "../lcl-lexer" }

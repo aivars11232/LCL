@@ -22,6 +22,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "lcl-cli"
+version = "0.0.0"
+dependencies = [
+ "lcl-capabilities",
+ "lcl-lexer",
+ "lcl-project",
+ "lcl-protocol",
+ "lcl-resolver",
+ "lcl-spec",
+ "lcl-stdlib",
+]
+
+[[package]]
 name = "lcl-completion"
 version = "0.0.0"
 dependencies = [
@@ -76,6 +89,33 @@ dependencies = [
  "lcl-diagnostics",
  "lcl-lexer",
  "lcl-spec",
+]
+
+[[package]]
+name = "lcl-project"
+version = "0.0.0"
+dependencies = [
+ "lcl-capabilities",
+ "lcl-lexer",
+ "lcl-resolver",
+ "lcl-spec",
+]
+
+[[package]]
+name = "lcl-protocol"
+version = "0.0.0"
+dependencies = [
+ "lcl-capabilities",
+ "lcl-checker",
+ "lcl-completion",
+ "lcl-diagnostics",
+ "lcl-lexer",
+ "lcl-parser",
+ "lcl-resolver",
+ "lcl-runtime",
+ "lcl-semantics",
+ "lcl-spec",
+ "lcl-stdlib",
 ]
 
 [[package]]

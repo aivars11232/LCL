@@ -1,0 +1,20 @@
+[package]
+name = "lcl-protocol"
+description = "The stable headless engine surface for LCL Core 0.1.0: one facade that carries source through every canonical stage in order, and one machine-readable record of what happened, carrying exact source identity, byte spans, registered diagnostic identifiers, execution events and completion evidence. It is UI-independent and decides no language rule of its own."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lcl-spec = { path = "../lcl-spec" }
+lcl-diagnostics = { path = "../lcl-diagnostics" }
+lcl-lexer = { path = "../lcl-lexer" }
+lcl-parser = { path = "../lcl-parser" }
+lcl-resolver = { path = "../lcl-resolver" }
+lcl-checker = { path = "../lcl-checker" }
+lcl-semantics = { path = "../lcl-semantics" }
+lcl-runtime = { path = "../lcl-runtime" }
+lcl-capabilities = { path = "../lcl-capabilities" }
+lcl-stdlib = { path = "../lcl-stdlib" }
+lcl-completion = { path = "../lcl-completion" }

@@ -1,0 +1,17 @@
+[package]
+name = "lcl-project"
+description = "Project and document loading for LCL Core 0.1.0: an explicit project root, a filesystem source provider that can only answer for a source the document named, reproducible root-relative source identity, and the checksum cache and lock file that make a multi-document project reproducible. It supplies source units; it decides no language rule."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lcl-spec = { path = "../lcl-spec" }
+lcl-resolver = { path = "../lcl-resolver" }
+lcl-capabilities = { path = "../lcl-capabilities" }
+
+[dev-dependencies]
+# Tests build real project trees and assert on exact source identity and byte
+# spans, which needs the lexer's `Span` and the trust root's SHA-256.
+lcl-lexer = { path = "../lcl-lexer" }

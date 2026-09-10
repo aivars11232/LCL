@@ -58,6 +58,9 @@ members = [
     "crates/lcl-capabilities",
     "crates/lcl-stdlib",
     "crates/lcl-completion",
+    "crates/lcl-project",
+    "crates/lcl-cli",
+    "crates/lcl-protocol",
     # Last: the conformance runner executes cases through every layer above, so
     # it depends on all of them.
     "crates/lcl-conformance",

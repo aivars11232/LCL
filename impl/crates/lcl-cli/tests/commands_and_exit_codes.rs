@@ -70,7 +70,10 @@ fn a_rejected_document_exits_one() {
 /// with a rejection.
 #[test]
 fn a_run_that_does_not_succeed_exits_two() {
-    let source = example("01_MINIMAL_TASK.lcl").replace("ASSERT: REF(output.value) == 8", "ASSERT: REF(output.value) == 9");
+    let source = example("01_MINIMAL_TASK.lcl").replace(
+        "ASSERT: REF(output.value) == 8",
+        "ASSERT: REF(output.value) == 9",
+    );
     let root = project("cli_run_failed", "main.lcl", &source);
     let run = lcl_in(&root, &["run", "main.lcl"], &[]);
     assert_eq!(run.code, NOT_SUCCEEDED, "{}{}", run.stdout, run.stderr);
@@ -96,7 +99,11 @@ fn an_unknown_command_is_a_usage_error() {
 
 #[test]
 fn an_unknown_option_is_a_usage_error() {
-    let root = project("cli_bad_option", "main.lcl", &example("01_MINIMAL_TASK.lcl"));
+    let root = project(
+        "cli_bad_option",
+        "main.lcl",
+        &example("01_MINIMAL_TASK.lcl"),
+    );
     let run = lcl_in(&root, &["check", "--wat", "main.lcl"], &[]);
     assert_eq!(run.code, USAGE);
     assert!(run.stderr.contains("unknown option"));
@@ -245,7 +252,11 @@ fn a_bad_input_is_a_usage_error() {
 
 #[test]
 fn an_input_without_an_equals_sign_is_a_usage_error() {
-    let root = project("cli_input_shape", "main.lcl", &example("01_MINIMAL_TASK.lcl"));
+    let root = project(
+        "cli_input_shape",
+        "main.lcl",
+        &example("01_MINIMAL_TASK.lcl"),
+    );
     let run = lcl_in(&root, &["validate", "--input", "novalue", "main.lcl"], &[]);
     assert_eq!(run.code, USAGE);
     assert!(run.stderr.contains("<id>=<expression>"));
@@ -270,9 +281,17 @@ fn a_supplied_input_reaches_the_run() {
 /// `--input=id=expr` and `--input id=expr` are the same option.
 #[test]
 fn inline_and_separated_option_values_agree() {
-    let root = project("cli_option_forms", "main.lcl", &example("01_MINIMAL_TASK.lcl"));
+    let root = project(
+        "cli_option_forms",
+        "main.lcl",
+        &example("01_MINIMAL_TASK.lcl"),
+    );
     let separated = lcl_in(&root, &["check", "--spec", &spec(), "main.lcl"], &[]);
-    let inline = lcl_in(&root, &["check", &format!("--spec={}", spec()), "main.lcl"], &[]);
+    let inline = lcl_in(
+        &root,
+        &["check", &format!("--spec={}", spec()), "main.lcl"],
+        &[],
+    );
     assert_eq!(separated.code, inline.code);
     assert_eq!(separated.stdout, inline.stdout);
 }

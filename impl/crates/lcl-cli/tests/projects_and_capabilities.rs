@@ -74,7 +74,10 @@ fn a_multi_file_project_loads_both_units() {
 fn an_unreferenced_document_never_enters_the_project() {
     let root = importing_project("project_ambient");
     write(root.join("src/stray.lcl"), example("01_MINIMAL_TASK.lcl"));
-    write(root.join("src/also_stray.lcl"), example("12_SET_SORTING.lcl"));
+    write(
+        root.join("src/also_stray.lcl"),
+        example("12_SET_SORTING.lcl"),
+    );
 
     let run = lcl_in(&root, &["check", "--machine"], &[]);
     let units = units_of(&run.stdout);
@@ -94,8 +97,16 @@ fn resolution_is_reproducible() {
 /// A project's identities do not depend on where the project lives.
 #[test]
 fn identity_is_independent_of_the_projects_location() {
-    let a = lcl_in(&importing_project("project_place_a"), &["check", "--machine"], &[]);
-    let b = lcl_in(&importing_project("project_place_b"), &["check", "--machine"], &[]);
+    let a = lcl_in(
+        &importing_project("project_place_a"),
+        &["check", "--machine"],
+        &[],
+    );
+    let b = lcl_in(
+        &importing_project("project_place_b"),
+        &["check", "--machine"],
+        &[],
+    );
     assert_eq!(units_of(&a.stdout), units_of(&b.stdout));
 }
 

@@ -164,9 +164,7 @@ fn entry(document: &Document, project: &Project) -> Result<PathBuf, Failure> {
     match &document.path {
         Some(path) => Ok(path.clone()),
         None => project.entry_path().ok_or_else(|| {
-            Failure::usage(
-                "no document: name one, or declare \"entry\" in lcl.project.json",
-            )
+            Failure::usage("no document: name one, or declare \"entry\" in lcl.project.json")
         }),
     }
 }
@@ -405,12 +403,11 @@ fn lock_json(path: &Path, lock: &Lock, drift: &[String]) -> Node {
 /// accepts them.
 fn vendor(uri: &str, file: &Path, common: &Common) -> Result<i32, Failure> {
     let project = open_project(common, None)?;
-    let dir = project.cache_path().ok_or_else(|| {
-        Failure::usage("no package cache: declare \"cache\" in lcl.project.json")
-    })?;
-    let bytes = std::fs::read(file).map_err(|e| {
-        Failure::environment(format!("{}: not readable: {e}", file.display()))
-    })?;
+    let dir = project
+        .cache_path()
+        .ok_or_else(|| Failure::usage("no package cache: declare \"cache\" in lcl.project.json"))?;
+    let bytes = std::fs::read(file)
+        .map_err(|e| Failure::environment(format!("{}: not readable: {e}", file.display())))?;
     let mut cache = Cache::open(&dir).map_err(|e| Failure::environment(e.to_string()))?;
     let digest = cache
         .put(uri, &bytes)
@@ -438,9 +435,9 @@ fn vendor(uri: &str, file: &Path, common: &Common) -> Result<i32, Failure> {
 
 fn cache_list(common: &Common) -> Result<i32, Failure> {
     let project = open_project(common, None)?;
-    let dir = project.cache_path().ok_or_else(|| {
-        Failure::usage("no package cache: declare \"cache\" in lcl.project.json")
-    })?;
+    let dir = project
+        .cache_path()
+        .ok_or_else(|| Failure::usage("no package cache: declare \"cache\" in lcl.project.json"))?;
     let cache = Cache::open(&dir).map_err(|e| Failure::environment(e.to_string()))?;
     let faults = cache.verify();
 

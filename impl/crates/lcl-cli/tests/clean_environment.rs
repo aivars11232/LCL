@@ -50,10 +50,18 @@ fn a_project_checks_validates_locks_and_runs_from_a_clean_environment() {
     assert_eq!(check.code, SUCCESS, "{}{}", check.stdout, check.stderr);
 
     let validate = lcl_in(&root, &["validate"], &[]);
-    assert_eq!(validate.code, SUCCESS, "{}{}", validate.stdout, validate.stderr);
+    assert_eq!(
+        validate.code, SUCCESS,
+        "{}{}",
+        validate.stdout, validate.stderr
+    );
 
     let inspect = lcl_in(&root, &["inspect"], &[]);
-    assert_eq!(inspect.code, SUCCESS, "{}{}", inspect.stdout, inspect.stderr);
+    assert_eq!(
+        inspect.code, SUCCESS,
+        "{}{}",
+        inspect.stdout, inspect.stderr
+    );
     assert!(inspect.stdout.contains("IMPORT"));
 
     let lock = lcl_in(&root, &["package", "lock"], &[]);
@@ -120,9 +128,20 @@ fn two_clean_runs_produce_the_same_bytes() {
 /// Every valid canonical example runs from a clean environment.
 ///
 /// Thirteen documents, each carried from bytes to exactly one terminal status
-/// through the real binary. Seven succeed; the rest do not, each for a reason
-/// the record states. A suite that only ran the succeeding ones would be
-/// choosing its evidence.
+/// through the real binary. A suite that only ran the succeeding ones would be
+/// choosing its evidence, so all thirteen are run and the reasons are asserted.
+///
+/// Five succeed. That is fewer than the seven the facade's own suite reaches,
+/// and the difference is the host, not a defect: that suite installs every
+/// registered profile against a deterministic in-memory host, while the CLI
+/// grants nothing at all unless a flag says so. Two examples that reach mock
+/// fixtures therefore report a host limitation here instead.
+///
+/// The second assertion is the load-bearing one. Every example that does not
+/// succeed must fail for a *host* reason — an uninstalled implementation
+/// profile, a capability nobody granted, or a datum nobody supplied — and never
+/// because the engine could not lex, parse, resolve or check it. A regression
+/// that broke the language would show up as a diagnostic outside that set.
 #[test]
 fn every_canonical_example_runs_through_the_binary() {
     let dir = canonical_root().join("08_EXAMPLES/VALID");
@@ -137,7 +156,10 @@ fn every_canonical_example_runs_through_the_binary() {
 
     // Every example beside its siblings, because two of them import.
     for name in &names {
-        write(root.join(name), std::fs::read(dir.join(name)).expect("readable"));
+        write(
+            root.join(name),
+            std::fs::read(dir.join(name)).expect("readable"),
+        );
     }
     write(
         root.join("lcl.project.json"),
@@ -146,6 +168,20 @@ fn every_canonical_example_runs_through_the_binary() {
             canonical_root().display().to_string()
         ),
     );
+
+    // The only identifiers a closed host may produce here. Each names a
+    // limitation of this machine or of what the caller supplied, never a defect
+    // the engine found in the document.
+    const HOST_REASONS: &[&str] = &[
+        // "Host limitations produce error.host.constraint and never change LCL
+        // meaning."
+        "error.host.constraint",
+        // A row whose implementation-profile role has no installed profile
+        // fails its precondition before any effect.
+        "error.operation.precondition",
+        // A required datum nobody supplied reads MISSING and blocks.
+        "error.required.missing",
+    ];
 
     let mut succeeded = 0usize;
     for name in &names {
@@ -162,17 +198,33 @@ fn every_canonical_example_runs_through_the_binary() {
             .and_then(|c| c.get("terminal_status"))
             .and_then(Json::as_str)
             .expect("one terminal status");
+
         if status == "status.succeeded" {
             succeeded += 1;
             assert_eq!(run.code, SUCCESS, "{name}");
-        } else {
-            assert_eq!(run.code, 2, "{name} -> {status}");
+            continue;
         }
+
+        assert_eq!(run.code, 2, "{name} -> {status}");
+        let primary = value
+            .get("diagnostics")
+            .and_then(Json::as_array)
+            .expect("diagnostics")
+            .iter()
+            .find(|d| d.get("primary").and_then(Json::as_bool) == Some(true))
+            .and_then(|d| d.get("id"))
+            .and_then(Json::as_str)
+            .expect("a primary diagnostic explains a non-success");
+        assert!(
+            HOST_REASONS.contains(&primary),
+            "{name} did not succeed for a host reason, but for {primary}"
+        );
     }
+
     assert_eq!(names.len(), 13);
     assert_eq!(
-        succeeded, 7,
-        "the same seven the M8 report and the facade reach success on"
+        succeeded, 5,
+        "the five examples that need nothing outside the language"
     );
 }
 

@@ -93,9 +93,7 @@ impl Metadata {
             )
             .with(
                 "comment",
-                Object::new()
-                    .with("line", Node::string("COMMENT:"))
-                    .into(),
+                Object::new().with("line", Node::string("COMMENT:")).into(),
             )
             .with("reserved_words", words(&self.reserved_words))
             .with("callables", words(&self.callables))

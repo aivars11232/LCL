@@ -23,7 +23,11 @@ fn integration_dir() -> PathBuf {
 /// Everything the tool says about `.lcl`, and the shipped file, agree.
 #[test]
 fn the_shipped_mime_package_matches_what_the_tool_reports() {
-    let root = project("integration_syntax", "main.lcl", &example("01_MINIMAL_TASK.lcl"));
+    let root = project(
+        "integration_syntax",
+        "main.lcl",
+        &example("01_MINIMAL_TASK.lcl"),
+    );
     let run = lcl_in(&root, &["syntax", "--machine"], &[]);
     let value = json::parse(&run.stdout).expect("valid JSON");
     let media_type = value

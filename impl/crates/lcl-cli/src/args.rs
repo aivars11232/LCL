@@ -231,9 +231,10 @@ fn split(argv: &[String]) -> Result<(Vec<String>, Common), UsageError> {
             if let Some(inline) = inline.clone() {
                 return Ok(inline);
             }
-            let next = argv.get(index).cloned().ok_or_else(|| {
-                UsageError::new(format!("{option} needs a value"))
-            })?;
+            let next = argv
+                .get(index)
+                .cloned()
+                .ok_or_else(|| UsageError::new(format!("{option} needs a value")))?;
             index += 1;
             Ok(next)
         };
@@ -277,7 +278,10 @@ fn split(argv: &[String]) -> Result<(Vec<String>, Common), UsageError> {
                 }
                 common.inputs.push((id.to_string(), expression.to_string()));
             }
-            "--allow-read" => common.grants.read.push(PathBuf::from(value("--allow-read")?)),
+            "--allow-read" => common
+                .grants
+                .read
+                .push(PathBuf::from(value("--allow-read")?)),
             "--allow-write" => common
                 .grants
                 .write
@@ -302,16 +306,43 @@ pub fn usage() -> String {
     out.push_str("USAGE\n    lcl <command> [options] [document]\n\n");
     out.push_str("COMMANDS\n");
     for (name, description) in [
-        ("check", "canonical steps 1-5: lexical, grammar, resolution, static checking"),
-        ("validate", "steps 1-9: everything check does, plus no-effect semantic preflight"),
-        ("run", "steps 1-13: execution, verification, evidence and one terminal status"),
-        ("inspect", "steps 1-9, reported as units, imports, declarations and the ordered plan"),
-        ("package lock", "write the lock file from an actual resolution"),
-        ("package verify", "compare the lock file against an actual resolution"),
-        ("package vendor", "put a local file into the package cache under a URI"),
+        (
+            "check",
+            "canonical steps 1-5: lexical, grammar, resolution, static checking",
+        ),
+        (
+            "validate",
+            "steps 1-9: everything check does, plus no-effect semantic preflight",
+        ),
+        (
+            "run",
+            "steps 1-13: execution, verification, evidence and one terminal status",
+        ),
+        (
+            "inspect",
+            "steps 1-9, reported as units, imports, declarations and the ordered plan",
+        ),
+        (
+            "package lock",
+            "write the lock file from an actual resolution",
+        ),
+        (
+            "package verify",
+            "compare the lock file against an actual resolution",
+        ),
+        (
+            "package vendor",
+            "put a local file into the package cache under a URI",
+        ),
         ("package list", "list what the package cache holds"),
-        ("spec", "report the specification package's identity and authority"),
-        ("syntax", "emit registry-derived syntax metadata for editors and tooling"),
+        (
+            "spec",
+            "report the specification package's identity and authority",
+        ),
+        (
+            "syntax",
+            "emit registry-derived syntax metadata for editors and tooling",
+        ),
         ("version", "print the tool and protocol versions"),
         ("help", "print this text"),
     ] {
@@ -320,14 +351,35 @@ pub fn usage() -> String {
     out.push_str("\nOPTIONS\n");
     for (name, description) in [
         ("--spec <path>", "the canonical specification package root"),
-        ("--project <dir>", "the project root; defaults to the document's own directory"),
-        ("--input <id>=<expr>", "supply one declared INPUT, STATE, MEMORY or CONTEXT"),
-        ("--machine", "emit the machine-readable JSON record instead of human text"),
+        (
+            "--project <dir>",
+            "the project root; defaults to the document's own directory",
+        ),
+        (
+            "--input <id>=<expr>",
+            "supply one declared INPUT, STATE, MEMORY or CONTEXT",
+        ),
+        (
+            "--machine",
+            "emit the machine-readable JSON record instead of human text",
+        ),
         ("--locked", "refuse to proceed when the lock file disagrees"),
-        ("--allow-read <path>", "grant the host read access to a path (run only)"),
-        ("--allow-write <path>", "grant the host write access to a path (run only)"),
-        ("--allow-run <program>", "grant the host permission to run a program (run only)"),
-        ("--allow-net <host>", "grant the host network access to a host (run only)"),
+        (
+            "--allow-read <path>",
+            "grant the host read access to a path (run only)",
+        ),
+        (
+            "--allow-write <path>",
+            "grant the host write access to a path (run only)",
+        ),
+        (
+            "--allow-run <program>",
+            "grant the host permission to run a program (run only)",
+        ),
+        (
+            "--allow-net <host>",
+            "grant the host network access to a host (run only)",
+        ),
     ] {
         out.push_str(&format!("    {name:<24}{description}\n"));
     }

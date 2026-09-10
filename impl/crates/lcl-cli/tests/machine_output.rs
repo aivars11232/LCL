@@ -74,7 +74,11 @@ fn the_cli_and_the_engine_agree_on_a_rejected_document() {
 /// The same, for a run that reaches completion.
 #[test]
 fn the_cli_and_the_engine_agree_on_a_run() {
-    let root = project("machine_agree_run", "main.lcl", &example("01_MINIMAL_TASK.lcl"));
+    let root = project(
+        "machine_agree_run",
+        "main.lcl",
+        &example("01_MINIMAL_TASK.lcl"),
+    );
     let from_cli = lcl_in(&root, &["run", "--machine", "main.lcl"], &[]);
     assert_eq!(from_cli.code, 0, "{}{}", from_cli.stdout, from_cli.stderr);
 
@@ -107,7 +111,13 @@ fn the_cli_and_the_engine_agree_on_supplied_inputs() {
     let root = project("machine_agree_input", "main.lcl", &source);
     let from_cli = lcl_in(
         &root,
-        &["validate", "--machine", "--input", "input.value=7", "main.lcl"],
+        &[
+            "validate",
+            "--machine",
+            "--input",
+            "input.value=7",
+            "main.lcl",
+        ],
         &[],
     );
 
@@ -157,7 +167,9 @@ fn machine_output_carries_identity_spans_ids_stages_and_statuses() {
         digest,
         format!(
             "sha256:{}",
-            lcl_spec::sha256::hex_digest(invalid_example("02_TAB_INDENTATION.invalid.lcl").as_bytes())
+            lcl_spec::sha256::hex_digest(
+                invalid_example("02_TAB_INDENTATION.invalid.lcl").as_bytes()
+            )
         )
     );
 
@@ -348,7 +360,11 @@ fn every_machine_command_emits_readable_json() {
 /// The syntax metadata is the registry's own data.
 #[test]
 fn syntax_metadata_matches_the_lexicon() {
-    let root = project("machine_syntax", "main.lcl", &example("01_MINIMAL_TASK.lcl"));
+    let root = project(
+        "machine_syntax",
+        "main.lcl",
+        &example("01_MINIMAL_TASK.lcl"),
+    );
     let run = lcl_in(&root, &["syntax", "--machine"], &[]);
     let value = parse(&run.stdout);
 
@@ -363,7 +379,10 @@ fn syntax_metadata_matches_the_lexicon() {
     assert_eq!(count("reserved_words"), lexicon.reserved_words().count());
     assert_eq!(count("callables"), lexicon.callables().count());
     assert_eq!(count("adopted_symbols"), lexicon.adopted_symbols().count());
-    assert_eq!(count("excluded_lexemes"), lexicon.excluded_lexemes().count());
+    assert_eq!(
+        count("excluded_lexemes"),
+        lexicon.excluded_lexemes().count()
+    );
     assert_eq!(
         value.get("language_version").and_then(Json::as_str),
         Some("0.1.0")

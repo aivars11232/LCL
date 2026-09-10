@@ -1,4 +1,4 @@
-# LCL implementation — milestones M0 (foundation), M1 (lexer), M2 (parser), M3 (resolver), M4 (checker), M5 (semantic preflight), M6 (runtime), M7 (capabilities and standard library) and M8 (completion and executable conformance)
+# LCL implementation — milestones M0 (foundation), M1 (lexer), M2 (parser), M3 (resolver), M4 (checker), M5 (semantic preflight), M6 (runtime), M7 (capabilities and standard library), M8 (completion and executable conformance) and M9 (CLI, projects and the engine protocol)
 
 This directory is a **consumer** of the canonical specification at
 `../canonical/LCL_Core_0.1.0`. It is not part of the release, is not listed in
@@ -26,6 +26,9 @@ evidence and is never a claim about the release.
 | `lcl-semantics` | M5 | Deterministic, no-effect semantic preflight. A statically checked program plus explicit invocation data in; an authorized, dependency-resolved, prevalidated and ordered execution plan, or registered pre-effect diagnostics, out. |
 | `lcl-completion` | M8 | Canonical processing steps 11 to 13. An accepted execution in; post-execution `VERIFY` and `TEST` against what was actually observed, resolved `EVIDENCE`, a `SUCCESS`/`FAILURE` decision, exactly one terminal invocation status and the declared outputs, or registered `verification_or_completion` diagnostics, out. It performs no effect of its own. |
 | `lcl-runtime` | M6 | Deterministic evaluator and runtime. An accepted execution plan plus an explicit host capability boundary in; canonical execution events, invocation results, state and diagnostics out. Every external effect leaves the language through `Host`; the runtime core performs no filesystem, process, network, provider or clock access. |
+| `lcl-protocol` | M9 | The stable headless engine surface. One assembled engine that carries source through every canonical stage in order and stops where the requested command says, and one machine-readable record of what happened, with a JSON projection. It resolves nothing, checks nothing and classifies nothing: every identifier, stage, status, span and value is copied from the layer that decided it. |
+| `lcl-project` | M9 | Projects and documents. An explicit project root, a filesystem source provider that can answer only for a source a document named, root-relative source identity that does not depend on where the project lives, and the content-addressed cache and lock file that make a multi-document project reproducible. |
+| `lcl-cli` | M9 | The `lcl` binary. `check`, `validate`, `run`, `inspect`, `package` and `syntax` over the same engine any other consumer uses, with a closed exit-code table, human rendering and `--machine` JSON. It grants the host nothing unless a flag says so. |
 
 ## Trust boundary (M0.1)
 
@@ -726,10 +729,158 @@ The report executes all 13 canonical valid examples, confirms all 21 invalid
 examples are owned by an earlier stage, and compares every valid example's
 serialized execution across all three admissible interleavings.
 
+## M9 — `lcl-protocol`, `lcl-project` and `lcl-cli`
+
+The first milestone whose output a person uses directly. Everything before it was
+a library; this is the terminal command, the project on disk, and the record a
+later workspace UI will consume.
+
+### API
+
+```rust
+// One assembled engine, reused for any number of documents.
+let engine = Engine::open("canonical/LCL_Core_0.1.0")?;
+
+// One project: an explicit root, and a provider that cannot volunteer a file.
+let project = Project::open("my-project")?;
+let provider = project.provider()?;
+let unit = provider.root_unit("src/main.lcl")?;
+
+let report = engine.check(&unit, &provider);                          // steps 1-5
+let report = engine.validate(&unit, &provider, &inputs);              // steps 1-9
+let report = engine.inspect(&unit, &provider, &inputs);               // steps 1-9, structural
+let report = engine.run(&unit, &provider, &inputs, &mut stdlib, &mut host); // steps 1-13
+
+report.outcome;            // accepted, rejected, or refused
+report.reached;            // the furthest canonical stage
+report.terminal_status();  // Some(..) only for a run that completed
+report.to_json().pretty(); // exactly what `--machine` prints
+```
+
+### Where a command stops
+
+Each command ends at a canonical boundary rather than a convenient one, and
+`Reached` names it in the language's own vocabulary.
+
+| Command | Canonical steps | Effects possible |
+| --- | --- | --- |
+| `check` | 1 to 5 — lexical, grammar, resolution, static checking | no |
+| `validate` | 1 to 9 — adds the no-effect semantic preflight | no |
+| `inspect` | 1 to 9, reported as units, imports, declarations and the ordered plan | no |
+| `run` | 1 to 13 — execution, verification, evidence, one terminal status | yes, through the host |
+
+Stopping early is the point of a command, and `check` on a document with a
+validation-stage defect reports success: it is a statement about steps 1 to 5,
+and the rendering says so rather than letting a reader infer more.
+
+### Three things that are deliberately not the same
+
+**A rejected document, a completed run that did not succeed, and an unusable
+request.** `05_SEMANTICS/10` keeps producer completion and domain outcome apart,
+so the exit table does too. `Outcome::Refused` is the third: a caller who
+mistyped `--input` has learned nothing about their document, and a report saying
+"rejected" would be claiming they had.
+
+| Code | Meaning |
+| --- | --- |
+| 0 | the requested work completed; a run also succeeded |
+| 1 | the document was rejected by a diagnostic |
+| 2 | the document ran and its terminal status was not `status.succeeded` |
+| 3 | the command line or a supplied input was not usable |
+| 4 | the specification, project or document could not be read |
+
+### Nothing is discovered
+
+`05_SEMANTICS/02` is categorical: "Ambient current directory and implied nearby
+files do not exist in portable LCL." Three consequences, each tested:
+
+- the specification package comes from `--spec`, then `LCL_SPEC`, then the
+  project manifest, and if none names one the command stops rather than looking;
+- the project root is the directory a caller named or the document's own
+  directory, with no walk upward, because a root found by searching parents is an
+  implied nearby file by another name;
+- `SourceProvider` has one method and no listing, globbing, searching or
+  defaulting, so a file no document names cannot enter the program.
+  `FileProvider::loaded` exists so a caller can prove that afterwards, and the
+  resolver cannot call it.
+
+Containment is decided on the *resolved* path — "textual prefix alone does not
+establish containment" — so a symbolic link pointing outside the project root is
+refused even though its spelling is innocent.
+
+### A run is granted nothing
+
+`HostAdapter` starts with the engine's internal `MEMORY` and `STATE` stores and
+no filesystem, no process runner and no transport. Each `--allow-*` flag adds
+exactly what it names, and a profile is installed only alongside the capability
+it describes, because a profile is a claim that an implementation exists.
+
+The two-gate rule stays structural. One `--allow-write` is the whole difference
+between a run that writes a file and one that reports
+`error.operation.precondition` before any effect, and the document is byte for
+byte the same in both. Five of the thirteen canonical examples succeed under this
+closed default; the other eight do not, each for a host reason the record states
+and never because the engine could not read them.
+
+### Reproducibility, without a network
+
+`07_VERSIONING_AND_EXTENSIONS/02` already makes `VERSION` exact and a `URI`
+import's `CHECKSUM` mandatory, and the resolver already enforces both. M9 adds
+what a *project* needs around that:
+
+- source identity is root-relative, so two checkouts at different absolute paths
+  produce identical identities, spans and reports;
+- `lcl.lock` records the package identity and every unit's SHA-256; `package
+  verify` and `--locked` report drift rather than absorbing it;
+- a `URI` import is answered from a content-addressed cache or not at all.
+  Nothing fetches: the architecture contract rules out resolver-owned web
+  browsing, and a tool that downloaded on demand would make a document's meaning
+  depend on when it was resolved. `package vendor` puts local bytes in the cache
+  and prints the `CHECKSUM` the importing document must declare.
+
+### Why there is no transport, and no editor file
+
+A protocol crate could have shipped a socket, a JSON-RPC dispatcher or a language
+server. It ships none: M10 has not chosen a UI toolkit, and a transport chosen
+now would be a guess later work has to live with. What a UI needs is a stable set
+of records and one way to obtain them, and both forms are here — a Rust consumer
+calls `Engine`, any other consumer runs `lcl --machine` — producing the same
+records from the same code. A transport can be added later without changing
+either.
+
+`integration/linux/lcl.xml` registers `text/x-lcl` for the desktop, with a magic
+rule matching the `LCL:` header every conforming document begins with. There is
+no `.desktop` entry, because a desktop entry opens a file in an application and
+that application is M10's work. `lcl syntax --machine` emits the closed
+vocabulary from the loaded lexicon rather than from a checked-in word list, so
+editor metadata cannot drift from the registry.
+
+### What M9 does not do
+
+No editor, no workspace, no debugger UI, and no release hardening. It also adds
+no language rule: the one piece of language behavior the tool needs that did not
+exist — turning a supplied `--input` expression into a value — was added to
+`lcl-semantics` as `Preflight::value_of`, which calls the same literal
+evaluation `DATA` and `INPUT` resolution already performs at step 7. A second
+literal reader in a CLI would have been a second implementation of the language.
+
+### Proof
+
+The equivalence claim is tested by running the CLI and the facade over the same
+document and comparing the records **byte for byte**, for an accepted document, a
+rejected one, a completed run and a supplied input. Comparing selected fields
+would only have proved that the fields someone remembered to compare agree.
+
+The clean-environment suite runs every command from an empty environment, with no
+inherited variable and no working directory the tool may rely on, and asserts
+that the same project produces byte-identical output from three different
+directories and that read-only commands leave the project's file listing
+unchanged.
+
 ## Use
 
 ```bash
-cargo test --offline --workspace --all-targets                # M0 + M1 + M2 + M3 + M4 + M5
+cargo test --offline --workspace --all-targets                # every milestone, M0 through M9
 cargo run --offline -p lcl-lexer --example m1_report          # lexer report over all canonical inputs
 cargo run --offline -p lcl-parser --example m2_report         # parser report over all canonical inputs
 cargo run --offline -p lcl-resolver --example m3_report       # resolver report over all canonical inputs
@@ -743,5 +894,27 @@ cargo clippy --offline --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
 
+The M9 binary, over a document or a project:
+
+```bash
+cargo build --offline -p lcl-cli                              # builds target/debug/lcl
+lcl help                                                      # commands, options and exit codes
+lcl spec --spec canonical/LCL_Core_0.1.0                      # package identity and authority
+lcl check   src/main.lcl                                      # canonical steps 1-5
+lcl validate src/main.lcl                                     # steps 1-9, before any effect
+lcl inspect src/main.lcl                                      # units, imports, declarations, plan
+lcl run     src/main.lcl                                      # steps 1-13, one terminal status
+lcl run --allow-write /tmp/out src/main.lcl                   # the same, with one capability
+lcl check --machine src/main.lcl                              # the JSON record a UI consumes
+lcl package lock                                              # record what resolution loaded
+lcl package verify                                            # compare against that record
+lcl syntax --machine                                          # registry-derived editor metadata
+```
+
+Every command needs a specification package, from `--spec`, `LCL_SPEC` or the
+project manifest's `"spec"`. None of them searches for one.
+
 All are read-only with respect to `canonical/`. Integrity tests that need to
-mutate a package operate on a throwaway copy under `target/test-tmp/`.
+mutate a package operate on a throwaway copy under `target/test-tmp/`, and the
+`.lcl` desktop registration in `integration/linux/` is never installed by
+building the workspace.

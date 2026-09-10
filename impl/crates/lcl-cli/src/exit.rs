@@ -64,12 +64,18 @@ pub fn of(report: &Report) -> i32 {
 
 /// The table, for `lcl help` and for the test that pins it.
 pub const TABLE: &[(i32, &str)] = &[
-    (SUCCESS, "the requested work completed; a run also succeeded"),
+    (
+        SUCCESS,
+        "the requested work completed; a run also succeeded",
+    ),
     (REJECTED, "the document was rejected by a diagnostic"),
     (
         NOT_SUCCEEDED,
         "the document ran and its terminal status was not status.succeeded",
     ),
     (USAGE, "the command line or a supplied input was not usable"),
-    (ENVIRONMENT, "the specification, project or document could not be read"),
+    (
+        ENVIRONMENT,
+        "the specification, project or document could not be read",
+    ),
 ];

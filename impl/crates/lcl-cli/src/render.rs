@@ -148,9 +148,10 @@ fn completion(report: &Report) -> String {
                 check.id,
                 if check.required { " (required)" } else { "" }
             )),
-            (None, Some(reason)) => {
-                out.push_str(&format!("  {} {} skipped: {reason}\n", check.kind, check.id))
-            }
+            (None, Some(reason)) => out.push_str(&format!(
+                "  {} {} skipped: {reason}\n",
+                check.kind, check.id
+            )),
             (None, None) => {}
         }
     }

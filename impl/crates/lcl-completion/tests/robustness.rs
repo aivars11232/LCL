@@ -96,10 +96,9 @@ FAILURE:
         ),
     ];
     // Every canonical example, truncated at each of a spread of byte offsets.
-    let source = std::fs::read_to_string(
-        canonical_root().join("08_EXAMPLES/VALID/01_MINIMAL_TASK.lcl"),
-    )
-    .expect("readable");
+    let source =
+        std::fs::read_to_string(canonical_root().join("08_EXAMPLES/VALID/01_MINIMAL_TASK.lcl"))
+            .expect("readable");
     let len = source.len();
     for cut in (0..len).step_by(17) {
         if source.is_char_boundary(cut) {

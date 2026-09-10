@@ -33,10 +33,11 @@ use lcl_completion::{Completion, Contracts as CompletionContracts};
 use lcl_lexer::Lexicon;
 use lcl_parser::Grammar;
 use lcl_resolver::{MemoryProvider, Resolver, Rules, SourceId, SourceUnit};
-use lcl_runtime::{Contracts as RuntimeContracts, MockHost, Runtime};
+use lcl_runtime::{Contracts as RuntimeContracts, Host, MockHost, Runtime};
 use lcl_semantics::{Contracts as PreflightContracts, Invocation, Outcome, Preflight};
 use lcl_spec::SpecPackage;
 use lcl_stdlib::Stdlib;
+use std::cell::RefCell;
 use std::fmt;
 
 /// The furthest canonical stage a source reached.
@@ -232,7 +233,14 @@ pub struct Runner {
     preflight: PreflightContracts,
     runtime: RuntimeContracts,
     completion: CompletionContracts,
-    stdlib: Stdlib,
+    /// One assembled operation surface, lent mutably to each run.
+    ///
+    /// `Operations::invoke` takes `&mut self`, but `Stdlib` accumulates nothing
+    /// across invocations: every mutating method on it is a builder that an
+    /// embedder calls before running, and none is reachable from `invoke`. So
+    /// reusing one surface leaves runs independent, which a conformance runner
+    /// needs more than most callers.
+    stdlib: RefCell<Stdlib>,
 }
 
 impl Runner {
@@ -246,7 +254,21 @@ impl Runner {
         let preflight = PreflightContracts::load(spec).map_err(|x| e(format!("{x}")))?;
         let runtime = RuntimeContracts::load(spec).map_err(|x| e(format!("{x}")))?;
         let completion = CompletionContracts::load(spec).map_err(|x| e(format!("{x}")))?;
-        let stdlib = Stdlib::load(spec).map_err(|x| e(format!("{x}")))?;
+        // Every registered implementation profile is installed. A `Stdlib`
+        // starts with none, which makes every profile-requiring row fail its
+        // precondition before effects — correct for an engine with nothing
+        // installed, and useless for a conformance runner, which must be able
+        // to reach the rows the registry actually defines.
+        let stdlib = Stdlib::load(spec)
+            .map_err(|x| e(format!("{x}")))?
+            .with_profiles(
+                lcl_stdlib::checking_profiles()
+                    .into_iter()
+                    .chain(lcl_stdlib::filesystem_profiles())
+                    .chain(lcl_stdlib::process_profiles())
+                    .chain(lcl_stdlib::transport_profiles())
+                    .collect::<Vec<_>>(),
+            );
         Ok(Runner {
             lexicon,
             grammar,
@@ -255,7 +277,7 @@ impl Runner {
             preflight,
             runtime,
             completion,
-            stdlib,
+            stdlib: RefCell::new(stdlib),
         })
     }
 
@@ -269,6 +291,17 @@ impl Runner {
 
     /// The same, with an explicit source provider for a document that imports.
     pub fn run_with_imports(&self, source: &str, provider: &MemoryProvider) -> Observed {
+        let mut host = MockHost::new();
+        self.run_on(source, provider, &mut host)
+    }
+
+    /// The same, against a supplied host.
+    ///
+    /// A witness about an addressable target — a file with content, a program
+    /// that exits, a transport that answers — needs a host that has one.
+    /// `lcl-stdlib`'s in-memory fixtures supply exactly that, deterministically,
+    /// so such a witness becomes executable without a real machine behind it.
+    pub fn run_on(&self, source: &str, provider: &MemoryProvider, host: &mut dyn Host) -> Observed {
         let id = SourceId::new("case.lcl");
         let unit = SourceUnit::new(id, source.as_bytes());
 
@@ -299,7 +332,11 @@ impl Runner {
                 reached: Reached::Resolution,
                 primary: Some(primary.id.to_string()),
                 primary_stage: Some(primary.stage().as_registry_str().to_string()),
-                diagnostics: resolved.diagnostics().iter().map(|d| d.id.to_string()).collect(),
+                diagnostics: resolved
+                    .diagnostics()
+                    .iter()
+                    .map(|d| d.id.to_string())
+                    .collect(),
                 terminal_status: None,
                 checks: Vec::new(),
                 outputs: Vec::new(),
@@ -325,52 +362,56 @@ impl Runner {
                 reached: Reached::StaticChecking,
                 primary: Some(primary.id.to_string()),
                 primary_stage: Some(primary.stage().as_registry_str().to_string()),
-                diagnostics: checked.diagnostics().iter().map(|d| d.id.to_string()).collect(),
+                diagnostics: checked
+                    .diagnostics()
+                    .iter()
+                    .map(|d| d.id.to_string())
+                    .collect(),
                 terminal_status: None,
                 checks: Vec::new(),
                 outputs: Vec::new(),
             };
         }
 
-        let planned = match Preflight::new(&self.preflight).plan(
-            &checked,
-            &resolved,
-            &Invocation::new(),
-        ) {
-            Ok(planned) => planned,
-            Err(skipped) => {
-                return Observed {
-                    reached: Reached::StaticChecking,
-                    primary: Some(skipped.primary.clone()),
-                    primary_stage: Some("static_or_expression".to_string()),
-                    diagnostics: vec![skipped.primary],
-                    terminal_status: None,
-                    checks: Vec::new(),
-                    outputs: Vec::new(),
+        let planned =
+            match Preflight::new(&self.preflight).plan(&checked, &resolved, &Invocation::new()) {
+                Ok(planned) => planned,
+                Err(skipped) => {
+                    return Observed {
+                        reached: Reached::StaticChecking,
+                        primary: Some(skipped.primary.clone()),
+                        primary_stage: Some("static_or_expression".to_string()),
+                        diagnostics: vec![skipped.primary],
+                        terminal_status: None,
+                        checks: Vec::new(),
+                        outputs: Vec::new(),
+                    }
                 }
-            }
-        };
+            };
         if planned.outcome() != Outcome::Planned {
             let primary = planned.primary();
             return Observed {
                 reached: Reached::Preflight,
                 primary: primary.map(|d| d.id.to_string()),
-                primary_stage: primary.map(|d| d.stage().as_registry_str().to_string()),
-                diagnostics: planned.diagnostics().iter().map(|d| d.id.to_string()).collect(),
+                primary_stage: primary.map(|d| d.stage.as_registry_str().to_string()),
+                diagnostics: planned
+                    .diagnostics()
+                    .iter()
+                    .map(|d| d.id.to_string())
+                    .collect(),
                 terminal_status: None,
                 checks: Vec::new(),
                 outputs: Vec::new(),
             };
         }
 
-        let mut stdlib = self.stdlib.clone();
-        let mut host = MockHost::new();
+        let mut stdlib = self.stdlib.borrow_mut();
         let execution = match Runtime::new(&self.runtime).execute_with(
             &planned,
             &checked,
             &resolved,
-            &mut stdlib,
-            &mut host,
+            &mut *stdlib,
+            host,
         ) {
             Ok(execution) => execution,
             Err(_) => {
@@ -386,30 +427,25 @@ impl Runner {
             }
         };
 
-        let completion = match Completion::of(
-            &self.completion,
-            &planned,
-            &checked,
-            &resolved,
-            &execution,
-        ) {
-            Ok(completion) => completion,
-            Err(_) => {
-                return Observed {
-                    reached: Reached::Execution,
-                    primary: execution.primary().map(|d| d.id.to_string()),
-                    primary_stage: None,
-                    diagnostics: execution
-                        .diagnostics()
-                        .iter()
-                        .map(|d| d.id.to_string())
-                        .collect(),
-                    terminal_status: None,
-                    checks: Vec::new(),
-                    outputs: Vec::new(),
+        let completion =
+            match Completion::of(&self.completion, &planned, &checked, &resolved, &execution) {
+                Ok(completion) => completion,
+                Err(_) => {
+                    return Observed {
+                        reached: Reached::Execution,
+                        primary: execution.primary().map(|d| d.id.to_string()),
+                        primary_stage: None,
+                        diagnostics: execution
+                            .diagnostics()
+                            .iter()
+                            .map(|d| d.id.to_string())
+                            .collect(),
+                        terminal_status: None,
+                        checks: Vec::new(),
+                        outputs: Vec::new(),
+                    }
                 }
-            }
-        };
+            };
 
         // Diagnostics from both post-preflight layers, execution first, which
         // is `earliest_stage_rule` order for these two stages.
@@ -485,6 +521,27 @@ impl Runner {
         expectation: Expectation,
     ) -> ExecutedCase {
         self.execute_with_imports(id, contract, source, expectation, &MemoryProvider::new())
+    }
+
+    /// Execute one case against a supplied host.
+    pub fn execute_on(
+        &self,
+        id: &str,
+        contract: &str,
+        source: &str,
+        expectation: Expectation,
+        host: &mut dyn Host,
+    ) -> ExecutedCase {
+        let observed = self.run_on(source, &MemoryProvider::new(), host);
+        let verdict = judge(&expectation, &observed);
+        ExecutedCase {
+            id: id.to_string(),
+            contract: contract.to_string(),
+            source: source.to_string(),
+            expectation,
+            observed,
+            verdict,
+        }
     }
 
     pub fn execute_with_imports(

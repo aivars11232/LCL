@@ -102,10 +102,24 @@ fn expectation_vocabulary_is_descriptive() {
 }
 
 /// The load-bearing negative assertion of this crate.
+///
+/// The *index* still executes nothing, at M8 exactly as at M0. What changed is
+/// only the stated reason: the original text said the claim was blocked because
+/// no lexer, parser, evaluator or executor existed "at milestone M0", and that
+/// sentence became false when M8 supplied all four. The blocked claim itself is
+/// unchanged and is asserted here more strictly than before, against the
+/// canonical requirement rather than against a milestone name:
+///
+/// > catalog entries without concrete input and an implementation result are
+/// > not executed conformance cases
+///
+/// Executed evidence lives in `runner::ExecutedCase`, a different type that
+/// cannot be constructed without both, and `executed_cases_are_a_separate_type`
+/// below pins that separation.
 #[test]
-fn nothing_is_executed_and_no_claim_is_available() {
+fn nothing_is_executed_and_no_claim_is_available_from_the_index() {
     let i = index();
-    assert!(i.all_unexecuted(), "M0 executes nothing");
+    assert!(i.all_unexecuted(), "the index executes nothing");
     for r in i.requirements() {
         assert_eq!(r.state, CaseState::NotExecuted);
     }
@@ -113,8 +127,39 @@ fn nothing_is_executed_and_no_claim_is_available() {
         assert_eq!(w.state, CaseState::NotExecuted);
     }
     let reason = i.claim_blocked_reason();
-    assert!(reason.contains("No conformance level may be claimed"));
-    assert!(reason.contains("milestone M0"));
+    assert!(reason.contains("No conformance level may be claimed from this index"));
+    assert!(
+        reason.contains("without concrete input and an implementation result"),
+        "the reason must cite the canonical threshold, not a milestone number"
+    );
+    assert!(
+        reason.contains("runner::Runner"),
+        "and must name where executed evidence does come from"
+    );
+}
+
+/// An indexed requirement and an executed case cannot be confused or combined.
+#[test]
+fn executed_cases_are_a_separate_type_from_indexed_requirements() {
+    let i = index();
+    // `CaseState` still has exactly one variant, so no indexed entry can carry
+    // a verdict. The exhaustive match is the guard: adding a `Passed` variant
+    // stops this compiling.
+    for r in i.requirements() {
+        match r.state {
+            CaseState::NotExecuted => {}
+        }
+    }
+    // And the report keeps the two populations in separate columns with no
+    // total, so 799 indexed rows can never be read as 799 executed ones.
+    let report = lcl_conformance::ConformanceReport::new(
+        lcl_conformance::report::Implementation::under_test("test", "0.1.0"),
+        i.requirement_count(),
+        i.witness_count(),
+    );
+    assert_eq!(report.descriptive_count(), 799);
+    assert_eq!(report.executed_count(), 0);
+    assert_eq!(report.claim(), lcl_conformance::report::ClaimLevel::None);
 }
 
 /// The witness catalog must keep declaring itself unexecuted; if the release

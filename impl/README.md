@@ -1,12 +1,16 @@
-# LCL implementation — milestones M0 (foundation), M1 (lexer), M2 (parser), M3 (resolver), M4 (checker), M5 (semantic preflight) and M6 (runtime)
+# LCL implementation — milestones M0 (foundation), M1 (lexer), M2 (parser), M3 (resolver), M4 (checker), M5 (semantic preflight), M6 (runtime), M7 (capabilities and standard library) and M8 (completion and executable conformance)
 
 This directory is a **consumer** of the canonical specification at
 `../canonical/LCL_Core_0.1.0`. It is not part of the release, is not listed in
 `MANIFEST.json` or `SHA256SUMS.txt`, and never writes to `canonical/`.
 
 Building this does not change the release's status. The `complete_example_parse_matrix`
-and `semantic_case_execution` gates remain `OUT_OF_SCOPE` for LCL Core 0.1.0;
-implementation conformance is separate evidence.
+and `semantic_case_execution` gates remain `OUT_OF_SCOPE` for LCL Core 0.1.0, because the
+bare-language package ships no engine. Both classifications are correct and unchanged.
+What this workspace supplies is the executed implementation evidence they defer to:
+`lcl-parser`'s `tests/parse_matrix.rs` for the first, and `lcl-conformance`'s
+`tests/decision_witnesses.rs` for the second. Implementation conformance is separate
+evidence and is never a claim about the release.
 
 ## Crates
 
@@ -14,12 +18,13 @@ implementation conformance is separate evidence.
 | --- | --- | --- |
 | `lcl-spec` | M0 | Specification authority loader. Verifies package integrity against `MANIFEST.json` and `SHA256SUMS.txt`, checks an **external trust anchor**, pins the formal version, loads the 12 closed registries and 2 catalogs as data. |
 | `lcl-diagnostics` | M0 | Diagnostics skeleton. The 7 normative stages, 12 statuses and 77 errors, loaded and closure-checked. |
-| `lcl-conformance` | M0 | Conformance skeleton. Indexes the 799 descriptive requirements and 66 decision witnesses. Executes nothing. |
+| `lcl-conformance` | M0 + M8 | The descriptive index **and** the executable case runner. Indexes the 799 descriptive requirements and 66 decision witnesses, and separately carries concrete sources through every implemented stage, comparing observed against expected. An indexed requirement and an executed case are different types with different evidence standards, and the report counts them in separate columns with no total. |
 | `lcl-lexer` | M1 | Deterministic, non-executing lexer. Source bytes in; tokens with exact byte spans or stable-ordered registered lexical diagnostics out, including every contextual `error.keyword.case` position and the closed literal profiles of constructor arguments. |
 | `lcl-parser` | M2 | Deterministic, non-executing parser. M1 tokens in; a source-faithful syntax tree with exact byte spans or registered grammar-and-schema diagnostics out. |
 | `lcl-resolver` | M3 | Deterministic, non-executing resolver. Parsed units plus an explicit source provider in; version, import, extension, namespace, ID and `REF` bindings and the structural candidate graph, or registered resolution diagnostics, out. |
 | `lcl-checker` | M4 | Deterministic, non-executing static and type checker. A resolved program graph in; every declaration's type, every expression's static contract and the value obligations left to the demanding layer, or registered `static_or_expression` diagnostics, out. |
 | `lcl-semantics` | M5 | Deterministic, no-effect semantic preflight. A statically checked program plus explicit invocation data in; an authorized, dependency-resolved, prevalidated and ordered execution plan, or registered pre-effect diagnostics, out. |
+| `lcl-completion` | M8 | Canonical processing steps 11 to 13. An accepted execution in; post-execution `VERIFY` and `TEST` against what was actually observed, resolved `EVIDENCE`, a `SUCCESS`/`FAILURE` decision, exactly one terminal invocation status and the declared outputs, or registered `verification_or_completion` diagnostics, out. It performs no effect of its own. |
 | `lcl-runtime` | M6 | Deterministic evaluator and runtime. An accepted execution plan plus an explicit host capability boundary in; canonical execution events, invocation results, state and diagnostics out. Every external effect leaves the language through `Host`; the runtime core performs no filesystem, process, network, provider or clock access. |
 
 ## Trust boundary (M0.1)
@@ -69,9 +74,13 @@ review; `mint_anchor` computes a candidate digest but never writes one.
 3. **No third-party dependencies.** The trust root carries no supply-chain
    surface; SHA-256 and the JSON reader are implemented in `lcl-spec`. The
    lexer is `std` only as well.
-4. **No false claims.** `lcl-conformance` has no `Pass` state and no `run()`.
-   `lcl-lexer`'s `Outcome::Tokenized` means "no lexical diagnostic", never
-   "document accepted".
+4. **No false claims.** `lcl-conformance`'s indexed `CaseState` still has one
+   variant, `NotExecuted`, so a catalog entry can never carry a verdict; an
+   executed case is a separate type that cannot be built without the exact
+   source that ran and the result the engine gave. `lcl-lexer`'s
+   `Outcome::Tokenized` means "no lexical diagnostic", never "document
+   accepted", and `lcl-completion`'s `succeeded()` means one terminal status
+   was `status.succeeded`, never that every declared check passed.
 5. **Authority is explicit.** `Authority` is a two-state enum, not a boolean
    buried in a struct, so an unverified package cannot be quietly mistaken for
    the approved release.
@@ -727,6 +736,8 @@ cargo run --offline -p lcl-resolver --example m3_report       # resolver report 
 cargo run --offline -p lcl-checker --example m4_report        # static and type checker report
 cargo run --offline -p lcl-semantics --example m5_report      # semantic preflight report
 cargo run --offline -p lcl-conformance --example m0_report    # foundation report
+cargo run --offline -p lcl-completion --example m8_report     # completion report over all canonical examples
+cargo run --offline -p lcl-conformance --example m8_conformance_report  # executed conformance evidence
 cargo run --offline -p lcl-spec --example mint_anchor         # compute a package identity
 cargo clippy --offline --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check

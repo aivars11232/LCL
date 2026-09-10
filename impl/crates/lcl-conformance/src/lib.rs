@@ -1,30 +1,49 @@
-//! # lcl-conformance — conformance skeleton (descriptive only)
+//! # lcl-conformance — the descriptive index, and the executable case runner
 //!
-//! Milestone M0 component K, skeleton stage.
+//! Milestone M0 component K, extended at M8 with execution.
 //!
-//! Loads and indexes the two descriptive catalogs shipped with LCL Core 0.1.0:
+//! Two things live here, and the whole design turns on keeping them apart.
+//!
+//! **The descriptive index.** [`ConformanceIndex`] loads the two catalogs the
+//! package ships:
 //!
 //! * `core_conformance_cases_v0.1.0.json` — a 799-entry **requirements index**;
 //! * `language_decision_cases_v0.1.0.json` — 66 **decision witnesses**.
 //!
-//! ## The rule this crate enforces
+//! **The executable runner.** [`runner::Runner`] carries a concrete source
+//! through every implemented stage — lexer, parser, resolver, checker, semantic
+//! preflight, runtime over the real Core operation surface, completion — and
+//! reports what the engine actually did.
+//!
+//! ## The rule that keeps them apart
 //!
 //! `09_CONFORMANCE/01_CONFORMANCE_REQUIREMENTS.txt` is explicit:
 //!
 //! > catalog entries without concrete input and an implementation result are
 //! > not executed conformance cases
 //!
-//! and the witness catalog declares `executed: false`. So this crate is
-//! deliberately built so that it **cannot express a pass**. There is no
-//! `Outcome::Pass`, no `run()`, and no result type carrying a verdict. Every
-//! requirement loads in state [`CaseState::NotExecuted`], and the only API that
-//! mentions conformance claims is [`ConformanceIndex::claim_blocked_reason`],
-//! which explains why no claim is available.
+//! An indexed [`Requirement`] has neither. It is prose from a registry, and it
+//! still loads in state [`CaseState::NotExecuted`] — the only state that enum
+//! has, at M8 as at M0. Nothing in this crate can move it to another one,
+//! because there is no other one.
 //!
-//! Executing these requirements needs a lexer, parser, evaluator and executor.
-//! None exists at M0. A future milestone adds an execution engine; until then,
-//! indexing is the whole job, and reporting anything stronger would be a false
-//! conformance claim.
+//! An executed case is a *different type*. A [`runner::ExecutedCase`] cannot be
+//! constructed without the exact source that ran and the
+//! [`runner::Observed`] result the engine produced, and its verdict is computed
+//! by comparing them rather than asserted. So the two populations cannot be
+//! summed by accident: they do not share a type, a state or a counter, and
+//! [`report::ConformanceReport`] counts them in separate columns.
+//!
+//! What changed at M8 is not the standard of evidence. It is that an engine now
+//! exists to supply it.
+
+pub mod report;
+pub mod runner;
+
+pub use report::{ConformanceReport, Coverage};
+pub use runner::{
+    judge, ExecutedCase, Expectation, Observed, Reached, Runner, RunnerError, Verdict,
+};
 
 use lcl_spec::json::Json;
 use lcl_spec::SpecPackage;
@@ -304,11 +323,13 @@ impl ConformanceIndex {
     /// Returns the reason unconditionally. There is no argument that makes it
     /// return `None`, by design.
     pub fn claim_blocked_reason(&self) -> &'static str {
-        "No conformance level may be claimed. The catalogs are descriptive requirement \
-         indexes; executing them requires a lexer, parser, evaluator and executor, none of \
-         which exists at milestone M0. Per 09_CONFORMANCE/01_CONFORMANCE_REQUIREMENTS.txt, \
-         catalog entries without concrete input and an implementation result are not executed \
-         conformance cases."
+        "No conformance level may be claimed from this index. The catalogs are descriptive \
+         requirement indexes: per 09_CONFORMANCE/01_CONFORMANCE_REQUIREMENTS.txt, catalog \
+         entries without concrete input and an implementation result are not executed \
+         conformance cases, and every entry here has neither. A claim requires executed \
+         evidence from `runner::Runner`, and must state implementation version, host \
+         capabilities, exact failed case IDs and evidence, which `report::ConformanceReport` \
+         carries."
     }
 }
 

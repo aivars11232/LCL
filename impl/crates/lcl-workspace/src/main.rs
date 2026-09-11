@@ -109,7 +109,9 @@ fn run(argv: &[String]) -> Result<(), String> {
         None => {
             let root = match root {
                 Some(root) => root,
-                None => std::env::current_dir().map_err(|e| format!("no working directory: {e}"))?,
+                None => {
+                    std::env::current_dir().map_err(|e| format!("no working directory: {e}"))?
+                }
             };
             (root, None)
         }

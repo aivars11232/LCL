@@ -224,7 +224,7 @@ fn every_source_fixture_is_total() {
     let mut total = 0usize;
     for entry in fs::read_dir(root).expect("fixtures") {
         let path = entry.expect("entry").path();
-        if path.extension().is_none_or(|ext| ext != "lcl") {
+        if !path.extension().is_some_and(|ext| ext == "lcl") {
             continue;
         }
         total += 1;

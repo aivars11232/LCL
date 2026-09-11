@@ -49,6 +49,89 @@ fn the_shipped_mime_package_matches_what_the_tool_reports() {
         xml.contains(&format!("pattern=\"*.{extension}\"")),
         "the MIME package globs the extension the tool reports"
     );
+
+    // Every ending the tool recognises is globbed, not only the first.
+    let extensions: Vec<&str> = value
+        .get("extensions")
+        .and_then(Json::as_array)
+        .expect("the reported endings")
+        .iter()
+        .filter_map(Json::as_str)
+        .collect();
+    assert!(
+        extensions.contains(&".lcl") && extensions.contains(&".lcl.txt"),
+        "both recognised endings must be reported: {extensions:?}"
+    );
+    for ending in &extensions {
+        let pattern = format!("pattern=\"*{ending}\"");
+        assert!(
+            xml.contains(&pattern),
+            "the MIME package does not glob {ending}"
+        );
+    }
+
+    // And nothing claims plain text. A glob for `*.txt` would make every text
+    // file on the machine an LCL document.
+    assert!(
+        !xml.contains("pattern=\"*.txt\""),
+        "the MIME package must not claim every .txt file"
+    );
+    assert!(
+        !xml.contains("<mime-type type=\"text/plain\""),
+        "the MIME package must not redefine text/plain"
+    );
+}
+
+/// A `.lcl.txt` document is the same document under a different name.
+///
+/// The follow-up to post-Task-20: new documents default to `.lcl.txt` so they
+/// travel as plain text. The name must change nothing about the verdict, and
+/// ending in `.txt` must never relax validation.
+#[test]
+fn the_text_ending_neither_changes_a_verdict_nor_relaxes_validation() {
+    let valid = example("01_MINIMAL_TASK.lcl");
+    let mut records = Vec::new();
+    for name in ["main.lcl", "main.lcl.txt"] {
+        let root = scratch(&format!("integration_text_{}", name.replace('.', "_")));
+        write(root.join(name), &valid);
+        write(
+            root.join("lcl.project.json"),
+            format!(
+                "{{\n  \"format\": \"lcl.project/1\",\n  \"spec\": {:?}\n}}\n",
+                canonical_root().display().to_string()
+            ),
+        );
+        let run = lcl_in(&root, &["run", "--machine", name], &[]);
+        assert_eq!(run.code, 0, "{name}: {}{}", run.stdout, run.stderr);
+        records.push(run.stdout.replace(name, "<document>"));
+    }
+    assert_eq!(
+        records[0], records[1],
+        "a .lcl.txt document must produce the same record as a .lcl one"
+    );
+
+    // Invalid source is refused identically. A `.txt` ending is not a way to
+    // get a malformed document past the checker.
+    let invalid = "LCL:\n    VERSION: \"0.1.0\"\n\nNOT_A_BLOCK:\n    ID: x\n";
+    let mut refusals = Vec::new();
+    for name in ["bad.lcl", "bad.lcl.txt"] {
+        let root = scratch(&format!("integration_bad_{}", name.replace('.', "_")));
+        write(root.join(name), invalid);
+        write(
+            root.join("lcl.project.json"),
+            format!(
+                "{{\n  \"format\": \"lcl.project/1\",\n  \"spec\": {:?}\n}}\n",
+                canonical_root().display().to_string()
+            ),
+        );
+        let run = lcl_in(&root, &["check", "--machine", name], &[]);
+        assert_ne!(run.code, 0, "{name} was not refused: {}", run.stdout);
+        refusals.push(run.stdout.replace(name, "<document>"));
+    }
+    assert_eq!(
+        refusals[0], refusals[1],
+        "an invalid document must be refused identically under either ending"
+    );
 }
 
 /// The magic rule matches what a conforming document actually begins with.

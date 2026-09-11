@@ -52,6 +52,19 @@ use lcl_resolver::SourceId;
 /// `DATA` "is immutable material".
 const SOURCE_BLOCKS: [&str; 5] = ["INPUT", "DATA", "CONTEXT", "MEMORY", "STATE"];
 
+/// The one `DEFINE` whose declared value is readable in a value context.
+///
+/// `05_SEMANTICS/12`: "REF reads exactly one bound value of INPUT, DATA,
+/// CONTEXT, MEMORY, STATE, OUTPUT, DEFINE kind.constant, or a loop-local
+/// binding." Every other `DEFINE` -- a type, an operation, a format -- stays a
+/// reference identity and has no value to read.
+const CONSTANT_KIND: &str = "kind.constant";
+
+/// True for the one declaration shape whose value a `REF` reads.
+fn is_readable_constant(declaration: &lcl_resolver::Declaration) -> bool {
+    declaration.block == "DEFINE" && declaration.definition_kind.as_deref() == Some(CONSTANT_KIND)
+}
+
 /// Resolve every declared datum and every declared dependency.
 pub(crate) fn resolve(engine: &mut Engine) {
     resolve_sources(engine);
@@ -66,7 +79,7 @@ fn resolve_sources(engine: &mut Engine) {
         .all()
         .iter()
         .enumerate()
-        .filter(|(_, d)| SOURCE_BLOCKS.contains(&d.block.as_str()))
+        .filter(|(_, d)| SOURCE_BLOCKS.contains(&d.block.as_str()) || is_readable_constant(d))
         .map(|(index, d)| {
             (
                 index,
@@ -89,6 +102,34 @@ fn resolve_sources(engine: &mut Engine) {
         // 1. explicit VALUE.
         let mut origin = Origin::DeclaredValue;
         let mut value = declared_value(engine, syntax_block);
+
+        // A `DEFINE kind.constant` is exactly its declared value and nothing
+        // else. It is not a source an invocation supplies, it takes no DEFAULT
+        // and no ASSUME applies to it, so the remaining steps are skipped
+        // rather than given a constant to reinterpret.
+        //
+        // Repair, post-Task-20 finding F14. Every step of the read path already
+        // honoured `05_SEMANTICS/12` except this one: M4 records the constant's
+        // statically known value and judges a `REF` to it as a value context,
+        // and the runtime's `declaration_value` reads the plan's resolutions.
+        // Constants were never put in them, so the read fell through to
+        // MISSING, an operation parameter quietly took its registered default,
+        // and a declared bound had no INTEGER to check.
+        if block == "DEFINE" {
+            resolutions.push(Resolution {
+                declaration: index,
+                id,
+                block,
+                source,
+                span,
+                origin: match value.is_some() {
+                    true => Origin::DeclaredValue,
+                    false => Origin::Absent,
+                },
+                value: value.unwrap_or(Value::Missing),
+            });
+            continue;
+        }
 
         // 2. resolved SOURCE/INPUT/STATE/MEMORY/CONTEXT — the explicit data
         //    this invocation supplied for this declaration.

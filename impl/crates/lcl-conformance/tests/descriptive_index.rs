@@ -155,7 +155,7 @@ fn executed_cases_are_a_separate_type_from_indexed_requirements() {
     let report = lcl_conformance::ConformanceReport::new(
         lcl_conformance::report::Implementation::under_test("test", "0.1.0"),
         i.requirement_count(),
-        i.witness_count(),
+        i.witnesses().iter().map(|w| w.id.clone()),
     );
     assert_eq!(report.descriptive_count(), 799);
     assert_eq!(report.executed_count(), 0);

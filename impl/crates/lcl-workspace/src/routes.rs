@@ -32,6 +32,15 @@ const INDEX_HTML: &str = include_str!("../assets/index.html");
 const APP_CSS: &str = include_str!("../assets/app.css");
 const APP_JS: &str = include_str!("../assets/app.js");
 
+/// The product's own mark, compiled in beside the rest of the frontend.
+///
+/// Derived from `assets/brand/lcl-logo-master.png` by
+/// `assets/brand/derive_brand_assets.py`, which records every derivative's
+/// checksum. Bytes, not text: `include_str!` would refuse a PNG, and forcing
+/// one through a string is how an image arrives corrupted.
+const BRAND_MARK_PNG: &[u8] = include_bytes!("../assets/brand/lcl-mark.png");
+const BRAND_ICON_PNG: &[u8] = include_bytes!("../assets/brand/lcl-icon-32.png");
+
 /// Everything the routes need, shared across connection threads.
 pub struct Routes {
     workspace: Arc<Workspace>,
@@ -79,11 +88,19 @@ impl Routes {
             }
             ("GET", "/app.css") => Response::css(APP_CSS),
             ("GET", "/app.js") => Response::javascript(APP_JS),
+            // Both are stamped with the session token by the page that
+            // references them, exactly as the stylesheet and script are, so
+            // they pass the same three gates as every other request. A browser
+            // guessing at `/favicon.ico` is not served: an unauthenticated
+            // route would be a hole opened for a picture.
+            ("GET", "/brand/lcl-mark.png") => Response::png(BRAND_MARK_PNG),
+            ("GET", "/brand/lcl-icon-32.png") => Response::png(BRAND_ICON_PNG),
 
             ("GET", "/api/session") => self.session(),
             ("GET", "/api/documents") => self.documents(),
             ("GET", "/api/document") => self.read_document(request),
             ("PUT", "/api/document") => self.save_document(request),
+            ("POST", "/api/document") => self.create_document(request),
 
             ("POST", "/api/tokens") => self.tokens(request),
             ("POST", "/api/check") => self.analyse(request, Command::Check),
@@ -193,6 +210,45 @@ impl Routes {
                         "final_line_feed_added",
                         Node::Bool(document.text.len() != text.len()),
                     )
+                    .pretty(),
+            ),
+            Err(e) => Response::error(422, &e.to_string()),
+        }
+    }
+
+    /// Create one document, under the name the naming default gives it.
+    ///
+    /// Separate from `PUT` on purpose. Saving must write exactly the name it
+    /// was given, or opening a `.lcl` document and pressing save would rename
+    /// it; creating applies the default, which is the text form. Keeping the
+    /// two in one route would mean guessing which of them the caller meant.
+    ///
+    /// An existing file is never overwritten. Creation that silently replaced
+    /// a document would be a data-loss path reachable by typing a name.
+    fn create_document(&self, request: &Request) -> Response {
+        let Some(requested) = request.param("id") else {
+            return Response::error(400, "a document id is required");
+        };
+        let id = lcl_project::default_name(requested);
+        if id.is_empty() || id == lcl_project::TEXT_SUFFIX {
+            return Response::error(400, "a document needs a name");
+        }
+        if self.workspace.exists(&id) {
+            return Response::error(409, &format!("{id} already exists"));
+        }
+        let text = match request.text() {
+            Ok(text) => text,
+            Err(e) => return Response::error(422, &e.to_string()),
+        };
+        match self.workspace.save(&id, text) {
+            Ok(document) => Response::json(
+                Object::new()
+                    .with("id", Node::string(&document.id))
+                    // What the caller asked for, so a frontend can say that the
+                    // name it is about to show is not the one that was typed.
+                    .with("requested", Node::string(requested))
+                    .with("digest", Node::string(&document.digest))
+                    .with("bytes", Node::usize(document.text.len()))
                     .pretty(),
             ),
             Err(e) => Response::error(422, &e.to_string()),

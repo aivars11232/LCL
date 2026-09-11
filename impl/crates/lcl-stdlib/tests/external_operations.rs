@@ -342,11 +342,62 @@ fn bounds_outside_the_sequence_are_refused_and_never_clipped() {
 #[test]
 fn a_unit_that_does_not_index_this_representation_is_refused() {
     // "item requires LIST[T]", and a file's representation is a STRING.
+    //
+    // Corrected expectation, post-Task-20 finding F13. This asserted
+    // `error.operation.precondition`, which is not the identifier the row
+    // names. `operations_v0.1.0.json#/contracts/core.read/parameters/range`
+    // says "An incompatible unit/representation or wrong key/type uses
+    // error.operation.parameter", and `core.read`'s own `errors` list admits
+    // it. The substitution was made because that identifier is registered
+    // `static_or_expression` and the demand map does not re-stage it, but
+    // `diagnostic_selection.expression_demand_resolution.exclusion_rule` is
+    // explicit that "Discovery time alone never changes classification": a
+    // source-stage identifier found at execution keeps its registered stage,
+    // which is not the same as being forbidden to appear.
+    //
+    // So the expectation is corrected to the row's identifier rather than
+    // weakened, and the stage it is classified at is asserted too.
     let execution = ranged_read("abcd", "item", 0, 1);
     assert_eq!(
         common::errors_of(&execution, "action.read"),
-        vec!["error.operation.precondition".to_string()]
+        vec!["error.operation.parameter".to_string()]
     );
+
+    // Whichever stage discovers it, the classification is the registry's.
+    let diagnostic = execution
+        .diagnostics()
+        .iter()
+        .find(|d| d.id == lcl_runtime::RuntimeError::OperationParameter)
+        .expect("the diagnostic was emitted");
+    assert_eq!(
+        diagnostic.registered_stage.as_registry_str(),
+        "static_or_expression",
+        "the registered stage is never overwritten"
+    );
+    assert_eq!(
+        diagnostic.resolved_stage, None,
+        "this identifier is not in the demand map, so no stage is resolved for it"
+    );
+    assert_eq!(
+        diagnostic.default_status, "status.invalid",
+        "the registered default status travels with the identifier"
+    );
+
+    // A refused range reads nothing and changes nothing. `05_SEMANTICS/09`
+    // makes the pre-effect phase mean an "empty observed_effects list", and a
+    // parameter defect is decided before the target is touched.
+    for invocation in execution.invocations() {
+        let effects = invocation
+            .result
+            .as_ref()
+            .map(|r| r.observed_effects.as_slice())
+            .unwrap_or_default();
+        assert!(
+            effects.is_empty(),
+            "{} left an effect behind for a parameter defect: {effects:?}",
+            invocation.block
+        );
+    }
 }
 
 #[test]

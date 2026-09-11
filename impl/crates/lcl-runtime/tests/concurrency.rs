@@ -278,7 +278,7 @@ fn the_runtime_contains_no_thread_and_no_hash_container() {
             }
             continue;
         }
-        if path.extension().is_none_or(|e| e != "rs") {
+        if !path.extension().is_some_and(|e| e == "rs") {
             continue;
         }
         let text = std::fs::read_to_string(&path).expect("readable");

@@ -10,6 +10,7 @@
 #   ~/.local/share/lcl/LCL_Core_0.1.0   the specification package they load
 #   ~/.local/share/applications         the desktop entry
 #   ~/.local/share/mime/packages        the .lcl media type
+#   ~/.local/share/icons/hicolor/...    the application and document icons
 #
 # The specification package is installed beside the binaries rather than looked
 # for, because the engine loads one exact approved package and "Ambient current
@@ -79,6 +80,31 @@ echo "installed $data/applications/lcl-workspace.desktop"
 
 cp "$here/share/lcl.xml" "$data/mime/packages/lcl.xml"
 echo "installed $data/mime/packages/lcl.xml"
+
+# The application icon the desktop entry names, and the document icon for the
+# media type registered above. Both are derived from one supplied master, so a
+# launcher and the files it opens look like one product.
+#
+# Each file is copied individually into the shared hicolor theme. The theme
+# belongs to every application on the machine, so nothing here creates, empties
+# or removes a directory that is not ours to touch, and uninstall removes
+# exactly the files this loop wrote.
+icons=$data/icons/hicolor
+for source in "$here/share/icons/hicolor/"*/*/*.png; do
+    [ -f "$source" ] || continue
+    relative=${source#"$here/share/icons/hicolor/"}
+    mkdir -p "$icons/$(dirname "$relative")"
+    cp "$source" "$icons/$relative"
+done
+echo "installed $icons/*/apps/lcl-workspace.png"
+echo "installed $icons/*/mimetypes/text-x-lcl.png"
+
+# No icon cache is generated. `gtk-update-icon-cache` writes an
+# `icon-theme.cache` into the theme root, which is a lookup accelerator rather
+# than a requirement: the icon theme specification's search algorithm reads the
+# directories, and every desktop falls back to doing so. Generating one would
+# put a shared file into the theme that this installation did not own and could
+# not safely remove, and the icons resolve without it.
 
 if command -v update-mime-database >/dev/null 2>&1; then
     update-mime-database "$data/mime"

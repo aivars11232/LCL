@@ -35,11 +35,13 @@
 pub mod cache;
 pub mod lock;
 pub mod manifest;
+pub mod naming;
 pub mod provider;
 
 pub use cache::{Cache, CacheError};
 pub use lock::{Drift, Lock, LockError};
 pub use manifest::{Manifest, ManifestError, MANIFEST_FILE, MANIFEST_FORMAT};
+pub use naming::{default_name, is_document, SUFFIX, SUFFIXES, TEXT_SUFFIX};
 pub use provider::{FileProvider, ProjectPathError};
 
 use std::fmt;

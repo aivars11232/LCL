@@ -27,6 +27,7 @@
 //! target type, not from a list of operation names.
 
 use crate::contracts::{ContractType, OperationContract};
+use crate::declarations::field_in;
 use crate::expr::Check;
 use crate::StaticError;
 use lcl_parser::syntax::{Block, Statement, Value};
@@ -129,6 +130,7 @@ fn parameters(
         if let Some(spec) = contract.parameters.get(&name) {
             fragment_parameter(check, source, contract, spec, &nested.statements);
             declared_family(check, source, contract, spec, &name, &nested.statements);
+            closed_object_parameter(check, source, contract, spec, &name, &nested.statements);
         }
         // "supplies an unregistered named parameter"
         if !contract.parameters.contains_key(&name) {
@@ -418,4 +420,184 @@ fn declared_scalar(statements: &[Statement]) -> Option<(String, lcl_lexer::Span)
         return Some((word.text.clone(), word.span));
     }
     None
+}
+
+// ---------------------------------------------------------------------------
+// A parameter whose registered constraint closes its object shape
+// ---------------------------------------------------------------------------
+
+/// The closed shape one parameter's registered constraints declare.
+///
+/// Read from the row, not written here. `core.read`'s `range` is the only row
+/// that currently carries such a constraint; a row that gained one would be
+/// covered without a code change, and one that lost it would stop being
+/// checked for the same reason.
+struct ClosedShape {
+    /// Admitted keys with the type word each is declared as, in source order.
+    fields: Vec<(String, String)>,
+    /// The closed set of words the `unit` key admits.
+    units: Vec<String>,
+}
+
+/// The marker phrase that says a parameter's object shape is closed.
+const CLOSED_KEYS: &str = "No other keys or defaults are admitted";
+
+fn closed_shape(spec: &crate::contracts::ParameterSpec) -> Option<ClosedShape> {
+    let constraint = spec.constraints.iter().find(|c| c.contains(CLOSED_KEYS))?;
+
+    // "... is an OBJECT with exactly unit: STRING, start: INTEGER, and end:
+    // INTEGER. No other keys or defaults are admitted."
+    let listed = constraint
+        .split("with exactly ")
+        .nth(1)?
+        .split(". ")
+        .next()?;
+    let mut fields = Vec::new();
+    for piece in listed.split(',') {
+        let piece = piece.trim().trim_start_matches("and ").trim();
+        let (key, word) = piece.split_once(':')?;
+        fields.push((key.trim().to_string(), word.trim().to_string()));
+    }
+    if fields.is_empty() {
+        return None;
+    }
+
+    // "unit is exactly scalar, line, item, or byte."
+    let units = match constraint.split(" is exactly ").nth(1) {
+        Some(rest) => rest
+            .split('.')
+            .next()
+            .unwrap_or_default()
+            .split(',')
+            .map(|word| word.trim().trim_start_matches("or ").trim().to_string())
+            .filter(|word| !word.is_empty())
+            .collect(),
+        None => Vec::new(),
+    };
+    Some(ClosedShape { fields, units })
+}
+
+/// One written object literal, against the closed shape its row declares.
+///
+/// ## Why this belongs here rather than at demand
+///
+/// The row names `error.operation.parameter` for "an incompatible
+/// unit/representation or wrong key/type", and that identifier is registered at
+/// the `static_or_expression` stage. `expression_demand_resolution` does not
+/// make it eligible, and its `exclusion_rule` puts every "source structure,
+/// token, name resolution, type-family" defect outside the map, so a wrong key
+/// or a wrong value type never becomes an execution-stage failure.
+///
+/// A range written as a literal OBJECT is knowable exactly here, which is where
+/// `earliest_stage_rule` requires it to be decided. Before this check the
+/// runtime met these cases at demand and substituted another identifier from
+/// the row, which `LCL_RELEASE_REPORT.md` recorded as a known limitation.
+///
+/// ## Deliberately narrow
+///
+/// Only a written literal is judged. A property whose value is a reference, an
+/// expression or anything else this stage does not evaluate is left alone, and
+/// so is a `VALUE` that is not an indented object at all. Nothing uncertain is
+/// refused here.
+fn closed_object_parameter(
+    check: &mut Check<'_>,
+    source: &SourceId,
+    contract: &OperationContract,
+    spec: &crate::contracts::ParameterSpec,
+    name: &str,
+    statements: &[Statement],
+) {
+    let Some(shape) = closed_shape(spec) else {
+        return;
+    };
+    let Some(value) = field_in(statements, "VALUE") else {
+        return;
+    };
+    let Some(nested) = value.body.as_nested() else {
+        return;
+    };
+
+    let mut written: Vec<(&str, &lcl_parser::syntax::Property)> = Vec::new();
+    for statement in &nested.statements {
+        if let Statement::Property(property) = statement {
+            written.push((property.key.text.as_str(), property));
+        }
+    }
+
+    // "No other keys or defaults are admitted": the written set must be the
+    // registered set, neither short nor long.
+    let admitted: Vec<&str> = shape.fields.iter().map(|(key, _)| key.as_str()).collect();
+    let mut present: Vec<&str> = written.iter().map(|(key, _)| *key).collect();
+    present.sort_unstable();
+    present.dedup();
+    let mut expected: Vec<&str> = admitted.clone();
+    expected.sort_unstable();
+    if present != expected {
+        check.emit(
+            StaticError::OperationParameter,
+            source,
+            nested.span,
+            "closed_object_keys",
+            format!(
+                "`{}` admits exactly {} in the named parameter `{name}`; this one holds {}",
+                contract.id,
+                admitted.join(", "),
+                match present.is_empty() {
+                    true => "no key".to_string(),
+                    false => present.join(", "),
+                }
+            ),
+        );
+        return;
+    }
+
+    for (key, declared) in &shape.fields {
+        let Some((_, property)) = written.iter().find(|(written, _)| written == key) else {
+            continue;
+        };
+        let Some(Value::Expression(lcl_parser::syntax::Expr::Literal(literal))) =
+            property.body.as_inline()
+        else {
+            // Not a written literal, so not knowable at this stage.
+            continue;
+        };
+        if !literal_is(literal.kind, declared) {
+            check.emit(
+                StaticError::OperationParameter,
+                source,
+                literal.span,
+                "closed_object_type",
+                format!("`{}` types `{name}.{key}` as {declared}", contract.id),
+            );
+            continue;
+        }
+        // A closed word list applies to the key the constraint names.
+        if key == "unit" && !shape.units.is_empty() && !shape.units.contains(&literal.text) {
+            check.emit(
+                StaticError::OperationParameter,
+                source,
+                literal.span,
+                "closed_object_word",
+                format!(
+                    "`{}` admits exactly {} as `{name}.{key}`; found {:?}",
+                    contract.id,
+                    shape.units.join(", "),
+                    literal.text
+                ),
+            );
+        }
+    }
+}
+
+/// Whether one written literal satisfies a registered scalar type word.
+fn literal_is(kind: lcl_parser::syntax::LiteralKind, declared: &str) -> bool {
+    use lcl_parser::syntax::LiteralKind;
+    match declared {
+        "STRING" => matches!(kind, LiteralKind::String | LiteralKind::MultilineString),
+        "INTEGER" => matches!(kind, LiteralKind::Integer),
+        "DECIMAL" => matches!(kind, LiteralKind::Integer | LiteralKind::Decimal),
+        "BOOLEAN" => matches!(kind, LiteralKind::True | LiteralKind::False),
+        // A word this check does not model is not a word it refuses on.
+        _ => true,
+    }
 }

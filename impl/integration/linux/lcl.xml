@@ -23,6 +23,15 @@
     <comment xml:lang="en">Learned Computing Language document</comment>
     <sub-class-of type="text/plain"/>
     <glob pattern="*.lcl"/>
+    <!--
+      New documents are created as `*.lcl.txt`, so that a document can be
+      shared and edited anywhere plain text is. The two-part pattern is longer
+      than `*.txt`, and the specification resolves overlapping globs by the
+      longest match, so an `.lcl.txt` file is recognised as an LCL document
+      while every other `.txt` file stays exactly what it was. No pattern for
+      `*.txt` is declared here, and `text/plain` is not modified.
+    -->
+    <glob pattern="*.lcl.txt"/>
     <magic priority="50">
       <match type="string" value="LCL:" offset="0"/>
     </magic>

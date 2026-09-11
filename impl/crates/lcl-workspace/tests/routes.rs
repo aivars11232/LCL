@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::{get_json, send, serve_examples};
+use common::{get_json, send, send_binary, serve_examples};
 use lcl_spec::json::Json;
 
 fn text(value: &Json) -> &str {
@@ -244,5 +244,293 @@ fn the_frontend_declares_no_function_twice() {
         duplicated.is_empty(),
         "these functions are declared more than once, so only the last one \
          runs: {duplicated:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The product's own mark
+// ---------------------------------------------------------------------------
+//
+// B1. The header showed the letters `LCL` in a monospace font and the page
+// declared no favicon at all, so a browser asked for `/favicon.ico`, was
+// refused by the token gate, and the tab stayed blank.
+//
+// What these cases refuse to accept as evidence: a file existing on disk, a
+// route answering 200, or the HTML naming a path. An image is delivered when
+// the exact bytes arrive under a type a decoder will accept, so that is what
+// is compared.
+
+/// The committed derivative behind one served route.
+fn derived(name: &str) -> Vec<u8> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("assets/brand")
+        .join(name);
+    std::fs::read(&path).unwrap_or_else(|e| panic!("{} is not readable: {e}", path.display()))
+}
+
+/// Width, height and colour type from a PNG's own header.
+///
+/// Read from the bytes rather than from a library, because the question is
+/// whether *these* bytes are a decodable image. `IHDR` is fixed-position: an
+/// eight-byte signature, a four-byte length, the chunk type, then the
+/// dimensions as big-endian `u32`s, then bit depth and colour type.
+fn png_header(bytes: &[u8]) -> (u32, u32, u8) {
+    assert_eq!(
+        &bytes[..8],
+        b"\x89PNG\r\n\x1a\n",
+        "the reply does not begin with the PNG signature"
+    );
+    assert_eq!(&bytes[12..16], b"IHDR", "the first chunk must be IHDR");
+    let number =
+        |at: usize| u32::from_be_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]);
+    (number(16), number(20), bytes[25])
+}
+
+#[test]
+fn the_header_mark_is_served_as_the_exact_image_on_disk() {
+    let (_scratch, running) = serve_examples("brand-mark");
+    let reply = send_binary(
+        running.address,
+        &format!("/brand/lcl-mark.png?t={}", running.token),
+    );
+
+    assert_eq!(reply.status, 200);
+    assert_eq!(
+        reply.content_type, "image/png",
+        "an image needs an image content type, not a text one"
+    );
+    assert_eq!(
+        reply.body,
+        derived("lcl-mark.png"),
+        "the served bytes are not the committed derivative"
+    );
+
+    let (width, height, colour) = png_header(&reply.body);
+    assert_eq!((width, height), (97, 96));
+    // Colour type 6 is truecolour with alpha. The supplied artwork is
+    // transparent, and a derivative that had lost its alpha would still decode.
+    assert_eq!(colour, 6, "the mark must keep its alpha channel");
+}
+
+#[test]
+fn the_favicon_is_served_as_a_square_transparent_image() {
+    let (_scratch, running) = serve_examples("brand-icon");
+    let reply = send_binary(
+        running.address,
+        &format!("/brand/lcl-icon-32.png?t={}", running.token),
+    );
+
+    assert_eq!(reply.status, 200);
+    assert_eq!(reply.content_type, "image/png");
+    assert_eq!(reply.body, derived("lcl-icon-32.png"));
+    let (width, height, colour) = png_header(&reply.body);
+    assert_eq!((width, height), (32, 32));
+    assert_eq!(colour, 6);
+}
+
+#[test]
+fn the_page_references_both_images_with_the_token_the_gate_needs() {
+    let (_scratch, running) = serve_examples("brand-page");
+    let page = send(
+        running.address,
+        "GET",
+        &format!("/?t={}", running.token),
+        &[],
+        b"",
+    );
+    assert_eq!(page.status, 200);
+
+    // A reference without the token is a reference the browser cannot follow,
+    // which is exactly how the first attempt at this failed.
+    for reference in [
+        format!("/brand/lcl-icon-32.png?t={}", running.token),
+        format!("/brand/lcl-mark.png?t={}", running.token),
+    ] {
+        assert!(
+            page.body.contains(&reference),
+            "the page does not reference {reference}"
+        );
+    }
+    assert!(
+        page.body.contains("rel=\"icon\""),
+        "the page must declare a real favicon rather than leaving the browser \
+         to guess at /favicon.ico"
+    );
+    // The mark carries an accessible name, because it replaced readable text.
+    assert!(
+        page.body.contains("alt=\"LCL\""),
+        "the header image must keep the name the letters used to give it"
+    );
+}
+
+#[test]
+fn an_image_is_refused_without_the_token_like_everything_else() {
+    let (_scratch, running) = serve_examples("brand-gate");
+    for path in ["/brand/lcl-mark.png", "/brand/lcl-icon-32.png"] {
+        let reply = send(running.address, "GET", path, &[], b"");
+        assert_eq!(reply.status, 403, "{path} answered without a session token");
+    }
+    // And a guessed favicon path is not a hole in the route table.
+    let reply = send(
+        running.address,
+        "GET",
+        &format!("/favicon.ico?t={}", running.token),
+        &[],
+        b"",
+    );
+    assert_eq!(
+        reply.status, 404,
+        "no unauthenticated or undeclared favicon route exists"
+    );
+}
+
+#[test]
+fn an_image_is_refused_from_another_origin() {
+    let (_scratch, running) = serve_examples("brand-origin");
+    let reply = send(
+        running.address,
+        "GET",
+        &format!("/brand/lcl-mark.png?t={}", running.token),
+        &[("Origin", "http://evil.example")],
+        b"",
+    );
+    assert_eq!(
+        reply.status, 403,
+        "an image route must pass the same origin check as every other route"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Creating a document
+// ---------------------------------------------------------------------------
+
+/// POST one create request and return the parsed reply.
+fn create(running: &common::Running, id: &str, body: &str) -> common::Reply {
+    send(
+        running.address,
+        "POST",
+        &format!("/api/document?id={id}&t={}", running.token),
+        &[],
+        body.as_bytes(),
+    )
+}
+
+const SEED: &str = "LCL:\n    VERSION: \"0.1.0\"\n\nSPECIFICATION:\n    ID: example.new\n    \
+                    NAME: \"New document\"\n    VERSION: \"1.0.0\"\n    KIND: kind.task\n    \
+                    DOMAIN: \"general\"\n";
+
+#[test]
+fn a_new_document_defaults_to_the_text_ending_without_stacking_it() {
+    let (scratch, running) = serve_examples("create-default");
+    for (written, expected) in [
+        ("plain", "plain.lcl.txt"),
+        ("classic.lcl", "classic.lcl.txt"),
+        ("modern.lcl.txt", "modern.lcl.txt"),
+        ("nested/deep.lcl", "nested/deep.lcl.txt"),
+    ] {
+        let reply = create(&running, written, SEED);
+        assert_eq!(reply.status, 200, "{written}: {}", reply.body);
+        let parsed = lcl_spec::json::parse(&reply.body).expect("a reply is JSON");
+        assert_eq!(
+            text(parsed.get("id").unwrap()),
+            expected,
+            "{written} was created under the wrong name"
+        );
+        assert_eq!(text(parsed.get("requested").unwrap()), written);
+        assert!(
+            scratch.join(expected).is_file(),
+            "{expected} is not on disk"
+        );
+    }
+}
+
+#[test]
+fn creating_over_an_existing_document_is_refused_rather_than_overwriting_it() {
+    let (scratch, running) = serve_examples("create-conflict");
+    assert_eq!(create(&running, "once", SEED).status, 200);
+    let original = std::fs::read_to_string(scratch.join("once.lcl.txt")).expect("readable");
+
+    let again = create(&running, "once", "LCL:\n");
+    assert_eq!(again.status, 409, "{}", again.body);
+    assert_eq!(
+        std::fs::read_to_string(scratch.join("once.lcl.txt")).expect("readable"),
+        original,
+        "a refused creation must leave the document untouched"
+    );
+
+    // The same document, named the other way, is the same document.
+    let by_other_name = create(&running, "once.lcl", SEED);
+    assert_eq!(
+        by_other_name.status, 409,
+        "`once.lcl` defaults to `once.lcl.txt`, which already exists: {}",
+        by_other_name.body
+    );
+}
+
+#[test]
+fn saving_writes_the_exact_name_it_was_given() {
+    // `PUT` is not `POST`. Saving an open `.lcl` document must never apply the
+    // creation default, or every save would rename what it opened.
+    let (scratch, running) = serve_examples("save-exact");
+    let name = "01_MINIMAL_TASK.lcl";
+    let edited = common::example(name).replace("\"Double one integer\"", "\"Edited\"");
+    let reply = send(
+        running.address,
+        "PUT",
+        &format!("/api/document?id={name}&t={}", running.token),
+        &[],
+        edited.as_bytes(),
+    );
+    assert_eq!(reply.status, 200, "{}", reply.body);
+    let parsed = lcl_spec::json::parse(&reply.body).expect("a reply is JSON");
+    assert_eq!(text(parsed.get("id").unwrap()), name);
+    assert!(scratch.join(name).is_file());
+    assert!(
+        !scratch.join("01_MINIMAL_TASK.lcl.txt").exists(),
+        "a save created a second document under the default name"
+    );
+}
+
+#[test]
+fn a_created_document_is_checked_and_run_like_any_other() {
+    // The ending is not a way past the engine. A `.lcl.txt` document goes
+    // through the same route, the same engine and the same contracts.
+    let (_scratch, running) = serve_examples("create-check");
+    let created = create(&running, "fresh", SEED);
+    assert_eq!(created.status, 200);
+
+    let checked = send(
+        running.address,
+        "POST",
+        &format!("/api/check?id=fresh.lcl.txt&t={}", running.token),
+        &[],
+        SEED.as_bytes(),
+    );
+    assert_eq!(checked.status, 200, "{}", checked.body);
+    let report = lcl_spec::json::parse(&checked.body).expect("a report");
+    assert!(
+        report.get("reached").is_some(),
+        "a created document must produce an engine report: {}",
+        checked.body
+    );
+
+    // And an invalid one under the same ending is still refused.
+    let invalid = send(
+        running.address,
+        "POST",
+        &format!("/api/check?id=fresh.lcl.txt&t={}", running.token),
+        &[],
+        b"LCL:\n    VERSION: \"0.1.0\"\n\nNOT_A_BLOCK:\n    ID: x\n",
+    );
+    assert_eq!(invalid.status, 200, "{}", invalid.body);
+    let report = lcl_spec::json::parse(&invalid.body).expect("a report");
+    let diagnostics = report
+        .get("diagnostics")
+        .and_then(lcl_spec::json::Json::as_array)
+        .expect("diagnostics");
+    assert!(
+        !diagnostics.is_empty(),
+        "ending a name in .txt must not relax validation: {}",
+        invalid.body
     );
 }

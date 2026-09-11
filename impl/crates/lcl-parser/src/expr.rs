@@ -277,7 +277,7 @@ impl<'a> ExprParser<'a, '_> {
                     match operator {
                         Some((op, span)) => {
                             let prec = precedence(op);
-                            Self::reduce(frame, prec);
+                            reduce(frame, prec);
                             if prec == COMPARE_PRECEDENCE {
                                 frame.compare = Some(span);
                             } else if prec < COMPARE_PRECEDENCE {
@@ -289,7 +289,7 @@ impl<'a> ExprParser<'a, '_> {
                         }
                         None => {
                             let mut frame = stack.pop()?;
-                            Self::reduce(&mut frame, 0);
+                            reduce(&mut frame, 0);
                             let value = frame.operands.pop()?;
                             match self.close(c, frame.cont, value)? {
                                 Closed::Done(expr) => return Some(expr),
@@ -353,22 +353,6 @@ impl<'a> ExprParser<'a, '_> {
             });
         }
         node
-    }
-
-    /// Reduce pending operators at or above `min_prec`, left-associatively.
-    fn reduce(frame: &mut Frame, min_prec: u8) {
-        while let Some(&(_, _, prec)) = frame.operators.last() {
-            if prec < min_prec {
-                break;
-            }
-            let Some((op, span, _)) = frame.operators.pop() else {
-                return;
-            };
-            let (Some(right), Some(left)) = (frame.operands.pop(), frame.operands.pop()) else {
-                return;
-            };
-            frame.operands.push(Self::binary(left, op, span, right));
-        }
     }
 
     /// The next binary operator, or `None` when the expression ends here.
@@ -815,16 +799,6 @@ impl<'a> ExprParser<'a, '_> {
 
     // -- helpers ----------------------------------------------------------
 
-    fn binary(left: Expr, op: BinaryOp, operator_span: Span, right: Expr) -> Expr {
-        Expr::Binary(Binary {
-            operator: op,
-            operator_span,
-            span: Span::new(left.span().start, right.span().end),
-            left: Box::new(left),
-            right: Box::new(right),
-        })
-    }
-
     pub(crate) fn at_symbol(&self, c: &Cursor<'a>, symbol: &str) -> bool {
         c.peek()
             .is_some_and(|t| t.kind == TokenKind::Symbol && self.text(t.span) == symbol)
@@ -919,4 +893,43 @@ impl<'a> ExprParser<'a, '_> {
         c.bump();
         Some(found)
     }
+}
+
+// ---------------------------------------------------------------------------
+// Operator reduction
+// ---------------------------------------------------------------------------
+//
+// Free functions rather than associated ones. Neither takes `self`, and neither
+// mentions the parser's source lifetime, but while they sat inside
+// `impl<'a> ExprParser<'a, '_>` a `Self::` call bound them to it anyway: on the
+// declared minimum toolchain that made the shunting-yard reduction require
+// `'a` to outlive the borrow of its own frame, and `lcl-parser` did not
+// compile. Lifting them out states what was already true, and builds on every
+// version from the declared minimum upward.
+
+/// Reduce pending operators at or above `min_prec`, left-associatively.
+fn reduce(frame: &mut Frame, min_prec: u8) {
+    while let Some(&(_, _, prec)) = frame.operators.last() {
+        if prec < min_prec {
+            break;
+        }
+        let Some((op, span, _)) = frame.operators.pop() else {
+            return;
+        };
+        let (Some(right), Some(left)) = (frame.operands.pop(), frame.operands.pop()) else {
+            return;
+        };
+        frame.operands.push(binary(left, op, span, right));
+    }
+}
+
+/// One binary node, spanning from its left operand through its right.
+fn binary(left: Expr, op: BinaryOp, operator_span: Span, right: Expr) -> Expr {
+    Expr::Binary(Binary {
+        operator: op,
+        operator_span,
+        span: Span::new(left.span().start, right.span().end),
+        left: Box::new(left),
+        right: Box::new(right),
+    })
 }

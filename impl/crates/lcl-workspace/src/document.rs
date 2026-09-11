@@ -1,4 +1,8 @@
-//! Reading and writing one `.lcl` document, byte for byte.
+//! Reading and writing one LCL document, byte for byte.
+//!
+//! Nothing here looks at what the document is called. A document is its bytes,
+//! and `.lcl` and `.lcl.txt` are read and written identically; a save writes
+//! the name it was given and never renames what it opened.
 //!
 //! ## Why saving is fussy
 //!

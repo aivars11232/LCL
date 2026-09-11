@@ -277,6 +277,20 @@ impl Response {
         }
     }
 
+    /// One image, as bytes.
+    ///
+    /// The body was already `Vec<u8>`, so this adds a content type and nothing
+    /// else. That matters: a PNG pushed through `&str` would have to be valid
+    /// UTF-8, which no PNG is, and the lossy conversion that makes it compile
+    /// is the one that corrupts every byte a decoder needs.
+    pub fn png(body: &'static [u8]) -> Response {
+        Response {
+            status: 200,
+            content_type: "image/png",
+            body: body.to_vec(),
+        }
+    }
+
     /// A refusal, as JSON so the frontend reads every reply the same way.
     ///
     /// The detail is the server's own words about the request. It never carries

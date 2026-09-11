@@ -1093,21 +1093,37 @@ impl Unit {
 /// A wrong key, a wrong type, or a unit that does not index this
 /// representation.
 ///
-/// The row says these "use error.operation.parameter", whose registered stage
-/// is `static_or_expression`, and which `expression_demand_resolution` does not
-/// make eligible for demand resolution: its `exclusion_rule` puts every
-/// "source structure, token, name resolution, type-family, signature arity,
-/// receiving-type" defect outside the map. A runtime that emitted it would be
-/// relabelling a stage, which is what `earliest_stage_rule` forbids, so this
-/// selects `error.operation.precondition` — an identifier `core.read`'s own
-/// `errors` list admits, at this stage. The same reasoning is written out at
-/// `crate::fragment::FragmentFault::error`.
+/// The row says these "use error.operation.parameter", and that is now what is
+/// emitted.
 ///
-/// A range written as a literal OBJECT is statically knowable and belongs to
-/// M4; this arm is what remains when the range arrives at demand.
+/// ## What changed, and why the earlier reasoning was wrong
+///
+/// This previously selected `error.operation.precondition`, on the grounds that
+/// `error.operation.parameter` is registered `static_or_expression` and
+/// `expression_demand_resolution` does not make it eligible, so emitting it
+/// here would relabel a stage.
+///
+/// The second half of that does not follow. The demand map moves an eligible
+/// identifier's *stage*; it is not the only permission to *name* one. The
+/// `exclusion_rule` settles it in the other direction: "Discovery time alone
+/// never changes classification." An identifier discovered late keeps the
+/// classification the registry gives it, and substituting a different
+/// identifier is the one thing that really does change it. So this emits the
+/// row's own identifier, and `lcl-runtime` carries its registered stage
+/// `static_or_expression` and status `status.invalid` through unaltered.
+///
+/// ## What still reaches this arm
+///
+/// Less than used to. A range written as a literal OBJECT is knowable at M4,
+/// and `lcl_checker`'s closed-object parameter check now decides a wrong key, a
+/// wrong written type and an unregistered unit word there, at the stage
+/// `earliest_stage_rule` assigns them to. What is left is what only execution
+/// can see: a unit that does not index the representation the target actually
+/// held, and a range that arrived through something no earlier stage read as a
+/// literal.
 fn wrong_parameter(detail: impl Into<String>) -> CapabilityOutcome {
     CapabilityOutcome::Refused {
-        error: lcl_runtime::RuntimeError::OperationPrecondition,
+        error: lcl_runtime::RuntimeError::OperationParameter,
         cause: "range".to_string(),
         detail: detail.into(),
     }

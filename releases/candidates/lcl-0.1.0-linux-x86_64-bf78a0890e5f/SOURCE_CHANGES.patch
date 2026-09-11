@@ -1,0 +1,3171 @@
+diff --git a/impl/crates/lcl-checker/src/declarations.rs b/impl/crates/lcl-checker/src/declarations.rs
+index 2233381..9b68e64 100644
+--- a/impl/crates/lcl-checker/src/declarations.rs
++++ b/impl/crates/lcl-checker/src/declarations.rs
+@@ -689,7 +689,10 @@ fn constrain(
+ /// wrapped in a block. A nested body is a block's body without being a block,
+ /// and copying one into a synthetic `Block` to reuse that method costs a deep
+ /// copy of the whole subtree at every level.
+-fn field_in<'a>(statements: &'a [Statement], name: &str) -> Option<&'a lcl_parser::syntax::Field> {
++pub(crate) fn field_in<'a>(
++    statements: &'a [Statement],
++    name: &str,
++) -> Option<&'a lcl_parser::syntax::Field> {
+     statements.iter().find_map(|statement| match statement {
+         Statement::Field(field) if field.key.text == name => Some(field),
+         _ => None,
+diff --git a/impl/crates/lcl-checker/src/operation.rs b/impl/crates/lcl-checker/src/operation.rs
+index b35bbc2..bed1348 100644
+--- a/impl/crates/lcl-checker/src/operation.rs
++++ b/impl/crates/lcl-checker/src/operation.rs
+@@ -27,6 +27,7 @@
+ //! target type, not from a list of operation names.
+ 
+ use crate::contracts::{ContractType, OperationContract};
++use crate::declarations::field_in;
+ use crate::expr::Check;
+ use crate::StaticError;
+ use lcl_parser::syntax::{Block, Statement, Value};
+@@ -129,6 +130,7 @@ fn parameters(
+         if let Some(spec) = contract.parameters.get(&name) {
+             fragment_parameter(check, source, contract, spec, &nested.statements);
+             declared_family(check, source, contract, spec, &name, &nested.statements);
++            closed_object_parameter(check, source, contract, spec, &name, &nested.statements);
+         }
+         // "supplies an unregistered named parameter"
+         if !contract.parameters.contains_key(&name) {
+@@ -419,3 +421,183 @@ fn declared_scalar(statements: &[Statement]) -> Option<(String, lcl_lexer::Span)
+     }
+     None
+ }
++
++// ---------------------------------------------------------------------------
++// A parameter whose registered constraint closes its object shape
++// ---------------------------------------------------------------------------
++
++/// The closed shape one parameter's registered constraints declare.
++///
++/// Read from the row, not written here. `core.read`'s `range` is the only row
++/// that currently carries such a constraint; a row that gained one would be
++/// covered without a code change, and one that lost it would stop being
++/// checked for the same reason.
++struct ClosedShape {
++    /// Admitted keys with the type word each is declared as, in source order.
++    fields: Vec<(String, String)>,
++    /// The closed set of words the `unit` key admits.
++    units: Vec<String>,
++}
++
++/// The marker phrase that says a parameter's object shape is closed.
++const CLOSED_KEYS: &str = "No other keys or defaults are admitted";
++
++fn closed_shape(spec: &crate::contracts::ParameterSpec) -> Option<ClosedShape> {
++    let constraint = spec.constraints.iter().find(|c| c.contains(CLOSED_KEYS))?;
++
++    // "... is an OBJECT with exactly unit: STRING, start: INTEGER, and end:
++    // INTEGER. No other keys or defaults are admitted."
++    let listed = constraint
++        .split("with exactly ")
++        .nth(1)?
++        .split(". ")
++        .next()?;
++    let mut fields = Vec::new();
++    for piece in listed.split(',') {
++        let piece = piece.trim().trim_start_matches("and ").trim();
++        let (key, word) = piece.split_once(':')?;
++        fields.push((key.trim().to_string(), word.trim().to_string()));
++    }
++    if fields.is_empty() {
++        return None;
++    }
++
++    // "unit is exactly scalar, line, item, or byte."
++    let units = match constraint.split(" is exactly ").nth(1) {
++        Some(rest) => rest
++            .split('.')
++            .next()
++            .unwrap_or_default()
++            .split(',')
++            .map(|word| word.trim().trim_start_matches("or ").trim().to_string())
++            .filter(|word| !word.is_empty())
++            .collect(),
++        None => Vec::new(),
++    };
++    Some(ClosedShape { fields, units })
++}
++
++/// One written object literal, against the closed shape its row declares.
++///
++/// ## Why this belongs here rather than at demand
++///
++/// The row names `error.operation.parameter` for "an incompatible
++/// unit/representation or wrong key/type", and that identifier is registered at
++/// the `static_or_expression` stage. `expression_demand_resolution` does not
++/// make it eligible, and its `exclusion_rule` puts every "source structure,
++/// token, name resolution, type-family" defect outside the map, so a wrong key
++/// or a wrong value type never becomes an execution-stage failure.
++///
++/// A range written as a literal OBJECT is knowable exactly here, which is where
++/// `earliest_stage_rule` requires it to be decided. Before this check the
++/// runtime met these cases at demand and substituted another identifier from
++/// the row, which `LCL_RELEASE_REPORT.md` recorded as a known limitation.
++///
++/// ## Deliberately narrow
++///
++/// Only a written literal is judged. A property whose value is a reference, an
++/// expression or anything else this stage does not evaluate is left alone, and
++/// so is a `VALUE` that is not an indented object at all. Nothing uncertain is
++/// refused here.
++fn closed_object_parameter(
++    check: &mut Check<'_>,
++    source: &SourceId,
++    contract: &OperationContract,
++    spec: &crate::contracts::ParameterSpec,
++    name: &str,
++    statements: &[Statement],
++) {
++    let Some(shape) = closed_shape(spec) else {
++        return;
++    };
++    let Some(value) = field_in(statements, "VALUE") else {
++        return;
++    };
++    let Some(nested) = value.body.as_nested() else {
++        return;
++    };
++
++    let mut written: Vec<(&str, &lcl_parser::syntax::Property)> = Vec::new();
++    for statement in &nested.statements {
++        if let Statement::Property(property) = statement {
++            written.push((property.key.text.as_str(), property));
++        }
++    }
++
++    // "No other keys or defaults are admitted": the written set must be the
++    // registered set, neither short nor long.
++    let admitted: Vec<&str> = shape.fields.iter().map(|(key, _)| key.as_str()).collect();
++    let mut present: Vec<&str> = written.iter().map(|(key, _)| *key).collect();
++    present.sort_unstable();
++    present.dedup();
++    let mut expected: Vec<&str> = admitted.clone();
++    expected.sort_unstable();
++    if present != expected {
++        check.emit(
++            StaticError::OperationParameter,
++            source,
++            nested.span,
++            "closed_object_keys",
++            format!(
++                "`{}` admits exactly {} in the named parameter `{name}`; this one holds {}",
++                contract.id,
++                admitted.join(", "),
++                match present.is_empty() {
++                    true => "no key".to_string(),
++                    false => present.join(", "),
++                }
++            ),
++        );
++        return;
++    }
++
++    for (key, declared) in &shape.fields {
++        let Some((_, property)) = written.iter().find(|(written, _)| written == key) else {
++            continue;
++        };
++        let Some(Value::Expression(lcl_parser::syntax::Expr::Literal(literal))) =
++            property.body.as_inline()
++        else {
++            // Not a written literal, so not knowable at this stage.
++            continue;
++        };
++        if !literal_is(literal.kind, declared) {
++            check.emit(
++                StaticError::OperationParameter,
++                source,
++                literal.span,
++                "closed_object_type",
++                format!("`{}` types `{name}.{key}` as {declared}", contract.id),
++            );
++            continue;
++        }
++        // A closed word list applies to the key the constraint names.
++        if key == "unit" && !shape.units.is_empty() && !shape.units.contains(&literal.text) {
++            check.emit(
++                StaticError::OperationParameter,
++                source,
++                literal.span,
++                "closed_object_word",
++                format!(
++                    "`{}` admits exactly {} as `{name}.{key}`; found {:?}",
++                    contract.id,
++                    shape.units.join(", "),
++                    literal.text
++                ),
++            );
++        }
++    }
++}
++
++/// Whether one written literal satisfies a registered scalar type word.
++fn literal_is(kind: lcl_parser::syntax::LiteralKind, declared: &str) -> bool {
++    use lcl_parser::syntax::LiteralKind;
++    match declared {
++        "STRING" => matches!(kind, LiteralKind::String | LiteralKind::MultilineString),
++        "INTEGER" => matches!(kind, LiteralKind::Integer),
++        "DECIMAL" => matches!(kind, LiteralKind::Integer | LiteralKind::Decimal),
++        "BOOLEAN" => matches!(kind, LiteralKind::True | LiteralKind::False),
++        // A word this check does not model is not a word it refuses on.
++        _ => true,
++    }
++}
+diff --git a/impl/crates/lcl-checker/tests/constructors_and_operations.rs b/impl/crates/lcl-checker/tests/constructors_and_operations.rs
+index 00c1e5a..93cb402 100644
+--- a/impl/crates/lcl-checker/tests/constructors_and_operations.rs
++++ b/impl/crates/lcl-checker/tests/constructors_and_operations.rs
+@@ -336,3 +336,142 @@ fn every_core_operation_contract_is_applied_from_the_registry() {
+         );
+     }
+ }
++
++// ---------------------------------------------------------------------------
++// A parameter whose registered constraint closes its object shape
++// ---------------------------------------------------------------------------
++//
++// Regression, post-Task-20 finding F13. `core.read`'s `range` row says "An
++// incompatible unit/representation or wrong key/type uses
++// error.operation.parameter", and that identifier is registered at
++// `static_or_expression`. A range written as a literal OBJECT is knowable
++// there. It was not checked there, so it reached demand, where the runtime
++// could not name the identifier the row names and substituted
++// `error.operation.precondition` instead.
++
++/// One `core.read` whose `range` parameter holds the given properties.
++fn ranged_read(properties: &str) -> String {
++    format!(
++        concat!(
++            "LCL:\n    VERSION: \"0.1.0\"\n\n",
++            "SPECIFICATION:\n    ID: spec.range\n    NAME: \"Range\"\n",
++            "    VERSION: \"1.0.0\"\n    KIND: kind.task\n    DOMAIN: \"general\"\n\n",
++            "INPUT:\n    ID: input.target\n    TYPE: PATH\n    VALUE: PATH(\"/srv/a.txt\")\n\n",
++            "OUTPUT:\n    ID: output.value\n    TYPE: STRING\n    FORMAT: format.json\n\n",
++            "GOAL:\n    ID: goal.one\n    ASSERT: TRUE\n\n",
++            "ACTION:\n    ID: action.read\n    OPERATION: core.read\n",
++            "    TARGET: REF(input.target)\n",
++            "    PARAMETER:\n        NAME: range\n        TYPE: OBJECT\n",
++            "        REQUIRED: FALSE\n        VALUE:\n{}",
++            "    OUTPUT: REF(output.value)\n\n",
++            "VERIFY:\n    ID: verify.one\n    ASSERT: TRUE\n\n",
++            "SUCCESS:\n    ID: success.one\n    ALL: [REF(verify.one)]\n\n",
++            "TASK:\n    ID: task.one\n    GOAL: REF(goal.one)\n    INPUT: REF(input.target)\n",
++            "    ACTION: REF(action.read)\n    OUTPUT: REF(output.value)\n",
++            "    SUCCESS: REF(success.one)\n\n",
++            "EXECUTE:\n    REFERENCE: REF(task.one)\n"
++        ),
++        properties
++    )
++}
++
++const WELL_FORMED_RANGE: &str =
++    "            unit: \"scalar\"\n            start: 1\n            end: 3\n";
++
++#[test]
++fn a_well_formed_range_is_accepted_at_the_static_stage() {
++    // The control. Without it the three cases below would pass just as well
++    // against a check that refused every range.
++    assert_eq!(
++        check(&ranged_read(WELL_FORMED_RANGE)).outcome(),
++        Outcome::Checked
++    );
++    // Every admitted unit word, so the closed list is read rather than guessed.
++    for unit in ["scalar", "line", "item", "byte"] {
++        let source = ranged_read(&format!(
++            "            unit: {unit:?}\n            start: 0\n            end: 1\n"
++        ));
++        assert_eq!(
++            check(&source).outcome(),
++            Outcome::Checked,
++            "{unit} is a registered unit"
++        );
++    }
++}
++
++#[test]
++fn a_wrong_key_in_a_closed_range_is_an_operation_parameter_defect() {
++    // "No other keys or defaults are admitted."
++    for properties in [
++        // A key the row does not register.
++        "            unit: \"scalar\"\n            start: 1\n            end: 3\n            step: 1\n",
++        // A key misspelled, so one registered key is also missing.
++        "            unit: \"scalar\"\n            start: 1\n            stop: 3\n",
++        // A registered key omitted.
++        "            unit: \"scalar\"\n            start: 1\n",
++    ] {
++        let checked = check(&ranged_read(properties));
++        assert_eq!(
++            ids(&checked),
++            vec!["error.operation.parameter"],
++            "properties: {properties}"
++        );
++        assert_eq!(
++            checked.diagnostics()[0].stage().to_string(),
++            "static_or_expression",
++            "the row's identifier keeps its registered stage"
++        );
++    }
++}
++
++#[test]
++fn a_wrong_type_in_a_closed_range_is_an_operation_parameter_defect() {
++    // "unit: STRING, start: INTEGER, and end: INTEGER."
++    for properties in [
++        "            unit: 1\n            start: 1\n            end: 3\n",
++        "            unit: \"scalar\"\n            start: \"1\"\n            end: 3\n",
++        "            unit: \"scalar\"\n            start: 1\n            end: TRUE\n",
++    ] {
++        let checked = check(&ranged_read(properties));
++        assert!(
++            ids(&checked).contains(&"error.operation.parameter".to_string()),
++            "properties {properties} gave {:?}",
++            ids(&checked)
++        );
++    }
++}
++
++#[test]
++fn a_unit_outside_the_closed_list_is_an_operation_parameter_defect() {
++    // "unit is exactly scalar, line, item, or byte."
++    for unit in ["character", "SCALAR", "lines", ""] {
++        let source = ranged_read(&format!(
++            "            unit: {unit:?}\n            start: 0\n            end: 1\n"
++        ));
++        let checked = check(&source);
++        assert_eq!(
++            ids(&checked),
++            vec!["error.operation.parameter"],
++            "unit {unit:?} is not registered"
++        );
++        assert_eq!(
++            checked.diagnostics()[0].stage().to_string(),
++            "static_or_expression"
++        );
++    }
++}
++
++#[test]
++fn a_range_this_stage_cannot_read_is_left_to_a_later_one() {
++    // Deliberately narrow: a value that is not a written literal is not
++    // refused here, because this stage does not evaluate one.
++    let source = ranged_read(
++        "            unit: \"scalar\"\n            start: REF(input.target)\n            end: 3\n",
++    );
++    let checked = check(&source);
++    assert!(
++        !ids(&checked).contains(&"error.operation.parameter".to_string()),
++        "a reference is not a wrong key or a wrong written type: {:?}",
++        ids(&checked)
++    );
++}
+diff --git a/impl/crates/lcl-checker/tests/robustness.rs b/impl/crates/lcl-checker/tests/robustness.rs
+index 7c54433..a4033f8 100644
+--- a/impl/crates/lcl-checker/tests/robustness.rs
++++ b/impl/crates/lcl-checker/tests/robustness.rs
+@@ -70,7 +70,7 @@ fn every_truncation_of_every_valid_example_is_total() {
+     let mut reached = 0usize;
+     for entry in fs::read_dir(root).expect("examples") {
+         let path = entry.expect("entry").path();
+-        if path.extension().is_none_or(|ext| ext != "lcl") {
++        if !path.extension().is_some_and(|ext| ext == "lcl") {
+             continue;
+         }
+         let bytes = fs::read(&path).expect("readable");
+diff --git a/impl/crates/lcl-checker/tests/static_matrix.rs b/impl/crates/lcl-checker/tests/static_matrix.rs
+index 9ed3074..189d1e3 100644
+--- a/impl/crates/lcl-checker/tests/static_matrix.rs
++++ b/impl/crates/lcl-checker/tests/static_matrix.rs
+@@ -224,7 +224,7 @@ fn every_source_fixture_is_total() {
+     let mut total = 0usize;
+     for entry in fs::read_dir(root).expect("fixtures") {
+         let path = entry.expect("entry").path();
+-        if path.extension().is_none_or(|ext| ext != "lcl") {
++        if !path.extension().is_some_and(|ext| ext == "lcl") {
+             continue;
+         }
+         total += 1;
+diff --git a/impl/crates/lcl-cli/src/syntax.rs b/impl/crates/lcl-cli/src/syntax.rs
+index b9094cd..91b2f61 100644
+--- a/impl/crates/lcl-cli/src/syntax.rs
++++ b/impl/crates/lcl-cli/src/syntax.rs
+@@ -33,8 +33,22 @@ use lcl_protocol::json::{Node, Object};
+ pub const MEDIA_TYPE: &str = "text/x-lcl";
+ 
+ /// The file extension this product associates with LCL documents.
++///
++/// Unchanged, and still reported under its own key, so an editor reading this
++/// metadata keeps working. `EXTENSIONS` is the complete list.
+ pub const EXTENSION: &str = "lcl";
+ 
++/// Every file ending this product recognises, most specific first.
++///
++/// `.lcl.txt` is the ending a newly created document is given, so that a
++/// document can be shared and edited anywhere plain text is. It is recognised
++/// in addition to `.lcl`, never instead of it, and it changes no language rule:
++/// both are read, checked and run by the same engine under the same contracts.
++///
++/// A file that merely ends in `.txt` is not an LCL document. Only the exact
++/// two-part ending is recognised.
++pub const EXTENSIONS: [&str; 2] = [lcl_project::TEXT_SUFFIX, ".lcl"];
++
+ /// Everything an editor needs to colour a document, as data.
+ pub struct Metadata {
+     pub formal_version: String,
+@@ -76,6 +90,10 @@ impl Metadata {
+             .with("language_version", Node::string(&self.formal_version))
+             .with("media_type", Node::string(MEDIA_TYPE))
+             .with("extension", Node::string(EXTENSION))
++            .with(
++                "extensions",
++                Node::array(EXTENSIONS.iter().map(|e| Node::string(*e))),
++            )
+             .with(
+                 "source",
+                 Object::new()
+@@ -111,6 +129,7 @@ impl Metadata {
+         out.push_str(&format!("LCL {} syntax metadata\n", self.formal_version));
+         out.push_str(&format!("  media type        {MEDIA_TYPE}\n"));
+         out.push_str(&format!("  extension         .{EXTENSION}\n"));
++        out.push_str(&format!("  recognised        {}\n", EXTENSIONS.join(", ")));
+         out.push_str("  encoding          UTF-8, no BOM, LF only, final LF required\n");
+         out.push_str("  indentation       four spaces, no tabs, no trailing space\n");
+         out.push_str(&format!(
+diff --git a/impl/crates/lcl-cli/tests/lcl_integration.rs b/impl/crates/lcl-cli/tests/lcl_integration.rs
+index 0c615e5..a373ca7 100644
+--- a/impl/crates/lcl-cli/tests/lcl_integration.rs
++++ b/impl/crates/lcl-cli/tests/lcl_integration.rs
+@@ -49,6 +49,89 @@ fn the_shipped_mime_package_matches_what_the_tool_reports() {
+         xml.contains(&format!("pattern=\"*.{extension}\"")),
+         "the MIME package globs the extension the tool reports"
+     );
++
++    // Every ending the tool recognises is globbed, not only the first.
++    let extensions: Vec<&str> = value
++        .get("extensions")
++        .and_then(Json::as_array)
++        .expect("the reported endings")
++        .iter()
++        .filter_map(Json::as_str)
++        .collect();
++    assert!(
++        extensions.contains(&".lcl") && extensions.contains(&".lcl.txt"),
++        "both recognised endings must be reported: {extensions:?}"
++    );
++    for ending in &extensions {
++        let pattern = format!("pattern=\"*{ending}\"");
++        assert!(
++            xml.contains(&pattern),
++            "the MIME package does not glob {ending}"
++        );
++    }
++
++    // And nothing claims plain text. A glob for `*.txt` would make every text
++    // file on the machine an LCL document.
++    assert!(
++        !xml.contains("pattern=\"*.txt\""),
++        "the MIME package must not claim every .txt file"
++    );
++    assert!(
++        !xml.contains("<mime-type type=\"text/plain\""),
++        "the MIME package must not redefine text/plain"
++    );
++}
++
++/// A `.lcl.txt` document is the same document under a different name.
++///
++/// The follow-up to post-Task-20: new documents default to `.lcl.txt` so they
++/// travel as plain text. The name must change nothing about the verdict, and
++/// ending in `.txt` must never relax validation.
++#[test]
++fn the_text_ending_neither_changes_a_verdict_nor_relaxes_validation() {
++    let valid = example("01_MINIMAL_TASK.lcl");
++    let mut records = Vec::new();
++    for name in ["main.lcl", "main.lcl.txt"] {
++        let root = scratch(&format!("integration_text_{}", name.replace('.', "_")));
++        write(root.join(name), &valid);
++        write(
++            root.join("lcl.project.json"),
++            format!(
++                "{{\n  \"format\": \"lcl.project/1\",\n  \"spec\": {:?}\n}}\n",
++                canonical_root().display().to_string()
++            ),
++        );
++        let run = lcl_in(&root, &["run", "--machine", name], &[]);
++        assert_eq!(run.code, 0, "{name}: {}{}", run.stdout, run.stderr);
++        records.push(run.stdout.replace(name, "<document>"));
++    }
++    assert_eq!(
++        records[0], records[1],
++        "a .lcl.txt document must produce the same record as a .lcl one"
++    );
++
++    // Invalid source is refused identically. A `.txt` ending is not a way to
++    // get a malformed document past the checker.
++    let invalid = "LCL:\n    VERSION: \"0.1.0\"\n\nNOT_A_BLOCK:\n    ID: x\n";
++    let mut refusals = Vec::new();
++    for name in ["bad.lcl", "bad.lcl.txt"] {
++        let root = scratch(&format!("integration_bad_{}", name.replace('.', "_")));
++        write(root.join(name), invalid);
++        write(
++            root.join("lcl.project.json"),
++            format!(
++                "{{\n  \"format\": \"lcl.project/1\",\n  \"spec\": {:?}\n}}\n",
++                canonical_root().display().to_string()
++            ),
++        );
++        let run = lcl_in(&root, &["check", "--machine", name], &[]);
++        assert_ne!(run.code, 0, "{name} was not refused: {}", run.stdout);
++        refusals.push(run.stdout.replace(name, "<document>"));
++    }
++    assert_eq!(
++        refusals[0], refusals[1],
++        "an invalid document must be refused identically under either ending"
++    );
+ }
+ 
+ /// The magic rule matches what a conforming document actually begins with.
+diff --git a/impl/crates/lcl-conformance/examples/m8_conformance_report.rs b/impl/crates/lcl-conformance/examples/m8_conformance_report.rs
+index 22fa110..4164142 100644
+--- a/impl/crates/lcl-conformance/examples/m8_conformance_report.rs
++++ b/impl/crates/lcl-conformance/examples/m8_conformance_report.rs
+@@ -14,6 +14,7 @@
+ use lcl_conformance::report::Implementation;
+ use lcl_conformance::{ConformanceIndex, ConformanceReport, Runner};
+ use lcl_spec::SpecPackage;
++use lcl_stdlib::{HostAdapter, MemoryFileSystem};
+ use std::path::{Path, PathBuf};
+ 
+ #[path = "../tests/witness_cases/mod.rs"]
+@@ -28,6 +29,21 @@ fn canonical_root() -> PathBuf {
+         .expect("the canonical package must be present")
+ }
+ 
++/// The in-memory filesystem a filesystem-shaped witness runs against.
++///
++/// The same fixture `tests/decision_witnesses.rs` installs, so this report and
++/// that gate execute the same probes against the same declared content rather
++/// than two populations a reader has to reconcile.
++fn filesystem_host() -> HostAdapter {
++    let fs = MemoryFileSystem::new()
++        .with_read_scope("/case")
++        .with_scope("/case")
++        .with_file("/case/a.txt", *b"abcd")
++        .with_file("/case/lines.txt", *b"a\nb");
++    let grants = fs.grants().clone();
++    HostAdapter::new(grants).with_filesystem(fs)
++}
++
+ fn main() {
+     let spec = SpecPackage::open(canonical_root()).expect("the approved package opens");
+     let index = ConformanceIndex::load(&spec).expect("the catalogs load");
+@@ -39,7 +55,7 @@ fn main() {
+             spec.formal_version().to_string(),
+         ),
+         index.requirement_count(),
+-        index.witness_count(),
++        index.witnesses().iter().map(|w| w.id.clone()),
+     );
+ 
+     for case in witness_cases::cases() {
+@@ -57,21 +73,29 @@ fn main() {
+                     } else {
+                         format!("{}/{}", case.id, probe.label)
+                     };
+-                    // The example runs the host-free probes only; the
+-                    // filesystem-backed ones need the test fixture host, and the
+-                    // gate in `tests/decision_witnesses.rs` runs those.
+-                    if probe.needs_filesystem {
+-                        report.record_descriptive(
+-                            format!("{id} (needs the filesystem fixture)"),
+-                            "executed by the semantic_case_execution gate, which installs the \
+-                             in-memory filesystem this probe reads",
+-                        );
+-                        continue;
+-                    }
+-                    report.record(
+-                        runner.execute(&id, &contract, &probe.source, probe.expectation.clone()),
+-                        case.coverage,
+-                    );
++                    // Every probe runs here, including the filesystem-backed
++                    // ones. They used to be recorded as descriptive entries
++                    // with a note saying the gate ran them elsewhere, which was
++                    // true and misleading at once: a reader comparing the
++                    // executed count against the sixty-six indexed witnesses
++                    // saw five behaviours apparently unexhibited, and the
++                    // descriptive column counted probes rather than witnesses.
++                    // The fixture is deterministic and contract-faithful, so
++                    // there is no reason for this report to be the one place
++                    // that cannot use it.
++                    let executed = if probe.needs_filesystem {
++                        let mut host = filesystem_host();
++                        runner.execute_on(
++                            &id,
++                            &contract,
++                            &probe.source,
++                            probe.expectation.clone(),
++                            &mut host,
++                        )
++                    } else {
++                        runner.execute(&id, &contract, &probe.source, probe.expectation.clone())
++                    };
++                    report.record(executed, case.coverage);
+                 }
+             }
+             Plan::Descriptive { reason } => report.record_descriptive(case.id, *reason),
+diff --git a/impl/crates/lcl-conformance/src/report.rs b/impl/crates/lcl-conformance/src/report.rs
+index f025fbd..7ed308e 100644
+--- a/impl/crates/lcl-conformance/src/report.rs
++++ b/impl/crates/lcl-conformance/src/report.rs
+@@ -197,8 +197,12 @@ pub struct ConformanceReport {
+     implementation: Implementation,
+     /// The 799-entry requirements index size. Descriptive, never executed.
+     indexed_requirements: usize,
+-    /// The 66-entry witness catalog size.
+-    indexed_witnesses: usize,
++    /// Every decision witness the canonical catalog indexes, by identifier.
++    ///
++    /// The identifiers rather than a count, because completeness is a question
++    /// about *which* ones ran. A report holding a count could say that sixty
++    /// cases passed while saying nothing about the six that never ran.
++    indexed_witnesses: BTreeSet<String>,
+     covered: Vec<CoveredCase>,
+     descriptive_only: Vec<Descriptive>,
+ }
+@@ -207,12 +211,12 @@ impl ConformanceReport {
+     pub fn new(
+         implementation: Implementation,
+         indexed_requirements: usize,
+-        indexed_witnesses: usize,
++        indexed_witnesses: impl IntoIterator<Item = String>,
+     ) -> ConformanceReport {
+         ConformanceReport {
+             implementation,
+             indexed_requirements,
+-            indexed_witnesses,
++            indexed_witnesses: indexed_witnesses.into_iter().collect(),
+             covered: Vec::new(),
+             descriptive_only: Vec::new(),
+         }
+@@ -241,7 +245,7 @@ impl ConformanceReport {
+     }
+ 
+     pub fn indexed_witnesses(&self) -> usize {
+-        self.indexed_witnesses
++        self.indexed_witnesses.len()
+     }
+ 
+     /// How many cases actually ran.
+@@ -299,6 +303,50 @@ impl ConformanceReport {
+         out
+     }
+ 
++    /// The witness one executed case belongs to.
++    ///
++    /// A witness may be probed several times, and each probe is recorded under
++    /// `<witness>/<label>`. The witness is what the catalog indexes, so that is
++    /// what completeness is measured against.
++    fn witness_of(case_id: &str) -> &str {
++        case_id.split('/').next().unwrap_or(case_id)
++    }
++
++    /// Every indexed witness with at least one passing case and no failing one.
++    fn supported_witnesses(&self) -> BTreeSet<&str> {
++        let mut passed: BTreeSet<&str> = BTreeSet::new();
++        let mut failed: BTreeSet<&str> = BTreeSet::new();
++        for covered in &self.covered {
++            let witness = ConformanceReport::witness_of(&covered.case.id);
++            match covered.case.verdict {
++                Verdict::Passed => {
++                    passed.insert(witness);
++                }
++                Verdict::Failed => {
++                    failed.insert(witness);
++                }
++            }
++        }
++        passed.difference(&failed).copied().collect()
++    }
++
++    /// Indexed witnesses this run did not establish, in identifier order.
++    ///
++    /// `09_CONFORMANCE/01`: "No semantic-conformance claim is permitted while
++    /// the required implementation or concrete executable cases are absent."
++    /// A witness that was never executed, that was executed and failed, or that
++    /// was recorded as descriptive because this build cannot exhibit it, is
++    /// absent in exactly that sense. "Unsupported core behavior is failure, not
++    /// silent inference."
++    pub fn unsupported_witnesses(&self) -> Vec<&str> {
++        let supported = self.supported_witnesses();
++        self.indexed_witnesses
++            .iter()
++            .map(String::as_str)
++            .filter(|id| !supported.contains(id))
++            .collect()
++    }
++
+     /// Coverage levels with at least one passing case and no failing one.
+     fn clean_coverage(&self) -> BTreeSet<Coverage> {
+         self.by_coverage()
+@@ -312,6 +360,29 @@ impl ConformanceReport {
+     ///
+     /// One failed case withdraws the level rather than qualifying it:
+     /// "Unsupported core behavior is failure, not silent inference."
++    ///
++    /// ## Why a clean stage is not a claim
++    ///
++    /// [`Self::clean_coverage`] answers "did anything pass at this stage", and
++    /// that is a question about breadth, not completeness: nine stages each
++    /// holding one passing case satisfied it, and a run that executed nine of
++    /// sixty-six witnesses could claim conformance to the whole semantics.
++    /// `09_CONFORMANCE/01` forbids exactly that, in a sentence about absence
++    /// rather than about failure: "No semantic-conformance claim is permitted
++    /// while the required implementation or concrete executable cases are
++    /// absent."
++    ///
++    /// So a semantic claim needs both. The stages say the evidence reaches the
++    /// semantic layers at all; [`Self::unsupported_witnesses`] says none of the
++    /// canonically indexed decision witnesses is missing, failed or unexhibited.
++    /// A run short of that falls back to the source level rather than
++    /// footnoting the higher one, which is what "permitted" means.
++    ///
++    /// The 799-entry requirements index is deliberately not part of this. The
++    /// canonical text calls it "structural evidence only" and says "catalog
++    /// entries without concrete input and an implementation result are not
++    /// executed conformance cases", so requiring an executed case per entry
++    /// would be inventing a gate the specification declines to impose.
+     pub fn claim(&self) -> ClaimLevel {
+         if self.covered.is_empty() || self.failed_count() > 0 {
+             return ClaimLevel::None;
+@@ -320,10 +391,13 @@ impl ConformanceReport {
+         if !Coverage::SOURCE.iter().all(|c| clean.contains(c)) {
+             return ClaimLevel::None;
+         }
+-        if Coverage::SEMANTICS.iter().all(|c| clean.contains(c)) {
+-            return ClaimLevel::Semantics;
++        if !Coverage::SEMANTICS.iter().all(|c| clean.contains(c)) {
++            return ClaimLevel::Source;
+         }
+-        ClaimLevel::Source
++        if !self.unsupported_witnesses().is_empty() {
++            return ClaimLevel::Source;
++        }
++        ClaimLevel::Semantics
+     }
+ 
+     /// Why the run does not support a higher level, in plain terms.
+@@ -342,6 +416,11 @@ impl ConformanceReport {
+                 out.push(format!("no clean executed coverage at {coverage}"));
+             }
+         }
++        // Named individually, never summarised as a number: the point of the
++        // list is that a reader can see which behaviour is unestablished.
++        for id in self.unsupported_witnesses() {
++            out.push(format!("witness {id} has no passing executed case"));
++        }
+         out
+     }
+ 
+@@ -373,7 +452,7 @@ impl ConformanceReport {
+         ));
+         out.push_str(&format!(
+             "  decision witnesses : {} entries\n",
+-            self.indexed_witnesses
++            self.indexed_witnesses.len()
+         ));
+ 
+         out.push_str("\nEXECUTED CASES (concrete input, observed result)\n");
+@@ -383,6 +462,24 @@ impl ConformanceReport {
+             self.passed_count(),
+             self.failed_count()
+         ));
++
++        // Three populations, never added together. A probe is one execution; a
++        // witness is one indexed behaviour and may take several probes; an
++        // indexed requirement is prose. Reading an executed-probe count as
++        // witness coverage is the specific misreading this section prevents.
++        let supported = self.indexed_witnesses.len() - self.unsupported_witnesses().len();
++        out.push_str(&format!(
++            "\n  witnesses established : {} of {}\n",
++            supported,
++            self.indexed_witnesses.len()
++        ));
++        let unsupported = self.unsupported_witnesses();
++        if !unsupported.is_empty() {
++            out.push_str("  witnesses not established, by identifier:\n");
++            for id in unsupported {
++                out.push_str(&format!("    {id}\n"));
++            }
++        }
+         out.push_str("\n  by coverage:\n");
+         for (coverage, (passed, failed)) in self.by_coverage() {
+             out.push_str(&format!(
+@@ -457,9 +554,32 @@ mod tests {
+         Implementation::under_test("digest", "0.1.0")
+     }
+ 
++    /// A report whose indexed witnesses are exactly `witnesses`.
++    fn report_of(witnesses: &[&str]) -> ConformanceReport {
++        ConformanceReport::new(
++            implementation(),
++            799,
++            witnesses.iter().map(|id| id.to_string()),
++        )
++    }
++
++    /// One passing case at every coverage level, named after a witness each.
++    fn cover_every_stage(report: &mut ConformanceReport, witnesses: &[&str]) {
++        for (coverage, witness) in Coverage::ALL.into_iter().zip(witnesses) {
++            report.record(case(witness, Verdict::Passed), coverage);
++        }
++    }
++
++    fn stage_witnesses() -> Vec<String> {
++        Coverage::ALL
++            .into_iter()
++            .map(|coverage| format!("W-{coverage}"))
++            .collect()
++    }
++
+     #[test]
+     fn an_empty_run_claims_nothing() {
+-        let report = ConformanceReport::new(implementation(), 799, 66);
++        let report = report_of(&["CLOSURE-001"]);
+         assert_eq!(report.claim(), ClaimLevel::None);
+         assert_eq!(report.executed_count(), 0);
+         assert_eq!(report.descriptive_count(), 799);
+@@ -467,10 +587,10 @@ mod tests {
+ 
+     #[test]
+     fn one_failed_case_withdraws_the_claim_entirely() {
+-        let mut report = ConformanceReport::new(implementation(), 799, 66);
+-        for coverage in Coverage::ALL {
+-            report.record(case(&format!("ok-{coverage}"), Verdict::Passed), coverage);
+-        }
++        let names = stage_witnesses();
++        let ids: Vec<&str> = names.iter().map(String::as_str).collect();
++        let mut report = report_of(&ids);
++        cover_every_stage(&mut report, &ids);
+         assert_eq!(report.claim(), ClaimLevel::Semantics);
+ 
+         report.record(case("bad", Verdict::Failed), Coverage::Runtime);
+@@ -484,9 +604,9 @@ mod tests {
+ 
+     #[test]
+     fn source_coverage_alone_claims_source_only() {
+-        let mut report = ConformanceReport::new(implementation(), 799, 66);
+-        report.record(case("lex", Verdict::Passed), Coverage::Lexical);
+-        report.record(case("gram", Verdict::Passed), Coverage::Grammar);
++        let mut report = report_of(&["W-lexical", "W-grammar"]);
++        report.record(case("W-lexical", Verdict::Passed), Coverage::Lexical);
++        report.record(case("W-grammar", Verdict::Passed), Coverage::Grammar);
+         assert_eq!(report.claim(), ClaimLevel::Source);
+         assert!(report
+             .claim_limits()
+@@ -496,7 +616,7 @@ mod tests {
+ 
+     #[test]
+     fn descriptive_and_executed_are_never_summed() {
+-        let mut report = ConformanceReport::new(implementation(), 799, 66);
++        let mut report = report_of(&["one"]);
+         report.record(case("one", Verdict::Passed), Coverage::Lexical);
+         assert_eq!(report.descriptive_count(), 799);
+         assert_eq!(report.executed_count(), 1);
+@@ -509,9 +629,117 @@ mod tests {
+ 
+     #[test]
+     fn a_descriptive_only_entry_is_listed_with_its_reason() {
+-        let mut report = ConformanceReport::new(implementation(), 799, 66);
++        let mut report = report_of(&["CLOSURE-999"]);
+         report.record_descriptive("CLOSURE-999", "needs a real network adapter");
+         let rendered = report.render();
+         assert!(rendered.contains("CLOSURE-999 — needs a real network adapter"));
+     }
++
++    // -----------------------------------------------------------------------
++    // Completeness
++    // -----------------------------------------------------------------------
++    //
++    // Post-Task-20 finding F8. A clean stage meant "something passed here", and
++    // the claim was built from nine of those. Nine passing cases could then
++    // certify conformance to the whole of LCL's semantics.
++
++    #[test]
++    fn sparse_stage_passes_cannot_claim_full_semantics() {
++        // Every stage clean, every case passing, no failures -- and sixty of
++        // the catalogue's witnesses never ran. This is the exact shape that
++        // used to return `semantics_conforming`.
++        let names = stage_witnesses();
++        let mut ids: Vec<&str> = names.iter().map(String::as_str).collect();
++        let absent: Vec<String> = (0..60).map(|n| format!("CLOSURE-{n:03}")).collect();
++        ids.extend(absent.iter().map(String::as_str));
++
++        let mut report = report_of(&ids);
++        let covered: Vec<&str> = names.iter().map(String::as_str).collect();
++        cover_every_stage(&mut report, &covered);
++
++        assert_eq!(report.failed_count(), 0);
++        assert_eq!(
++            report.claim(),
++            ClaimLevel::Source,
++            "breadth across stages is not completeness across witnesses"
++        );
++        assert_eq!(report.unsupported_witnesses().len(), 60);
++    }
++
++    #[test]
++    fn one_missing_witness_blocks_the_semantic_claim() {
++        let names = stage_witnesses();
++        let mut ids: Vec<&str> = names.iter().map(String::as_str).collect();
++        let mut report = report_of(&ids);
++        cover_every_stage(&mut report, &ids);
++        assert_eq!(report.claim(), ClaimLevel::Semantics);
++
++        // Add exactly one indexed witness that nothing establishes.
++        ids.push("CLOSURE-041");
++        let mut with_gap = report_of(&ids);
++        cover_every_stage(&mut with_gap, &ids);
++        assert_eq!(with_gap.claim(), ClaimLevel::Source);
++        assert_eq!(with_gap.unsupported_witnesses(), vec!["CLOSURE-041"]);
++        assert!(with_gap
++            .claim_limits()
++            .iter()
++            .any(|l| l == "witness CLOSURE-041 has no passing executed case"));
++    }
++
++    #[test]
++    fn a_witness_left_descriptive_is_not_established() {
++        // "Unsupported core behavior is failure, not silent inference." An
++        // entry recorded with a reason is honest about what it is; it is still
++        // not an executed case, and it cannot support a claim.
++        let names = stage_witnesses();
++        let mut ids: Vec<&str> = names.iter().map(String::as_str).collect();
++        ids.push("CLOSURE-021");
++        let mut report = report_of(&ids);
++        let covered: Vec<&str> = names.iter().map(String::as_str).collect();
++        cover_every_stage(&mut report, &covered);
++        report.record_descriptive("CLOSURE-021", "Core 0.1.0 supplies no way to write one");
++
++        assert_eq!(report.claim(), ClaimLevel::Source);
++        assert_eq!(report.unsupported_witnesses(), vec!["CLOSURE-021"]);
++    }
++
++    #[test]
++    fn a_witness_probed_several_times_is_established_once() {
++        // A probe is recorded as `<witness>/<label>`, and completeness is
++        // measured over witnesses rather than over probes.
++        let names = stage_witnesses();
++        let ids: Vec<&str> = names.iter().map(String::as_str).collect();
++        let mut report = report_of(&ids);
++        cover_every_stage(&mut report, &ids);
++        assert_eq!(report.claim(), ClaimLevel::Semantics);
++
++        let mut labelled = report_of(&ids);
++        for (coverage, witness) in Coverage::ALL.into_iter().zip(&ids) {
++            for label in ["a", "b"] {
++                labelled.record(
++                    case(&format!("{witness}/{label}"), Verdict::Passed),
++                    coverage,
++                );
++            }
++        }
++        assert_eq!(labelled.claim(), ClaimLevel::Semantics);
++        assert!(labelled.unsupported_witnesses().is_empty());
++        assert_eq!(labelled.executed_count(), Coverage::ALL.len() * 2);
++    }
++
++    #[test]
++    fn one_failing_probe_unestablishes_its_whole_witness() {
++        // A witness with a passing probe and a failing one is not established,
++        // even though something under its identifier passed.
++        let names = stage_witnesses();
++        let ids: Vec<&str> = names.iter().map(String::as_str).collect();
++        let mut report = report_of(&ids);
++        cover_every_stage(&mut report, &ids);
++        report.record(
++            case(&format!("{}/second", ids[0]), Verdict::Failed),
++            Coverage::Lexical,
++        );
++        assert_eq!(report.claim(), ClaimLevel::None, "a failure withdraws it");
++        assert_eq!(report.unsupported_witnesses(), vec![ids[0]]);
++    }
+ }
+diff --git a/impl/crates/lcl-conformance/tests/decision_witnesses.rs b/impl/crates/lcl-conformance/tests/decision_witnesses.rs
+index ccaf991..978fe46 100644
+--- a/impl/crates/lcl-conformance/tests/decision_witnesses.rs
++++ b/impl/crates/lcl-conformance/tests/decision_witnesses.rs
+@@ -64,7 +64,7 @@ fn run_all() -> (ConformanceReport, Vec<(String, ExecutedCase)>) {
+             spec().formal_version().to_string(),
+         ),
+         index.requirement_count(),
+-        index.witness_count(),
++        index.witnesses().iter().map(|w| w.id.clone()),
+     );
+     let mut all: Vec<(String, ExecutedCase)> = Vec::new();
+ 
+diff --git a/impl/crates/lcl-conformance/tests/descriptive_index.rs b/impl/crates/lcl-conformance/tests/descriptive_index.rs
+index dec0f9c..5477bea 100644
+--- a/impl/crates/lcl-conformance/tests/descriptive_index.rs
++++ b/impl/crates/lcl-conformance/tests/descriptive_index.rs
+@@ -155,7 +155,7 @@ fn executed_cases_are_a_separate_type_from_indexed_requirements() {
+     let report = lcl_conformance::ConformanceReport::new(
+         lcl_conformance::report::Implementation::under_test("test", "0.1.0"),
+         i.requirement_count(),
+-        i.witness_count(),
++        i.witnesses().iter().map(|w| w.id.clone()),
+     );
+     assert_eq!(report.descriptive_count(), 799);
+     assert_eq!(report.executed_count(), 0);
+diff --git a/impl/crates/lcl-hardening/tests/installed_launcher.rs b/impl/crates/lcl-hardening/tests/installed_launcher.rs
+index ab6fae1..e73194c 100644
+--- a/impl/crates/lcl-hardening/tests/installed_launcher.rs
++++ b/impl/crates/lcl-hardening/tests/installed_launcher.rs
+@@ -24,6 +24,7 @@
+ 
+ use std::io::{Read, Write};
+ use std::net::TcpStream;
++use std::os::unix::process::CommandExt;
+ use std::path::{Path, PathBuf};
+ use std::process::{Command, Output, Stdio};
+ use std::time::{Duration, Instant};
+@@ -45,12 +46,65 @@ fn built() -> PathBuf {
+     path
+ }
+ 
+-/// A disposable home, with nothing in it.
+-fn clean_home(case: &str) -> PathBuf {
+-    let home = std::env::temp_dir().join(format!("lcl-launch-{}-{case}", std::process::id()));
+-    let _ = std::fs::remove_dir_all(&home);
+-    std::fs::create_dir_all(&home).expect("the temporary home is writable");
+-    home
++/// One case at a time.
++///
++/// Each home below holds a staged payload and an installation of it, and a
++/// payload carries this build's two binaries. Those are unstripped debug
++/// builds, so one home is a few hundred megabytes and eight running at once
++/// would fill a `tmpfs`. It did, once, which is why this exists.
++static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
++
++/// A disposable home that removes itself.
++///
++/// Removal is on `Drop` rather than only at the start of the next run, so a
++/// suite that finishes leaves nothing behind. A panicking test still drops its
++/// guard while unwinding.
++struct Home {
++    path: PathBuf,
++    _one_at_a_time: std::sync::MutexGuard<'static, ()>,
++}
++
++impl Home {
++    fn new(case: &str) -> Home {
++        // A poisoned lock means an earlier case panicked, which this one has
++        // no reason to inherit.
++        let guard = ONE_AT_A_TIME
++            .lock()
++            .unwrap_or_else(|poisoned| poisoned.into_inner());
++        let path = std::env::temp_dir().join(format!("lcl-launch-{}-{case}", std::process::id()));
++        let _ = std::fs::remove_dir_all(&path);
++        std::fs::create_dir_all(&path).expect("the temporary home is writable");
++        Home {
++            path,
++            _one_at_a_time: guard,
++        }
++    }
++}
++
++impl Drop for Home {
++    fn drop(&mut self) {
++        let _ = std::fs::remove_dir_all(&self.path);
++    }
++}
++
++impl std::ops::Deref for Home {
++    type Target = Path;
++
++    fn deref(&self) -> &Path {
++        &self.path
++    }
++}
++
++impl AsRef<Path> for Home {
++    fn as_ref(&self) -> &Path {
++        &self.path
++    }
++}
++
++impl AsRef<std::ffi::OsStr> for Home {
++    fn as_ref(&self) -> &std::ffi::OsStr {
++        self.path.as_os_str()
++    }
+ }
+ 
+ fn copy_tree(from: &Path, to: &Path) {
+@@ -93,7 +147,10 @@ fn stage_payload(into: &Path) -> PathBuf {
+         (packaging.join("install.sh"), payload.join("install.sh")),
+         (packaging.join("uninstall.sh"), payload.join("uninstall.sh")),
+         (packaging.join("README.md"), payload.join("README.md")),
+-        (packaging.join("lcl.desktop"), payload.join("share/lcl.desktop")),
++        (
++            packaging.join("lcl.desktop"),
++            payload.join("share/lcl.desktop"),
++        ),
+         (
+             packaging.join("lcl-workspace-launch.in"),
+             payload.join("share/lcl-workspace-launch.in"),
+@@ -105,6 +162,7 @@ fn stage_payload(into: &Path) -> PathBuf {
+     ] {
+         std::fs::copy(&from, &to).unwrap_or_else(|e| panic!("{}: {e}", from.display()));
+     }
++    copy_tree(&packaging.join("icons"), &payload.join("share/icons"));
+     for script in ["install.sh", "uninstall.sh"] {
+         make_executable(&payload.join(script));
+     }
+@@ -211,10 +269,7 @@ fn stub_opener(home: &Path) -> PathBuf {
+     let dir = home.join("stub-bin");
+     std::fs::create_dir_all(&dir).expect("writable");
+     let recorded = home.join("opened-url");
+-    let script = format!(
+-        "#!/bin/sh\nprintf '%s' \"$1\" > {}\n",
+-        recorded.display()
+-    );
++    let script = format!("#!/bin/sh\nprintf '%s' \"$1\" > {}\n", recorded.display());
+     let path = dir.join("xdg-open");
+     std::fs::write(&path, script).expect("writable");
+     make_executable(&path);
+@@ -229,6 +284,16 @@ struct Launched {
+ 
+ impl Drop for Launched {
+     fn drop(&mut self) {
++        // The launcher is a shell script and the workspace is *its* child, so
++        // killing the script on its own leaves a server behind holding a
++        // socket and a few hundred megabytes. `launch` puts the script into a
++        // new process group, which makes the whole tree addressable at once.
++        let group = self.child.id();
++        let _ = Command::new("kill")
++            .args(["-TERM", &format!("-{group}")])
++            .stdout(Stdio::null())
++            .stderr(Stdio::null())
++            .status();
+         let _ = self.child.kill();
+         let _ = self.child.wait();
+     }
+@@ -260,6 +325,9 @@ fn launch(home: &Path, document: Option<&Path>) -> Launched {
+         .stdin(Stdio::null())
+         .stdout(Stdio::null())
+         .stderr(Stdio::null())
++        // Its own process group, so `Launched::drop` can end the launcher and
++        // the workspace it starts together.
++        .process_group(0)
+         .spawn()
+         .unwrap_or_else(|e| panic!("the desktop entry's Exec did not start: {exec}: {e}"));
+     Launched {
+@@ -333,7 +401,7 @@ fn document(home: &Path, relative: &str) -> PathBuf {
+ 
+ #[test]
+ fn the_installed_desktop_entry_runs_a_launcher_that_exists() {
+-    let home = clean_home("entry");
++    let home = Home::new("entry");
+     install(&home);
+ 
+     let exec = desktop_value(&home, "Exec");
+@@ -363,7 +431,7 @@ fn the_installed_desktop_entry_runs_a_launcher_that_exists() {
+ 
+ #[test]
+ fn a_menu_launch_with_no_document_opens_the_default_project() {
+-    let home = clean_home("menu");
++    let home = Home::new("menu");
+     install(&home);
+ 
+     let launched = launch(&home, None);
+@@ -389,7 +457,7 @@ fn a_menu_launch_with_no_document_opens_the_default_project() {
+ 
+ #[test]
+ fn a_file_association_opens_that_document_in_its_own_project() {
+-    let home = clean_home("assoc");
++    let home = Home::new("assoc");
+     install(&home);
+     let path = document(&home, "papers/report.lcl");
+ 
+@@ -416,7 +484,7 @@ fn a_file_association_opens_that_document_in_its_own_project() {
+ 
+ #[test]
+ fn a_document_whose_path_holds_spaces_opens() {
+-    let home = clean_home("spaces");
++    let home = Home::new("spaces");
+     install(&home);
+     let path = document(&home, "my papers/first draft.lcl");
+ 
+@@ -433,7 +501,7 @@ fn a_document_whose_path_holds_spaces_opens() {
+ 
+ #[test]
+ fn a_document_inside_a_project_opens_against_that_project() {
+-    let home = clean_home("project");
++    let home = Home::new("project");
+     install(&home);
+     let root = home.join("work");
+     let path = document(&home, "work/src/main.lcl");
+@@ -468,7 +536,7 @@ fn the_launcher_needs_no_spec_in_the_environment() {
+     // The environment every launch above ran in had no LCL_SPEC, which is the
+     // condition the old packaging failed under. This states it as its own
+     // assertion rather than leaving it implicit in the others.
+-    let home = clean_home("nospec");
++    let home = Home::new("nospec");
+     install(&home);
+     let launcher = std::fs::read_to_string(home.join(".local/bin/lcl-workspace-launch"))
+         .expect("the launcher is installed");
+@@ -498,7 +566,7 @@ fn the_launcher_needs_no_spec_in_the_environment() {
+ 
+ #[test]
+ fn a_missing_document_fails_visibly_instead_of_silently() {
+-    let home = clean_home("missing");
++    let home = Home::new("missing");
+     install(&home);
+     let exec = desktop_value(&home, "Exec");
+     let argv = exec_argv(&exec, Some(Path::new("/nonexistent/document.lcl")));
+@@ -531,7 +599,7 @@ fn a_missing_document_fails_visibly_instead_of_silently() {
+ 
+ #[test]
+ fn uninstall_removes_the_launcher_and_reinstall_restores_it() {
+-    let home = clean_home("lifecycle");
++    let home = Home::new("lifecycle");
+     let (payload, _) = install(&home);
+     let launcher = home.join(".local/bin/lcl-workspace-launch");
+     assert!(launcher.is_file());
+@@ -555,7 +623,9 @@ fn uninstall_removes_the_launcher_and_reinstall_restores_it() {
+     );
+     assert!(!launcher.exists(), "the launcher survived the uninstall");
+     assert!(
+-        !home.join(".local/share/applications/lcl-workspace.desktop").exists(),
++        !home
++            .join(".local/share/applications/lcl-workspace.desktop")
++            .exists(),
+         "the desktop entry survived the uninstall"
+     );
+     assert!(
+@@ -568,3 +638,323 @@ fn uninstall_removes_the_launcher_and_reinstall_restores_it() {
+     let launched = launch(&home, None);
+     await_url(&launched);
+ }
++
++// ---------------------------------------------------------------------------
++// B1: the installed application icon
++// ---------------------------------------------------------------------------
++
++/// Every installed icon file this product owns, under one home.
++fn installed_icons(home: &Path) -> Vec<PathBuf> {
++    let theme = home.join(".local/share/icons/hicolor");
++    let mut found = Vec::new();
++    let mut stack = vec![theme];
++    while let Some(directory) = stack.pop() {
++        let Ok(entries) = std::fs::read_dir(&directory) else {
++            continue;
++        };
++        for entry in entries.flatten() {
++            if entry.path().is_dir() {
++                stack.push(entry.path());
++            } else {
++                found.push(entry.path());
++            }
++        }
++    }
++    found.sort();
++    found
++}
++
++#[test]
++fn the_desktop_entry_names_an_icon_that_is_actually_installed() {
++    let home = Home::new("icon");
++    install(&home);
++
++    // A desktop entry names an icon by theme name, not by path, and the theme
++    // resolves it. So the assertion is that the name resolves, in the isolated
++    // data directory this installation wrote to.
++    let name = desktop_value(&home, "Icon");
++    assert_eq!(name, "lcl-workspace");
++    assert!(
++        !name.contains('/'),
++        "an Icon key is a theme name, not a path: {name}"
++    );
++
++    let theme = home.join(".local/share/icons/hicolor");
++    let mut resolved = Vec::new();
++    for size in [16, 24, 32, 48, 64, 128, 256] {
++        let path = theme.join(format!("{size}x{size}/apps/{name}.png"));
++        if path.is_file() {
++            resolved.push(path);
++        }
++    }
++    assert!(
++        resolved.len() >= 5,
++        "the icon name resolved at only {} sizes under {}",
++        resolved.len(),
++        theme.display()
++    );
++
++    // Every one of them is a real decodable image with the dimensions its
++    // directory claims, not a placeholder that happens to sit at the path.
++    for path in &resolved {
++        let bytes = std::fs::read(path).expect("readable");
++        assert_eq!(
++            &bytes[..8],
++            b"\x89PNG\r\n\x1a\n",
++            "{} is not a PNG",
++            path.display()
++        );
++        let number = |at: usize| {
++            u32::from_be_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]])
++        };
++        let (width, height, colour) = (number(16), number(20), bytes[25]);
++        let declared: u32 = path
++            .parent()
++            .and_then(|p| p.parent())
++            .and_then(|p| p.file_name())
++            .and_then(|n| n.to_str())
++            .and_then(|n| n.split('x').next())
++            .and_then(|n| n.parse().ok())
++            .expect("a sized theme directory");
++        assert_eq!(
++            (width, height),
++            (declared, declared),
++            "{} does not hold a {declared}-pixel icon",
++            path.display()
++        );
++        assert_eq!(colour, 6, "{} lost its alpha channel", path.display());
++    }
++}
++
++#[test]
++fn the_document_icon_uses_the_same_source_as_the_application() {
++    let home = Home::new("docicon");
++    install(&home);
++    let theme = home.join(".local/share/icons/hicolor");
++    // The media type registered by this installation is `text/x-lcl`, and a
++    // theme names its icon after the type with the slash replaced.
++    let document = theme.join("48x48/mimetypes/text-x-lcl.png");
++    let application = theme.join("48x48/apps/lcl-workspace.png");
++    assert!(document.is_file(), "no document icon was installed");
++    assert_eq!(
++        std::fs::read(&document).expect("readable"),
++        std::fs::read(&application).expect("readable"),
++        "the document and application icons must come from one source"
++    );
++}
++
++#[test]
++fn uninstall_takes_only_this_products_icons() {
++    let home = Home::new("iconlife");
++    let (payload, _) = install(&home);
++    let theme = home.join(".local/share/icons/hicolor");
++
++    let ours = installed_icons(&home);
++    assert!(!ours.is_empty(), "nothing was installed to remove");
++
++    // Another application's icon, in the same shared directory. A recursive
++    // removal would take it, and that is the failure this asserts against.
++    let stranger = theme.join("48x48/apps/someone-elses-app.png");
++    std::fs::write(&stranger, b"not ours").expect("writable");
++
++    let output = Command::new(payload.join("uninstall.sh"))
++        .env_clear()
++        .env("HOME", &home)
++        .env("PATH", "/usr/bin:/bin")
++        .current_dir(std::env::temp_dir())
++        .output()
++        .expect("the uninstaller runs");
++    assert!(
++        output.status.success(),
++        "uninstall failed: {}",
++        String::from_utf8_lossy(&output.stderr)
++    );
++
++    assert!(
++        stranger.is_file(),
++        "uninstall removed another application's icon from the shared theme"
++    );
++    for path in ours {
++        assert!(!path.exists(), "{} survived the uninstall", path.display());
++    }
++    assert!(
++        theme.join("48x48/apps").is_dir(),
++        "a shared theme directory holding another application's icon must stay"
++    );
++
++    // Reinstall restores exactly what was removed, alongside the stranger.
++    install(&home);
++    assert!(theme.join("48x48/apps/lcl-workspace.png").is_file());
++    assert!(stranger.is_file());
++}
++
++#[test]
++fn an_empty_theme_directory_is_removed_but_the_shared_root_is_never_recursive() {
++    // With nothing else in the theme, uninstall should leave no empty skeleton
++    // behind either. The two cases together state the whole rule: remove our
++    // files, remove the directories only we filled, never remove the rest.
++    let home = Home::new("icontidy");
++    let (payload, _) = install(&home);
++    let theme = home.join(".local/share/icons/hicolor");
++    assert!(theme.join("256x256/apps/lcl-workspace.png").is_file());
++
++    let output = Command::new(payload.join("uninstall.sh"))
++        .env_clear()
++        .env("HOME", &home)
++        .env("PATH", "/usr/bin:/bin")
++        .current_dir(std::env::temp_dir())
++        .output()
++        .expect("the uninstaller runs");
++    assert!(output.status.success());
++    assert!(
++        !theme.exists(),
++        "an installation that filled the theme by itself should leave none of \
++         it behind: {} is still there",
++        theme.display()
++    );
++}
++
++// ---------------------------------------------------------------------------
++// The `.lcl.txt` ending, through the installed association
++// ---------------------------------------------------------------------------
++
++#[test]
++fn a_text_ending_document_opens_through_the_desktop_entry() {
++    let home = Home::new("textdoc");
++    install(&home);
++    // The same source, under the ending a newly created document is given.
++    let path = document(&home, "papers/report.lcl.txt");
++
++    let launched = launch(&home, Some(&path));
++    let url = await_url(&launched);
++
++    let (status, body) = get(&url, "/api/session");
++    assert_eq!(status, 200, "the session route refused: {body}");
++    assert!(
++        body.contains("\"open\": \"report.lcl.txt\""),
++        "a .lcl.txt document must open exactly like a .lcl one:\n{body}"
++    );
++
++    // And it is listed, so the person can see it in the project.
++    let (status, tree) = get(&url, "/api/documents");
++    assert_eq!(status, 200);
++    assert!(
++        tree.contains("report.lcl.txt"),
++        "the created ending must appear in the project tree:\n{tree}"
++    );
++}
++
++#[test]
++fn the_installed_media_type_claims_both_endings_and_not_plain_text() {
++    let home = Home::new("mime");
++    install(&home);
++
++    // `update-mime-database` compiles the installed package into `globs2`,
++    // which is the table a desktop consults. Asserting on it rather than on the
++    // XML proves the registration survived compilation. This is the *user*
++    // table, which only adds: `text/plain` lives in the system database, which
++    // this installation never touches.
++    let globs = home.join(".local/share/mime/globs2");
++    if !globs.is_file() {
++        eprintln!("update-mime-database produced no globs2; skipping the compiled check");
++        return;
++    }
++    let table = std::fs::read_to_string(&globs).expect("readable");
++    let ours: Vec<&str> = table
++        .lines()
++        .filter(|line| line.contains("text/x-lcl"))
++        .collect();
++    assert!(
++        ours.iter().any(|l| l.ends_with("*.lcl")),
++        "the compiled table does not claim *.lcl: {ours:?}"
++    );
++    assert!(
++        ours.iter().any(|l| l.ends_with("*.lcl.txt")),
++        "the compiled table does not claim *.lcl.txt: {ours:?}"
++    );
++    assert!(
++        !ours.iter().any(|l| l.ends_with("*.txt")),
++        "LCL must not claim every text file: {ours:?}"
++    );
++    assert!(
++        !table.contains("text/plain"),
++        "this installation must not redefine plain text: {table}"
++    );
++}
++
++#[test]
++fn an_ordinary_text_file_is_still_ordinary_after_installation() {
++    // The end-to-end question, asked of the desktop's own resolver rather than
++    // of a table: which media type does each of these files actually get?
++    //
++    // `*.lcl.txt` and `*.txt` overlap, and the specification resolves an
++    // overlap by the longer pattern, so the answers below are the whole reason
++    // the two-part ending is safe to register.
++    let home = Home::new("mimequery");
++    install(&home);
++    if Command::new("xdg-mime")
++        .arg("--help")
++        .stdout(Stdio::null())
++        .stderr(Stdio::null())
++        .status()
++        .is_err()
++    {
++        eprintln!("xdg-mime is absent; skipping the resolver check");
++        return;
++    }
++
++    let files = home.join("files");
++    std::fs::create_dir_all(&files).expect("writable");
++    for (name, contents) in [
++        ("a.lcl", "LCL:\n"),
++        ("b.lcl.txt", "LCL:\n"),
++        ("c.txt", "just text\n"),
++        // A plain text file whose bytes happen to begin like a document. The
++        // glob decides before the magic rule is reached, so this stays text.
++        ("d.txt", "LCL:\n"),
++        ("e.md", "# not a document\n"),
++    ] {
++        std::fs::write(files.join(name), contents).expect("writable");
++    }
++
++    let query = |name: &str| -> String {
++        let output = Command::new("xdg-mime")
++            .args(["query", "filetype"])
++            .arg(files.join(name))
++            .env("HOME", home.as_ref() as &Path)
++            .env("XDG_DATA_HOME", home.join(".local/share"))
++            .env("PATH", "/usr/bin:/bin")
++            .output()
++            .expect("xdg-mime runs");
++        String::from_utf8_lossy(&output.stdout).trim().to_string()
++    };
++
++    assert_eq!(query("a.lcl"), "text/x-lcl");
++    assert_eq!(query("b.lcl.txt"), "text/x-lcl");
++    assert_eq!(
++        query("c.txt"),
++        "text/plain",
++        "an ordinary text file must stay an ordinary text file"
++    );
++    assert_eq!(
++        query("d.txt"),
++        "text/plain",
++        "a .txt file is not an LCL document just because of what is inside it"
++    );
++    assert_eq!(query("e.md"), "text/markdown");
++}
++
++#[test]
++fn installation_does_not_take_over_the_operators_default_applications() {
++    let home = Home::new("defaults");
++    install(&home);
++    for path in [
++        ".config/mimeapps.list",
++        ".local/share/applications/mimeapps.list",
++    ] {
++        assert!(
++            !home.join(path).exists(),
++            "{path} was written; installation must not choose default applications"
++        );
++    }
++}
+diff --git a/impl/crates/lcl-parser/src/expr.rs b/impl/crates/lcl-parser/src/expr.rs
+index 56d1319..3b3d014 100644
+--- a/impl/crates/lcl-parser/src/expr.rs
++++ b/impl/crates/lcl-parser/src/expr.rs
+@@ -277,7 +277,7 @@ impl<'a> ExprParser<'a, '_> {
+                     match operator {
+                         Some((op, span)) => {
+                             let prec = precedence(op);
+-                            Self::reduce(frame, prec);
++                            reduce(frame, prec);
+                             if prec == COMPARE_PRECEDENCE {
+                                 frame.compare = Some(span);
+                             } else if prec < COMPARE_PRECEDENCE {
+@@ -289,7 +289,7 @@ impl<'a> ExprParser<'a, '_> {
+                         }
+                         None => {
+                             let mut frame = stack.pop()?;
+-                            Self::reduce(&mut frame, 0);
++                            reduce(&mut frame, 0);
+                             let value = frame.operands.pop()?;
+                             match self.close(c, frame.cont, value)? {
+                                 Closed::Done(expr) => return Some(expr),
+@@ -355,22 +355,6 @@ impl<'a> ExprParser<'a, '_> {
+         node
+     }
+ 
+-    /// Reduce pending operators at or above `min_prec`, left-associatively.
+-    fn reduce(frame: &mut Frame, min_prec: u8) {
+-        while let Some(&(_, _, prec)) = frame.operators.last() {
+-            if prec < min_prec {
+-                break;
+-            }
+-            let Some((op, span, _)) = frame.operators.pop() else {
+-                return;
+-            };
+-            let (Some(right), Some(left)) = (frame.operands.pop(), frame.operands.pop()) else {
+-                return;
+-            };
+-            frame.operands.push(Self::binary(left, op, span, right));
+-        }
+-    }
+-
+     /// The next binary operator, or `None` when the expression ends here.
+     ///
+     /// Tried in cascade order over the same helpers the recursive version used,
+@@ -815,16 +799,6 @@ impl<'a> ExprParser<'a, '_> {
+ 
+     // -- helpers ----------------------------------------------------------
+ 
+-    fn binary(left: Expr, op: BinaryOp, operator_span: Span, right: Expr) -> Expr {
+-        Expr::Binary(Binary {
+-            operator: op,
+-            operator_span,
+-            span: Span::new(left.span().start, right.span().end),
+-            left: Box::new(left),
+-            right: Box::new(right),
+-        })
+-    }
+-
+     pub(crate) fn at_symbol(&self, c: &Cursor<'a>, symbol: &str) -> bool {
+         c.peek()
+             .is_some_and(|t| t.kind == TokenKind::Symbol && self.text(t.span) == symbol)
+@@ -920,3 +894,42 @@ impl<'a> ExprParser<'a, '_> {
+         Some(found)
+     }
+ }
++
++// ---------------------------------------------------------------------------
++// Operator reduction
++// ---------------------------------------------------------------------------
++//
++// Free functions rather than associated ones. Neither takes `self`, and neither
++// mentions the parser's source lifetime, but while they sat inside
++// `impl<'a> ExprParser<'a, '_>` a `Self::` call bound them to it anyway: on the
++// declared minimum toolchain that made the shunting-yard reduction require
++// `'a` to outlive the borrow of its own frame, and `lcl-parser` did not
++// compile. Lifting them out states what was already true, and builds on every
++// version from the declared minimum upward.
++
++/// Reduce pending operators at or above `min_prec`, left-associatively.
++fn reduce(frame: &mut Frame, min_prec: u8) {
++    while let Some(&(_, _, prec)) = frame.operators.last() {
++        if prec < min_prec {
++            break;
++        }
++        let Some((op, span, _)) = frame.operators.pop() else {
++            return;
++        };
++        let (Some(right), Some(left)) = (frame.operands.pop(), frame.operands.pop()) else {
++            return;
++        };
++        frame.operands.push(binary(left, op, span, right));
++    }
++}
++
++/// One binary node, spanning from its left operand through its right.
++fn binary(left: Expr, op: BinaryOp, operator_span: Span, right: Expr) -> Expr {
++    Expr::Binary(Binary {
++        operator: op,
++        operator_span,
++        span: Span::new(left.span().start, right.span().end),
++        left: Box::new(left),
++        right: Box::new(right),
++    })
++}
+diff --git a/impl/crates/lcl-project/src/lib.rs b/impl/crates/lcl-project/src/lib.rs
+index 5a56c9a..5ddd99b 100644
+--- a/impl/crates/lcl-project/src/lib.rs
++++ b/impl/crates/lcl-project/src/lib.rs
+@@ -35,11 +35,13 @@
+ pub mod cache;
+ pub mod lock;
+ pub mod manifest;
++pub mod naming;
+ pub mod provider;
+ 
+ pub use cache::{Cache, CacheError};
+ pub use lock::{Drift, Lock, LockError};
+ pub use manifest::{Manifest, ManifestError, MANIFEST_FILE, MANIFEST_FORMAT};
++pub use naming::{default_name, is_document, SUFFIX, SUFFIXES, TEXT_SUFFIX};
+ pub use provider::{FileProvider, ProjectPathError};
+ 
+ use std::fmt;
+diff --git a/impl/crates/lcl-runtime/src/diagnostic.rs b/impl/crates/lcl-runtime/src/diagnostic.rs
+index c5d480d..ca69c68 100644
+--- a/impl/crates/lcl-runtime/src/diagnostic.rs
++++ b/impl/crates/lcl-runtime/src/diagnostic.rs
+@@ -30,6 +30,29 @@
+ //! list read from the registry at load time, so a structure, arity, type-family
+ //! or name defect has no path to it.
+ //!
++//! ## One identifier this layer mirrors at a stage it cannot move
++//!
++//! `error.operation.parameter` is registered `static_or_expression`, and M4
++//! decides almost all of it: a missing target, a duplicate or unregistered
++//! named parameter, a malformed fragment, a declared family outside the row,
++//! and a written object literal outside a closed parameter shape.
++//!
++//! One part of the same contract is not decidable there. `core.read`'s `range`
++//! row says "An incompatible unit/representation or wrong key/type uses
++//! error.operation.parameter", and whether a unit indexes the representation
++//! depends on what the target actually held, which no stage before execution
++//! knows. The identifier is mirrored here so that case can be reported under
++//! the name the row gives it.
++//!
++//! What is emitted keeps its registered classification exactly. The stage stays
++//! `static_or_expression` and the status stays `status.invalid`, both read from
++//! the registry like every other mirrored identifier, because the
++//! `exclusion_rule` is explicit that "Discovery time alone never changes
++//! classification". This identifier is not in the eligible map, so
++//! [`DemandContext`] cannot reach it and its stage is never resolved to
++//! execution. Finding a source-stage defect late does not make it a late
++//! defect, and the report says which stage owns it rather than relabelling it.
++//!
+ //! ## Two identifiers this layer mirrors and never emits
+ //!
+ //! `error.dependency.unsatisfied` and `error.scope.violation` are registered at
+@@ -77,6 +100,12 @@ pub enum RuntimeError {
+     /// A registered SUM, MIN or MAX reduction received an empty material
+     /// collection.
+     OperatorOperand,
++    /// An invocation site got a closed parameter contract wrong.
++    ///
++    /// Registered at `static_or_expression`, and mirrored here for the part of
++    /// that contract no earlier stage can decide. See the note below on why a
++    /// source-stage identifier appears in a runtime enum at all.
++    OperationParameter,
+     /// An operation postcondition was not satisfied.
+     OperationPostcondition,
+     /// An operation precondition was not satisfied.
+@@ -112,7 +141,7 @@ pub enum RuntimeError {
+ 
+ impl RuntimeError {
+     /// Every identifier this layer mirrors, in registry order.
+-    pub const ALL: [RuntimeError; 22] = [
++    pub const ALL: [RuntimeError; 23] = [
+         RuntimeError::Cancelled,
+         RuntimeError::DependencyUnsatisfied,
+         RuntimeError::ExecutionAction,
+@@ -123,6 +152,7 @@ impl RuntimeError {
+         RuntimeError::NumericNonTerminating,
+         RuntimeError::NumericUnitMismatch,
+         RuntimeError::OperatorOperand,
++        RuntimeError::OperationParameter,
+         RuntimeError::OperationPostcondition,
+         RuntimeError::OperationPrecondition,
+         RuntimeError::PatternMismatch,
+@@ -149,6 +179,7 @@ impl RuntimeError {
+             RuntimeError::NumericNonTerminating => "error.numeric.non_terminating",
+             RuntimeError::NumericUnitMismatch => "error.numeric.unit_mismatch",
+             RuntimeError::OperatorOperand => "error.operator.operand",
++            RuntimeError::OperationParameter => "error.operation.parameter",
+             RuntimeError::OperationPostcondition => "error.operation.postcondition",
+             RuntimeError::OperationPrecondition => "error.operation.precondition",
+             RuntimeError::PatternMismatch => "error.pattern.mismatch",
+diff --git a/impl/crates/lcl-runtime/tests/concurrency.rs b/impl/crates/lcl-runtime/tests/concurrency.rs
+index 3a0f7bc..19f4162 100644
+--- a/impl/crates/lcl-runtime/tests/concurrency.rs
++++ b/impl/crates/lcl-runtime/tests/concurrency.rs
+@@ -278,7 +278,7 @@ fn the_runtime_contains_no_thread_and_no_hash_container() {
+             }
+             continue;
+         }
+-        if path.extension().is_none_or(|e| e != "rs") {
++        if !path.extension().is_some_and(|e| e == "rs") {
+             continue;
+         }
+         let text = std::fs::read_to_string(&path).expect("readable");
+diff --git a/impl/crates/lcl-semantics/src/data.rs b/impl/crates/lcl-semantics/src/data.rs
+index 58ca29d..0aae079 100644
+--- a/impl/crates/lcl-semantics/src/data.rs
++++ b/impl/crates/lcl-semantics/src/data.rs
+@@ -52,6 +52,19 @@ use lcl_resolver::SourceId;
+ /// `DATA` "is immutable material".
+ const SOURCE_BLOCKS: [&str; 5] = ["INPUT", "DATA", "CONTEXT", "MEMORY", "STATE"];
+ 
++/// The one `DEFINE` whose declared value is readable in a value context.
++///
++/// `05_SEMANTICS/12`: "REF reads exactly one bound value of INPUT, DATA,
++/// CONTEXT, MEMORY, STATE, OUTPUT, DEFINE kind.constant, or a loop-local
++/// binding." Every other `DEFINE` -- a type, an operation, a format -- stays a
++/// reference identity and has no value to read.
++const CONSTANT_KIND: &str = "kind.constant";
++
++/// True for the one declaration shape whose value a `REF` reads.
++fn is_readable_constant(declaration: &lcl_resolver::Declaration) -> bool {
++    declaration.block == "DEFINE" && declaration.definition_kind.as_deref() == Some(CONSTANT_KIND)
++}
++
+ /// Resolve every declared datum and every declared dependency.
+ pub(crate) fn resolve(engine: &mut Engine) {
+     resolve_sources(engine);
+@@ -66,7 +79,7 @@ fn resolve_sources(engine: &mut Engine) {
+         .all()
+         .iter()
+         .enumerate()
+-        .filter(|(_, d)| SOURCE_BLOCKS.contains(&d.block.as_str()))
++        .filter(|(_, d)| SOURCE_BLOCKS.contains(&d.block.as_str()) || is_readable_constant(d))
+         .map(|(index, d)| {
+             (
+                 index,
+@@ -90,6 +103,34 @@ fn resolve_sources(engine: &mut Engine) {
+         let mut origin = Origin::DeclaredValue;
+         let mut value = declared_value(engine, syntax_block);
+ 
++        // A `DEFINE kind.constant` is exactly its declared value and nothing
++        // else. It is not a source an invocation supplies, it takes no DEFAULT
++        // and no ASSUME applies to it, so the remaining steps are skipped
++        // rather than given a constant to reinterpret.
++        //
++        // Repair, post-Task-20 finding F14. Every step of the read path already
++        // honoured `05_SEMANTICS/12` except this one: M4 records the constant's
++        // statically known value and judges a `REF` to it as a value context,
++        // and the runtime's `declaration_value` reads the plan's resolutions.
++        // Constants were never put in them, so the read fell through to
++        // MISSING, an operation parameter quietly took its registered default,
++        // and a declared bound had no INTEGER to check.
++        if block == "DEFINE" {
++            resolutions.push(Resolution {
++                declaration: index,
++                id,
++                block,
++                source,
++                span,
++                origin: match value.is_some() {
++                    true => Origin::DeclaredValue,
++                    false => Origin::Absent,
++                },
++                value: value.unwrap_or(Value::Missing),
++            });
++            continue;
++        }
++
+         // 2. resolved SOURCE/INPUT/STATE/MEMORY/CONTEXT — the explicit data
+         //    this invocation supplied for this declaration.
+         if value.is_none() {
+diff --git a/impl/crates/lcl-stdlib/src/host.rs b/impl/crates/lcl-stdlib/src/host.rs
+index efd2e0a..79e9fb6 100644
+--- a/impl/crates/lcl-stdlib/src/host.rs
++++ b/impl/crates/lcl-stdlib/src/host.rs
+@@ -1093,21 +1093,37 @@ impl Unit {
+ /// A wrong key, a wrong type, or a unit that does not index this
+ /// representation.
+ ///
+-/// The row says these "use error.operation.parameter", whose registered stage
+-/// is `static_or_expression`, and which `expression_demand_resolution` does not
+-/// make eligible for demand resolution: its `exclusion_rule` puts every
+-/// "source structure, token, name resolution, type-family, signature arity,
+-/// receiving-type" defect outside the map. A runtime that emitted it would be
+-/// relabelling a stage, which is what `earliest_stage_rule` forbids, so this
+-/// selects `error.operation.precondition` — an identifier `core.read`'s own
+-/// `errors` list admits, at this stage. The same reasoning is written out at
+-/// `crate::fragment::FragmentFault::error`.
++/// The row says these "use error.operation.parameter", and that is now what is
++/// emitted.
+ ///
+-/// A range written as a literal OBJECT is statically knowable and belongs to
+-/// M4; this arm is what remains when the range arrives at demand.
++/// ## What changed, and why the earlier reasoning was wrong
++///
++/// This previously selected `error.operation.precondition`, on the grounds that
++/// `error.operation.parameter` is registered `static_or_expression` and
++/// `expression_demand_resolution` does not make it eligible, so emitting it
++/// here would relabel a stage.
++///
++/// The second half of that does not follow. The demand map moves an eligible
++/// identifier's *stage*; it is not the only permission to *name* one. The
++/// `exclusion_rule` settles it in the other direction: "Discovery time alone
++/// never changes classification." An identifier discovered late keeps the
++/// classification the registry gives it, and substituting a different
++/// identifier is the one thing that really does change it. So this emits the
++/// row's own identifier, and `lcl-runtime` carries its registered stage
++/// `static_or_expression` and status `status.invalid` through unaltered.
++///
++/// ## What still reaches this arm
++///
++/// Less than used to. A range written as a literal OBJECT is knowable at M4,
++/// and `lcl_checker`'s closed-object parameter check now decides a wrong key, a
++/// wrong written type and an unregistered unit word there, at the stage
++/// `earliest_stage_rule` assigns them to. What is left is what only execution
++/// can see: a unit that does not index the representation the target actually
++/// held, and a range that arrived through something no earlier stage read as a
++/// literal.
+ fn wrong_parameter(detail: impl Into<String>) -> CapabilityOutcome {
+     CapabilityOutcome::Refused {
+-        error: lcl_runtime::RuntimeError::OperationPrecondition,
++        error: lcl_runtime::RuntimeError::OperationParameter,
+         cause: "range".to_string(),
+         detail: detail.into(),
+     }
+diff --git a/impl/crates/lcl-stdlib/tests/external_operations.rs b/impl/crates/lcl-stdlib/tests/external_operations.rs
+index ac2adc8..8a19432 100644
+--- a/impl/crates/lcl-stdlib/tests/external_operations.rs
++++ b/impl/crates/lcl-stdlib/tests/external_operations.rs
+@@ -342,11 +342,62 @@ fn bounds_outside_the_sequence_are_refused_and_never_clipped() {
+ #[test]
+ fn a_unit_that_does_not_index_this_representation_is_refused() {
+     // "item requires LIST[T]", and a file's representation is a STRING.
++    //
++    // Corrected expectation, post-Task-20 finding F13. This asserted
++    // `error.operation.precondition`, which is not the identifier the row
++    // names. `operations_v0.1.0.json#/contracts/core.read/parameters/range`
++    // says "An incompatible unit/representation or wrong key/type uses
++    // error.operation.parameter", and `core.read`'s own `errors` list admits
++    // it. The substitution was made because that identifier is registered
++    // `static_or_expression` and the demand map does not re-stage it, but
++    // `diagnostic_selection.expression_demand_resolution.exclusion_rule` is
++    // explicit that "Discovery time alone never changes classification": a
++    // source-stage identifier found at execution keeps its registered stage,
++    // which is not the same as being forbidden to appear.
++    //
++    // So the expectation is corrected to the row's identifier rather than
++    // weakened, and the stage it is classified at is asserted too.
+     let execution = ranged_read("abcd", "item", 0, 1);
+     assert_eq!(
+         common::errors_of(&execution, "action.read"),
+-        vec!["error.operation.precondition".to_string()]
++        vec!["error.operation.parameter".to_string()]
+     );
++
++    // Whichever stage discovers it, the classification is the registry's.
++    let diagnostic = execution
++        .diagnostics()
++        .iter()
++        .find(|d| d.id == lcl_runtime::RuntimeError::OperationParameter)
++        .expect("the diagnostic was emitted");
++    assert_eq!(
++        diagnostic.registered_stage.as_registry_str(),
++        "static_or_expression",
++        "the registered stage is never overwritten"
++    );
++    assert_eq!(
++        diagnostic.resolved_stage, None,
++        "this identifier is not in the demand map, so no stage is resolved for it"
++    );
++    assert_eq!(
++        diagnostic.default_status, "status.invalid",
++        "the registered default status travels with the identifier"
++    );
++
++    // A refused range reads nothing and changes nothing. `05_SEMANTICS/09`
++    // makes the pre-effect phase mean an "empty observed_effects list", and a
++    // parameter defect is decided before the target is touched.
++    for invocation in execution.invocations() {
++        let effects = invocation
++            .result
++            .as_ref()
++            .map(|r| r.observed_effects.as_slice())
++            .unwrap_or_default();
++        assert!(
++            effects.is_empty(),
++            "{} left an effect behind for a parameter defect: {effects:?}",
++            invocation.block
++        );
++    }
+ }
+ 
+ #[test]
+diff --git a/impl/crates/lcl-workspace/assets/app.css b/impl/crates/lcl-workspace/assets/app.css
+index 628d0bf..acf59ab 100644
+--- a/impl/crates/lcl-workspace/assets/app.css
++++ b/impl/crates/lcl-workspace/assets/app.css
+@@ -112,10 +112,16 @@ button.icon { padding: 2px 8px; line-height: 1.2; font-size: 15px; }
+   background: var(--bg-raised);
+   border-bottom: 1px solid var(--line);
+ }
+-.brand { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
++.brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
+ .brand .mark {
+-  font-weight: 700; letter-spacing: 0.08em; color: var(--accent);
+-  font-family: var(--mono); font-size: 13px;
++  /* Height only. The width follows from the image's own proportions, so the
++     supplied artwork is never stretched by a layout rule, and `flex: none`
++     keeps a long project path from squeezing it. The intrinsic size is larger
++     than this, which is what keeps it sharp on a high-density screen. */
++  height: 26px;
++  width: auto;
++  display: block;
++  flex: none;
+ }
+ .brand .where {
+   color: var(--ink-dim); font-size: 12px;
+diff --git a/impl/crates/lcl-workspace/assets/app.js b/impl/crates/lcl-workspace/assets/app.js
+index 14e2b7a..c184087 100644
+--- a/impl/crates/lcl-workspace/assets/app.js
++++ b/impl/crates/lcl-workspace/assets/app.js
+@@ -335,10 +335,13 @@ async function reload() {
+ 
+ async function newDocument() {
+   modal("New document", (body) => {
+-    body.append(el("p", "", "A path inside the project. It must end in .lcl."));
++    body.append(el("p", "",
++      "A path inside the project. New documents are created as .lcl.txt, " +
++      "so they open anywhere plain text does. Existing .lcl documents keep " +
++      "their name."));
+     const input = el("input", "field");
+     input.id = "new-path";
+-    input.value = "untitled.lcl";
++    input.value = "untitled.lcl.txt";
+     body.append(input);
+   }, [
+     ["Cancel", "", (close) => close()],
+@@ -354,10 +357,19 @@ async function newDocument() {
+           'LCL:\n    VERSION: "0.1.0"\n\n' +
+           'SPECIFICATION:\n    ID: example.new\n    NAME: "New document"\n' +
+           '    VERSION: "1.0.0"\n    KIND: kind.task\n    DOMAIN: "general"\n';
+-        await api("PUT", "/api/document", { id }, seed);
++        /* Creating is its own route: it applies the .lcl.txt default and
++         * refuses to overwrite. Saving stays exact, so an open document is
++         * never renamed under the person editing it. The server decides the
++         * final name, and the reply says what it chose. */
++        const created = await api("POST", "/api/document", { id }, seed);
+         await loadTree();
+-        await openDocument(id);
+-        toast(`Created ${id}`, "good");
++        await openDocument(created.id);
++        toast(
++          created.id === created.requested
++            ? `Created ${created.id}`
++            : `Created ${created.id}, the default name for ${created.requested}`,
++          "good",
++        );
+       } catch (e) {
+         toast(`Not created. ${e.message}`, "bad");
+       }
+diff --git a/impl/crates/lcl-workspace/assets/index.html b/impl/crates/lcl-workspace/assets/index.html
+index 11b1c2e..97a80ab 100644
+--- a/impl/crates/lcl-workspace/assets/index.html
++++ b/impl/crates/lcl-workspace/assets/index.html
+@@ -5,6 +5,7 @@
+ <meta name="viewport" content="width=device-width, initial-scale=1">
+ <meta name="lcl-token" content="{{TOKEN}}">
+ <title>LCL Workspace</title>
++<link rel="icon" type="image/png" sizes="32x32" href="/brand/lcl-icon-32.png?t={{TOKEN}}">
+ <link rel="stylesheet" href="/app.css?t={{TOKEN}}">
+ </head>
+ <body>
+@@ -12,7 +13,8 @@
+ 
+   <header id="titlebar">
+     <div class="brand">
+-      <span class="mark">LCL</span>
++      <img class="mark" src="/brand/lcl-mark.png?t={{TOKEN}}" alt="LCL"
++           width="97" height="96">
+       <span class="where" id="project-root">opening…</span>
+     </div>
+     <div class="actions">
+diff --git a/impl/crates/lcl-workspace/src/document.rs b/impl/crates/lcl-workspace/src/document.rs
+index ba59c9f..d1e899f 100644
+--- a/impl/crates/lcl-workspace/src/document.rs
++++ b/impl/crates/lcl-workspace/src/document.rs
+@@ -1,4 +1,8 @@
+-//! Reading and writing one `.lcl` document, byte for byte.
++//! Reading and writing one LCL document, byte for byte.
++//!
++//! Nothing here looks at what the document is called. A document is its bytes,
++//! and `.lcl` and `.lcl.txt` are read and written identically; a save writes
++//! the name it was given and never renames what it opened.
+ //!
+ //! ## Why saving is fussy
+ //!
+diff --git a/impl/crates/lcl-workspace/src/http.rs b/impl/crates/lcl-workspace/src/http.rs
+index ddbf3b5..a53d25d 100644
+--- a/impl/crates/lcl-workspace/src/http.rs
++++ b/impl/crates/lcl-workspace/src/http.rs
+@@ -277,6 +277,20 @@ impl Response {
+         }
+     }
+ 
++    /// One image, as bytes.
++    ///
++    /// The body was already `Vec<u8>`, so this adds a content type and nothing
++    /// else. That matters: a PNG pushed through `&str` would have to be valid
++    /// UTF-8, which no PNG is, and the lossy conversion that makes it compile
++    /// is the one that corrupts every byte a decoder needs.
++    pub fn png(body: &'static [u8]) -> Response {
++        Response {
++            status: 200,
++            content_type: "image/png",
++            body: body.to_vec(),
++        }
++    }
++
+     /// A refusal, as JSON so the frontend reads every reply the same way.
+     ///
+     /// The detail is the server's own words about the request. It never carries
+diff --git a/impl/crates/lcl-workspace/src/main.rs b/impl/crates/lcl-workspace/src/main.rs
+index 2cef7e5..95e860a 100644
+--- a/impl/crates/lcl-workspace/src/main.rs
++++ b/impl/crates/lcl-workspace/src/main.rs
+@@ -109,7 +109,9 @@ fn run(argv: &[String]) -> Result<(), String> {
+         None => {
+             let root = match root {
+                 Some(root) => root,
+-                None => std::env::current_dir().map_err(|e| format!("no working directory: {e}"))?,
++                None => {
++                    std::env::current_dir().map_err(|e| format!("no working directory: {e}"))?
++                }
+             };
+             (root, None)
+         }
+diff --git a/impl/crates/lcl-workspace/src/project.rs b/impl/crates/lcl-workspace/src/project.rs
+index 1e0be5e..29c4b56 100644
+--- a/impl/crates/lcl-workspace/src/project.rs
++++ b/impl/crates/lcl-workspace/src/project.rs
+@@ -158,8 +158,7 @@ impl Workspace {
+         if !document.is_file() {
+             return Err(WorkspaceError::Io {
+                 path: document,
+-                detail: "a document is a file; pass a directory as the project instead"
+-                    .to_string(),
++                detail: "a document is a file; pass a directory as the project instead".to_string(),
+             });
+         }
+         let directory = document
+@@ -259,7 +258,13 @@ impl Workspace {
+         Some(to_identity(relative))
+     }
+ 
+-    /// Every `.lcl` document in the project, in ascending identity order.
++    /// Every LCL document in the project, in ascending identity order.
++    ///
++    /// Both recognised suffixes, `.lcl` and `.lcl.txt`. The test is on the file
++    /// name rather than on `Path::extension`, because the extension of
++    /// `notes.lcl.txt` is `txt` and a listing built on that would show neither
++    /// the new default nor anything else useful. Ordinary `.txt` files are not
++    /// listed: only the exact `.lcl.txt` ending is recognised.
+     ///
+     /// Deterministic: the walk sorts each directory's entries by name rather
+     /// than taking the filesystem's enumeration order, which contract 5.3
+@@ -280,9 +285,19 @@ impl Workspace {
+     }
+ 
+     /// Save one document.
++    ///
++    /// Exactly the bytes and exactly the name given. Saving never renames what
++    /// it opened, so a `.lcl` document stays a `.lcl` document forever.
+     pub fn save(&self, id: &str, text: &str) -> Result<Document, WorkspaceError> {
+         Ok(document::write(self.project.root(), id, text)?)
+     }
++
++    /// Whether one document already exists, for a caller about to create one.
++    pub fn exists(&self, id: &str) -> bool {
++        document::resolve(self.project.root(), id)
++            .map(|path| path.is_file())
++            .unwrap_or(false)
++    }
+ }
+ 
+ /// Walk one directory, appending every `.lcl` document and every directory.
+@@ -321,7 +336,7 @@ fn walk(
+                 bytes: None,
+             });
+             walk(root, &path, depth + 1, out)?;
+-        } else if path.extension().is_some_and(|e| e == "lcl") {
++        } else if lcl_project::is_document(&name) {
+             out.push(Entry {
+                 id: to_identity(relative),
+                 directory: false,
+diff --git a/impl/crates/lcl-workspace/src/routes.rs b/impl/crates/lcl-workspace/src/routes.rs
+index 1ab3408..0b4af58 100644
+--- a/impl/crates/lcl-workspace/src/routes.rs
++++ b/impl/crates/lcl-workspace/src/routes.rs
+@@ -32,6 +32,15 @@ const INDEX_HTML: &str = include_str!("../assets/index.html");
+ const APP_CSS: &str = include_str!("../assets/app.css");
+ const APP_JS: &str = include_str!("../assets/app.js");
+ 
++/// The product's own mark, compiled in beside the rest of the frontend.
++///
++/// Derived from `assets/brand/lcl-logo-master.png` by
++/// `assets/brand/derive_brand_assets.py`, which records every derivative's
++/// checksum. Bytes, not text: `include_str!` would refuse a PNG, and forcing
++/// one through a string is how an image arrives corrupted.
++const BRAND_MARK_PNG: &[u8] = include_bytes!("../assets/brand/lcl-mark.png");
++const BRAND_ICON_PNG: &[u8] = include_bytes!("../assets/brand/lcl-icon-32.png");
++
+ /// Everything the routes need, shared across connection threads.
+ pub struct Routes {
+     workspace: Arc<Workspace>,
+@@ -79,11 +88,19 @@ impl Routes {
+             }
+             ("GET", "/app.css") => Response::css(APP_CSS),
+             ("GET", "/app.js") => Response::javascript(APP_JS),
++            // Both are stamped with the session token by the page that
++            // references them, exactly as the stylesheet and script are, so
++            // they pass the same three gates as every other request. A browser
++            // guessing at `/favicon.ico` is not served: an unauthenticated
++            // route would be a hole opened for a picture.
++            ("GET", "/brand/lcl-mark.png") => Response::png(BRAND_MARK_PNG),
++            ("GET", "/brand/lcl-icon-32.png") => Response::png(BRAND_ICON_PNG),
+ 
+             ("GET", "/api/session") => self.session(),
+             ("GET", "/api/documents") => self.documents(),
+             ("GET", "/api/document") => self.read_document(request),
+             ("PUT", "/api/document") => self.save_document(request),
++            ("POST", "/api/document") => self.create_document(request),
+ 
+             ("POST", "/api/tokens") => self.tokens(request),
+             ("POST", "/api/check") => self.analyse(request, Command::Check),
+@@ -199,6 +216,45 @@ impl Routes {
+         }
+     }
+ 
++    /// Create one document, under the name the naming default gives it.
++    ///
++    /// Separate from `PUT` on purpose. Saving must write exactly the name it
++    /// was given, or opening a `.lcl` document and pressing save would rename
++    /// it; creating applies the default, which is the text form. Keeping the
++    /// two in one route would mean guessing which of them the caller meant.
++    ///
++    /// An existing file is never overwritten. Creation that silently replaced
++    /// a document would be a data-loss path reachable by typing a name.
++    fn create_document(&self, request: &Request) -> Response {
++        let Some(requested) = request.param("id") else {
++            return Response::error(400, "a document id is required");
++        };
++        let id = lcl_project::default_name(requested);
++        if id.is_empty() || id == lcl_project::TEXT_SUFFIX {
++            return Response::error(400, "a document needs a name");
++        }
++        if self.workspace.exists(&id) {
++            return Response::error(409, &format!("{id} already exists"));
++        }
++        let text = match request.text() {
++            Ok(text) => text,
++            Err(e) => return Response::error(422, &e.to_string()),
++        };
++        match self.workspace.save(&id, text) {
++            Ok(document) => Response::json(
++                Object::new()
++                    .with("id", Node::string(&document.id))
++                    // What the caller asked for, so a frontend can say that the
++                    // name it is about to show is not the one that was typed.
++                    .with("requested", Node::string(requested))
++                    .with("digest", Node::string(&document.digest))
++                    .with("bytes", Node::usize(document.text.len()))
++                    .pretty(),
++            ),
++            Err(e) => Response::error(422, &e.to_string()),
++        }
++    }
++
+     /// Token spans for one buffer, produced by the real lexer.
+     fn tokens(&self, request: &Request) -> Response {
+         let text = match request.text() {
+diff --git a/impl/crates/lcl-workspace/tests/common/mod.rs b/impl/crates/lcl-workspace/tests/common/mod.rs
+index e01b9c9..45fd60e 100644
+--- a/impl/crates/lcl-workspace/tests/common/mod.rs
++++ b/impl/crates/lcl-workspace/tests/common/mod.rs
+@@ -68,6 +68,57 @@ pub fn send(
+     parse_reply(&raw)
+ }
+ 
++/// One reply whose body was never decoded.
++#[derive(Debug, Clone)]
++pub struct BinaryReply {
++    pub status: u16,
++    pub content_type: String,
++    pub body: Vec<u8>,
++}
++
++/// GET one target and keep the reply body as the bytes that crossed the socket.
++///
++/// [`send`] renders a body as text, which is right for JSON and wrong for a
++/// PNG: `from_utf8_lossy` replaces every byte a decoder needs with U+FFFD, so a
++/// test built on it would pass against an image no browser could read. The
++/// whole question about an image route is whether the exact bytes arrive.
++pub fn send_binary(address: SocketAddr, target: &str) -> BinaryReply {
++    let mut stream = TcpStream::connect(address).expect("the server is listening");
++    let request = format!(
++        "GET {target} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Length: 0\r\n\r\n",
++        address.port()
++    );
++    stream.write_all(request.as_bytes()).expect("request sent");
++    stream.flush().expect("flushed");
++
++    let mut raw = Vec::new();
++    stream.read_to_end(&mut raw).expect("reply read");
++    let separator = b"\r\n\r\n";
++    let cut = raw
++        .windows(separator.len())
++        .position(|window| window == separator)
++        .expect("a reply has a head and a body");
++    let head = String::from_utf8_lossy(&raw[..cut]).to_string();
++    let body = raw[cut + separator.len()..].to_vec();
++
++    let mut lines = head.split("\r\n");
++    let status = lines
++        .next()
++        .and_then(|line| line.split(' ').nth(1))
++        .and_then(|code| code.parse().ok())
++        .unwrap_or(0);
++    let content_type = lines
++        .filter_map(|line| line.split_once(':'))
++        .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
++        .map(|(_, value)| value.trim().to_string())
++        .unwrap_or_default();
++    BinaryReply {
++        status,
++        content_type,
++        body,
++    }
++}
++
+ /// Send a request with a completely hand-written head, framing included.
+ pub fn send_raw(address: SocketAddr, raw: &str) -> Reply {
+     let mut stream = TcpStream::connect(address).expect("the server is listening");
+diff --git a/impl/crates/lcl-workspace/tests/persistence.rs b/impl/crates/lcl-workspace/tests/persistence.rs
+index 279892e..e1ba8d4 100644
+--- a/impl/crates/lcl-workspace/tests/persistence.rs
++++ b/impl/crates/lcl-workspace/tests/persistence.rs
+@@ -269,3 +269,81 @@ fn a_new_document_in_a_directory_that_does_not_exist_yet_is_still_inside() {
+     assert_eq!(saved.id, "a/b/c/deep.lcl");
+     assert_eq!(workspace.read("a/b/c/deep.lcl").unwrap().text, saved.text);
+ }
++
++// ---------------------------------------------------------------------------
++// Two recognised endings
++// ---------------------------------------------------------------------------
++//
++// New documents default to `.lcl.txt`, so that a document can be shared and
++// edited anywhere plain text is. `.lcl` stays fully supported: nothing renames
++// a file, rewrites an import, or changes what a save writes.
++
++#[test]
++fn the_tree_lists_both_endings_and_no_other_text_file() {
++    let (scratch, workspace) = common::project_of_examples("both-endings");
++    scratch.put("classic.lcl", &common::example("01_MINIMAL_TASK.lcl"));
++    scratch.put("modern.lcl.txt", &common::example("01_MINIMAL_TASK.lcl"));
++    scratch.put("notes.txt", "an ordinary text file");
++    scratch.put("readme.md", "not a document");
++    scratch.put("backup.lcl.bak", "not a document either");
++
++    let ids: Vec<String> = workspace
++        .documents()
++        .expect("the tree lists")
++        .into_iter()
++        .filter(|e| !e.directory)
++        .map(|e| e.id)
++        .collect();
++
++    assert!(ids.contains(&"classic.lcl".to_string()));
++    assert!(ids.contains(&"modern.lcl.txt".to_string()));
++    for absent in ["notes.txt", "readme.md", "backup.lcl.bak"] {
++        assert!(
++            !ids.contains(&absent.to_string()),
++            "{absent} is not an LCL document and must not be listed: {ids:?}"
++        );
++    }
++}
++
++#[test]
++fn a_document_of_either_ending_reads_saves_and_reopens_identically() {
++    let (scratch, workspace) = common::project_of_examples("either-ending");
++    let source = common::example("01_MINIMAL_TASK.lcl");
++    for name in ["classic.lcl", "modern.lcl.txt"] {
++        scratch.put(name, &source);
++
++        let read = workspace.read(name).expect("the document reads");
++        assert_eq!(read.text, source, "{name} did not read back its bytes");
++
++        let edited = source.replace("\"Double one integer\"", "\"Edited\"");
++        let saved = workspace.save(name, &edited).expect("the document saves");
++        assert_eq!(
++            saved.id, name,
++            "saving must write the name it was given, never a renamed one"
++        );
++
++        let reopened = workspace.read(name).expect("the document reopens");
++        assert_eq!(reopened.text, edited, "{name} did not reopen its new bytes");
++        assert_eq!(reopened.digest, saved.digest);
++        assert!(
++            scratch.join(name).is_file(),
++            "{name} is not on disk under the name it was saved as"
++        );
++    }
++}
++
++#[test]
++fn saving_a_classic_document_never_renames_it() {
++    // The rule that makes the new default safe: creation applies it, saving
++    // does not. An open `.lcl` document stays `.lcl` for as long as it exists.
++    let (scratch, workspace) = common::project_of_examples("no-rename");
++    let source = common::example("01_MINIMAL_TASK.lcl");
++    scratch.put("legacy.lcl", &source);
++
++    workspace.save("legacy.lcl", &source).expect("saves");
++    assert!(scratch.join("legacy.lcl").is_file());
++    assert!(
++        !scratch.join("legacy.lcl.txt").exists(),
++        "saving created a second document under the default name"
++    );
++}
+diff --git a/impl/crates/lcl-workspace/tests/routes.rs b/impl/crates/lcl-workspace/tests/routes.rs
+index 56d1e68..aea3152 100644
+--- a/impl/crates/lcl-workspace/tests/routes.rs
++++ b/impl/crates/lcl-workspace/tests/routes.rs
+@@ -2,7 +2,7 @@
+ 
+ mod common;
+ 
+-use common::{get_json, send, serve_examples};
++use common::{get_json, send, send_binary, serve_examples};
+ use lcl_spec::json::Json;
+ 
+ fn text(value: &Json) -> &str {
+@@ -246,3 +246,291 @@ fn the_frontend_declares_no_function_twice() {
+          runs: {duplicated:?}"
+     );
+ }
++
++// ---------------------------------------------------------------------------
++// The product's own mark
++// ---------------------------------------------------------------------------
++//
++// B1. The header showed the letters `LCL` in a monospace font and the page
++// declared no favicon at all, so a browser asked for `/favicon.ico`, was
++// refused by the token gate, and the tab stayed blank.
++//
++// What these cases refuse to accept as evidence: a file existing on disk, a
++// route answering 200, or the HTML naming a path. An image is delivered when
++// the exact bytes arrive under a type a decoder will accept, so that is what
++// is compared.
++
++/// The committed derivative behind one served route.
++fn derived(name: &str) -> Vec<u8> {
++    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
++        .join("assets/brand")
++        .join(name);
++    std::fs::read(&path).unwrap_or_else(|e| panic!("{} is not readable: {e}", path.display()))
++}
++
++/// Width, height and colour type from a PNG's own header.
++///
++/// Read from the bytes rather than from a library, because the question is
++/// whether *these* bytes are a decodable image. `IHDR` is fixed-position: an
++/// eight-byte signature, a four-byte length, the chunk type, then the
++/// dimensions as big-endian `u32`s, then bit depth and colour type.
++fn png_header(bytes: &[u8]) -> (u32, u32, u8) {
++    assert_eq!(
++        &bytes[..8],
++        b"\x89PNG\r\n\x1a\n",
++        "the reply does not begin with the PNG signature"
++    );
++    assert_eq!(&bytes[12..16], b"IHDR", "the first chunk must be IHDR");
++    let number =
++        |at: usize| u32::from_be_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]);
++    (number(16), number(20), bytes[25])
++}
++
++#[test]
++fn the_header_mark_is_served_as_the_exact_image_on_disk() {
++    let (_scratch, running) = serve_examples("brand-mark");
++    let reply = send_binary(
++        running.address,
++        &format!("/brand/lcl-mark.png?t={}", running.token),
++    );
++
++    assert_eq!(reply.status, 200);
++    assert_eq!(
++        reply.content_type, "image/png",
++        "an image needs an image content type, not a text one"
++    );
++    assert_eq!(
++        reply.body,
++        derived("lcl-mark.png"),
++        "the served bytes are not the committed derivative"
++    );
++
++    let (width, height, colour) = png_header(&reply.body);
++    assert_eq!((width, height), (97, 96));
++    // Colour type 6 is truecolour with alpha. The supplied artwork is
++    // transparent, and a derivative that had lost its alpha would still decode.
++    assert_eq!(colour, 6, "the mark must keep its alpha channel");
++}
++
++#[test]
++fn the_favicon_is_served_as_a_square_transparent_image() {
++    let (_scratch, running) = serve_examples("brand-icon");
++    let reply = send_binary(
++        running.address,
++        &format!("/brand/lcl-icon-32.png?t={}", running.token),
++    );
++
++    assert_eq!(reply.status, 200);
++    assert_eq!(reply.content_type, "image/png");
++    assert_eq!(reply.body, derived("lcl-icon-32.png"));
++    let (width, height, colour) = png_header(&reply.body);
++    assert_eq!((width, height), (32, 32));
++    assert_eq!(colour, 6);
++}
++
++#[test]
++fn the_page_references_both_images_with_the_token_the_gate_needs() {
++    let (_scratch, running) = serve_examples("brand-page");
++    let page = send(
++        running.address,
++        "GET",
++        &format!("/?t={}", running.token),
++        &[],
++        b"",
++    );
++    assert_eq!(page.status, 200);
++
++    // A reference without the token is a reference the browser cannot follow,
++    // which is exactly how the first attempt at this failed.
++    for reference in [
++        format!("/brand/lcl-icon-32.png?t={}", running.token),
++        format!("/brand/lcl-mark.png?t={}", running.token),
++    ] {
++        assert!(
++            page.body.contains(&reference),
++            "the page does not reference {reference}"
++        );
++    }
++    assert!(
++        page.body.contains("rel=\"icon\""),
++        "the page must declare a real favicon rather than leaving the browser \
++         to guess at /favicon.ico"
++    );
++    // The mark carries an accessible name, because it replaced readable text.
++    assert!(
++        page.body.contains("alt=\"LCL\""),
++        "the header image must keep the name the letters used to give it"
++    );
++}
++
++#[test]
++fn an_image_is_refused_without_the_token_like_everything_else() {
++    let (_scratch, running) = serve_examples("brand-gate");
++    for path in ["/brand/lcl-mark.png", "/brand/lcl-icon-32.png"] {
++        let reply = send(running.address, "GET", path, &[], b"");
++        assert_eq!(reply.status, 403, "{path} answered without a session token");
++    }
++    // And a guessed favicon path is not a hole in the route table.
++    let reply = send(
++        running.address,
++        "GET",
++        &format!("/favicon.ico?t={}", running.token),
++        &[],
++        b"",
++    );
++    assert_eq!(
++        reply.status, 404,
++        "no unauthenticated or undeclared favicon route exists"
++    );
++}
++
++#[test]
++fn an_image_is_refused_from_another_origin() {
++    let (_scratch, running) = serve_examples("brand-origin");
++    let reply = send(
++        running.address,
++        "GET",
++        &format!("/brand/lcl-mark.png?t={}", running.token),
++        &[("Origin", "http://evil.example")],
++        b"",
++    );
++    assert_eq!(
++        reply.status, 403,
++        "an image route must pass the same origin check as every other route"
++    );
++}
++
++// ---------------------------------------------------------------------------
++// Creating a document
++// ---------------------------------------------------------------------------
++
++/// POST one create request and return the parsed reply.
++fn create(running: &common::Running, id: &str, body: &str) -> common::Reply {
++    send(
++        running.address,
++        "POST",
++        &format!("/api/document?id={id}&t={}", running.token),
++        &[],
++        body.as_bytes(),
++    )
++}
++
++const SEED: &str = "LCL:\n    VERSION: \"0.1.0\"\n\nSPECIFICATION:\n    ID: example.new\n    \
++                    NAME: \"New document\"\n    VERSION: \"1.0.0\"\n    KIND: kind.task\n    \
++                    DOMAIN: \"general\"\n";
++
++#[test]
++fn a_new_document_defaults_to_the_text_ending_without_stacking_it() {
++    let (scratch, running) = serve_examples("create-default");
++    for (written, expected) in [
++        ("plain", "plain.lcl.txt"),
++        ("classic.lcl", "classic.lcl.txt"),
++        ("modern.lcl.txt", "modern.lcl.txt"),
++        ("nested/deep.lcl", "nested/deep.lcl.txt"),
++    ] {
++        let reply = create(&running, written, SEED);
++        assert_eq!(reply.status, 200, "{written}: {}", reply.body);
++        let parsed = lcl_spec::json::parse(&reply.body).expect("a reply is JSON");
++        assert_eq!(
++            text(parsed.get("id").unwrap()),
++            expected,
++            "{written} was created under the wrong name"
++        );
++        assert_eq!(text(parsed.get("requested").unwrap()), written);
++        assert!(
++            scratch.join(expected).is_file(),
++            "{expected} is not on disk"
++        );
++    }
++}
++
++#[test]
++fn creating_over_an_existing_document_is_refused_rather_than_overwriting_it() {
++    let (scratch, running) = serve_examples("create-conflict");
++    assert_eq!(create(&running, "once", SEED).status, 200);
++    let original = std::fs::read_to_string(scratch.join("once.lcl.txt")).expect("readable");
++
++    let again = create(&running, "once", "LCL:\n");
++    assert_eq!(again.status, 409, "{}", again.body);
++    assert_eq!(
++        std::fs::read_to_string(scratch.join("once.lcl.txt")).expect("readable"),
++        original,
++        "a refused creation must leave the document untouched"
++    );
++
++    // The same document, named the other way, is the same document.
++    let by_other_name = create(&running, "once.lcl", SEED);
++    assert_eq!(
++        by_other_name.status, 409,
++        "`once.lcl` defaults to `once.lcl.txt`, which already exists: {}",
++        by_other_name.body
++    );
++}
++
++#[test]
++fn saving_writes_the_exact_name_it_was_given() {
++    // `PUT` is not `POST`. Saving an open `.lcl` document must never apply the
++    // creation default, or every save would rename what it opened.
++    let (scratch, running) = serve_examples("save-exact");
++    let name = "01_MINIMAL_TASK.lcl";
++    let edited = common::example(name).replace("\"Double one integer\"", "\"Edited\"");
++    let reply = send(
++        running.address,
++        "PUT",
++        &format!("/api/document?id={name}&t={}", running.token),
++        &[],
++        edited.as_bytes(),
++    );
++    assert_eq!(reply.status, 200, "{}", reply.body);
++    let parsed = lcl_spec::json::parse(&reply.body).expect("a reply is JSON");
++    assert_eq!(text(parsed.get("id").unwrap()), name);
++    assert!(scratch.join(name).is_file());
++    assert!(
++        !scratch.join("01_MINIMAL_TASK.lcl.txt").exists(),
++        "a save created a second document under the default name"
++    );
++}
++
++#[test]
++fn a_created_document_is_checked_and_run_like_any_other() {
++    // The ending is not a way past the engine. A `.lcl.txt` document goes
++    // through the same route, the same engine and the same contracts.
++    let (_scratch, running) = serve_examples("create-check");
++    let created = create(&running, "fresh", SEED);
++    assert_eq!(created.status, 200);
++
++    let checked = send(
++        running.address,
++        "POST",
++        &format!("/api/check?id=fresh.lcl.txt&t={}", running.token),
++        &[],
++        SEED.as_bytes(),
++    );
++    assert_eq!(checked.status, 200, "{}", checked.body);
++    let report = lcl_spec::json::parse(&checked.body).expect("a report");
++    assert!(
++        report.get("reached").is_some(),
++        "a created document must produce an engine report: {}",
++        checked.body
++    );
++
++    // And an invalid one under the same ending is still refused.
++    let invalid = send(
++        running.address,
++        "POST",
++        &format!("/api/check?id=fresh.lcl.txt&t={}", running.token),
++        &[],
++        b"LCL:\n    VERSION: \"0.1.0\"\n\nNOT_A_BLOCK:\n    ID: x\n",
++    );
++    assert_eq!(invalid.status, 200, "{}", invalid.body);
++    let report = lcl_spec::json::parse(&invalid.body).expect("a report");
++    let diagnostics = report
++        .get("diagnostics")
++        .and_then(lcl_spec::json::Json::as_array)
++        .expect("diagnostics");
++    assert!(
++        !diagnostics.is_empty(),
++        "ending a name in .txt must not relax validation: {}",
++        invalid.body
++    );
++}
+diff --git a/impl/integration/README.md b/impl/integration/README.md
+index 1ed5aab..7736af4 100644
+--- a/impl/integration/README.md
++++ b/impl/integration/README.md
+@@ -10,9 +10,9 @@ LCL Core 0.1.0 registers `format.lcl` as "A document conforming to an exact LCL
+ version" and says nothing about file names, extensions or media types. A
+ document's meaning comes from its bytes and the version it declares. So:
+ 
+-- the `.lcl` extension is a convention, and the toolchain never uses it to
+-  decide anything — `lcl check` reads whatever path it is given, whatever it is
+-  called;
++- the `.lcl` and `.lcl.txt` endings are conventions, and the toolchain never
++  uses either to decide anything — `lcl check` reads whatever path it is given,
++  whatever it is called;
+ - `text/x-lcl` is this product's media type, chosen because no registered one
+   exists;
+ - syntax metadata is for highlighting, not for validation. An editor that
+@@ -21,8 +21,21 @@ document's meaning comes from its bytes and the version it declares. So:
+ 
+ ## Desktop registration (Linux)
+ 
+-`linux/lcl.xml` is a shared-mime-info package defining `text/x-lcl`, with a glob
+-for `*.lcl` and a magic rule matching the first four bytes. The magic rule is
++`linux/lcl.xml` is a shared-mime-info package defining `text/x-lcl`, with globs
++for `*.lcl` and `*.lcl.txt` and a magic rule matching the first four bytes.
++
++`*.lcl.txt` is the ending a newly created document is given, so a document can
++be shared and edited anywhere plain text is. It is recognised **in addition to**
++`*.lcl`, never instead of it, and it changes no language rule: both are read,
++checked and run by the same engine under the same contracts, and ending a name
++in `.txt` never relaxes validation.
++
++Ordinary text files are unaffected. Only the exact two-part ending is claimed,
++no glob for `*.txt` is declared, and `text/plain` is not modified. Where the two
++overlap the specification resolves by the longer pattern, so `notes.lcl.txt` is
++an LCL document and `notes.txt` is not — including a `notes.txt` whose bytes
++happen to begin with `LCL:`, because the glob decides before the magic rule is
++consulted. The magic rule is
+ grounded rather than guessed: `04_GRAMMAR/01` requires that "Every document
+ starts with LCL then SPECIFICATION" and `02_LEXICAL/01` requires UTF-8 with no
+ byte-order mark, so every conforming document begins with exactly `LCL:`.
+@@ -41,14 +54,17 @@ two paths it prints. `./uninstall.sh` reverses it exactly.
+ Verify:
+ 
+ ```sh
+-xdg-mime query filetype some-document.lcl   # text/x-lcl
++xdg-mime query filetype some-document.lcl       # text/x-lcl
++xdg-mime query filetype some-document.lcl.txt   # text/x-lcl
++xdg-mime query filetype ordinary-notes.txt      # text/plain
+ ```
+ 
+ On Arch Linux, `update-mime-database` comes from `shared-mime-info`.
+ 
+-There is deliberately no `.desktop` entry. A desktop entry opens a file in an
+-application, and the workspace application is a later milestone's work. Adding
+-one now would register a handler that does not exist yet.
++A `.desktop` entry lives in `packaging/` rather than here, and is installed by
++`packaging/install.sh` together with the binaries it launches. This directory
++registers the media type on its own, for a machine that wants the type without
++the application.
+ 
+ ## Syntax metadata
+ 
+diff --git a/impl/integration/linux/lcl.xml b/impl/integration/linux/lcl.xml
+index 7de3352..a7c9cdd 100644
+--- a/impl/integration/linux/lcl.xml
++++ b/impl/integration/linux/lcl.xml
+@@ -23,6 +23,15 @@
+     <comment xml:lang="en">Learned Computing Language document</comment>
+     <sub-class-of type="text/plain"/>
+     <glob pattern="*.lcl"/>
++    <!--
++      New documents are created as `*.lcl.txt`, so that a document can be
++      shared and edited anywhere plain text is. The two-part pattern is longer
++      than `*.txt`, and the specification resolves overlapping globs by the
++      longest match, so an `.lcl.txt` file is recognised as an LCL document
++      while every other `.txt` file stays exactly what it was. No pattern for
++      `*.txt` is declared here, and `text/plain` is not modified.
++    -->
++    <glob pattern="*.lcl.txt"/>
+     <magic priority="50">
+       <match type="string" value="LCL:" offset="0"/>
+     </magic>
+diff --git a/packaging/README.md b/packaging/README.md
+index b827e3b..981335f 100644
+--- a/packaging/README.md
++++ b/packaging/README.md
+@@ -43,6 +43,22 @@ Installing registers the `text/x-lcl` media type and an application that
+ handles it. It does **not** make LCL your default handler for anything; that
+ stays your choice.
+ 
++## Icons
++
++The menu entry and `.lcl` documents both use the supplied LCL mark, installed
++into `~/.local/share/icons/hicolor` at seven sizes. Both come from one master,
++recorded with its checksum in `assets/brand/`.
++
++The theme directory is shared with every other application, so the installer
++copies its own files in one at a time and the uninstaller removes exactly those
++files. Neither ever removes a directory it did not fill, and no icon cache is
++generated: the icon theme specification resolves an icon by reading the
++directories, and writing a cache would put a shared file there that this
++installation could not safely take back.
++
++Setting a menu icon does not change the icon of the browser window the
++workspace opens in. That window belongs to your browser.
++
+ ## The one thing to know
+ 
+ Every command needs a specification package, and **nothing searches for one**.
+@@ -71,6 +87,18 @@ lcl-workspace my-project --open                # the editor and debugger
+ lcl-workspace --document src/main.lcl --open   # open one document's project
+ ```
+ 
++## What a document is called
++
++New documents are created as `name.lcl.txt`, so they can be shared, opened and
++edited anywhere plain text is. Both endings are recognised everywhere: the
++project tree, opening, saving, checking, running and the `.lcl` file
++association. Nothing renames an existing document, and saving writes exactly
++the name it opened.
++
++The ending decides nothing about meaning. A `.lcl.txt` document is judged by the
++same engine under the same contracts as a `.lcl` one, and ending a name in
++`.txt` never relaxes validation. Ordinary `.txt` files are not LCL documents.
++
+ A run is granted nothing unless a flag says so. A document that asks for the
+ world against a tool that was granted nothing gets a refusal, not a surprise.
+ 
+diff --git a/packaging/build_release.sh b/packaging/build_release.sh
+index 2749d31..40ca860 100755
+--- a/packaging/build_release.sh
++++ b/packaging/build_release.sh
+@@ -1,38 +1,119 @@
+ #!/bin/sh
+-# Build one LCL release tarball, from a clean offline build.
++# Build one LCL release candidate, bound to the exact source it was built from.
+ #
+-# What it produces, under releases/:
++# What it produces, under an output directory of its own:
+ #
+-#   lcl-<version>-linux-x86_64.tar.gz   the payload
+-#   lcl-<version>-linux-x86_64.sha256   its checksum
+-#   lcl-<version>-PROVENANCE.txt        what it was built from, and how
++#   <name>.tar.gz              the payload
++#   <name>.sha256              its checksum
++#   <name>-source.tar.gz       every source byte the build consumed
++#   <name>-source.sha256       its checksum
++#   SOURCE_MANIFEST.sha256     one line per source file
++#   SOURCE_CHANGES.patch       tracked modifications, when the tree is dirty
++#   lcl-<version>-PROVENANCE.txt
+ #
+-# What it does not do: install anything, touch the canonical package, or reach
+-# the network. `--locked --offline` is not a convenience here; a release that
+-# resolved a dependency at build time would not be the thing that was tested,
+-# and this workspace has no dependency to resolve.
++# What it does not do: install anything, touch the canonical package, reach the
++# network, or write into releases/ itself. `--locked --offline` is not a
++# convenience; a release that resolved a dependency at build time would not be
++# the thing that was tested, and this workspace has no dependency to resolve.
++#
++# ## Source identity, recorded before anything is built
++#
++# The previous recipe recorded a commit and a count of uncommitted files, and
++# recorded them *after* writing the artifacts. Neither half worked. A count is
++# not an identity, so the commit could not reconstruct what was actually built;
++# and reading the working tree after generating output measured a tree the run
++# had already changed.
++#
++# So the source set is enumerated, hashed and exported first, and the payload
++# is built from that recorded state. Reconstruction needs no access to this
++# machine's history: the source archive holds the bytes, the manifest holds
++# their checksums, and the provenance names both.
++#
++# ## An isolated build
++#
++# `CARGO_TARGET_DIR` points somewhere this script owns, so a candidate cannot
++# pick up a stale binary that a developer's earlier `cargo build` left in
++# impl/target/release. The build directory is removed afterwards unless
++# LCL_KEEP_BUILD is set.
++#
++# ## Output location
++#
++#   LCL_RELEASE_OUT=<dir>   where to write. Defaults to
++#                           releases/candidates/<name>-<short source id>.
++#
++# It never defaults to releases/ itself. The archives there are the published
++# historical release, and a candidate that overwrote them would destroy the
++# evidence it exists to be compared against.
+ set -eu
+ 
+ here=$(cd "$(dirname "$0")" && pwd)
+ root=$(cd "$here/.." && pwd)
+ impl=$root/impl
+-releases=$root/releases
+ canonical=$root/canonical/LCL_Core_0.1.0
+ 
+ version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$impl/Cargo.toml" | head -1)
+ [ -n "$version" ] || { echo "cannot read the product version from impl/Cargo.toml" >&2; exit 1; }
+ name=lcl-$version-linux-x86_64
++
++# ---------------------------------------------------------------------------
++# 1. Source identity, before any output exists
++# ---------------------------------------------------------------------------
++
+ staging=$(mktemp -d)
+ trap 'rm -rf "$staging"' EXIT
+ 
++# Every file the build may read: tracked files plus untracked ones that are not
++# ignored. `releases/` is excluded because it holds published archives, which
++# are outputs of earlier runs rather than inputs to this one.
++( cd "$root" && git ls-files --cached --others --exclude-standard ) \
++    | grep -v '^releases/' \
++    | LC_ALL=C sort > "$staging/source-files.txt" \
++    || { echo "not a git checkout; source identity cannot be recorded" >&2; exit 1; }
++
++manifest=$staging/SOURCE_MANIFEST.sha256
++( cd "$root" && xargs -d '\n' -r sha256sum < "$staging/source-files.txt" ) > "$manifest"
++source_count=$(wc -l < "$manifest")
++# One digest standing for the whole source set: the checksum of the checksums.
++source_id=$(sha256sum "$manifest" | cut -d' ' -f1)
++short_source_id=$(printf '%.12s' "$source_id")
++
++out=${LCL_RELEASE_OUT:-$root/releases/candidates/$name-$short_source_id}
++mkdir -p "$out"
++
++# The exact bytes, not a reference to them. A candidate built from an
++# uncommitted tree is reconstructible from this archive alone.
++tar -czf "$out/$name-source.tar.gz" -C "$root" -T "$staging/source-files.txt"
++( cd "$out" && sha256sum "$name-source.tar.gz" > "$name-source.sha256" )
++cp "$manifest" "$out/SOURCE_MANIFEST.sha256"
++
++commit=$(cd "$root" && git rev-parse HEAD 2>/dev/null || echo "not a git checkout")
++dirty=$(cd "$root" && git status --porcelain 2>/dev/null | wc -l)
++if [ "$dirty" -gt 0 ]; then
++    # What this tree is, relative to the commit it names. Untracked files are
++    # already whole in the source archive; this is the tracked difference.
++    ( cd "$root" && git diff HEAD --binary ) > "$out/SOURCE_CHANGES.patch"
++else
++    rm -f "$out/SOURCE_CHANGES.patch"
++fi
++
++echo "source:  $source_count files, id $short_source_id"
++echo "output:  $out"
++
++# ---------------------------------------------------------------------------
++# 2. Build, in a directory this script owns
++# ---------------------------------------------------------------------------
++
++build=${LCL_BUILD_DIR:-$staging/build}
++mkdir -p "$build"
+ echo "building $name"
+-( cd "$impl" && cargo build --release --offline --locked -p lcl-cli -p lcl-workspace )
++( cd "$impl" && CARGO_TARGET_DIR="$build" cargo build --release --offline --locked \
++    -p lcl-cli -p lcl-workspace )
+ 
+ payload=$staging/$name
+ mkdir -p "$payload/bin" "$payload/share"
+ 
+-install -m 0755 "$impl/target/release/lcl" "$payload/bin/lcl"
+-install -m 0755 "$impl/target/release/lcl-workspace" "$payload/bin/lcl-workspace"
++install -m 0755 "$build/release/lcl" "$payload/bin/lcl"
++install -m 0755 "$build/release/lcl-workspace" "$payload/bin/lcl-workspace"
+ 
+ # The engine refuses to load a package that is not the approved release, so the
+ # package travels with the binaries rather than being looked for at run time.
+@@ -45,37 +126,87 @@ cp "$here/lcl-workspace-launch.in" "$payload/share/lcl-workspace-launch.in"
+ cp "$root/impl/integration/linux/lcl.xml" "$payload/share/lcl.xml"
+ cp "$here/README.md" "$payload/README.md"
+ 
+-mkdir -p "$releases"
+-tar -czf "$releases/$name.tar.gz" -C "$staging" "$name"
+-( cd "$releases" && sha256sum "$name.tar.gz" > "$name.sha256" )
++# The installed application and document icons, and the master they were
++# derived from. The master travels so that a payload carries the provenance of
++# its own artwork; nothing at run time reads it.
++cp -r "$here/icons" "$payload/share/icons"
++mkdir -p "$payload/share/brand"
++cp "$root/assets/brand/lcl-logo-master.png" "$payload/share/brand/lcl-logo-master.png"
++cp "$root/assets/brand/BRAND_ASSETS.sha256" "$payload/share/brand/BRAND_ASSETS.sha256"
++
++tar -czf "$out/$name.tar.gz" -C "$staging" "$name"
++( cd "$out" && sha256sum "$name.tar.gz" > "$name.sha256" )
++
++# ---------------------------------------------------------------------------
++# 3. Provenance
++# ---------------------------------------------------------------------------
+ 
+-# Provenance: what this is, what it was built from, and how to rebuild it.
+-commit=$(cd "$root" && git rev-parse HEAD 2>/dev/null || echo "not a git checkout")
+-dirty=$(cd "$root" && git status --porcelain 2>/dev/null | wc -l)
+ identity=$("$payload/bin/lcl" spec --spec "$payload/share/LCL_Core_0.1.0" | sed -n 's/^ *identity *//p')
+ {
+-    echo "LCL product release provenance"
++    echo "LCL product release candidate provenance"
++    echo
++    echo "SOURCE, recorded before this build produced anything"
++    echo
++    echo "source id:        $source_id"
++    echo "  (the SHA-256 of SOURCE_MANIFEST.sha256, which lists every source file)"
++    echo "source files:     $source_count"
++    echo "source archive:   $name-source.tar.gz"
++    echo "source sha256:    $(cut -d' ' -f1 < "$out/$name-source.sha256")"
++    echo "git commit:       $commit"
++    echo "uncommitted files at the moment the source was recorded: $dirty"
++    if [ "$dirty" -gt 0 ]; then
++        echo "tracked changes:  SOURCE_CHANGES.patch"
++        echo "                  (untracked files are whole in the source archive)"
++    fi
++    echo
++    echo "TOOLCHAIN AND INPUTS"
++    echo
++    echo "toolchain:        $(rustc --version)"
++    echo "cargo:            $(cargo --version)"
++    echo "declared minimum: $(sed -n 's/^rust-version = "\(.*\)"$/\1/p' "$impl/Cargo.toml" | head -1)"
++    echo "lockfile sha256:  $(sha256sum "$impl/Cargo.lock" | cut -d' ' -f1)"
++    echo "build flags:      --release --offline --locked"
++    echo "build directory:  isolated, not impl/target"
++    echo "built on:         $(uname -srm)"
++    echo
++    echo "ARTIFACT"
+     echo
+     echo "artifact:         $name.tar.gz"
+-    echo "sha256:           $(cut -d' ' -f1 < "$releases/$name.sha256")"
++    echo "sha256:           $(cut -d' ' -f1 < "$out/$name.sha256")"
+     echo "product version:  $version"
+     echo "language version: $("$payload/bin/lcl" version | sed -n 's/^language //p')"
+     echo "engine protocol:  $("$payload/bin/lcl" version | sed -n 's/^protocol //p')"
+     echo "package identity: $identity"
+-    echo "source commit:    $commit"
+-    echo "uncommitted files at build time: $dirty"
+-    echo "toolchain:        $(rustc --version)"
+-    echo "built on:         $(uname -srm)"
+     echo
+-    echo "Rebuild with:"
+-    echo "    packaging/build_release.sh"
++    echo "Bit-for-bit reproducibility is not claimed. Rust embeds build paths"
++    echo "and no attempt is made to normalize them, so two runs from identical"
++    echo "source may differ. What is claimed is the other direction: the source"
++    echo "these bytes were built from is recorded exactly."
++    echo
++    echo "To reconstruct the source and rebuild:"
++    echo
++    echo "    tar -xzf $name-source.tar.gz -C <dir>"
++    echo "    sha256sum -c SOURCE_MANIFEST.sha256   # from <dir>"
++    echo "    cd <dir> && packaging/build_release.sh"
+     echo
+-    echo "The payload's own checksums, for every file in the tarball:"
++    echo "BRAND ASSETS IN THIS PAYLOAD"
+     echo
+-    ( cd "$staging" && find "$name" -type f -print0 | sort -z | xargs -0 sha256sum )
+-} > "$releases/lcl-$version-PROVENANCE.txt"
++    sed 's/^/    /' "$root/assets/brand/BRAND_ASSETS.sha256"
++    echo
++    echo "PAYLOAD, every file in the tarball:"
++    echo
++    ( cd "$staging" && find "$name" -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum )
++} > "$out/lcl-$version-PROVENANCE.txt"
+ 
++if [ "${LCL_KEEP_BUILD:-}" = "" ]; then
++    rm -rf "$build"
++fi
++
++echo
++echo "wrote $out/$name.tar.gz"
++echo "wrote $out/$name.sha256"
++echo "wrote $out/$name-source.tar.gz"
++echo "wrote $out/SOURCE_MANIFEST.sha256"
++echo "wrote $out/lcl-$version-PROVENANCE.txt"
+ echo
+-echo "wrote $releases/$name.tar.gz"
+-echo "wrote $releases/$name.sha256"
+-echo "wrote $releases/lcl-$version-PROVENANCE.txt"
++echo "The published release in releases/ was not touched."
+diff --git a/packaging/install.sh b/packaging/install.sh
+index 144d8c2..e46f617 100755
+--- a/packaging/install.sh
++++ b/packaging/install.sh
+@@ -10,6 +10,7 @@
+ #   ~/.local/share/lcl/LCL_Core_0.1.0   the specification package they load
+ #   ~/.local/share/applications         the desktop entry
+ #   ~/.local/share/mime/packages        the .lcl media type
++#   ~/.local/share/icons/hicolor/...    the application and document icons
+ #
+ # The specification package is installed beside the binaries rather than looked
+ # for, because the engine loads one exact approved package and "Ambient current
+@@ -80,6 +81,31 @@ echo "installed $data/applications/lcl-workspace.desktop"
+ cp "$here/share/lcl.xml" "$data/mime/packages/lcl.xml"
+ echo "installed $data/mime/packages/lcl.xml"
+ 
++# The application icon the desktop entry names, and the document icon for the
++# media type registered above. Both are derived from one supplied master, so a
++# launcher and the files it opens look like one product.
++#
++# Each file is copied individually into the shared hicolor theme. The theme
++# belongs to every application on the machine, so nothing here creates, empties
++# or removes a directory that is not ours to touch, and uninstall removes
++# exactly the files this loop wrote.
++icons=$data/icons/hicolor
++for source in "$here/share/icons/hicolor/"*/*/*.png; do
++    [ -f "$source" ] || continue
++    relative=${source#"$here/share/icons/hicolor/"}
++    mkdir -p "$icons/$(dirname "$relative")"
++    cp "$source" "$icons/$relative"
++done
++echo "installed $icons/*/apps/lcl-workspace.png"
++echo "installed $icons/*/mimetypes/text-x-lcl.png"
++
++# No icon cache is generated. `gtk-update-icon-cache` writes an
++# `icon-theme.cache` into the theme root, which is a lookup accelerator rather
++# than a requirement: the icon theme specification's search algorithm reads the
++# directories, and every desktop falls back to doing so. Generating one would
++# put a shared file into the theme that this installation did not own and could
++# not safely remove, and the icons resolve without it.
++
+ if command -v update-mime-database >/dev/null 2>&1; then
+     update-mime-database "$data/mime"
+     echo "updated   $data/mime"
+diff --git a/packaging/lcl.desktop b/packaging/lcl.desktop
+index 3b12d1b..0a60f2a 100644
+--- a/packaging/lcl.desktop
++++ b/packaging/lcl.desktop
+@@ -4,6 +4,7 @@ Version=1.0
+ Name=LCL Workspace
+ GenericName=LCL editor and debugger
+ Comment=Write, run, inspect and debug LCL documents
++Icon=lcl-workspace
+ Exec=@LAUNCHER@ %f
+ Terminal=false
+ Categories=Development;IDE;
+diff --git a/packaging/uninstall.sh b/packaging/uninstall.sh
+index be1e42b..c8a5ac4 100755
+--- a/packaging/uninstall.sh
++++ b/packaging/uninstall.sh
+@@ -18,6 +18,24 @@ do
+     fi
+ done
+ 
++# Exactly the icon files this installation wrote, one at a time. The hicolor
++# theme is shared with every other application on the machine, so a recursive
++# removal here would take other products' icons with it. Each directory is
++# offered to `rmdir`, which declines unless this installation left it empty.
++icons=$data/icons/hicolor
++for relative in */apps/lcl-workspace.png */mimetypes/text-x-lcl.png; do
++    for path in "$icons"/$relative; do
++        if [ -f "$path" ]; then
++            rm -f "$path"
++            echo "removed $path"
++        fi
++    done
++done
++if [ -d "$icons" ]; then
++    # Deepest first, so an emptied leaf lets its parent go too. Never -r.
++    find "$icons" -depth -type d -exec rmdir {} + 2>/dev/null || true
++    rmdir "$data/icons" 2>/dev/null || true
++fi
+ if [ -d "$data/lcl/LCL_Core_0.1.0" ]; then
+     rm -rf "$data/lcl/LCL_Core_0.1.0"
+     echo "removed $data/lcl/LCL_Core_0.1.0"

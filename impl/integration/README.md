@@ -10,9 +10,9 @@ LCL Core 0.1.0 registers `format.lcl` as "A document conforming to an exact LCL
 version" and says nothing about file names, extensions or media types. A
 document's meaning comes from its bytes and the version it declares. So:
 
-- the `.lcl` extension is a convention, and the toolchain never uses it to
-  decide anything — `lcl check` reads whatever path it is given, whatever it is
-  called;
+- the `.lcl` and `.lcl.txt` endings are conventions, and the toolchain never
+  uses either to decide anything — `lcl check` reads whatever path it is given,
+  whatever it is called;
 - `text/x-lcl` is this product's media type, chosen because no registered one
   exists;
 - syntax metadata is for highlighting, not for validation. An editor that
@@ -21,8 +21,21 @@ document's meaning comes from its bytes and the version it declares. So:
 
 ## Desktop registration (Linux)
 
-`linux/lcl.xml` is a shared-mime-info package defining `text/x-lcl`, with a glob
-for `*.lcl` and a magic rule matching the first four bytes. The magic rule is
+`linux/lcl.xml` is a shared-mime-info package defining `text/x-lcl`, with globs
+for `*.lcl` and `*.lcl.txt` and a magic rule matching the first four bytes.
+
+`*.lcl.txt` is the ending a newly created document is given, so a document can
+be shared and edited anywhere plain text is. It is recognised **in addition to**
+`*.lcl`, never instead of it, and it changes no language rule: both are read,
+checked and run by the same engine under the same contracts, and ending a name
+in `.txt` never relaxes validation.
+
+Ordinary text files are unaffected. Only the exact two-part ending is claimed,
+no glob for `*.txt` is declared, and `text/plain` is not modified. Where the two
+overlap the specification resolves by the longer pattern, so `notes.lcl.txt` is
+an LCL document and `notes.txt` is not — including a `notes.txt` whose bytes
+happen to begin with `LCL:`, because the glob decides before the magic rule is
+consulted. The magic rule is
 grounded rather than guessed: `04_GRAMMAR/01` requires that "Every document
 starts with LCL then SPECIFICATION" and `02_LEXICAL/01` requires UTF-8 with no
 byte-order mark, so every conforming document begins with exactly `LCL:`.
@@ -41,14 +54,17 @@ two paths it prints. `./uninstall.sh` reverses it exactly.
 Verify:
 
 ```sh
-xdg-mime query filetype some-document.lcl   # text/x-lcl
+xdg-mime query filetype some-document.lcl       # text/x-lcl
+xdg-mime query filetype some-document.lcl.txt   # text/x-lcl
+xdg-mime query filetype ordinary-notes.txt      # text/plain
 ```
 
 On Arch Linux, `update-mime-database` comes from `shared-mime-info`.
 
-There is deliberately no `.desktop` entry. A desktop entry opens a file in an
-application, and the workspace application is a later milestone's work. Adding
-one now would register a handler that does not exist yet.
+A `.desktop` entry lives in `packaging/` rather than here, and is installed by
+`packaging/install.sh` together with the binaries it launches. This directory
+registers the media type on its own, for a machine that wants the type without
+the application.
 
 ## Syntax metadata
 

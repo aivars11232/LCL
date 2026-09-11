@@ -4,6 +4,7 @@ Version=1.0
 Name=LCL Workspace
 GenericName=LCL editor and debugger
 Comment=Write, run, inspect and debug LCL documents
+Icon=lcl-workspace
 Exec=@LAUNCHER@ %f
 Terminal=false
 Categories=Development;IDE;

@@ -14,6 +14,7 @@
 use lcl_conformance::report::Implementation;
 use lcl_conformance::{ConformanceIndex, ConformanceReport, Runner};
 use lcl_spec::SpecPackage;
+use lcl_stdlib::{HostAdapter, MemoryFileSystem};
 use std::path::{Path, PathBuf};
 
 #[path = "../tests/witness_cases/mod.rs"]
@@ -28,6 +29,21 @@ fn canonical_root() -> PathBuf {
         .expect("the canonical package must be present")
 }
 
+/// The in-memory filesystem a filesystem-shaped witness runs against.
+///
+/// The same fixture `tests/decision_witnesses.rs` installs, so this report and
+/// that gate execute the same probes against the same declared content rather
+/// than two populations a reader has to reconcile.
+fn filesystem_host() -> HostAdapter {
+    let fs = MemoryFileSystem::new()
+        .with_read_scope("/case")
+        .with_scope("/case")
+        .with_file("/case/a.txt", *b"abcd")
+        .with_file("/case/lines.txt", *b"a\nb");
+    let grants = fs.grants().clone();
+    HostAdapter::new(grants).with_filesystem(fs)
+}
+
 fn main() {
     let spec = SpecPackage::open(canonical_root()).expect("the approved package opens");
     let index = ConformanceIndex::load(&spec).expect("the catalogs load");
@@ -39,7 +55,7 @@ fn main() {
             spec.formal_version().to_string(),
         ),
         index.requirement_count(),
-        index.witness_count(),
+        index.witnesses().iter().map(|w| w.id.clone()),
     );
 
     for case in witness_cases::cases() {
@@ -57,21 +73,29 @@ fn main() {
                     } else {
                         format!("{}/{}", case.id, probe.label)
                     };
-                    // The example runs the host-free probes only; the
-                    // filesystem-backed ones need the test fixture host, and the
-                    // gate in `tests/decision_witnesses.rs` runs those.
-                    if probe.needs_filesystem {
-                        report.record_descriptive(
-                            format!("{id} (needs the filesystem fixture)"),
-                            "executed by the semantic_case_execution gate, which installs the \
-                             in-memory filesystem this probe reads",
-                        );
-                        continue;
-                    }
-                    report.record(
-                        runner.execute(&id, &contract, &probe.source, probe.expectation.clone()),
-                        case.coverage,
-                    );
+                    // Every probe runs here, including the filesystem-backed
+                    // ones. They used to be recorded as descriptive entries
+                    // with a note saying the gate ran them elsewhere, which was
+                    // true and misleading at once: a reader comparing the
+                    // executed count against the sixty-six indexed witnesses
+                    // saw five behaviours apparently unexhibited, and the
+                    // descriptive column counted probes rather than witnesses.
+                    // The fixture is deterministic and contract-faithful, so
+                    // there is no reason for this report to be the one place
+                    // that cannot use it.
+                    let executed = if probe.needs_filesystem {
+                        let mut host = filesystem_host();
+                        runner.execute_on(
+                            &id,
+                            &contract,
+                            &probe.source,
+                            probe.expectation.clone(),
+                            &mut host,
+                        )
+                    } else {
+                        runner.execute(&id, &contract, &probe.source, probe.expectation.clone())
+                    };
+                    report.record(executed, case.coverage);
                 }
             }
             Plan::Descriptive { reason } => report.record_descriptive(case.id, *reason),

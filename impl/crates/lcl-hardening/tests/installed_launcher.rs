@@ -24,6 +24,7 @@
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
@@ -45,12 +46,65 @@ fn built() -> PathBuf {
     path
 }
 
-/// A disposable home, with nothing in it.
-fn clean_home(case: &str) -> PathBuf {
-    let home = std::env::temp_dir().join(format!("lcl-launch-{}-{case}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&home);
-    std::fs::create_dir_all(&home).expect("the temporary home is writable");
-    home
+/// One case at a time.
+///
+/// Each home below holds a staged payload and an installation of it, and a
+/// payload carries this build's two binaries. Those are unstripped debug
+/// builds, so one home is a few hundred megabytes and eight running at once
+/// would fill a `tmpfs`. It did, once, which is why this exists.
+static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// A disposable home that removes itself.
+///
+/// Removal is on `Drop` rather than only at the start of the next run, so a
+/// suite that finishes leaves nothing behind. A panicking test still drops its
+/// guard while unwinding.
+struct Home {
+    path: PathBuf,
+    _one_at_a_time: std::sync::MutexGuard<'static, ()>,
+}
+
+impl Home {
+    fn new(case: &str) -> Home {
+        // A poisoned lock means an earlier case panicked, which this one has
+        // no reason to inherit.
+        let guard = ONE_AT_A_TIME
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let path = std::env::temp_dir().join(format!("lcl-launch-{}-{case}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("the temporary home is writable");
+        Home {
+            path,
+            _one_at_a_time: guard,
+        }
+    }
+}
+
+impl Drop for Home {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+impl std::ops::Deref for Home {
+    type Target = Path;
+
+    fn deref(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl AsRef<Path> for Home {
+    fn as_ref(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl AsRef<std::ffi::OsStr> for Home {
+    fn as_ref(&self) -> &std::ffi::OsStr {
+        self.path.as_os_str()
+    }
 }
 
 fn copy_tree(from: &Path, to: &Path) {
@@ -93,7 +147,10 @@ fn stage_payload(into: &Path) -> PathBuf {
         (packaging.join("install.sh"), payload.join("install.sh")),
         (packaging.join("uninstall.sh"), payload.join("uninstall.sh")),
         (packaging.join("README.md"), payload.join("README.md")),
-        (packaging.join("lcl.desktop"), payload.join("share/lcl.desktop")),
+        (
+            packaging.join("lcl.desktop"),
+            payload.join("share/lcl.desktop"),
+        ),
         (
             packaging.join("lcl-workspace-launch.in"),
             payload.join("share/lcl-workspace-launch.in"),
@@ -105,6 +162,7 @@ fn stage_payload(into: &Path) -> PathBuf {
     ] {
         std::fs::copy(&from, &to).unwrap_or_else(|e| panic!("{}: {e}", from.display()));
     }
+    copy_tree(&packaging.join("icons"), &payload.join("share/icons"));
     for script in ["install.sh", "uninstall.sh"] {
         make_executable(&payload.join(script));
     }
@@ -211,10 +269,7 @@ fn stub_opener(home: &Path) -> PathBuf {
     let dir = home.join("stub-bin");
     std::fs::create_dir_all(&dir).expect("writable");
     let recorded = home.join("opened-url");
-    let script = format!(
-        "#!/bin/sh\nprintf '%s' \"$1\" > {}\n",
-        recorded.display()
-    );
+    let script = format!("#!/bin/sh\nprintf '%s' \"$1\" > {}\n", recorded.display());
     let path = dir.join("xdg-open");
     std::fs::write(&path, script).expect("writable");
     make_executable(&path);
@@ -229,6 +284,16 @@ struct Launched {
 
 impl Drop for Launched {
     fn drop(&mut self) {
+        // The launcher is a shell script and the workspace is *its* child, so
+        // killing the script on its own leaves a server behind holding a
+        // socket and a few hundred megabytes. `launch` puts the script into a
+        // new process group, which makes the whole tree addressable at once.
+        let group = self.child.id();
+        let _ = Command::new("kill")
+            .args(["-TERM", &format!("-{group}")])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
@@ -260,6 +325,9 @@ fn launch(home: &Path, document: Option<&Path>) -> Launched {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
+        // Its own process group, so `Launched::drop` can end the launcher and
+        // the workspace it starts together.
+        .process_group(0)
         .spawn()
         .unwrap_or_else(|e| panic!("the desktop entry's Exec did not start: {exec}: {e}"));
     Launched {
@@ -333,7 +401,7 @@ fn document(home: &Path, relative: &str) -> PathBuf {
 
 #[test]
 fn the_installed_desktop_entry_runs_a_launcher_that_exists() {
-    let home = clean_home("entry");
+    let home = Home::new("entry");
     install(&home);
 
     let exec = desktop_value(&home, "Exec");
@@ -363,7 +431,7 @@ fn the_installed_desktop_entry_runs_a_launcher_that_exists() {
 
 #[test]
 fn a_menu_launch_with_no_document_opens_the_default_project() {
-    let home = clean_home("menu");
+    let home = Home::new("menu");
     install(&home);
 
     let launched = launch(&home, None);
@@ -389,7 +457,7 @@ fn a_menu_launch_with_no_document_opens_the_default_project() {
 
 #[test]
 fn a_file_association_opens_that_document_in_its_own_project() {
-    let home = clean_home("assoc");
+    let home = Home::new("assoc");
     install(&home);
     let path = document(&home, "papers/report.lcl");
 
@@ -416,7 +484,7 @@ fn a_file_association_opens_that_document_in_its_own_project() {
 
 #[test]
 fn a_document_whose_path_holds_spaces_opens() {
-    let home = clean_home("spaces");
+    let home = Home::new("spaces");
     install(&home);
     let path = document(&home, "my papers/first draft.lcl");
 
@@ -433,7 +501,7 @@ fn a_document_whose_path_holds_spaces_opens() {
 
 #[test]
 fn a_document_inside_a_project_opens_against_that_project() {
-    let home = clean_home("project");
+    let home = Home::new("project");
     install(&home);
     let root = home.join("work");
     let path = document(&home, "work/src/main.lcl");
@@ -468,7 +536,7 @@ fn the_launcher_needs_no_spec_in_the_environment() {
     // The environment every launch above ran in had no LCL_SPEC, which is the
     // condition the old packaging failed under. This states it as its own
     // assertion rather than leaving it implicit in the others.
-    let home = clean_home("nospec");
+    let home = Home::new("nospec");
     install(&home);
     let launcher = std::fs::read_to_string(home.join(".local/bin/lcl-workspace-launch"))
         .expect("the launcher is installed");
@@ -498,7 +566,7 @@ fn the_launcher_needs_no_spec_in_the_environment() {
 
 #[test]
 fn a_missing_document_fails_visibly_instead_of_silently() {
-    let home = clean_home("missing");
+    let home = Home::new("missing");
     install(&home);
     let exec = desktop_value(&home, "Exec");
     let argv = exec_argv(&exec, Some(Path::new("/nonexistent/document.lcl")));
@@ -531,7 +599,7 @@ fn a_missing_document_fails_visibly_instead_of_silently() {
 
 #[test]
 fn uninstall_removes_the_launcher_and_reinstall_restores_it() {
-    let home = clean_home("lifecycle");
+    let home = Home::new("lifecycle");
     let (payload, _) = install(&home);
     let launcher = home.join(".local/bin/lcl-workspace-launch");
     assert!(launcher.is_file());
@@ -555,7 +623,9 @@ fn uninstall_removes_the_launcher_and_reinstall_restores_it() {
     );
     assert!(!launcher.exists(), "the launcher survived the uninstall");
     assert!(
-        !home.join(".local/share/applications/lcl-workspace.desktop").exists(),
+        !home
+            .join(".local/share/applications/lcl-workspace.desktop")
+            .exists(),
         "the desktop entry survived the uninstall"
     );
     assert!(
@@ -567,4 +637,324 @@ fn uninstall_removes_the_launcher_and_reinstall_restores_it() {
     assert!(launcher.is_file(), "reinstall did not restore the launcher");
     let launched = launch(&home, None);
     await_url(&launched);
+}
+
+// ---------------------------------------------------------------------------
+// B1: the installed application icon
+// ---------------------------------------------------------------------------
+
+/// Every installed icon file this product owns, under one home.
+fn installed_icons(home: &Path) -> Vec<PathBuf> {
+    let theme = home.join(".local/share/icons/hicolor");
+    let mut found = Vec::new();
+    let mut stack = vec![theme];
+    while let Some(directory) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&directory) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            if entry.path().is_dir() {
+                stack.push(entry.path());
+            } else {
+                found.push(entry.path());
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+#[test]
+fn the_desktop_entry_names_an_icon_that_is_actually_installed() {
+    let home = Home::new("icon");
+    install(&home);
+
+    // A desktop entry names an icon by theme name, not by path, and the theme
+    // resolves it. So the assertion is that the name resolves, in the isolated
+    // data directory this installation wrote to.
+    let name = desktop_value(&home, "Icon");
+    assert_eq!(name, "lcl-workspace");
+    assert!(
+        !name.contains('/'),
+        "an Icon key is a theme name, not a path: {name}"
+    );
+
+    let theme = home.join(".local/share/icons/hicolor");
+    let mut resolved = Vec::new();
+    for size in [16, 24, 32, 48, 64, 128, 256] {
+        let path = theme.join(format!("{size}x{size}/apps/{name}.png"));
+        if path.is_file() {
+            resolved.push(path);
+        }
+    }
+    assert!(
+        resolved.len() >= 5,
+        "the icon name resolved at only {} sizes under {}",
+        resolved.len(),
+        theme.display()
+    );
+
+    // Every one of them is a real decodable image with the dimensions its
+    // directory claims, not a placeholder that happens to sit at the path.
+    for path in &resolved {
+        let bytes = std::fs::read(path).expect("readable");
+        assert_eq!(
+            &bytes[..8],
+            b"\x89PNG\r\n\x1a\n",
+            "{} is not a PNG",
+            path.display()
+        );
+        let number = |at: usize| {
+            u32::from_be_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]])
+        };
+        let (width, height, colour) = (number(16), number(20), bytes[25]);
+        let declared: u32 = path
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .and_then(|n| n.split('x').next())
+            .and_then(|n| n.parse().ok())
+            .expect("a sized theme directory");
+        assert_eq!(
+            (width, height),
+            (declared, declared),
+            "{} does not hold a {declared}-pixel icon",
+            path.display()
+        );
+        assert_eq!(colour, 6, "{} lost its alpha channel", path.display());
+    }
+}
+
+#[test]
+fn the_document_icon_uses_the_same_source_as_the_application() {
+    let home = Home::new("docicon");
+    install(&home);
+    let theme = home.join(".local/share/icons/hicolor");
+    // The media type registered by this installation is `text/x-lcl`, and a
+    // theme names its icon after the type with the slash replaced.
+    let document = theme.join("48x48/mimetypes/text-x-lcl.png");
+    let application = theme.join("48x48/apps/lcl-workspace.png");
+    assert!(document.is_file(), "no document icon was installed");
+    assert_eq!(
+        std::fs::read(&document).expect("readable"),
+        std::fs::read(&application).expect("readable"),
+        "the document and application icons must come from one source"
+    );
+}
+
+#[test]
+fn uninstall_takes_only_this_products_icons() {
+    let home = Home::new("iconlife");
+    let (payload, _) = install(&home);
+    let theme = home.join(".local/share/icons/hicolor");
+
+    let ours = installed_icons(&home);
+    assert!(!ours.is_empty(), "nothing was installed to remove");
+
+    // Another application's icon, in the same shared directory. A recursive
+    // removal would take it, and that is the failure this asserts against.
+    let stranger = theme.join("48x48/apps/someone-elses-app.png");
+    std::fs::write(&stranger, b"not ours").expect("writable");
+
+    let output = Command::new(payload.join("uninstall.sh"))
+        .env_clear()
+        .env("HOME", &home)
+        .env("PATH", "/usr/bin:/bin")
+        .current_dir(std::env::temp_dir())
+        .output()
+        .expect("the uninstaller runs");
+    assert!(
+        output.status.success(),
+        "uninstall failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(
+        stranger.is_file(),
+        "uninstall removed another application's icon from the shared theme"
+    );
+    for path in ours {
+        assert!(!path.exists(), "{} survived the uninstall", path.display());
+    }
+    assert!(
+        theme.join("48x48/apps").is_dir(),
+        "a shared theme directory holding another application's icon must stay"
+    );
+
+    // Reinstall restores exactly what was removed, alongside the stranger.
+    install(&home);
+    assert!(theme.join("48x48/apps/lcl-workspace.png").is_file());
+    assert!(stranger.is_file());
+}
+
+#[test]
+fn an_empty_theme_directory_is_removed_but_the_shared_root_is_never_recursive() {
+    // With nothing else in the theme, uninstall should leave no empty skeleton
+    // behind either. The two cases together state the whole rule: remove our
+    // files, remove the directories only we filled, never remove the rest.
+    let home = Home::new("icontidy");
+    let (payload, _) = install(&home);
+    let theme = home.join(".local/share/icons/hicolor");
+    assert!(theme.join("256x256/apps/lcl-workspace.png").is_file());
+
+    let output = Command::new(payload.join("uninstall.sh"))
+        .env_clear()
+        .env("HOME", &home)
+        .env("PATH", "/usr/bin:/bin")
+        .current_dir(std::env::temp_dir())
+        .output()
+        .expect("the uninstaller runs");
+    assert!(output.status.success());
+    assert!(
+        !theme.exists(),
+        "an installation that filled the theme by itself should leave none of \
+         it behind: {} is still there",
+        theme.display()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The `.lcl.txt` ending, through the installed association
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_text_ending_document_opens_through_the_desktop_entry() {
+    let home = Home::new("textdoc");
+    install(&home);
+    // The same source, under the ending a newly created document is given.
+    let path = document(&home, "papers/report.lcl.txt");
+
+    let launched = launch(&home, Some(&path));
+    let url = await_url(&launched);
+
+    let (status, body) = get(&url, "/api/session");
+    assert_eq!(status, 200, "the session route refused: {body}");
+    assert!(
+        body.contains("\"open\": \"report.lcl.txt\""),
+        "a .lcl.txt document must open exactly like a .lcl one:\n{body}"
+    );
+
+    // And it is listed, so the person can see it in the project.
+    let (status, tree) = get(&url, "/api/documents");
+    assert_eq!(status, 200);
+    assert!(
+        tree.contains("report.lcl.txt"),
+        "the created ending must appear in the project tree:\n{tree}"
+    );
+}
+
+#[test]
+fn the_installed_media_type_claims_both_endings_and_not_plain_text() {
+    let home = Home::new("mime");
+    install(&home);
+
+    // `update-mime-database` compiles the installed package into `globs2`,
+    // which is the table a desktop consults. Asserting on it rather than on the
+    // XML proves the registration survived compilation. This is the *user*
+    // table, which only adds: `text/plain` lives in the system database, which
+    // this installation never touches.
+    let globs = home.join(".local/share/mime/globs2");
+    if !globs.is_file() {
+        eprintln!("update-mime-database produced no globs2; skipping the compiled check");
+        return;
+    }
+    let table = std::fs::read_to_string(&globs).expect("readable");
+    let ours: Vec<&str> = table
+        .lines()
+        .filter(|line| line.contains("text/x-lcl"))
+        .collect();
+    assert!(
+        ours.iter().any(|l| l.ends_with("*.lcl")),
+        "the compiled table does not claim *.lcl: {ours:?}"
+    );
+    assert!(
+        ours.iter().any(|l| l.ends_with("*.lcl.txt")),
+        "the compiled table does not claim *.lcl.txt: {ours:?}"
+    );
+    assert!(
+        !ours.iter().any(|l| l.ends_with("*.txt")),
+        "LCL must not claim every text file: {ours:?}"
+    );
+    assert!(
+        !table.contains("text/plain"),
+        "this installation must not redefine plain text: {table}"
+    );
+}
+
+#[test]
+fn an_ordinary_text_file_is_still_ordinary_after_installation() {
+    // The end-to-end question, asked of the desktop's own resolver rather than
+    // of a table: which media type does each of these files actually get?
+    //
+    // `*.lcl.txt` and `*.txt` overlap, and the specification resolves an
+    // overlap by the longer pattern, so the answers below are the whole reason
+    // the two-part ending is safe to register.
+    let home = Home::new("mimequery");
+    install(&home);
+    if Command::new("xdg-mime")
+        .arg("--help")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_err()
+    {
+        eprintln!("xdg-mime is absent; skipping the resolver check");
+        return;
+    }
+
+    let files = home.join("files");
+    std::fs::create_dir_all(&files).expect("writable");
+    for (name, contents) in [
+        ("a.lcl", "LCL:\n"),
+        ("b.lcl.txt", "LCL:\n"),
+        ("c.txt", "just text\n"),
+        // A plain text file whose bytes happen to begin like a document. The
+        // glob decides before the magic rule is reached, so this stays text.
+        ("d.txt", "LCL:\n"),
+        ("e.md", "# not a document\n"),
+    ] {
+        std::fs::write(files.join(name), contents).expect("writable");
+    }
+
+    let query = |name: &str| -> String {
+        let output = Command::new("xdg-mime")
+            .args(["query", "filetype"])
+            .arg(files.join(name))
+            .env("HOME", home.as_ref() as &Path)
+            .env("XDG_DATA_HOME", home.join(".local/share"))
+            .env("PATH", "/usr/bin:/bin")
+            .output()
+            .expect("xdg-mime runs");
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    };
+
+    assert_eq!(query("a.lcl"), "text/x-lcl");
+    assert_eq!(query("b.lcl.txt"), "text/x-lcl");
+    assert_eq!(
+        query("c.txt"),
+        "text/plain",
+        "an ordinary text file must stay an ordinary text file"
+    );
+    assert_eq!(
+        query("d.txt"),
+        "text/plain",
+        "a .txt file is not an LCL document just because of what is inside it"
+    );
+    assert_eq!(query("e.md"), "text/markdown");
+}
+
+#[test]
+fn installation_does_not_take_over_the_operators_default_applications() {
+    let home = Home::new("defaults");
+    install(&home);
+    for path in [
+        ".config/mimeapps.list",
+        ".local/share/applications/mimeapps.list",
+    ] {
+        assert!(
+            !home.join(path).exists(),
+            "{path} was written; installation must not choose default applications"
+        );
+    }
 }

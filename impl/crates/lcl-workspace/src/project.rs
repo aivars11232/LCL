@@ -158,8 +158,7 @@ impl Workspace {
         if !document.is_file() {
             return Err(WorkspaceError::Io {
                 path: document,
-                detail: "a document is a file; pass a directory as the project instead"
-                    .to_string(),
+                detail: "a document is a file; pass a directory as the project instead".to_string(),
             });
         }
         let directory = document
@@ -259,7 +258,13 @@ impl Workspace {
         Some(to_identity(relative))
     }
 
-    /// Every `.lcl` document in the project, in ascending identity order.
+    /// Every LCL document in the project, in ascending identity order.
+    ///
+    /// Both recognised suffixes, `.lcl` and `.lcl.txt`. The test is on the file
+    /// name rather than on `Path::extension`, because the extension of
+    /// `notes.lcl.txt` is `txt` and a listing built on that would show neither
+    /// the new default nor anything else useful. Ordinary `.txt` files are not
+    /// listed: only the exact `.lcl.txt` ending is recognised.
     ///
     /// Deterministic: the walk sorts each directory's entries by name rather
     /// than taking the filesystem's enumeration order, which contract 5.3
@@ -280,8 +285,18 @@ impl Workspace {
     }
 
     /// Save one document.
+    ///
+    /// Exactly the bytes and exactly the name given. Saving never renames what
+    /// it opened, so a `.lcl` document stays a `.lcl` document forever.
     pub fn save(&self, id: &str, text: &str) -> Result<Document, WorkspaceError> {
         Ok(document::write(self.project.root(), id, text)?)
+    }
+
+    /// Whether one document already exists, for a caller about to create one.
+    pub fn exists(&self, id: &str) -> bool {
+        document::resolve(self.project.root(), id)
+            .map(|path| path.is_file())
+            .unwrap_or(false)
     }
 }
 
@@ -321,7 +336,7 @@ fn walk(
                 bytes: None,
             });
             walk(root, &path, depth + 1, out)?;
-        } else if path.extension().is_some_and(|e| e == "lcl") {
+        } else if lcl_project::is_document(&name) {
             out.push(Entry {
                 id: to_identity(relative),
                 directory: false,

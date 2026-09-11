@@ -336,3 +336,142 @@ fn every_core_operation_contract_is_applied_from_the_registry() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// A parameter whose registered constraint closes its object shape
+// ---------------------------------------------------------------------------
+//
+// Regression, post-Task-20 finding F13. `core.read`'s `range` row says "An
+// incompatible unit/representation or wrong key/type uses
+// error.operation.parameter", and that identifier is registered at
+// `static_or_expression`. A range written as a literal OBJECT is knowable
+// there. It was not checked there, so it reached demand, where the runtime
+// could not name the identifier the row names and substituted
+// `error.operation.precondition` instead.
+
+/// One `core.read` whose `range` parameter holds the given properties.
+fn ranged_read(properties: &str) -> String {
+    format!(
+        concat!(
+            "LCL:\n    VERSION: \"0.1.0\"\n\n",
+            "SPECIFICATION:\n    ID: spec.range\n    NAME: \"Range\"\n",
+            "    VERSION: \"1.0.0\"\n    KIND: kind.task\n    DOMAIN: \"general\"\n\n",
+            "INPUT:\n    ID: input.target\n    TYPE: PATH\n    VALUE: PATH(\"/srv/a.txt\")\n\n",
+            "OUTPUT:\n    ID: output.value\n    TYPE: STRING\n    FORMAT: format.json\n\n",
+            "GOAL:\n    ID: goal.one\n    ASSERT: TRUE\n\n",
+            "ACTION:\n    ID: action.read\n    OPERATION: core.read\n",
+            "    TARGET: REF(input.target)\n",
+            "    PARAMETER:\n        NAME: range\n        TYPE: OBJECT\n",
+            "        REQUIRED: FALSE\n        VALUE:\n{}",
+            "    OUTPUT: REF(output.value)\n\n",
+            "VERIFY:\n    ID: verify.one\n    ASSERT: TRUE\n\n",
+            "SUCCESS:\n    ID: success.one\n    ALL: [REF(verify.one)]\n\n",
+            "TASK:\n    ID: task.one\n    GOAL: REF(goal.one)\n    INPUT: REF(input.target)\n",
+            "    ACTION: REF(action.read)\n    OUTPUT: REF(output.value)\n",
+            "    SUCCESS: REF(success.one)\n\n",
+            "EXECUTE:\n    REFERENCE: REF(task.one)\n"
+        ),
+        properties
+    )
+}
+
+const WELL_FORMED_RANGE: &str =
+    "            unit: \"scalar\"\n            start: 1\n            end: 3\n";
+
+#[test]
+fn a_well_formed_range_is_accepted_at_the_static_stage() {
+    // The control. Without it the three cases below would pass just as well
+    // against a check that refused every range.
+    assert_eq!(
+        check(&ranged_read(WELL_FORMED_RANGE)).outcome(),
+        Outcome::Checked
+    );
+    // Every admitted unit word, so the closed list is read rather than guessed.
+    for unit in ["scalar", "line", "item", "byte"] {
+        let source = ranged_read(&format!(
+            "            unit: {unit:?}\n            start: 0\n            end: 1\n"
+        ));
+        assert_eq!(
+            check(&source).outcome(),
+            Outcome::Checked,
+            "{unit} is a registered unit"
+        );
+    }
+}
+
+#[test]
+fn a_wrong_key_in_a_closed_range_is_an_operation_parameter_defect() {
+    // "No other keys or defaults are admitted."
+    for properties in [
+        // A key the row does not register.
+        "            unit: \"scalar\"\n            start: 1\n            end: 3\n            step: 1\n",
+        // A key misspelled, so one registered key is also missing.
+        "            unit: \"scalar\"\n            start: 1\n            stop: 3\n",
+        // A registered key omitted.
+        "            unit: \"scalar\"\n            start: 1\n",
+    ] {
+        let checked = check(&ranged_read(properties));
+        assert_eq!(
+            ids(&checked),
+            vec!["error.operation.parameter"],
+            "properties: {properties}"
+        );
+        assert_eq!(
+            checked.diagnostics()[0].stage().to_string(),
+            "static_or_expression",
+            "the row's identifier keeps its registered stage"
+        );
+    }
+}
+
+#[test]
+fn a_wrong_type_in_a_closed_range_is_an_operation_parameter_defect() {
+    // "unit: STRING, start: INTEGER, and end: INTEGER."
+    for properties in [
+        "            unit: 1\n            start: 1\n            end: 3\n",
+        "            unit: \"scalar\"\n            start: \"1\"\n            end: 3\n",
+        "            unit: \"scalar\"\n            start: 1\n            end: TRUE\n",
+    ] {
+        let checked = check(&ranged_read(properties));
+        assert!(
+            ids(&checked).contains(&"error.operation.parameter".to_string()),
+            "properties {properties} gave {:?}",
+            ids(&checked)
+        );
+    }
+}
+
+#[test]
+fn a_unit_outside_the_closed_list_is_an_operation_parameter_defect() {
+    // "unit is exactly scalar, line, item, or byte."
+    for unit in ["character", "SCALAR", "lines", ""] {
+        let source = ranged_read(&format!(
+            "            unit: {unit:?}\n            start: 0\n            end: 1\n"
+        ));
+        let checked = check(&source);
+        assert_eq!(
+            ids(&checked),
+            vec!["error.operation.parameter"],
+            "unit {unit:?} is not registered"
+        );
+        assert_eq!(
+            checked.diagnostics()[0].stage().to_string(),
+            "static_or_expression"
+        );
+    }
+}
+
+#[test]
+fn a_range_this_stage_cannot_read_is_left_to_a_later_one() {
+    // Deliberately narrow: a value that is not a written literal is not
+    // refused here, because this stage does not evaluate one.
+    let source = ranged_read(
+        "            unit: \"scalar\"\n            start: REF(input.target)\n            end: 3\n",
+    );
+    let checked = check(&source);
+    assert!(
+        !ids(&checked).contains(&"error.operation.parameter".to_string()),
+        "a reference is not a wrong key or a wrong written type: {:?}",
+        ids(&checked)
+    );
+}

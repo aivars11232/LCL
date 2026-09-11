@@ -18,6 +18,24 @@ do
     fi
 done
 
+# Exactly the icon files this installation wrote, one at a time. The hicolor
+# theme is shared with every other application on the machine, so a recursive
+# removal here would take other products' icons with it. Each directory is
+# offered to `rmdir`, which declines unless this installation left it empty.
+icons=$data/icons/hicolor
+for relative in */apps/lcl-workspace.png */mimetypes/text-x-lcl.png; do
+    for path in "$icons"/$relative; do
+        if [ -f "$path" ]; then
+            rm -f "$path"
+            echo "removed $path"
+        fi
+    done
+done
+if [ -d "$icons" ]; then
+    # Deepest first, so an emptied leaf lets its parent go too. Never -r.
+    find "$icons" -depth -type d -exec rmdir {} + 2>/dev/null || true
+    rmdir "$data/icons" 2>/dev/null || true
+fi
 if [ -d "$data/lcl/LCL_Core_0.1.0" ]; then
     rm -rf "$data/lcl/LCL_Core_0.1.0"
     echo "removed $data/lcl/LCL_Core_0.1.0"

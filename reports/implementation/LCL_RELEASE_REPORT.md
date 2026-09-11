@@ -3,6 +3,14 @@
 The closing position of `LCL-TASK-0020`, beside the opening position recorded in
 `LCL_RELEASE_BASELINE.md`.
 
+> **Correction, 12 September 2026.** A read-only audit through Task 20 found
+> eight defects, and the bounded repairs for all eight are recorded in
+> `LCL_POST_TASK_20_REPAIR_REPORT.md`. This report is preserved as the Task 20
+> closing position; the sections that work changed carry a dated note pointing
+> there. Two statements below were wrong when written and are corrected in
+> place: the conformance claim in section 2, and the zero-blocking-defects
+> statement in section 11.
+
 ## 1. What is being released
 
 | Field | Value |
@@ -26,12 +34,32 @@ toolchain and how to rebuild it, is `releases/lcl-0.1.0-PROVENANCE.txt`.
 | Passed | 56 | 61 |
 | Failed | 3 | **0** |
 | Descriptive-only entries | 25 | 16 |
-| Claim | none, withdrawn by three failures | **`semantics_conforming`** |
+| Claim | none, withdrawn by three failures | `semantics_conforming` — **incorrect, see below** |
 
 The indexed catalogs are unchanged and are not results: 799 descriptive
 requirements and 66 decision witnesses, counted in their own columns with no
 total, because an indexed requirement and an executed case are different
 evidence and adding them would claim something neither supports.
+
+> **Correction, 12 September 2026 — finding F8.** The `semantics_conforming`
+> claim above was not supported by the evidence that produced it. The claim rule
+> accepted one passing case per broad stage as covering that stage, so nine
+> passing cases could certify conformance to the whole of LCL's semantics, and
+> nothing accounted for what was absent. `09_CONFORMANCE/01` forbids that
+> directly: "No semantic-conformance claim is permitted while the required
+> implementation or concrete executable cases are absent."
+>
+> Completeness is now measured against the canonical decision-witness
+> catalogue. The regenerated report executes 66 probes, all passing, and
+> establishes **55 of the 66 indexed witnesses**. The eleven that remain are
+> named individually in it: CLOSURE-004, -006, -021, -022, -023, -024, -027,
+> -055, -058, -059 and -060.
+>
+> **The claim this product is entitled to is `source_conforming`.** The closing
+> figures above are also restated: 66 executed probes rather than 61, because
+> the five filesystem-backed probes now run in this report instead of being
+> recorded as descriptive entries; and 11 descriptive witnesses rather than 16,
+> because that column had been counting probes in a column about witnesses.
 
 ## 3. The five defects the release was opened with
 
@@ -182,13 +210,19 @@ Executed, into a temporary home with an empty environment:
 
 Each is measured, has an owner, and is not a silent waiver.
 
-1. **Nested indented bodies are bounded at 512 levels.** The static checker's
-   declaration walk still recurses once per level and `Statement`'s `Clone` is
-   still derived. Past the bound the process aborts rather than emitting a
-   diagnostic. A nested body costs four bytes of indentation per level per line,
-   so the trigger is also a large document: 2,000 levels is 7.7 MB and 4,000 is
-   31 MB. The repair is the one applied to expressions, extended to statements.
-2. **Sixteen decision witnesses stay descriptive.** Each records why: seven need
+1. ~~**Nested indented bodies are bounded at 512 levels.**~~ **Repaired,
+   12 September 2026 — finding F10.** Recording a reachable process abort as a
+   support boundary was the wrong call: canonical LCL declares no depth limit
+   and no registered diagnostic permits an implementation-defined nesting
+   rejection, so this was a defect rather than a bound. It was an overflow chain
+   of four paths, not one: derived `Clone` on the statement forest, the
+   checker's `object_data`, the checker's block collection, and the resolver's
+   free-statement walk. All four are now iterative. Depth costs heap and the
+   engine completes; cost is linear in source bytes at roughly 0.7 s per MB,
+   measured to 128 MB.
+2. **Eleven decision witnesses stay descriptive.** *(Corrected from sixteen,
+   12 September 2026 — finding F8. The figure counted probes, not witnesses.)*
+   Each records why: seven need
    a host scripted to fail, which the canonical text does not supply; two need a
    declaration form this build does not admit; and the rest need test data the
    canonical text does not name. `CLOSURE-021` is the clearest: it groups a
@@ -196,27 +230,55 @@ Each is measured, has an owner, and is not a silent waiver.
    members as expressions while an object is an indented body, so Core 0.1.0
    supplies no way to write one. Turning any of them into a pass would mean
    inventing the missing input.
-3. **`core.read`'s range reports a substituted identifier for a shape defect.**
-   A wrong key, a wrong type or a unit that does not index the representation is
-   reported as `error.operation.precondition`, which the row admits, rather than
-   the `error.operation.parameter` the row's prose names, because that
-   identifier's registered stage is `static_or_expression` and the demand map
-   does not make it eligible. The bounds contract, which the witnesses test,
-   uses its own registered identifier.
+3. ~~**`core.read`'s range reports a substituted identifier for a shape
+   defect.**~~ **Repaired, 12 September 2026 — finding F13.** A wrong key, a
+   wrong written type and an unregistered unit word are now decided at
+   `static_or_expression`, where `earliest_stage_rule` assigns them. The part
+   only execution can decide, a unit that does not index the representation the
+   target actually held, now carries the row's own identifier with its
+   registered stage and status unchanged. The reasoning that forbade this was
+   wrong: `exclusion_rule` says "Discovery time alone never changes
+   classification", so a late discovery keeps its classification rather than
+   requiring a different identifier.
 4. **A `ROUND` chain is quadratic in its depth**, measured in section 5. Every
    other nesting shape is linear. Bounded, recorded, not repaired.
-5. **A `REF` to a `DEFINE kind.constant` does not resolve to its value** where an
-   operation parameter admits one. Found while writing a regression fixture,
-   outside this task's register.
+5. ~~**A `REF` to a `DEFINE kind.constant` does not resolve to its value**~~
+   **Repaired, 12 September 2026 — finding F14.** Semantic preflight resolved
+   only `INPUT`, `DATA`, `CONTEXT`, `MEMORY` and `STATE` into the plan, so the
+   read fell through to `MISSING`, the parameter silently took its registered
+   default, and a declared bound had no value to check. `05_SEMANTICS/12` lists
+   `DEFINE kind.constant` among what a reference reads, and preflight now
+   resolves it.
 6. **No model or provider adapter.** A document that needs one is refused rather
    than served by a stand-in.
 7. **One platform is verified.** Arch Linux x86_64, KDE Plasma 6, Wayland.
 8. **The tarball is not bit-reproducible.** Rust embeds build paths, and no
    attempt was made to normalize them. Provenance is the recorded checksum of
    every payload file plus the build recipe, not a claim that two builds produce
-   identical bytes.
+   identical bytes. *(Unchanged, and now stated inside the provenance itself.
+   Separately, 12 September 2026 — finding F12: the provenance this report
+   describes named a commit plus a count of uncommitted files, which cannot
+   identify what was built. A candidate's exact source is now recorded and
+   exported before the build, and reconstruction was demonstrated.)*
+
+9. **The declared minimum Rust version was never tested.** *(Added
+   12 September 2026 — finding F9.)* It is now. The workspace builds and its
+   whole suite passes on Rust 1.75.0. Two problems were found and fixed getting
+   there, one of which stopped `lcl-parser` compiling on that version at all.
 
 ## 11. Release-blocking defects
 
-**Zero.** The crash found in phase B was a release blocker and is closed. Every
-limitation in section 10 is bounded, measured and recorded.
+> **Correction, 12 September 2026.** The statement below was wrong when written.
+> A later read-only audit found eight defects at this commit, four of them
+> high-priority, including a second reachable process abort from untrusted
+> source and an installed desktop entry that could not launch. "Zero known
+> release-blocking defects" recorded the absence of a search, not the absence of
+> defects.
+>
+> All eight are now repaired, with evidence, in
+> `LCL_POST_TASK_20_REPAIR_REPORT.md`. The honest closing position is there and
+> not here: in particular the conformance claim this product is entitled to is
+> `source_conforming`, and eleven decision witnesses remain unestablished.
+
+~~**Zero.** The crash found in phase B was a release blocker and is closed.
+Every limitation in section 10 is bounded, measured and recorded.~~

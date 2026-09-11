@@ -335,10 +335,13 @@ async function reload() {
 
 async function newDocument() {
   modal("New document", (body) => {
-    body.append(el("p", "", "A path inside the project. It must end in .lcl."));
+    body.append(el("p", "",
+      "A path inside the project. New documents are created as .lcl.txt, " +
+      "so they open anywhere plain text does. Existing .lcl documents keep " +
+      "their name."));
     const input = el("input", "field");
     input.id = "new-path";
-    input.value = "untitled.lcl";
+    input.value = "untitled.lcl.txt";
     body.append(input);
   }, [
     ["Cancel", "", (close) => close()],
@@ -354,10 +357,19 @@ async function newDocument() {
           'LCL:\n    VERSION: "0.1.0"\n\n' +
           'SPECIFICATION:\n    ID: example.new\n    NAME: "New document"\n' +
           '    VERSION: "1.0.0"\n    KIND: kind.task\n    DOMAIN: "general"\n';
-        await api("PUT", "/api/document", { id }, seed);
+        /* Creating is its own route: it applies the .lcl.txt default and
+         * refuses to overwrite. Saving stays exact, so an open document is
+         * never renamed under the person editing it. The server decides the
+         * final name, and the reply says what it chose. */
+        const created = await api("POST", "/api/document", { id }, seed);
         await loadTree();
-        await openDocument(id);
-        toast(`Created ${id}`, "good");
+        await openDocument(created.id);
+        toast(
+          created.id === created.requested
+            ? `Created ${created.id}`
+            : `Created ${created.id}, the default name for ${created.requested}`,
+          "good",
+        );
       } catch (e) {
         toast(`Not created. ${e.message}`, "bad");
       }

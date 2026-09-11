@@ -5,6 +5,17 @@
 M11 — full-product hardening, staged application validation, packaging and
 release closure.
 
+> **Status correction, 12 September 2026.** This report is preserved as the
+> historical record of `LCL-TASK-0020` and its figures are not restated. A later
+> read-only audit of this commit found eight defects, all of which have since
+> been repaired; see `reports/implementation/LCL_POST_TASK_20_REPAIR_REPORT.md`.
+> Two acceptance criteria recorded below did not hold as stated: "No known crash
+> or panic from untrusted source within defined resource bounds", which a second
+> nesting axis violated past the documented bound, and "Zero known
+> release-blocking defects". The conformance claim recorded below,
+> `semantics_conforming`, was not supported by the evidence that produced it;
+> the level this product is entitled to is `source_conforming`.
+
 ## Repository state
 
 | Fact | Value |

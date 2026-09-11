@@ -64,7 +64,7 @@ fn run_all() -> (ConformanceReport, Vec<(String, ExecutedCase)>) {
             spec().formal_version().to_string(),
         ),
         index.requirement_count(),
-        index.witness_count(),
+        index.witnesses().iter().map(|w| w.id.clone()),
     );
     let mut all: Vec<(String, ExecutedCase)> = Vec::new();
 

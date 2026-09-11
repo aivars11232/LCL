@@ -689,7 +689,10 @@ fn constrain(
 /// wrapped in a block. A nested body is a block's body without being a block,
 /// and copying one into a synthetic `Block` to reuse that method costs a deep
 /// copy of the whole subtree at every level.
-fn field_in<'a>(statements: &'a [Statement], name: &str) -> Option<&'a lcl_parser::syntax::Field> {
+pub(crate) fn field_in<'a>(
+    statements: &'a [Statement],
+    name: &str,
+) -> Option<&'a lcl_parser::syntax::Field> {
     statements.iter().find_map(|statement| match statement {
         Statement::Field(field) if field.key.text == name => Some(field),
         _ => None,

@@ -33,7 +33,21 @@ use lcl_protocol::json::{Node, Object};
 pub const MEDIA_TYPE: &str = "text/x-lcl";
 
 /// The file extension this product associates with LCL documents.
+///
+/// Unchanged, and still reported under its own key, so an editor reading this
+/// metadata keeps working. `EXTENSIONS` is the complete list.
 pub const EXTENSION: &str = "lcl";
+
+/// Every file ending this product recognises, most specific first.
+///
+/// `.lcl.txt` is the ending a newly created document is given, so that a
+/// document can be shared and edited anywhere plain text is. It is recognised
+/// in addition to `.lcl`, never instead of it, and it changes no language rule:
+/// both are read, checked and run by the same engine under the same contracts.
+///
+/// A file that merely ends in `.txt` is not an LCL document. Only the exact
+/// two-part ending is recognised.
+pub const EXTENSIONS: [&str; 2] = [lcl_project::TEXT_SUFFIX, ".lcl"];
 
 /// Everything an editor needs to colour a document, as data.
 pub struct Metadata {
@@ -77,6 +91,10 @@ impl Metadata {
             .with("media_type", Node::string(MEDIA_TYPE))
             .with("extension", Node::string(EXTENSION))
             .with(
+                "extensions",
+                Node::array(EXTENSIONS.iter().map(|e| Node::string(*e))),
+            )
+            .with(
                 "source",
                 Object::new()
                     // `02_LEXICAL/01` and `02_LEXICAL/02`, which an editor needs
@@ -111,6 +129,7 @@ impl Metadata {
         out.push_str(&format!("LCL {} syntax metadata\n", self.formal_version));
         out.push_str(&format!("  media type        {MEDIA_TYPE}\n"));
         out.push_str(&format!("  extension         .{EXTENSION}\n"));
+        out.push_str(&format!("  recognised        {}\n", EXTENSIONS.join(", ")));
         out.push_str("  encoding          UTF-8, no BOM, LF only, final LF required\n");
         out.push_str("  indentation       four spaces, no tabs, no trailing space\n");
         out.push_str(&format!(

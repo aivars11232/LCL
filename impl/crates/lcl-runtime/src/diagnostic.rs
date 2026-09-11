@@ -30,6 +30,29 @@
 //! list read from the registry at load time, so a structure, arity, type-family
 //! or name defect has no path to it.
 //!
+//! ## One identifier this layer mirrors at a stage it cannot move
+//!
+//! `error.operation.parameter` is registered `static_or_expression`, and M4
+//! decides almost all of it: a missing target, a duplicate or unregistered
+//! named parameter, a malformed fragment, a declared family outside the row,
+//! and a written object literal outside a closed parameter shape.
+//!
+//! One part of the same contract is not decidable there. `core.read`'s `range`
+//! row says "An incompatible unit/representation or wrong key/type uses
+//! error.operation.parameter", and whether a unit indexes the representation
+//! depends on what the target actually held, which no stage before execution
+//! knows. The identifier is mirrored here so that case can be reported under
+//! the name the row gives it.
+//!
+//! What is emitted keeps its registered classification exactly. The stage stays
+//! `static_or_expression` and the status stays `status.invalid`, both read from
+//! the registry like every other mirrored identifier, because the
+//! `exclusion_rule` is explicit that "Discovery time alone never changes
+//! classification". This identifier is not in the eligible map, so
+//! [`DemandContext`] cannot reach it and its stage is never resolved to
+//! execution. Finding a source-stage defect late does not make it a late
+//! defect, and the report says which stage owns it rather than relabelling it.
+//!
 //! ## Two identifiers this layer mirrors and never emits
 //!
 //! `error.dependency.unsatisfied` and `error.scope.violation` are registered at
@@ -77,6 +100,12 @@ pub enum RuntimeError {
     /// A registered SUM, MIN or MAX reduction received an empty material
     /// collection.
     OperatorOperand,
+    /// An invocation site got a closed parameter contract wrong.
+    ///
+    /// Registered at `static_or_expression`, and mirrored here for the part of
+    /// that contract no earlier stage can decide. See the note below on why a
+    /// source-stage identifier appears in a runtime enum at all.
+    OperationParameter,
     /// An operation postcondition was not satisfied.
     OperationPostcondition,
     /// An operation precondition was not satisfied.
@@ -112,7 +141,7 @@ pub enum RuntimeError {
 
 impl RuntimeError {
     /// Every identifier this layer mirrors, in registry order.
-    pub const ALL: [RuntimeError; 22] = [
+    pub const ALL: [RuntimeError; 23] = [
         RuntimeError::Cancelled,
         RuntimeError::DependencyUnsatisfied,
         RuntimeError::ExecutionAction,
@@ -123,6 +152,7 @@ impl RuntimeError {
         RuntimeError::NumericNonTerminating,
         RuntimeError::NumericUnitMismatch,
         RuntimeError::OperatorOperand,
+        RuntimeError::OperationParameter,
         RuntimeError::OperationPostcondition,
         RuntimeError::OperationPrecondition,
         RuntimeError::PatternMismatch,
@@ -149,6 +179,7 @@ impl RuntimeError {
             RuntimeError::NumericNonTerminating => "error.numeric.non_terminating",
             RuntimeError::NumericUnitMismatch => "error.numeric.unit_mismatch",
             RuntimeError::OperatorOperand => "error.operator.operand",
+            RuntimeError::OperationParameter => "error.operation.parameter",
             RuntimeError::OperationPostcondition => "error.operation.postcondition",
             RuntimeError::OperationPrecondition => "error.operation.precondition",
             RuntimeError::PatternMismatch => "error.pattern.mismatch",

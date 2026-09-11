@@ -43,6 +43,22 @@ Installing registers the `text/x-lcl` media type and an application that
 handles it. It does **not** make LCL your default handler for anything; that
 stays your choice.
 
+## Icons
+
+The menu entry and `.lcl` documents both use the supplied LCL mark, installed
+into `~/.local/share/icons/hicolor` at seven sizes. Both come from one master,
+recorded with its checksum in `assets/brand/`.
+
+The theme directory is shared with every other application, so the installer
+copies its own files in one at a time and the uninstaller removes exactly those
+files. Neither ever removes a directory it did not fill, and no icon cache is
+generated: the icon theme specification resolves an icon by reading the
+directories, and writing a cache would put a shared file there that this
+installation could not safely take back.
+
+Setting a menu icon does not change the icon of the browser window the
+workspace opens in. That window belongs to your browser.
+
 ## The one thing to know
 
 Every command needs a specification package, and **nothing searches for one**.
@@ -70,6 +86,18 @@ lcl check --machine src/main.lcl               # the JSON a tool consumes
 lcl-workspace my-project --open                # the editor and debugger
 lcl-workspace --document src/main.lcl --open   # open one document's project
 ```
+
+## What a document is called
+
+New documents are created as `name.lcl.txt`, so they can be shared, opened and
+edited anywhere plain text is. Both endings are recognised everywhere: the
+project tree, opening, saving, checking, running and the `.lcl` file
+association. Nothing renames an existing document, and saving writes exactly
+the name it opened.
+
+The ending decides nothing about meaning. A `.lcl.txt` document is judged by the
+same engine under the same contracts as a `.lcl` one, and ending a name in
+`.txt` never relaxes validation. Ordinary `.txt` files are not LCL documents.
 
 A run is granted nothing unless a flag says so. A document that asks for the
 world against a tool that was granted nothing gets a refusal, not a surprise.

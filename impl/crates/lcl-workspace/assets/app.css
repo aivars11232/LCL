@@ -112,10 +112,16 @@ button.icon { padding: 2px 8px; line-height: 1.2; font-size: 15px; }
   background: var(--bg-raised);
   border-bottom: 1px solid var(--line);
 }
-.brand { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
+.brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .brand .mark {
-  font-weight: 700; letter-spacing: 0.08em; color: var(--accent);
-  font-family: var(--mono); font-size: 13px;
+  /* Height only. The width follows from the image's own proportions, so the
+     supplied artwork is never stretched by a layout rule, and `flex: none`
+     keeps a long project path from squeezing it. The intrinsic size is larger
+     than this, which is what keeps it sharp on a high-density screen. */
+  height: 26px;
+  width: auto;
+  display: block;
+  flex: none;
 }
 .brand .where {
   color: var(--ink-dim); font-size: 12px;

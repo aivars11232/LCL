@@ -70,7 +70,7 @@ fn every_truncation_of_every_valid_example_is_total() {
     let mut reached = 0usize;
     for entry in fs::read_dir(root).expect("examples") {
         let path = entry.expect("entry").path();
-        if path.extension().is_none_or(|ext| ext != "lcl") {
+        if !path.extension().is_some_and(|ext| ext == "lcl") {
             continue;
         }
         let bytes = fs::read(&path).expect("readable");

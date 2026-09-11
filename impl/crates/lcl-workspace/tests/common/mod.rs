@@ -68,6 +68,57 @@ pub fn send(
     parse_reply(&raw)
 }
 
+/// One reply whose body was never decoded.
+#[derive(Debug, Clone)]
+pub struct BinaryReply {
+    pub status: u16,
+    pub content_type: String,
+    pub body: Vec<u8>,
+}
+
+/// GET one target and keep the reply body as the bytes that crossed the socket.
+///
+/// [`send`] renders a body as text, which is right for JSON and wrong for a
+/// PNG: `from_utf8_lossy` replaces every byte a decoder needs with U+FFFD, so a
+/// test built on it would pass against an image no browser could read. The
+/// whole question about an image route is whether the exact bytes arrive.
+pub fn send_binary(address: SocketAddr, target: &str) -> BinaryReply {
+    let mut stream = TcpStream::connect(address).expect("the server is listening");
+    let request = format!(
+        "GET {target} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Length: 0\r\n\r\n",
+        address.port()
+    );
+    stream.write_all(request.as_bytes()).expect("request sent");
+    stream.flush().expect("flushed");
+
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw).expect("reply read");
+    let separator = b"\r\n\r\n";
+    let cut = raw
+        .windows(separator.len())
+        .position(|window| window == separator)
+        .expect("a reply has a head and a body");
+    let head = String::from_utf8_lossy(&raw[..cut]).to_string();
+    let body = raw[cut + separator.len()..].to_vec();
+
+    let mut lines = head.split("\r\n");
+    let status = lines
+        .next()
+        .and_then(|line| line.split(' ').nth(1))
+        .and_then(|code| code.parse().ok())
+        .unwrap_or(0);
+    let content_type = lines
+        .filter_map(|line| line.split_once(':'))
+        .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
+        .map(|(_, value)| value.trim().to_string())
+        .unwrap_or_default();
+    BinaryReply {
+        status,
+        content_type,
+        body,
+    }
+}
+
 /// Send a request with a completely hand-written head, framing included.
 pub fn send_raw(address: SocketAddr, raw: &str) -> Reply {
     let mut stream = TcpStream::connect(address).expect("the server is listening");

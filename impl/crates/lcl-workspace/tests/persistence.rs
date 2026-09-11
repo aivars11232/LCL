@@ -269,3 +269,81 @@ fn a_new_document_in_a_directory_that_does_not_exist_yet_is_still_inside() {
     assert_eq!(saved.id, "a/b/c/deep.lcl");
     assert_eq!(workspace.read("a/b/c/deep.lcl").unwrap().text, saved.text);
 }
+
+// ---------------------------------------------------------------------------
+// Two recognised endings
+// ---------------------------------------------------------------------------
+//
+// New documents default to `.lcl.txt`, so that a document can be shared and
+// edited anywhere plain text is. `.lcl` stays fully supported: nothing renames
+// a file, rewrites an import, or changes what a save writes.
+
+#[test]
+fn the_tree_lists_both_endings_and_no_other_text_file() {
+    let (scratch, workspace) = common::project_of_examples("both-endings");
+    scratch.put("classic.lcl", &common::example("01_MINIMAL_TASK.lcl"));
+    scratch.put("modern.lcl.txt", &common::example("01_MINIMAL_TASK.lcl"));
+    scratch.put("notes.txt", "an ordinary text file");
+    scratch.put("readme.md", "not a document");
+    scratch.put("backup.lcl.bak", "not a document either");
+
+    let ids: Vec<String> = workspace
+        .documents()
+        .expect("the tree lists")
+        .into_iter()
+        .filter(|e| !e.directory)
+        .map(|e| e.id)
+        .collect();
+
+    assert!(ids.contains(&"classic.lcl".to_string()));
+    assert!(ids.contains(&"modern.lcl.txt".to_string()));
+    for absent in ["notes.txt", "readme.md", "backup.lcl.bak"] {
+        assert!(
+            !ids.contains(&absent.to_string()),
+            "{absent} is not an LCL document and must not be listed: {ids:?}"
+        );
+    }
+}
+
+#[test]
+fn a_document_of_either_ending_reads_saves_and_reopens_identically() {
+    let (scratch, workspace) = common::project_of_examples("either-ending");
+    let source = common::example("01_MINIMAL_TASK.lcl");
+    for name in ["classic.lcl", "modern.lcl.txt"] {
+        scratch.put(name, &source);
+
+        let read = workspace.read(name).expect("the document reads");
+        assert_eq!(read.text, source, "{name} did not read back its bytes");
+
+        let edited = source.replace("\"Double one integer\"", "\"Edited\"");
+        let saved = workspace.save(name, &edited).expect("the document saves");
+        assert_eq!(
+            saved.id, name,
+            "saving must write the name it was given, never a renamed one"
+        );
+
+        let reopened = workspace.read(name).expect("the document reopens");
+        assert_eq!(reopened.text, edited, "{name} did not reopen its new bytes");
+        assert_eq!(reopened.digest, saved.digest);
+        assert!(
+            scratch.join(name).is_file(),
+            "{name} is not on disk under the name it was saved as"
+        );
+    }
+}
+
+#[test]
+fn saving_a_classic_document_never_renames_it() {
+    // The rule that makes the new default safe: creation applies it, saving
+    // does not. An open `.lcl` document stays `.lcl` for as long as it exists.
+    let (scratch, workspace) = common::project_of_examples("no-rename");
+    let source = common::example("01_MINIMAL_TASK.lcl");
+    scratch.put("legacy.lcl", &source);
+
+    workspace.save("legacy.lcl", &source).expect("saves");
+    assert!(scratch.join("legacy.lcl").is_file());
+    assert!(
+        !scratch.join("legacy.lcl.txt").exists(),
+        "saving created a second document under the default name"
+    );
+}

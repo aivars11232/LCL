@@ -957,7 +957,36 @@ fn child_declared_type(
     check.catalog.resolve(source, expr).ok()
 }
 
+/// One indented object body still to be judged, and what it is judged against.
+///
+/// A frame rather than a stack frame: see [`object_data`].
+struct ObjectFrame<'a> {
+    nested: &'a Nested,
+    declared: Option<Type>,
+    schema: Option<Schema>,
+    key: String,
+}
+
 /// An indented object value, against its schema when it has one.
+///
+/// ## Why this is a worklist and not a recursive walk
+///
+/// `04_GRAMMAR/12` puts an object in an indented `VALUE` body, and an object
+/// field's value may be another indented body, with no declared depth limit.
+/// Judging one by calling this function again cost a native frame per level,
+/// and past roughly a thousand levels on a small stack the process aborted
+/// instead of returning a diagnostic. That is the defect
+/// `LCL_RELEASE_REPORT.md` section 10 recorded as a 512-level bound.
+///
+/// So a nested field's body is pushed onto an explicit worklist and judged on
+/// the next turn of this loop. Depth costs heap, exactly as it does in M2's
+/// parser and in the expression walk beside this one.
+///
+/// Emission order changes: a parent's own diagnostics are all emitted before
+/// its children's, where recursion interleaved them. That is not observable.
+/// `stable_order` sorts every static diagnostic by source then byte offset
+/// before anything reads them, which `crate::diagnostic` applies to the whole
+/// run.
 fn object_data(
     check: &mut Check<'_>,
     source: &SourceId,
@@ -967,13 +996,34 @@ fn object_data(
     block: &str,
     key: &str,
 ) {
-    let expected_object = match declared {
+    let mut pending = vec![ObjectFrame {
+        nested,
+        declared: declared.cloned(),
+        schema: schema.cloned(),
+        key: key.to_string(),
+    }];
+    while let Some(frame) = pending.pop() {
+        object_body(check, source, &frame, block, &mut pending);
+    }
+}
+
+/// Judge one object body, queueing the indented values inside it.
+fn object_body<'a>(
+    check: &mut Check<'_>,
+    source: &SourceId,
+    frame: &ObjectFrame<'a>,
+    block: &str,
+    pending: &mut Vec<ObjectFrame<'a>>,
+) {
+    let key = frame.key.as_str();
+    let expected_object = match frame.declared.as_ref() {
         Some(Type::Object(object)) => Some(object.clone()),
         _ => None,
     };
     let mut present: BTreeMap<String, Type> = BTreeMap::new();
+    let mut children: Vec<ObjectFrame<'a>> = Vec::new();
 
-    for statement in &nested.statements {
+    for statement in &frame.nested.statements {
         let Statement::Property(property) = statement else {
             continue;
         };
@@ -1013,15 +1063,12 @@ fn object_data(
             }
             Body::Nested(inner) => {
                 let inner_declared = field_type.clone();
-                object_data(
-                    check,
-                    source,
-                    inner,
-                    inner_declared.as_ref(),
-                    None,
-                    block,
-                    &name,
-                );
+                children.push(ObjectFrame {
+                    nested: inner,
+                    declared: inner_declared.clone(),
+                    schema: None,
+                    key: name.clone(),
+                });
                 if let Some(ty) = inner_declared {
                     present.insert(name, ty);
                 }
@@ -1037,13 +1084,13 @@ fn object_data(
                 check.emit(
                     StaticError::ObjectSchema,
                     source,
-                    nested.span,
+                    frame.nested.span,
                     "required_field",
                     format!("`{block}.{key}` omits the required schema field `{name}`"),
                 );
             }
         }
-    } else if schema.is_none() {
+    } else if frame.schema.is_none() {
         // "A schema-free object infers each present field's exact static type
         // from its value", all required.
         let inferred = ObjectType::new(
@@ -1054,6 +1101,9 @@ fn object_data(
         );
         let _ = inferred;
     }
+
+    // Popped, so pushed in reverse to keep source order.
+    pending.extend(children.into_iter().rev());
 }
 
 /// The catalog every pass shares.

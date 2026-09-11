@@ -159,20 +159,31 @@ impl Binder<'_, '_> {
 
     /// Statements whose enclosing field is not a registered child block, so no
     /// reference slot governs them.
+    ///
+    /// A worklist, not recursion. Object data nests as deep as its author
+    /// indents and `04_GRAMMAR/02` declares no limit, so walking it one native
+    /// frame per level ended the process on a document that merely indented a
+    /// long way. Children are pushed then reversed, so they are visited in
+    /// source order exactly as the recursive form visited them.
     fn free_statements(&mut self, nested: &lcl_parser::syntax::Nested) {
-        for statement in &nested.statements {
-            match statement {
-                Statement::Field(f) => match &f.body {
-                    lcl_parser::syntax::Body::Inline(value) => self.free_value(value),
-                    lcl_parser::syntax::Body::Nested(n) => self.free_statements(n),
-                },
-                Statement::Property(p) => match &p.body {
-                    lcl_parser::syntax::Body::Inline(value) => self.free_value(value),
-                    lcl_parser::syntax::Body::Nested(n) => self.free_statements(n),
-                },
-                Statement::Conditional(c) => self.conditional(c),
-                Statement::ForEach(f) => self.for_each(f),
+        let mut pending = vec![nested];
+        while let Some(nested) = pending.pop() {
+            let before = pending.len();
+            for statement in &nested.statements {
+                match statement {
+                    Statement::Field(f) => match &f.body {
+                        lcl_parser::syntax::Body::Inline(value) => self.free_value(value),
+                        lcl_parser::syntax::Body::Nested(n) => pending.push(n),
+                    },
+                    Statement::Property(p) => match &p.body {
+                        lcl_parser::syntax::Body::Inline(value) => self.free_value(value),
+                        lcl_parser::syntax::Body::Nested(n) => pending.push(n),
+                    },
+                    Statement::Conditional(c) => self.conditional(c),
+                    Statement::ForEach(f) => self.for_each(f),
+                }
             }
+            pending[before..].reverse();
         }
     }
 

@@ -399,80 +399,79 @@ fn find_block(document: &lcl_parser::syntax::Document, offset: usize) -> Option<
     None
 }
 
-fn collect_top_level<'a>(item: &'a lcl_parser::syntax::TopLevel, out: &mut Vec<&'a Block>) {
-    match item {
-        lcl_parser::syntax::TopLevel::Block(b) => out.push(b),
-        lcl_parser::syntax::TopLevel::Conditional(c) => {
-            for executable in c.then_body.iter().chain(
-                c.else_body
-                    .as_ref()
-                    .map(|e| e.body.iter())
-                    .unwrap_or_default(),
-            ) {
-                collect_executable(executable, out);
+/// One node still to be walked while collecting blocks.
+enum Reachable<'a> {
+    TopLevel(&'a lcl_parser::syntax::TopLevel),
+    Executable(&'a lcl_parser::syntax::Executable),
+    Statement(&'a Statement),
+}
+
+/// Append every `Block` reachable from one node, without recursing.
+///
+/// A block's own body is not walked here: [`find_block`] owns that step, and
+/// walking it from inside would collect the same blocks twice.
+///
+/// The walk is a worklist because `04_GRAMMAR/02` declares no depth limit for
+/// an indented body, and the three functions this replaced called one another
+/// once per level. A document nested a few thousand deep ended the process
+/// instead of returning a diagnostic. Children are pushed in reverse so
+/// popping yields source order, which is the order the recursive form appended
+/// in.
+fn collect_reachable<'a>(root: Reachable<'a>, out: &mut Vec<&'a Block>) {
+    use lcl_parser::syntax::{Executable, TopLevel};
+
+    let mut pending = vec![root];
+    while let Some(node) = pending.pop() {
+        let before = pending.len();
+        match node {
+            Reachable::TopLevel(TopLevel::Block(block))
+            | Reachable::Executable(Executable::Block(block)) => {
+                out.push(block);
+            }
+            Reachable::TopLevel(TopLevel::Conditional(node))
+            | Reachable::Executable(Executable::Conditional(node))
+            | Reachable::Statement(Statement::Conditional(node)) => {
+                for executable in node.then_body.iter().chain(
+                    node.else_body
+                        .as_ref()
+                        .map(|arm| arm.body.iter())
+                        .unwrap_or_default(),
+                ) {
+                    pending.push(Reachable::Executable(executable));
+                }
+            }
+            Reachable::TopLevel(TopLevel::ForEach(node))
+            | Reachable::Executable(Executable::ForEach(node))
+            | Reachable::Statement(Statement::ForEach(node)) => {
+                for executable in &node.body {
+                    pending.push(Reachable::Executable(executable));
+                }
+            }
+            Reachable::Statement(Statement::Field(field)) => {
+                if let Body::Nested(nested) = &field.body {
+                    for inner in &nested.statements {
+                        pending.push(Reachable::Statement(inner));
+                    }
+                }
+            }
+            Reachable::Statement(Statement::Property(property)) => {
+                if let Body::Nested(nested) = &property.body {
+                    for inner in &nested.statements {
+                        pending.push(Reachable::Statement(inner));
+                    }
+                }
             }
         }
-        lcl_parser::syntax::TopLevel::ForEach(f) => {
-            for executable in &f.body {
-                collect_executable(executable, out);
-            }
-        }
+        pending[before..].reverse();
     }
 }
 
-fn collect_executable<'a>(item: &'a lcl_parser::syntax::Executable, out: &mut Vec<&'a Block>) {
-    match item {
-        lcl_parser::syntax::Executable::Block(b) => out.push(b),
-        lcl_parser::syntax::Executable::Conditional(c) => {
-            for executable in c.then_body.iter().chain(
-                c.else_body
-                    .as_ref()
-                    .map(|e| e.body.iter())
-                    .unwrap_or_default(),
-            ) {
-                collect_executable(executable, out);
-            }
-        }
-        lcl_parser::syntax::Executable::ForEach(f) => {
-            for executable in &f.body {
-                collect_executable(executable, out);
-            }
-        }
-    }
+fn collect_top_level<'a>(item: &'a lcl_parser::syntax::TopLevel, out: &mut Vec<&'a Block>) {
+    collect_reachable(Reachable::TopLevel(item), out);
 }
 
 fn collect_statement<'a>(statement: &'a Statement, out: &mut Vec<&'a Block>) {
-    match statement {
-        Statement::Field(field) => {
-            if let Body::Nested(nested) = &field.body {
-                for inner in &nested.statements {
-                    collect_statement(inner, out);
-                }
-            }
-        }
-        Statement::Property(property) => {
-            if let Body::Nested(nested) = &property.body {
-                for inner in &nested.statements {
-                    collect_statement(inner, out);
-                }
-            }
-        }
-        Statement::Conditional(c) => {
-            for executable in c.then_body.iter().chain(
-                c.else_body
-                    .as_ref()
-                    .map(|e| e.body.iter())
-                    .unwrap_or_default(),
-            ) {
-                collect_executable(executable, out);
-            }
-        }
-        Statement::ForEach(f) => {
-            for executable in &f.body {
-                collect_executable(executable, out);
-            }
-        }
-    }
+    collect_reachable(Reachable::Statement(statement), out);
 }
 
 /// The locus a definition's `BASE` defect reports against.

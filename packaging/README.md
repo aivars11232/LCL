@@ -1,7 +1,8 @@
 # LCL, packaged
 
-Two binaries, the specification package they load, a desktop entry and a media
-type. Everything installs under your own home directory.
+Two binaries, a desktop launcher, the specification package they load, a
+desktop entry and a media type. Everything installs under your own home
+directory.
 
 ## Install
 
@@ -10,7 +11,37 @@ type. Everything installs under your own home directory.
 ```
 
 It needs no elevation, writes nothing system-wide, and prints every path it
-touches. `./uninstall.sh` reverses it exactly.
+touches. `./uninstall.sh` removes everything it installed. The one thing
+uninstall keeps is `~/.local/share/lcl/workspace`, because that directory holds
+your own documents rather than ours.
+
+## From the desktop
+
+The installed menu entry runs `~/.local/bin/lcl-workspace-launch`, not the
+binary directly. The script exists because one `Exec` line cannot express three
+things a menu launch needs.
+
+- **The specification package.** Nothing searches for one, so the installer
+  writes its absolute path into the launcher. A menu launch therefore works
+  with no `LCL_SPEC` exported.
+- **The browser.** A desktop launch has no terminal, so the URL the workspace
+  prints would go nowhere. The launcher passes `--open`.
+- **The document.** A file association hands over a *file*; the workspace's
+  positional argument is a *project directory*. The launcher passes the file to
+  `--document`, which resolves its own project: the nearest ancestor holding
+  `lcl.project.json`, or the file's own directory.
+
+Opened from the menu with no document, it opens
+`~/.local/share/lcl/workspace`, stated rather than inherited from wherever the
+process happened to start.
+
+Anything that goes wrong is written to
+`~/.local/state/lcl/launch.log` and, where a dialog tool exists, shown in one.
+A launch that fails is not a launch that silently does nothing.
+
+Installing registers the `text/x-lcl` media type and an application that
+handles it. It does **not** make LCL your default handler for anything; that
+stays your choice.
 
 ## The one thing to know
 
@@ -37,6 +68,7 @@ lcl run     src/main.lcl      # steps 1 to 13, one terminal status
 lcl run --allow-write /tmp/out src/main.lcl    # the same, with one capability
 lcl check --machine src/main.lcl               # the JSON a tool consumes
 lcl-workspace my-project --open                # the editor and debugger
+lcl-workspace --document src/main.lcl --open   # open one document's project
 ```
 
 A run is granted nothing unless a flag says so. A document that asks for the

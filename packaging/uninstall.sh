@@ -8,6 +8,7 @@ data=${XDG_DATA_HOME:-$HOME/.local/share}
 for path in \
     "$bin/lcl" \
     "$bin/lcl-workspace" \
+    "$bin/lcl-workspace-launch" \
     "$data/applications/lcl-workspace.desktop" \
     "$data/mime/packages/lcl.xml"
 do
@@ -21,7 +22,12 @@ if [ -d "$data/lcl/LCL_Core_0.1.0" ]; then
     rm -rf "$data/lcl/LCL_Core_0.1.0"
     echo "removed $data/lcl/LCL_Core_0.1.0"
 fi
-# Only if this installation left it empty.
+# The default project directory holds the operator's own documents, so it is
+# never removed. `rmdir` takes the parent only when this installation left it
+# empty, which it does not when a project is still sitting in it.
+if [ -d "$data/lcl/workspace" ]; then
+    echo "kept    $data/lcl/workspace (your documents)"
+fi
 rmdir "$data/lcl" 2>/dev/null && echo "removed $data/lcl" || true
 
 if command -v update-mime-database >/dev/null 2>&1; then

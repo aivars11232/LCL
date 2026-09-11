@@ -41,6 +41,7 @@ cp -r "$canonical" "$payload/share/LCL_Core_0.1.0"
 cp "$here/install.sh" "$here/uninstall.sh" "$payload/"
 chmod 0755 "$payload/install.sh" "$payload/uninstall.sh"
 cp "$here/lcl.desktop" "$payload/share/lcl.desktop"
+cp "$here/lcl-workspace-launch.in" "$payload/share/lcl-workspace-launch.in"
 cp "$root/impl/integration/linux/lcl.xml" "$payload/share/lcl.xml"
 cp "$here/README.md" "$payload/README.md"
 

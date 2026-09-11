@@ -13,12 +13,20 @@
 //! A timed-out command does not become a different command with a different
 //! result; it becomes the same command the host could not finish in time.
 //!
-//! ## Output is captured, and capped
+//! ## Output is drained while the program runs, and capped while it is read
 //!
-//! A program can write more than memory holds. Both streams are truncated at
-//! [`Bounds::max_stream_bytes`], and truncation is reported rather than hidden,
-//! because a silently shortened `stdout` would be a wrong answer that looked
-//! like a right one.
+//! A pipe holds one buffer, and a program that fills it blocks in `write`
+//! until someone reads. So both streams are drained on their own threads from
+//! the moment the child starts, for the whole time it is supervised. Waiting
+//! for exit first and reading afterwards is what made a healthy command that
+//! merely printed a lot look like a command that timed out.
+//!
+//! A program can also write more than memory holds. Each stream retains at
+//! most [`Bounds::max_stream_bytes`] and keeps draining past that point
+//! without keeping the excess, so the bound holds during collection rather
+//! than after it, and the child still never blocks. Truncation is reported
+//! rather than hidden, because a silently shortened `stdout` would be a wrong
+//! answer that looked like a right one.
 
 use crate::bounds::{Bounds, Cancelled};
 use crate::grant::{Grant, Grants, Refusal};
@@ -122,77 +130,117 @@ impl Process for RealProcess {
     }
 }
 
-/// Wait for a child, honouring a declared deadline.
+/// Wait for a child, draining both streams and honouring a declared deadline.
+///
+/// The two readers start before the wait does. That ordering is the whole
+/// repair: a child that writes more than a pipe buffer holds blocks until it
+/// is read, and a supervisor that waits for exit before reading waits for
+/// something that cannot happen.
 fn wait(mut child: std::process::Child, bounds: &Bounds) -> Result<Completion, ProcessError> {
-    let Some(deadline) = bounds.deadline else {
-        let output = child
-            .wait_with_output()
-            .map_err(|error| ProcessError::NotStarted(error.to_string()))?;
-        return Ok(completion(
-            output.status.code().map(|code| code as i64),
-            output.stdout,
-            output.stderr,
-            bounds,
-        ));
+    let cap = bounds.max_stream_bytes as usize;
+    let out = child.stdout.take();
+    let err = child.stderr.take();
+    let out_reader = std::thread::spawn(move || match out {
+        Some(stream) => drain(stream, cap),
+        None => Drained::default(),
+    });
+    let err_reader = std::thread::spawn(move || match err {
+        Some(stream) => drain(stream, cap),
+        None => Drained::default(),
+    });
+
+    let status = match bounds.deadline {
+        None => child
+            .wait()
+            .map_err(|error| ProcessError::NotStarted(error.to_string()))?,
+        Some(deadline) => {
+            // Poll rather than block, so the declared bound can end the wait.
+            // The interval is small enough to be imperceptible and large enough
+            // not to spin. The readers are running the whole time.
+            let limit = deadline.as_duration();
+            let started = std::time::Instant::now();
+            let interval = std::time::Duration::from_millis(5);
+            loop {
+                match child.try_wait() {
+                    Ok(Some(status)) => break status,
+                    Ok(None) => {}
+                    Err(error) => {
+                        // Reap what can be reaped before giving up on it.
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return Err(ProcessError::NotStarted(error.to_string()));
+                    }
+                }
+                if started.elapsed() >= limit {
+                    // The program began and did not finish. Killing it is the
+                    // bound being enforced, and the caller is told the truth
+                    // about both. The readers are left to end on their own as
+                    // the pipes close: joining them here would reintroduce
+                    // exactly the wait this repair removed, for output that a
+                    // timed-out call does not return.
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(ProcessError::Bounded(Cancelled::timed_out(deadline)));
+                }
+                std::thread::sleep(interval);
+            }
+        }
     };
 
-    // Poll rather than block, so the declared bound can end the wait. The
-    // interval is small enough to be imperceptible and large enough not to spin.
-    let limit = deadline.as_duration();
-    let started = std::time::Instant::now();
-    let interval = std::time::Duration::from_millis(5);
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                let output = child
-                    .wait_with_output()
-                    .map_err(|error| ProcessError::NotStarted(error.to_string()))?;
-                return Ok(completion(
-                    status.code().map(|code| code as i64),
-                    output.stdout,
-                    output.stderr,
-                    bounds,
-                ));
-            }
-            Ok(None) => {}
-            Err(error) => return Err(ProcessError::NotStarted(error.to_string())),
-        }
-        if started.elapsed() >= limit {
-            // The program began and did not finish. Killing it is the bound
-            // being enforced, and the caller is told the truth about both.
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(ProcessError::Bounded(Cancelled::timed_out(deadline)));
-        }
-        std::thread::sleep(interval);
-    }
+    // The child has exited, so both pipes are closing and both reads end.
+    let out = out_reader.join().unwrap_or_default();
+    let err = err_reader.join().unwrap_or_default();
+    Ok(completion(status.code().map(|code| code as i64), out, err))
 }
 
-fn completion(
-    exit_code: Option<i64>,
-    stdout: Vec<u8>,
-    stderr: Vec<u8>,
-    bounds: &Bounds,
-) -> Completion {
-    let cap = bounds.max_stream_bytes as usize;
-    let truncated = stdout.len() > cap || stderr.len() > cap;
+/// One stream, drained to its end and retained only up to a bound.
+#[derive(Debug, Default)]
+struct Drained {
+    bytes: Vec<u8>,
+    /// True when the stream produced more than the bound retained.
+    truncated: bool,
+}
+
+/// Read one stream to its end, keeping at most `cap` bytes.
+///
+/// Reading continues past the cap. Stopping there would leave a full pipe and
+/// a blocked child, which is the defect this function exists to avoid; the
+/// excess is read and dropped instead, so peak memory is the bound rather than
+/// whatever the program decided to print.
+fn drain(mut stream: impl std::io::Read, cap: usize) -> Drained {
+    let mut drained = Drained::default();
+    let mut buffer = [0u8; 8 * 1024];
+    loop {
+        match stream.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => {
+                let room = cap.saturating_sub(drained.bytes.len());
+                if read > room {
+                    drained.bytes.extend_from_slice(&buffer[..room]);
+                    drained.truncated = true;
+                } else {
+                    drained.bytes.extend_from_slice(&buffer[..read]);
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            // A reader that cannot read cannot help the child either. Dropping
+            // the stream closes this end, so the child's next write fails
+            // instead of blocking on a pipe nobody is emptying.
+            Err(_) => break,
+        }
+    }
+    drained
+}
+
+fn completion(exit_code: Option<i64>, stdout: Drained, stderr: Drained) -> Completion {
     Completion {
         started: true,
         completed: true,
         exit_code,
-        stdout: capped(stdout, cap),
-        stderr: capped(stderr, cap),
-        truncated,
+        truncated: stdout.truncated || stderr.truncated,
+        stdout: String::from_utf8_lossy(&stdout.bytes).to_string(),
+        stderr: String::from_utf8_lossy(&stderr.bytes).to_string(),
     }
-}
-
-fn capped(bytes: Vec<u8>, cap: usize) -> String {
-    let slice = if bytes.len() > cap {
-        &bytes[..cap]
-    } else {
-        &bytes[..]
-    };
-    String::from_utf8_lossy(slice).to_string()
 }
 
 /// Whether one path is a plausible program location, for a caller that needs to

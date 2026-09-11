@@ -283,3 +283,177 @@ fn every_canonical_example_runs_to_a_terminal_state_without_a_grant() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Nested bodies past the documented bound
+// ---------------------------------------------------------------------------
+//
+// `a_deeply_nested_body_terminates` above stops at the 512 levels this build
+// declares. `LCL_RELEASE_REPORT.md` section 10 admits what happens past that:
+// "Past the bound the process aborts rather than emitting a diagnostic." An
+// abort is not a panic, so `catch_unwind` cannot observe it and an in-process
+// test cannot survive it. The only way to assert the absence of one is to put
+// the work in a child process and read how that process died.
+//
+// The budget is explicit rather than ambient. The engine work runs on a thread
+// with a stated stack size, so "it survived" means "it survived on this much
+// stack" instead of "it survived on whatever the machine gave us today". Depth
+// 8 runs on the same budget as the control: if it failed too, the budget would
+// be the finding rather than the nesting.
+
+/// Set in the child, naming the depth it must carry.
+const NESTED_DEPTH: &str = "LCL_ADVERSARIAL_NESTED_DEPTH";
+/// Set in the child, naming the stack budget the engine gets, in bytes.
+const NESTED_STACK: &str = "LCL_ADVERSARIAL_NESTED_STACK";
+/// The test that plays both halves. Named once, used by the parent's filter.
+const NESTED_TEST: &str = "a_nested_body_past_the_documented_bound_does_not_end_the_process";
+
+/// One document whose `VALUE` body nests `depth` levels before its leaf.
+fn nested_body_source(depth: usize) -> String {
+    let mut source = String::from(HEADER);
+    source.push_str("\nDATA:\n    ID: data.deep\n    TYPE: OBJECT\n    VALUE:\n");
+    for level in 0..depth {
+        source.push_str(&"    ".repeat(level + 2));
+        source.push_str(&format!("k{level}:\n"));
+    }
+    source.push_str(&"    ".repeat(depth + 2));
+    source.push_str("leaf: 1\n");
+    source
+}
+
+/// How one child ended.
+struct ChildOutcome {
+    finished: bool,
+    code: Option<i32>,
+    signal: Option<i32>,
+    stderr: String,
+}
+
+/// The child half: carry one deeply nested document through every entry point
+/// on a bounded stack.
+///
+/// Exits 0 when every command returned a report and the invariants held. Any
+/// other ending — a panic, or the abort this reproduces — is the parent's
+/// finding, not something this half can report.
+fn nested_child(depth: usize, stack: usize) -> i32 {
+    let source = nested_body_source(depth);
+    let worker = std::thread::Builder::new()
+        .stack_size(stack)
+        .spawn(move || {
+            let engine = engine();
+            all_commands(&engine, &format!("nesting depth {depth}"), &source);
+        })
+        .expect("the worker thread starts");
+    match worker.join() {
+        Ok(()) => 0,
+        Err(_) => 101,
+    }
+}
+
+/// The parent half: run one depth in a child and report how it ended.
+fn nested_in_child(depth: usize, stack: usize) -> ChildOutcome {
+    let log = std::env::temp_dir().join(format!(
+        "lcl-nested-{}-{}-{depth}.stderr",
+        std::process::id(),
+        stack
+    ));
+    let errors = std::fs::File::create(&log).expect("the child's stderr file is writable");
+    let mut child = std::process::Command::new(
+        std::env::current_exe().expect("the test binary knows its own path"),
+    )
+    .args(["--exact", NESTED_TEST, "--test-threads=1"])
+    .env(NESTED_DEPTH, depth.to_string())
+    .env(NESTED_STACK, stack.to_string())
+    .stdin(std::process::Stdio::null())
+    .stdout(std::process::Stdio::null())
+    .stderr(std::process::Stdio::from(errors))
+    .spawn()
+    .expect("the child test process starts");
+
+    // A deadline, so a hang is a finding rather than a stuck suite.
+    let limit = std::time::Duration::from_secs(300);
+    let started = std::time::Instant::now();
+    let status = loop {
+        match child.try_wait().expect("the child is waitable") {
+            Some(status) => break Some(status),
+            None => {
+                if started.elapsed() >= limit {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break None;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        }
+    };
+
+    let stderr = std::fs::read_to_string(&log).unwrap_or_default();
+    let _ = std::fs::remove_file(&log);
+    match status {
+        Some(status) => ChildOutcome {
+            finished: true,
+            code: status.code(),
+            signal: exit_signal(&status),
+            stderr,
+        },
+        None => ChildOutcome {
+            finished: false,
+            code: None,
+            signal: None,
+            stderr,
+        },
+    }
+}
+
+#[cfg(unix)]
+fn exit_signal(status: &std::process::ExitStatus) -> Option<i32> {
+    use std::os::unix::process::ExitStatusExt;
+    status.signal()
+}
+
+#[cfg(not(unix))]
+fn exit_signal(_status: &std::process::ExitStatus) -> Option<i32> {
+    None
+}
+
+/// Regression, post-Task-20 finding F10.
+///
+/// A nested body past the documented 512-level bound ended the process instead
+/// of returning a result. `04_GRAMMAR` states the nesting shape and no limit,
+/// and no registered diagnostic permits an implementation-defined nesting
+/// rejection, so the repair is the one M2 and the expression walk already
+/// applied: depth costs heap, not native stack.
+#[test]
+fn a_nested_body_past_the_documented_bound_does_not_end_the_process() {
+    if let Ok(depth) = std::env::var(NESTED_DEPTH) {
+        let depth: usize = depth.parse().expect("the depth is a number");
+        let stack: usize = std::env::var(NESTED_STACK)
+            .ok()
+            .and_then(|raw| raw.parse().ok())
+            .unwrap_or(1024 * 1024);
+        std::process::exit(nested_child(depth, stack));
+    }
+
+    let stack = 1024 * 1024;
+    for depth in [8usize, 1_000, 2_000] {
+        let outcome = nested_in_child(depth, stack);
+        assert!(
+            outcome.finished,
+            "depth {depth} did not finish within the deadline: {}",
+            outcome.stderr
+        );
+        assert_eq!(
+            outcome.signal, None,
+            "depth {depth} ended the process with signal {:?} instead of returning a \
+             result, on a {stack}-byte stack: {}",
+            outcome.signal, outcome.stderr
+        );
+        assert_eq!(
+            outcome.code,
+            Some(0),
+            "depth {depth} exited {:?} on a {stack}-byte stack: {}",
+            outcome.code,
+            outcome.stderr
+        );
+    }
+}

@@ -76,6 +76,10 @@ pub struct Workspace {
     project: Project,
     engine: Engine,
     spec_root: PathBuf,
+    /// The document the frontend should open on load, when the workspace was
+    /// launched for one. A file association supplies it; an ordinary launch
+    /// does not.
+    open_document: Option<String>,
 }
 
 impl Workspace {
@@ -105,6 +109,7 @@ impl Workspace {
             project,
             engine,
             spec_root,
+            open_document: None,
         })
     }
 
@@ -129,6 +134,73 @@ impl Workspace {
         Err(WorkspaceError::Spec(format!(
             "no specification package: pass one, set LCL_SPEC, or declare \"spec\" in {MANIFEST_FILE}"
         )))
+    }
+
+    /// The project root and root-relative identity of one document.
+    ///
+    /// A desktop file association hands over a document, not a project, and
+    /// the workspace opens projects. `07_VERSIONING_AND_EXTENSIONS/02` resolves
+    /// a `SOURCE PATH` "relative only to importing file or explicit WORKSPACE",
+    /// so the root a document belongs to is the nearest ancestor that declares
+    /// itself one. When no ancestor does, the document's own directory is the
+    /// root: that is a rootless project, which `Workspace::open` already
+    /// supports, and it keeps containment without inventing a manifest in
+    /// someone's home directory.
+    ///
+    /// The search stops at the first manifest and never leaves the filesystem
+    /// path it was given. Nothing is discovered by scanning, and no file
+    /// outside the returned root becomes reachable.
+    pub fn locate_document(document: &Path) -> Result<(PathBuf, String), WorkspaceError> {
+        let document = document.canonicalize().map_err(|e| WorkspaceError::Io {
+            path: document.to_path_buf(),
+            detail: format!("the document could not be opened: {e}"),
+        })?;
+        if !document.is_file() {
+            return Err(WorkspaceError::Io {
+                path: document,
+                detail: "a document is a file; pass a directory as the project instead"
+                    .to_string(),
+            });
+        }
+        let directory = document
+            .parent()
+            .ok_or_else(|| WorkspaceError::Io {
+                path: document.clone(),
+                detail: "the document has no containing directory".to_string(),
+            })?
+            .to_path_buf();
+
+        let mut root = directory.clone();
+        loop {
+            if root.join(MANIFEST_FILE).is_file() {
+                break;
+            }
+            match root.parent() {
+                Some(parent) => root = parent.to_path_buf(),
+                // No ancestor declares a project, so the document's own
+                // directory is the root.
+                None => {
+                    root = directory;
+                    break;
+                }
+            }
+        }
+
+        let relative = document
+            .strip_prefix(&root)
+            .map_err(|_| WorkspaceError::Document(DocumentError::Outside(document.clone())))?;
+        Ok((root, to_identity(relative)))
+    }
+
+    /// Record the document a launch asked for, so the frontend can open it.
+    pub fn with_open_document(mut self, id: Option<String>) -> Workspace {
+        self.open_document = id;
+        self
+    }
+
+    /// The document this workspace was launched for, if it was launched for one.
+    pub fn open_document(&self) -> Option<&str> {
+        self.open_document.as_deref()
     }
 
     /// Create a project directory holding a manifest, and open it.

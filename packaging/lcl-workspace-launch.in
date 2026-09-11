@@ -1,0 +1,97 @@
+#!/bin/sh
+# The installed desktop launcher for the LCL workspace.
+#
+# install.sh substitutes @BIN@, @SPEC@ and @DEFAULT_PROJECT@ with absolute
+# installed paths and writes the result to $XDG_BIN_HOME/lcl-workspace-launch.
+# The desktop entry's Exec line names this script, not the binary.
+#
+# ## Why a script exists at all
+#
+# A desktop entry is one command line with no conditions in it, and three
+# things have to happen that a single Exec cannot express.
+#
+# 1. The workspace loads one exact specification package and never searches for
+#    one, because "Ambient current directory and implied nearby files do not
+#    exist in portable LCL". The installed package's absolute path is baked in
+#    here at install time, so a menu launch resolves it without the operator
+#    having exported LCL_SPEC.
+# 2. A desktop launch has no terminal, so the printed URL goes nowhere. The
+#    workspace opens the browser itself only when asked, so this asks.
+# 3. `%f` hands over a *document*. The workspace's positional argument is a
+#    *project directory*, and passing a file as one opens the wrong thing. The
+#    document goes to --document, which resolves its own project.
+#
+# With no argument this is a menu launch rather than a file association, and it
+# opens one explicit project directory. It is never the working directory and
+# never the home directory: a launcher that opened whatever it happened to
+# start in would make the visible file tree depend on ambient state.
+set -eu
+
+bin=@BIN@
+spec=@SPEC@
+default_project=@DEFAULT_PROJECT@
+
+state=${XDG_STATE_HOME:-$HOME/.local/state}/lcl
+log=$state/launch.log
+mkdir -p "$state"
+
+# Keep the log from growing without bound across a long-lived installation.
+if [ -f "$log" ] && [ "$(wc -c <"$log")" -gt 1048576 ]; then
+    : >"$log"
+fi
+
+# Say something the operator can actually see. Terminal=false means stderr is
+# discarded by the desktop, so a failure with no dialog is a failure nobody
+# hears about. Every branch also writes the log, which is the durable record.
+report() {
+    message=$1
+    echo "$message" >&2
+    if command -v kdialog >/dev/null 2>&1; then
+        kdialog --title "LCL Workspace" --error "$message" >/dev/null 2>&1 || true
+    elif command -v zenity >/dev/null 2>&1; then
+        zenity --error --title="LCL Workspace" --text="$message" >/dev/null 2>&1 || true
+    elif command -v notify-send >/dev/null 2>&1; then
+        notify-send "LCL Workspace" "$message" >/dev/null 2>&1 || true
+    elif command -v xmessage >/dev/null 2>&1; then
+        xmessage -center "$message" >/dev/null 2>&1 || true
+    fi
+}
+
+fail() {
+    printf '%s  %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$1" >>"$log"
+    report "$1
+
+The full record is in $log"
+    exit 4
+}
+
+printf '%s  launch with %d argument(s)\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$#" >>"$log"
+
+if [ ! -x "$bin" ]; then
+    fail "The LCL workspace is not installed at $bin."
+fi
+if [ ! -d "$spec" ]; then
+    fail "The LCL specification package is missing from $spec. Reinstall LCL."
+fi
+
+if [ "$#" -gt 1 ]; then
+    fail "This launcher opens one document at a time, and $# were passed."
+fi
+
+# One argument is a file association; none is a menu launch. An empty argument
+# is what a desktop passes when %f matched nothing, and it is not a document.
+if [ "$#" -eq 1 ] && [ -n "$1" ]; then
+    if [ ! -f "$1" ]; then
+        fail "There is no document at $1."
+    fi
+    set -- --document "$1"
+else
+    mkdir -p "$default_project"
+    set -- "$default_project"
+fi
+
+# Not exec: the exit status is wanted, so that a workspace which refuses to
+# start says so in a dialog instead of appearing to do nothing.
+"$bin" --spec "$spec" --open "$@" >>"$log" 2>&1 && exit 0
+status=$?
+fail "The LCL workspace stopped with status $status."

@@ -116,6 +116,14 @@ impl Routes {
                     .into(),
             )
             .with("entry", Node::optional(self.workspace.entry()))
+            // The document this workspace was launched for, when a file
+            // association supplied one. Separate from `entry`, which is the
+            // manifest's declared starting document and belongs to the project
+            // rather than to this launch.
+            .with(
+                "open",
+                Node::optional(self.workspace.open_document().map(str::to_string)),
+            )
             .pretty();
         Response::json(body)
     }

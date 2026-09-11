@@ -1413,9 +1413,13 @@ function scheduleAnalysis() {
   try {
     await loadSession();
     await loadTree();
+    /* What to show first, most specific wins. A document this launch was
+     * opened for -- a desktop file association passes one -- then the
+     * manifest's declared entry, then whatever the project holds. */
+    const launched = state.session.open;
     const entry = state.session.entry;
     const first = state.entries.find((e) => !e.directory);
-    const open = entry || (first && first.id);
+    const open = launched || entry || (first && first.id);
     if (open) { await openDocument(open); await runAnalysis(); }
     renderCapabilities();
     $("#hint").textContent = "Ctrl+S save · F12 definition · Shift+F12 references";

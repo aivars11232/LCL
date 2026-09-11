@@ -25,6 +25,9 @@ ARGUMENTS:
     PROJECT             The project directory. Defaults to the working directory.
 
 OPTIONS:
+    --document <PATH>   Open one document. Its project is the nearest ancestor
+                        holding lcl.project.json, or its own directory. This is
+                        what a desktop file association passes; PROJECT is not.
     --spec <PATH>       The canonical specification package. Falls back to
                         LCL_SPEC, then to \"spec\" in lcl.project.json.
     --create            Create a project here before opening it.
@@ -50,6 +53,7 @@ fn main() -> ExitCode {
 
 fn run(argv: &[String]) -> Result<(), String> {
     let mut root: Option<PathBuf> = None;
+    let mut document: Option<PathBuf> = None;
     let mut spec: Option<PathBuf> = None;
     let mut port: u16 = 0;
     let mut create = false;
@@ -70,6 +74,7 @@ fn run(argv: &[String]) -> Result<(), String> {
                 print!("{USAGE}");
                 return Ok(());
             }
+            "--document" => document = Some(PathBuf::from(value("--document")?)),
             "--spec" => spec = Some(PathBuf::from(value("--spec")?)),
             "--port" => {
                 port = value("--port")?
@@ -90,9 +95,24 @@ fn run(argv: &[String]) -> Result<(), String> {
         i += 1;
     }
 
-    let root = match root {
-        Some(root) => root,
-        None => std::env::current_dir().map_err(|e| format!("no working directory: {e}"))?,
+    // A document names its own project, so the two cannot both be given: one
+    // of them would have to be ignored, and silently ignoring the operator's
+    // argument is how a launcher opens the wrong thing.
+    if document.is_some() && root.is_some() {
+        return Err("pass either a project directory or --document, not both".to_string());
+    }
+    let (root, open_document) = match &document {
+        Some(path) => {
+            let (root, id) = Workspace::locate_document(path).map_err(|e| e.to_string())?;
+            (root, Some(id))
+        }
+        None => {
+            let root = match root {
+                Some(root) => root,
+                None => std::env::current_dir().map_err(|e| format!("no working directory: {e}"))?,
+            };
+            (root, None)
+        }
     };
     let spec = Workspace::locate_spec(&root, spec).map_err(|e| e.to_string())?;
 
@@ -100,7 +120,8 @@ fn run(argv: &[String]) -> Result<(), String> {
         Workspace::create(&root, &spec).map_err(|e| e.to_string())?
     } else {
         Workspace::open(&root, &spec).map_err(|e| e.to_string())?
-    };
+    }
+    .with_open_document(open_document);
 
     let server = Server::bind_to(port)
         .map_err(|e| format!("could not bind loopback: {e}"))?
@@ -108,6 +129,9 @@ fn run(argv: &[String]) -> Result<(), String> {
     let url = server.url();
     println!("LCL Workspace");
     println!("  project  {}", workspace.root().display());
+    if let Some(id) = workspace.open_document() {
+        println!("  document {id}");
+    }
     println!("  spec     {}", workspace.spec_root().display());
     println!("  open     {url}");
     println!();

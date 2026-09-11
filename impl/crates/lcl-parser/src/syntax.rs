@@ -113,7 +113,7 @@ impl TopLevel {
 }
 
 /// `CORE_BLOCK = BLOCK_WORD, ":", NEWLINE, INDENT, BLOCK_BODY, DEDENT`
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Block {
     /// The `BLOCK_WORD` itself. Its span is the block's header locus, which is
     /// what `error.block.context`, `error.block.duplicate` and
@@ -145,7 +145,7 @@ impl Block {
 
 /// `BLOCK_STATEMENT = FIELD_LINE | NESTED_FIELD | CONDITIONAL | FOR_EACH`,
 /// widened by `NESTED_BODY` to admit `OBJECT_PROPERTY`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Statement {
     /// A `FIELD_LINE` or `NESTED_FIELD`: an uppercase registered key.
     Field(Field),
@@ -175,7 +175,7 @@ impl Statement {
 ///
 /// `FIELD_KEY = RESERVED_WORD`, so the key is always an uppercase registered
 /// word.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Field {
     pub key: Word,
     /// From the first byte of `key` through the last byte of the body.
@@ -185,7 +185,7 @@ pub struct Field {
 
 /// `OBJECT_PROPERTY = SIMPLE_IDENTIFIER, ":", (SPACE, INLINE_VALUE, NEWLINE |
 ///  NEWLINE, INDENT, NESTED_BODY, DEDENT)`
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Property {
     pub key: Ident,
     pub span: Span,
@@ -197,7 +197,7 @@ pub struct Property {
 /// The two forms are the whole of the "colon then space" versus "colon then
 /// newline" distinction in `04_GRAMMAR/02`: "A colon followed by NEWLINE opens
 /// one indented block. A colon followed by one space and value is inline."
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Body {
     /// `: <value>` on one line.
     Inline(Value),
@@ -233,7 +233,7 @@ impl Body {
 }
 
 /// An indented `NESTED_BODY`, spanning its statements.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Nested {
     pub span: Span,
     /// `NESTED_BODY = (BLOCK_STATEMENT | OBJECT_PROPERTY), { … }` — one or
@@ -560,7 +560,7 @@ pub struct BracketType {
 /// `CONDITIONAL = "IF", SPACE, "(", EXPRESSION, ")", SPACE, "THEN", ":",
 ///  NEWLINE, INDENT, EXECUTABLE_BODY, DEDENT,
 ///  [ "ELSE", ":", NEWLINE, INDENT, EXECUTABLE_BODY, DEDENT ]`
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Conditional {
     pub span: Span,
     /// Span of the `IF` word, the header locus for diagnostics.
@@ -571,7 +571,7 @@ pub struct Conditional {
     pub else_body: Option<ElseArm>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ElseArm {
     pub span: Span,
     pub keyword_span: Span,
@@ -580,7 +580,7 @@ pub struct ElseArm {
 
 /// `FOR_EACH = "FOR", SPACE, "EACH", SPACE, SIMPLE_IDENTIFIER, SPACE, "IN",
 ///  SPACE, EXPRESSION, ":", NEWLINE, INDENT, EXECUTABLE_BODY, DEDENT`
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ForEach {
     pub span: Span,
     /// Span of the `FOR` word, the header locus for diagnostics.
@@ -593,7 +593,7 @@ pub struct ForEach {
 }
 
 /// `EXECUTABLE_STATEMENT = STEP_BLOCK | CONDITIONAL | FOR_EACH | COMMENT_BLOCK`
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Executable {
     /// `STEP_BLOCK` or `COMMENT_BLOCK`; both are `BLOCK_WORD, ":", …` with a
     /// `BLOCK_BODY`, so both are ordinary [`Block`]s.
@@ -918,4 +918,316 @@ fn rebuild_bracket(bracket: &BracketType, argument: Box<Expr>) -> BracketType {
         span: bracket.span,
         argument,
     }
+}
+
+// ---------------------------------------------------------------------------
+// Cloning a statement forest without recursion
+// ---------------------------------------------------------------------------
+
+/// The same defect [`Expr`] had, at the other nesting axis.
+///
+/// A nested body is a `Vec<Statement>` inside a `Body` inside a `Field` inside
+/// a `Statement`, and derived `Clone` walks that cycle one native frame per
+/// level. `04_GRAMMAR/02` states the indented-body shape and no depth limit, so
+/// a document may nest as far as its author indents, and the static checker
+/// copies a document's items to satisfy the borrow checker. Past roughly a
+/// thousand levels on a small stack the copy ended the process by `SIGABRT`
+/// rather than returning a diagnostic, which `LCL_RELEASE_REPORT.md` section 10
+/// recorded as a bound instead of a defect.
+///
+/// So these ten types clone through the same worklist their [`Drop`] already
+/// uses: list every node in pre-order, then rebuild in reverse, so a node is
+/// assembled only once all of its descendants are built and waiting. Depth
+/// costs heap, which fails as an allocation rather than as an abort.
+///
+/// [`Value`], [`Collection`] and the expression types keep derived or
+/// hand-written clones: every path out of them reaches [`Expr::clone`], which
+/// is already iterative, in one frame.
+#[derive(Clone, Copy)]
+enum Node<'a> {
+    Statement(&'a Statement),
+    Executable(&'a Executable),
+}
+
+/// One rebuilt node, waiting for the parent that will take it.
+enum BuiltNode {
+    Statement(Statement),
+    Executable(Executable),
+}
+
+impl BuiltNode {
+    fn statement(self) -> Statement {
+        match self {
+            BuiltNode::Statement(node) => node,
+            BuiltNode::Executable(_) => {
+                unreachable!("a statement body holds statements, and the listing agrees")
+            }
+        }
+    }
+
+    fn executable(self) -> Executable {
+        match self {
+            BuiltNode::Executable(node) => node,
+            BuiltNode::Statement(_) => {
+                unreachable!("an executable body holds executables, and the listing agrees")
+            }
+        }
+    }
+}
+
+/// Every direct child of one node, in source order.
+fn node_children<'a>(node: Node<'a>) -> Vec<Node<'a>> {
+    match node {
+        Node::Statement(Statement::Field(field)) => body_children(&field.body),
+        Node::Statement(Statement::Property(property)) => body_children(&property.body),
+        Node::Statement(Statement::Conditional(node))
+        | Node::Executable(Executable::Conditional(node)) => conditional_children(node),
+        Node::Statement(Statement::ForEach(node)) | Node::Executable(Executable::ForEach(node)) => {
+            node.body.iter().map(Node::Executable).collect()
+        }
+        Node::Executable(Executable::Block(block)) => {
+            block.body.iter().map(Node::Statement).collect()
+        }
+    }
+}
+
+fn body_children(body: &Body) -> Vec<Node<'_>> {
+    match body {
+        // An inline value bottoms out in `Expr`, whose own clone is iterative.
+        Body::Inline(_) => Vec::new(),
+        Body::Nested(nested) => nested.statements.iter().map(Node::Statement).collect(),
+    }
+}
+
+fn conditional_children(node: &Conditional) -> Vec<Node<'_>> {
+    let mut children: Vec<Node<'_>> = node.then_body.iter().map(Node::Executable).collect();
+    if let Some(arm) = &node.else_body {
+        children.extend(arm.body.iter().map(Node::Executable));
+    }
+    children
+}
+
+/// Clone a whole forest of nodes, deepest first, and return the roots in the
+/// order they were given.
+fn clone_forest(roots: Vec<Node<'_>>) -> Vec<BuiltNode> {
+    let count = roots.len();
+    let mut order: Vec<Node<'_>> = Vec::new();
+    let mut stack: Vec<Node<'_>> = roots.into_iter().rev().collect();
+    while let Some(node) = stack.pop() {
+        order.push(node);
+        // Pushed in reverse so that popping yields source order, which is what
+        // the rebuild below relies on.
+        for child in node_children(node).into_iter().rev() {
+            stack.push(child);
+        }
+    }
+    let mut done: Vec<BuiltNode> = Vec::with_capacity(order.len());
+    for node in order.into_iter().rev() {
+        let built = rebuild_node(node, &mut done);
+        done.push(built);
+    }
+    // Every non-root was consumed by its parent, so `done` now holds the roots
+    // with the first one on top.
+    let mut roots: Vec<BuiltNode> = Vec::with_capacity(count);
+    for _ in 0..count {
+        roots.push(done.pop().expect("every root was built"));
+    }
+    roots
+}
+
+/// Take `count` already-built statements off the stack, in source order.
+fn take_statements(done: &mut Vec<BuiltNode>, count: usize) -> Vec<Statement> {
+    (0..count)
+        .map(|_| {
+            done.pop()
+                .expect("every child was built before its parent")
+                .statement()
+        })
+        .collect()
+}
+
+/// Take `count` already-built executables off the stack, in source order.
+fn take_executables(done: &mut Vec<BuiltNode>, count: usize) -> Vec<Executable> {
+    (0..count)
+        .map(|_| {
+            done.pop()
+                .expect("every child was built before its parent")
+                .executable()
+        })
+        .collect()
+}
+
+fn rebuild_node(node: Node<'_>, done: &mut Vec<BuiltNode>) -> BuiltNode {
+    match node {
+        Node::Statement(statement) => BuiltNode::Statement(rebuild_statement(statement, done)),
+        Node::Executable(executable) => BuiltNode::Executable(rebuild_executable(executable, done)),
+    }
+}
+
+fn rebuild_statement(statement: &Statement, done: &mut Vec<BuiltNode>) -> Statement {
+    match statement {
+        Statement::Field(field) => Statement::Field(Field {
+            key: field.key.clone(),
+            span: field.span,
+            body: rebuild_body(&field.body, done),
+        }),
+        Statement::Property(property) => Statement::Property(Property {
+            key: property.key.clone(),
+            span: property.span,
+            body: rebuild_body(&property.body, done),
+        }),
+        Statement::Conditional(node) => Statement::Conditional(rebuild_conditional(node, done)),
+        Statement::ForEach(node) => Statement::ForEach(rebuild_for_each(node, done)),
+    }
+}
+
+fn rebuild_executable(executable: &Executable, done: &mut Vec<BuiltNode>) -> Executable {
+    match executable {
+        Executable::Block(block) => Executable::Block(rebuild_block(block, done)),
+        Executable::Conditional(node) => Executable::Conditional(rebuild_conditional(node, done)),
+        Executable::ForEach(node) => Executable::ForEach(rebuild_for_each(node, done)),
+    }
+}
+
+fn rebuild_body(body: &Body, done: &mut Vec<BuiltNode>) -> Body {
+    match body {
+        Body::Inline(value) => Body::Inline(value.clone()),
+        Body::Nested(nested) => Body::Nested(Nested {
+            span: nested.span,
+            statements: take_statements(done, nested.statements.len()),
+        }),
+    }
+}
+
+fn rebuild_block(block: &Block, done: &mut Vec<BuiltNode>) -> Block {
+    Block {
+        key: block.key.clone(),
+        span: block.span,
+        body: take_statements(done, block.body.len()),
+    }
+}
+
+fn rebuild_conditional(node: &Conditional, done: &mut Vec<BuiltNode>) -> Conditional {
+    let then_body = take_executables(done, node.then_body.len());
+    let else_body = node.else_body.as_ref().map(|arm| ElseArm {
+        span: arm.span,
+        keyword_span: arm.keyword_span,
+        body: take_executables(done, arm.body.len()),
+    });
+    Conditional {
+        span: node.span,
+        keyword_span: node.keyword_span,
+        condition: Box::new((*node.condition).clone()),
+        then_body,
+        else_body,
+    }
+}
+
+fn rebuild_for_each(node: &ForEach, done: &mut Vec<BuiltNode>) -> ForEach {
+    ForEach {
+        span: node.span,
+        keyword_span: node.keyword_span,
+        binding: node.binding.clone(),
+        collection: Box::new((*node.collection).clone()),
+        body: take_executables(done, node.body.len()),
+    }
+}
+
+impl Clone for Statement {
+    fn clone(&self) -> Statement {
+        clone_forest(vec![Node::Statement(self)])
+            .pop()
+            .expect("the root was listed")
+            .statement()
+    }
+}
+
+impl Clone for Executable {
+    fn clone(&self) -> Executable {
+        clone_forest(vec![Node::Executable(self)])
+            .pop()
+            .expect("the root was listed")
+            .executable()
+    }
+}
+
+impl Clone for Block {
+    fn clone(&self) -> Block {
+        let mut done = clone_children_of(self.body.iter().map(Node::Statement).collect());
+        rebuild_block(self, &mut done)
+    }
+}
+
+impl Clone for Field {
+    fn clone(&self) -> Field {
+        let mut done = clone_children_of(body_children(&self.body));
+        Field {
+            key: self.key.clone(),
+            span: self.span,
+            body: rebuild_body(&self.body, &mut done),
+        }
+    }
+}
+
+impl Clone for Property {
+    fn clone(&self) -> Property {
+        let mut done = clone_children_of(body_children(&self.body));
+        Property {
+            key: self.key.clone(),
+            span: self.span,
+            body: rebuild_body(&self.body, &mut done),
+        }
+    }
+}
+
+impl Clone for Body {
+    fn clone(&self) -> Body {
+        let mut done = clone_children_of(body_children(self));
+        rebuild_body(self, &mut done)
+    }
+}
+
+impl Clone for Nested {
+    fn clone(&self) -> Nested {
+        let mut done = clone_children_of(self.statements.iter().map(Node::Statement).collect());
+        Nested {
+            span: self.span,
+            statements: take_statements(&mut done, self.statements.len()),
+        }
+    }
+}
+
+impl Clone for Conditional {
+    fn clone(&self) -> Conditional {
+        let mut done = clone_children_of(conditional_children(self));
+        rebuild_conditional(self, &mut done)
+    }
+}
+
+impl Clone for ElseArm {
+    fn clone(&self) -> ElseArm {
+        let mut done = clone_children_of(self.body.iter().map(Node::Executable).collect());
+        ElseArm {
+            span: self.span,
+            keyword_span: self.keyword_span,
+            body: take_executables(&mut done, self.body.len()),
+        }
+    }
+}
+
+impl Clone for ForEach {
+    fn clone(&self) -> ForEach {
+        let mut done = clone_children_of(self.body.iter().map(Node::Executable).collect());
+        rebuild_for_each(self, &mut done)
+    }
+}
+
+/// Clone a node's children into the stack its own rebuild will pop from.
+///
+/// `clone_forest` returns the roots with the first on top; a rebuild pops in
+/// the same direction, so the two agree without reversing anything.
+fn clone_children_of(children: Vec<Node<'_>>) -> Vec<BuiltNode> {
+    let mut built = clone_forest(children);
+    built.reverse();
+    built
 }

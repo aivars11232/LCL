@@ -41,6 +41,13 @@
 # effect of its own; a TEST root that executes a referenced graph does so
 # through the runtime's existing operation and host boundary.
 #
+# Milestone M10 scope: adds `lcl-workspace`, the editor, project shell, live
+# diagnostics, execution inspection and debugger a person actually uses. It is
+# a consumer of `lcl-protocol` and holds no language rule of its own: it does
+# not tokenize, parse, resolve, check or evaluate anything, and every span it
+# paints and every diagnostic it shows was decided by an engine layer. It
+# serves a browser frontend over a loopback HTTP server written on `std::net`.
+#
 # Dependency policy: std only. The spec authority loader is the trust root for
 # every later layer, so it carries no third-party supply-chain surface.
 
@@ -61,6 +68,7 @@ members = [
     "crates/lcl-project",
     "crates/lcl-cli",
     "crates/lcl-protocol",
+    "crates/lcl-workspace",
     # Last: the conformance runner executes cases through every layer above, so
     # it depends on all of them.
     "crates/lcl-conformance",

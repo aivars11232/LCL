@@ -38,16 +38,18 @@
 //! product boundary rather than a language rule.
 
 pub mod engine;
+pub mod host;
 pub mod inputs;
 pub mod json;
 pub mod record;
 
 pub use engine::{Engine, EngineError};
+pub use host::{surface, Granted};
 pub use inputs::{Inputs, Supplied};
 pub use json::{Node, Object};
 pub use record::{
-    CheckRecord, Command, CompletionRecord, DiagnosticRecord, EventRecord, EvidenceRecord,
-    ExecutionRecord, ImportRecord, InputRecord, InvocationRecord, Outcome, OutputRecord,
-    PlanRecord, Reached, Report, SourceRecord, SpecRecord, StructureRecord, VerdictRecord,
-    PROTOCOL,
+    CheckRecord, Command, CompletionRecord, DeclarationRecord, DiagnosticRecord, EventRecord,
+    EvidenceRecord, ExecutionRecord, ImportRecord, InputRecord, InvocationRecord, NavigationRecord,
+    Outcome, OutputRecord, PlanRecord, Reached, ReferenceRecord, Report, SourceRecord, SpecRecord,
+    StructureRecord, VerdictRecord, PROTOCOL,
 };

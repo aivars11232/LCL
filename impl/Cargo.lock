@@ -171,3 +171,18 @@ dependencies = [
  "lcl-semantics",
  "lcl-spec",
 ]
+
+[[package]]
+name = "lcl-workspace"
+version = "0.0.0"
+dependencies = [
+ "lcl-capabilities",
+ "lcl-diagnostics",
+ "lcl-lexer",
+ "lcl-project",
+ "lcl-protocol",
+ "lcl-resolver",
+ "lcl-runtime",
+ "lcl-spec",
+ "lcl-stdlib",
+]

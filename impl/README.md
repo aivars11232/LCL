@@ -1,4 +1,4 @@
-# LCL implementation — milestones M0 (foundation), M1 (lexer), M2 (parser), M3 (resolver), M4 (checker), M5 (semantic preflight), M6 (runtime), M7 (capabilities and standard library), M8 (completion and executable conformance) and M9 (CLI, projects and the engine protocol)
+# LCL implementation — milestones M0 (foundation), M1 (lexer), M2 (parser), M3 (resolver), M4 (checker), M5 (semantic preflight), M6 (runtime), M7 (capabilities and standard library), M8 (completion and executable conformance), M9 (CLI, projects and the engine protocol) and M10 (the workspace, inspector and debugger)
 
 This directory is a **consumer** of the canonical specification at
 `../canonical/LCL_Core_0.1.0`. It is not part of the release, is not listed in
@@ -29,6 +29,7 @@ evidence and is never a claim about the release.
 | `lcl-protocol` | M9 | The stable headless engine surface. One assembled engine that carries source through every canonical stage in order and stops where the requested command says, and one machine-readable record of what happened, with a JSON projection. It resolves nothing, checks nothing and classifies nothing: every identifier, stage, status, span and value is copied from the layer that decided it. |
 | `lcl-project` | M9 | Projects and documents. An explicit project root, a filesystem source provider that can answer only for a source a document named, root-relative source identity that does not depend on where the project lives, and the content-addressed cache and lock file that make a multi-document project reproducible. |
 | `lcl-cli` | M9 | The `lcl` binary. `check`, `validate`, `run`, `inspect`, `package` and `syntax` over the same engine any other consumer uses, with a closed exit-code table, human rendering and `--machine` JSON. It grants the host nothing unless a flag says so. |
+| `lcl-workspace` | M10 | The editor, project shell, live diagnostics, execution inspection and debugger. A loopback HTTP server on `std::net` serving a hand-written browser frontend, over the same engine the CLI uses. It holds no language rule of its own, and the page does not even highlight: token spans come from the real lexer. |
 
 ## Trust boundary (M0.1)
 
@@ -918,3 +919,95 @@ All are read-only with respect to `canonical/`. Integrity tests that need to
 mutate a package operate on a throwaway copy under `target/test-tmp/`, and the
 `.lcl` desktop registration in `integration/linux/` is never installed by
 building the workspace.
+
+## M10 — `lcl-workspace`
+
+The product a person actually uses: an editor, a project shell, live
+diagnostics, execution inspection and a debugger, over the same engine the CLI
+uses.
+
+It is a loopback HTTP server serving a browser frontend, both written here,
+both on `std` alone. No UI toolkit was added, and no crate was added, because
+the workspace's dependency policy — "std only … no third-party supply-chain
+surface" — is the same policy that made `lcl-cli` write out its own argument
+parser and `lcl-protocol` its own JSON writer. The owner approved that shape
+before any of it was built.
+
+### The rule everything else follows from
+
+> CLI and UI consume engine APIs/protocols. Neither may contain a second
+> private implementation of language semantics.
+
+So this crate does not tokenize, parse, resolve, check, plan or evaluate, and
+neither does the page. **The browser does not even highlight.** A JavaScript
+regular-expression highlighter is a second lexer, transcribed into a language
+where it will drift the first time a registry moves, so instead the page asks
+for token spans, the real `lcl-lexer` produces them, and the page paints them.
+The frontend holds no keyword list, no grammar and no pattern that matches LCL.
+
+Byte offsets stay normative the whole way out. Spans cross the wire as byte
+offsets with the engine's own derived position beside them, and the page maps
+bytes to screen positions through one index built per document rather than by
+counting characters itself.
+
+### Running it
+
+```bash
+cargo build --offline -p lcl-workspace
+lcl-workspace my-project --spec canonical/LCL_Core_0.1.0     # prints a URL
+lcl-workspace my-project --create                            # make the project first
+lcl-workspace my-project --open                              # and open it in a browser
+lcl-workspace my-project --log                               # one line per request
+```
+
+The server binds `127.0.0.1` on an ephemeral port and mints a session token per
+launch. Three gates run before any handler sees a request: the `Host` header
+must name the address actually bound, which is what refuses a rebound DNS name;
+an `Origin`, when present, must be this same origin; and the token must match.
+Responses carry `default-src 'self'`, `nosniff`, and no CORS header at all.
+
+### What the debugger can and cannot do
+
+It stops at the capability boundary — before the standard library dispatches an
+operation, and before an effect crosses into the host — by wrapping the existing
+`Operations` and `Host` traits. That is where an effect leaves the language, so
+it is both the most useful place to stop and the one the engine already exposes
+a seam for. Neither wrapper decides anything: a denial returns the same
+`Refusal` the host would, and the engine decides what that means.
+
+It does **not** single-step plan nodes, and does not pretend to. The runtime
+executes an accepted plan in one call over its own deterministic queue, and
+pausing between nodes would mean changing a closed milestone. After a run, the
+recorded invocations step forward and back with their spans highlighted, which
+is a different thing and is labelled as one.
+
+Consent is the second gate and only the second gate. A pause is reached only for
+a request the language already authorized; a `FORBID`den effect is refused at
+preflight, before the host is consulted, so there is no prompt to say yes to.
+
+### Additions to M9
+
+Three, all additive, all in `lcl-protocol` where both consumers reach them:
+
+- **`Report::navigation`** — the resolver's declarations and bindings, with
+  spans, projected for `inspect`. Without it, go-to-definition in an editor
+  would have to be a text search. It is attached as soon as resolution has run,
+  including when resolution *rejected* the document, because an editor needs to
+  navigate a broken file most of all.
+- **`surface()`** — the function that turns granted paths, programs and hosts
+  into a `Stdlib` and a `HostAdapter`. It was private in the CLI binary; the
+  workspace has to behave identically for identical grants, and one copy both
+  call is the only way to guarantee that.
+- **`Engine::run_with`** — `run` with the operation dispatcher as a parameter,
+  mirroring `Runtime::execute_with`, which has always taken one. A debugger that
+  observes the dispatch seam would otherwise have to reassemble the thirteen-step
+  walk itself.
+
+### The gate
+
+`lcl-workspace`'s equivalence suite runs the `lcl` binary as a subprocess with a
+cleared environment and compares its `--machine` output against what the
+workspace serves, **byte for byte**, for `check`, `validate` and `inspect` over
+all thirteen valid canonical examples and over documents rejected at the
+lexical, grammar and resolution stages. Comparing selected fields would prove
+only that the fields someone thought of agree.

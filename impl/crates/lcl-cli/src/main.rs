@@ -35,12 +35,10 @@ mod exit;
 mod render;
 mod syntax;
 
-use args::{Command, Common, Document, Grants, UsageError};
-use lcl_capabilities::{RealFileSystem, RealProcess, TcpTransport};
+use args::{Command, Common, Document, UsageError};
 use lcl_project::{Cache, Lock, Project};
 use lcl_protocol::json::{Node, Object};
 use lcl_protocol::{Engine, Inputs, Report};
-use lcl_stdlib::HostAdapter;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -197,7 +195,8 @@ fn stage_command(document: Document, command: lcl_protocol::Command) -> Result<i
         lcl_protocol::Command::Validate => engine.validate(&unit, &provider, &inputs),
         lcl_protocol::Command::Inspect => engine.inspect(&unit, &provider, &inputs),
         lcl_protocol::Command::Run => {
-            let (mut stdlib, mut host) = surface(&engine, &common.grants)?;
+            let (mut stdlib, mut host) = lcl_protocol::surface(&engine, &common.grants)
+                .map_err(|e| Failure::environment(e.to_string()))?;
             engine.run(&unit, &provider, &inputs, &mut stdlib, &mut host)
         }
     };
@@ -210,55 +209,6 @@ fn stage_command(document: Document, command: lcl_protocol::Command) -> Result<i
 
     emit(&report, &common);
     Ok(exit::of(&report))
-}
-
-/// Assemble the operation surface and the host from what the caller granted.
-///
-/// A profile is installed only when the capability it describes is actually
-/// present. `lcl-stdlib` states why: a profile is "a claim an implementation
-/// makes", and installing one for a capability nobody supplied would be
-/// claiming an implementation that is not there.
-fn surface(
-    engine: &Engine,
-    granted: &Grants,
-) -> Result<(lcl_stdlib::Stdlib, HostAdapter), Failure> {
-    let mut grants = lcl_capabilities::Grants::internal();
-    for path in &granted.read {
-        grants = grants.permit_read(path.clone());
-    }
-    for path in &granted.write {
-        grants = grants.permit_write(path.clone());
-    }
-    for program in &granted.programs {
-        grants = grants.permit_program(program.clone());
-    }
-    for host in &granted.hosts {
-        grants = grants.permit_network_host(host.clone());
-    }
-
-    // The in-language verifier reaches nothing outside the language, so it is
-    // always available. Every other profile follows a real capability.
-    let mut profiles = lcl_stdlib::checking_profiles();
-    let mut host = HostAdapter::new(grants.clone());
-    if !granted.read.is_empty() || !granted.write.is_empty() {
-        host = host.with_filesystem(RealFileSystem::new(grants.clone()));
-        profiles.extend(lcl_stdlib::filesystem_profiles());
-    }
-    if !granted.programs.is_empty() {
-        host = host.with_process(RealProcess::new(grants.clone()));
-        profiles.extend(lcl_stdlib::process_profiles());
-    }
-    if !granted.hosts.is_empty() {
-        host = host.with_transport(TcpTransport::new(grants.clone()));
-        profiles.extend(lcl_stdlib::transport_profiles());
-    }
-
-    let stdlib = engine
-        .stdlib()
-        .map_err(|e| Failure::environment(e.to_string()))?
-        .with_profiles(profiles)
-        .with_grants(grants);
-    Ok((stdlib, host))
 }
 
 // ---------------------------------------------------------------------------

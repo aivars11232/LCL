@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="lcl-token" content="{{TOKEN}}">
+<title>LCL Workspace</title>
+<link rel="stylesheet" href="/app.css?t={{TOKEN}}">
+</head>
+<body>
+<div id="shell">
+
+  <header id="titlebar">
+    <div class="brand">
+      <span class="mark">LCL</span>
+      <span class="where" id="project-root">opening…</span>
+    </div>
+    <div class="actions">
+      <button id="act-check" class="run" title="Steps 1 to 5. No effect can occur.">Check</button>
+      <button id="act-inspect" class="run" title="Steps 1 to 9, reported structurally. No effect can occur.">Inspect</button>
+      <button id="act-run" class="run primary" title="Steps 1 to 13.">Run</button>
+      <button id="act-save" title="Write this document to disk.">Save</button>
+      <button id="act-reload" title="Discard edits and re-read from disk.">Reload</button>
+    </div>
+    <div class="spec" id="spec-identity" title="The specification package every result here was produced against."></div>
+  </header>
+
+  <nav id="sidebar">
+    <div class="panel-head">
+      <span>Project</span>
+      <button id="act-new" class="icon" title="New document">+</button>
+    </div>
+    <ul id="tree" class="tree"></ul>
+  </nav>
+
+  <main id="editor-pane">
+    <div id="tabs" class="tabs"></div>
+    <div id="editor" class="editor">
+      <div id="gutter" class="gutter" aria-hidden="true"></div>
+      <div class="surface">
+        <pre id="paint" class="paint" aria-hidden="true"></pre>
+        <textarea id="code" class="code" spellcheck="false" autocapitalize="off"
+                  autocomplete="off" autocorrect="off" wrap="off"
+                  aria-label="LCL source"></textarea>
+      </div>
+    </div>
+    <div id="statusbar" class="statusbar">
+      <span id="cursor">1:1</span>
+      <span id="doc-state"></span>
+      <span id="hint" class="hint"></span>
+    </div>
+  </main>
+
+  <aside id="inspector">
+    <div class="tabstrip" role="tablist">
+      <button class="tab active" data-view="diagnostics" role="tab">Diagnostics</button>
+      <button class="tab" data-view="structure" role="tab">Structure</button>
+      <button class="tab" data-view="execution" role="tab">Execution</button>
+      <button class="tab" data-view="completion" role="tab">Completion</button>
+      <button class="tab" data-view="capabilities" role="tab">Capabilities</button>
+    </div>
+    <div id="views">
+      <section class="view active" data-view="diagnostics"><div class="empty">Nothing checked yet.</div></section>
+      <section class="view" data-view="structure"><div class="empty">Run Inspect to see imports, declarations and the execution plan.</div></section>
+      <section class="view" data-view="execution"><div class="empty">Run the document to see invocations and events.</div></section>
+      <section class="view" data-view="completion"><div class="empty">Run the document to see checks, evidence, outputs and its terminal status.</div></section>
+      <section class="view" data-view="capabilities"><div class="empty">Loading…</div></section>
+    </div>
+  </aside>
+
+</div>
+
+<div id="modal-backdrop" class="backdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <h2 id="modal-title"></h2>
+    <div id="modal-body"></div>
+    <div id="modal-actions" class="modal-actions"></div>
+  </div>
+</div>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
+<script src="/app.js?t={{TOKEN}}"></script>
+</body>
+</html>

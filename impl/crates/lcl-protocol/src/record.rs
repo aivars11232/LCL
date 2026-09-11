@@ -45,6 +45,23 @@ use lcl_lexer::{Position, Span};
 /// meaning changes, never when a field is added.
 pub const PROTOCOL: &str = "lcl.engine/1";
 
+/// One span as JSON. Byte offsets, which `02_LEXICAL/01` makes normative.
+fn span_json(span: Span) -> Node {
+    Object::new()
+        .with("start", Node::usize(span.start))
+        .with("end", Node::usize(span.end))
+        .into()
+}
+
+/// One derived position as JSON, carried beside a span and never instead of it.
+fn position_json(position: Position) -> Node {
+    Object::new()
+        .with("offset", Node::usize(position.offset))
+        .with("line", Node::usize(position.line as usize))
+        .with("column", Node::usize(position.column as usize))
+        .into()
+}
+
 /// How far a source got through the canonical processing order.
 ///
 /// The names are the canonical stage names from
@@ -765,6 +782,188 @@ impl StructureRecord {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Navigation
+// ---------------------------------------------------------------------------
+
+/// One declaration, with the loci a consumer needs to navigate to it.
+///
+/// Every field is copied from `lcl_resolver::Declaration`. Nothing here is
+/// searched for, matched or inferred: an editor that jumps to a definition is
+/// following the binding the resolver already made at step 4, which is what
+/// keeps navigation engine truth rather than a text search wearing its clothes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeclarationRecord {
+    /// Index into this record's own declaration list, which is the resolver's
+    /// `DeclarationIndex` order. [`ReferenceRecord::declaration`] points here.
+    pub index: usize,
+    /// Fully qualified identity.
+    pub id: String,
+    /// The declaring block, e.g. `ACTION`.
+    pub block: String,
+    /// `DEFINE.KIND`, for a `DEFINE` declaration only.
+    pub definition_kind: Option<String>,
+    /// The unit that declares it.
+    pub source: String,
+    /// Locus of the `ID` value: where "go to definition" lands.
+    pub id_span: Span,
+    /// Derived from [`DeclarationRecord::id_span`]'s start, beside it and never
+    /// instead of it.
+    pub id_position: Position,
+    /// Locus of the declaring block's header word: what an outline selects.
+    pub block_span: Span,
+    /// The enclosing declaration, for a nested block such as a `STEP` inside a
+    /// `SEQUENCE`.
+    pub parent: Option<usize>,
+}
+
+impl DeclarationRecord {
+    fn to_json(&self) -> Node {
+        Object::new()
+            .with("index", Node::usize(self.index))
+            .with("id", Node::string(&self.id))
+            .with("block", Node::string(&self.block))
+            .with(
+                "definition_kind",
+                Node::optional(self.definition_kind.clone()),
+            )
+            .with("source", Node::string(&self.source))
+            .with("id_span", span_json(self.id_span))
+            .with("id_position", position_json(self.id_position))
+            .with("block_span", span_json(self.block_span))
+            .with(
+                "parent",
+                match self.parent {
+                    Some(p) => Node::usize(p),
+                    None => Node::Null,
+                },
+            )
+            .into()
+    }
+}
+
+/// One `REF` occurrence and what the resolver bound it to.
+///
+/// An unresolved reference is kept rather than dropped. The resolver already
+/// emitted a diagnostic for it, and a consumer that silently omitted the
+/// occurrence would be hiding the one place a user needs to look.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReferenceRecord {
+    /// The unit the reference is written in.
+    pub source: String,
+    /// Locus of the identifier inside `REF(...)`.
+    pub span: Span,
+    /// Derived from [`ReferenceRecord::span`]'s start.
+    pub position: Position,
+    /// The identifier exactly as written.
+    pub text: String,
+    /// The receiving block and field, when the reference stands in a field slot
+    /// with a registered target set.
+    pub slot: Option<(String, String)>,
+    /// `declaration`, `loop_local` or `unresolved`, in the resolver's own
+    /// vocabulary.
+    pub target: String,
+    /// Index into [`NavigationRecord::declarations`], when it bound to one.
+    pub declaration: Option<usize>,
+    /// Locus of the binding identifier in its `FOR EACH` header, for a
+    /// loop-local reference. `02_LEXICAL/03`: a loop-local identifier is not a
+    /// declaration, so it has no index and its definition is this span.
+    pub binding_span: Option<Span>,
+    /// The resolved declaration's identity, when it resolved to one.
+    pub resolved_id: Option<String>,
+}
+
+impl ReferenceRecord {
+    fn to_json(&self) -> Node {
+        Object::new()
+            .with("source", Node::string(&self.source))
+            .with("span", span_json(self.span))
+            .with("position", position_json(self.position))
+            .with("text", Node::string(&self.text))
+            .with(
+                "slot",
+                match &self.slot {
+                    Some((block, field)) => Object::new()
+                        .with("block", Node::string(block))
+                        .with("field", Node::string(field))
+                        .into(),
+                    None => Node::Null,
+                },
+            )
+            .with("target", Node::string(&self.target))
+            .with(
+                "declaration",
+                match self.declaration {
+                    Some(d) => Node::usize(d),
+                    None => Node::Null,
+                },
+            )
+            .with(
+                "binding_span",
+                match self.binding_span {
+                    Some(span) => span_json(span),
+                    None => Node::Null,
+                },
+            )
+            .with("resolved_id", Node::optional(self.resolved_id.clone()))
+            .into()
+    }
+}
+
+/// What the resolver bound, for an editor that navigates.
+///
+/// Produced alongside [`StructureRecord`] and for the same reason: the
+/// resolver decided all of it at step 4, and a consumer that had to rediscover
+/// it would be writing a second resolver.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NavigationRecord {
+    /// Every declaration of every usable unit, in the resolver's index order.
+    pub declarations: Vec<DeclarationRecord>,
+    /// Every `REF` occurrence, in the resolver's binding order.
+    pub references: Vec<ReferenceRecord>,
+}
+
+impl NavigationRecord {
+    /// Every reference that bound to one declaration, by its index.
+    ///
+    /// "Find references" is this and nothing more.
+    pub fn references_to(&self, declaration: usize) -> impl Iterator<Item = &ReferenceRecord> {
+        self.references
+            .iter()
+            .filter(move |r| r.declaration == Some(declaration))
+    }
+
+    /// The declaration whose `ID` value contains one byte offset.
+    ///
+    /// "Go to definition" resolves the reference under a cursor; this resolves
+    /// the cursor when it is already sitting on the definition.
+    pub fn declaration_at(&self, source: &str, offset: usize) -> Option<&DeclarationRecord> {
+        self.declarations
+            .iter()
+            .find(|d| d.source == source && d.id_span.start <= offset && offset < d.id_span.end)
+    }
+
+    /// The reference whose identifier contains one byte offset.
+    pub fn reference_at(&self, source: &str, offset: usize) -> Option<&ReferenceRecord> {
+        self.references
+            .iter()
+            .find(|r| r.source == source && r.span.start <= offset && offset < r.span.end)
+    }
+
+    fn to_json(&self) -> Node {
+        Object::new()
+            .with(
+                "declarations",
+                Node::array(self.declarations.iter().map(DeclarationRecord::to_json)),
+            )
+            .with(
+                "references",
+                Node::array(self.references.iter().map(ReferenceRecord::to_json)),
+            )
+            .into()
+    }
+}
+
 /// The complete record of one engine request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Report {
@@ -780,6 +979,8 @@ pub struct Report {
     pub diagnostics: Vec<DiagnosticRecord>,
     /// Present for `inspect`.
     pub structure: Option<StructureRecord>,
+    /// Present for `inspect`. What the resolver bound, for an editor.
+    pub navigation: Option<NavigationRecord>,
     /// Present for `run`, once execution began.
     pub execution: Option<ExecutionRecord>,
     /// Present for `run`, once execution finished.
@@ -825,6 +1026,10 @@ impl Report {
             .with_some(
                 "structure",
                 self.structure.as_ref().map(StructureRecord::to_json),
+            )
+            .with_some(
+                "navigation",
+                self.navigation.as_ref().map(NavigationRecord::to_json),
             )
             .with_some(
                 "execution",

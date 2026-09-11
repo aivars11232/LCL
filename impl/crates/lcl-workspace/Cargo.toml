@@ -1,0 +1,26 @@
+[package]
+name = "lcl-workspace"
+description = "The LCL workspace: an editor, project shell, live diagnostics, execution inspection and debugger over the same engine the CLI uses. It serves a browser frontend from a loopback HTTP server and contains no language semantics of its own."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "lcl-workspace"
+path = "src/main.rs"
+
+[dependencies]
+lcl-protocol = { path = "../lcl-protocol" }
+lcl-project = { path = "../lcl-project" }
+lcl-resolver = { path = "../lcl-resolver" }
+lcl-runtime = { path = "../lcl-runtime" }
+lcl-stdlib = { path = "../lcl-stdlib" }
+lcl-capabilities = { path = "../lcl-capabilities" }
+lcl-lexer = { path = "../lcl-lexer" }
+lcl-spec = { path = "../lcl-spec" }
+
+[dev-dependencies]
+# Tests read replies back with the trust root's own strict JSON reader, so a
+# malformed reply fails the test rather than being leniently accepted.
+lcl-diagnostics = { path = "../lcl-diagnostics" }

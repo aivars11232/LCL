@@ -79,17 +79,11 @@ pub struct Common {
 
 /// What a run is allowed to touch, exactly as the caller stated it.
 ///
-/// Empty by default. `05_SEMANTICS/03` and the capability contract make host
-/// permission a separate gate from language authorization, and a tool that
-/// granted anything by default would be answering that gate on the operator's
-/// behalf.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Grants {
-    pub read: Vec<PathBuf>,
-    pub write: Vec<PathBuf>,
-    pub programs: Vec<String>,
-    pub hosts: Vec<String>,
-}
+/// This is `lcl-protocol`'s type, not one of the CLI's own. The workspace UI
+/// grants capabilities through the same struct and assembles its host through
+/// the same function, which is what makes "the UI matches the CLI for identical
+/// capabilities" a property of the code rather than of two authors agreeing.
+pub use lcl_protocol::Granted as Grants;
 
 /// Why a command line could not be used.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -28,18 +28,19 @@
 //!
 //! ## The host is the caller's
 //!
-//! [`Engine::request`] takes a `&mut dyn Host` and a `&mut Stdlib`. It installs
-//! no adapter and grants no permission, because deciding what a run may touch
-//! is the embedder's decision, not the engine's. An engine handed a host with
-//! nothing installed runs a document that needs nothing and reports
+//! [`Engine::request`] takes a `&mut dyn Host` and an operation dispatcher. It
+//! installs no adapter and grants no permission, because deciding what a run
+//! may touch is the embedder's decision, not the engine's. An engine handed a
+//! host with nothing installed runs a document that needs nothing and reports
 //! `error.host.constraint` for one that does — which is the truthful outcome,
 //! not a degraded one.
 
 use crate::inputs::{Inputs, Supplied};
 use crate::record::{
-    CheckRecord, Command, CompletionRecord, DiagnosticRecord, EventRecord, EvidenceRecord,
-    ExecutionRecord, ImportRecord, InputRecord, InvocationRecord, Outcome, OutputRecord,
-    PlanRecord, Reached, Report, SourceRecord, SpecRecord, StructureRecord, VerdictRecord,
+    CheckRecord, Command, CompletionRecord, DeclarationRecord, DiagnosticRecord, EventRecord,
+    EvidenceRecord, ExecutionRecord, ImportRecord, InputRecord, InvocationRecord, NavigationRecord,
+    Outcome, OutputRecord, PlanRecord, Reached, ReferenceRecord, Report, SourceRecord, SpecRecord,
+    StructureRecord, VerdictRecord,
 };
 use lcl_checker::{Checked, Checker, Contracts as StaticContracts};
 use lcl_completion::{Completion, Contracts as CompletionContracts, Publication, SkipReason};
@@ -47,8 +48,10 @@ use lcl_diagnostics::Stage;
 use lcl_lexer::{Lexer, Lexicon, Position, Span};
 use lcl_parser::syntax::Expr;
 use lcl_parser::{Grammar, Parser};
-use lcl_resolver::{Resolved, ResolvedUnit, Resolver, Rules, SourceId, SourceProvider, SourceUnit};
-use lcl_runtime::{Contracts as RuntimeContracts, Execution, Host, Runtime};
+use lcl_resolver::{
+    BindingTarget, Resolved, ResolvedUnit, Resolver, Rules, SourceId, SourceProvider, SourceUnit,
+};
+use lcl_runtime::{Contracts as RuntimeContracts, Execution, Host, Operations, Runtime};
 use lcl_semantics::{
     Contracts as PreflightContracts, Invocation, Outcome as PreflightOutcome, Planned, Preflight,
 };
@@ -224,6 +227,36 @@ impl Engine {
         self.request(Command::Run, unit, provider, inputs, Some((stdlib, host)))
     }
 
+    /// Steps 1 to 13, against an explicit operation dispatcher and host.
+    ///
+    /// [`Engine::run`] is this with the dispatcher fixed to a [`Stdlib`], which
+    /// is what almost every caller wants. This exists for a caller that needs
+    /// to observe the dispatch seam — a debugger that pauses before an
+    /// operation, a recorder, a test double — and it mirrors
+    /// [`lcl_runtime::Runtime::execute_with`], which has always taken the
+    /// dispatcher as a parameter for the same reason.
+    ///
+    /// Without it, such a caller would have to reassemble the thirteen-step
+    /// walk itself, which is the exact duplication this crate exists to
+    /// prevent. The dispatcher still decides what an operation means; wrapping
+    /// one does not move that decision.
+    pub fn run_with(
+        &self,
+        unit: &SourceUnit,
+        provider: &dyn SourceProvider,
+        inputs: &Inputs,
+        operations: &mut dyn Operations,
+        host: &mut dyn Host,
+    ) -> Report {
+        self.request(
+            Command::Run,
+            unit,
+            provider,
+            inputs,
+            Some((operations, host)),
+        )
+    }
+
     /// The one staged walk every command uses.
     fn request(
         &self,
@@ -231,7 +264,7 @@ impl Engine {
         unit: &SourceUnit,
         provider: &dyn SourceProvider,
         inputs: &Inputs,
-        effects: Option<(&mut Stdlib, &mut dyn Host)>,
+        effects: Option<(&mut dyn Operations, &mut dyn Host)>,
     ) -> Report {
         let mut report = Report {
             command,
@@ -247,6 +280,7 @@ impl Engine {
             inputs: Vec::new(),
             diagnostics: Vec::new(),
             structure: None,
+            navigation: None,
             execution: None,
             completion: None,
         };
@@ -303,6 +337,17 @@ impl Engine {
         }
 
         report.reached = Reached::Resolution;
+
+        // Navigation is the resolver's own output, so it is available as soon
+        // as the resolver ran — including when it rejected the document. An
+        // editor needs to jump to a definition most while a document is broken,
+        // and withholding bindings that step 4 already made would push it into
+        // searching for identifiers itself, which is the one thing a UI must
+        // never do. An unresolved occurrence is reported as unresolved.
+        if command == Command::Inspect {
+            report.navigation = Some(navigation(&resolved));
+        }
+
         if resolved.primary().is_some() {
             report.diagnostics = resolved
                 .diagnostics()
@@ -435,7 +480,7 @@ impl Engine {
         }
 
         // Step 10. The first stage permitted to reach outside the language.
-        let Some((stdlib, host)) = effects else {
+        let Some((operations, host)) = effects else {
             // `run` was requested without an operation surface. Reported, never
             // substituted: a run with no host is not a run with a silent one.
             report.diagnostics.push(placeholder(
@@ -447,7 +492,7 @@ impl Engine {
             return report;
         };
         let execution = match Runtime::new(&self.runtime)
-            .execute_with(&planned, &checked, &resolved, stdlib, host)
+            .execute_with(&planned, &checked, &resolved, operations, host)
         {
             Ok(execution) => execution,
             Err(not_planned) => {
@@ -979,6 +1024,78 @@ fn structure(resolved: &Resolved, planned: &Planned) -> StructureRecord {
             })
             .collect(),
         unused_inputs: planned.unused_invocation_data().to_vec(),
+    }
+}
+
+/// Project what the resolver bound into the navigation record.
+///
+/// Every field is copied. This function searches nothing, matches no text and
+/// resolves no name: step 4 already did all of it, and `lcl-protocol`'s whole
+/// contract is that it "resolves nothing, checks nothing and classifies
+/// nothing". An editor that jumped to a definition by grepping for an
+/// identifier would be a second resolver living in a UI, which is exactly what
+/// this exists to prevent.
+fn navigation(resolved: &Resolved) -> NavigationRecord {
+    let index = resolved.declarations();
+    let position_in = |source: &SourceId, offset: usize| match resolved.unit(source) {
+        Some(unit) => lcl_runtime::position_of(unit.source(), offset),
+        // A binding names the unit it was found in, so its unit is loaded.
+        // Reported rather than unwrapped: a panic in a product facade would
+        // destroy the record a caller needs.
+        None => Position {
+            offset,
+            line: 0,
+            column: 0,
+        },
+    };
+
+    let declarations = index
+        .all()
+        .iter()
+        .enumerate()
+        .map(|(i, d)| DeclarationRecord {
+            index: i,
+            id: d.id.qualified(),
+            block: d.block.clone(),
+            definition_kind: d.definition_kind.clone(),
+            source: d.source.to_string(),
+            id_span: d.id_span,
+            id_position: position_in(&d.source, d.id_span.start),
+            block_span: d.block_span,
+            parent: d.parent,
+        })
+        .collect();
+
+    let references = resolved
+        .bindings()
+        .iter()
+        .map(|b| ReferenceRecord {
+            source: b.source.to_string(),
+            span: b.span,
+            position: position_in(&b.source, b.span.start),
+            text: b.text.clone(),
+            slot: b.slot.clone(),
+            target: match b.target {
+                BindingTarget::Declaration(_) => "declaration",
+                BindingTarget::LoopLocal { .. } => "loop_local",
+                BindingTarget::Unresolved => "unresolved",
+            }
+            .to_string(),
+            declaration: match b.target {
+                BindingTarget::Declaration(i) => Some(i),
+                _ => None,
+            },
+            binding_span: match b.target {
+                BindingTarget::LoopLocal { binding_span } => Some(binding_span),
+                _ => None,
+            },
+            resolved_id: b.resolved_id.as_ref().map(|id| id.qualified()),
+        })
+        .collect();
+
+    NavigationRecord {
+        declarations,
+        references,
     }
 }
 

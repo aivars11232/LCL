@@ -254,6 +254,7 @@ pub(crate) fn resolve(
                         failure.id, failure.written_status, requested
                     ),
                     phase,
+                    demand_resolved: false,
                 });
                 return Terminal {
                     status,
@@ -294,6 +295,7 @@ pub(crate) fn resolve(
             .unwrap_or_else(|| "root".to_string()),
         detail,
         phase,
+        demand_resolved: false,
     });
     let status = engine
         .contracts

@@ -271,6 +271,99 @@ fn an_absent_human_responder_is_a_limitation() {
 }
 
 // ---------------------------------------------------------------------------
+// core.read's range contract
+// ---------------------------------------------------------------------------
+
+/// `operations_v0.1.0.json#/contracts/core.read/parameters/range`.
+///
+/// Regression, `LCL-TASK-0020` defect 4. `core.read` returned the whole target
+/// content and never applied the range, and an inverted range raised nothing.
+/// CLOSURE-048, CLOSURE-049 and CLOSURE-050 could not be executed at all.
+fn ranged_read(content: &str, unit: &str, start: i64, end: i64) -> Execution {
+    let action = format!(
+        "ID: action.read\nOPERATION: core.read\nTARGET: REF(data.target)\n\
+         PARAMETER:\n    NAME: range\n    TYPE: OBJECT\n    REQUIRED: TRUE\n    VALUE:\n        \
+         unit: {unit:?}\n        start: {start}\n        end: {end}"
+    );
+    let source = common::task(
+        &common::data("data.target", "PATH", "PATH(\"/srv/data/a.txt\")"),
+        &[&action],
+    );
+    let filesystem = MemoryFileSystem::new()
+        .with_read_scope("/srv/data")
+        .with_file("/srv/data/a.txt", content.as_bytes());
+    let mut host = HostAdapter::new(filesystem.grants().clone()).with_filesystem(filesystem);
+    run_with_host(&source, &mut host)
+}
+
+fn read_value(execution: &Execution) -> String {
+    match common::field(execution, "action.read", "value") {
+        lcl_runtime::Value::Text(text) => text.clone(),
+        other => panic!("core.read returns a value, got {other}"),
+    }
+}
+
+#[test]
+fn a_scalar_range_selects_exactly_the_positions_it_names() {
+    // The witness: "range {unit: scalar, start: 1, end: 3} on STRING abcd" is
+    // "Returned STRING bc. End is exclusive and Unicode scalars are the
+    // indexing unit."
+    assert_eq!(read_value(&ranged_read("abcd", "scalar", 1, 3)), "bc");
+    // "equal bounds produce the corresponding empty value"
+    assert_eq!(read_value(&ranged_read("abcd", "scalar", 2, 2)), "");
+    // "indexes Unicode scalars", not bytes: each of these is three bytes.
+    assert_eq!(read_value(&ranged_read("日本語", "scalar", 1, 3)), "本語");
+}
+
+#[test]
+fn a_line_range_retains_each_selected_terminator() {
+    // "line requires STRING and indexes LF-terminated lines, retaining each
+    // selected line terminator and any final unterminated line."
+    assert_eq!(read_value(&ranged_read("a\nb", "line", 0, 1)), "a\n");
+    assert_eq!(read_value(&ranged_read("a\nb", "line", 1, 2)), "b");
+    assert_eq!(read_value(&ranged_read("a\nb", "line", 0, 2)), "a\nb");
+    // "Empty STRING has zero lines."
+    assert_eq!(read_value(&ranged_read("", "line", 0, 0)), "");
+}
+
+#[test]
+fn bounds_outside_the_sequence_are_refused_and_never_clipped() {
+    // "negative, inverted, or excessive bounds are never clipped."
+    for (start, end) in [(2, 1), (-1, 2), (0, 9)] {
+        let execution = ranged_read("abcd", "scalar", start, end);
+        assert_eq!(
+            common::errors_of(&execution, "action.read"),
+            vec!["error.value.out_of_range".to_string()],
+            "range {start}..{end} is outside 0 <= start <= end <= length"
+        );
+    }
+}
+
+#[test]
+fn a_unit_that_does_not_index_this_representation_is_refused() {
+    // "item requires LIST[T]", and a file's representation is a STRING.
+    let execution = ranged_read("abcd", "item", 0, 1);
+    assert_eq!(
+        common::errors_of(&execution, "action.read"),
+        vec!["error.operation.precondition".to_string()]
+    );
+}
+
+#[test]
+fn a_read_without_a_range_is_unchanged() {
+    let action = "ID: action.read\nOPERATION: core.read\nTARGET: REF(data.target)";
+    let source = common::task(
+        &common::data("data.target", "PATH", "PATH(\"/srv/data/a.txt\")"),
+        &[action],
+    );
+    let filesystem = MemoryFileSystem::new()
+        .with_read_scope("/srv/data")
+        .with_file("/srv/data/a.txt", *b"abcd");
+    let mut host = HostAdapter::new(filesystem.grants().clone()).with_filesystem(filesystem);
+    assert_eq!(read_value(&run_with_host(&source, &mut host)), "abcd");
+}
+
+// ---------------------------------------------------------------------------
 // Bounds
 // ---------------------------------------------------------------------------
 

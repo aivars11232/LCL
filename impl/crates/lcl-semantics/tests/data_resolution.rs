@@ -39,6 +39,73 @@ fn an_explicit_value_wins_over_everything() {
     assert_eq!(resolved.value.to_string(), "7");
 }
 
+/// `03_TYPES_AND_VALUES/10`, OBJECT: "An object uses an indented VALUE block
+/// containing unique lowercase property names."
+///
+/// Regression, `LCL-TASK-0020` defect 1. That body is `Body::Nested`, an inline
+/// read cannot see it, and every object-valued declaration resolved to MISSING
+/// while nothing in the document was missing. CLOSURE-005 failed on it, and
+/// CLOSURE-021, CLOSURE-042 and CLOSURE-051 could not be written at all.
+const RECORD: &str = "\nDATA:\n    ID: data.record\n    TYPE: OBJECT\n    VALUE:\n        name: \"a\"\n        count: 2\n";
+
+#[test]
+fn an_object_written_as_an_indented_value_block_resolves_to_an_object() {
+    let source = task_document(&format!("{RECORD}{SUBJECT}"));
+    let planned = plan_with(&source, &Invocation::new());
+    let resolved = resolution(&planned, "data.record");
+    assert_eq!(resolved.origin, Origin::DeclaredValue);
+    let Value::Object(fields) = &resolved.value else {
+        panic!(
+            "an indented VALUE block declares an OBJECT, got {:?}",
+            resolved.value
+        );
+    };
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields.get("name"), Some(&Value::Text("a".to_string())));
+    assert_eq!(
+        fields.get("count").map(|v| v.to_string()),
+        Some("2".to_string())
+    );
+}
+
+/// "Property order has no semantic effect", and `03_TYPES_AND_VALUES/03` gives
+/// OBJECT equality by field. Two objects written in different orders are one
+/// value.
+#[test]
+fn property_order_has_no_semantic_effect() {
+    let reversed = "\nDATA:\n    ID: data.record\n    TYPE: OBJECT\n    VALUE:\n        count: 2\n        name: \"a\"\n";
+    let first = plan_with(
+        &task_document(&format!("{RECORD}{SUBJECT}")),
+        &Invocation::new(),
+    );
+    let second = plan_with(
+        &task_document(&format!("{reversed}{SUBJECT}")),
+        &Invocation::new(),
+    );
+    assert_eq!(
+        resolution(&first, "data.record").value,
+        resolution(&second, "data.record").value
+    );
+}
+
+/// An object property may itself be an object: the same syntactic form nests,
+/// and the depth bound is the evaluator's own.
+#[test]
+fn an_object_property_may_itself_be_an_object() {
+    let nested = "\nDATA:\n    ID: data.record\n    TYPE: OBJECT\n    VALUE:\n        inner:\n            name: \"a\"\n";
+    let planned = plan_with(
+        &task_document(&format!("{nested}{SUBJECT}")),
+        &Invocation::new(),
+    );
+    let Value::Object(outer) = &resolution(&planned, "data.record").value else {
+        panic!("the outer value is an object");
+    };
+    let Some(Value::Object(inner)) = outer.get("inner") else {
+        panic!("the inner value is an object, got {:?}", outer.get("inner"));
+    };
+    assert_eq!(inner.get("name"), Some(&Value::Text("a".to_string())));
+}
+
 #[test]
 fn a_supplied_value_resolves_a_declaration_with_no_declared_value() {
     let source = task_document(&format!(

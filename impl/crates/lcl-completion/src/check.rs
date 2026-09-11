@@ -514,6 +514,7 @@ fn order_by_prerequisites(engine: &mut Engine, selected: Vec<Selected>) -> Optio
                         "check `{id}` is in a prerequisite cycle, so no first check exists"
                     ),
                     phase,
+                    demand_resolved: false,
                 });
             }
             return None;
@@ -618,6 +619,7 @@ fn evaluate(engine: &mut Engine, selected: Vec<Selected>) -> Checks {
                     result.kind, result.id, result.outcome
                 ),
                 phase,
+                demand_resolved: false,
             });
         }
         checks.results.push(result);
@@ -670,6 +672,7 @@ fn applicability(engine: &mut Engine, declaration: usize) -> Applicability {
                 cause: "WHEN".to_string(),
                 detail: "a check applicability condition demanded MISSING".to_string(),
                 phase,
+                demand_resolved: false,
             });
             Applicability::Faulted(CompletionError::RequiredMissing.to_string())
         }
@@ -683,6 +686,7 @@ fn applicability(engine: &mut Engine, declaration: usize) -> Applicability {
                 cause: "WHEN".to_string(),
                 detail: "a check applicability condition demanded UNKNOWN".to_string(),
                 phase,
+                demand_resolved: false,
             });
             Applicability::Faulted(CompletionError::ValueUnknown.to_string())
         }
@@ -721,9 +725,57 @@ fn assertion_outcome(engine: &mut Engine, declaration: usize, check: &Selected) 
                 cause: "ASSERT".to_string(),
                 detail: format!("{} `{}` demanded a MISSING assertion", check.kind, check.id),
                 phase,
+                demand_resolved: false,
             });
             Value::Missing
         }
-        Ok(_) | Err(_) => Value::Unknown,
+        // `expression_demand_resolution` covers a demand made "during a
+        // reachable invocation, condition, verification, or completion step",
+        // and a check's own ASSERT is one. A fault raised here is raised here
+        // or nowhere: the evaluator returns it to this call and no other layer
+        // sees it, so discarding it would lose a registered diagnostic the
+        // registry says this demand produces.
+        Err(fault) => {
+            let kind = check.kind.to_string();
+            report_demand_fault(engine, &fault, &check.source, &kind, &check.id, "ASSERT");
+            Value::Unknown
+        }
+        Ok(_) => Value::Unknown,
     }
+}
+
+/// Emit one evaluation fault raised by this layer's own demand.
+///
+/// Only an identifier the registry lists in `expression_demand_resolution`
+/// reaches a diagnostic: `exclusion_rule` says "No source structure, token,
+/// name resolution, type-family, signature arity, receiving-type, or required
+/// static-validation defect qualifies", and the evaluator has already read
+/// eligibility from the registry into `Fault::demand_resolved`. An ineligible
+/// fault would be a defect in an earlier layer that this one must not relabel,
+/// so it keeps today's behavior of reporting no outcome.
+fn report_demand_fault(
+    engine: &mut Engine,
+    fault: &lcl_runtime::Fault,
+    source: &SourceId,
+    kind: &str,
+    id: &str,
+    field: &str,
+) {
+    if !fault.demand_resolved {
+        return;
+    }
+    let Some(mirrored) = CompletionError::from_registry_str(fault.id.as_registry_str()) else {
+        return;
+    };
+    let phase = engine.observed_phase();
+    engine.emit(Emission {
+        id: mirrored,
+        source,
+        span: fault.span,
+        declaration: Some(id.to_string()),
+        cause: fault.cause.clone(),
+        detail: format!("{kind} `{id}` demanded {field}: {}", fault.detail),
+        phase,
+        demand_resolved: true,
+    });
 }

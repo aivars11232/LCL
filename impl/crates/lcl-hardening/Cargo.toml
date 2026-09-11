@@ -1,0 +1,25 @@
+[package]
+name = "lcl-hardening"
+description = "Release hardening for the LCL implementation: a deterministic seeded generator, mutation and adversarial corpora, and the cross-layer invariants every stage must hold under hostile input. It adds no language rule and is never a dependency of the engine; it drives the same public surfaces a user drives."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lcl-spec = { path = "../lcl-spec" }
+lcl-diagnostics = { path = "../lcl-diagnostics" }
+lcl-lexer = { path = "../lcl-lexer" }
+lcl-parser = { path = "../lcl-parser" }
+lcl-resolver = { path = "../lcl-resolver" }
+lcl-checker = { path = "../lcl-checker" }
+lcl-semantics = { path = "../lcl-semantics" }
+lcl-runtime = { path = "../lcl-runtime" }
+lcl-capabilities = { path = "../lcl-capabilities" }
+lcl-stdlib = { path = "../lcl-stdlib" }
+lcl-completion = { path = "../lcl-completion" }
+lcl-protocol = { path = "../lcl-protocol" }
+lcl-project = { path = "../lcl-project" }
+
+[dev-dependencies]
+lcl-workspace = { path = "../lcl-workspace" }

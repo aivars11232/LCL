@@ -56,6 +56,10 @@ pub(crate) struct Emission<'a> {
     /// Non-normative human detail.
     pub(crate) detail: String,
     pub(crate) phase: FailurePhase,
+    /// True when this diagnostic came from a post-preflight expression demand,
+    /// which `expression_demand_resolution` may resolve to the execution stage.
+    /// The evaluator decides it from the registry; a call site never asserts it.
+    pub(crate) demand_resolved: bool,
 }
 
 pub(crate) struct Engine<'a> {
@@ -137,15 +141,33 @@ impl<'a> Engine<'a> {
             .map(|unit| unit.source())
             .unwrap_or("");
         let position = lcl_runtime::position_of(text, emission.span.start);
+        // `expression_demand_resolution`: "Resolve expression_demand_resolution
+        // before stage selection", and its context covers a demand made
+        // "during a reachable invocation, condition, verification, or
+        // completion step". Eligibility is read from the registry, never
+        // decided here, and an identifier outside the map keeps everything it
+        // was registered with.
+        let demand = self.contracts.runtime().demand();
+        let demanded = emission.demand_resolved
+            && lcl_runtime::RuntimeError::from_registry_str(emission.id.as_registry_str())
+                .is_some_and(|id| demand.is_eligible(id));
+        let resolved_stage = demanded.then_some(demand.resolved_stage);
+        let default_status = match demanded {
+            true => lcl_runtime::RuntimeError::from_registry_str(emission.id.as_registry_str())
+                .map(|id| demand.status_for(id).to_string())
+                .unwrap_or_else(|| registered.default_status.clone()),
+            false => registered.default_status.clone(),
+        };
         self.diagnostics.push(Diagnostic {
             sequence: self.diagnostics.len(),
             id: emission.id,
             registered_stage: registered.stage,
+            resolved_stage,
             source: emission.source.clone(),
             span: emission.span,
             position,
             meaning: registered.meaning.clone(),
-            default_status: registered.default_status.clone(),
+            default_status,
             specificity_rank: registered.specificity_rank,
             event: registered.event.clone(),
             cause: emission.cause,

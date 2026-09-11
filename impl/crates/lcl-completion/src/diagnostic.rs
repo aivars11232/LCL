@@ -30,12 +30,28 @@
 //!   error.value.unknown."
 //! * `error.reference.cycle` — `prerequisites`: "A prerequisite cycle uses
 //!   error.reference.cycle."
+//! * `error.operator.operand` — `expression_demand_resolution`, whose context
+//!   is "A statically valid expression is actually demanded after the
+//!   document's preflight checks, during a reachable invocation, condition,
+//!   **verification, or completion step**", and whose eligible map gives this
+//!   identifier to "a registered SUM, MIN, or MAX reduction [receiving] an
+//!   empty material collection whose member type and function signature are
+//!   already valid". A check's own `ASSERT` is such a demand, and the fault it
+//!   raises is raised here or nowhere.
 //!
 //! Every one of them keeps its **registered** stage here. A reused identifier
 //! is not relabelled `verification_or_completion` because completion happened
 //! to emit it: `errors.<id>.stage` is verbatim registry data, and
 //! `earliest_stage_rule` orders diagnostics by that stage, not by which layer
 //! ran.
+//!
+//! One exception is not an exception to that rule but an application of a
+//! second one. `expression_demand_resolution` says its resolution happens
+//! "before supersession, duplicate suppression, ordering, event selection,
+//! primary selection, and phase lookup", and `earliest_stage_rule` says to
+//! "Resolve expression_demand_resolution before stage selection". So a demand
+//! fault raised by this layer carries both: `registered_stage` verbatim, and
+//! `resolved_stage` = `execution`, exactly as `lcl_runtime::Diagnostic` does.
 
 use lcl_diagnostics::Stage;
 use lcl_lexer::{Position, Span};
@@ -54,6 +70,9 @@ pub enum CompletionError {
     /// A requested terminal transition is not in the current state's
     /// `allowed_next`, or an execution root requested `status.skipped`.
     ExecutionOrder,
+    /// A demanded SUM, MIN or MAX reduction received an empty material
+    /// collection. Eligible for `expression_demand_resolution`.
+    OperatorOperand,
     /// A prerequisite cycle among selected checks.
     ReferenceCycle,
     /// A required demanded condition or check result yields MISSING.
@@ -69,9 +88,10 @@ pub enum CompletionError {
 
 impl CompletionError {
     /// Every identifier this layer mirrors, in registry order.
-    pub const ALL: [CompletionError; 7] = [
+    pub const ALL: [CompletionError; 8] = [
         CompletionError::EvidenceMissing,
         CompletionError::ExecutionOrder,
+        CompletionError::OperatorOperand,
         CompletionError::ReferenceCycle,
         CompletionError::RequiredMissing,
         CompletionError::SuccessUnsatisfied,
@@ -91,6 +111,7 @@ impl CompletionError {
         match self {
             CompletionError::EvidenceMissing => "error.evidence.missing",
             CompletionError::ExecutionOrder => "error.execution.order",
+            CompletionError::OperatorOperand => "error.operator.operand",
             CompletionError::ReferenceCycle => "error.reference.cycle",
             CompletionError::RequiredMissing => "error.required.missing",
             CompletionError::SuccessUnsatisfied => "error.success.unsatisfied",
@@ -128,6 +149,9 @@ pub struct Diagnostic {
     pub id: CompletionError,
     /// `errors.<id>.stage`, verbatim. Never rewritten to this layer's stage.
     pub registered_stage: Stage,
+    /// The stage `expression_demand_resolution` resolved, when it applied.
+    /// `None` means the registered stage governs.
+    pub resolved_stage: Option<Stage>,
     pub source: SourceId,
     /// Exact byte locus. Authoritative.
     pub span: Span,
@@ -154,10 +178,11 @@ pub struct Diagnostic {
 impl Diagnostic {
     /// The stage that governs ordering and classification.
     ///
-    /// Always the registered stage: this layer never demand-resolves an
-    /// identifier into a different stage.
+    /// The registered stage, unless `expression_demand_resolution` applied to
+    /// this identifier at this locus, which the registry requires to be
+    /// resolved "before stage selection".
     pub fn stage(&self) -> Stage {
-        self.registered_stage
+        self.resolved_stage.unwrap_or(self.registered_stage)
     }
 
     /// `duplicate_key`: identifier, locus and cause identity together.
@@ -175,7 +200,7 @@ impl Diagnostic {
         format!(
             "{} stage={} status={} at {}:{} cause={}",
             self.id,
-            self.registered_stage.as_registry_str(),
+            self.stage().as_registry_str(),
             self.default_status,
             self.source,
             self.span.start,

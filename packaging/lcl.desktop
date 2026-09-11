@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=LCL Workspace
+GenericName=LCL editor and debugger
+Comment=Write, run, inspect and debug LCL documents
+Exec=@BIN@ %f
+Terminal=false
+Categories=Development;IDE;
+MimeType=text/x-lcl;
+StartupNotify=false

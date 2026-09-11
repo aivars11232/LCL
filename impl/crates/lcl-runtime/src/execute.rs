@@ -1353,6 +1353,7 @@ impl<'a> Engine<'a> {
         for statements in fields {
             let mut name = None;
             let mut value_expr = None;
+            let mut value_object = None;
             for statement in &statements {
                 if let lcl_parser::syntax::Statement::Field(field) = statement {
                     match field.key.text.as_str() {
@@ -1370,17 +1371,65 @@ impl<'a> Engine<'a> {
                                 .as_inline()
                                 .and_then(|v| v.as_expression())
                                 .cloned();
+                            // `03_TYPES_AND_VALUES/10`, OBJECT: "An object uses
+                            // an indented VALUE block containing unique
+                            // lowercase property names." A parameter whose
+                            // registered type is OBJECT is written that way, so
+                            // a reader that saw only the inline form skipped
+                            // the parameter entirely and the operation received
+                            // nothing.
+                            value_object = field.body.as_nested().cloned();
                         }
                         _ => {}
                     }
                 }
             }
-            if let (Some(name), Some(expr)) = (name, value_expr) {
-                let value = self.evaluator(&planned.source, iteration).demand(&expr)?;
+            let value = match (&value_expr, &value_object) {
+                (Some(expr), _) => Some(self.evaluator(&planned.source, iteration).demand(expr)?),
+                (None, Some(nested)) => {
+                    Some(self.object_value(nested, &planned.source, iteration)?)
+                }
+                (None, None) => None,
+            };
+            if let (Some(name), Some(value)) = (name, value) {
                 out.insert(name, value);
             }
         }
         Ok(out)
+    }
+
+    /// The object one indented `VALUE` body declares, demanded property by
+    /// property.
+    ///
+    /// "Property order has no semantic effect", so the result is keyed rather
+    /// than ordered. A statement that is not a property is not object data:
+    /// the grammar stage has already emitted `error.field.duplicate` for a
+    /// repeated property and `error.block.field` for an uppercase key inside
+    /// object data, so nothing here judges the shape a second time; it reports
+    /// no object rather than guessing what a surviving oddity meant.
+    fn object_value(
+        &mut self,
+        nested: &lcl_parser::syntax::Nested,
+        source: &SourceId,
+        iteration: &IterationPath,
+    ) -> Result<Value, Fault> {
+        use lcl_parser::syntax::Statement;
+        let mut fields = BTreeMap::new();
+        for statement in &nested.statements {
+            let Statement::Property(property) = statement else {
+                continue;
+            };
+            let value = match (&property.body.as_inline(), property.body.as_nested()) {
+                (Some(inline), _) => match inline.as_expression() {
+                    Some(expr) => self.evaluator(source, iteration).demand(expr)?,
+                    None => continue,
+                },
+                (None, Some(inner)) => self.object_value(inner, source, iteration)?,
+                (None, None) => continue,
+            };
+            fields.insert(property.key.text.clone(), value);
+        }
+        Ok(Value::Object(fields))
     }
 
     /// Turn a boundary outcome into a producer result record.
@@ -1402,6 +1451,22 @@ impl<'a> Engine<'a> {
                     EffectState::Applied
                 };
                 (record, None)
+            }
+            // The operation's own registered contract refused, naming an
+            // identifier its row lists. No effect occurred: a contract this
+            // side of the boundary is decided before the world changes, or
+            // over a representation already read without effect.
+            Ok(CapabilityOutcome::Refused {
+                error,
+                cause,
+                detail,
+            }) => {
+                let fault = Fault::new(self.contracts, error, planned.span, cause, detail);
+                let occurrence = self.fault(&fault, planned, id, FailurePhase::PreEffect);
+                let mut record = ResultRecord::new(schema, "status.failed");
+                record.execution_errors = vec![error.as_registry_str().to_string()];
+                record.effect_state = EffectState::None;
+                (record, occurrence)
             }
             Ok(CapabilityOutcome::Failed {
                 detail,

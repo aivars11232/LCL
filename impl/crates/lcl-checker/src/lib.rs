@@ -393,8 +393,21 @@ impl<'a> Checker<'a> {
             property_depth: 0,
             deferred: Vec::new(),
             earlier: Vec::new(),
+            ready: std::collections::HashMap::new(),
+            ready_judge: std::collections::HashMap::new(),
         };
         declarations::check_program(&mut check);
+        // Every judgement the driver computed ahead of the walk was asked for
+        // by the node that owns it. A leftover would mean `children_of`
+        // predicted a child the judging function never requested, which would
+        // have judged that subtree twice, once under a contract it does not
+        // receive. Debug assertions are on for every test in this workspace,
+        // so the whole suite and every fuzz corpus is the evidence.
+        debug_assert!(
+            check.ready.is_empty() && check.ready_judge.is_empty(),
+            "the expression driver judged {} node(s) nobody asked for",
+            check.ready.len() + check.ready_judge.len()
+        );
 
         Ok(Checked {
             root: resolved.root().clone(),

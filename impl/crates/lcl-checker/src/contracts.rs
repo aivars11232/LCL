@@ -36,6 +36,9 @@
 use crate::diagnostic::StaticError;
 use crate::ty::Type;
 use lcl_diagnostics::{DiagnosticRegistry, Stage};
+use lcl_lexer::Lexicon;
+use lcl_parser::syntax::Expr;
+use lcl_parser::{FragmentError, Grammar};
 use lcl_spec::json::Json;
 use lcl_spec::SpecPackage;
 use std::collections::{BTreeMap, BTreeSet};
@@ -284,6 +287,29 @@ pub enum ContractType {
     Atom(String),
 }
 
+impl fmt::Display for ContractType {
+    /// Written back exactly as `#/contract_type_notation` spells it, so a
+    /// diagnostic quotes the registry rather than this build's data structure.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ContractType::Union(members) => {
+                let text: Vec<String> = members.iter().map(ContractType::to_string).collect();
+                f.write_str(&text.join("|"))
+            }
+            ContractType::Enum(items) => write!(f, "ENUM[{}]", items.join("|")),
+            ContractType::List(inner) => write!(f, "LIST[{inner}]"),
+            ContractType::Set(inner) => write!(f, "SET[{inner}]"),
+            ContractType::Reference(targets) if targets.is_empty() => f.write_str("REFERENCE"),
+            ContractType::Reference(targets) => write!(f, "REFERENCE[{}]", targets.join("|")),
+            ContractType::QualifiedIdentifier(None) => f.write_str("qualified_identifier"),
+            ContractType::QualifiedIdentifier(Some(domain)) => {
+                write!(f, "qualified_identifier({domain})")
+            }
+            ContractType::Atom(name) => f.write_str(name),
+        }
+    }
+}
+
 impl ContractType {
     /// Every alternative of a union, or this type alone.
     pub fn members(&self) -> Vec<&ContractType> {
@@ -394,6 +420,17 @@ pub struct Contracts {
     numeric_promotion: BTreeMap<String, String>,
     /// `built_in_groups_and_results_v0.1.0.json#/enum_groups`, each closed.
     enum_groups: BTreeMap<String, BTreeSet<String>>,
+    /// The M1 lexicon and M2 grammar, loaded from the same package.
+    ///
+    /// `operations_v0.1.0.json#/expression_fragment_contract/evaluation`:
+    /// "Static checks cover the complete fragment; dynamic errors arise only
+    /// from evaluated subexpressions." A fragment is a STRING inside a
+    /// parameter, so checking it needs the lexer and parser that decide what
+    /// one expression is. Reading them here rather than taking them as
+    /// constructor arguments keeps `Checker::new` unchanged and keeps the
+    /// fragment reader the same code M2 exposes, never a second one.
+    lexicon: Lexicon,
+    grammar: Grammar,
 }
 
 impl fmt::Debug for Contracts {
@@ -560,7 +597,20 @@ impl Contracts {
             unknown_logic,
             numeric_promotion,
             enum_groups,
+            lexicon: Lexicon::load(spec)
+                .map_err(|e| ContractsLoadError::Malformed(e.to_string()))?,
+            grammar: Grammar::load(spec)
+                .map_err(|e| ContractsLoadError::Malformed(e.to_string()))?,
         })
+    }
+
+    /// Parse one expression fragment exactly as M2 does.
+    ///
+    /// `expression_fragment_contract/syntax`: "After STRING decoding, consume
+    /// exactly one EXPRESSION from 04_GRAMMAR/10_COMPLETE_EBNF.ebnf, followed
+    /// only by optional whitespace."
+    pub fn expression_fragment(&self, fragment: &str) -> Result<Expr, FragmentError> {
+        lcl_parser::Parser::new(&self.grammar).expression_fragment(&self.lexicon, fragment)
     }
 
     pub fn error(&self, id: StaticError) -> &RegisteredStaticError {

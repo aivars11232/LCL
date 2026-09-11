@@ -335,6 +335,7 @@ fn select_failure(
                     cause: "WHEN".to_string(),
                     detail: format!("FAILURE `{id}` demanded a MISSING condition"),
                     phase,
+                    demand_resolved: false,
                 });
                 continue;
             }
@@ -347,6 +348,7 @@ fn select_failure(
                     cause: "WHEN".to_string(),
                     detail: format!("FAILURE `{id}` demanded an UNKNOWN condition"),
                     phase,
+                    demand_resolved: false,
                 });
                 continue;
             }

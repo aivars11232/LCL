@@ -594,9 +594,9 @@ impl<'a> Engine<'a> {
                 };
                 Some(record)
             }
-            Ok(CapabilityOutcome::Failed { .. }) | Ok(CapabilityOutcome::Denied(_)) => {
-                Some(ResultRecord::new(&schema, "status.failed"))
-            }
+            Ok(CapabilityOutcome::Failed { .. })
+            | Ok(CapabilityOutcome::Refused { .. })
+            | Ok(CapabilityOutcome::Denied(_)) => Some(ResultRecord::new(&schema, "status.failed")),
             Ok(CapabilityOutcome::Unavailable(_)) | Err(Refusal::Unavailable(_)) => {
                 Some(ResultRecord::new(&schema, "status.blocked"))
             }

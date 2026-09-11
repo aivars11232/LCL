@@ -278,7 +278,10 @@ pub struct Collection {
 }
 
 /// `EXPRESSION`, in the exact precedence the EBNF declares.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// [`Clone`] is hand-written and iterative, for the same reason [`Drop`] is:
+/// see the implementation below.
+#[derive(Debug, PartialEq, Eq)]
 pub enum Expr {
     Literal(Literal),
     /// `IDENTIFIER` — a lowercase simple or qualified identifier.
@@ -777,5 +780,142 @@ impl Drop for Executable {
         let mut work = Vec::new();
         take_executable_children(self, &mut work);
         dismantle(work);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cloning without recursion
+// ---------------------------------------------------------------------------
+
+/// A deep copy that costs heap rather than native stack.
+///
+/// Expression nesting is unbounded — `04_GRAMMAR/10` states the shape and no
+/// limit — which is why this module already dismantles a tree through a
+/// worklist rather than letting derived drop glue recurse. A *derived* `Clone`
+/// has exactly the same defect at exactly the same depths, and every consumer
+/// that copies a subtree to satisfy the borrow checker pays it: the static
+/// checker cloned a document's top-level items, and a deeply nested expression
+/// ended the process by `SIGABRT` rather than by a diagnostic.
+///
+/// The shape is the mirror of `take_expr_children`: list every node in
+/// pre-order, then rebuild in reverse, so a node is assembled only after all of
+/// its descendants are already built and waiting.
+impl Clone for Expr {
+    fn clone(&self) -> Expr {
+        let mut order: Vec<&Expr> = Vec::new();
+        let mut stack: Vec<&Expr> = vec![self];
+        while let Some(node) = stack.pop() {
+            order.push(node);
+            // Pushed in reverse so that popping yields source order, which is
+            // what the rebuild below relies on.
+            for child in expr_children(node).into_iter().rev() {
+                stack.push(child);
+            }
+        }
+        let mut done: Vec<Expr> = Vec::with_capacity(order.len());
+        for node in order.into_iter().rev() {
+            let built = rebuild_expr(node, &mut done);
+            done.push(built);
+        }
+        done.pop().expect("the root was listed")
+    }
+}
+
+/// Every direct child expression, in source order.
+fn expr_children(expr: &Expr) -> Vec<&Expr> {
+    match expr {
+        Expr::Literal(_) | Expr::Identifier(_) => Vec::new(),
+        Expr::Group(node) => vec![&node.inner],
+        Expr::Unary(node) => vec![&node.operand],
+        Expr::Binary(node) => vec![&node.left, &node.right],
+        Expr::Property(node) => vec![&node.base],
+        Expr::Index(node) => vec![&node.base, &node.index],
+        Expr::Call(node) => node.arguments.iter().collect(),
+        Expr::Collection(node) => node.members.iter().collect(),
+        Expr::Type(node) => match node {
+            TypeExpr::Scalar(_) => Vec::new(),
+            TypeExpr::List(b) | TypeExpr::Set(b) | TypeExpr::Object(b) | TypeExpr::Reference(b) => {
+                vec![&b.argument]
+            }
+        },
+    }
+}
+
+/// Rebuild one node from children already on `done`, deepest last.
+///
+/// Reverse pre-order leaves this node's children on top of `done` in source
+/// order, so each is popped in turn.
+fn rebuild_expr(expr: &Expr, done: &mut Vec<Expr>) -> Expr {
+    let take = |done: &mut Vec<Expr>| {
+        Box::new(done.pop().expect("every child was built before its parent"))
+    };
+    match expr {
+        Expr::Literal(node) => Expr::Literal(node.clone()),
+        Expr::Identifier(node) => Expr::Identifier(node.clone()),
+        Expr::Group(node) => Expr::Group(Group {
+            span: node.span,
+            inner: take(done),
+        }),
+        Expr::Unary(node) => Expr::Unary(Unary {
+            operator: node.operator,
+            operator_span: node.operator_span,
+            span: node.span,
+            operand: take(done),
+        }),
+        Expr::Binary(node) => {
+            let left = take(done);
+            let right = take(done);
+            Expr::Binary(Binary {
+                operator: node.operator,
+                operator_span: node.operator_span,
+                span: node.span,
+                left,
+                right,
+            })
+        }
+        Expr::Property(node) => Expr::Property(PropertyAccess {
+            span: node.span,
+            base: take(done),
+            name: node.name.clone(),
+            name_span: node.name_span,
+            reserved: node.reserved,
+        }),
+        Expr::Index(node) => {
+            let base = take(done);
+            let index = take(done);
+            Expr::Index(IndexAccess {
+                span: node.span,
+                base,
+                index,
+            })
+        }
+        Expr::Call(node) => Expr::Call(Call {
+            callable: node.callable.clone(),
+            span: node.span,
+            arguments: (0..node.arguments.len())
+                .map(|_| done.pop().expect("every argument was built"))
+                .collect(),
+        }),
+        Expr::Collection(node) => Expr::Collection(Collection {
+            span: node.span,
+            members: (0..node.members.len())
+                .map(|_| done.pop().expect("every member was built"))
+                .collect(),
+        }),
+        Expr::Type(node) => Expr::Type(match node {
+            TypeExpr::Scalar(word) => TypeExpr::Scalar(word.clone()),
+            TypeExpr::List(b) => TypeExpr::List(rebuild_bracket(b, take(done))),
+            TypeExpr::Set(b) => TypeExpr::Set(rebuild_bracket(b, take(done))),
+            TypeExpr::Object(b) => TypeExpr::Object(rebuild_bracket(b, take(done))),
+            TypeExpr::Reference(b) => TypeExpr::Reference(rebuild_bracket(b, take(done))),
+        }),
+    }
+}
+
+fn rebuild_bracket(bracket: &BracketType, argument: Box<Expr>) -> BracketType {
+    BracketType {
+        word: bracket.word.clone(),
+        span: bracket.span,
+        argument,
     }
 }

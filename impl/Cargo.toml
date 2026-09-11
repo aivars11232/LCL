@@ -48,6 +48,14 @@
 # paints and every diagnostic it shows was decided by an engine layer. It
 # serves a browser frontend over a loopback HTTP server written on `std::net`.
 #
+# Milestone M11 scope: adds `lcl-hardening`, the release gate. It holds a
+# deterministic seeded generator, mutation and adversarial corpora, the
+# cross-layer invariants every stage must hold under hostile input,
+# performance and repeatability measurements, the product-level security
+# matrix, the staged application ladder and the packaging smoke test. It
+# defines no language rule and nothing depends on it: it drives the same
+# public surfaces a user drives.
+#
 # Dependency policy: std only. The spec authority loader is the trust root for
 # every later layer, so it carries no third-party supply-chain surface.
 
@@ -72,10 +80,19 @@ members = [
     # Last: the conformance runner executes cases through every layer above, so
     # it depends on all of them.
     "crates/lcl-conformance",
+    # Release hardening, which drives every layer above through its public
+    # surfaces and adds none of its own.
+    "crates/lcl-hardening",
 ]
 
 [workspace.package]
-version = "0.0.0"
+# The product version, which is not the language version. This workspace
+# implements LCL Core 0.1.0 and says so separately: `lcl version` prints the
+# tool version, the engine protocol and the language version on three lines,
+# and `lcl-conformance`'s report states the implementation version beside the
+# language version it was judged against. 0.1.0 here is the first release of
+# the implementation, frozen by LCL-TASK-0020 as the release candidate.
+version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
 publish = false

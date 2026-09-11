@@ -1,0 +1,50 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: app.release_types
+    NAME: "Release pipeline types"
+    VERSION: "1.0.0"
+    KIND: kind.library
+    AUTHORITY: 600
+
+DEFINE:
+    ID: type.artifact
+    KIND: kind.type
+    BASE: OBJECT
+    FIELD:
+        NAME: name
+        TYPE: STRING
+        REQUIRED: TRUE
+    FIELD:
+        NAME: bytes
+        TYPE: INTEGER
+        REQUIRED: TRUE
+
+DEFINE:
+    ID: type.channel
+    KIND: kind.type
+    BASE: OBJECT
+    FIELD:
+        NAME: name
+        TYPE: STRING
+        REQUIRED: TRUE
+    FIELD:
+        NAME: notify
+        TYPE: BOOLEAN
+        REQUIRED: TRUE
+
+DEFINE:
+    ID: release.sign
+    KIND: kind.operation
+    MEANING: "Sign one release artifact with an external signing service."
+    SIDE_EFFECT: [network]
+    DEPENDENCY: [host]
+    DETERMINISTIC: FALSE
+    PARAMETER:
+        NAME: artifact
+        TYPE: OBJECT[REF(type.artifact)]
+        REQUIRED: TRUE
+    RESULT:
+        TYPE: STRING
+        FORMAT: format.plain_text

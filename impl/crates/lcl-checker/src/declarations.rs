@@ -222,8 +222,7 @@ fn defining_schema(
             continue;
         }
         let block = types::declaration_block(check.resolved, index)?;
-        let statements = block.body.clone();
-        return local_schema(check, source, &statements);
+        return local_schema(check, source, &block.body);
     }
     None
 }
@@ -460,7 +459,7 @@ fn block_of(check: &mut Check<'_>, source: &SourceId, block: &Block) {
     }
 
     // Constraints are judged after the values they constrain.
-    declared_constraints(check, source, block);
+    declared_constraints(check, source, &block.body);
 }
 
 fn field_of(
@@ -684,10 +683,22 @@ fn constrain(
 /// `03_TYPES_AND_VALUES/07`: "MINIMUM and MAXIMUM are inclusive. … PATTERN is
 /// GLOB or REGEX and does not silently coerce the target to STRING." Only a
 /// statically known value is judged; anything else is the demanding layer's.
-fn declared_constraints(check: &mut Check<'_>, source: &SourceId, block: &Block) {
-    let Some(subject) = block
-        .field("VALUE")
-        .or_else(|| block.field("DEFAULT"))
+/// The first direct field spelled `name`, among these statements.
+///
+/// The same lookup `Block::field` performs, over statements that are not
+/// wrapped in a block. A nested body is a block's body without being a block,
+/// and copying one into a synthetic `Block` to reuse that method costs a deep
+/// copy of the whole subtree at every level.
+fn field_in<'a>(statements: &'a [Statement], name: &str) -> Option<&'a lcl_parser::syntax::Field> {
+    statements.iter().find_map(|statement| match statement {
+        Statement::Field(field) if field.key.text == name => Some(field),
+        _ => None,
+    })
+}
+
+fn declared_constraints(check: &mut Check<'_>, source: &SourceId, block: &[Statement]) {
+    let Some(subject) = field_in(block, "VALUE")
+        .or_else(|| field_in(block, "DEFAULT"))
         .and_then(|field| types::inline_expression(&field.body))
     else {
         return;
@@ -697,9 +708,7 @@ fn declared_constraints(check: &mut Check<'_>, source: &SourceId, block: &Block)
     };
 
     for (key, kind) in [("MINIMUM", true), ("MAXIMUM", false)] {
-        let Some(bound_expr) = block
-            .field(key)
-            .and_then(|f| types::inline_expression(&f.body))
+        let Some(bound_expr) = field_in(block, key).and_then(|f| types::inline_expression(&f.body))
         else {
             continue;
         };
@@ -741,9 +750,8 @@ fn declared_constraints(check: &mut Check<'_>, source: &SourceId, block: &Block)
 
     // "PATTERN is GLOB or REGEX and does not silently coerce the target to
     // STRING."
-    let Some(pattern_expr) = block
-        .field("PATTERN")
-        .and_then(|f| types::inline_expression(&f.body))
+    let Some(pattern_expr) =
+        field_in(block, "PATTERN").and_then(|f| types::inline_expression(&f.body))
     else {
         return;
     };
@@ -899,16 +907,11 @@ fn nested_of(
         .strip_prefix("nested_block(")
         .and_then(|rest| rest.strip_suffix(')'))
     {
-        let child_block = Block {
-            key: lcl_parser::syntax::Word {
-                text: child.to_string(),
-                span: Span::new(0, 0),
-            },
-            span: nested.span,
-            body: nested.statements.clone(),
-        };
-        // The child's own declared type, when it declares one.
-        let child_declared = child_declared_type(check, source, child, &child_block);
+        // The child's own declared type, when it declares one. The statements
+        // are read where they are: building a `Block` around a copy of them
+        // would deep-copy the whole subtree at every level of a nested body,
+        // which is quadratic in the document and recursive in the stack.
+        let child_declared = child_declared_type(check, source, child, &nested.statements);
         for statement in &nested.statements {
             match statement {
                 Statement::Field(field) => {
@@ -921,7 +924,7 @@ fn nested_of(
         }
         // A child block declares its own constraints — `FIELD` and `PARAMETER`
         // both carry MINIMUM, MAXIMUM and PATTERN — so they are judged here too.
-        declared_constraints(check, source, &child_block);
+        declared_constraints(check, source, &nested.statements);
         return;
     }
 
@@ -944,12 +947,12 @@ fn child_declared_type(
     check: &mut Check<'_>,
     source: &SourceId,
     child: &str,
-    block: &Block,
+    block: &[Statement],
 ) -> Option<Type> {
     if check.contracts.value_kind(child, "TYPE") != Some("type_expression") {
         return None;
     }
-    let field = block.field("TYPE")?;
+    let field = field_in(block, "TYPE")?;
     let expr = types::inline_expression(&field.body)?;
     check.catalog.resolve(source, expr).ok()
 }

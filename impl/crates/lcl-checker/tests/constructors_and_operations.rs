@@ -171,6 +171,126 @@ fn an_invocation_site_must_satisfy_its_operations_parameter_contract() {
     assert_eq!(ids(&check(&duplicated)), vec!["error.operation.parameter"]);
 }
 
+/// `expression_fragment_contract/syntax`: "consume exactly one EXPRESSION …
+/// followed only by optional whitespace", `#/diagnostics`: "Malformed fragment
+/// syntax and invalid bindings produce error.operation.parameter", and
+/// `#/evaluation`: "Static checks cover the complete fragment".
+///
+/// Regression, `LCL-TASK-0020` defect 3. No stage checked the fragment, so a
+/// malformed one passed `check` and reached execution, where the runtime could
+/// not emit a static-stage identifier and substituted another from the row.
+/// CLOSURE-019 failed on the substituted identifier.
+#[test]
+fn a_fragment_that_is_not_one_expression_is_refused_at_this_stage() {
+    let calculate = |fragment: &str| {
+        format!(
+            concat!(
+                "LCL:\n    VERSION: \"0.1.0\"\n\n",
+                "SPECIFICATION:\n    ID: test.task\n    NAME: \"T\"\n    VERSION: \"1.0.0\"\n    KIND: kind.task\n\n",
+                "INPUT:\n    ID: input.value\n    TYPE: INTEGER\n    VALUE: 4\n\n",
+                "OUTPUT:\n    ID: output.value\n    TYPE: INTEGER\n    FORMAT: format.plain_text\n\n",
+                "GOAL:\n    ID: goal.one\n    ASSERT: TRUE\n\n",
+                "ACTION:\n    ID: action.one\n    OPERATION: core.calculate\n    TARGET: REF(input.value)\n",
+                "    PARAMETER:\n        NAME: expression\n        TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: {:?}\n",
+                "    OUTPUT: REF(output.value)\n\n",
+                "VERIFY:\n    ID: verify.one\n    ASSERT: TRUE\n\n",
+                "SUCCESS:\n    ID: success.one\n    ALL: [REF(verify.one)]\n\n",
+                "TASK:\n    ID: task.one\n    GOAL: REF(goal.one)\n    INPUT: REF(input.value)\n    ACTION: REF(action.one)\n    OUTPUT: REF(output.value)\n    SUCCESS: REF(success.one)\n\n",
+                "EXECUTE:\n    REFERENCE: REF(task.one)\n"
+            ),
+            fragment
+        )
+    };
+
+    // One expression is admitted, so the check below is about the fragment and
+    // not about fragments.
+    assert_eq!(
+        check(&calculate("REF(input.value) * 2")).outcome(),
+        Outcome::Checked
+    );
+
+    // The witness: a fragment holding two expressions.
+    assert_eq!(
+        ids(&check(&calculate("1; 2"))),
+        vec!["error.operation.parameter"]
+    );
+    // One that lexes, so the defect is the trailing expression and not a token.
+    assert_eq!(
+        ids(&check(&calculate("1 2"))),
+        vec!["error.operation.parameter"]
+    );
+    // "followed only by optional whitespace" — trailing space is not trailing
+    // input.
+    assert_eq!(
+        check(&calculate("REF(input.value) * 2   ")).outcome(),
+        Outcome::Checked
+    );
+    // A fragment holding no expression at all.
+    assert_eq!(
+        ids(&check(&calculate(""))),
+        vec!["error.operation.parameter"]
+    );
+}
+
+/// `06_STANDARD_LIBRARY/10` and the two witnesses that name this identifier for
+/// a declared parameter family the row does not register.
+///
+/// Regression, `LCL-TASK-0020` defect 5. `core.append` accepted a `BYTES`
+/// content and completed, though the row types content `STRING|LIST[T]` and
+/// says plainly that "BYTES is a count and is not content"; CLOSURE-052 could
+/// not be executed. `core.validate` accepted an arbitrary OBJECT as its schema,
+/// though the row types it `REFERENCE` and says "Material OBJECT schema
+/// encodings are not admitted"; CLOSURE-051 could not be executed.
+#[test]
+fn a_declared_parameter_family_outside_the_row_is_refused() {
+    let invocation = |operation: &str, target: &str, parameter: &str| {
+        format!(
+            concat!(
+                "LCL:\n    VERSION: \"0.1.0\"\n\n",
+                "SPECIFICATION:\n    ID: test.task\n    NAME: \"T\"\n    VERSION: \"1.0.0\"\n    KIND: kind.task\n\n",
+                "DATA:\n    ID: data.subject\n    TYPE: {}\n\n",
+                "GOAL:\n    ID: goal.one\n    ASSERT: TRUE\n\n",
+                "ACTION:\n    ID: action.one\n    OPERATION: {}\n    TARGET: REF(data.subject)\n{}",
+                "VERIFY:\n    ID: verify.one\n    ASSERT: TRUE\n\n",
+                "SUCCESS:\n    ID: success.one\n    ALL: [REF(verify.one)]\n\n",
+                "TASK:\n    ID: task.one\n    GOAL: REF(goal.one)\n    ACTION: REF(action.one)\n    SUCCESS: REF(success.one)\n\n",
+                "EXECUTE:\n    REFERENCE: REF(task.one)\n"
+            ),
+            target, operation, parameter
+        )
+    };
+
+    // "BYTES is a count and is not content."
+    let bytes_content = invocation(
+        "core.append",
+        "PATH\n    VALUE: PATH(\"/srv/data/a.txt\")",
+        "    PARAMETER:\n        NAME: content\n        TYPE: BYTES\n        REQUIRED: TRUE\n        VALUE: BYTES(4)\n\n",
+    );
+    assert_eq!(
+        ids(&check(&bytes_content)),
+        vec!["error.operation.parameter"]
+    );
+
+    // A STRING content is the family the row registers.
+    let string_content = invocation(
+        "core.append",
+        "PATH\n    VALUE: PATH(\"/srv/data/a.txt\")",
+        "    PARAMETER:\n        NAME: content\n        TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: \"x\"\n\n",
+    );
+    assert_eq!(check(&string_content).outcome(), Outcome::Checked);
+
+    // "Material OBJECT schema encodings are not admitted."
+    let object_schema = invocation(
+        "core.validate",
+        "STRING\n    VALUE: \"x\"",
+        "    PARAMETER:\n        NAME: schema\n        TYPE: OBJECT\n        REQUIRED: TRUE\n        VALUE:\n            name: \"a\"\n\n",
+    );
+    assert_eq!(
+        ids(&check(&object_schema)),
+        vec!["error.operation.parameter"]
+    );
+}
+
 #[test]
 fn an_omitted_required_target_is_an_operation_parameter_defect() {
     // "omits TARGET when the selected operation marks it required and no

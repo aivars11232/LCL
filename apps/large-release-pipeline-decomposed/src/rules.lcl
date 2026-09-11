@@ -1,0 +1,39 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: app.release_rules
+    NAME: "Release pipeline rules"
+    VERSION: "1.0.0"
+    KIND: kind.library
+    AUTHORITY: 600
+
+SCOPE:
+    ID: scope.release
+    INCLUDE: GLOB("**")
+
+ALLOW:
+    ID: permission.write_release
+    OPERATION: core.create
+    TARGET: REF(scope.release)
+    AUTHORITY: 600
+    PRIORITY: 10
+
+FORBID:
+    ID: rule.no_write_by_default
+    OPERATION: core.create
+    TARGET: REF(scope.release)
+    AUTHORITY: 500
+    PRIORITY: 10
+
+OVERRIDE:
+    ID: override.write
+    WINNER: REF(permission.write_release)
+    LOSER: REF(rule.no_write_by_default)
+
+FORBID:
+    ID: rule.no_delete
+    OPERATION: core.delete
+    TARGET: REF(scope.release)
+    AUTHORITY: 600
+    PRIORITY: 100

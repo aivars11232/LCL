@@ -1,0 +1,243 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: app.release_pipeline
+    NAME: "Release pipeline"
+    VERSION: "1.0.0"
+    KIND: kind.task
+    DOMAIN: "release"
+    AUTHORITY: 600
+
+DEFINE:
+    ID: type.artifact
+    KIND: kind.type
+    BASE: OBJECT
+    FIELD:
+        NAME: name
+        TYPE: STRING
+        REQUIRED: TRUE
+    FIELD:
+        NAME: bytes
+        TYPE: INTEGER
+        REQUIRED: TRUE
+
+DEFINE:
+    ID: type.channel
+    KIND: kind.type
+    BASE: OBJECT
+    FIELD:
+        NAME: name
+        TYPE: STRING
+        REQUIRED: TRUE
+    FIELD:
+        NAME: notify
+        TYPE: BOOLEAN
+        REQUIRED: TRUE
+
+DEFINE:
+    ID: release.sign
+    KIND: kind.operation
+    MEANING: "Sign one release artifact with an external signing service."
+    SIDE_EFFECT: [network]
+    DEPENDENCY: [host]
+    DETERMINISTIC: FALSE
+    PARAMETER:
+        NAME: artifact
+        TYPE: OBJECT[REF(type.artifact)]
+        REQUIRED: TRUE
+    RESULT:
+        TYPE: STRING
+        FORMAT: format.plain_text
+
+WORKSPACE:
+    ID: workspace.release
+    PATH: PATH("/tmp/lcl-apps/large-release-pipeline")
+    MODE: mode.read_write
+
+SCOPE:
+    ID: scope.release
+    INCLUDE: REF(task.release)
+
+DATA:
+    ID: data.artifact
+    TYPE: OBJECT[REF(type.artifact)]
+    VALUE:
+        name: "lcl"
+        bytes: 4
+
+CONTEXT:
+    ID: context.channel
+    TYPE: OBJECT[REF(type.channel)]
+    SCOPE: REF(scope.release)
+    VALUE:
+        name: "stable"
+        notify: TRUE
+
+STATE:
+    ID: state.expected_bytes
+    TYPE: INTEGER
+    SCOPE: REF(scope.release)
+    MODE: mode.read_only
+    VALUE: 4
+
+ALLOW:
+    ID: permission.write_release
+    OPERATION: core.create
+    TARGET: REF(scope.release)
+    AUTHORITY: 600
+    PRIORITY: 10
+
+FORBID:
+    ID: rule.no_write_by_default
+    OPERATION: core.create
+    TARGET: REF(scope.release)
+    AUTHORITY: 500
+    PRIORITY: 10
+
+OVERRIDE:
+    ID: override.write
+    WINNER: REF(permission.write_release)
+    LOSER: REF(rule.no_write_by_default)
+
+FORBID:
+    ID: rule.no_delete
+    OPERATION: core.delete
+    TARGET: REF(scope.release)
+    AUTHORITY: 600
+    PRIORITY: 100
+
+HANDLER:
+    ID: handler.host
+    EVENT: event.host_constraint
+    OPERATION: core.retry
+    FALLBACK: core.stop
+    LIMIT: 2
+
+OUTPUT:
+    ID: output.manifest
+    TYPE: PATH
+    FORMAT: format.plain_text
+    TARGET: PATH(REF(workspace.release), "MANIFEST.txt")
+    PROPERTY: target
+
+OUTPUT:
+    ID: output.name
+    TYPE: STRING
+    FORMAT: format.plain_text
+
+OUTPUT:
+    ID: output.head
+    TYPE: STRING
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.release
+    ASSERT: EXISTS(REF(output.manifest))
+
+ACTION:
+    ID: action.write_manifest
+    OPERATION: core.create
+    TARGET: PATH(REF(workspace.release), "MANIFEST.txt")
+    PARAMETER:
+        NAME: content
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "lcl 0.1.0"
+    OUTPUT: REF(output.manifest)
+    RETRY:
+        LIMIT: 2
+        WHEN: REF(output.manifest) == MISSING
+        DELAY: DURATION(1, unit.second)
+        HANDLER: REF(handler.host)
+
+ACTION:
+    ID: action.read_head
+    OPERATION: core.read
+    TARGET: PATH(REF(workspace.release), "MANIFEST.txt")
+    PARAMETER:
+        NAME: range
+        TYPE: OBJECT
+        REQUIRED: TRUE
+        VALUE:
+            unit: "scalar"
+            start: 0
+            end: 3
+    OUTPUT: REF(output.head)
+
+ACTION:
+    ID: action.name
+    OPERATION: core.calculate
+    TARGET: REF(data.artifact)
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "REF(data.artifact).name"
+    OUTPUT: REF(output.name)
+
+PHASE:
+    ID: phase.prepare
+    MODE: mode.sequential
+    STEP:
+        ID: step.write
+        ACTION: REF(action.write_manifest)
+
+PHASE:
+    ID: phase.inspect
+    MODE: mode.sequential
+    STEP:
+        ID: step.read_head
+        ACTION: REF(action.read_head)
+    STEP:
+        ID: step.name
+        ACTION: REF(action.name)
+
+EVIDENCE:
+    ID: evidence.channel
+    TYPE: STRING
+    VALUE: "Published to the stable channel declared in CONTEXT context.channel."
+    PROVENANCE: "Declared directly in this specification."
+    REQUIRED: TRUE
+
+VERIFY:
+    ID: verify.manifest
+    REQUIRED: TRUE
+    ASSERT: EXISTS(REF(output.manifest))
+    EVIDENCE: REF(evidence.channel)
+
+VERIFY:
+    ID: verify.head
+    REQUIRED: TRUE
+    ASSERT: REF(output.head) == "lcl"
+
+VERIFY:
+    ID: verify.name
+    REQUIRED: TRUE
+    ASSERT: REF(output.name) == "lcl"
+
+VERIFY:
+    ID: verify.bytes
+    REQUIRED: TRUE
+    ASSERT: REF(data.artifact).bytes == REF(state.expected_bytes)
+
+VERIFY:
+    ID: verify.channel
+    REQUIRED: TRUE
+    ASSERT: REF(context.channel).name == "stable"
+
+SUCCESS:
+    ID: success.release
+    ALL: [REF(verify.manifest), REF(verify.head), REF(verify.name), REF(verify.bytes), REF(verify.channel)]
+
+TASK:
+    ID: task.release
+    GOAL: REF(goal.release)
+    WORKSPACE: REF(workspace.release)
+    PHASE: [REF(phase.prepare), REF(phase.inspect)]
+    OUTPUT: [REF(output.manifest), REF(output.head), REF(output.name)]
+    HANDLER: REF(handler.host)
+    SUCCESS: REF(success.release)
+
+EXECUTE:
+    REFERENCE: REF(task.release)

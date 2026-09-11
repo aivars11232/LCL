@@ -390,10 +390,23 @@ impl HostAdapter {
             Ok(filesystem) => filesystem,
             Err(outcome) => return outcome,
         };
+        let range = match Range::of(request.parameters.get("range")) {
+            Ok(range) => range,
+            Err(refusal) => return refusal,
+        };
         match filesystem.read(&path, &bounds) {
-            Ok(bytes) => CapabilityOutcome::Completed(schema::value(Value::Text(
-                String::from_utf8_lossy(&bytes).to_string(),
-            ))),
+            Ok(bytes) => {
+                // "Resolve the exact target representation and any requested
+                // format before selecting the range."
+                let content = Value::Text(String::from_utf8_lossy(&bytes).to_string());
+                match range {
+                    None => CapabilityOutcome::Completed(schema::value(content)),
+                    Some(range) => match range.select(&content) {
+                        Ok(selected) => CapabilityOutcome::Completed(schema::value(selected)),
+                        Err(refusal) => refusal,
+                    },
+                }
+            }
             Err(error) => fs_failure(error, None),
         }
     }
@@ -1016,5 +1029,253 @@ fn fs_failure(error: FsError, effect: Option<ObservedEffect>) -> CapabilityOutco
         FsError::Refused(Refusal::Unavailable(detail)) => CapabilityOutcome::Unavailable(detail),
         FsError::Bounded(cancelled) => CapabilityOutcome::Unavailable(cancelled.reason),
         other => failed(other.to_string(), effect),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// core.read's range contract
+// ---------------------------------------------------------------------------
+
+/// `operations_v0.1.0.json#/contracts/core.read/parameters/range`.
+///
+/// > When supplied, range is an OBJECT with exactly unit: STRING, start:
+/// > INTEGER, and end: INTEGER. No other keys or defaults are admitted. unit is
+/// > exactly scalar, line, item, or byte.
+///
+/// > scalar requires STRING and indexes Unicode scalars; line requires STRING
+/// > and indexes LF-terminated lines, retaining each selected line terminator
+/// > and any final unterminated line. Empty STRING has zero lines. item
+/// > requires LIST[T] and indexes elements. byte requires LIST[INTEGER] with
+/// > every element in 0..255; BYTES is not content.
+///
+/// > Require 0 <= start <= end <= sequence length; otherwise
+/// > error.value.out_of_range. Return the same representation family
+/// > containing exactly positions start through end-1; equal bounds produce
+/// > the corresponding empty value. No clipping or ambient encoding conversion
+/// > occurs. An incompatible unit/representation or wrong key/type uses
+/// > error.operation.parameter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Range {
+    unit: Unit,
+    start: usize,
+    end: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Unit {
+    Scalar,
+    Line,
+    Item,
+    Byte,
+}
+
+impl Unit {
+    fn of(text: &str) -> Option<Unit> {
+        match text {
+            "scalar" => Some(Unit::Scalar),
+            "line" => Some(Unit::Line),
+            "item" => Some(Unit::Item),
+            "byte" => Some(Unit::Byte),
+            _ => None,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Unit::Scalar => "scalar",
+            Unit::Line => "line",
+            Unit::Item => "item",
+            Unit::Byte => "byte",
+        }
+    }
+}
+
+/// A wrong key, a wrong type, or a unit that does not index this
+/// representation.
+///
+/// The row says these "use error.operation.parameter", whose registered stage
+/// is `static_or_expression`, and which `expression_demand_resolution` does not
+/// make eligible for demand resolution: its `exclusion_rule` puts every
+/// "source structure, token, name resolution, type-family, signature arity,
+/// receiving-type" defect outside the map. A runtime that emitted it would be
+/// relabelling a stage, which is what `earliest_stage_rule` forbids, so this
+/// selects `error.operation.precondition` — an identifier `core.read`'s own
+/// `errors` list admits, at this stage. The same reasoning is written out at
+/// `crate::fragment::FragmentFault::error`.
+///
+/// A range written as a literal OBJECT is statically knowable and belongs to
+/// M4; this arm is what remains when the range arrives at demand.
+fn wrong_parameter(detail: impl Into<String>) -> CapabilityOutcome {
+    CapabilityOutcome::Refused {
+        error: lcl_runtime::RuntimeError::OperationPrecondition,
+        cause: "range".to_string(),
+        detail: detail.into(),
+    }
+}
+
+/// `error.value.out_of_range`: bounds outside `0 <= start <= end <= length`.
+fn out_of_range(detail: impl Into<String>) -> CapabilityOutcome {
+    CapabilityOutcome::Refused {
+        error: lcl_runtime::RuntimeError::ValueOutOfRange,
+        cause: "range".to_string(),
+        detail: detail.into(),
+    }
+}
+
+impl Range {
+    /// Read the declared range, or report exactly why it is not one.
+    ///
+    /// `Ok(None)` means no range was supplied, which the row admits: the
+    /// parameter is optional and its default is no selection at all.
+    fn of(value: Option<&Value>) -> Result<Option<Range>, CapabilityOutcome> {
+        let Some(value) = value else {
+            return Ok(None);
+        };
+        if matches!(value, Value::Missing | Value::Null) {
+            return Ok(None);
+        }
+        let Value::Object(fields) = value else {
+            return Err(wrong_parameter(format!(
+                "core.read range is an OBJECT, found {}",
+                value.family()
+            )));
+        };
+        // "exactly unit, start and end. No other keys or defaults are
+        // admitted."
+        let keys: Vec<&str> = fields.keys().map(String::as_str).collect();
+        if keys != ["end", "start", "unit"] {
+            return Err(wrong_parameter(format!(
+                "core.read range holds exactly unit, start and end; found {}",
+                match keys.is_empty() {
+                    true => "no key".to_string(),
+                    false => keys.join(", "),
+                }
+            )));
+        }
+        let Some(Value::Text(unit)) = fields.get("unit") else {
+            return Err(wrong_parameter("core.read range unit is a STRING"));
+        };
+        let Some(unit) = Unit::of(unit) else {
+            return Err(wrong_parameter(format!(
+                "core.read range unit is exactly scalar, line, item or byte; found {unit:?}"
+            )));
+        };
+        let start = Range::bound(fields.get("start"), "start")?;
+        let end = Range::bound(fields.get("end"), "end")?;
+        // "Require 0 <= start <= end": the half that needs no content. A
+        // negative bound already failed above, because a position is not a
+        // negative number.
+        if start > end {
+            return Err(out_of_range(format!(
+                "core.read range start {start} is after end {end}; bounds are never clipped"
+            )));
+        }
+        Ok(Some(Range {
+            unit,
+            start: start as usize,
+            end: end as usize,
+        }))
+    }
+
+    /// One INTEGER bound, which must be a whole non-negative position.
+    fn bound(value: Option<&Value>, name: &str) -> Result<i64, CapabilityOutcome> {
+        let Some(Value::Integer(number)) = value else {
+            return Err(wrong_parameter(format!(
+                "core.read range {name} is an INTEGER"
+            )));
+        };
+        let Some(number) = number.to_i64() else {
+            return Err(wrong_parameter(format!(
+                "core.read range {name} is not a readable INTEGER position"
+            )));
+        };
+        // "negative, inverted, or excessive bounds are never clipped."
+        if number < 0 {
+            return Err(out_of_range(format!(
+                "core.read range {name} is {number}; a position is never negative"
+            )));
+        }
+        Ok(number)
+    }
+
+    /// Select this range from one representation.
+    fn select(self, content: &Value) -> Result<Value, CapabilityOutcome> {
+        match (self.unit, content) {
+            (Unit::Scalar, Value::Text(text)) => {
+                let scalars: Vec<char> = text.chars().collect();
+                let selected = self.slice(&scalars, "scalar")?;
+                Ok(Value::Text(selected.iter().collect()))
+            }
+            // "line requires STRING and indexes LF-terminated lines, retaining
+            // each selected line terminator and any final unterminated line.
+            // Empty STRING has zero lines."
+            (Unit::Line, Value::Text(text)) => {
+                let lines = split_lines(text);
+                let selected = self.slice(&lines, "line")?;
+                Ok(Value::Text(selected.concat()))
+            }
+            (Unit::Item, Value::List(members)) => {
+                let selected = self.slice(members, "item")?;
+                Ok(Value::List(selected.to_vec()))
+            }
+            // "byte requires LIST[INTEGER] with every element in 0..255; BYTES
+            // is not a count and is not content."
+            (Unit::Byte, Value::List(members)) => {
+                if let Some(outside) = members.iter().find(|m| !is_byte(m)) {
+                    return Err(wrong_parameter(format!(
+                        "core.read range unit byte requires LIST[INTEGER] with every element in \
+                         0..255; found {outside}"
+                    )));
+                }
+                let selected = self.slice(members, "byte")?;
+                Ok(Value::List(selected.to_vec()))
+            }
+            (unit, other) => Err(wrong_parameter(format!(
+                "core.read range unit {} does not index a {}",
+                unit.as_str(),
+                other.family()
+            ))),
+        }
+    }
+
+    /// "Return the same representation family containing exactly positions
+    /// start through end-1; equal bounds produce the corresponding empty
+    /// value."
+    fn slice<'a, T>(self, sequence: &'a [T], unit: &str) -> Result<&'a [T], CapabilityOutcome> {
+        if self.end > sequence.len() {
+            return Err(out_of_range(format!(
+                "core.read range end {} is past the {} {unit}s of the target; bounds are never \
+                 clipped",
+                self.end,
+                sequence.len()
+            )));
+        }
+        Ok(&sequence[self.start..self.end])
+    }
+}
+
+/// Every LF-terminated line, plus any final unterminated one.
+///
+/// Each piece keeps its own terminator, so concatenating a selection
+/// reconstructs exactly the bytes that were selected.
+fn split_lines(text: &str) -> Vec<&str> {
+    let mut lines = Vec::new();
+    let mut rest = text;
+    while let Some(position) = rest.find('\n') {
+        let (line, after) = rest.split_at(position + 1);
+        lines.push(line);
+        rest = after;
+    }
+    if !rest.is_empty() {
+        lines.push(rest);
+    }
+    lines
+}
+
+/// One INTEGER in `0..255`.
+fn is_byte(value: &Value) -> bool {
+    match value {
+        Value::Integer(number) => number.to_i64().is_some_and(|n| (0..=255).contains(&n)),
+        _ => false,
     }
 }

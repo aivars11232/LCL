@@ -113,38 +113,62 @@ fn core_calculate_reads_a_document_value_only_through_ref() {
     assert_eq!(value_of(&execution, "action.calculate"), "15");
 }
 
-#[test]
-fn a_malformed_fragment_fails_before_any_effect() {
-    let action = "ID: action.calculate\nOPERATION: core.calculate\n\
-                  PARAMETER:\n    NAME: expression\n    TYPE: STRING\n    REQUIRED: TRUE\n    \
-                  VALUE: \"1 + \"";
-    let execution = common::run(&common::task("", &[action]));
-    let result = common::result_of(&execution, "action.calculate");
-    assert_eq!(result.status, "status.failed");
-    assert_eq!(
-        result.failure_phase,
-        lcl_runtime::FailurePhase::PreEffect,
-        "a fragment defect is decided before anything happens"
+/// `expression_fragment_contract/evaluation`: "Static checks cover the complete
+/// fragment; dynamic errors arise only from evaluated subexpressions", and
+/// `#/diagnostics`: "Malformed fragment syntax and invalid bindings produce
+/// error.operation.parameter."
+///
+/// Changed by `LCL-TASK-0020` defect 3, with that authority. These two cases
+/// used to reach this milestone and assert the identifier the *runtime*
+/// substituted, because no stage checked a written fragment and a malformed one
+/// executed. M4 now refuses it at the stage the contract names, so a written
+/// fragment can no longer reach a host, and asserting that here is asserting
+/// the earliest-stage rule rather than a runtime behavior that no longer
+/// happens. `lcl-checker`'s `constructors_and_operations` suite holds the
+/// positive cases; this one proves the defect never arrives at M7.
+///
+/// `FragmentFault::Malformed` stays as totality: a fragment that arrives at
+/// demand rather than as a written STRING is still the demanding layer's to
+/// judge.
+fn refused_before_execution(fragment: &str) -> String {
+    let action = format!(
+        "ID: action.calculate\nOPERATION: core.calculate\n\
+         PARAMETER:\n    NAME: expression\n    TYPE: STRING\n    REQUIRED: TRUE\n    \
+         VALUE: {fragment:?}"
     );
-    // core.calculate does not list error.operation.precondition, so the row's
-    // own operand identifier is the one selected.
+    let source = common::task("", &[&action]);
+    let unit =
+        lcl_resolver::SourceUnit::new(lcl_resolver::SourceId::new("root.lcl"), source.as_bytes());
+    let resolved =
+        lcl_resolver::Resolver::new(common::rules(), common::grammar(), common::lexicon())
+            .resolve(&unit, &lcl_resolver::MemoryProvider::new())
+            .expect("lexing and parsing succeed");
+    let checked = lcl_checker::Checker::new(common::static_contracts())
+        .check(&resolved)
+        .expect("resolution succeeded");
+    checked
+        .primary()
+        .map(|d| d.id.to_string())
+        .unwrap_or_default()
+}
+
+#[test]
+fn a_malformed_fragment_is_refused_before_any_effect() {
     assert_eq!(
-        common::errors_of(&execution, "action.calculate"),
-        vec!["error.operator.operand".to_string()]
+        refused_before_execution("1 + "),
+        "error.operation.parameter"
     );
 }
 
 #[test]
 fn a_fragment_holding_two_expressions_is_not_one_expression() {
     // "consume exactly one EXPRESSION … followed only by optional whitespace"
-    let action = "ID: action.calculate\nOPERATION: core.calculate\n\
-                  PARAMETER:\n    NAME: expression\n    TYPE: STRING\n    REQUIRED: TRUE\n    \
-                  VALUE: \"1 + 2 3\"";
-    let execution = common::run(&common::task("", &[action]));
     assert_eq!(
-        common::result_of(&execution, "action.calculate").status,
-        "status.failed"
+        refused_before_execution("1 + 2 3"),
+        "error.operation.parameter"
     );
+    // One expression still runs, so the two above are about the fragment.
+    assert!(refused_before_execution("1 + 2").is_empty());
 }
 
 // ---------------------------------------------------------------------------

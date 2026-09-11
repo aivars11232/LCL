@@ -411,6 +411,7 @@ impl Host for WatchedHost<'_> {
                 match &outcome {
                     CapabilityOutcome::Completed(_) => "completed",
                     CapabilityOutcome::Failed { .. } => "failed",
+                    CapabilityOutcome::Refused { .. } => "refused",
                     CapabilityOutcome::Denied(_) => "denied",
                     CapabilityOutcome::Unavailable(_) => "unavailable",
                 }

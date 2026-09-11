@@ -221,6 +221,40 @@ pub(crate) struct Check<'a> {
     pub(crate) property_depth: usize,
     pub(crate) deferred: Vec<DemandObligation>,
     pub(crate) earlier: Vec<EarlierStageDefect>,
+    /// Judgements the driver computed ahead of the walk, by the child's address
+    /// in the syntax tree. See [`Check::flatten`].
+    pub(crate) ready: std::collections::HashMap<*const Expr, Judgement>,
+    /// The same, for a child whose parent asks for a judgement without the
+    /// receiving contract: the inner expression of a group.
+    pub(crate) ready_judge: std::collections::HashMap<*const Expr, Judgement>,
+}
+
+/// How a parent asks for a child's judgement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Via {
+    /// Through `expression`: judged, then received and recorded at its own
+    /// locus.
+    Receiving,
+    /// Through `judge`: judged alone, because the parent receives the contract
+    /// at the parent's locus.
+    JudgeOnly,
+}
+
+/// The receiving contract a collection's members are judged against.
+///
+/// `03_TYPES_AND_VALUES/10`: "An exact expected member type supplies the
+/// context for empty and nested literals", and "The rule applies recursively to
+/// the members of a reference-typed collection", so an identity slot's bracket
+/// members are identities too.
+fn member_expectation(expected: &Expected) -> Expected {
+    if matches!(expected, Expected::Identity) {
+        return Expected::Identity;
+    }
+    expected
+        .member()
+        .cloned()
+        .map(Expected::Member)
+        .unwrap_or(Expected::None)
 }
 
 impl Check<'_> {
@@ -282,6 +316,178 @@ impl Check<'_> {
         expr: &Expr,
         expected: &Expected,
     ) -> Judgement {
+        // A judgement the driver already computed for exactly this node.
+        if let Some(ready) = self.ready.remove(&(expr as *const Expr)) {
+            return ready;
+        }
+        self.flatten(source, expr, expected);
+        if let Some(ready) = self.ready.remove(&(expr as *const Expr)) {
+            return ready;
+        }
+        self.judge_one(source, expr, expected)
+    }
+
+    /// Judge every predictable descendant of one expression, deepest first.
+    ///
+    /// ## Why this exists
+    ///
+    /// Expression nesting is unbounded: `04_GRAMMAR/10` states the shape and no
+    /// limit, and no registered diagnostic permits an implementation-defined
+    /// nesting rejection, so the depth a document may reach is not this
+    /// implementation's to cap. M2 drew the same conclusion and made the
+    /// parser's four nesting paths iterative. This stage walked the tree it
+    /// received with native recursion and died by `SIGABRT` — not by a
+    /// diagnostic — at a few thousand levels of groups, collections, call
+    /// arguments, unary prefixes or binary operands.
+    ///
+    /// ## How it works
+    ///
+    /// [`Check::children_of`] answers, without judging anything, which child
+    /// expressions a node's own judging function will ask for and with which
+    /// receiving contract. The driver descends that spine, judges the nodes it
+    /// collected deepest-first, and leaves each result where the judging
+    /// function will find it. A judging function therefore never recurses into
+    /// a child it did not have to: it asks, and the answer is already there.
+    ///
+    /// ## Where it stops
+    ///
+    /// `children_of` answers `None` for any node whose children it cannot
+    /// predict exactly. That node is judged the way it always was, natively,
+    /// and its own children are flattened by a fresh driver call. An unsure
+    /// answer therefore costs one stack frame and never changes a judgement.
+    fn flatten(&mut self, source: &SourceId, root: &Expr, expected: &Expected) {
+        let mut order: Vec<(&Expr, Expected, Via)> = Vec::new();
+        let mut stack: Vec<(&Expr, Expected, Via)> = vec![(root, expected.clone(), Via::Receiving)];
+        while let Some((node, expectation, via)) = stack.pop() {
+            let children = self.children_of(node, &expectation);
+            order.push((node, expectation, via));
+            let Some(children) = children else {
+                continue;
+            };
+            stack.extend(children);
+        }
+        // One node is the caller's own, and judging it here would gain nothing.
+        if order.len() <= 1 {
+            return;
+        }
+        // A pre-order listing reversed puts every node after its descendants.
+        for (node, expectation, via) in order.into_iter().rev() {
+            let key = node as *const Expr;
+            match via {
+                Via::Receiving => {
+                    let judgement = self.judge_one(source, node, &expectation);
+                    self.ready.insert(key, judgement);
+                }
+                Via::JudgeOnly => {
+                    let judgement = self.judge(source, node, &expectation);
+                    self.ready_judge.insert(key, judgement);
+                }
+            }
+        }
+    }
+
+    /// Which children a node's judging function will ask for, and how.
+    ///
+    /// `None` means "not predictable here", which is always safe: the node is
+    /// then judged natively. Every answer must match what the judging function
+    /// actually does, because a child judged under the wrong receiving contract
+    /// would be judged twice, once wrongly.
+    fn children_of<'e>(
+        &mut self,
+        expr: &'e Expr,
+        expected: &Expected,
+    ) -> Option<Vec<(&'e Expr, Expected, Via)>> {
+        match expr {
+            Expr::Literal(_) | Expr::Identifier(_) | Expr::Type(_) => Some(Vec::new()),
+            // `judge` delegates a group to its inner expression *as a judgement*,
+            // because "A receiving identity context applies to a direct REF
+            // expression, including parentheses around it": the contract is
+            // received once, at the group's own locus.
+            Expr::Group(group) => Some(vec![(&group.inner, expected.clone(), Via::JudgeOnly)]),
+            Expr::Unary(unary) => Some(vec![(&unary.operand, Expected::None, Via::Receiving)]),
+            Expr::Binary(binary) => Some(vec![
+                (&binary.left, Expected::None, Via::Receiving),
+                (&binary.right, Expected::None, Via::Receiving),
+            ]),
+            Expr::Index(index) => Some(vec![
+                (&index.base, Expected::None, Via::Receiving),
+                (&index.index, Expected::None, Via::Receiving),
+            ]),
+            // A reserved property reads the declaration's registered field
+            // rather than judging its base as a value.
+            Expr::Property(property) if property.reserved => None,
+            Expr::Property(property) => {
+                Some(vec![(&property.base, Expected::None, Via::Receiving)])
+            }
+            Expr::Collection(collection) => {
+                let quantifier = matches!(expected, Expected::Quantifier);
+                let member = member_expectation(expected);
+                Some(
+                    collection
+                        .members
+                        .iter()
+                        .map(|m| {
+                            let expectation = match quantifier {
+                                true => Expected::Quantifier,
+                                false => member.clone(),
+                            };
+                            (m, expectation, Via::Receiving)
+                        })
+                        .collect(),
+                )
+            }
+            Expr::Call(call) => self.call_children(call),
+        }
+    }
+
+    /// A call's arguments, when this build can say what contract receives them.
+    fn call_children<'e>(&mut self, call: &'e Call) -> Option<Vec<(&'e Expr, Expected, Via)>> {
+        // `REF(...)` reads a binding rather than judging an argument.
+        if call.is_reference() {
+            return None;
+        }
+        let name = call.callable.text.clone();
+        if let Some(row) = self.contracts.constructor(&name).cloned() {
+            return Some(
+                call.arguments
+                    .iter()
+                    .enumerate()
+                    .map(|(position, argument)| {
+                        (
+                            argument,
+                            self.constructor_expectation(&row, position),
+                            Via::Receiving,
+                        )
+                    })
+                    .collect(),
+            );
+        }
+        if let Some(row) = self.contracts.function(&name).cloned() {
+            // ROUND's first argument takes a different path when it *is* a
+            // direct division, which the row materializes once as an exact
+            // rational rather than judging as an ordinary operand. Any other
+            // first argument is judged exactly like the rest.
+            if row.name == "ROUND" && call.arguments.first().is_some_and(is_direct_division) {
+                return None;
+            }
+            let quantifier = row.argument_contract.as_deref() == Some("quantifier_argument");
+            let expectation = match quantifier {
+                true => Expected::Quantifier,
+                false => Expected::None,
+            };
+            return Some(
+                call.arguments
+                    .iter()
+                    .map(|argument| (argument, expectation.clone(), Via::Receiving))
+                    .collect(),
+            );
+        }
+        // An unregistered callable judges no argument at all.
+        Some(Vec::new())
+    }
+
+    /// Judge one node and apply the receiving contract at its own locus.
+    fn judge_one(&mut self, source: &SourceId, expr: &Expr, expected: &Expected) -> Judgement {
         let judgement = self.judge(source, expr, expected);
         let judgement = self.receive(source, expr.span(), expected, judgement);
         self.record(source, expr.span(), &judgement.outcome);
@@ -467,6 +673,9 @@ impl Check<'_> {
     }
 
     fn judge(&mut self, source: &SourceId, expr: &Expr, expected: &Expected) -> Judgement {
+        if let Some(ready) = self.ready_judge.remove(&(expr as *const Expr)) {
+            return ready;
+        }
         match expr {
             Expr::Literal(literal) => self.literal(source, literal, expected),
             Expr::Identifier(ident) => self.identifier(source, ident, expected),
@@ -658,15 +867,7 @@ impl Check<'_> {
         // "The rule applies recursively to the members of a reference-typed
         // collection", so an identity slot's bracket members are identities too.
         let identities = matches!(expected, Expected::Identity);
-        let member_expectation = if identities {
-            Expected::Identity
-        } else {
-            expected
-                .member()
-                .cloned()
-                .map(Expected::Member)
-                .unwrap_or(Expected::None)
-        };
+        let member_expectation = member_expectation(expected);
         let quantifier = matches!(expected, Expected::Quantifier);
 
         let mut member_types: Vec<(Type, Span)> = Vec::new();
@@ -2206,4 +2407,16 @@ fn unwrap_group(expr: Option<&Expr>) -> Option<&Expr> {
         current = &group.inner;
     }
     Some(current)
+}
+
+/// True when an expression is a division, looking through parentheses.
+///
+/// `rounded_first_argument` unwraps groups the same way before deciding
+/// whether ROUND's first argument is the direct quotient the row materializes.
+fn is_direct_division(expr: &Expr) -> bool {
+    let mut inner = expr;
+    while let Expr::Group(group) = inner {
+        inner = &group.inner;
+    }
+    matches!(inner, Expr::Binary(binary) if binary.operator == BinaryOp::Divide)
 }

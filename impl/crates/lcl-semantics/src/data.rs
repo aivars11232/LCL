@@ -154,6 +154,13 @@ fn declared_value(engine: &Engine, block: syntax::DeclBlock) -> Option<Value> {
         }
         return Some(Value::List(members));
     }
+    // `03_TYPES_AND_VALUES/10`: an OBJECT "uses an indented VALUE block
+    // containing unique lowercase property names". That body is `Body::Nested`,
+    // which an inline read cannot see, and a declaration whose value it holds
+    // would otherwise resolve to MISSING with nothing in the document missing.
+    if let Some(nested) = field.body.as_nested() {
+        return eval::object_value(engine, &source, nested);
+    }
     let expr = syntax::inline_expr(&field.body)?;
     eval::literal_value(engine, &source, expr)
 }

@@ -247,6 +247,82 @@ VERIFY:
     assert!(!completion.succeeded());
 }
 
+/// `expression_demand_resolution`: its context is a demand "during a reachable
+/// invocation, condition, verification, or completion step", its eligible map
+/// gives `error.operator.operand` to "a registered SUM, MIN, or MAX reduction
+/// [receiving] an empty material collection whose member type and function
+/// signature are already valid", and its `resolved_stage` is `execution`.
+///
+/// Regression, `LCL-TASK-0020` defect 2. The evaluator raised the fault
+/// correctly and this layer discarded it, recording UNKNOWN and nothing else,
+/// so the registered diagnostic the registry names for this demand was never
+/// emitted by anyone. CLOSURE-015 failed on it.
+#[test]
+fn a_reduction_over_an_empty_collection_emits_its_registered_identifier() {
+    let completion = complete(&task_with(
+        "
+DATA:
+    ID: data.empty
+    TYPE: LIST[INTEGER]
+    VALUE: []
+
+VERIFY:
+    ID: verify.sum
+    REQUIRED: TRUE
+    ASSERT: SUM(REF(data.empty)) == 0
+",
+        "[REF(verify.sum)]",
+    ));
+    let emitted: Vec<&lcl_completion::Diagnostic> = completion
+        .diagnostics()
+        .iter()
+        .filter(|d| d.id.as_registry_str() == "error.operator.operand")
+        .collect();
+    assert_eq!(
+        emitted.len(),
+        1,
+        "the demand fault is emitted exactly once: {}",
+        completion.serialize()
+    );
+    let diagnostic = emitted[0];
+    // "Retain the canonical error identifier, registered source-stage
+    // metadata, resolved demand stage, and demand locus in evidence."
+    assert_eq!(
+        diagnostic.registered_stage.as_registry_str(),
+        "static_or_expression"
+    );
+    assert_eq!(diagnostic.stage().as_registry_str(), "execution");
+    assert_eq!(diagnostic.default_status, "status.failed");
+    assert_eq!(diagnostic.declaration.as_deref(), Some("verify.sum"));
+    assert!(!completion.succeeded());
+}
+
+/// The same reduction over a nonempty collection raises nothing, so the
+/// diagnostic above is evidence of the empty case and not of reductions.
+#[test]
+fn a_reduction_over_a_nonempty_collection_raises_nothing() {
+    let completion = complete(&task_with(
+        "
+DATA:
+    ID: data.two
+    TYPE: LIST[INTEGER]
+    VALUE: [1, 2]
+
+VERIFY:
+    ID: verify.sum
+    REQUIRED: TRUE
+    ASSERT: SUM(REF(data.two)) == 3
+",
+        "[REF(verify.sum)]",
+    ));
+    assert!(
+        completion.diagnostics().is_empty(),
+        "{}",
+        completion.serialize()
+    );
+    assert!(completion.succeeded());
+}
+
 #[test]
 fn an_optional_false_verify_keeps_its_outcome_and_emits_nothing() {
     // "Optional FALSE checks retain their Boolean domain outcome without

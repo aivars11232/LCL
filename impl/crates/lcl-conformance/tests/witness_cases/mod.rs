@@ -366,10 +366,9 @@ DATA:
         WitnessCase {
             id: "CLOSURE-005",
             coverage: Coverage::Runtime,
-            plan: Plan::NotImplemented {
-                probes: vec![Probe::new(
-                    assertion(
-                        "
+            plan: Plan::Executable(vec![Probe::new(
+                assertion(
+                    "
 DEFINE:
     ID: type.record
     KIND: kind.type
@@ -385,18 +384,10 @@ DATA:
     VALUE:
         name: \"a\"
 ",
-                        "REF(data.record).name == \"a\"",
-                    ),
-                    holds(),
-                )],
-                missing: "An OBJECT-valued declaration never resolves to a material value. \
-                          `Body::Nested` covers \"an object-data value\", but data resolution \
-                          reads a VALUE only through `inline_expr`, which matches \
-                          `Body::Inline` alone, so every read of an object-valued DATA or \
-                          INPUT yields MISSING and the property selection has nothing to \
-                          select from",
-                owner: "M5 lcl-semantics data resolution",
-            },
+                    "REF(data.record).name == \"a\"",
+                ),
+                holds(),
+            )]),
         },
         WitnessCase {
             id: "CLOSURE-006",
@@ -490,19 +481,13 @@ DATA:
         WitnessCase {
             id: "CLOSURE-015",
             coverage: Coverage::Runtime,
-            plan: Plan::NotImplemented {
-                probes: vec![Probe::new(
-                    assertion(
-                        "\nDATA:\n    ID: data.empty\n    TYPE: LIST[INTEGER]\n    VALUE: []\n",
-                        "SUM(REF(data.empty)) == 0",
-                    ),
-                    Expectation::Rejects("error.operator.operand".to_string()),
-                )],
-                missing: "SUM over a declared empty typed collection yields UNKNOWN instead of \
-                          emitting error.operator.operand, although the registry gives SUM \
-                          minimum_count 1 and names that identifier",
-                owner: "M6 lcl-runtime reductions",
-            },
+            plan: Plan::Executable(vec![Probe::new(
+                assertion(
+                    "\nDATA:\n    ID: data.empty\n    TYPE: LIST[INTEGER]\n    VALUE: []\n",
+                    "SUM(REF(data.empty)) == 0",
+                ),
+                Expectation::Rejects("error.operator.operand".to_string()),
+            )]),
         },
         WitnessCase {
             id: "CLOSURE-016",
@@ -534,16 +519,10 @@ DATA:
         WitnessCase {
             id: "CLOSURE-019",
             coverage: Coverage::StandardLibrary,
-            plan: Plan::NotImplemented {
-                probes: vec![Probe::new(
-                    calculate("\"1; 2\""),
-                    Expectation::Rejects("error.operation.parameter".to_string()),
-                )],
-                missing: "A calculate fragment holding two expressions is refused with \
-                          error.operator.operand rather than the error.operation.parameter the \
-                          witness and the operation contract name",
-                owner: "M7 lcl-stdlib expression fragment",
-            },
+            plan: Plan::Executable(vec![Probe::new(
+                calculate("\"1; 2\""),
+                Expectation::Rejects("error.operation.parameter".to_string()),
+            )]),
         },
         // -- compare / group -----------------------------------------------
         WitnessCase {
@@ -558,10 +537,14 @@ DATA:
             id: "CLOSURE-021",
             coverage: Coverage::StandardLibrary,
             plan: Plan::Descriptive {
-                reason: "core.group over a LIST of OBJECT members needs object-valued data, \
-                         which no declaration in this build resolves; see the gap recorded \
-                         under CLOSURE-005. Encoding the witness would require inventing an \
-                         object source the language does not currently carry to runtime.",
+                reason: "The witness groups a LIST whose members are OBJECTs, and Core 0.1.0 \
+                         supplies no way to write one. `04_GRAMMAR/10` gives \
+                         MULTILINE_COLLECTION and COLLECTION_LITERAL members as EXPRESSION, \
+                         and `04_GRAMMAR/12` puts an object in an indented VALUE body, which \
+                         is not an expression; no Core operation returns a LIST of objects \
+                         either. The object-resolution gap this once cited was closed by \
+                         LCL-TASK-0020, and the remaining obstacle is the collection member \
+                         form, not the object value.",
             },
         },
         // -- retry ---------------------------------------------------------
@@ -759,13 +742,53 @@ DEFINE:
         WitnessCase {
             id: "CLOSURE-042",
             coverage: Coverage::Runtime,
-            plan: Plan::Descriptive {
-                reason: "Structural OBJECT equality cannot be observed while object-valued \
-                         declarations resolve to MISSING; see the gap recorded under \
-                         CLOSURE-005. Comparing two such declarations returns TRUE because \
-                         both sides are MISSING, which would be a pass for the wrong reason \
-                         rather than evidence of structural equality.",
-            },
+            plan: Plan::Executable(vec![Probe::new(
+                assertion(
+                    "
+DEFINE:
+    ID: type.one
+    KIND: kind.type
+    BASE: OBJECT
+    FIELD:
+        NAME: name
+        TYPE: STRING
+        REQUIRED: TRUE
+    FIELD:
+        NAME: count
+        TYPE: INTEGER
+        REQUIRED: TRUE
+
+DEFINE:
+    ID: type.two
+    KIND: kind.type
+    BASE: OBJECT
+    FIELD:
+        NAME: count
+        TYPE: INTEGER
+        REQUIRED: TRUE
+    FIELD:
+        NAME: name
+        TYPE: STRING
+        REQUIRED: TRUE
+
+DATA:
+    ID: data.one
+    TYPE: OBJECT[REF(type.one)]
+    VALUE:
+        name: \"a\"
+        count: 2
+
+DATA:
+    ID: data.two
+    TYPE: OBJECT[REF(type.two)]
+    VALUE:
+        count: 2
+        name: \"a\"
+",
+                    "REF(data.one) == REF(data.two)",
+                ),
+                holds(),
+            )]),
         },
         WitnessCase {
             id: "CLOSURE-043",
@@ -838,75 +861,48 @@ DEFINE:
         WitnessCase {
             id: "CLOSURE-048",
             coverage: Coverage::StandardLibrary,
-            plan: Plan::NotImplemented {
-                probes: vec![Probe::new(
-                    read_range("PATH(\"/case/a.txt\")", "scalar", 1, 3),
-                    Expectation::Terminal("status.succeeded".to_string()),
-                )
-                .on_filesystem()],
-                missing: "core.read returns the whole target content and never applies the \
-                          registered range contract. `FileSystem::read` takes only a path and \
-                          bounds, and no layer above it selects positions start..end, so the \
-                          witness's STRING bc is unobtainable",
-                owner: "M7 lcl-stdlib core.read range selection",
-            },
+            plan: Plan::Executable(vec![Probe::new(
+                read_range("PATH(\"/case/a.txt\")", "scalar", 1, 3, "bc"),
+                Expectation::Terminal("status.succeeded".to_string()),
+            )
+            .on_filesystem()]),
         },
         WitnessCase {
             id: "CLOSURE-049",
             coverage: Coverage::StandardLibrary,
-            plan: Plan::NotImplemented {
-                probes: vec![Probe::new(
-                    read_range("PATH(\"/case/lines.txt\")", "line", 0, 1),
-                    Expectation::Terminal("status.succeeded".to_string()),
-                )
-                .on_filesystem()],
-                missing: "Same absent range selection as CLOSURE-048, for the line unit",
-                owner: "M7 lcl-stdlib core.read range selection",
-            },
+            plan: Plan::Executable(vec![Probe::new(
+                read_range("PATH(\"/case/lines.txt\")", "line", 0, 1, "a\\n"),
+                Expectation::Terminal("status.succeeded".to_string()),
+            )
+            .on_filesystem()]),
         },
         WitnessCase {
             id: "CLOSURE-050",
             coverage: Coverage::StandardLibrary,
-            plan: Plan::NotImplemented {
-                probes: vec![Probe::new(
-                    read_range("PATH(\"/case/a.txt\")", "scalar", 2, 1),
-                    Expectation::Rejects("error.value.out_of_range".to_string()),
-                )
-                .on_filesystem()],
-                missing: "An inverted range is accepted silently. The registry requires \
-                          0 <= start <= end <= length otherwise error.value.out_of_range, and \
-                          the start <= end half needs no content to check",
-                owner: "M7 lcl-stdlib core.read range validation",
-            },
+            plan: Plan::Executable(vec![Probe::new(
+                read_range("PATH(\"/case/a.txt\")", "scalar", 2, 1, "never read"),
+                Expectation::Rejects("error.value.out_of_range".to_string()),
+            )
+            .on_filesystem()]),
         },
         // -- validate_schema / append_content -------------------------------
         WitnessCase {
             id: "CLOSURE-051",
             coverage: Coverage::StandardLibrary,
-            plan: Plan::Descriptive {
-                reason: "The witness supplies core.validate's schema parameter as an arbitrary \
-                         OBJECT. An object-valued parameter cannot be carried to the operation \
-                         while object values resolve to MISSING; see the gap under \
-                         CLOSURE-005.",
-            },
+            plan: Plan::Executable(vec![Probe::new(
+                validate_object_schema(),
+                Expectation::Rejects("error.operation.parameter".to_string()),
+            )]),
         },
         WitnessCase {
             id: "CLOSURE-052",
             coverage: Coverage::StandardLibrary,
-            plan: Plan::NotImplemented {
-                probes: vec![Probe::new(
-                    append_bytes(),
-                    Expectation::Rejects("error.operation.parameter".to_string()),
-                )
-                .on_filesystem()],
-                missing: "core.append accepts a BYTES content parameter and completes, though \
-                          the contract types content as STRING|LIST[T] and states plainly that \
-                          \"BYTES is a count and is not content\". The declared parameter \
-                          family is not enforced",
-                owner: "M7 lcl-stdlib operation parameter families",
-            },
+            plan: Plan::Executable(vec![Probe::new(
+                append_bytes(),
+                Expectation::Rejects("error.operation.parameter".to_string()),
+            )
+            .on_filesystem()]),
         },
-        // -- graph ---------------------------------------------------------
         WitnessCase {
             id: "CLOSURE-053",
             coverage: Coverage::Preflight,
@@ -1332,7 +1328,7 @@ DATA:
 }
 
 /// core.read with a declared range over an addressable target.
-pub fn read_range(target: &str, unit: &str, start: i64, end: i64) -> String {
+pub fn read_range(target: &str, unit: &str, start: i64, end: i64, expected: &str) -> String {
     format!(
         "{HEADER}
 DATA:
@@ -1365,7 +1361,7 @@ ACTION:
 
 VERIFY:
     ID: verify.case
-    ASSERT: REF(output.slice) == \"bc\"
+    ASSERT: REF(output.slice) == \"{expected}\"
 
 SUCCESS:
     ID: success.case
@@ -1376,6 +1372,49 @@ TASK:
     GOAL: REF(goal.case)
     ACTION: REF(action.read)
     OUTPUT: REF(output.slice)
+    SUCCESS: REF(success.case)
+
+EXECUTE:
+    REFERENCE: REF(task.case)
+"
+    )
+}
+
+/// core.validate whose schema parameter is an arbitrary OBJECT.
+///
+/// `#/contracts/core.validate/parameters/schema`: "Material OBJECT schema
+/// encodings are not admitted."
+pub fn validate_object_schema() -> String {
+    format!(
+        "{HEADER}
+DATA:
+    ID: data.subject
+    TYPE: STRING
+    VALUE: \"x\"
+
+GOAL:
+    ID: goal.case
+    ASSERT: TRUE
+
+ACTION:
+    ID: action.validate
+    OPERATION: core.validate
+    TARGET: REF(data.subject)
+    PARAMETER:
+        NAME: schema
+        TYPE: OBJECT
+        REQUIRED: TRUE
+        VALUE:
+            name: \"a\"
+
+SUCCESS:
+    ID: success.case
+    ALL: TRUE
+
+TASK:
+    ID: task.case
+    GOAL: REF(goal.case)
+    ACTION: REF(action.validate)
     SUCCESS: REF(success.case)
 
 EXECUTE:

@@ -253,6 +253,7 @@ pub(crate) fn run(engine: &mut Engine, checks: &Checks, verdict: &Verdict) -> Ev
                 cause: id.clone(),
                 detail,
                 phase,
+                demand_resolved: false,
             });
         }
         records.push(record);

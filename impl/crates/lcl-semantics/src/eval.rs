@@ -99,6 +99,78 @@ pub(crate) fn literal_value(engine: &Engine, source: &SourceId, expr: &Expr) -> 
     evaluate(engine, source, expr, 0)
 }
 
+/// The object one indented `VALUE` body declares.
+///
+/// `03_TYPES_AND_VALUES/10`, OBJECT: "An object uses an indented VALUE block
+/// containing unique lowercase property names. Property order has no semantic
+/// effect." The parser records that body as `Body::Nested`, because "This one
+/// syntactic form covers a nested child block, an object-data value and a
+/// locally nested schema alike" and it does not choose between them.
+///
+/// Uniqueness and the absence of uppercase keys are already decided: the
+/// grammar stage emits `error.field.duplicate` for a repeated property and
+/// `error.block.field` for an uppercase key inside object data, and it recurses
+/// into nested object data to do it. A body that reaches this layer has
+/// survived that, so a statement here that is not a property is not object
+/// data, and this function reports that it read nothing rather than deciding
+/// what the author meant.
+///
+/// Property order is not preserved, because the canonical text says it has no
+/// semantic effect and [`Value::Object`] is a `BTreeMap`: two objects written
+/// in different orders are then the same value, which is what
+/// `03_TYPES_AND_VALUES/03` requires of OBJECT equality.
+pub(crate) fn object_value(
+    engine: &Engine,
+    source: &SourceId,
+    nested: &lcl_parser::syntax::Nested,
+) -> Option<Value> {
+    object_at(engine, source, nested, 0)
+}
+
+fn object_at(
+    engine: &Engine,
+    source: &SourceId,
+    nested: &lcl_parser::syntax::Nested,
+    depth: usize,
+) -> Option<Value> {
+    use lcl_parser::syntax::Statement;
+
+    if depth > MAX_DEPTH {
+        return None;
+    }
+    let mut fields = std::collections::BTreeMap::new();
+    for statement in &nested.statements {
+        let Statement::Property(property) = statement else {
+            return None;
+        };
+        let value = body_value(engine, source, &property.body, depth + 1)?;
+        fields.insert(property.key.text.clone(), value);
+    }
+    Some(Value::Object(fields))
+}
+
+/// One property's value, whichever of the three forms it is written in.
+fn body_value(
+    engine: &Engine,
+    source: &SourceId,
+    body: &lcl_parser::syntax::Body,
+    depth: usize,
+) -> Option<Value> {
+    use lcl_parser::syntax::{Body, Value as SyntaxValue};
+
+    match body {
+        Body::Inline(SyntaxValue::Expression(expr)) => evaluate(engine, source, expr, depth),
+        Body::Inline(SyntaxValue::MultilineCollection(collection)) => {
+            let mut members = Vec::new();
+            for member in &collection.members {
+                members.push(evaluate(engine, source, member, depth + 1)?);
+            }
+            Some(Value::List(members))
+        }
+        Body::Nested(inner) => object_at(engine, source, inner, depth),
+    }
+}
+
 fn evaluate(engine: &Engine, source: &SourceId, expr: &Expr, depth: usize) -> Option<Value> {
     if depth > MAX_DEPTH {
         return None;

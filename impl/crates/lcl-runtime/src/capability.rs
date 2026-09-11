@@ -183,6 +183,30 @@ pub enum CapabilityOutcome {
         detail: String,
         observation: Observation,
     },
+    /// The operation's own registered contract refused the request, naming the
+    /// identifier its row lists.
+    ///
+    /// Not a host decision. `Denied` and `Unavailable` are the host's two ways
+    /// of saying no, and the runtime already maps each to one registered
+    /// identifier; this arm is the same shape for the *standard library's*
+    /// implementation of a row, which decides a contract this side of the
+    /// boundary and can only discover part of it once the representation is in
+    /// hand. `core.read`'s range is the case that needs it:
+    /// `operations_v0.1.0.json#/contracts/core.read/parameters/range` requires
+    /// "0 <= start <= end <= sequence length; otherwise
+    /// error.value.out_of_range", and a sequence length is not knowable before
+    /// the target has been read.
+    ///
+    /// The identifier must be one the row's own `errors` list admits. Nothing
+    /// here invents a classification: it carries one the registry already
+    /// assigned to this operation.
+    Refused {
+        error: crate::RuntimeError,
+        /// The `cause_identity` component, as `crate::diagnostic` uses it.
+        cause: String,
+        /// Non-normative human detail.
+        detail: String,
+    },
     /// The host refused. `error.permission.denied`.
     Denied(String),
     /// A host limitation. `error.host.constraint`.

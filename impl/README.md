@@ -1,4 +1,4 @@
-# LCL implementation — milestones M0 (foundation), M1 (lexer), M2 (parser), M3 (resolver), M4 (checker), M5 (semantic preflight), M6 (runtime), M7 (capabilities and standard library), M8 (completion and executable conformance), M9 (CLI, projects and the engine protocol) and M10 (the workspace, inspector and debugger)
+# LCL implementation — milestones M0 (foundation), M1 (lexer), M2 (parser), M3 (resolver), M4 (checker), M5 (semantic preflight), M6 (runtime), M7 (capabilities and standard library), M8 (completion and executable conformance), M9 (CLI, projects and the engine protocol), M10 (the workspace, inspector and debugger) and M11 (hardening, the application ladder and release)
 
 This directory is a **consumer** of the canonical specification at
 `../canonical/LCL_Core_0.1.0`. It is not part of the release, is not listed in
@@ -29,6 +29,7 @@ evidence and is never a claim about the release.
 | `lcl-protocol` | M9 | The stable headless engine surface. One assembled engine that carries source through every canonical stage in order and stops where the requested command says, and one machine-readable record of what happened, with a JSON projection. It resolves nothing, checks nothing and classifies nothing: every identifier, stage, status, span and value is copied from the layer that decided it. |
 | `lcl-project` | M9 | Projects and documents. An explicit project root, a filesystem source provider that can answer only for a source a document named, root-relative source identity that does not depend on where the project lives, and the content-addressed cache and lock file that make a multi-document project reproducible. |
 | `lcl-cli` | M9 | The `lcl` binary. `check`, `validate`, `run`, `inspect`, `package` and `syntax` over the same engine any other consumer uses, with a closed exit-code table, human rendering and `--machine` JSON. It grants the host nothing unless a flag says so. |
+| `lcl-hardening` | M11 | The release gate. A deterministic seeded generator, mutation and adversarial corpora, the cross-layer invariants every stage must hold under hostile input, the performance and repeatability measurements, the product-level security matrix, the staged application ladder and the packaging smoke test. It defines no language rule and nothing depends on it: it drives the same public surfaces a user drives. |
 | `lcl-workspace` | M10 | The editor, project shell, live diagnostics, execution inspection and debugger. A loopback HTTP server on `std::net` serving a hand-written browser frontend, over the same engine the CLI uses. It holds no language rule of its own, and the page does not even highlight: token spans come from the real lexer. |
 
 ## Trust boundary (M0.1)
@@ -1011,3 +1012,66 @@ workspace serves, **byte for byte**, for `check`, `validate` and `inspect` over
 all thirteen valid canonical examples and over documents rejected at the
 lexical, grammar and resolution stages. Comparing selected fields would prove
 only that the fields someone thought of agree.
+
+## M11 — hardening, the ladder, and the release
+
+The last milestone adds no layer. It asks whether the ten below it survive a
+world that is not trying to help, and it closes a release.
+
+### What it repaired
+
+Five defects were open when it started, each blocking a canonical decision
+witness, and the executable conformance gate was withdrawing its claim because
+of three of them. All five are closed, and the gate now claims
+`semantics_conforming` over 61 executed cases with none failing.
+
+Two of the five were diagnosed differently from how they were recorded. The
+`SUM`-over-empty defect was not in the reduction, which was correct; the fault
+it raised was being discarded by the layer that demanded it, so a registered
+diagnostic was raised there or nowhere. The `core.read` range defect was two
+defects, because the parameter carrying the range never reached the operation:
+an object-valued `PARAMETER` body was read only in its inline form.
+
+### What it found
+
+A document could end the process by `SIGABRT`. Every nesting shape —
+parentheses, collections, unary prefixes, binary operands, call arguments,
+property and index chains — aborted between 2,000 and 16,000 levels. Canonical
+LCL declares no maximum nesting depth and no registered diagnostic permits an
+implementation-defined nesting rejection, so a limit was not available as a
+repair, exactly as M2 had already concluded for the parser.
+
+Two things still recursed. The static checker's expression walk now judges a
+node's descendants through an explicit worklist and never recurses into a child
+it did not have to; `children_of` answers, without judging anything, which
+children a node's judging function will ask for and with which receiving
+contract, and answers `None` for anything it cannot predict exactly, which
+costs one stack frame and changes no judgement. And `Expr`'s `Clone` is now
+iterative, like the `Drop` beside it, because every consumer that copies a
+subtree to satisfy the borrow checker was paying derived recursion.
+
+Every shape now survives 50,000 levels, the depth M2 proved for the parser.
+Nested indented bodies are the one declared bound: 512 levels, recorded in
+`reports/implementation/LCL_RELEASE_BASELINE.md` with the two paths that set it.
+
+### The ladder
+
+Four projects under `apps/`, run through the binary with an empty environment
+and exactly the capabilities they declare: a single-document calculation, a
+project with an imported rule library and one granted write, a two-phase
+pipeline with an authority override and a retry handler, and the same pipeline
+written as two sub-tasks composed by a parent phase. The last pair agree on
+every observable the engine decides, differing only in the workspace each was
+told to use.
+
+### Running it
+
+```bash
+cargo test --offline -p lcl-hardening              # the whole gate, a few minutes
+cargo test --offline -p lcl-hardening --test fuzz_stages
+cargo test --offline -p lcl-hardening --test applications
+../packaging/build_release.sh                      # the tarball, checksum and provenance
+```
+
+Every generated case is a pure function of a seed, so a failure is reproducible
+from the number the failure message prints and no corpus is stored.

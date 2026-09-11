@@ -4,7 +4,7 @@ version = 3
 
 [[package]]
 name = "lcl-capabilities"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "lcl-diagnostics",
  "lcl-spec",
@@ -12,7 +12,7 @@ dependencies = [
 
 [[package]]
 name = "lcl-checker"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "lcl-diagnostics",
  "lcl-lexer",
@@ -23,7 +23,7 @@ dependencies = [
 
 [[package]]
 name = "lcl-cli"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "lcl-capabilities",
  "lcl-lexer",
@@ -36,7 +36,7 @@ dependencies = [
 
 [[package]]
 name = "lcl-completion"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "lcl-capabilities",
  "lcl-checker",
@@ -52,7 +52,7 @@ dependencies = [
 
 [[package]]
 name = "lcl-conformance"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "lcl-capabilities",
  "lcl-checker",
@@ -69,14 +69,34 @@ dependencies = [
 
 [[package]]
 name = "lcl-diagnostics"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "lcl-spec",
 ]
 
 [[package]]
+name = "lcl-hardening"
+version = "0.1.0"
+dependencies = [
+ "lcl-capabilities",
+ "lcl-checker",
+ "lcl-completion",
+ "lcl-diagnostics",
+ "lcl-lexer",
+ "lcl-parser",
+ "lcl-project",
+ "lcl-protocol",
+ "lcl-resolver",
+ "lcl-runtime",
+ "lcl-semantics",
+ "lcl-spec",
+ "lcl-stdlib",
+ "lcl-workspace",
+]
+
+[[package]]
 name = "lcl-lexer"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "lcl-diagnostics",
  "lcl-spec",
@@ -84,7 +104,7 @@ dependencies = [
 
 [[package]]
 name = "lcl-parser"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "lcl-diagnostics",
  "lcl-lexer",
@@ -93,7 +113,7 @@ dependencies = [
 
 [[package]]
 name = "lcl-project"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "lcl-capabilities",
  "lcl-lexer",
@@ -103,7 +123,7 @@ dependencies = [
 
 [[package]]
 name = "lcl-protocol"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "lcl-capabilities",
  "lcl-checker",
@@ -120,7 +140,7 @@ dependencies = [
 
 [[package]]
 name = "lcl-resolver"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "lcl-diagnostics",
  "lcl-lexer",
@@ -130,7 +150,7 @@ dependencies = [
 
 [[package]]
 name = "lcl-runtime"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "lcl-checker",
  "lcl-diagnostics",
@@ -143,7 +163,7 @@ dependencies = [
 
 [[package]]
 name = "lcl-semantics"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "lcl-checker",
  "lcl-diagnostics",
@@ -155,11 +175,11 @@ dependencies = [
 
 [[package]]
 name = "lcl-spec"
-version = "0.0.0"
+version = "0.1.0"
 
 [[package]]
 name = "lcl-stdlib"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "lcl-capabilities",
  "lcl-checker",
@@ -174,7 +194,7 @@ dependencies = [
 
 [[package]]
 name = "lcl-workspace"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "lcl-capabilities",
  "lcl-diagnostics",

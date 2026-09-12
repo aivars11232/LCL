@@ -1013,6 +1013,35 @@ all thirteen valid canonical examples and over documents rejected at the
 lexical, grammar and resolution stages. Comparing selected fields would prove
 only that the fields someone thought of agree.
 
+The editor-save regression target also requires **Node.js 22 or newer** on PATH.
+It uses only Node built-ins; there is no npm package or production dependency.
+`tests/editor_save.cjs` loads the entire production frontend with a controlled
+DOM and drives its actual input, save and close-modal handlers. The Rust driver
+starts an owned workspace process, loads its served JavaScript, exercises real
+authenticated HTTP and checks the persisted bytes. A missing Node prerequisite
+fails the target. This evidence is distinct from a visible browser/desktop check.
+
+```bash
+node crates/lcl-workspace/tests/editor_save.cjs
+cargo test --offline -p lcl-workspace --test editor_save -- --nocapture
+```
+
+For release acceptance, point the same target at the exact extracted/installed
+candidate and its bundled specification. Both overrides are required together;
+the process receives an otherwise cleared environment, including no inherited
+`LCL_SPEC`, and uses a newly reserved project under `TMPDIR`.
+
+```bash
+LCL_EDITOR_WORKSPACE_BIN="/absolute/candidate/bin/lcl-workspace" \
+LCL_EDITOR_SPEC="/absolute/candidate/spec" \
+cargo test --offline -p lcl-workspace --test editor_save -- --nocapture
+```
+
+The log records the exercised binary and frontend SHA-256 identities. These
+checks cover failed/inactive-tab close-save, edits during save, overlapping
+saves, pending work, final-line-feed acknowledgement, discarded/reopened
+documents and refresh failure after successful persistence.
+
 ## M11 — hardening, the ladder, and the release
 
 The last milestone adds no layer. It asks whether the ten below it survive a

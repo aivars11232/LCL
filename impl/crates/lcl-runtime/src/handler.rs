@@ -35,12 +35,15 @@
 //! raising for the whole nested region, and the attempt budget is read from the
 //! registry-bounded `RETRY.LIMIT`.
 
-use crate::capability::{self, Authorized, CapabilityOutcome, CapabilityRequest, Refusal};
+use crate::capability::{
+    self, Authorized, CapabilityOutcome, CapabilityRequest, Refusal, RetryContext, RetryEvidence,
+    RetryMethod, RetryProof,
+};
 use crate::diagnostic::RuntimeError;
 use crate::eval::Fault;
 use crate::event::Disposition;
 use crate::execute::Engine;
-use crate::result::{EffectState, FailurePhase, ResultRecord};
+use crate::result::{EffectState, FailurePhase, RecordState, ResultRecord};
 use crate::state::{InvocationId, IterationPath};
 use crate::syntax::{self, DeclBlock};
 use crate::value::Value;
@@ -473,44 +476,43 @@ impl<'a> Engine<'a> {
     /// "prohibits another attempt until exact reconciliation evidence resolves
     /// the relevant state."
     fn retry_is_safe(&mut self, planned: &PlanNode, id: &InvocationId) -> bool {
-        let Some(record) = self.records.get(id).and_then(|r| r.result.as_ref()) else {
+        let Some(record) = self.records.get(id).and_then(|r| r.result.clone()) else {
             return true;
         };
-        match record.failure_phase {
-            FailurePhase::None | FailurePhase::PreEffect
-                if record.effect_state == EffectState::None =>
-            {
-                true
-            }
-            FailurePhase::Indeterminate => {
-                self.emit_at(
-                    RuntimeError::RequiredMissing,
-                    planned,
-                    id,
-                    "retry safety",
-                    "an attempt with indeterminate phase prohibits another attempt until \
-                     reconciliation evidence resolves the relevant state",
-                    FailurePhase::Indeterminate,
-                );
-                false
-            }
-            _ => {
-                // After known applied or partial effects, exact evidence is
-                // required. No host in this milestone supplies it, so a further
-                // attempt is refused rather than assumed safe: "proof that
-                // retry is unsafe uses error.operation.precondition".
-                self.emit_at(
-                    RuntimeError::OperationPrecondition,
-                    planned,
-                    id,
-                    "retry safety",
-                    "an attempt after known effects requires exact evidence that repetition \
-                     cannot duplicate a non-idempotent effect; none was supplied",
-                    FailurePhase::PostEffect,
-                );
-                false
-            }
+        if matches!(record.failure_phase, FailurePhase::None | FailurePhase::PreEffect)
+            && record.effect_state == EffectState::None
+        {
+            return true;
         }
+        let context = self.host_requests.get(id).map(|request| RetryContext {
+            request: request.clone(),
+            previous: record.clone(),
+        });
+        let evidence = context.as_ref().map(|context| self.host.retry_evidence(context));
+        let (error, detail) = match (context, evidence) {
+            (Some(context), Some(RetryEvidence::Established(proof)))
+                if retry_proof_matches(&context, &proof) =>
+            {
+                if let Some(action) = self.action_requests.get(id) {
+                    // Both the original language request and the resolved host
+                    // request must remain exact at the next attempt boundary.
+                    self.retry_guards.insert(
+                        id.next_attempt(), (action.clone(), context.request),
+                    );
+                    self.retry_proofs.push(*proof);
+                    return true;
+                }
+                (RuntimeError::RequiredMissing, "the original action request is unavailable")
+            }
+            (Some(_), Some(RetryEvidence::Unknown)) =>
+                (RuntimeError::ValueUnknown, "the host could not establish retry safety"),
+            (Some(context), Some(RetryEvidence::Unsafe(subject))) if *subject == context =>
+                (RuntimeError::OperationPrecondition, "the host proved this exact retry unsafe"),
+            _ => (RuntimeError::RequiredMissing,
+                "exact state and retry evidence for the previous request were not established"),
+        };
+        self.emit_at(error, planned, id, "retry safety", detail, record.failure_phase);
+        false
     }
 
     /// Invoke one handler's `OPERATION` under the invocation-site contract.
@@ -919,4 +921,32 @@ fn handler_parameters(
 /// unsatisfied or ends with status.failed or status.blocked."
 pub(crate) fn fallback_eligible(record: &ResultRecord) -> bool {
     matches!(record.status.as_str(), "status.failed" | "status.blocked")
+}
+
+/// Correspondence is checked by the core; capability-specific safety is the
+/// host's proof obligation. A proof cannot rewrite the previous attempt.
+fn retry_proof_matches(context: &RetryContext, proof: &RetryProof) -> bool {
+    if proof.context != *context || proof.post_state.trim().is_empty()
+        || proof.evidence.is_empty() || proof.evidence.iter().any(|item| item.trim().is_empty())
+        || proof.observed_effects.iter().any(|effect|
+            effect.state == RecordState::Indeterminate
+            || !context.request.possible_effects.contains(effect.class.as_registry_str()))
+    {
+        return false;
+    }
+    let consistent = match proof.effect_state {
+        EffectState::None => proof.observed_effects.is_empty(),
+        EffectState::Applied => !proof.observed_effects.is_empty()
+            && proof.observed_effects.iter().all(|effect| effect.state == RecordState::Applied),
+        EffectState::Partial => proof.observed_effects.iter().any(|effect| effect.state == RecordState::Partial),
+        EffectState::Indeterminate => false,
+    };
+    let uncertain = context.previous.failure_phase == FailurePhase::Indeterminate
+        || context.previous.effect_state == EffectState::Indeterminate;
+    consistent && if uncertain {
+        proof.method == RetryMethod::Reconcile
+    } else {
+        proof.effect_state == context.previous.effect_state
+            && proof.observed_effects == context.previous.observed_effects
+    }
 }

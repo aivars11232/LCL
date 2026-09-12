@@ -130,6 +130,9 @@ function Doc(id, text, digest) {
   return {
     id, text, digest,
     saved: text,
+    revision: 0,
+    pendingSaves: 0,
+    saveTail: Promise.resolve(),
     index: buildIndex(text),
     tokens: null,        // token spans from the engine
     report: null,        // the last engine report for this document
@@ -241,7 +244,9 @@ async function openDocument(id, { focusByte } = {}) {
 
 function closeDocument(id) {
   const doc = state.docs.get(id);
+  if (!doc) return;
   const drop = () => {
+    if (state.docs.get(id) !== doc) return;
     state.docs.delete(id);
     state.order = state.order.filter((x) => x !== id);
     if (state.active === id) {
@@ -255,13 +260,19 @@ function closeDocument(id) {
     }
     renderTabs(); renderTree(); render();
   };
-  if (dirty(doc)) {
+  if (dirty(doc) || doc.pendingSaves) {
     modal("Unsaved changes", (body) => {
       body.append(el("p", "", `${id} has unsaved edits.`));
     }, [
       ["Cancel", "", (close) => close()],
       ["Discard", "", (close) => { close(); drop(); }],
-      ["Save", "primary", async (close) => { close(); await save(); drop(); }],
+      ["Save", "primary", async (close) => {
+        close();
+        if (await save(doc)) {
+          if (!dirty(doc) && !doc.pendingSaves) drop();
+          else toast(`${id} still has unsaved changes.`, "warn");
+        }
+      }],
     ]);
     return;
   }
@@ -285,26 +296,56 @@ function renderTabs() {
   }
 }
 
-async function save() {
-  const doc = current();
-  if (!doc) return;
-  try {
-    const reply = await api("PUT", "/api/document", { id: doc.id }, doc.text);
+async function save(doc = current()) {
+  if (!doc || state.docs.get(doc.id) !== doc) return false;
+  // Snapshot at the user's Save action, even when an earlier save is pending.
+  const submitted = doc.text;
+  const revision = doc.revision;
+  doc.pendingSaves++;
+  const pending = doc.saveTail.then(async () => {
+    // Discard can close a document while its next save is still queued.
+    if (state.docs.get(doc.id) !== doc) return false;
+    let reply, persisted;
+    try {
+      reply = await api("PUT", "/api/document", { id: doc.id }, submitted);
+      if (!reply || reply.id !== doc.id || typeof reply.digest !== "string" ||
+          typeof reply.final_line_feed_added !== "boolean") {
+        throw new Error("The server did not acknowledge this document's save.");
+      }
+      persisted = submitted + (reply.final_line_feed_added ? "\n" : "");
+      if (reply.bytes !== buildIndex(persisted).byteLength) {
+        throw new Error("The server did not acknowledge the submitted content length.");
+      }
+    } catch (e) {
+      toast(`Not saved. ${e.message}`, "bad");
+      return false;
+    }
+    // Only acknowledged bytes form the saved baseline. Later input belongs to
+    // the next revision and must never be overwritten or marked as saved here.
+    doc.saved = persisted;
+    doc.digest = reply.digest;
+    if (doc.revision === revision && doc.text === submitted) {
+      doc.text = persisted;
+      doc.index = buildIndex(persisted);
+      if (current() === doc) code.value = persisted;
+    }
     if (reply.final_line_feed_added) {
-      doc.text += "\n";
-      code.value = doc.text;
-      doc.index = buildIndex(doc.text);
       toast("A final line feed was added, which 02_LEXICAL/01 requires.", "warn");
     }
-    doc.saved = doc.text;
-    doc.digest = reply.digest;
     renderTabs(); renderTree(); render();
     toast(`Saved ${doc.id}`, "good");
-    await loadTree();
-    await refreshTokens();
-  } catch (e) {
-    toast(`Not saved. ${e.message}`, "bad");
-  }
+    // A refresh failure cannot turn an acknowledged write into a failed save.
+    try {
+      await loadTree();
+      if (current() === doc) await refreshTokens();
+    } catch (e) {
+      toast(`Saved ${doc.id}; could not refresh the project. ${e.message}`, "warn");
+    }
+    return true;
+  }).finally(() => { doc.pendingSaves--; });
+  // A rejected UI task must not poison this document's future save queue.
+  doc.saveTail = pending.catch(() => false);
+  return pending;
 }
 
 async function reload() {
@@ -313,10 +354,11 @@ async function reload() {
   const go = async () => {
     const reply = await api("GET", "/api/document", { id: doc.id });
     doc.text = reply.text;
+    doc.revision++;
     doc.saved = reply.text;
     doc.digest = reply.digest;
     doc.index = buildIndex(doc.text);
-    code.value = doc.text;
+    if (current() === doc) code.value = doc.text;
     renderTabs(); renderTree(); render();
     await refreshTokens();
     toast(`Reloaded ${doc.id}`);
@@ -1345,6 +1387,7 @@ code.addEventListener("input", () => {
   const doc = current();
   if (!doc) return;
   doc.text = code.value;
+  doc.revision++;
   doc.index = buildIndex(doc.text);
   doc.stepAt = null;
   render();
@@ -1388,7 +1431,7 @@ $("#act-check").onclick = async () => {
 };
 $("#act-inspect").onclick = async () => { await runAnalysis(); showView("structure"); };
 $("#act-run").onclick = startRun;
-$("#act-save").onclick = save;
+$("#act-save").onclick = () => save();
 $("#act-reload").onclick = reload;
 $("#act-new").onclick = newDocument;
 

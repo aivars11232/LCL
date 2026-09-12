@@ -41,7 +41,7 @@ use crate::{
     Static, StaticError,
 };
 use lcl_lexer::Span;
-use lcl_parser::syntax::{BinaryOp, Call, Collection, Expr, LiteralKind, PropertyAccess, UnaryOp};
+use lcl_parser::syntax::{BinaryOp, Body, Call, Collection, Expr, LiteralKind, PropertyAccess, Statement, UnaryOp, Value};
 use lcl_resolver::{BindingTarget, Resolved, SourceId};
 use std::collections::BTreeMap;
 
@@ -1168,6 +1168,9 @@ impl Check<'_> {
         }
         let base = self.expression(source, &property.base, &Expected::None);
         match base.outcome {
+            Static::Value(Type::ObjectFamily) => {
+                self.schema_free_selection(source, &property.base, &property.name, property.span)
+            }
             Static::Value(Type::Object(object)) => match object.field(&property.name) {
                 Some(field) => Judgement::value(field.ty.clone()),
                 None => {
@@ -1197,6 +1200,67 @@ impl Check<'_> {
                 Judgement::rejected()
             }
         }
+    }
+
+    /// Resolve only the selected schema-free path. This keeps deeply nested
+    /// object bodies on a worklist and does not construct a recursive copy of
+    /// their entire type tree. Declaration/source identities remain exact.
+    fn schema_free_selection(&mut self, source: &SourceId, base: &Expr, key: &str, span: Span) -> Judgement {
+        enum Cursor<'a> { Expression(&'a Expr), Body(&'a Body) }
+        let resolved = self.resolved;
+        let mut cursor = Cursor::Expression(base);
+        let selection_source = source.clone();
+        let mut source = source.clone();
+        let mut keys = vec![key.to_string()];
+        let mut visited = std::collections::BTreeSet::new();
+        loop {
+            cursor = match cursor {
+                Cursor::Expression(Expr::Group(group)) => Cursor::Expression(&group.inner),
+                Cursor::Expression(Expr::Property(property)) if !property.reserved => {
+                    keys.push(property.name.clone());
+                    Cursor::Expression(&property.base)
+                }
+                Cursor::Expression(Expr::Index(index)) => {
+                    let Some(key) = self.values.get(&(source.clone(), index.index.span())).and_then(Const::text) else { break };
+                    keys.push(key.to_string());
+                    Cursor::Expression(&index.base)
+                }
+                Cursor::Expression(Expr::Call(call)) if call.is_reference() => {
+                    let Some(target) = call.reference_target() else { break };
+                    let Some(index) = self.catalog.binding(&source, target.span) else { break };
+                    if !visited.insert(index) { break; }
+                    let Some(declaration) = resolved.declarations().get(index) else { break };
+                    let Some(block) = crate::types::declaration_block(resolved, index) else { break };
+                    let Some(field) = block.field("VALUE").or_else(|| block.field("SOURCE")).or_else(|| block.field("DEFAULT")) else { break };
+                    source = declaration.source.clone();
+                    Cursor::Body(&field.body)
+                }
+                Cursor::Body(Body::Nested(nested)) => {
+                    let Some(key) = keys.pop() else { return Judgement::value(Type::ObjectFamily) };
+                    let field = nested.statements.iter().find_map(|statement| match statement {
+                        Statement::Property(property) if property.key.text == key => Some(&property.body),
+                        _ => None,
+                    });
+                    let Some(field) = field else { return Judgement::plain(Static::Missing) };
+                    Cursor::Body(field)
+                }
+                Cursor::Body(Body::Inline(Value::Expression(expr))) => {
+                    if keys.is_empty() {
+                        let judged = self.expression(&source, expr, &Expected::None);
+                        return Judgement::plain(judged.outcome);
+                    }
+                    Cursor::Expression(expr)
+                }
+                Cursor::Body(Body::Inline(Value::MultilineCollection(collection))) if keys.is_empty() => {
+                    let judged = self.expression(&source, &Expr::Collection(collection.clone()), &Expected::None);
+                    return Judgement::plain(judged.outcome);
+                }
+                _ => break,
+            };
+        }
+        self.emit(StaticError::OperatorOperand, &selection_source, span, "object_selection_type",
+            "the selected schema-free object key must have one statically known value type".into());
+        Judgement::rejected()
     }
 
     /// `REF(id).FIELD` — a registered declaration field, read before any value.
@@ -1305,6 +1369,14 @@ impl Check<'_> {
             // admitted."
             (Static::Value(Type::List(member)), Static::Value(Type::Integer)) => {
                 Judgement::value(*member)
+            }
+            (Static::Value(Type::ObjectFamily), Static::Value(Type::String)) => {
+                let Some(key) = subscript.value.as_ref().and_then(Const::text) else {
+                    self.emit(StaticError::OperatorOperand, source, index.index.span(), "index_key",
+                        "an OBJECT index selects a statically known key".into());
+                    return Judgement::rejected();
+                };
+                self.schema_free_selection(source, &index.base, key, index.span)
             }
             (Static::Value(Type::Object(object)), Static::Value(Type::String)) => {
                 // "A selected key must be statically known so the result has one
@@ -1997,9 +2069,16 @@ impl Check<'_> {
                 _ => ty.clone(),
             }),
             ResultSpec::SameNumericFamily | ResultSpec::SameFamilyNonnegative => first.cloned(),
-            ResultSpec::PromotedFamily | ResultSpec::PromotedNumericOrMeasure => {
-                self.promote(first?, second?)
-            }
+            ResultSpec::PromotedFamily => self.promote(first?, second?),
+            ResultSpec::PromotedNumericOrMeasure => match (first?, second?) {
+                (measure @ Type::Measure(_), scalar) if scalar.is_numeric() => {
+                    Some(measure.clone())
+                }
+                (scalar, measure @ Type::Measure(_)) if scalar.is_numeric() => {
+                    Some(measure.clone())
+                }
+                (left, right) => self.promote(left, right),
+            },
             ResultSpec::PromotedMemberFamily => {
                 let member = first?.member()?;
                 Some(member.clone())

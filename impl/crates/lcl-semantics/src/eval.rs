@@ -99,6 +99,18 @@ pub(crate) fn literal_value(engine: &Engine, source: &SourceId, expr: &Expr) -> 
     evaluate(engine, source, expr, 0)
 }
 
+/// A checked declaration field, preserving inline, multiline and object forms.
+pub(crate) fn field_value(
+    engine: &Engine,
+    source: &SourceId,
+    body: &lcl_parser::syntax::Body,
+) -> Option<Value> {
+    if let Some(nested) = body.as_nested() {
+        return object_value(engine, source, nested);
+    }
+    body_value(engine, source, body, 0)
+}
+
 /// The object one indented `VALUE` body declares.
 ///
 /// `03_TYPES_AND_VALUES/10`, OBJECT: "An object uses an indented VALUE block
@@ -161,11 +173,7 @@ fn body_value(
     match body {
         Body::Inline(SyntaxValue::Expression(expr)) => evaluate(engine, source, expr, depth),
         Body::Inline(SyntaxValue::MultilineCollection(collection)) => {
-            let mut members = Vec::new();
-            for member in &collection.members {
-                members.push(evaluate(engine, source, member, depth + 1)?);
-            }
-            Some(Value::List(members))
+            collection_value(engine, source, collection, depth)
         }
         Body::Nested(inner) => object_at(engine, source, inner, depth),
     }
@@ -184,13 +192,7 @@ fn evaluate(engine: &Engine, source: &SourceId, expr: &Expr, depth: usize) -> Op
             // registered name, not a material value.
             Some(Value::Identifier(ident.text.clone()))
         }
-        Expr::Collection(collection) => {
-            let mut members = Vec::new();
-            for member in &collection.members {
-                members.push(evaluate(engine, source, member, depth + 1)?);
-            }
-            Some(Value::List(members))
-        }
+        Expr::Collection(collection) => collection_value(engine, source, collection, depth),
         Expr::Unary(unary) => {
             let operand = evaluate(engine, source, &unary.operand, depth + 1)?;
             fold_unary(unary.operator, &operand)
@@ -202,6 +204,39 @@ fn evaluate(engine: &Engine, source: &SourceId, expr: &Expr, depth: usize) -> Op
         // effects, and guessing one would read an OUTPUT early.
         Expr::Property(_) | Expr::Index(_) | Expr::Type(_) => None,
     }
+}
+
+fn collection_value(
+    engine: &Engine,
+    source: &SourceId,
+    collection: &lcl_parser::syntax::Collection,
+    depth: usize,
+) -> Option<Value> {
+    if depth > MAX_DEPTH {
+        return None;
+    }
+    // Evaluate every source occurrence before collapsing any equal members.
+    // An undecidable/non-material occurrence never becomes a SET member.
+    let evaluated: Vec<_> = collection
+        .members
+        .iter()
+        .map(|member| evaluate(engine, source, member, depth + 1))
+        .collect();
+    let members: Vec<_> = evaluated.into_iter().collect::<Option<_>>()?;
+    if members.contains(&Value::Missing) {
+        return Some(Value::Missing);
+    }
+    if members.contains(&Value::Unknown) {
+        return Some(Value::Unknown);
+    }
+    let as_set = matches!(
+        engine
+            .checked
+            .annotation(source, collection.span)
+            .map(|a| &a.outcome),
+        Some(lcl_checker::Static::Value(lcl_checker::ty::Type::Set(_)))
+    );
+    Some(crate::value::collection(members, as_set))
 }
 
 fn literal_of(literal: &lcl_parser::syntax::Literal) -> Option<Value> {
@@ -226,11 +261,28 @@ fn call_value(
     depth: usize,
 ) -> Option<Value> {
     if call.is_reference() {
-        let target = match call.arguments.first()? {
-            Expr::Identifier(ident) => ident.text.as_str(),
+        let ident = match call.arguments.first()? {
+            Expr::Identifier(ident) => ident,
             _ => return None,
         };
-        return reference_value(engine, target);
+        let target = engine
+            .resolved
+            .bindings()
+            .iter()
+            .find(|binding| &binding.source == source && binding.span == ident.span)?
+            .resolved_id
+            .as_ref()?
+            .qualified();
+        if matches!(
+            engine
+                .checked
+                .annotation(source, call.span)
+                .map(|a| &a.outcome),
+            Some(lcl_checker::Static::Identity(_))
+        ) {
+            return Some(Value::Reference(target));
+        }
+        return reference_value(engine, &target);
     }
 
     let name = call.callable.text.as_str();
@@ -243,7 +295,7 @@ fn call_value(
     // layer knows exactly. The constructor set is the registry's, so an
     // unregistered callable is never folded.
     if engine.contracts.statics().constructor(name).is_some() {
-        return constructor_value(name, &arguments);
+        return constructor_value(engine, name, &arguments);
     }
 
     // A registered pure function over known arguments.
@@ -274,8 +326,11 @@ fn reference_value(engine: &Engine, id: &str) -> Option<Value> {
     None
 }
 
-fn constructor_value(name: &str, arguments: &[Value]) -> Option<Value> {
+fn constructor_value(engine: &Engine, name: &str, arguments: &[Value]) -> Option<Value> {
     match (name, arguments) {
+        ("DURATION", [value, Value::Identifier(unit)]) => {
+            engine.contracts.duration().duration(value.number()?, unit)
+        }
         ("MEASURE" | "DURATION", [value, unit]) => {
             let number = value.number()?.clone();
             let unit = match unit {

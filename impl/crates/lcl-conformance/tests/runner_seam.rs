@@ -153,3 +153,103 @@ fn an_executed_case_carries_its_source_and_its_observation() {
     assert!(case.passed());
     assert!(case.serialize().contains("SEAM-001"));
 }
+
+#[test]
+fn exact_bytes_reach_the_lexer_without_lossy_decoding() {
+    let observed = runner().run_input(
+        &lcl_resolver::SourceUnit::new(lcl_resolver::SourceId::new("bytes.lcl"), b"\xff\n"),
+        &lcl_resolver::MemoryProvider::new(),
+        &lcl_semantics::Invocation::new(),
+        &mut lcl_runtime::MockHost::new(),
+    );
+    assert_eq!(observed.reached, Reached::Lexical);
+    assert_eq!(observed.primary.as_deref(), Some("error.encoding.invalid"));
+    assert!(observed.invocations.is_empty());
+}
+
+#[test]
+fn supplied_values_and_real_imports_use_the_same_pipeline() {
+    let source = assertion_task(
+        "\nIMPORT:\n    ID: import.lib\n    SOURCE: PATH(\"lib.lcl\")\n    NAMESPACE: lib\n    VERSION: \"1.0.0\"\n",
+        "REF(input.seed) == 7 AND REF(lib.data.value) == 2",
+    ).replace("ASSERT: REF(output.seed) == 1", "ASSERT: REF(output.seed) == 7");
+    let library = data_document(&[("data.value", "INTEGER", "2")])
+        .replace("KIND: kind.data", "KIND: kind.library");
+    let mut provider = lcl_resolver::MemoryProvider::new();
+    provider.insert("lib.lcl", library.as_bytes());
+    let engine = runner();
+    let invocation = lcl_semantics::Invocation::new().with("input.seed", lcl_runtime::Value::Integer(
+        lcl_checker::numeric::Decimal::parse_integer("7").unwrap(),
+    ));
+    let run = |source: &str| engine.run_input(
+        &lcl_resolver::SourceUnit::new(lcl_resolver::SourceId::new("case.lcl"), source.as_bytes()),
+        &provider, &invocation, &mut lcl_runtime::MockHost::new(),
+    );
+    // 05_SEMANTICS/06: explicit VALUE precedes resolved invocation data.
+    let explicit = run(&source);
+    assert_eq!(judge(&Expectation::Output { id: "output.seed".into(), value: "1".into() }, &explicit), Verdict::Passed);
+    assert_eq!(explicit.primary.as_deref(), Some("error.verification.failed"));
+    let observed = run(&source.replace("    VALUE: 1\n", "    REQUIRED: FALSE\n    DEFAULT: 1\n"));
+    assert_eq!(observed.primary, None, "{}", observed.serialize());
+    assert_eq!(judge(&Expectation::Check { id: "verify.case".into(), outcome: "TRUE".into() }, &observed), Verdict::Passed);
+}
+
+#[test]
+fn attempt_assertions_reject_missing_or_extra_execution() {
+    let observed = runner().run(&assertion_task("", "REF(output.seed) == 1"));
+    let expected = Expectation::All(vec![
+        Expectation::Accepts,
+        Expectation::Attempts { declaration: "action.seed".into(), statuses: vec!["status.succeeded".into()] },
+        Expectation::AttemptField { declaration: "action.seed".into(), attempt: 0, field: "value".into(), value: "1".into() },
+        Expectation::Output { id: "output.seed".into(), value: "1".into() },
+    ]);
+    assert_eq!(judge(&expected, &observed), Verdict::Passed);
+    for statuses in [vec![], vec!["status.succeeded".into(), "status.succeeded".into()]] {
+        assert_eq!(judge(&Expectation::Attempts { declaration: "action.seed".into(), statuses }, &observed), Verdict::Failed);
+    }
+    assert_eq!(judge(&Expectation::Recovered("action.seed".into()), &observed), Verdict::Failed);
+    assert_eq!(judge(&Expectation::All(vec![]), &observed), Verdict::Failed);
+}
+
+
+#[test]
+fn source_stage_evidence_is_separate_from_semantic_execution() {
+    let engine = runner();
+    let source = data_document(&[("data.value", "INTEGER", "1")]);
+    let clean = engine.run_source(source.as_bytes());
+    assert_eq!(judge(&Expectation::SourcePass(Reached::Grammar), &clean), Verdict::Passed);
+    assert_eq!(judge(&Expectation::Accepts, &clean), Verdict::Failed);
+    assert!(clean.invocations.is_empty());
+    let malformed = source.replace("TYPE: INTEGER", "TYPE: 17");
+    let observed = engine.run_source(malformed.as_bytes());
+    assert_eq!(judge(&Expectation::SourcePass(Reached::Lexical), &observed), Verdict::Passed);
+    assert_eq!(judge(&Expectation::SourcePass(Reached::Grammar), &observed), Verdict::Failed);
+    assert!(observed.diagnostics.contains(&"error.field.type".into()));
+    let encoding = engine.run_source(b"\xff\n");
+    assert_eq!(encoding.primary.as_deref(), Some("error.encoding.invalid"));
+    assert!(encoding.input_evidence[0].contains("255"));
+    assert_eq!(judge(&Expectation::SourcePass(Reached::Lexical), &encoding), Verdict::Failed);
+    let bytes = std::fs::read(canonical_root().join("08_EXAMPLES/INVALID/10_CONTEXT_WITHOUT_SCOPE.invalid.lcl")).unwrap();
+    let context = engine.run_source(&bytes);
+    // The higher-authority block-kind rule is primary; the missing SCOPE
+    // diagnostic pinned by the illustrative example must remain in evidence.
+    assert_eq!(context.primary.as_deref(), Some("error.block.context"));
+    assert!(context.diagnostics.contains(&"error.field.required".into()));
+}
+
+#[test]
+fn rendered_evidence_contains_exact_sources_and_invocation_data() {
+    let source = data_document(&[("data.value", "INTEGER", "1")]);
+    let provider = lcl_resolver::MemoryProvider::new().with("unused.lcl", b"exact import bytes\n");
+    let invocation = lcl_semantics::Invocation::new().with("unused.input", lcl_runtime::Value::Text("supplied text".into()));
+    let observed = runner().run_input(
+        &lcl_resolver::SourceUnit::new(lcl_resolver::SourceId::new("root.lcl"), source.as_bytes()),
+        &provider, &invocation, &mut lcl_runtime::MockHost::new());
+    let rendered = observed.serialize();
+    assert!(rendered.contains("root.lcl"));
+    assert!(rendered.contains("unused.lcl"));
+    assert!(rendered.contains("101, 120, 97, 99, 116"));
+    assert!(rendered.contains("supplied text"));
+    let executed = runner().execute("source-text", "instrument", &source, Expectation::Accepts);
+    assert!(executed.serialize().contains(&format!("source: {source:?}")));
+}

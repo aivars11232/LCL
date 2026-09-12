@@ -37,8 +37,10 @@
 //! What changed at M8 is not the standard of evidence. It is that an engine now
 //! exists to supply it.
 
+pub mod obligations;
 pub mod report;
 pub mod runner;
+pub mod source_cases;
 
 pub use report::{ConformanceReport, Coverage};
 pub use runner::{
@@ -343,6 +345,20 @@ fn field(v: &Json, key: &str) -> Result<String, ConformanceError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn obligation_inventory_requires_the_approved_package() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../canonical/LCL_Core_0.1.0");
+        let spec = SpecPackage::open(&root).unwrap();
+        let inventory = obligations::Obligations::load(&spec).unwrap();
+        assert_eq!(inventory.rows().count(), 980);
+        assert_eq!(inventory.probes().count(), 2413);
+        assert_eq!(inventory.rows().filter(|r| r.id.starts_with("source/field/")).count(), 334);
+        assert_eq!(inventory.rows().filter(|r| r.id.starts_with("CLOSURE-")).count(), 66);
+        let unverified = SpecPackage::open_unverified(&root).unwrap();
+        assert!(obligations::Obligations::load(&unverified).is_err());
+    }
 
     #[test]
     fn case_state_has_no_pass_variant() {

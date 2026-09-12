@@ -17,55 +17,20 @@ mod common;
 mod witness_cases;
 
 use common::*;
-use lcl_conformance::report::{ClaimLevel, Implementation};
+use lcl_conformance::report::ClaimLevel;
 use lcl_conformance::{ConformanceReport, ExecutedCase, Runner, Verdict};
-use lcl_stdlib::{HostAdapter, MemoryFileSystem};
 use std::collections::BTreeSet;
 use witness_cases::{Plan, Probe};
 
-/// The in-memory filesystem a filesystem-shaped witness runs against.
-fn filesystem_host() -> HostAdapter {
-    let fs = MemoryFileSystem::new()
-        .with_read_scope("/case")
-        .with_scope("/case")
-        .with_file("/case/a.txt", *b"abcd")
-        .with_file("/case/lines.txt", *b"a\nb");
-    let grants = fs.grants().clone();
-    HostAdapter::new(grants).with_filesystem(fs)
-}
-
 fn execute_probe(runner: &Runner, id: &str, contract: &str, probe: &Probe) -> ExecutedCase {
-    let case_id = if probe.label.is_empty() {
-        id.to_string()
-    } else {
-        format!("{id}/{}", probe.label)
-    };
-    if probe.needs_filesystem {
-        let mut host = filesystem_host();
-        runner.execute_on(
-            &case_id,
-            contract,
-            &probe.source,
-            probe.expectation.clone(),
-            &mut host,
-        )
-    } else {
-        runner.execute(&case_id, contract, &probe.source, probe.expectation.clone())
-    }
+    probe.execute(runner, id, contract)
 }
 
 /// Run every witness and build the report.
 fn run_all() -> (ConformanceReport, Vec<(String, ExecutedCase)>) {
     let runner = runner();
     let index = index();
-    let mut report = ConformanceReport::new(
-        Implementation::under_test(
-            lcl_spec::APPROVED_PACKAGE.identity_digest,
-            spec().formal_version().to_string(),
-        ),
-        index.requirement_count(),
-        index.witnesses().iter().map(|w| w.id.clone()),
-    );
+    let mut report = ConformanceReport::for_spec(spec()).expect("complete verified inventory");
     let mut all: Vec<(String, ExecutedCase)> = Vec::new();
 
     for case in witness_cases::cases() {
@@ -189,6 +154,17 @@ fn descriptive_requirements_are_never_counted_as_executed() {
     let rendered = report.render();
     assert!(rendered.contains("799 entries, all not_executed"));
     assert!(rendered.contains("EXECUTED CASES (concrete input, observed result)"));
+}
+
+#[test]
+fn all_decision_witnesses_pass_but_do_not_substitute_for_source_and_other_contracts() {
+    let (report, all) = run_all();
+    assert_eq!(all.len(), 83);
+    assert!(report.unsupported_witnesses().is_empty(), "{:?}", report.unsupported_witnesses());
+    assert_eq!(report.failed_count(), 0);
+    assert_eq!(report.claim(), ClaimLevel::None);
+    assert!(!report.missing_probes(ClaimLevel::Source).is_empty());
+    assert!(!report.missing_probes(ClaimLevel::Semantics).is_empty());
 }
 
 #[test]

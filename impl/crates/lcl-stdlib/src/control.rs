@@ -355,7 +355,7 @@ pub(crate) fn validate(
                 // A FALSE check is a domain finding, and "valid FALSE requires
                 // at least one domain validation error".
                 Some(Value::Boolean(false)) => {
-                    errors.push(Value::Identifier("error.value.constraint".to_string()))
+                    errors.push(Value::Identifier("error.validation.failed".to_string()))
                 }
                 Some(Value::Unknown) => {
                     return Resolution::failed(
@@ -417,6 +417,9 @@ pub(crate) fn verify(
         .as_ref()
         .map(|t| pure::read_through(cx, t))
         .unwrap_or(Value::Missing);
+    // The schema records an OBJECT snapshot even when the observed target is
+    // scalar. Its domain findings remain separate from execution diagnostics.
+    let observed = Value::Object(BTreeMap::from([("target".to_string(), observed)]));
 
     match assertion_value(cx, assertion, contract, "assertion") {
         Ok(Value::Boolean(held)) => Resolution::Completed(schema::verification(
@@ -425,7 +428,7 @@ pub(crate) fn verify(
             if held {
                 Vec::new()
             } else {
-                vec![Value::Identifier("error.value.constraint".to_string())]
+                vec![Value::Identifier("error.verification.failed".to_string())]
             },
         )),
         // "verified ... UNKNOWN when [it] cannot be established."

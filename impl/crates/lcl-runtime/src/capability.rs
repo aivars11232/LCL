@@ -218,6 +218,52 @@ pub enum CapabilityOutcome {
     Unavailable(String),
 }
 
+/// Exact subject of a retry-safety query. The runtime captures the request
+/// actually sent to the host and the resulting attempt record; programs cannot
+/// construct this context or replace its authority, scope or invocation ID.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RetryContext {
+    pub request: CapabilityRequest,
+    pub previous: crate::result::ResultRecord,
+}
+
+/// The three methods admitted by the canonical known-effect retry rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetryMethod {
+    Repeat,
+    Resume,
+    Reconcile,
+}
+
+/// Host-established evidence for one exact previous attempt. This is a host
+/// attestation about a concrete capability implementation, not a language value
+/// or a generic promise that running an arbitrary process twice is safe.
+///
+/// The host must prove that this method cannot duplicate a non-idempotent
+/// effect or exceed the request's original authority, scope and post-state.
+/// The runtime verifies correspondence and concrete state before accepting it;
+/// the portable core cannot invent a host's implementation-specific proof.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RetryProof {
+    pub context: RetryContext,
+    pub method: RetryMethod,
+    pub effect_state: crate::result::EffectState,
+    pub observed_effects: Vec<ObservedEffect>,
+    /// Exact established post-state, retained separately from prior history.
+    pub post_state: String,
+    /// Concrete observation/reconciliation evidence supporting the method.
+    pub evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RetryEvidence {
+    Missing,
+    Unknown,
+    /// A proof that this exact retry subject is unsafe.
+    Unsafe(Box<RetryContext>),
+    Established(Box<RetryProof>),
+}
+
 /// The host effect boundary.
 ///
 /// Implementations live outside the language: `crate::mock::MockHost` is the
@@ -233,6 +279,13 @@ pub trait Host {
     ///
     /// Called only after both gates pass.
     fn invoke(&mut self, request: &CapabilityRequest) -> CapabilityOutcome;
+
+    /// Query evidence after a failed attempt with known or indeterminate
+    /// effects. Absence never proves safety; existing hosts deny by default.
+    /// This query must not repeat the operation or expand its permissions.
+    fn retry_evidence(&mut self, _context: &RetryContext) -> RetryEvidence {
+        RetryEvidence::Missing
+    }
 
     /// Apply one declared `RETRY.DELAY` before the next attempt.
     ///

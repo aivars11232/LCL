@@ -1,10 +1,15 @@
 # LCL-RESIDUAL-REPAIR-01 — execution record
 
-Date: 2026-09-12. Status: **STOPPED AT B3 — AMENDMENT A3 REQUIRED FOR SET
-MATERIALIZATION; A1's focused checker/direction tests pass; A2 remains approved;
-B1 / VR-01 repaired for the approved
-Linux x86_64 process-group scope; B2 / VR-04 repaired; B3–B5 and final acceptance
-remain open**.
+Date: 2026-09-12. Status: **IN PROGRESS — B3 / SORT-01, A1 and A3 verified;
+B1 / VR-01 and B2 / VR-04 retained; A2 / UI-01 verified including actual browser
+observation; B4 is in progress (66/66 decision witnesses, claim accounting still
+open); B5 and final integrated/package acceptance remain open.**
+
+The latest owner instruction explicitly approves A3 and necessary supporting
+callers/helpers/tests, and directs continuation through A2, B4, B5 and final
+verification. Earlier approval-pending stop records below are historical.
+Current continuation checkpoint: `3d55de33d17adf2dd65606dbad171d0f1359e228`.
+See the latest continuation section at the end of this report.
 
 The owner approved the Stage A plan with
 `APPROVED: IMPLEMENT LCL-RESIDUAL-REPAIR-01 EXACTLY AS PLANNED.`
@@ -486,3 +491,443 @@ empty owned tmp, no owned product processes, empty staged diff and approximately
 The new current handoff is
 `/mnt/F/.lcl-residual-repair-01-lxd8dwu8/LCL_RESIDUAL_REPAIR_01_HANDOFF_A3.txt`;
 the earlier handoff remains historical and must not revoke A1/A2 approval.
+
+
+## 2026-09-12 continuation — A3 approved, B3 verified
+
+The owner's direct instruction in attachment
+`83011386-09b0-4b4f-b4dc-a9112263b683/pasted-text.txt` explicitly approves A3,
+retains A1/A2/base approval and includes necessary existing callers, shared
+helpers and regressions. It directs implementation through final verification;
+an old handoff's pending approval is superseded. No new architecture,
+dependency or canonical decision was needed here.
+
+Fresh starting inspection confirmed `/mnt/F/LCL`, `main`, HEAD and locally
+recorded `origin/main` at `3d55de33d17adf2dd65606dbad171d0f1359e228`
+(`LCL finish v3`), with no staged, unstaged or untracked files. This is the
+owner's checkpoint containing A1 and the previously red SET controls. No pull,
+branch switch or Git mutation was performed. Existing contracts and current
+files were reconciled; Tasks 11–20 and completed B1/B2 were not restarted.
+
+### Implemented boundary repair
+
+The checked receiving annotation determines LIST versus SET for ordinary,
+multiline, nested and schema-received brackets. All source members are evaluated
+before strict-equal duplicates collapse; LIST order and duplicates remain.
+VALUE, DEFAULT and applicable ASSUME use the same field evaluator with the
+actual declaring SourceId. Existing constant and source/default/assumption
+precedence is retained. Reference identity contexts use the resolved binding;
+value dependencies are resolved by a finite worklist and completed resolutions
+are available to later reads. Resolution report order is retained, and this
+adds no producer activation or execution graph edges.
+
+Canonical normalization now lives beside the existing shared Value model.
+Runtime's order-profile module re-exports that implementation; duration factors
+load from the verified registry in preflight. SET construction and runtime
+strict equality share the same helper, including unordered nested SET equality
+and normalized TIME/DATETIME/DURATION identity. No crate or dependency was
+added. Runtime and preflight no longer carry separate normalization code.
+
+New `lcl-semantics/tests/collection_materialization.rs` executes 11 regressions:
+inline/multiline family and duplicates, empty collections, nested SET/LIST
+identity, constants/defaults and supplied/UNKNOWN precedence, normalized
+ordered values, retained reference identity, actual imported-source annotations,
+invalid later-member diagnostics, malformed multiline separators, value REF in
+both declaration orders, and a schema-received multiline SET property.
+
+### Fresh evidence and corrected expectations
+
+All Rust commands below ran from `impl/`, offline, using the existing explicit
+scratch TMPDIR and target directories. Full logs and actual `.exit` files remain
+under `/mnt/F/.lcl-residual-repair-01-lxd8dwu8/logs/`.
+
+| Gate | Exit / result | Log |
+| --- | --- | --- |
+| New preflight regressions, before repair | 101; 1 passed, 7 failed | `A3-collection-before.log` |
+| Verified duration contract loading | 0; 12 passed | `A3-contracts.log` |
+| New collection + existing data-resolution targets | 0; 11 + 26 passed, no failed/ignored | `A3-reference-resolution.log` |
+| Runtime evaluation target | 0; 60 passed, no failed/ignored | `A3-runtime-evaluation-canonical.log` |
+| Full stdlib pure_operations | 0; 23 passed, including the original equal-key SET failure and direction/stability controls | `A3-sort-full.log` |
+| `cargo fmt --all -- --check` | 0 | `A3-fmt-workspace.log` |
+| `cargo clippy --offline -p lcl-checker -p lcl-semantics -p lcl-runtime -p lcl-stdlib --all-targets -- -D warnings` | 0 | `A3-phase-clippy-corrected.log` |
+| `cargo test --offline -p lcl-checker -p lcl-semantics -p lcl-runtime -p lcl-stdlib --all-targets` | 0; 46 suites, 559 passed, 0 failed/ignored; actual Rust 1.98.1 | `A3-phase-tests.log` |
+| Same four-crate all-target `cargo check --offline --locked` | 0; actual Rust 1.75.0 | `A3-msrv-check.log` |
+| Same four-crate all-target `cargo test --offline --locked` | 0; 46 suites, 559 passed, 0 failed/ignored; actual Rust 1.75.0 | `A3-msrv-tests.log` |
+| `cargo build --offline -p lcl-cli --bin lcl` | 0 | `A3-cli-build.log` |
+| Nine actual CLI source programs, empty inherited environment | Every process exit 0, VERIFY TRUE, terminal status.succeeded, exact expected published list | `A3-cli-matrix.json`, per-case `A3-cli-*.record.json`, `.stdout.json`, `.stderr.log` |
+
+Failures remain recorded and were diagnosed before later changes:
+
+- Two new multiline fixtures omitted the commas required by
+  `04_GRAMMAR/10_COMPLETE_EBNF.ebnf:67–68`. Corrected source spelling and added a
+  discriminating rejection control for comma-free members. `A3-collection-after.log`
+  retains the grammar failures; `A3-collection-corrected-fixtures.log` passed.
+- One invocation from repository root failed to find Cargo.toml
+  (`A3-collection-confirmed.log`, exit 101). It was rerun from verified `impl/`;
+  this command-location error was not counted as a product regression.
+- The old runtime test asserted FALSE for equivalent DATETIME instants, with
+  a representation-identity rationale. Both `03_TYPES_AND_VALUES/03:17–22` and
+  `operators_and_functions_v0.1.0.json#/ordered_value_equality` require TRUE.
+  The assertion was corrected and unequal-instant/signed TIME displacement
+  controls added. `A3-runtime-evaluation.log` retains 59 passed/1 failed.
+- The new value-REF regression initially produced MISSING because all
+  resolutions were hidden in a local list until the source loop finished.
+  `A3-collection-reference-before.log` retains that red case. Dependency order
+  and incremental publication repair it without reading through stored identities.
+- `A3-phase-clippy.log` records mixed module documentation attributes and two
+  manual-contains lints. Corrected without suppression; the exact gate passed.
+
+The unchanged original standalone SET source retains SHA-256
+`b669fa17a99c0155221de1dfe324664125dedc3c1b8f2aa291af6fa6c749978d`.
+It now publishes `[1, 3]`, verifies TRUE and exits 0. The LIST counterpart keeps
+`[1, 1, 3]`. The seven CLI forms are omitted, bare/named ascending and descending,
+and DATA/constant references; their four-member LIST preserves multiplicity
+and publishes the exact expected ascending/descending list. The development
+CLI actually exercised has SHA-256
+`caeea88ab65b26cdadf366ceb755a18c17e3c55a6b6a051f1e9a65468a9de55f`.
+This is development evidence, not final candidate acceptance.
+
+A3 first-touch change order: new semantics `tests/collection_materialization.rs`;
+semantics `src/value.rs`; runtime `src/order_profile.rs`; semantics
+`src/contracts.rs`, `src/eval.rs`, `src/data.rs`; runtime `src/eval.rs`,
+`tests/evaluation.rs`; this report. Later corrections above stay in that scope.
+All current changes remain unstaged. HEAD/branch/upstream are unchanged.
+`A3-preservation.json` confirms all 192 protected files still match the original
+inventory. No canonical, artwork or historical release file was changed.
+
+**Current phase result: B3 / SORT-01, A1 and A3 FIXED with the above phase
+verification.** A2/UI-01 is approved and next. B4's version-bound claims and
+11 unestablished witnesses, B5's source-bound build/export/exact candidate,
+final workspace-wide checks and graphical acceptance remain required. No
+release-complete or full-language-conformance claim is made by this closure.
+
+
+## 2026-09-12 continuation — A2 / UI-01 verified
+
+A2 now captures the intended Doc, immutable submitted text and edit revision at
+Save, serializes that document's saves and retains a count of pending work.
+Only the response's acknowledged content (including explicit final LF) updates
+the saved baseline. Newer edits remain dirty, and an inactive save cannot
+replace the active textarea. The close modal passes its own Doc to Save and
+closes only after success with no dirty or pending work. Discard stays explicit;
+stale close callbacks cannot delete a newly reopened Doc. Save returns a Boolean
+result, checks the acknowledgement's document/byte count and separates later
+refresh failure from persistence failure. Input and reload maintain revision
+identity. Backend atomic create/save publication from B2 remains unchanged.
+
+Changes in first-touch order: new workspace `tests/editor_save.cjs`, new
+`tests/editor_save.rs`, production `assets/app.js`, `impl/README.md`, this report.
+The JS harness loads the whole unmodified production script, with a controlled
+DOM and transport. Its server mode instead fetches the actual served JavaScript,
+uses authenticated real HTTP and checks filesystem bytes. The Rust driver owns
+and bounds startup, execution and teardown; Node >=22 is an explicit test-only
+prerequisite, with no npm or new Rust dependency. Paired
+`LCL_EDITOR_WORKSPACE_BIN` / `LCL_EDITOR_SPEC` overrides select an exact candidate
+and bundled specification for the later release gate. Missing prerequisites or
+only one override fail the test.
+
+### Fresh acceptance evidence
+
+Logs below are in the existing scratch `logs/` directory; command exits are
+captured separately in `.exit` files. Rust commands use the same explicit scratch
+TMPDIR/targets and run from `impl/`.
+
+| Gate | Exit / observed result | Log |
+| --- | --- | --- |
+| `node impl/crates/lcl-workspace/tests/editor_save.cjs`, before repair, from repo root | 1; 2 controls pass, 9 acceptance cases fail | `A2-editor-controlled-before.log`, `A2-editor-controlled-red-confirmed.log` |
+| `cargo test --offline -p lcl-workspace --test editor_save -- --nocapture`, before repair | 101; the same 9 cases fail against served JS + real HTTP/disk | `A2-editor-http-before.log` |
+| Controlled whole-script harness after repair | 0; 11 pass, 0 fail/skip | `A2-editor-controlled-after.log` |
+| Actual served-script HTTP/disk target after repair | 0; all 11 cases pass inside one Rust integration test | `A2-editor-http-after.log` |
+| `cargo clippy --offline -p lcl-workspace --all-targets -- -D warnings` | 0 | `A2-clippy.log` |
+| `cargo test --offline -p lcl-workspace --all-targets` | 0; 11 suites, 87 passed, 0 failed/ignored; Rust 1.98.1 | `A2-workspace-tests.log` |
+| `cargo check --offline --locked -p lcl-workspace --all-targets` | 0; actual Rust 1.75.0 | `A2-msrv-check.log` |
+| `cargo test --offline --locked -p lcl-workspace --all-targets` | 0; 11 suites, 87 passed, 0 failed/ignored; actual Rust 1.75.0 | `A2-msrv-tests.log` |
+| `cargo fmt --all -- --check` | 0 | `A2-fmt.log` |
+| Owned Firefox graphical acceptance script | 0; three demonstrated UI-01 cases pass in real headed Firefox | `A2-firefox-acceptance.log`, `A2-firefox-report.json` |
+
+The 11 harness cases cover failed close-save, closing inactive A with dirty
+active B, newer edits during a delayed acknowledgement, LF handling after a tab
+switch, serialized overlapping saves, edits during close-save, pending save
+with text reverted to the old baseline, discard/reopen before an old response,
+Cancel/Discard, successful toolbar Save for a legacy name containing spaces,
+and project-list refresh failure after successful persistence. The new harness
+was tightened before product edits to settle held promises even on failed
+assertions and assert the newer buffer state before the new return-value rule.
+The same nine acceptance failures remained; no product oracle was weakened.
+
+### Actual browser observation, not the DOM double
+
+The preferred browser plugin could not initialize: its client import was refused
+with `Importing module "node:process" is not allowed in node_repl`. Its prescribed
+bootstrap troubleshooting offered no applicable recovery before initialization.
+The available native fallback was then verified from Mozilla's documentation:
+[direct Firefox BiDi connection](https://developer.mozilla.org/en-US/docs/Web/WebDriver/How_to/Create_BiDi_connection)
+and [isolated instance/profile arguments](https://firefox-source-docs.mozilla.org/browser/CommandLineParameters.html).
+
+An owned scratch script `A2-firefox-acceptance.cjs` started the real product and
+Firefox 155.0.1 with a fresh profile, private HOME/XDG paths, `--no-remote`, a
+loopback debugging port and the existing Wayland display. Firefox's returned
+capabilities explicitly record `moz:headless: false`. It drove pointer and
+keyboard actions on actual UI controls, without replacing production save logic:
+
+- Dirty inactive A saved and closed; B's textarea stayed unchanged and dirty;
+  disk held A's submitted text and B's previous saved text.
+- A controlled filesystem refusal (the test document path temporarily occupied
+  by an owned directory) produced the real error toast and retained the visible
+  buffer/tab. The fixture's original saved file was preserved and restored.
+- A BiDi network intercept held the actual PUT response after the server had
+  persisted it; further keyboard edits remained visible and modified after the
+  acknowledgement was released. Disk still held only the submitted version.
+
+The three screenshots were opened and visually inspected:
+`A2-firefox-inactive-saved.png`, `A2-firefox-save-refused.png`, and
+`A2-firefox-newer-edits.png`. Additional initial/modal captures and the full
+`A2-firefox-protocol.jsonl` are retained. The deliberately plain editing strings
+are lexically invalid LCL, which the real diagnostics panel reports; these are
+save-integrity checks, not valid-program execution evidence. The header artwork
+was visibly present and decoded at its original 97-pixel width. Final packaged
+application/desktop launcher checks still belong to B5.
+
+The exact development workspace exercised has SHA-256
+`9de91ec4ea1c9dd2bdfc0b9a8dc1aecef274b4a385d3a39073a449eacd234a77`;
+served production `app.js` has SHA-256
+`f281ec49f8f60a7f95a379df157b31e3251168c04789b009045584d6e5254b65`.
+The owned browser/project profile is retained under scratch
+`A2-firefox-s73VUP/`. Both process groups were terminated/reaped;
+`A2-firefox-cleanup.json` records no remaining members. No real installation,
+existing browser profile, desktop default or artwork was changed.
+`A2-preservation.json` confirms all 192 protected file hashes match. HEAD remains
+`3d55de33d17adf2dd65606dbad171d0f1359e228`; all current changes remain unstaged.
+
+**Current phase result: A2 / UI-01 FIXED, with controlled frontend, actual
+HTTP/disk and actual graphical evidence.** Next is B4: the canonical-backed
+claim inventory and all 11 previously unestablished witnesses. B5 and final
+integrated/export/exact candidate/desktop acceptance remain required.
+
+## 2026-09-12 continuation — B4 ten-witness checkpoint, not phase closure
+
+HEAD remains `3d55de33d17adf2dd65606dbad171d0f1359e228`, branch `main`.
+The approved sequential implementation continues. All edits remain unstaged.
+`LCL_CONFORMANCE_OBLIGATIONS.md` now records the canonical basis, required source
+and semantic evidence families, exact-subprobe accounting requirements and the
+eleven previously unestablished witnesses. The verified obligation constructor,
+complete source-case population and replacement claim logic are **still open**.
+
+The following ten witnesses now have passing concrete probes in the shared
+production/test runner: CLOSURE-004, 006, 021, 022, 023, 024, 027, 055, 058 and
+060. CLOSURE-059 remains unestablished; its old descriptive explanation is not
+accepted as justification and the approved retry-evidence repair remains next.
+
+- CLOSURE-004 exposed an implementation defect: the runtime returned declaration
+  field source spelling as STRING although the checker assigned PATH. Runtime
+  metadata evaluation now evaluates the selected expression in its declaring
+  source context, preserving its value type without reading the unbound OUTPUT.
+  The witness checks both the PATH metadata and the still-MISSING output value.
+- CLOSURE-006 compares same and different stored reference identities while the
+  referents have equal INTEGER values. The existing engine passes.
+- CLOSURE-021 groups three typed OBJECT declarations through ordinary value
+  references into an a/b/a LIST, and checks group keys, group order, duplicate
+  occurrences and member order. The existing engine passes.
+- CLOSURE-055 executes legal AFTER and rejects reversed BEFORE ordering.
+- CLOSURE-058 exposed absent static loop-output scope validation. The resolver's
+  candidate-graph pass now checks value reads against producer loop paths.
+  Seven focused tests cover outside assertions/material values/defaults,
+  metadata/reference identity exemptions, operator context boundaries, nested
+  parameters, EXECUTE exports, conditions and same-iteration reads. Conditions,
+  nested parameters and EXECUTE exports were initially missed by the first
+  implementation; those discriminating tests were red and now pass.
+- CLOSURE-022/023/024 use a bounded host read fixture and the actual standard
+  library: one failure then success gives exactly two attempts; WHEN FALSE
+  leaves one failed attempt and an unbound output; three failures exhaust LIMIT
+  2 with exactly three attempts. Host permission restricts the fixture to its
+  exact PATH and operation; no fixture process or network service is used.
+- CLOSURE-027 observes recovery, retained original diagnostic, successor
+  invocation and output publication. Its absent-successor control refuses with
+  error.execution.order under the canonical core.continue contract.
+- CLOSURE-060 imports a complete valid kind.task document with targetless VERIFY
+  FALSE. Import alone leaves it inactive; an explicit prerequisite selects it.
+  A kind.library fixture was correctly rejected because that kind forbids
+  VERIFY; the corrected fixture preserves the witness's actual requirement.
+
+The runner now accepts source bytes, a provider and typed invocation data through
+one shared entry point and records actual invocation/attempt/result/event
+evidence. Its expectations can require every assertion, exact attempt sequences,
+retained diagnostic presence/absence, recovery, result fields and publications.
+Eleven instrument tests cover raw invalid UTF-8, imports, supplied data and exact
+attempt accounting. These tests remain instrument evidence, not additional
+language witnesses. Both decision_witnesses and m8_conformance_report now call
+the same probe executor and fixture setup.
+
+Fresh current-toolchain gates (rustc/cargo 1.98.1, offline; each actual exit 0):
+
+| Log stem in owned scratch `logs/` | Command / evidence |
+| --- | --- |
+| B4-partial-clippy | `cargo clippy --offline -p lcl-resolver -p lcl-runtime -p lcl-conformance --all-targets -- -D warnings` |
+| B4-partial-tests | `cargo test --offline -p lcl-resolver -p lcl-runtime -p lcl-conformance --all-targets`: 30 suites, 357 passed, 0 failed/ignored |
+| B4-output-contexts-typed | `cargo test --offline -p lcl-resolver --test output_instances -- --nocapture`: 7 passed |
+| B4-runner-input-evidence-valid-default | `cargo test --offline -p lcl-conformance --test runner_seam`: 11 passed |
+| B4-ten-witness-report | `cargo run --offline -p lcl-conformance --example m8_conformance_report`: 80 executed probes, 80 passed, 0 failed; 65/66 unique witnesses |
+
+All full logs, actual `.exit` files, and failed predecessors remain under
+`/mnt/F/.lcl-residual-repair-01-lxd8dwu8/logs/`. The new, nonoverwritten
+`B4-ten-witness-checkpoint.json` records every B4 gate exit, test totals and log
+hash. It also verifies that all 192 protected canonical/artwork/historical
+release files still match the original preservation inventory.
+
+Failed predecessors are not acceptance evidence. They include the original
+metadata and output-scope reds; malformed test syntax corrected against the
+canonical grammar/field registry; one edit attempted from the wrong directory
+that changed no file; a Rust reference-list inference error; fixture integer
+constructor/type mistakes; and the supplied-value fixture's initially wrong
+precedence expectation. The latter now retains a discriminating control proving
+explicit VALUE wins, followed by an optional DEFAULT case proving supplied data
+wins over DEFAULT, exactly as 05_SEMANTICS/06 requires. No language expectation
+was weakened to accommodate an implementation defect.
+
+**B4 remains IN PROGRESS.** The report's current `source_conforming` line is
+generated by the old category-hit accounting and is not accepted as proof of
+source completeness. The required inventory/claim repair, remaining CLOSURE-059,
+final formatting and actual Rust 1.75 phase/integrated verification remain open.
+B5 has not begun and no new final candidate has been built or tested.
+
+
+## 2026-09-12 continuation — all decision witnesses executable; B4 accounting open
+
+The shared production/test runner now executes 83 passing probes covering all 66
+canonical decision witnesses. CLOSURE-059 adds three bounded partial-command
+cases: successful proven retry, absent-proof refusal, and exhausted final partial
+attempt. They assert initial MISSING bindings, exact attempt order, retained
+partial stdout, accepted proof count, final bound/partial publication and correct
+exhaustion presence/absence. No remaining decision-witness ID is descriptive.
+This closes the previously missing eleven witnesses, not the full B4 obligation
+or conformance-accounting requirement.
+
+Two demonstrated retry-path defects were repaired. Host retry evidence is now
+queried and checked against the exact prior request/result, original authority,
+scope, target and parameters. Missing/unknown/proved-unsafe evidence maps to the
+canonical required.missing/value.unknown/operation.precondition diagnostics.
+Mismatched or incomplete proof cannot authorize another attempt. Indeterminate
+state requires concrete reconciliation. Accepted proof is retained separately;
+prior attempt results are unchanged, and original/resolved requests are guarded
+at the next dispatch. Existing hosts supply no retry proof by default.
+
+An incomplete native command stream was incorrectly marked fully bound. Runtime
+projection now applies the schema's partial-output policy to incomplete stdout
+and stderr; a projection mixing an incomplete stream with a non-partial field
+stays unbound. Pre-effect failures cannot bind output. Full completed projections
+retain ordinary binding. The CLOSURE-059 red exposed this rather than weakening
+its expectation.
+
+Fresh current-toolchain (Rust 1.98.1) gates, logs under the same owned `logs/`:
+
+| Log stem | Actual exit | Result |
+| --- | --- | --- |
+| B4-retry-proof-matrix-before | 101 | Intentional red: two tests failed, 24 passed; host evidence never queried |
+| B4-retry-proof-handler | 0 | 26 failure-handling tests passed |
+| B4-retry-proof-reconciliation | 0 | 27 passed; exact proof, reconciliation and fourteen refusal controls |
+| B4-retry-observations | 0 | 11 runner instrument tests passed |
+| B4-059-partial-command | 101 | Fixture compile error: Decimal module path; corrected against existing API |
+| B4-059-command-decimal | 101 | Runtime defect: incomplete streams incorrectly fully bound |
+| B4-059-partial-projection | 0 | Full semantic_case_execution gate, including all three new cases |
+| B4-all-witness-runtime-gate | 0 | `cargo test --offline -p lcl-runtime -p lcl-stdlib -p lcl-conformance -p lcl-completion --all-targets`: 38 suites, 433 passed, 0 failed/ignored |
+| B4-all-witness-clippy | 0 | Same four crates, `cargo clippy --offline ... --all-targets -- -D warnings` |
+| B4-66-witness-report | 0 | Production m8_conformance_report: 83 probes passed, 0 failed, 66/66 witnesses |
+
+All 192 protected files still match the starting inventory at this checkpoint.
+The production report still uses the old category/prefix accounting; its claim
+line is NOT accepted as source or semantic completeness. Next: version-bound
+complete obligation inventory, source/semantic evidence population and exact
+sub-probe accounting, followed by B5 and final integrated/candidate verification.
+Formatting and Rust 1.75 verification of the B4 changes remain pending.
+
+## 2026-09-12 continuation — verified source obligations and claim accounting
+
+B4 accounting now uses the embedded, digest-pinned 0.1.0 inventory bound to the
+approved canonical package identity: 980 obligations requiring 2,413 exact probe
+IDs. The caller cannot construct a shortened authoritative inventory. All required
+sub-probes must pass exactly once; missing, failed, duplicate, irrelevant, empty
+input and falsely supplied verdict records cannot fill the tested gaps. Legacy
+caller-count reports are descriptive only. Synthetic accounting tests remain
+instrument tests, never engine conformance evidence.
+
+The actual shared source runner executes all 2,011 source probes: all canonical
+fixtures and examples, exact/case keyword checks, admitted/excluded symbols, all
+registered blocks and parent contexts, all 334 field uses with every admitted
+form and absence/cardinality/invalid-form controls, plus the grammar families.
+A faithful local SCHEMA fixture exposed a parser defect: its nested FIELD bodies
+were processed as object data. The parser now validates local FIELD declarations
+against their registered schema; eleven document-structure tests pass including
+legal local fields and forbidden/malformed controls. The earlier multiline-string
+fixture failures were corrected against canonical content indentation.
+
+Fresh logs and actual exits in the owned logs directory:
+- B4-obligation-inventory, B4-claim-obligations, B4-verified-witness-report: 0.
+- B4-local-schema-before: 101 (intentional red); B4-local-schema-after: 0.
+- B4-complete-source-matrix: 0, all 2,011 source probes pass.
+- B4-source-production-report: 0, 2,094 executed/passed, zero failed, all 66
+  witnesses established, no missing source probes, 319 missing semantic probes.
+  The report now supports source_conforming under the complete source inventory.
+- B4-source-phase-tests: 0, parser and conformance all-target gate.
+
+All 192 protected files match the starting inventory. B4 remains incomplete:
+the 319 additional semantic obligations require concrete executable evidence;
+formatting, actual Rust 1.75 and final integrated gates remain pending. B5 and
+the exact final candidate verification have not started. No Git closure occurred.
+
+## 2026-09-12 continuation — additional semantic cases and two checker repairs
+
+The additional semantic population is in progress, not yet included in the
+production report. `tests/semantic_cases.rs` executes 191 type, operator,
+function, status-transition and diagnostic-contract groups with 849 sub-runs.
+`tests/operation_cases.rs` executes 117 current operation binding/error/effect
+groups with 1,708 sub-runs. Each group retains ordered exact sub-inputs, expected
+results and observations. Component contracts (registry metadata, lifecycle,
+default application and profile selection) are explicitly distinguished from
+source-through-engine executions. The 799 descriptive entries remain descriptive.
+
+Two faithful positive cases exposed additional existing checker defects:
+- Registered MEASURE times INTEGER/DECIMAL, and scalar times MEASURE, were rejected
+  because result promotion discarded the measure family. The result-type branch
+  now preserves the measure operand and exact unit after overload admission.
+- A bare OBJECT declaration's written field types were unavailable to property
+  and index selection. The checker now follows the selected schema-free field
+  path and source references, preserves declaring SourceId, and returns MISSING
+  for absent schema-free keys. The traversal uses an explicit cursor and rejects
+  declaration cycles. Closed schemas, exact receiving types and runtime-varying
+  index rejection remain covered. Nested/forwarded selection controls pass.
+
+New gates under the existing owned logs directory (real exits):
+- B4-grouped-runner: 0; grouped evidence rejects missing/failed/inputless runs.
+- B4-semantic-types: 101, fixture issues; B4-semantic-types-canonical: 0.
+  Corrected ITEM simple identifiers, object-body whitespace, and the exact
+  collection.heterogeneous diagnostic for an incompatible declared item type.
+- B4-semantic-expressions and B4-expression-fixture-controls: 101. Faithful
+  measure/object reds remained; glob full-string and metadata/type fixtures were
+  corrected against canonical contracts, not weakened to accept engine defects.
+- B4-measure-products-fixed: 0; B4-schema-free-selection: 0.
+- B4-object-selection-controls: 101 for an ambiguous dotted fixture spelling;
+  B4-object-selection-grouped: 0 after parenthesizing the intermediate selector.
+- B4-checker-phase: 0, full checker all-target gate.
+- B4-status-error-contracts: 0, 191 groups and 849 sub-runs.
+- B4-operation-binding: 101, fixture JSON number API compile mismatch;
+  B4-operation-binding-json: 101, qualified format default typed as STRING in
+  the oracle; B4-operation-binding-default-types: 0, 39 groups/525 sub-runs.
+- B4-operation-binding-errors: 0, 78 groups/739 sub-runs.
+- B4-operation-effects: 101, fixture set/slice API compile mismatch;
+  B4-operation-effects-sets: 0, 117 groups/1,708 sub-runs.
+
+The operation population includes concrete required/duplicate/unknown binding
+failures, unresolved targets, declared numeric bounds, forbidden memory mutation,
+exact fresh-filesystem post-states, default absence/MISSING/preserved-value cases,
+resolved effect bounds, determinism modes, and required-profile missing/ambiguous/
+incomplete/out-of-bounds controls. Absent analysis, reporting, generation,
+conversion and package profiles are recorded as explicit precondition refusals,
+not as successful capability execution. The remaining operation-specific error
+clauses and capability coverage still require a completeness review.
+
+OPEN: nine result-schema groups, diagnostic-policy and failure-lifecycle groups;
+remaining overload/special-value and operation-specific sub-probe completeness;
+private inventory pinning of exact semantic sub-run membership and rejection of
+omitted sub-runs; production population integration; formatting, clippy, actual
+Rust 1.75 and integrated gates. All 192 protected files still match. B5 and exact
+final candidate verification have not started. No staging, commit or push.

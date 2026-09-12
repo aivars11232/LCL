@@ -23,6 +23,154 @@ mod common;
 use common::execute_with;
 use lcl_runtime::{CapabilityOutcome, MockHost, Observation, RuntimeError};
 
+#[derive(Debug, Clone, Copy)]
+enum ProofMode { Missing, Unknown, Unsafe, Exact, Stale, Target, Authority, Scope, State, Empty, Reconciled, Unreconciled, NoPostState, FalseState, ForeignEffect, Parameters }
+
+/// A bounded replacement-write model. Partial bytes and the exact final content
+/// are observable; replacing the same target with those bytes is idempotent.
+struct ReplacementHost {
+    mode: ProofMode,
+    calls: usize,
+    queries: usize,
+    bytes: Vec<u8>,
+}
+
+impl lcl_runtime::Host for ReplacementHost {
+    fn permits(&mut self, request: &lcl_runtime::CapabilityRequest) -> lcl_runtime::Permission {
+        if request.operation == "core.write" && request.target.as_ref() == Some(&lcl_runtime::Value::Constructed {
+            constructor: "PATH".into(), text: "/srv/data/report.txt".into(),
+        }) && request.parameters.get("content") == Some(&lcl_runtime::Value::Text("the written content".into())) {
+            lcl_runtime::Permission::Granted
+        } else { lcl_runtime::Permission::Denied("outside exact replacement fixture".into()) }
+    }
+
+    fn invoke(&mut self, request: &lcl_runtime::CapabilityRequest) -> CapabilityOutcome {
+        assert!(self.calls < 2, "no third attempt belongs to this fixture");
+        assert_eq!(request.invocation.attempt, self.calls);
+        self.calls += 1;
+        let partial = self.calls == 1;
+        self.bytes = if partial { b"the written".to_vec() } else { b"the written content".to_vec() };
+        let mut observation = Observation::none()
+            .with("changed", lcl_runtime::Value::Boolean(true))
+            .with("target", request.target.clone().expect("exact replacement target"))
+            .with_effect(lcl_runtime::ObservedEffect {
+            class: lcl_runtime::EffectClass::Filesystem,
+            state: if partial && matches!(self.mode, ProofMode::Reconciled | ProofMode::Unreconciled) { lcl_runtime::RecordState::Indeterminate } else if partial { lcl_runtime::RecordState::Partial } else { lcl_runtime::RecordState::Applied },
+            target: Some("/srv/data/report.txt".into()),
+            evidence: vec![format!("fixture bytes: {}", String::from_utf8(self.bytes.clone()).unwrap())],
+        });
+        if partial {
+            observation.host_limited = true;
+            CapabilityOutcome::Failed { detail: "replacement interrupted after known prefix".into(), observation }
+        } else {
+            CapabilityOutcome::Completed(observation)
+        }
+    }
+
+    fn retry_evidence(&mut self, context: &lcl_runtime::capability::RetryContext) -> lcl_runtime::capability::RetryEvidence {
+        use lcl_runtime::capability::{RetryEvidence, RetryMethod, RetryProof};
+        self.queries += 1;
+        assert_eq!(self.calls, 1);
+        assert_eq!(self.bytes, b"the written");
+        let mut proof = RetryProof {
+            context: context.clone(), method: RetryMethod::Repeat,
+            effect_state: context.previous.effect_state,
+            observed_effects: context.previous.observed_effects.clone(),
+            post_state: "exact replacement bytes at /srv/data/report.txt; no other target".into(),
+            evidence: vec!["observed prefix is the written; repeated replacement writes the written content under the same request and authority".into()],
+        };
+        match self.mode {
+            ProofMode::Missing => return RetryEvidence::Missing,
+            ProofMode::Unknown => return RetryEvidence::Unknown,
+            ProofMode::Unsafe => return RetryEvidence::Unsafe(Box::new(context.clone())),
+            ProofMode::Exact => {},
+            ProofMode::Stale => proof.context.request.invocation.attempt += 1,
+            ProofMode::Target => proof.context.request.target = None,
+            ProofMode::Authority => proof.context.request.authorization.operation = "core.append".into(),
+            ProofMode::Scope => proof.context.request.authorization.scope = Some("scope.other".into()),
+            ProofMode::State => proof.context.previous.observed_effects.clear(),
+            ProofMode::Empty => proof.evidence.clear(),
+            ProofMode::NoPostState => proof.post_state.clear(),
+            ProofMode::FalseState => proof.effect_state = lcl_runtime::EffectState::Applied,
+            ProofMode::ForeignEffect => proof.observed_effects[0].class = lcl_runtime::EffectClass::Network,
+            ProofMode::Parameters => { proof.context.request.parameters.clear(); },
+            ProofMode::Reconciled | ProofMode::Unreconciled => {
+                proof.effect_state = lcl_runtime::EffectState::Partial;
+                proof.observed_effects[0].state = lcl_runtime::RecordState::Partial;
+                proof.evidence.push("readback reconciles the exact target to the written prefix".into());
+                if matches!(self.mode, ProofMode::Reconciled) { proof.method = RetryMethod::Reconcile; }
+            },
+        }
+        RetryEvidence::Established(Box::new(proof))
+    }
+}
+
+fn replacement_retry(mode: ProofMode) -> (lcl_runtime::Execution, ReplacementHost) {
+    let source = writing_retry_document(2).replace("TARGET: REF(input.file)", "TARGET: PATH(\"/srv/data/report.txt\")");
+    let fixture = common::fixture(&source);
+    let mut host = ReplacementHost { mode, calls: 0, queries: 0, bytes: vec![] };
+    let execution = lcl_runtime::Runtime::new(common::contracts())
+        .execute(&fixture.planned, &fixture.checked, &fixture.resolved, &mut host).unwrap();
+    (execution, host)
+}
+
+#[test]
+fn exact_host_evidence_allows_only_the_proved_replacement_retry() {
+    let (execution, host) = replacement_retry(ProofMode::Exact);
+    assert_eq!(host.calls, 2, "{}", execution.serialize());
+    assert_eq!(host.queries, 1);
+    assert_eq!(host.bytes, b"the written content");
+    assert_eq!(execution.primary(), None, "{}", execution.serialize());
+    assert_eq!(execution.retry_proofs().len(), 1);
+    let attempts: Vec<_> = execution.invocations().iter().filter(|r| r.declaration.as_deref() == Some("action.fetch")).collect();
+    assert_eq!(attempts.len(), 2);
+    assert_eq!(attempts[0].result.as_ref().unwrap().effect_state, lcl_runtime::EffectState::Partial);
+    assert_eq!(attempts[1].result.as_ref().unwrap().effect_state, lcl_runtime::EffectState::Applied);
+    assert!(!execution.diagnostics().iter().any(|d| d.id == RuntimeError::RetryExhausted));
+}
+
+#[test]
+fn reconciliation_resolves_indeterminate_state_without_rewriting_history() {
+    let (execution, host) = replacement_retry(ProofMode::Reconciled);
+    assert_eq!(host.calls, 2, "{}", execution.serialize());
+    assert_eq!(host.queries, 1);
+    assert_eq!(execution.primary(), None, "{}", execution.serialize());
+    let first = execution.invocations().iter().find(|r| r.declaration.as_deref() == Some("action.fetch") && r.id.attempt == 0).unwrap();
+    assert_eq!(first.result.as_ref().unwrap().effect_state, lcl_runtime::EffectState::Indeterminate);
+    assert_eq!(execution.retry_proofs()[0].effect_state, lcl_runtime::EffectState::Partial);
+    assert_eq!(execution.retry_proofs()[0].context.previous, *first.result.as_ref().unwrap());
+}
+
+#[test]
+fn absent_unknown_unsafe_and_mismatched_retry_evidence_fail_closed() {
+    let mut failures = Vec::new();
+    for (mode, required) in [
+        (ProofMode::Missing, RuntimeError::RequiredMissing),
+        (ProofMode::Unknown, RuntimeError::ValueUnknown),
+        (ProofMode::Unsafe, RuntimeError::OperationPrecondition),
+        (ProofMode::Stale, RuntimeError::RequiredMissing),
+        (ProofMode::Target, RuntimeError::RequiredMissing),
+        (ProofMode::Authority, RuntimeError::RequiredMissing),
+        (ProofMode::Scope, RuntimeError::RequiredMissing),
+        (ProofMode::State, RuntimeError::RequiredMissing),
+        (ProofMode::Empty, RuntimeError::RequiredMissing),
+        (ProofMode::Unreconciled, RuntimeError::RequiredMissing),
+        (ProofMode::NoPostState, RuntimeError::RequiredMissing),
+        (ProofMode::FalseState, RuntimeError::RequiredMissing),
+        (ProofMode::ForeignEffect, RuntimeError::RequiredMissing),
+        (ProofMode::Parameters, RuntimeError::RequiredMissing),
+    ] {
+        let (execution, host) = replacement_retry(mode);
+        let errors: Vec<_> = execution.diagnostics().iter().map(|d| d.id).collect();
+        if host.calls != 1 || host.queries != 1 || !errors.contains(&required)
+            || errors.contains(&RuntimeError::RetryExhausted) || !execution.retry_proofs().is_empty() {
+            failures.push(format!("{mode:?}: calls={} queries={} errors={errors:?}; required {required}", host.calls, host.queries));
+        }
+        assert_eq!(host.bytes, b"the written");
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 /// A `kind.task` document whose one action declares a `RETRY` and a handler.
 fn retry_document(limit: u32, when: Option<&str>, handler_operation: &str) -> String {
     let when_line = when
@@ -155,7 +303,9 @@ fn unavailable(reason: &str) -> CapabilityOutcome {
 }
 
 fn completed() -> CapabilityOutcome {
-    CapabilityOutcome::Completed(Observation::none())
+    CapabilityOutcome::Completed(Observation::none()
+        .with("value", lcl_runtime::Value::Text("inspection completed".into()))
+        .with("evidence", lcl_runtime::Value::List(Vec::new())))
 }
 
 // ---------------------------------------------------------------------------

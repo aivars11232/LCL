@@ -30,8 +30,8 @@
 
 use lcl_checker::{Checked, Checker, Contracts as StaticContracts};
 use lcl_completion::{Completion, Contracts as CompletionContracts};
-use lcl_lexer::Lexicon;
-use lcl_parser::Grammar;
+use lcl_lexer::{Lexer, Lexicon};
+use lcl_parser::{Grammar, Parser};
 use lcl_resolver::{MemoryProvider, Resolver, Rules, SourceId, SourceUnit};
 use lcl_runtime::{Contracts as RuntimeContracts, Host, MockHost, Runtime};
 use lcl_semantics::{Contracts as PreflightContracts, Invocation, Outcome, Preflight};
@@ -41,8 +41,9 @@ use std::cell::RefCell;
 use std::fmt;
 
 /// The furthest canonical stage a source reached.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Reached {
+    #[default]
     Lexical,
     Grammar,
     Resolution,
@@ -75,8 +76,12 @@ impl fmt::Display for Reached {
 /// What the engine actually did with one concrete source.
 ///
 /// Every field is an observation. Nothing here is a judgement.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Observed {
+    /// Ordered independent sub-runs, each retaining its own exact inputs.
+    pub runs: Vec<Observed>,
+    /// Exact return values of a named production component API invocation.
+    pub component: Vec<(String, String)>,
     /// The furthest stage the source reached.
     pub reached: Reached,
     /// The registered identifier of the first unhandled diagnostic, if any.
@@ -85,30 +90,57 @@ pub struct Observed {
     pub primary_stage: Option<String>,
     /// Every registered identifier any stage produced, in stage order.
     pub diagnostics: Vec<String>,
+    /// Exact source-stage byte loci, retained independently of diagnostic IDs.
+    pub diagnostic_loci: Vec<(String, usize, usize)>,
     /// The one terminal status, when the invocation completed.
     pub terminal_status: Option<String>,
     /// Each post-execution check and the Boolean domain outcome it recorded.
     pub checks: Vec<(String, String)>,
     /// Each declared root output and its publication, rendered.
     pub outputs: Vec<(String, String)>,
+    /// Actual entered invocations, including ordered retry attempt results.
+    pub invocations: Vec<lcl_runtime::InvocationRecord>,
+    /// Actual diagnostic-driven event selection and recovery records.
+    pub events: Vec<lcl_runtime::EventRecord>,
+    /// Exact accepted host retry evidence, separate from unchanged attempt history.
+    pub retry_proofs: Vec<lcl_runtime::capability::RetryProof>,
+    /// Exact input bytes and fixture data, with deterministic explicit encoding.
+    pub input_evidence: Vec<String>,
 }
 
 impl Observed {
     /// A canonical, order-stable rendering, for evidence in a report.
     pub fn serialize(&self) -> String {
         let mut out = format!("reached={}", self.reached);
+        for (index, run) in self.runs.iter().enumerate() { out.push_str(&format!(" run[{index}]{{{}}}", run.serialize())); }
+        for (key, value) in &self.component { out.push_str(&format!(" component[{key}]={value:?}")); }
         if let Some(primary) = &self.primary {
             out.push_str(&format!(" primary={primary}"));
         }
         if let Some(status) = &self.terminal_status {
             out.push_str(&format!(" terminal={status}"));
         }
+        for (id, start, end) in &self.diagnostic_loci { out.push_str(&format!(" diagnostic[{id}@{start}..{end}]")); }
         for (id, outcome) in &self.checks {
             out.push_str(&format!(" check[{id}]={outcome}"));
         }
         for (id, publication) in &self.outputs {
             out.push_str(&format!(" output[{id}]={publication}"));
         }
+        for invocation in &self.invocations {
+            out.push_str(&format!(" invocation[{}:{}]={}",
+                invocation.declaration.as_deref().unwrap_or(&invocation.block),
+                invocation.id, invocation.status()));
+            if let Some(initial) = &invocation.initial_output {
+                out.push_str(&format!(" initial_output={initial}"));
+            }
+            if let Some(result) = &invocation.result {
+                out.push_str(&format!(" {{{}}}", result.serialize()));
+            }
+        }
+        for event in &self.events { out.push_str(&format!(" event[{event}]")); }
+        for proof in &self.retry_proofs { out.push_str(&format!(" retry_proof[{proof:?}]")); }
+        for input in &self.input_evidence { out.push_str(&format!(" input[{input}]")); }
         out
     }
 }
@@ -118,6 +150,30 @@ impl Observed {
 /// Data, not code: a case states its expectation and the runner compares.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expectation {
+    /// Exact ordered population: every sub-run must meet its own expectation.
+    Runs(Vec<Expectation>),
+    /// Exact complete component return values, with concrete input evidence.
+    Component(Vec<(String, String)>),
+    /// Every independent assertion is required; none substitutes for another.
+    All(Vec<Expectation>),
+    /// The lexical or grammar stage accepts; this asserts no execution result.
+    SourcePass(Reached),
+    /// Exact ordered actual attempt statuses for one declaration.
+    Attempts { declaration: String, statuses: Vec<String> },
+    /// A diagnostic must be absent from all retained evidence, not only primary.
+    NoDiagnostic(String),
+    /// Exact number of accepted, retained host retry proofs.
+    RetryProofs(usize),
+    /// An exact diagnostic must appear in the retained engine evidence.
+    Diagnostic(String),
+    DiagnosticAt { id: String, start: usize, end: usize },
+    /// An event from this producer must have a successful selected handler.
+    Recovered(String),
+    /// Exact selected root publication, including UNBOUND.
+    Output { id: String, value: String },
+    /// Exact field of a particular actual attempt. Common result axes use
+    /// their registered names, schema-local fields use their value rendering.
+    AttemptField { declaration: String, attempt: usize, field: String, value: String },
     /// The source must be rejected with exactly this registered identifier.
     Rejects(String),
     /// The source must pass every implemented stage without a primary
@@ -141,6 +197,18 @@ impl Expectation {
     /// Render the expectation for a report, in the catalog's own vocabulary.
     pub fn serialize(&self) -> String {
         match self {
+            Expectation::Runs(runs) => format!("all ordered runs {:?}", runs.iter().map(Self::serialize).collect::<Vec<_>>()),
+            Expectation::Component(values) => format!("exact component {values:?}"),
+            Expectation::SourcePass(stage) => format!("passes source stage {stage}"),
+            Expectation::All(assertions) => assertions.iter().map(Self::serialize).collect::<Vec<_>>().join("; "),
+            Expectation::Attempts { declaration, statuses } => format!("{declaration} attempts {statuses:?}"),
+            Expectation::RetryProofs(count) => format!("{count} accepted retry proofs"),
+            Expectation::NoDiagnostic(id) => format!("no {id} in retained diagnostics"),
+            Expectation::DiagnosticAt { id, start, end } => format!("{id} at source bytes {start}..{end}"),
+            Expectation::Diagnostic(id) => format!("{id} in retained diagnostics"),
+            Expectation::Recovered(id) => format!("event from {id} recovered"),
+            Expectation::Output { id, value } => format!("output {id} publishes {value}"),
+            Expectation::AttemptField { declaration, attempt, field, value } => format!("{declaration} attempt {attempt} {field}={value}"),
             Expectation::Rejects(id) => format!("rejects with {id}"),
             Expectation::Accepts => "accepts".to_string(),
             Expectation::Check { id, outcome } => format!("check {id} records {outcome}"),
@@ -198,12 +266,13 @@ impl ExecutedCase {
     /// A one-line record for a report: what was expected, what was observed.
     pub fn serialize(&self) -> String {
         format!(
-            "{} [{}] {} | expected: {} | observed: {}",
+            "{} [{}] {} | expected: {} | observed: {} | source: {:?}",
             self.id,
             self.contract,
             self.verdict,
             self.expectation.serialize(),
-            self.observed.serialize()
+            self.observed.serialize(),
+            self.source
         )
     }
 }
@@ -281,6 +350,28 @@ impl Runner {
         })
     }
 
+    /// Execute exact bytes through the real lexer and parser, retaining all
+    /// source diagnostics. No resolver, checker or host effects are invoked.
+    pub fn run_source(&self, bytes: &[u8]) -> Observed {
+        let lexed = Lexer::new(&self.lexicon).lex(bytes);
+        let input_evidence = vec![format!("source bytes {bytes:?}")];
+        if let Some(primary) = lexed.primary() {
+            return Observed { reached: Reached::Lexical,
+                primary: Some(primary.id.to_string()), primary_stage: Some("lexical".into()),
+                diagnostics: lexed.diagnostics().iter().map(|d| d.id.to_string()).collect(),
+                diagnostic_loci: lexed.diagnostics().iter().map(|d| (d.id.to_string(), d.span.start, d.span.end)).collect(),
+                input_evidence, ..Observed::default() };
+        }
+        let parsed = Parser::new(&self.grammar).parse(&lexed)
+            .expect("a clean lexical stage permits parsing");
+        Observed { reached: Reached::Grammar,
+            primary: parsed.primary().map(|d| d.id.to_string()),
+            primary_stage: parsed.primary().map(|_| "grammar_or_schema".into()),
+            diagnostics: parsed.diagnostics().iter().map(|d| d.id.to_string()).collect(),
+            diagnostic_loci: parsed.diagnostics().iter().map(|d| (d.id.to_string(), d.span.start, d.span.end)).collect(),
+            input_evidence, ..Observed::default() }
+    }
+
     /// Carry one source through every implemented stage and report what
     /// happened.
     ///
@@ -304,9 +395,35 @@ impl Runner {
     pub fn run_on(&self, source: &str, provider: &MemoryProvider, host: &mut dyn Host) -> Observed {
         let id = SourceId::new("case.lcl");
         let unit = SourceUnit::new(id, source.as_bytes());
+        self.run_input(&unit, provider, &Invocation::new(), host)
+    }
+
+    /// Run exact source bytes, imports and typed invocation data through the
+    /// same production layers as an ordinary case. Fixture data supplies no
+    /// verdict and cannot substitute for an operation implementation.
+    pub fn run_input(
+        &self,
+        unit: &SourceUnit,
+        provider: &MemoryProvider,
+        invocation: &Invocation,
+        host: &mut dyn Host,
+    ) -> Observed {
+        let mut observed = self.observe_input(unit, provider, invocation, host);
+        observed.input_evidence = vec![format!("root {unit:?}"), format!("imports {provider:?}"),
+            format!("supplied {invocation:?}")];
+        observed
+    }
+
+    fn observe_input(
+        &self,
+        unit: &SourceUnit,
+        provider: &MemoryProvider,
+        invocation: &Invocation,
+        host: &mut dyn Host,
+    ) -> Observed {
 
         let resolved = match Resolver::new(&self.rules, &self.grammar, &self.lexicon)
-            .resolve(&unit, provider)
+            .resolve(unit, provider)
         {
             Ok(resolved) => resolved,
             Err(skipped) => {
@@ -324,6 +441,7 @@ impl Runner {
                     terminal_status: None,
                     checks: Vec::new(),
                     outputs: Vec::new(),
+                    ..Observed::default()
                 };
             }
         };
@@ -340,6 +458,7 @@ impl Runner {
                 terminal_status: None,
                 checks: Vec::new(),
                 outputs: Vec::new(),
+                    ..Observed::default()
             };
         }
 
@@ -354,6 +473,7 @@ impl Runner {
                     terminal_status: None,
                     checks: Vec::new(),
                     outputs: Vec::new(),
+                    ..Observed::default()
                 }
             }
         };
@@ -370,11 +490,12 @@ impl Runner {
                 terminal_status: None,
                 checks: Vec::new(),
                 outputs: Vec::new(),
+                    ..Observed::default()
             };
         }
 
         let planned =
-            match Preflight::new(&self.preflight).plan(&checked, &resolved, &Invocation::new()) {
+            match Preflight::new(&self.preflight).plan(&checked, &resolved, invocation) {
                 Ok(planned) => planned,
                 Err(skipped) => {
                     return Observed {
@@ -385,6 +506,7 @@ impl Runner {
                         terminal_status: None,
                         checks: Vec::new(),
                         outputs: Vec::new(),
+                    ..Observed::default()
                     }
                 }
             };
@@ -402,6 +524,7 @@ impl Runner {
                 terminal_status: None,
                 checks: Vec::new(),
                 outputs: Vec::new(),
+                    ..Observed::default()
             };
         }
 
@@ -423,6 +546,7 @@ impl Runner {
                     terminal_status: None,
                     checks: Vec::new(),
                     outputs: Vec::new(),
+                    ..Observed::default()
                 }
             }
         };
@@ -443,6 +567,7 @@ impl Runner {
                         terminal_status: None,
                         checks: Vec::new(),
                         outputs: Vec::new(),
+                    ..Observed::default()
                     }
                 }
             };
@@ -509,6 +634,12 @@ impl Runner {
             terminal_status: Some(completion.terminal_status().to_string()),
             checks,
             outputs,
+            invocations: execution.invocations().to_vec(),
+            events: execution.events().to_vec(),
+            retry_proofs: execution.retry_proofs().to_vec(),
+            input_evidence: Vec::new(),
+            diagnostic_loci: Vec::new(),
+            ..Observed::default()
         }
     }
 
@@ -570,6 +701,41 @@ impl Runner {
 /// Free function, and deliberately the only place a verdict is decided.
 pub fn judge(expectation: &Expectation, observed: &Observed) -> Verdict {
     let passed = match expectation {
+        Expectation::Runs(runs) => !runs.is_empty() && runs.len() == observed.runs.len()
+            && runs.iter().zip(&observed.runs).all(|(e, o)| !o.input_evidence.is_empty() && judge(e, o) == Verdict::Passed),
+        Expectation::Component(values) => !values.is_empty() && !observed.input_evidence.is_empty()
+            && *values == observed.component,
+        Expectation::SourcePass(stage) => matches!(stage, Reached::Lexical | Reached::Grammar)
+            && (observed.reached > *stage || (observed.reached == *stage && observed.primary.is_none())),
+        Expectation::All(assertions) => !assertions.is_empty() && assertions.iter().all(|e| judge(e, observed) == Verdict::Passed),
+        Expectation::Attempts { declaration, statuses } => {
+            let actual: Vec<_> = observed.invocations.iter()
+                .filter(|i| i.declaration.as_ref() == Some(declaration)).collect();
+            actual.len() == statuses.len() && actual.iter().zip(statuses).enumerate()
+                .all(|(attempt, (record, status))| record.id.attempt == attempt && record.status() == status)
+        }
+        Expectation::RetryProofs(count) => observed.retry_proofs.len() == *count,
+        Expectation::NoDiagnostic(id) => observed.primary.as_ref() != Some(id) && !observed.diagnostics.contains(id),
+        Expectation::DiagnosticAt { id, start, end } => observed.diagnostic_loci.contains(&(id.clone(), *start, *end)),
+        Expectation::Diagnostic(id) => observed.diagnostics.contains(id),
+        Expectation::Recovered(id) => observed.events.iter().any(|event| {
+            observed.invocations.iter().any(|i| i.id == event.producer && i.declaration.as_ref() == Some(id))
+                && matches!(event.disposition, lcl_runtime::Disposition::Selected { recovered: true, .. })
+        }),
+        Expectation::Output { id, value } => observed.outputs.iter().any(|(found, actual)| found == id && actual == value),
+        Expectation::AttemptField { declaration, attempt, field, value } => {
+            observed.invocations.iter().find(|i| i.declaration.as_ref() == Some(declaration) && i.id.attempt == *attempt)
+                .and_then(|i| if field == "initial_output" {
+                    i.initial_output.as_ref().map(ToString::to_string)
+                } else { i.result.as_ref().and_then(|r| match field.as_str() {
+                    "output_binding" => Some(r.output_binding.to_string()),
+                    "failure_phase" => Some(r.failure_phase.to_string()),
+                    "effect_state" => Some(r.effect_state.to_string()),
+                    "status" => Some(r.status.clone()),
+                    "schema" => Some(r.schema.clone()),
+                    field => r.field(field).map(ToString::to_string),
+                }) }).as_ref() == Some(value)
+        }
         Expectation::Rejects(id) => {
             observed.primary.as_deref() == Some(id.as_str())
                 || (observed.primary.is_none() && observed.diagnostics.iter().any(|d| d == id))
@@ -590,5 +756,25 @@ pub fn judge(expectation: &Expectation, observed: &Observed) -> Verdict {
         Verdict::Passed
     } else {
         Verdict::Failed
+    }
+}
+
+#[cfg(test)]
+mod grouped_evidence_tests {
+    use super::*;
+    #[test]
+    fn grouped_evidence_requires_every_ordered_observation_and_exact_input() {
+        let component = vec![("transition".into(), "refused".into())];
+        let run = Observed { component: component.clone(), input_evidence: vec!["ready -> invented".into()], ..Observed::default() };
+        let expectation = Expectation::Runs(vec![Expectation::Component(component.clone()), Expectation::Component(component)]);
+        let mut observed = Observed { runs: vec![run.clone(), run], ..Observed::default() };
+        assert_eq!(judge(&expectation, &observed), Verdict::Passed);
+        observed.runs[1].component[0].1 = "allowed".into();
+        assert_eq!(judge(&expectation, &observed), Verdict::Failed);
+        observed.runs.pop();
+        assert_eq!(judge(&expectation, &observed), Verdict::Failed);
+        assert_eq!(judge(&Expectation::Runs(vec![]), &Observed::default()), Verdict::Failed);
+        observed.runs[0].input_evidence.clear();
+        assert_eq!(judge(&Expectation::Runs(vec![Expectation::Component(observed.runs[0].component.clone())]), &observed), Verdict::Failed);
     }
 }

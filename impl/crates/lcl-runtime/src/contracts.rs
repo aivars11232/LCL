@@ -158,6 +158,8 @@ pub struct ResultSchema {
     pub partial_fields: Vec<String>,
     /// Schema-local field names and their registered cardinality string.
     pub fields: BTreeMap<String, String>,
+    /// The same fields' exact registered contract type strings.
+    pub field_types: BTreeMap<String, String>,
     /// The registry's constraint sentences, verbatim.
     pub constraints: Vec<String>,
 }
@@ -526,7 +528,11 @@ fn load_schemas(results: &Json) -> Result<BTreeMap<String, ResultSchema>, Runtim
                 .collect()
         };
         let mut fields = BTreeMap::new();
+        let mut field_types = BTreeMap::new();
         for (name, signature) in body.get("fields").and_then(Json::as_object).unwrap_or(&[]) {
+            let ty = signature.get("type").and_then(Json::as_str).filter(|s| !s.is_empty())
+                .ok_or_else(|| RuntimeContractsError::Malformed(format!("{id}.{name} type missing")))?;
+            field_types.insert(name.clone(), ty.to_string());
             fields.insert(
                 name.clone(),
                 signature
@@ -551,6 +557,7 @@ fn load_schemas(results: &Json) -> Result<BTreeMap<String, ResultSchema>, Runtim
                     .unwrap_or(false),
                 partial_fields: strings(partial.and_then(|p| p.get("fields"))),
                 fields,
+                field_types,
                 constraints: strings(body.get("constraints")),
             },
         );

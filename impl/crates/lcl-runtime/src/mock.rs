@@ -146,11 +146,16 @@ impl MockHost {
 
         let observation = match request.result_schema.as_str() {
             "result.value" => Observation::none()
-                .with("value", Value::Text(format!("mock:{}", request.operation))),
+                .with("value", Value::Text(format!("mock:{}", request.operation)))
+                .with("evidence", Value::List(Vec::new())),
             "result.collection" => Observation::none()
                 .with("items", Value::List(Vec::new()))
                 .with("count", zero()),
-            "result.operation" => Observation::none().with("changed", Value::Boolean(true)),
+            "result.operation" => Observation::none()
+                .with("changed", Value::Boolean(true))
+                .with("target", request.target.clone().filter(Value::is_material)
+                    .or_else(|| request.authorization.target.clone().map(Value::Reference))
+                    .unwrap_or(Value::Null)),
             "result.command" => Observation::none()
                 .with("mode", Value::Identifier("non_graph".to_string()))
                 .with("started", Value::Boolean(true))
@@ -163,13 +168,16 @@ impl MockHost {
                 .with("errors", Value::List(Vec::new())),
             "result.verification" => Observation::none()
                 .with("verified", Value::Boolean(true))
-                .with("observed", Value::List(Vec::new()))
+                .with("observed", Value::Object(BTreeMap::new()))
                 .with("errors", Value::List(Vec::new()))
                 .with("evidence", Value::List(Vec::new())),
-            "result.test" => Observation::none().with("passed", Value::Boolean(true)),
+            "result.test" => Observation::none()
+                .with("passed", Value::Boolean(true))
+                .with("evidence", Value::List(Vec::new())),
             "result.message" => Observation::none()
                 .with("delivered", Value::Boolean(true))
-                .with("recipient", Value::Text(target_text.clone())),
+                .with("recipient", Value::Text(target_text.clone()))
+                .with("message_id", Value::Null),
             "result.transfer" => Observation::none()
                 .with("source", Value::Text(target_text.clone()))
                 .with(

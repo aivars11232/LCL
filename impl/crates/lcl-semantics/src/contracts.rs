@@ -154,6 +154,7 @@ impl OperationAxes {
 /// The preflight vocabulary.
 pub struct Contracts {
     statics: StaticContracts,
+    duration: crate::value::order_profile::DurationProfile,
     errors: BTreeMap<PreflightError, RegisteredError>,
     supersedes: BTreeMap<PreflightError, BTreeSet<PreflightError>>,
     authority: AuthorityBounds,
@@ -196,6 +197,15 @@ impl Contracts {
             return Err(PreflightContractsError::UnverifiedPackage(spec.authority()));
         }
         let statics = StaticContracts::load(spec).map_err(PreflightContractsError::Static)?;
+        let units = spec.registry("formats_encodings_units").ok_or(
+            PreflightContractsError::MissingRegistry("formats_encodings_units"),
+        )?;
+        let duration =
+            crate::value::order_profile::DurationProfile::load(units).ok_or_else(|| {
+                PreflightContractsError::Malformed(
+                    "duration_normalization is missing or empty".into(),
+                )
+            })?;
 
         let statuses_registry = spec.registry("statuses_and_errors").ok_or(
             PreflightContractsError::MissingRegistry("statuses_and_errors"),
@@ -245,6 +255,7 @@ impl Contracts {
 
         Ok(Contracts {
             statics,
+            duration,
             errors,
             supersedes,
             // `05_SEMANTICS/04`: "Effective AUTHORITY is 0..1000; local default
@@ -274,6 +285,11 @@ impl Contracts {
     /// The M4 vocabulary this layer builds on.
     pub fn statics(&self) -> &StaticContracts {
         &self.statics
+    }
+
+    /// The same verified normalization used when execution constructs DURATION.
+    pub fn duration(&self) -> &crate::value::order_profile::DurationProfile {
+        &self.duration
     }
 
     pub fn diagnostics(&self) -> &DiagnosticRegistry {

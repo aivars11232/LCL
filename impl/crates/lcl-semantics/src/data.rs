@@ -73,7 +73,7 @@ pub(crate) fn resolve(engine: &mut Engine) {
 }
 
 fn resolve_sources(engine: &mut Engine) {
-    let declarations: Vec<(usize, String, String, SourceId, Span)> = engine
+    let mut declarations: Vec<(usize, String, String, SourceId, Span)> = engine
         .resolved
         .declarations()
         .all()
@@ -91,7 +91,11 @@ fn resolve_sources(engine: &mut Engine) {
         })
         .collect();
 
-    let mut resolutions = Vec::new();
+    let order = source_order(
+        engine,
+        &declarations.iter().map(|d| d.0).collect::<Vec<_>>(),
+    );
+    declarations.sort_by_key(|d| order[&d.0]);
     let mut evidence = Vec::new();
 
     for (index, block, id, source, span) in declarations {
@@ -101,7 +105,7 @@ fn resolve_sources(engine: &mut Engine) {
 
         // 1. explicit VALUE.
         let mut origin = Origin::DeclaredValue;
-        let mut value = declared_value(engine, syntax_block);
+        let mut value = declared_value(engine, &source, syntax_block);
 
         // A `DEFINE kind.constant` is exactly its declared value and nothing
         // else. It is not a source an invocation supplies, it takes no DEFAULT
@@ -116,7 +120,7 @@ fn resolve_sources(engine: &mut Engine) {
         // MISSING, an operation parameter quietly took its registered default,
         // and a declared bound had no INTEGER to check.
         if block == "DEFINE" {
-            resolutions.push(Resolution {
+            engine.plan.resolutions.push(Resolution {
                 declaration: index,
                 id,
                 block,
@@ -147,8 +151,7 @@ fn resolve_sources(engine: &mut Engine) {
         if resolved == Value::Missing {
             if let Some(default) = syntax_block
                 .field("DEFAULT")
-                .and_then(|f| syntax::inline_expr(&f.body))
-                .and_then(|expr| eval::literal_value(engine, &source, expr))
+                .and_then(|field| eval::field_value(engine, &source, &field.body))
             {
                 origin = Origin::Default;
                 resolved = default;
@@ -168,7 +171,7 @@ fn resolve_sources(engine: &mut Engine) {
             origin = Origin::Absent;
         }
 
-        resolutions.push(Resolution {
+        engine.plan.resolutions.push(Resolution {
             declaration: index,
             id,
             block,
@@ -179,31 +182,98 @@ fn resolve_sources(engine: &mut Engine) {
         });
     }
 
-    engine.plan.resolutions = resolutions;
+    engine.plan.resolutions.sort_by_key(|r| r.declaration);
     engine.plan.evidence.extend(evidence);
+}
+
+/// Resolve material sources before the declarations that read them. These are
+/// pure value dependencies, never producer activation or execution-order edges.
+/// The finite worklist also avoids recursive evaluation of declaration chains.
+fn source_order(engine: &Engine, indexes: &[usize]) -> std::collections::BTreeMap<usize, usize> {
+    use std::collections::{BTreeMap, BTreeSet};
+    let sources: BTreeSet<_> = indexes.iter().copied().collect();
+    let mut pending = BTreeMap::new();
+    for &index in indexes {
+        let declaration = &engine.resolved.declarations().all()[index];
+        let mut fields = Vec::new();
+        if let Some(block) = syntax::declaration_block(engine.resolved, index) {
+            for name in ["VALUE", "DEFAULT"] {
+                if let Some(field) = block.field(name) {
+                    fields.push((&declaration.source, field.body.span()));
+                }
+            }
+        }
+        // An applicable assumption is part of source resolution too. Inspect
+        // its condition/value dependencies without activating any effect.
+        for (assumption_index, assumption) in
+            engine.resolved.declarations().all().iter().enumerate()
+        {
+            if assumption.block != "ASSUME" {
+                continue;
+            }
+            let Some(block) = syntax::declaration_block(engine.resolved, assumption_index) else {
+                continue;
+            };
+            let Some(target) = block.field("TARGET") else {
+                continue;
+            };
+            let target_span = target.body.span();
+            let applies_to = engine.resolved.bindings().iter().any(|b| {
+                b.source == assumption.source
+                    && target_span.start <= b.span.start
+                    && b.span.end <= target_span.end
+                    && b.target == lcl_resolver::BindingTarget::Declaration(index)
+            });
+            if applies_to {
+                for name in ["WHEN", "VALUE"] {
+                    if let Some(field) = block.field(name) {
+                        fields.push((&assumption.source, field.body.span()));
+                    }
+                }
+            }
+        }
+        let dependencies: BTreeSet<_> = engine
+            .resolved
+            .bindings()
+            .iter()
+            .filter_map(|binding| {
+                let lcl_resolver::BindingTarget::Declaration(target) = binding.target else {
+                    return None;
+                };
+                (sources.contains(&target)
+                    && fields.iter().any(|(source, span)| {
+                        *source == &binding.source
+                            && span.start <= binding.span.start
+                            && binding.span.end <= span.end
+                    }))
+                .then_some(target)
+            })
+            .collect();
+        pending.insert(index, dependencies);
+    }
+    let mut order = BTreeMap::new();
+    while let Some(next) = pending
+        .iter()
+        .find(|(_, dependencies)| dependencies.iter().all(|d| !pending.contains_key(d)))
+        .map(|(index, _)| *index)
+    {
+        pending.remove(&next);
+        order.insert(next, order.len());
+    }
+    // A retained identity or an undemanded conditional reference can form a
+    // structural cycle without a value cycle. Leave such residual declarations
+    // to the ordinary bounded evaluator, rather than inventing a cycle error.
+    for index in pending.keys() {
+        order.insert(*index, order.len());
+    }
+    order
 }
 
 /// The value a declaration writes inline, when it writes one this layer can
 /// read without demanding anything.
-fn declared_value(engine: &Engine, block: syntax::DeclBlock) -> Option<Value> {
+fn declared_value(engine: &Engine, source: &SourceId, block: syntax::DeclBlock) -> Option<Value> {
     let field = block.field("VALUE")?;
-    let source = engine.resolved.root().clone();
-    if let Some(collection) = syntax::inline_collection(&field.body) {
-        let mut members = Vec::new();
-        for member in &collection.members {
-            members.push(eval::literal_value(engine, &source, member)?);
-        }
-        return Some(Value::List(members));
-    }
-    // `03_TYPES_AND_VALUES/10`: an OBJECT "uses an indented VALUE block
-    // containing unique lowercase property names". That body is `Body::Nested`,
-    // which an inline read cannot see, and a declaration whose value it holds
-    // would otherwise resolve to MISSING with nothing in the document missing.
-    if let Some(nested) = field.body.as_nested() {
-        return eval::object_value(engine, &source, nested);
-    }
-    let expr = syntax::inline_expr(&field.body)?;
-    eval::literal_value(engine, &source, expr)
+    eval::field_value(engine, source, &field.body)
 }
 
 /// The first applicable `ASSUME` for one target, with its evidence record.
@@ -244,8 +314,7 @@ fn applicable_assumption(engine: &Engine, target_id: &str) -> Option<(EvidenceRe
         }
         let value = block
             .field("VALUE")
-            .and_then(|f| syntax::inline_expr(&f.body))
-            .and_then(|expr| eval::literal_value(engine, &declaration.source, expr))?;
+            .and_then(|field| eval::field_value(engine, &declaration.source, &field.body))?;
         return Some((
             EvidenceRecord {
                 declaration: index,

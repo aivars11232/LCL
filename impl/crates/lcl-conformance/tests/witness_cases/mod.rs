@@ -52,6 +52,11 @@ pub struct Probe {
     pub expectation: Expectation,
     /// Whether this probe needs the in-memory filesystem fixture.
     pub needs_filesystem: bool,
+    pub imports: Vec<(String, String)>,
+    pub invocation: lcl_semantics::Invocation,
+    /// Exact initial failure count for the bounded read fixture, when used.
+    pub read_failures: Option<usize>,
+    pub command_retry: Option<CommandRetry>,
 }
 
 impl Probe {
@@ -61,21 +66,86 @@ impl Probe {
             source,
             expectation,
             needs_filesystem: false,
+            imports: Vec::new(),
+            invocation: lcl_semantics::Invocation::new(),
+            read_failures: None,
+            command_retry: None,
         }
     }
 
     pub fn labelled(label: &'static str, source: String, expectation: Expectation) -> Probe {
-        Probe {
-            label,
-            source,
-            expectation,
-            needs_filesystem: false,
-        }
+        let mut probe = Probe::new(source, expectation);
+        probe.label = label;
+        probe
     }
 
     pub fn on_filesystem(mut self) -> Probe {
         self.needs_filesystem = true;
         self
+    }
+
+    pub fn with_read_failures(mut self, count: usize) -> Probe {
+        self.read_failures = Some(count);
+        self
+    }
+
+    pub fn with_import(mut self, path: &str, source: String) -> Probe {
+        self.imports.push((path.to_string(), source));
+        self
+    }
+
+    pub fn execute(&self, runner: &lcl_conformance::Runner, witness: &str, contract: &str) -> lcl_conformance::ExecutedCase {
+        let id = if self.label.is_empty() { witness.to_string() } else { format!("{witness}/{}", self.label) };
+        let mut provider = lcl_resolver::MemoryProvider::new();
+        for (path, source) in &self.imports { provider.insert(path, source.as_bytes()); }
+        let mut host: Box<dyn lcl_runtime::Host> = if let Some(failures) = self.read_failures {
+            Box::new(ScheduledRead { failures, calls: 0 })
+        } else if let Some(mode) = self.command_retry {
+            Box::new(PartialCommand { mode, calls: 0 })
+        } else if self.needs_filesystem {
+            let fs = lcl_stdlib::MemoryFileSystem::new()
+                .with_read_scope("/case").with_scope("/case")
+                .with_file("/case/a.txt", *b"abcd").with_file("/case/lines.txt", *b"a\nb");
+            let grants = fs.grants().clone();
+            Box::new(lcl_stdlib::HostAdapter::new(grants).with_filesystem(fs))
+        } else { Box::new(lcl_runtime::MockHost::new()) };
+        let observed = runner.run_input(
+            &lcl_resolver::SourceUnit::new(lcl_resolver::SourceId::new("case.lcl"), self.source.as_bytes()),
+            &provider, &self.invocation, &mut *host,
+        );
+        let verdict = lcl_conformance::judge(&self.expectation, &observed);
+        lcl_conformance::ExecutedCase { id, contract: contract.to_string(), source: self.source.clone(),
+            expectation: self.expectation.clone(), observed, verdict }
+    }
+}
+
+/// Test data: a single immutable read target and a finite failure schedule.
+/// No language rule or standard-library operation is replaced by this host.
+struct ScheduledRead { failures: usize, calls: usize }
+
+impl lcl_runtime::Host for ScheduledRead {
+    fn permits(&mut self, request: &lcl_runtime::CapabilityRequest) -> lcl_runtime::Permission {
+        if request.operation == "core.read" && matches!(&request.target,
+            Some(lcl_runtime::Value::Constructed { constructor, text }) if constructor == "PATH" && text == "/case/retry.txt") {
+            lcl_runtime::Permission::Granted
+        } else { lcl_runtime::Permission::Denied("outside the read fixture's exact target".into()) }
+    }
+
+    fn invoke(&mut self, request: &lcl_runtime::CapabilityRequest) -> lcl_runtime::CapabilityOutcome {
+        // The schedule cannot silently supply a fourth attempt or an unrelated
+        // capability. The recorded request attempt must agree with call order.
+        if self.calls >= 3 || request.invocation.attempt != self.calls {
+            return lcl_runtime::CapabilityOutcome::Denied("fixture attempt bound exceeded".into());
+        }
+        let failed = self.calls < self.failures;
+        self.calls += 1;
+        if failed {
+            lcl_runtime::CapabilityOutcome::Unavailable(format!("scripted read limitation {}", self.calls))
+        } else {
+            lcl_runtime::CapabilityOutcome::Completed(lcl_runtime::Observation::none()
+                .with("value", lcl_runtime::Value::Text("complete".into()))
+                .with("evidence", lcl_runtime::Value::List(Vec::new())))
+        }
     }
 }
 
@@ -355,13 +425,13 @@ DATA:
         WitnessCase {
             id: "CLOSURE-004",
             coverage: Coverage::StaticOrType,
-            plan: Plan::Descriptive {
-                reason: "The witness reads REF(output.copy).TARGET, a declaration-metadata \
-                         projection over an OUTPUT declaration. The canonical text names the \
-                         field but supplies no declaration for it, and OUTPUT.TARGET is a \
-                         destination whose concrete value this build's mock host never \
-                         assigns, so no source exhibits the read without inventing one.",
-            },
+            plan: Plan::Executable(vec![Probe::new(
+                assertion(
+                    "\nOUTPUT:\n    ID: output.copy\n    TYPE: INTEGER\n    FORMAT: format.plain_text\n    TARGET: PATH(\"/case/copy.txt\")\n",
+                    "REF(output.copy).TARGET == PATH(\"/case/copy.txt\") AND REF(output.copy) == MISSING",
+                ),
+                holds(),
+            )]),
         },
         WitnessCase {
             id: "CLOSURE-005",
@@ -392,15 +462,13 @@ DATA:
         WitnessCase {
             id: "CLOSURE-006",
             coverage: Coverage::StaticOrType,
-            plan: Plan::Descriptive {
-                reason: "The witness needs a REFERENCE-typed binding that is read by equality \
-                         without a second dereference. A bare `TYPE: REFERENCE` field is \
-                         refused at grammar stage and `TYPE: REFERENCE[INTEGER]` with a \
-                         `REF(...)` value is refused at static checking, so no declaration \
-                         form in this build produces the binding the witness describes, and \
-                         choosing one would be inventing the missing declaration syntax \
-                         rather than executing the witness.",
-            },
+            plan: Plan::Executable(vec![Probe::new(
+                assertion(
+                    "\nDEFINE:\n    ID: constant.left\n    KIND: kind.constant\n    TYPE: INTEGER\n    VALUE: 2\n\nDEFINE:\n    ID: constant.right\n    KIND: kind.constant\n    TYPE: INTEGER\n    VALUE: 2\n\nDEFINE:\n    ID: constant.first\n    KIND: kind.constant\n    TYPE: REFERENCE[REF(constant.left)]\n    VALUE: REF(constant.left)\n\nDEFINE:\n    ID: constant.same\n    KIND: kind.constant\n    TYPE: REFERENCE[REF(constant.left)]\n    VALUE: REF(constant.left)\n\nDEFINE:\n    ID: constant.other\n    KIND: kind.constant\n    TYPE: REFERENCE[REF(constant.right)]\n    VALUE: REF(constant.right)\n",
+                    "REF(constant.first) == REF(constant.same) AND REF(constant.first) != REF(constant.other) AND REF(constant.left) == REF(constant.right)",
+                ),
+                holds(),
+            )]),
         },
         // -- index ---------------------------------------------------------
         WitnessCase {
@@ -536,44 +604,48 @@ DATA:
         WitnessCase {
             id: "CLOSURE-021",
             coverage: Coverage::StandardLibrary,
-            plan: Plan::Descriptive {
-                reason: "The witness groups a LIST whose members are OBJECTs, and Core 0.1.0 \
-                         supplies no way to write one. `04_GRAMMAR/10` gives \
-                         MULTILINE_COLLECTION and COLLECTION_LITERAL members as EXPRESSION, \
-                         and `04_GRAMMAR/12` puts an object in an indented VALUE body, which \
-                         is not an expression; no Core operation returns a LIST of objects \
-                         either. The object-resolution gap this once cited was closed by \
-                         LCL-TASK-0020, and the remaining obstacle is the collection member \
-                         form, not the object value.",
-            },
+            plan: Plan::Executable(vec![Probe::new(group_objects(), holds())]),
         },
         // -- retry ---------------------------------------------------------
         WitnessCase {
             id: "CLOSURE-022",
             coverage: Coverage::Runtime,
-            plan: Plan::Descriptive {
-                reason: "The witness needs an action that fails once and then succeeds. The \
-                         canonical text supplies no such host behaviour, and this build's \
-                         in-memory fixtures answer a given request the same way every time, \
-                         so the attempt sequence cannot be exhibited without inventing a \
-                         failure schedule the witness does not state.",
-            },
+            plan: Plan::Executable(vec![Probe::new(
+                retry_read(None),
+                Expectation::All(vec![
+                    Expectation::Accepts,
+                    Expectation::Terminal("status.succeeded".into()),
+                    Expectation::Attempts { declaration: "action.read".into(), statuses: vec!["status.blocked".into(), "status.succeeded".into()] },
+                    Expectation::NoDiagnostic("error.retry.exhausted".into()),
+                    Expectation::Output { id: "output.payload".into(), value: "\"complete\"".into() },
+                ]),
+            ).with_read_failures(1)]),
         },
         WitnessCase {
             id: "CLOSURE-023",
             coverage: Coverage::Runtime,
-            plan: Plan::Descriptive {
-                reason: "Same missing test data as CLOSURE-022: the witness begins from an \
-                         initial failure, and no canonical fixture supplies one.",
-            },
+            plan: Plan::Executable(vec![Probe::new(
+                retry_read(Some("FALSE")),
+                Expectation::All(vec![
+                    Expectation::Rejects("error.host.constraint".into()),
+                    Expectation::Terminal("status.blocked".into()),
+                    Expectation::Attempts { declaration: "action.read".into(), statuses: vec!["status.blocked".into()] },
+                    Expectation::NoDiagnostic("error.retry.exhausted".into()),
+                    Expectation::Output { id: "output.payload".into(), value: "UNBOUND".into() },
+                ]),
+            ).with_read_failures(1)]),
         },
         WitnessCase {
             id: "CLOSURE-024",
             coverage: Coverage::Runtime,
-            plan: Plan::Descriptive {
-                reason: "Same missing test data as CLOSURE-022: exhaustion requires three \
-                         actual unsuccessful attempts, which needs a host scripted to fail.",
-            },
+            plan: Plan::Executable(vec![Probe::new(
+                retry_read(None),
+                Expectation::All(vec![
+                    Expectation::Attempts { declaration: "action.read".into(), statuses: vec!["status.blocked".into(); 3] },
+                    Expectation::Diagnostic("error.retry.exhausted".into()),
+                    Expectation::Output { id: "output.payload".into(), value: "UNBOUND".into() },
+                ]),
+            ).with_read_failures(3)]),
         },
         WitnessCase {
             id: "CLOSURE-025",
@@ -604,11 +676,22 @@ DEFINE:
         WitnessCase {
             id: "CLOSURE-027",
             coverage: Coverage::Runtime,
-            plan: Plan::Descriptive {
-                reason: "The witness needs a raised diagnostic to select a handler that then \
-                         invokes core.continue successfully. Raising one requires a scripted \
-                         failure, the same missing test data as CLOSURE-022.",
-            },
+            plan: Plan::Executable(vec![
+                Probe::labelled("advance", continue_read(true), Expectation::All(vec![
+                    Expectation::Accepts,
+                    Expectation::Terminal("status.succeeded".into()),
+                    Expectation::Recovered("action.read".into()),
+                    Expectation::Diagnostic("error.host.constraint".into()),
+                    Expectation::Attempts { declaration: "action.read".into(), statuses: vec!["status.blocked".into()] },
+                    Expectation::Attempts { declaration: "action.next".into(), statuses: vec!["status.succeeded".into()] },
+                    Expectation::Output { id: "output.payload".into(), value: "9".into() },
+                ])).with_read_failures(1),
+                Probe::labelled("no-successor", continue_read(false), Expectation::All(vec![
+                    Expectation::Rejects("error.execution.order".into()),
+                    Expectation::Diagnostic("error.host.constraint".into()),
+                    Expectation::Attempts { declaration: "action.next".into(), statuses: vec![] },
+                ])).with_read_failures(1),
+            ]),
         },
         WitnessCase {
             id: "CLOSURE-028",
@@ -922,12 +1005,18 @@ DATA:
         WitnessCase {
             id: "CLOSURE-055",
             coverage: Coverage::Preflight,
-            plan: Plan::Descriptive {
-                reason: "The witness needs an explicit BEFORE ordering request that reverses a \
-                         sequential sibling edge. Core 0.1.0 declares no ordering field on \
-                         STEP or ACTION that this build admits, so the request cannot be \
-                         written without inventing the syntax that carries it.",
-            },
+            plan: Plan::Executable(vec![
+                Probe::labelled(
+                    "reversed",
+                    sequential_order("BEFORE"),
+                    Expectation::Rejects("error.execution.order".to_string()),
+                ),
+                Probe::labelled(
+                    "legal",
+                    sequential_order("AFTER"),
+                    Expectation::Terminal("status.succeeded".to_string()),
+                ),
+            ]),
         },
         WitnessCase {
             id: "CLOSURE-056",
@@ -948,33 +1037,36 @@ DATA:
         WitnessCase {
             id: "CLOSURE-058",
             coverage: Coverage::Resolution,
-            plan: Plan::Descriptive {
-                reason: "The witness reads a loop-produced OUTPUT from outside its FOR EACH \
-                         body. Encoding it needs a FOR EACH whose body binds an OUTPUT and a \
-                         reader outside the loop; the canonical text names neither the \
-                         collection nor the producing action, so the source would be invented \
-                         rather than derived.",
-            },
+            plan: Plan::Executable(vec![
+                Probe::labelled(
+                    "outside",
+                    loop_output(true),
+                    Expectation::Rejects("error.reference.unresolved".to_string()),
+                ),
+                Probe::labelled(
+                    "inside",
+                    loop_output(false),
+                    Expectation::Terminal("status.succeeded".to_string()),
+                ),
+            ]),
         },
         WitnessCase {
             id: "CLOSURE-059",
             coverage: Coverage::Runtime,
-            plan: Plan::Descriptive {
-                reason: "The witness begins from a failed attempt that produced permitted \
-                         partial output. That needs a scripted partial failure, the same \
-                         missing test data as CLOSURE-022.",
-            },
+            plan: Plan::Executable(vec![
+                retry_command(CommandRetry::Complete),
+                retry_command(CommandRetry::NoProof),
+                retry_command(CommandRetry::FailAgain),
+            ]),
         },
         // -- check_selection and root completion ----------------------------
         WitnessCase {
             id: "CLOSURE-060",
             coverage: Coverage::Completion,
-            plan: Plan::Descriptive {
-                reason: "The witness needs a second imported document holding an unrelated \
-                         targetless VERIFY. The runner resolves one source unit through an \
-                         empty provider, and the import target the witness assumes is not \
-                         named in the canonical text, so the imported unit would be invented.",
-            },
+            plan: Plan::Executable(vec![
+                imported_check(false),
+                imported_check(true),
+            ]),
         },
         WitnessCase {
             id: "CLOSURE-061",
@@ -1029,6 +1121,171 @@ DATA:
             )]),
         },
     ]
+}
+
+/// A real imported targetless check is selected only by an explicit prerequisite.
+pub fn imported_check(selected: bool) -> Probe {
+    let library = assertion("", "FALSE").replace("verify.case", "verify.unrelated");
+    let expression = if selected { "REF(lib.verify.unrelated)" } else { "TRUE" };
+    let source = assertion(
+        "\nIMPORT:\n    ID: import.lib\n    SOURCE: PATH(\"checks.lcl\")\n    NAMESPACE: lib\n    VERSION: \"1.0.0\"\n",
+        expression,
+    );
+    let expectation = if selected {
+        Expectation::All(vec![
+            Expectation::Rejects("error.verification.failed".into()),
+            Expectation::Check { id: "lib.verify.unrelated".into(), outcome: "FALSE".into() },
+            Expectation::Check { id: "verify.case".into(), outcome: "FALSE".into() },
+        ])
+    } else {
+        Expectation::All(vec![Expectation::Accepts, holds(), Expectation::NoDiagnostic("error.verification.failed".into())])
+    };
+    Probe::labelled(if selected { "prerequisite" } else { "import-only" }, source, expectation)
+        .with_import("checks.lcl", library)
+}
+
+/// Recovery and declared successor activation must commit together.
+pub fn continue_read(successor: bool) -> String {
+    let successor = if successor {
+        "    STEP:\n        ID: step.next\n        ACTION:\n            ID: action.next\n            OPERATION: core.return\n            TARGET: 9\n            OUTPUT: REF(output.payload)\n"
+    } else { "" };
+    task(
+        "\nGOAL:\n    ID: goal.case\n    ASSERT: TRUE\n\nOUTPUT:\n    ID: output.payload\n    TYPE: INTEGER\n    FORMAT: format.plain_text\n\nHANDLER:\n    ID: handler.continue\n    EVENT: event.host_constraint\n    OPERATION: core.continue\n",
+        &format!(
+            "SEQUENCE:\n    ID: sequence.case\n    STEP:\n        ID: step.read\n        ACTION:\n            ID: action.read\n            OPERATION: core.read\n            TARGET: PATH(\"/case/retry.txt\")\n{successor}\nSUCCESS:\n    ID: success.case\n    ALL: TRUE\n\nTASK:\n    ID: task.case\n    GOAL: REF(goal.case)\n    SEQUENCE: REF(sequence.case)\n    HANDLER: REF(handler.continue)\n    OUTPUT: REF(output.payload)\n    SUCCESS: REF(success.case)\n"
+        ),
+        "task.case",
+    )
+}
+
+/// The source fixes retry policy; only host observations come from a schedule.
+pub fn retry_read(when: Option<&str>) -> String {
+    let when = when.map(|w| format!("        WHEN: {w}\n")).unwrap_or_default();
+    task(
+        "\nGOAL:\n    ID: goal.case\n    ASSERT: TRUE\n\nOUTPUT:\n    ID: output.payload\n    TYPE: STRING\n    FORMAT: format.plain_text\n\nHANDLER:\n    ID: handler.retry\n    EVENT: event.host_constraint\n    OPERATION: core.retry\n    LIMIT: 2\n",
+        &format!(
+            "ACTION:\n    ID: action.read\n    OPERATION: core.read\n    TARGET: PATH(\"/case/retry.txt\")\n    OUTPUT: REF(output.payload)\n    RETRY:\n        LIMIT: 2\n{when}        HANDLER: REF(handler.retry)\n\nSUCCESS:\n    ID: success.case\n    ALL: TRUE\n\nTASK:\n    ID: task.case\n    GOAL: REF(goal.case)\n    ACTION: REF(action.read)\n    HANDLER: REF(handler.retry)\n    OUTPUT: REF(output.payload)\n    SUCCESS: REF(success.case)\n"
+        ),
+        "task.case",
+    )
+}
+
+/// An iteration-local producer and an optionally out-of-scope value reader.
+pub fn loop_output(outside: bool) -> String {
+    let outside = if outside {
+        "\nVERIFY:\n    ID: verify.outside\n    ASSERT: REF(output.item) == 1\n"
+    } else {
+        ""
+    };
+    task(
+        &format!(
+            "\nINPUT:\n    ID: input.members\n    TYPE: LIST[INTEGER]\n    VALUE: [1, 2]\n\nOUTPUT:\n    ID: output.item\n    TYPE: INTEGER\n    FORMAT: format.plain_text\n\nGOAL:\n    ID: goal.case\n    ASSERT: TRUE\n{outside}"
+        ),
+        "SEQUENCE:\n    ID: sequence.case\n    FOR EACH item IN REF(input.members):\n        STEP:\n            ID: step.producer\n            ACTION:\n                ID: action.producer\n                OPERATION: core.return\n                TARGET: REF(item)\n                OUTPUT: REF(output.item)\n        STEP:\n            ID: step.consumer\n            ACTION:\n                ID: action.consumer\n                OPERATION: core.inspect\n                TARGET: REF(output.item)\n\nSUCCESS:\n    ID: success.case\n    ALL: TRUE\n\nTASK:\n    ID: task.case\n    GOAL: REF(goal.case)\n    INPUT: REF(input.members)\n    SEQUENCE: REF(sequence.case)\n    SUCCESS: REF(success.case)\n",
+        "task.case",
+    )
+}
+
+/// An explicit edge either agrees with or reverses sequential sibling order.
+pub fn sequential_order(order: &str) -> String {
+    task(
+        "\nDATA:\n    ID: data.subject\n    TYPE: STRING\n    VALUE: \"x\"\n\nGOAL:\n    ID: goal.case\n    ASSERT: TRUE\n",
+        &format!(
+            "SEQUENCE:\n    ID: sequence.case\n    MODE: mode.sequential\n    STEP:\n        ID: step.first\n        ACTION:\n            ID: action.first\n            OPERATION: core.inspect\n            TARGET: REF(data.subject)\n    STEP:\n        ID: step.second\n        {order}: [REF(step.first)]\n        ACTION:\n            ID: action.second\n            OPERATION: core.inspect\n            TARGET: REF(data.subject)\n\nSUCCESS:\n    ID: success.case\n    ALL: TRUE\n\nTASK:\n    ID: task.case\n    GOAL: REF(goal.case)\n    SEQUENCE: REF(sequence.case)\n    SUCCESS: REF(success.case)\n"
+        ),
+        "task.case",
+    )
+}
+
+/// Closed typed OBJECTs can be collection members through ordinary value REF.
+pub fn group_objects() -> String {
+    format!(
+        r#"{HEADER}
+DEFINE:
+    ID: type.tagged
+    KIND: kind.type
+    BASE: OBJECT
+    FIELD:
+        NAME: tag
+        TYPE: STRING
+        REQUIRED: TRUE
+
+DEFINE:
+    ID: type.grouped
+    KIND: kind.type
+    BASE: OBJECT
+    FIELD:
+        NAME: key
+        TYPE: STRING
+        REQUIRED: TRUE
+    FIELD:
+        NAME: items
+        TYPE: LIST[OBJECT[REF(type.tagged)]]
+        REQUIRED: TRUE
+
+DATA:
+    ID: data.first
+    TYPE: OBJECT[REF(type.tagged)]
+    VALUE:
+        tag: "a"
+
+DATA:
+    ID: data.second
+    TYPE: OBJECT[REF(type.tagged)]
+    VALUE:
+        tag: "b"
+
+DATA:
+    ID: data.third
+    TYPE: OBJECT[REF(type.tagged)]
+    VALUE:
+        tag: "a"
+
+INPUT:
+    ID: input.members
+    TYPE: LIST[OBJECT[REF(type.tagged)]]
+    VALUE: [REF(data.first), REF(data.second), REF(data.third)]
+
+OUTPUT:
+    ID: output.groups
+    TYPE: LIST[OBJECT[REF(type.grouped)]]
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.case
+    ASSERT: EXISTS(REF(output.groups))
+
+ACTION:
+    ID: action.group
+    OPERATION: core.group
+    TARGET: REF(input.members)
+    PARAMETER:
+        NAME: key
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "tag"
+    OUTPUT: REF(output.groups)
+
+VERIFY:
+    ID: verify.case
+    ASSERT: COUNT(REF(output.groups)) == 2 AND REF(output.groups)[0].key == "a" AND REF(output.groups)[1].key == "b" AND REF(output.groups)[0].items == [REF(data.first), REF(data.third)] AND REF(output.groups)[1].items == [REF(data.second)]
+
+SUCCESS:
+    ID: success.case
+    ALL: [REF(verify.case)]
+
+TASK:
+    ID: task.case
+    GOAL: REF(goal.case)
+    INPUT: REF(input.members)
+    ACTION: REF(action.group)
+    OUTPUT: REF(output.groups)
+    SUCCESS: REF(success.case)
+
+EXECUTE:
+    REFERENCE: REF(task.case)
+"#
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1869,4 +2126,94 @@ EXECUTE:
     REFERENCE: REF(task.case)
 "
     )
+}
+
+/// Finite, exact command fixture: emit fixed bytes to stdout and no other
+/// application-visible state. This is not a safety claim about arbitrary code.
+#[derive(Clone, Copy)]
+pub enum CommandRetry { Complete, NoProof, FailAgain }
+struct PartialCommand { mode: CommandRetry, calls: usize }
+impl lcl_runtime::Host for PartialCommand {
+    fn permits(&mut self, request: &lcl_runtime::CapabilityRequest) -> lcl_runtime::Permission {
+        if request.operation == "core.execute" && request.target == Some(lcl_runtime::Value::Constructed {
+            constructor: "PATH".into(), text: "/case/emit-fixed".into(),
+        }) && self.calls < 2 && request.invocation.attempt == self.calls {
+            lcl_runtime::Permission::Granted
+        } else { lcl_runtime::Permission::Denied("outside exact fixed-emitter fixture".into()) }
+    }
+    fn invoke(&mut self, request: &lcl_runtime::CapabilityRequest) -> lcl_runtime::CapabilityOutcome {
+        assert_eq!(request.invocation.attempt, self.calls);
+        self.calls += 1;
+        let complete = self.calls == 2 && matches!(self.mode, CommandRetry::Complete);
+        let stdout = if complete { "complete" } else if self.calls == 1 { "old partial" } else { "final partial" };
+        let mut observation = lcl_runtime::Observation::none()
+            .with("mode", lcl_runtime::Value::Identifier("non_graph".into()))
+            .with("started", lcl_runtime::Value::Boolean(true))
+            .with("completed", lcl_runtime::Value::Boolean(complete))
+            .with("stdout", lcl_runtime::Value::Text(stdout.into()))
+            .with("stderr", lcl_runtime::Value::Text(String::new()))
+            .with_effect(lcl_runtime::ObservedEffect {
+                class: lcl_runtime::EffectClass::Process,
+                state: if complete { lcl_runtime::RecordState::Applied } else { lcl_runtime::RecordState::Partial },
+                target: Some("/case/emit-fixed".into()),
+                evidence: vec![format!("fixed emitter stopped; captured stdout {stdout:?}; no other application-visible effects")],
+            });
+        if complete {
+            observation = observation.with("exit_code", lcl_runtime::Value::Integer(lcl_checker::numeric::Decimal::parse_integer("0").unwrap()));
+            lcl_runtime::CapabilityOutcome::Completed(observation)
+        } else {
+            observation.host_limited = true;
+            lcl_runtime::CapabilityOutcome::Failed { detail: "bounded fixed emitter interrupted".into(), observation }
+        }
+    }
+    fn retry_evidence(&mut self, context: &lcl_runtime::capability::RetryContext) -> lcl_runtime::capability::RetryEvidence {
+        use lcl_runtime::capability::{RetryEvidence, RetryMethod, RetryProof};
+        assert_eq!(self.calls, 1);
+        if matches!(self.mode, CommandRetry::NoProof) { return RetryEvidence::Missing; }
+        RetryEvidence::Established(Box::new(RetryProof {
+            context: context.clone(), method: RetryMethod::Repeat,
+            effect_state: context.previous.effect_state,
+            observed_effects: context.previous.observed_effects.clone(),
+            post_state: "fixed emitter stopped, private stdout captured; exact same immutable command and request".into(),
+            evidence: vec!["the bounded fixture only emits fixed bytes to a fresh private stdout; repeat cannot duplicate an external mutation or expand target, arguments, environment, authority or scope".into()],
+        }))
+    }
+}
+
+pub fn retry_command(mode: CommandRetry) -> Probe {
+    let source = retry_read(None).replace("core.read", "core.execute")
+        .replace("/case/retry.txt", "/case/emit-fixed").replace("LIMIT: 2", "LIMIT: 1");
+    let field = |attempt, name: &str, value: &str| Expectation::AttemptField {
+        declaration: "action.read".into(), attempt, field: name.into(), value: value.into(),
+    };
+    let mut assertions = vec![
+        field(0, "initial_output", "MISSING"), field(0, "output_binding", "partial"),
+        field(0, "stdout", "\"old partial\""), field(0, "effect_state", "partial"),
+        Expectation::Diagnostic("error.host.constraint".into()),
+    ];
+    let (label, final_value, statuses) = match mode {
+        CommandRetry::Complete => {
+            assertions.extend([Expectation::Accepts, Expectation::Terminal("status.succeeded".into()),
+                Expectation::RetryProofs(1), field(1, "initial_output", "MISSING"),
+                field(1, "output_binding", "bound"), field(1, "stdout", "\"complete\""),
+                Expectation::NoDiagnostic("error.retry.exhausted".into())]);
+            ("recovered", "\"complete\"", vec!["status.blocked", "status.succeeded"])
+        }
+        CommandRetry::NoProof => {
+            assertions.extend([Expectation::Diagnostic("error.required.missing".into()),
+                Expectation::RetryProofs(0), Expectation::NoDiagnostic("error.retry.exhausted".into())]);
+            ("safety-blocked", "\"old partial\"", vec!["status.blocked"])
+        }
+        CommandRetry::FailAgain => {
+            assertions.extend([Expectation::Diagnostic("error.retry.exhausted".into()),
+                Expectation::RetryProofs(1), field(1, "initial_output", "MISSING"),
+                field(1, "output_binding", "partial"), field(1, "stdout", "\"final partial\"")]);
+            ("exhausted", "\"final partial\"", vec!["status.blocked", "status.blocked"])
+        }
+    };
+    assertions.push(Expectation::Attempts { declaration: "action.read".into(), statuses: statuses.into_iter().map(str::to_string).collect() });
+    assertions.push(Expectation::Output { id: "output.payload".into(), value: final_value.into() });
+    let mut probe = Probe::labelled(label, source, Expectation::All(assertions));
+    probe.command_retry = Some(mode);
+    probe
 }

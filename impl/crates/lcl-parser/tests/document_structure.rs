@@ -173,3 +173,23 @@ fn the_grammar_stage_is_not_evaluated_after_a_lexical_failure() {
         .expect_err("a failed lexical stage must not yield a grammar verdict");
     assert_eq!(err.lexical_primary, "error.source.tab");
 }
+
+
+#[test]
+fn local_schema_validates_field_declarations_without_admitting_object_data() {
+    let body = "DATA:\n    ID: data.value\n    TYPE: OBJECT\n    VALUE:\n        number: 1\n    SCHEMA:\n        FIELD:\n            NAME: number\n            TYPE: INTEGER\n            REQUIRED: TRUE\n        FIELD:\n            NAME: optional\n            TYPE: STRING\n            REQUIRED: FALSE\n";
+    let parsed = parse(&data_doc(body));
+    assert_eq!(parsed.outcome(), Outcome::Parsed, "{:?}", ids(&parsed));
+    // Local SCHEMA is a sequence of FIELD declarations, not object data or
+    // executable statements. FIELD bodies retain their own signature checks.
+    for invalid in [
+        body.replace("        FIELD:\n            NAME: optional\n            TYPE: STRING\n            REQUIRED: FALSE", "        ACTION:\n            ID: action.invalid\n            OPERATION: core.inspect"),
+        body.replace("        FIELD:\n            NAME: optional\n            TYPE: STRING\n            REQUIRED: FALSE", "        extra: 1"),
+    ] {
+        assert!(id_list(&parse(&data_doc(&invalid))).contains(&"error.block.field".into()));
+    }
+    let omitted = body.replace("            TYPE: INTEGER\n", "");
+    assert!(id_list(&parse(&data_doc(&omitted))).contains(&"error.field.required".into()));
+    let scalar = body.replace("        FIELD:\n            NAME: optional\n            TYPE: STRING\n            REQUIRED: FALSE", "        FIELD: 1");
+    assert!(id_list(&parse(&data_doc(&scalar))).contains(&"error.field.type".into()));
+}

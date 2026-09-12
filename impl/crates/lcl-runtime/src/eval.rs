@@ -265,18 +265,10 @@ impl<'a> Evaluator<'a> {
                 other => members.push(other),
             }
         }
-        if self.is_set(collection.span) {
-            // "equal members collapse under strict equality before the
-            // snapshot"
-            let mut unique: Vec<Value> = Vec::new();
-            for member in members {
-                if !unique.iter().any(|kept| strict_equal(kept, &member)) {
-                    unique.push(member);
-                }
-            }
-            return Ok(Value::Set(unique));
-        }
-        Ok(Value::List(members))
+        Ok(lcl_semantics::value::collection(
+            members,
+            self.is_set(collection.span),
+        ))
     }
 
     /// True when M4 annotated this expression as a `SET`.
@@ -719,7 +711,7 @@ impl<'a> Evaluator<'a> {
         // before a bound-value read."
         if is_reserved_property(&property.name) {
             if let Some(id) = reference_target(&property.base) {
-                return self.metadata(id, &property.name, property.span);
+                return self.metadata(id, &property.name, depth);
             }
         }
         let base = self.eval(&property.base, depth + 1)?;
@@ -749,7 +741,7 @@ impl<'a> Evaluator<'a> {
     /// `05_SEMANTICS/01`: "A metadata read such as REF(output.copy).TARGET
     /// reads the declaration field without requiring the OUTPUT's result
     /// binding." So this never touches a binding and never starts a producer.
-    fn metadata(&self, id: &str, field: &str, span: Span) -> Demand {
+    fn metadata(&self, id: &str, field: &str, depth: usize) -> Demand {
         let Some(index) = self
             .resolved
             .declarations()
@@ -759,13 +751,28 @@ impl<'a> Evaluator<'a> {
         else {
             return Ok(Value::Missing);
         };
-        match crate::syntax::declaration_field_text(self.resolved, index, field) {
-            Some(text) => Ok(Value::Text(text)),
-            None => {
-                let _ = span;
-                Ok(Value::Missing)
-            }
+        let Some(block) = crate::syntax::declaration_block(self.resolved, index) else {
+            return Ok(Value::Missing);
+        };
+        if let Some(expression) = crate::syntax::field_expr(&block, field) {
+            // Metadata has the selected field's registered/inferred type. Its
+            // source spelling is not a STRING value, and its spans belong to
+            // the declaring document even when the read is in an importer.
+            let declaring = &self.resolved.declarations().all()[index];
+            let context = Evaluator {
+                contracts: self.contracts,
+                resolved: self.resolved,
+                checked: self.checked,
+                plan: self.plan,
+                bindings: self.bindings,
+                source: declaring.source.clone(),
+                iteration: self.iteration.clone(),
+            };
+            return context.eval(expression, depth + 1);
         }
+        Ok(crate::syntax::declaration_field_text(self.resolved, index, field)
+            .map(Value::Text)
+            .unwrap_or(Value::Missing))
     }
 
     fn index(&self, index: &lcl_parser::syntax::IndexAccess, depth: usize) -> Demand {
@@ -1339,52 +1346,7 @@ fn split_regex(text: &str) -> (&str, &str) {
 /// compares both exact unit identifier and numeric magnitude; different units
 /// produce FALSE."
 pub fn strict_equal(left: &Value, right: &Value) -> bool {
-    match (left, right) {
-        (Value::Missing, Value::Missing) | (Value::Unknown, Value::Unknown) => true,
-        (Value::Missing, _) | (_, Value::Missing) => false,
-        (Value::Unknown, _) | (_, Value::Unknown) => false,
-        (Value::Null, Value::Null) => true,
-        (Value::Null, _) | (_, Value::Null) => false,
-        (Value::Boolean(a), Value::Boolean(b)) => a == b,
-        (Value::Text(a), Value::Text(b)) => a == b,
-        (Value::Identifier(a), Value::Identifier(b)) => a == b,
-        // "Two resulting REFERENCE values compare resolved declaration or
-        // loop-instance identity."
-        (Value::Reference(a), Value::Reference(b)) => a == b,
-        (
-            Value::Constructed {
-                constructor: ca,
-                text: ta,
-            },
-            Value::Constructed {
-                constructor: cb,
-                text: tb,
-            },
-        ) => ca == cb && ta == tb,
-        // "MEASURE equality requires both the identical unit identifier and
-        // exact equal numeric magnitude; different units yield FALSE rather
-        // than a unit error."
-        (Value::Quantity(a, ua), Value::Quantity(b, ub)) => {
-            ua == ub && a.compare(b) == Ordering::Equal
-        }
-        (Value::Percentage(a), Value::Percentage(b)) => a.compare(b) == Ordering::Equal,
-        (Value::Bytes(a), Value::Bytes(b)) => a.compare(b) == Ordering::Equal,
-        // "Different material static types are unequal except INTEGER/DECIMAL
-        // promotion."
-        (Value::Integer(a) | Value::Decimal(a), Value::Integer(b) | Value::Decimal(b)) => {
-            a.compare(b) == Ordering::Equal
-        }
-        (Value::List(a), Value::List(b)) | (Value::Set(a), Value::Set(b)) => {
-            a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| strict_equal(x, y))
-        }
-        (Value::Object(a), Value::Object(b)) => {
-            a.len() == b.len()
-                && a.iter()
-                    .zip(b.iter())
-                    .all(|((ka, va), (kb, vb))| ka == kb && strict_equal(va, vb))
-        }
-        _ => false,
-    }
+    lcl_semantics::value::strict_equal(left, right)
 }
 
 /// The number of members `COUNT` reports, when the family has one.

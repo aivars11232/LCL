@@ -354,8 +354,22 @@ fn temporal_values_order_by_their_canonical_keys() {
     // "DATETIME uses its exact offset-normalized UTC instant."
     assert_eq!(
         boolean("DATETIME(\"2024-01-01T00:00:00Z\") == DATETIME(\"2024-01-01T01:00:00+01:00\")"),
+        Value::Boolean(true),
+        "03_TYPES_AND_VALUES/03 and ordered_value_equality require the same normalized instant"
+    );
+    assert_eq!(
+        boolean("DATETIME(\"2024-01-01T00:00:00Z\") == DATETIME(\"2024-01-01T00:00:00+01:00\")"),
         Value::Boolean(false),
-        "equality is representation identity for constructed values"
+        "the same local clock with a different offset is a different instant"
+    );
+    assert_eq!(
+        boolean("TIME(\"10:00:00+01:00\") == TIME(\"09:00:00Z\")"),
+        Value::Boolean(true)
+    );
+    assert_eq!(
+        boolean("TIME(\"00:00:00+01:00\") == TIME(\"23:00:00Z\")"),
+        Value::Boolean(false),
+        "normalization retains signed day displacement without wrapping"
     );
     assert_eq!(
         boolean("DATETIME(\"2024-01-01T00:00:00Z\") < DATETIME(\"2024-01-01T00:00:01Z\")"),

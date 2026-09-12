@@ -28,7 +28,8 @@
 //! executed case is a source that ran. Adding them would produce a number that
 //! describes nothing, and would read as coverage that does not exist.
 
-use crate::runner::{ExecutedCase, Verdict};
+use crate::obligations::{Obligations, MAPPING_DIGEST};
+use crate::runner::{judge, ExecutedCase, Verdict};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
@@ -203,11 +204,13 @@ pub struct ConformanceReport {
     /// about *which* ones ran. A report holding a count could say that sixty
     /// cases passed while saying nothing about the six that never ran.
     indexed_witnesses: BTreeSet<String>,
+    obligations: Option<Obligations>,
     covered: Vec<CoveredCase>,
     descriptive_only: Vec<Descriptive>,
 }
 
 impl ConformanceReport {
+    /// Legacy descriptive report. Caller-selected indexes cannot certify a version.
     pub fn new(
         implementation: Implementation,
         indexed_requirements: usize,
@@ -217,13 +220,31 @@ impl ConformanceReport {
             implementation,
             indexed_requirements,
             indexed_witnesses: indexed_witnesses.into_iter().collect(),
+            obligations: None,
             covered: Vec::new(),
             descriptive_only: Vec::new(),
         }
     }
 
+    /// A claim-capable report bound to the complete approved inventory.
+    pub fn for_spec(spec: &lcl_spec::SpecPackage) -> Result<Self, String> {
+        let obligations = Obligations::load(spec)?;
+        let index = crate::ConformanceIndex::load(spec).map_err(|e| e.to_string())?;
+        let mut report = Self::new(
+            Implementation::under_test(spec.identity_digest(), spec.formal_version()),
+            index.requirement_count(), index.witnesses().iter().map(|w| w.id.clone()),
+        );
+        report.obligations = Some(obligations);
+        Ok(report)
+    }
+
+    pub fn obligations(&self) -> Option<&Obligations> { self.obligations.as_ref() }
+
     /// Record one executed case and the coverage it contributes.
-    pub fn record(&mut self, case: ExecutedCase, coverage: Coverage) {
+    pub fn record(&mut self, mut case: ExecutedCase, coverage: Coverage) {
+        // A supplied verdict cannot overrule the observation and expectation.
+        case.verdict = judge(&case.expectation, &case.observed);
+        if case.source.is_empty() { case.verdict = Verdict::Failed; }
         self.covered.push(CoveredCase { case, coverage });
     }
 
@@ -303,123 +324,53 @@ impl ConformanceReport {
         out
     }
 
-    /// The witness one executed case belongs to.
-    ///
-    /// A witness may be probed several times, and each probe is recorded under
-    /// `<witness>/<label>`. The witness is what the catalog indexes, so that is
-    /// what completeness is measured against.
-    fn witness_of(case_id: &str) -> &str {
-        case_id.split('/').next().unwrap_or(case_id)
+    fn probe_established(&self, id: &str) -> bool {
+        let mut records = self.covered.iter().filter(|r| r.case.id == id);
+        matches!(records.next(), Some(record) if record.case.verdict == Verdict::Passed)
+            && records.next().is_none()
     }
 
-    /// Every indexed witness with at least one passing case and no failing one.
-    fn supported_witnesses(&self) -> BTreeSet<&str> {
-        let mut passed: BTreeSet<&str> = BTreeSet::new();
-        let mut failed: BTreeSet<&str> = BTreeSet::new();
-        for covered in &self.covered {
-            let witness = ConformanceReport::witness_of(&covered.case.id);
-            match covered.case.verdict {
-                Verdict::Passed => {
-                    passed.insert(witness);
-                }
-                Verdict::Failed => {
-                    failed.insert(witness);
-                }
-            }
-        }
-        passed.difference(&failed).copied().collect()
-    }
-
-    /// Indexed witnesses this run did not establish, in identifier order.
-    ///
-    /// `09_CONFORMANCE/01`: "No semantic-conformance claim is permitted while
-    /// the required implementation or concrete executable cases are absent."
-    /// A witness that was never executed, that was executed and failed, or that
-    /// was recorded as descriptive because this build cannot exhibit it, is
-    /// absent in exactly that sense. "Unsupported core behavior is failure, not
-    /// silent inference."
+    /// All required probes of a witness must be present exactly once and pass.
+    /// An arbitrary suffix, duplicate, or one passing prefix cannot fill a gap.
     pub fn unsupported_witnesses(&self) -> Vec<&str> {
-        let supported = self.supported_witnesses();
-        self.indexed_witnesses
-            .iter()
-            .map(String::as_str)
-            .filter(|id| !supported.contains(id))
-            .collect()
+        self.indexed_witnesses.iter().filter(|id| {
+            self.obligations.as_ref().and_then(|inventory| inventory.row(id))
+                .map(|row| !row.probes.iter().all(|probe| self.probe_established(probe)))
+                .unwrap_or(true)
+        }).map(String::as_str).collect()
     }
 
-    /// Coverage levels with at least one passing case and no failing one.
-    fn clean_coverage(&self) -> BTreeSet<Coverage> {
-        self.by_coverage()
-            .into_iter()
-            .filter(|(_, (passed, failed))| *passed > 0 && *failed == 0)
-            .map(|(coverage, _)| coverage)
-            .collect()
+    /// Required probes absent, failed or duplicated at this exact claim level.
+    pub fn missing_probes(&self, level: ClaimLevel) -> Vec<&str> {
+        self.obligations.as_ref().map(|inventory| inventory.probes()
+            .filter(|(id, required)| *required == level && !self.probe_established(id))
+            .map(|(id, _)| id).collect()).unwrap_or_default()
     }
 
-    /// The level this run's executed evidence supports.
-    ///
-    /// One failed case withdraws the level rather than qualifying it:
-    /// "Unsupported core behavior is failure, not silent inference."
-    ///
-    /// ## Why a clean stage is not a claim
-    ///
-    /// [`Self::clean_coverage`] answers "did anything pass at this stage", and
-    /// that is a question about breadth, not completeness: nine stages each
-    /// holding one passing case satisfied it, and a run that executed nine of
-    /// sixty-six witnesses could claim conformance to the whole semantics.
-    /// `09_CONFORMANCE/01` forbids exactly that, in a sentence about absence
-    /// rather than about failure: "No semantic-conformance claim is permitted
-    /// while the required implementation or concrete executable cases are
-    /// absent."
-    ///
-    /// So a semantic claim needs both. The stages say the evidence reaches the
-    /// semantic layers at all; [`Self::unsupported_witnesses`] says none of the
-    /// canonically indexed decision witnesses is missing, failed or unexhibited.
-    /// A run short of that falls back to the source level rather than
-    /// footnoting the higher one, which is what "permitted" means.
-    ///
-    /// The 799-entry requirements index is deliberately not part of this. The
-    /// canonical text calls it "structural evidence only" and says "catalog
-    /// entries without concrete input and an implementation result are not
-    /// executed conformance cases", so requiring an executed case per entry
-    /// would be inventing a gate the specification declines to impose.
+    /// Claims follow complete obligations, never category hits or caller counts.
+    /// A semantic failure does not erase independently complete source evidence.
     pub fn claim(&self) -> ClaimLevel {
-        if self.covered.is_empty() || self.failed_count() > 0 {
+        if self.obligations.is_none() || !self.missing_probes(ClaimLevel::Source).is_empty()
+            || self.covered.iter().any(|r| matches!(r.coverage, Coverage::Lexical | Coverage::Grammar)
+                && r.case.verdict == Verdict::Failed) {
             return ClaimLevel::None;
         }
-        let clean = self.clean_coverage();
-        if !Coverage::SOURCE.iter().all(|c| clean.contains(c)) {
-            return ClaimLevel::None;
-        }
-        if !Coverage::SEMANTICS.iter().all(|c| clean.contains(c)) {
-            return ClaimLevel::Source;
-        }
-        if !self.unsupported_witnesses().is_empty() {
+        if !self.missing_probes(ClaimLevel::Semantics).is_empty() || self.failed_count() > 0 {
             return ClaimLevel::Source;
         }
         ClaimLevel::Semantics
     }
 
-    /// Why the run does not support a higher level, in plain terms.
     pub fn claim_limits(&self) -> Vec<String> {
         let mut out = Vec::new();
-        if self.covered.is_empty() {
-            out.push("no case was executed".to_string());
-            return out;
+        if self.obligations.is_none() {
+            out.push("no verified complete obligation inventory; caller-selected indexes cannot certify a version".into());
         }
-        for id in self.failed_ids() {
-            out.push(format!("case {id} failed"));
-        }
-        let clean = self.clean_coverage();
-        for coverage in Coverage::SOURCE.iter().chain(Coverage::SEMANTICS.iter()) {
-            if !clean.contains(coverage) {
-                out.push(format!("no clean executed coverage at {coverage}"));
+        for id in self.failed_ids() { out.push(format!("case {id} failed")); }
+        for level in [ClaimLevel::Source, ClaimLevel::Semantics] {
+            for id in self.missing_probes(level) {
+                out.push(format!("required {level} probe {id} missing, failed or duplicated"));
             }
-        }
-        // Named individually, never summarised as a number: the point of the
-        // list is that a reader can see which behaviour is unestablished.
-        for id in self.unsupported_witnesses() {
-            out.push(format!("witness {id} has no passing executed case"));
         }
         out
     }
@@ -443,6 +394,16 @@ impl ConformanceReport {
         out.push_str("  host capabilities :\n");
         for capability in &self.implementation.host_capabilities {
             out.push_str(&format!("    - {capability}\n"));
+        }
+
+        if let Some(inventory) = &self.obligations {
+            out.push_str(&format!("  obligation mapping: {MAPPING_DIGEST}\n  required obligations: {}\n  required probes: {}\n",
+                inventory.rows().count(), inventory.probes().count()));
+            for level in [ClaimLevel::Source, ClaimLevel::Semantics] {
+                out.push_str(&format!("  missing {level} probes: {}\n", self.missing_probes(level).len()));
+            }
+        } else {
+            out.push_str("  obligation mapping: UNVERIFIED caller-selected index\n");
         }
 
         out.push_str("\nDESCRIPTIVE CATALOGS (indexed, never executed)\n");
@@ -528,218 +489,112 @@ impl ConformanceReport {
 
 #[cfg(test)]
 mod tests {
+    // These are instrument tests using synthetic observations. They validate
+    // report logic and are never emitted as language conformance evidence.
     use super::*;
     use crate::runner::{Expectation, Observed, Reached};
 
-    fn case(id: &str, verdict: Verdict) -> ExecutedCase {
-        ExecutedCase {
-            id: id.to_string(),
-            contract: "test".to_string(),
-            source: "LCL:\n".to_string(),
-            expectation: Expectation::Accepts,
-            observed: Observed {
-                reached: Reached::Completion,
-                primary: None,
-                primary_stage: None,
-                diagnostics: Vec::new(),
-                terminal_status: Some("status.succeeded".to_string()),
-                checks: Vec::new(),
-                outputs: Vec::new(),
-            },
-            verdict,
-        }
+    fn case(id: &str, passed: bool) -> ExecutedCase {
+        ExecutedCase { id: id.into(), contract: "report-instrument-test".into(),
+            source: "synthetic report instrument input".into(), expectation: Expectation::Accepts,
+            observed: Observed { reached: Reached::Completion,
+                primary: if passed { None } else { Some("error.operation.precondition".into()) },
+                ..Observed::default() }, verdict: Verdict::Passed }
     }
-
-    fn implementation() -> Implementation {
-        Implementation::under_test("digest", "0.1.0")
+    fn report() -> ConformanceReport {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../canonical/LCL_Core_0.1.0");
+        ConformanceReport::for_spec(&lcl_spec::SpecPackage::open(root).unwrap()).unwrap()
     }
-
-    /// A report whose indexed witnesses are exactly `witnesses`.
-    fn report_of(witnesses: &[&str]) -> ConformanceReport {
-        ConformanceReport::new(
-            implementation(),
-            799,
-            witnesses.iter().map(|id| id.to_string()),
-        )
-    }
-
-    /// One passing case at every coverage level, named after a witness each.
-    fn cover_every_stage(report: &mut ConformanceReport, witnesses: &[&str]) {
-        for (coverage, witness) in Coverage::ALL.into_iter().zip(witnesses) {
-            report.record(case(witness, Verdict::Passed), coverage);
-        }
-    }
-
-    fn stage_witnesses() -> Vec<String> {
-        Coverage::ALL
-            .into_iter()
-            .map(|coverage| format!("W-{coverage}"))
-            .collect()
+    fn fill(report: &mut ConformanceReport, level: ClaimLevel, omitted: &[&str]) {
+        let ids: Vec<_> = report.obligations().unwrap().probes()
+            .filter(|(id, required)| *required <= level && !omitted.contains(id))
+            .map(|(id, _)| id.to_string()).collect();
+        for id in ids { report.record(case(&id, true), if id.starts_with("source/") { Coverage::Grammar } else { Coverage::Runtime }); }
     }
 
     #[test]
     fn an_empty_run_claims_nothing() {
-        let report = report_of(&["CLOSURE-001"]);
+        let report = report();
         assert_eq!(report.claim(), ClaimLevel::None);
         assert_eq!(report.executed_count(), 0);
         assert_eq!(report.descriptive_count(), 799);
     }
-
     #[test]
-    fn one_failed_case_withdraws_the_claim_entirely() {
-        let names = stage_witnesses();
-        let ids: Vec<&str> = names.iter().map(String::as_str).collect();
-        let mut report = report_of(&ids);
-        cover_every_stage(&mut report, &ids);
-        assert_eq!(report.claim(), ClaimLevel::Semantics);
-
-        report.record(case("bad", Verdict::Failed), Coverage::Runtime);
-        assert_eq!(
-            report.claim(),
-            ClaimLevel::None,
-            "unsupported behavior is failure, not a footnote"
-        );
-        assert_eq!(report.failed_ids(), vec!["bad".to_string()]);
-    }
-
-    #[test]
-    fn source_coverage_alone_claims_source_only() {
-        let mut report = report_of(&["W-lexical", "W-grammar"]);
-        report.record(case("W-lexical", Verdict::Passed), Coverage::Lexical);
-        report.record(case("W-grammar", Verdict::Passed), Coverage::Grammar);
-        assert_eq!(report.claim(), ClaimLevel::Source);
-        assert!(report
-            .claim_limits()
-            .iter()
-            .any(|l| l.contains("no clean executed coverage at runtime")));
-    }
-
-    #[test]
-    fn descriptive_and_executed_are_never_summed() {
-        let mut report = report_of(&["one"]);
-        report.record(case("one", Verdict::Passed), Coverage::Lexical);
-        assert_eq!(report.descriptive_count(), 799);
-        assert_eq!(report.executed_count(), 1);
-        let rendered = report.render();
-        assert!(rendered.contains("799 entries, all not_executed"));
-        assert!(rendered.contains("executed : 1"));
-        // There is no combined figure to print, and none is printed.
-        assert!(!rendered.contains("800"));
-    }
-
-    #[test]
-    fn a_descriptive_only_entry_is_listed_with_its_reason() {
-        let mut report = report_of(&["CLOSURE-999"]);
-        report.record_descriptive("CLOSURE-999", "needs a real network adapter");
-        let rendered = report.render();
-        assert!(rendered.contains("CLOSURE-999 — needs a real network adapter"));
-    }
-
-    // -----------------------------------------------------------------------
-    // Completeness
-    // -----------------------------------------------------------------------
-    //
-    // Post-Task-20 finding F8. A clean stage meant "something passed here", and
-    // the claim was built from nine of those. Nine passing cases could then
-    // certify conformance to the whole of LCL's semantics.
-
-    #[test]
-    fn sparse_stage_passes_cannot_claim_full_semantics() {
-        // Every stage clean, every case passing, no failures -- and sixty of
-        // the catalogue's witnesses never ran. This is the exact shape that
-        // used to return `semantics_conforming`.
-        let names = stage_witnesses();
-        let mut ids: Vec<&str> = names.iter().map(String::as_str).collect();
-        let absent: Vec<String> = (0..60).map(|n| format!("CLOSURE-{n:03}")).collect();
-        ids.extend(absent.iter().map(String::as_str));
-
-        let mut report = report_of(&ids);
-        let covered: Vec<&str> = names.iter().map(String::as_str).collect();
-        cover_every_stage(&mut report, &covered);
-
-        assert_eq!(report.failed_count(), 0);
-        assert_eq!(
-            report.claim(),
-            ClaimLevel::Source,
-            "breadth across stages is not completeness across witnesses"
-        );
-        assert_eq!(report.unsupported_witnesses().len(), 60);
-    }
-
-    #[test]
-    fn one_missing_witness_blocks_the_semantic_claim() {
-        let names = stage_witnesses();
-        let mut ids: Vec<&str> = names.iter().map(String::as_str).collect();
-        let mut report = report_of(&ids);
-        cover_every_stage(&mut report, &ids);
-        assert_eq!(report.claim(), ClaimLevel::Semantics);
-
-        // Add exactly one indexed witness that nothing establishes.
-        ids.push("CLOSURE-041");
-        let mut with_gap = report_of(&ids);
-        cover_every_stage(&mut with_gap, &ids);
-        assert_eq!(with_gap.claim(), ClaimLevel::Source);
-        assert_eq!(with_gap.unsupported_witnesses(), vec!["CLOSURE-041"]);
-        assert!(with_gap
-            .claim_limits()
-            .iter()
-            .any(|l| l == "witness CLOSURE-041 has no passing executed case"));
-    }
-
-    #[test]
-    fn a_witness_left_descriptive_is_not_established() {
-        // "Unsupported core behavior is failure, not silent inference." An
-        // entry recorded with a reason is honest about what it is; it is still
-        // not an executed case, and it cannot support a claim.
-        let names = stage_witnesses();
-        let mut ids: Vec<&str> = names.iter().map(String::as_str).collect();
-        ids.push("CLOSURE-021");
-        let mut report = report_of(&ids);
-        let covered: Vec<&str> = names.iter().map(String::as_str).collect();
-        cover_every_stage(&mut report, &covered);
-        report.record_descriptive("CLOSURE-021", "Core 0.1.0 supplies no way to write one");
-
-        assert_eq!(report.claim(), ClaimLevel::Source);
-        assert_eq!(report.unsupported_witnesses(), vec!["CLOSURE-021"]);
-    }
-
-    #[test]
-    fn a_witness_probed_several_times_is_established_once() {
-        // A probe is recorded as `<witness>/<label>`, and completeness is
-        // measured over witnesses rather than over probes.
-        let names = stage_witnesses();
-        let ids: Vec<&str> = names.iter().map(String::as_str).collect();
-        let mut report = report_of(&ids);
-        cover_every_stage(&mut report, &ids);
-        assert_eq!(report.claim(), ClaimLevel::Semantics);
-
-        let mut labelled = report_of(&ids);
-        for (coverage, witness) in Coverage::ALL.into_iter().zip(&ids) {
-            for label in ["a", "b"] {
-                labelled.record(
-                    case(&format!("{witness}/{label}"), Verdict::Passed),
-                    coverage,
-                );
-            }
+    fn caller_selected_sparse_or_empty_inventories_cannot_certify() {
+        for ids in [vec![], vec!["CLOSURE-001".to_string()]] {
+            let mut r = ConformanceReport::new(Implementation::under_test(lcl_spec::APPROVED_PACKAGE.identity_digest, "0.1.0"), 799, ids);
+            for c in Coverage::ALL { r.record(case(&format!("{c}"), true), c); }
+            assert_eq!(r.claim(), ClaimLevel::None);
+            assert!(r.claim_limits()[0].contains("no verified complete obligation inventory"));
         }
-        assert_eq!(labelled.claim(), ClaimLevel::Semantics);
-        assert!(labelled.unsupported_witnesses().is_empty());
-        assert_eq!(labelled.executed_count(), Coverage::ALL.len() * 2);
     }
-
     #[test]
-    fn one_failing_probe_unestablishes_its_whole_witness() {
-        // A witness with a passing probe and a failing one is not established,
-        // even though something under its identifier passed.
-        let names = stage_witnesses();
-        let ids: Vec<&str> = names.iter().map(String::as_str).collect();
-        let mut report = report_of(&ids);
-        cover_every_stage(&mut report, &ids);
-        report.record(
-            case(&format!("{}/second", ids[0]), Verdict::Failed),
-            Coverage::Lexical,
-        );
-        assert_eq!(report.claim(), ClaimLevel::None, "a failure withdraws it");
-        assert_eq!(report.unsupported_witnesses(), vec![ids[0]]);
+    fn source_requires_every_lexical_grammar_block_and_field_probe() {
+        for omitted in ["source/fixture/invalid_bom.lcl", "source/grammar/expression/positive",
+            "source/block/ACTION/minimum", "source/field/ACTION/TARGET/form/expression"] {
+            let mut r = report(); fill(&mut r, ClaimLevel::Semantics, &[omitted]);
+            assert_eq!(r.claim(), ClaimLevel::None, "{omitted}");
+            assert_eq!(r.missing_probes(ClaimLevel::Source), [omitted]);
+        }
+    }
+    #[test]
+    fn full_source_evidence_supports_source_independently() {
+        let mut r = report(); fill(&mut r, ClaimLevel::Source, &[]);
+        assert_eq!(r.claim(), ClaimLevel::Source);
+        r.record(case("unrelated-semantic-failure", false), Coverage::Runtime);
+        assert_eq!(r.claim(), ClaimLevel::Source);
+    }
+    #[test]
+    fn semantic_contracts_are_required_in_addition_to_all_witnesses() {
+        let mut r = report();
+        let omitted = r.obligations().unwrap().probes().find(|(id, _)| id.starts_with("semantic/operation_binding/")).unwrap().0.to_string();
+        fill(&mut r, ClaimLevel::Semantics, &[&omitted]);
+        assert!(r.unsupported_witnesses().is_empty());
+        assert_eq!(r.claim(), ClaimLevel::Source);
+        r.record(case(&omitted, true), Coverage::Runtime);
+        assert_eq!(r.claim(), ClaimLevel::Semantics);
+    }
+    #[test]
+    fn necessary_subprobes_cannot_be_replaced_by_passing_prefixes() {
+        let mut r = report(); fill(&mut r, ClaimLevel::Semantics, &["CLOSURE-059/exhausted"]);
+        r.record(case("CLOSURE-059/irrelevant", true), Coverage::Runtime);
+        assert_eq!(r.unsupported_witnesses(), ["CLOSURE-059"]);
+        assert_eq!(r.claim(), ClaimLevel::Source);
+        r.record(case("CLOSURE-059/exhausted", true), Coverage::Runtime);
+        assert_eq!(r.claim(), ClaimLevel::Semantics);
+    }
+    #[test]
+    fn duplicate_required_probes_block_their_level() {
+        let mut r = report(); fill(&mut r, ClaimLevel::Semantics, &[]);
+        r.record(case("CLOSURE-059/recovered", true), Coverage::Runtime);
+        assert_eq!(r.claim(), ClaimLevel::Source);
+        assert_eq!(r.unsupported_witnesses(), ["CLOSURE-059"]);
+        r.record(case("source/block/ACTION/minimum", true), Coverage::Grammar);
+        assert_eq!(r.claim(), ClaimLevel::None);
+    }
+    #[test]
+    fn forged_passing_verdict_does_not_hide_a_failed_observation() {
+        let mut r = report(); fill(&mut r, ClaimLevel::Semantics, &["CLOSURE-059/recovered"]);
+        r.record(case("CLOSURE-059/recovered", false), Coverage::Runtime);
+        assert_eq!(r.failed_ids(), ["CLOSURE-059/recovered"]);
+        assert_eq!(r.claim(), ClaimLevel::Source);
+    }
+    #[test]
+    fn empty_source_is_not_executed_evidence() {
+        let mut r = report(); let mut c = case("empty", true); c.source.clear();
+        r.record(c, Coverage::Lexical); assert_eq!(r.failed_ids(), ["empty"]);
+    }
+    #[test]
+    fn descriptive_and_executed_counts_remain_separate() {
+        let mut r = report(); r.record(case("one", true), Coverage::Lexical);
+        assert_eq!(r.descriptive_count(), 799); assert_eq!(r.executed_count(), 1);
+        assert!(r.render().contains("799 entries, all not_executed"));
+    }
+    #[test]
+    fn descriptive_only_rows_retain_their_reasons() {
+        let mut r = report(); r.record_descriptive("CLOSURE-059", "missing fixture");
+        assert!(r.render().contains("CLOSURE-059 — missing fixture"));
+        assert!(r.unsupported_witnesses().contains(&"CLOSURE-059"));
     }
 }

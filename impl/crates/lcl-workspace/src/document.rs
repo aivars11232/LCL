@@ -24,11 +24,15 @@
 //! and every editor in existence treats the final newline as its own business.
 //! It is stated here rather than done quietly, and the reply says it happened.
 
+use std::io::Write;
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Why a document could not be read or written.
 #[derive(Debug)]
 pub enum DocumentError {
+    /// Atomic create-only publication found an occupied destination.
+    AlreadyExists(PathBuf),
     /// The path resolved outside the project root.
     Outside(PathBuf),
     /// The bytes are not valid UTF-8.
@@ -48,6 +52,7 @@ pub enum DocumentError {
 impl std::fmt::Display for DocumentError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            DocumentError::AlreadyExists(path) => write!(f, "{} already exists", path.display()),
             DocumentError::Outside(path) => {
                 write!(f, "{} is outside the project root", path.display())
             }
@@ -198,6 +203,29 @@ pub fn read(root: &Path, relative: &str) -> Result<Document, DocumentError> {
 /// intact rather than a half-written one. Same directory, because a rename
 /// across filesystems is a copy and would lose that property.
 pub fn write(root: &Path, relative: &str, text: &str) -> Result<Document, DocumentError> {
+    persist(root, relative, text, Publication::Replace)
+}
+
+/// Publish complete bytes only if the destination is absent. A same-directory
+/// hard link is atomic and cannot replace an existing file or symbolic link.
+/// Filesystems without that operation fail explicitly; there is no replacing
+/// rename fallback. Ordinary saving continues to use `write`.
+pub fn create(root: &Path, relative: &str, text: &str) -> Result<Document, DocumentError> {
+    persist(root, relative, text, Publication::Create)
+}
+
+#[derive(Clone, Copy)]
+enum Publication {
+    Create,
+    Replace,
+}
+
+fn persist(
+    root: &Path,
+    relative: &str,
+    text: &str,
+    publication: Publication,
+) -> Result<Document, DocumentError> {
     let path = resolve(root, relative)?;
     let (text, _) = admissible(text)?;
 
@@ -207,22 +235,7 @@ pub fn write(root: &Path, relative: &str, text: &str) -> Result<Document, Docume
         detail: format!("the directory could not be created: {e}"),
     })?;
 
-    let name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "document".to_string());
-    let temporary = directory.join(format!(".{name}.{}.tmp", std::process::id()));
-    std::fs::write(&temporary, text.as_bytes()).map_err(|e| DocumentError::Io {
-        path: temporary.clone(),
-        detail: format!("the document could not be written: {e}"),
-    })?;
-    std::fs::rename(&temporary, &path).map_err(|e| {
-        let _ = std::fs::remove_file(&temporary);
-        DocumentError::Io {
-            path: path.clone(),
-            detail: format!("the document could not be replaced: {e}"),
-        }
-    })?;
+    Temporary::prepare(directory, text.as_bytes())?.publish(&path, publication)?;
 
     let digest = lcl_spec::sha256::hex_digest(text.as_bytes());
     Ok(Document {
@@ -230,4 +243,175 @@ pub fn write(root: &Path, relative: &str, text: &str) -> Result<Document, Docume
         text,
         digest,
     })
+}
+
+static NEXT_TEMPORARY: AtomicU64 = AtomicU64::new(0);
+
+/// Only a file successfully reserved by create_new belongs to this guard.
+struct Temporary {
+    path: PathBuf,
+    owned: bool,
+}
+
+impl Temporary {
+    fn prepare(directory: &Path, bytes: &[u8]) -> Result<Self, DocumentError> {
+        for _ in 0..128 {
+            let number = NEXT_TEMPORARY.fetch_add(1, Ordering::Relaxed);
+            let path = directory.join(format!(".lcl-write-{}-{number}.tmp", std::process::id()));
+            let mut file = match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(file) => file,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => {
+                    return Err(DocumentError::Io {
+                        path,
+                        detail: format!("the temporary file could not be reserved: {error}"),
+                    })
+                }
+            };
+            let mut temporary = Temporary { path, owned: true };
+            let written = file.write_all(bytes).and_then(|()| file.flush());
+            drop(file);
+            if let Err(error) = written {
+                let error = DocumentError::Io {
+                    path: temporary.path.clone(),
+                    detail: format!("the document could not be written: {error}"),
+                };
+                return Err(temporary.failure(error));
+            }
+            return Ok(temporary);
+        }
+        Err(DocumentError::Io {
+            path: directory.to_path_buf(),
+            detail: "no unused temporary name could be reserved after 128 attempts".into(),
+        })
+    }
+
+    fn publish(
+        mut self,
+        destination: &Path,
+        publication: Publication,
+    ) -> Result<(), DocumentError> {
+        let published = match publication {
+            Publication::Create => std::fs::hard_link(&self.path, destination),
+            Publication::Replace => std::fs::rename(&self.path, destination),
+        };
+        if let Err(error) = published {
+            let error = if matches!(publication, Publication::Create)
+                && error.kind() == std::io::ErrorKind::AlreadyExists
+            {
+                DocumentError::AlreadyExists(destination.to_path_buf())
+            } else {
+                DocumentError::Io {
+                    path: destination.to_path_buf(),
+                    detail: format!("the document could not be published: {error}"),
+                }
+            };
+            return Err(self.failure(error));
+        }
+        if matches!(publication, Publication::Replace) {
+            self.owned = false; // rename consumed this exact temporary name
+        }
+        self.remove().map_err(|error| DocumentError::Io {
+            path: self.path.clone(),
+            detail: format!("the document was published, but temporary cleanup failed: {error}"),
+        })
+    }
+
+    fn remove(&mut self) -> std::io::Result<()> {
+        if self.owned {
+            match std::fs::remove_file(&self.path) {
+                Ok(()) => self.owned = false,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => self.owned = false,
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(())
+    }
+
+    fn failure(&mut self, original: DocumentError) -> DocumentError {
+        match self.remove() {
+            Ok(()) => original,
+            Err(error) => DocumentError::Io {
+                path: self.path.clone(),
+                detail: format!("{original}; owned temporary cleanup also failed: {error}"),
+            },
+        }
+    }
+}
+
+impl Drop for Temporary {
+    fn drop(&mut self) {
+        let _ = self.remove();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Directory(PathBuf);
+    impl Directory {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "lcl-publication-{}-{}",
+                std::process::id(),
+                NEXT_TEMPORARY.fetch_add(1, Ordering::Relaxed)
+            ));
+            std::fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+    }
+    impl Drop for Directory {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+
+    #[test]
+    fn two_fully_prepared_writers_cannot_both_create_the_destination() {
+        let directory = Directory::new();
+        let target = directory.0.join("new.lcl.txt");
+        let first = vec![b'a'; 128 * 1024];
+        let second = vec![b'b'; 128 * 1024];
+        // Both complete files exist before either writer may publish. This
+        // tests the actual filesystem publication point, not an existence lock.
+        let left = Temporary::prepare(&directory.0, &first).unwrap();
+        let right = Temporary::prepare(&directory.0, &second).unwrap();
+        let barrier = std::sync::Barrier::new(2);
+        let (a, b) = std::thread::scope(|scope| {
+            let a = scope.spawn(|| {
+                barrier.wait();
+                left.publish(&target, Publication::Create)
+            });
+            let b = scope.spawn(|| {
+                barrier.wait();
+                right.publish(&target, Publication::Create)
+            });
+            (a.join().unwrap(), b.join().unwrap())
+        });
+        assert_ne!(a.is_ok(), b.is_ok());
+        let (winner, loser) = if a.is_ok() { (&first, b) } else { (&second, a) };
+        assert!(matches!(loser, Err(DocumentError::AlreadyExists(_))));
+        assert_eq!(std::fs::read(target).unwrap(), *winner);
+        assert_eq!(std::fs::read_dir(&directory.0).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn failed_publication_cleans_its_temporary_and_preserves_existing_data() {
+        let directory = Directory::new();
+        let target = directory.0.join("occupied");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::write(target.join("user.txt"), b"preserved").unwrap();
+        let prepared = Temporary::prepare(&directory.0, b"replacement").unwrap();
+        assert!(prepared.publish(&target, Publication::Replace).is_err());
+        assert_eq!(
+            std::fs::read(target.join("user.txt")).unwrap(),
+            b"preserved"
+        );
+        assert_eq!(std::fs::read_dir(&directory.0).unwrap().count(), 1);
+    }
 }

@@ -198,6 +198,30 @@ fn an_atomic_save_leaves_no_temporary_behind() {
 }
 
 #[test]
+fn saving_never_reuses_a_preexisting_temporary_symlink() {
+    let scratch = Scratch::new("temporary-symlink");
+    let workspace = Workspace::open(&scratch.path, canonical_root()).unwrap();
+    let notes = scratch.put("notes.txt", "unrelated user text\n");
+    let old_temporary = scratch.join(&format!(".fresh.lcl.txt.{}.tmp", std::process::id()));
+    std::os::unix::fs::symlink(&notes, &old_temporary).unwrap();
+
+    workspace.save("fresh.lcl.txt", "LCL:\n").unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&notes).unwrap(),
+        "unrelated user text\n"
+    );
+    assert!(std::fs::symlink_metadata(old_temporary)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert!(!std::fs::symlink_metadata(scratch.join("fresh.lcl.txt"))
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(workspace.read("fresh.lcl.txt").unwrap().text, "LCL:\n");
+}
+
+#[test]
 fn a_workspace_locates_its_spec_without_searching_for_one() {
     let scratch = Scratch::new("locate");
     // Explicit wins.

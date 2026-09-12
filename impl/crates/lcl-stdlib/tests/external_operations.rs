@@ -116,6 +116,38 @@ fn an_absent_process_capability_is_a_limitation() {
     );
 }
 
+#[test]
+fn a_legacy_bounded_error_without_observations_is_not_proof_of_no_effects() {
+    struct LegacyBounded;
+    impl lcl_capabilities::process::Process for LegacyBounded {
+        fn run(
+            &mut self,
+            _command: &lcl_capabilities::process::Command,
+            _bounds: &Bounds,
+        ) -> Result<lcl_capabilities::process::Completion, lcl_capabilities::process::ProcessError>
+        {
+            Err(lcl_capabilities::process::ProcessError::Bounded(
+                lcl_capabilities::bounds::Cancelled::new("effect observations unavailable"),
+            ))
+        }
+    }
+    let mut host =
+        HostAdapter::new(Grants::none().permit_program("report")).with_process(LegacyBounded);
+    let execution = run_with_host(&command_document("report"), &mut host);
+    let result = common::result_of(&execution, "action.execute");
+    assert_eq!(result.execution_errors, ["error.host.constraint"]);
+    assert_eq!(
+        result.failure_phase,
+        lcl_runtime::result::FailurePhase::Indeterminate
+    );
+    assert_eq!(
+        result.effect_state,
+        lcl_runtime::result::EffectState::Indeterminate
+    );
+    assert!(result.observed_effects.is_empty());
+    assert!(result.violations().is_empty());
+}
+
 // ---------------------------------------------------------------------------
 // core.download and core.upload
 // ---------------------------------------------------------------------------
@@ -468,6 +500,26 @@ fn the_real_process_adapter_runs_a_program_and_reports_its_output() {
 
 #[test]
 fn the_real_process_adapter_stops_a_program_at_its_declared_timeout() {
+    use lcl_capabilities::process::{Command, Completion, Process, ProcessError, ProcessFailure};
+    use std::sync::{Arc, Mutex};
+    struct CaptureBounds {
+        real: RealProcess,
+        seen: Arc<Mutex<Option<Bounds>>>,
+    }
+    impl Process for CaptureBounds {
+        fn run(&mut self, command: &Command, bounds: &Bounds) -> Result<Completion, ProcessError> {
+            self.run_observed(command, bounds)
+                .map_err(|failure| failure.error)
+        }
+        fn run_observed(
+            &mut self,
+            command: &Command,
+            bounds: &Bounds,
+        ) -> Result<Completion, ProcessFailure> {
+            *self.seen.lock().unwrap() = Some(bounds.clone());
+            self.real.run_observed(command, bounds)
+        }
+    }
     // The declared DURATION is an explicit input, so enforcing it changes no
     // language meaning: the outcome is `error.host.constraint`.
     if !std::path::Path::new("/bin/sleep").exists() {
@@ -482,8 +534,12 @@ fn the_real_process_adapter_stops_a_program_at_its_declared_timeout() {
         ],
     );
     let grants = Grants::none().permit_program("/bin/sleep");
+    let seen = Arc::new(Mutex::new(None));
     let mut host = HostAdapter::new(grants.clone())
-        .with_process(RealProcess::new(grants))
+        .with_process(CaptureBounds {
+            real: RealProcess::new(grants),
+            seen: seen.clone(),
+        })
         .with_bounds(Bounds::new().with_deadline(Some(Deadline::from_nanos(200_000_000))));
     let execution = run_with_host(&source, &mut host);
 
@@ -491,6 +547,91 @@ fn the_real_process_adapter_stops_a_program_at_its_declared_timeout() {
         common::errors_of(&execution, "action.execute"),
         vec!["error.host.constraint".to_string()]
     );
+    assert_eq!(
+        host.requests()[0]
+            .parameters
+            .get("timeout")
+            .map(ToString::to_string),
+        // 03_TYPES_AND_VALUES/07: one second is exactly 10^9 nanoseconds.
+        // The runtime's existing order_profile::DURATION_UNIT is its private
+        // normalized representation, not a new source-level unit.
+        Some("1000000000 duration.normalized_nanoseconds".to_string()),
+        "the declared timeout must preserve its exact magnitude: {:?}",
+        host.requests()
+    );
+    assert_eq!(
+        seen.lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .deadline
+            .map(|deadline| deadline.nanos()),
+        Some(1_000_000_000),
+        "the actual process must receive the declared second, not the fallback 200 ms"
+    );
+    let result = common::result_of(&execution, "action.execute");
+    assert_eq!(
+        result.failure_phase,
+        lcl_runtime::result::FailurePhase::PostEffect
+    );
+    assert_eq!(
+        result.effect_state,
+        lcl_runtime::result::EffectState::Indeterminate
+    );
+    assert_eq!(result.fields.get("started"), Some(&Value::Boolean(true)));
+    assert_eq!(result.fields.get("completed"), Some(&Value::Boolean(false)));
+    assert_eq!(result.observed_effects.len(), 1);
+    assert!(result.violations().is_empty(), "{:?}", result.violations());
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn a_real_process_timeout_retains_partial_stdout_and_effect_uncertainty() {
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+    struct Script(std::path::PathBuf);
+    impl Drop for Script {
+        fn drop(&mut self) {
+            std::fs::remove_file(&self.0).expect("remove owned process fixture");
+        }
+    }
+    let path = std::env::temp_dir().join(format!("lcl-partial-command-{}", std::process::id()));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .unwrap();
+    let script = Script(path);
+    file.write_all(b"#!/bin/sh\nprintf 'observed-prefix'\nexec /bin/sleep 3\n")
+        .unwrap();
+    file.set_permissions(std::fs::Permissions::from_mode(0o700))
+        .unwrap();
+    drop(file);
+    let program = script.0.to_str().unwrap();
+    let source = command_document(program);
+    let grants = Grants::none().permit_program(program);
+    let mut host = HostAdapter::new(grants.clone())
+        .with_process(RealProcess::new(grants))
+        .with_bounds(Bounds::new().with_deadline(Some(Deadline::from_nanos(200_000_000))));
+    let execution = run_with_host(&source, &mut host);
+    let result = common::result_of(&execution, "action.execute");
+    assert_eq!(result.execution_errors, ["error.host.constraint"]);
+    assert_eq!(
+        result.failure_phase,
+        lcl_runtime::result::FailurePhase::PostEffect
+    );
+    assert_eq!(
+        result.effect_state,
+        lcl_runtime::result::EffectState::Indeterminate
+    );
+    assert_eq!(
+        result.fields.get("stdout"),
+        Some(&Value::Text("observed-prefix".into()))
+    );
+    assert_eq!(result.fields.get("started"), Some(&Value::Boolean(true)));
+    assert_eq!(result.fields.get("completed"), Some(&Value::Boolean(false)));
+    assert_eq!(result.observed_effects.len(), 1);
+    assert!(result.violations().is_empty(), "{:?}", result.violations());
 }
 
 #[test]

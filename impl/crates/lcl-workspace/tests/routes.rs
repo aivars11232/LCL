@@ -422,11 +422,13 @@ const SEED: &str = "LCL:\n    VERSION: \"0.1.0\"\n\nSPECIFICATION:\n    ID: exam
 #[test]
 fn a_new_document_defaults_to_the_text_ending_without_stacking_it() {
     let (scratch, running) = serve_examples("create-default");
+    scratch.put("notes.txt", "ordinary text stays ordinary\n");
     for (written, expected) in [
         ("plain", "plain.lcl.txt"),
         ("classic.lcl", "classic.lcl.txt"),
         ("modern.lcl.txt", "modern.lcl.txt"),
         ("nested/deep.lcl", "nested/deep.lcl.txt"),
+        ("notes.txt", "notes.txt.lcl.txt"),
     ] {
         let reply = create(&running, written, SEED);
         assert_eq!(reply.status, 200, "{written}: {}", reply.body);
@@ -442,6 +444,10 @@ fn a_new_document_defaults_to_the_text_ending_without_stacking_it() {
             "{expected} is not on disk"
         );
     }
+    assert_eq!(
+        std::fs::read_to_string(scratch.join("notes.txt")).unwrap(),
+        "ordinary text stays ordinary\n"
+    );
 }
 
 #[test]
@@ -464,6 +470,26 @@ fn creating_over_an_existing_document_is_refused_rather_than_overwriting_it() {
         by_other_name.status, 409,
         "`once.lcl` defaults to `once.lcl.txt`, which already exists: {}",
         by_other_name.body
+    );
+
+    // Neither is_file precheck recognizes these occupied names. The atomic
+    // publication error must still become a conflict and preserve the entry.
+    let missing = scratch.join("missing.txt");
+    let link = scratch.join("link.lcl.txt");
+    std::os::unix::fs::symlink(&missing, &link).unwrap();
+    let refused = create(&running, "link", SEED);
+    assert_eq!(refused.status, 409, "{}", refused.body);
+    assert_eq!(std::fs::read_link(link).unwrap(), missing);
+    assert!(!missing.exists());
+
+    let directory = scratch.join("occupied.lcl.txt");
+    std::fs::create_dir(&directory).unwrap();
+    std::fs::write(directory.join("user.txt"), b"preserved").unwrap();
+    let refused = create(&running, "occupied", SEED);
+    assert_eq!(refused.status, 409, "{}", refused.body);
+    assert_eq!(
+        std::fs::read(directory.join("user.txt")).unwrap(),
+        b"preserved"
     );
 }
 

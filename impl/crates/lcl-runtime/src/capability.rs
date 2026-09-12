@@ -146,6 +146,10 @@ pub struct Observation {
     /// never proves absence of effects" — so a host states it explicitly or the
     /// runtime records the phase as indeterminate.
     pub proven_effect_free: bool,
+    /// A host resource or supervision limitation prevented completion. This
+    /// fact does not assert when effects began; the runtime derives that from
+    /// the observations, independently of its error.host.constraint mapping.
+    pub host_limited: bool,
 }
 
 impl Observation {
@@ -155,6 +159,7 @@ impl Observation {
             fields: BTreeMap::new(),
             effects: Vec::new(),
             proven_effect_free: true,
+            host_limited: false,
         }
     }
 

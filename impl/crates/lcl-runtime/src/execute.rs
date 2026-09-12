@@ -1433,7 +1433,7 @@ impl<'a> Engine<'a> {
     }
 
     /// Turn a boundary outcome into a producer result record.
-    fn record_of(
+    pub(crate) fn record_of(
         &mut self,
         schema: &str,
         outcome: Result<CapabilityOutcome, Refusal>,
@@ -1473,17 +1473,16 @@ impl<'a> Engine<'a> {
                 observation,
             }) => {
                 let phase = phase_of(&observation.effects, observation.proven_effect_free);
-                let fault = Fault::new(
-                    self.contracts,
-                    RuntimeError::ExecutionAction,
-                    planned.span,
-                    "action",
-                    detail,
-                );
+                let (error, cause) = if observation.host_limited {
+                    (RuntimeError::HostConstraint, "host")
+                } else {
+                    (RuntimeError::ExecutionAction, "action")
+                };
+                let fault = Fault::new(self.contracts, error, planned.span, cause, detail);
                 let occurrence = self.fault(&fault, planned, id, phase);
-                let mut record = ResultRecord::new(schema, "status.failed");
-                record.execution_errors =
-                    vec![RuntimeError::ExecutionAction.as_registry_str().to_string()];
+                let mut record =
+                    ResultRecord::new(schema, &self.contracts.error(error).default_status);
+                record.execution_errors = vec![error.as_registry_str().to_string()];
                 record.failure_phase = phase;
                 record.effect_state = effect_state_of(&observation.effects, phase);
                 record.observed_effects = observation.effects;

@@ -290,6 +290,86 @@ fn descending_reverses_the_key_order() {
     assert_eq!(items(&execution, "action.sort"), vec!["3", "2", "1"]);
 }
 
+/// SORT-01: trace actual runtime parameters, without substituting an evaluator.
+/// Bare ENUM is admitted when the operation supplies its exact domain
+/// (03_TYPES_AND_VALUES/05); named concrete enums also admit ordinary value
+/// reads from DATA and DEFINE kind.constant.
+#[test]
+fn sort_direction_forms_reach_the_operation_and_preserve_multiplicity() {
+    struct Traced {
+        stdlib: Stdlib,
+        direction: Option<Value>,
+    }
+    impl lcl_runtime::Operations for Traced {
+        fn invoke(
+            &mut self,
+            cx: &mut lcl_runtime::Invocation<'_>,
+            request: &lcl_runtime::CapabilityRequest,
+        ) -> lcl_runtime::Resolution {
+            assert_eq!(request.operation, "core.sort");
+            self.direction = request.parameters.get("direction").cloned();
+            self.stdlib.invoke(cx, request)
+        }
+    }
+    for (label, ty, spelling, declaration, descending) in [
+        ("omitted", "", "", "", false),
+        ("bare-ascending", "ENUM", "ascending", "", false),
+        ("bare-descending", "ENUM", "descending", "", true),
+        ("named-ascending", "REF(type.direction)", "ascending", "", false),
+        ("named-descending", "REF(type.direction)", "descending", "", true),
+        (
+            "data-descending",
+            "REF(type.direction)",
+            "REF(data.direction)",
+            "\nDATA:\n    ID: data.direction\n    TYPE: REF(type.direction)\n    VALUE: descending\n",
+            true,
+        ),
+        (
+            "constant-descending",
+            "REF(type.direction)",
+            "REF(constant.direction)",
+            "\nDEFINE:\n    ID: constant.direction\n    KIND: kind.constant\n    TYPE: REF(type.direction)\n    VALUE: descending\n",
+            true,
+        ),
+    ] {
+        let declarations = format!(
+            "{}{DIRECTION_TYPE}{declaration}",
+            common::data("data.subject", "LIST[INTEGER]", "[3, 1, 2, 1]")
+        );
+        let parameter = if spelling.is_empty() {
+            String::new()
+        } else {
+            format!("\nPARAMETER:\n    NAME: direction\n    TYPE: {ty}\n    REQUIRED: FALSE\n    VALUE: {spelling}")
+        };
+        let action = format!(
+            "ID: action.sort\nOPERATION: core.sort\nTARGET: REF(data.subject){parameter}"
+        );
+        let source = common::task(&declarations, &[&action]);
+        let fixture = common::fixture(&source);
+        let mut traced = Traced {
+            stdlib: common::stdlib(),
+            direction: None,
+        };
+        let execution = lcl_runtime::Runtime::new(common::contracts())
+            .execute_with(
+                &fixture.planned,
+                &fixture.checked,
+                &fixture.resolved,
+                &mut traced,
+                &mut MockHost::new(),
+            )
+            .expect("planned");
+        let actual = items(&execution, "action.sort");
+        println!("SORT-01 {label}: parameter={:?}; items={actual:?}", traced.direction);
+        assert_eq!(
+            actual,
+            if descending { vec!["3", "2", "1", "1"] } else { vec!["1", "1", "2", "3"] },
+            "{label}:\n{source}"
+        );
+        assert!(common::errors_of(&execution, "action.sort").is_empty());
+    }
+}
+
 #[test]
 fn the_default_direction_is_ascending() {
     // The registry declares `direction` default "ascending", and an omitted

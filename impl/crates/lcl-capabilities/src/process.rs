@@ -16,8 +16,10 @@
 //! ## Output is drained while the program runs, and capped while it is read
 //!
 //! A pipe holds one buffer, and a program that fills it blocks in `write`
-//! until someone reads. So both streams are drained on their own threads from
-//! the moment the child starts, for the whole time it is supervised. Waiting
+//! until someone reads. Both streams are drained from the moment the child
+//! starts, for the whole time it is supervised. On Linux x86_64 this is one
+//! nonblocking loop, including after direct-child exit, with an owned process
+//! group and an explicit one-second teardown allowance. Waiting
 //! for exit first and reading afterwards is what made a healthy command that
 //! merely printed a lot look like a command that timed out.
 //!
@@ -33,6 +35,9 @@ use crate::grant::{Grant, Grants, Refusal};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+mod linux;
 
 /// What one process request could not do.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,10 +85,43 @@ pub struct Completion {
     pub truncated: bool,
 }
 
+/// A failed request and the observations actually available to its caller.
+/// The legacy `run` method retains its error type; effect-aware callers use
+/// `run_observed` so an already-started process is never reported as pre-effect.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcessFailure {
+    pub error: ProcessError,
+    pub observation: Option<Completion>,
+    /// Whether this adapter actually observed deadline expiry.
+    pub timed_out: bool,
+    /// None when a legacy adapter supplied no cleanup evidence.
+    pub cleanup_complete: Option<bool>,
+}
+
+impl From<ProcessError> for ProcessFailure {
+    fn from(error: ProcessError) -> Self {
+        ProcessFailure {
+            error,
+            observation: None,
+            timed_out: false,
+            cleanup_complete: None,
+        }
+    }
+}
+
 /// The primitive process capability.
 pub trait Process {
     /// Run one program to completion, or until a bound stops it.
     fn run(&mut self, command: &Command, bounds: &Bounds) -> Result<Completion, ProcessError>;
+
+    /// Run with explicit post-start observations where the adapter has them.
+    fn run_observed(
+        &mut self,
+        command: &Command,
+        bounds: &Bounds,
+    ) -> Result<Completion, ProcessFailure> {
+        self.run(command, bounds).map_err(Into::into)
+    }
 }
 
 /// The real process capability, confined to granted programs.
@@ -100,6 +138,15 @@ impl RealProcess {
 
 impl Process for RealProcess {
     fn run(&mut self, command: &Command, bounds: &Bounds) -> Result<Completion, ProcessError> {
+        self.run_observed(command, bounds)
+            .map_err(|failure| failure.error)
+    }
+
+    fn run_observed(
+        &mut self,
+        command: &Command,
+        bounds: &Bounds,
+    ) -> Result<Completion, ProcessFailure> {
         self.grants
             .decide(&Grant::RunProgram(command.program.clone()))
             .map_err(ProcessError::Refused)?;
@@ -123,10 +170,47 @@ impl Process for RealProcess {
             process.current_dir(directory);
         }
 
-        let child = process
-            .spawn()
-            .map_err(|error| ProcessError::NotStarted(error.to_string()))?;
-        wait(child, bounds)
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        {
+            match linux::run(
+                &mut process,
+                bounds.deadline.map(|deadline| deadline.as_duration()),
+                bounds.max_stream_bytes,
+            ) {
+                Ok(output) => Ok(observed_output(output, true)),
+                Err(failure) => Err(ProcessFailure {
+                    error: if failure.started {
+                        ProcessError::Bounded(Cancelled::new(failure.detail))
+                    } else {
+                        ProcessError::NotStarted(failure.detail)
+                    },
+                    observation: failure
+                        .started
+                        .then(|| observed_output(failure.output, false)),
+                    timed_out: failure.timed_out,
+                    cleanup_complete: Some(failure.cleanup_complete),
+                }),
+            }
+        }
+        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+        {
+            let child = process
+                .spawn()
+                .map_err(|error| ProcessError::NotStarted(error.to_string()))?;
+            wait(child, bounds).map_err(Into::into)
+        }
+    }
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn observed_output(output: linux::Output, completed: bool) -> Completion {
+    Completion {
+        started: true,
+        completed,
+        exit_code: output.exit_code,
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        truncated: output.truncated,
     }
 }
 
@@ -136,6 +220,7 @@ impl Process for RealProcess {
 /// repair: a child that writes more than a pipe buffer holds blocks until it
 /// is read, and a supervisor that waits for exit before reading waits for
 /// something that cannot happen.
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
 fn wait(mut child: std::process::Child, bounds: &Bounds) -> Result<Completion, ProcessError> {
     let cap = bounds.max_stream_bytes as usize;
     let out = child.stdout.take();
@@ -195,6 +280,7 @@ fn wait(mut child: std::process::Child, bounds: &Bounds) -> Result<Completion, P
 
 /// One stream, drained to its end and retained only up to a bound.
 #[derive(Debug, Default)]
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
 struct Drained {
     bytes: Vec<u8>,
     /// True when the stream produced more than the bound retained.
@@ -207,6 +293,7 @@ struct Drained {
 /// a blocked child, which is the defect this function exists to avoid; the
 /// excess is read and dropped instead, so peak memory is the bound rather than
 /// whatever the program decided to print.
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
 fn drain(mut stream: impl std::io::Read, cap: usize) -> Drained {
     let mut drained = Drained::default();
     let mut buffer = [0u8; 8 * 1024];
@@ -232,6 +319,7 @@ fn drain(mut stream: impl std::io::Read, cap: usize) -> Drained {
     drained
 }
 
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
 fn completion(exit_code: Option<i64>, stdout: Drained, stderr: Drained) -> Completion {
     Completion {
         started: true,

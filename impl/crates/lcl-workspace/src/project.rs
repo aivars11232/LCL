@@ -292,7 +292,13 @@ impl Workspace {
         Ok(document::write(self.project.root(), id, text)?)
     }
 
-    /// Whether one document already exists, for a caller about to create one.
+    /// Atomically create a document without replacing an occupied destination.
+    pub fn create_document(&self, id: &str, text: &str) -> Result<Document, WorkspaceError> {
+        Ok(document::create(self.project.root(), id, text)?)
+    }
+
+    /// Whether one document exists at this instant. Creation must still use
+    /// `create_document`: this observation cannot reserve a destination.
     pub fn exists(&self, id: &str) -> bool {
         document::resolve(self.project.root(), id)
             .map(|path| path.is_file())

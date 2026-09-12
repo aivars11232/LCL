@@ -30,7 +30,7 @@
 use crate::schema;
 use lcl_capabilities::fs::{FileSystem, FsError, WriteMode};
 use lcl_capabilities::net::{Address, NetError, Transport};
-use lcl_capabilities::process::{Command, Process, ProcessError, Responder};
+use lcl_capabilities::process::{Command, Process, ProcessError, ProcessFailure, Responder};
 use lcl_capabilities::{Bounds, Dependency, Effect, Grant, Grants, Refusal};
 use lcl_runtime::capability::{
     CapabilityOutcome, CapabilityRequest, Host, Observation, Permission,
@@ -682,7 +682,7 @@ impl HostAdapter {
                 "no process capability is installed".to_string(),
             );
         };
-        match process.run(&command, &bounds) {
+        match process.run_observed(&command, &bounds) {
             Ok(completion) => {
                 // "status.succeeded ... may accompany a FALSE domain outcome or
                 // a nonzero command exit_code." The exit code is a field, and a
@@ -700,7 +700,7 @@ impl HostAdapter {
                     .with_effect(applied(EffectClass::Process, Some(command.program))),
                 )
             }
-            Err(error) => process_failure(error),
+            Err(failure) => observed_process_failure(failure, command.program, None),
         }
     }
 
@@ -716,12 +716,12 @@ impl HostAdapter {
                 "no process capability is installed".to_string(),
             );
         };
-        match process.run(&command, &bounds) {
+        match process.run_observed(&command, &bounds) {
             Ok(completion) => CapabilityOutcome::Completed(
                 schema::operation(target, Value::Boolean(completion.started))
                     .with_effect(applied(EffectClass::Process, Some(command.program))),
             ),
-            Err(error) => process_failure(error),
+            Err(failure) => observed_process_failure(failure, command.program, Some(target)),
         }
     }
 
@@ -977,7 +977,9 @@ fn text_of(value: &Value) -> String {
 fn nanoseconds(magnitude: &lcl_checker::numeric::Decimal, unit: &str) -> Option<u128> {
     let seconds = magnitude.to_i64()? as u128;
     let factor = match unit {
-        "unit.nanosecond" => 1u128,
+        // The runtime normalizes a DURATION before crossing the host boundary.
+        // This private representation already holds exact nanoseconds.
+        "unit.nanosecond" | lcl_runtime::order_profile::DURATION_UNIT => 1u128,
         "unit.microsecond" => 1_000,
         "unit.millisecond" => 1_000_000,
         "unit.second" => 1_000_000_000,
@@ -989,7 +991,62 @@ fn nanoseconds(magnitude: &lcl_checker::numeric::Decimal, unit: &str) -> Option<
     Some(seconds * factor)
 }
 
-/// One process failure as the outcome the boundary carries.
+/// Preserve post-start observations independently of the runtime's registered
+/// error/phase selection. Killing a process cannot prove what arbitrary code
+/// already changed, so its effect extent is indeterminate, not effect-free.
+fn observed_process_failure(
+    failure: ProcessFailure,
+    program: String,
+    start_target: Option<Value>,
+) -> CapabilityOutcome {
+    let Some(completion) = failure.observation else {
+        if let ProcessError::Bounded(cancelled) = failure.error {
+            let mut observation = Observation::none();
+            // A legacy adapter supplied no observation of whether anything
+            // began. Absence of evidence is not proof of absence of effects.
+            observation.proven_effect_free = false;
+            observation.host_limited = true;
+            return CapabilityOutcome::Failed {
+                detail: cancelled.reason,
+                observation,
+            };
+        }
+        return process_failure(failure.error);
+    };
+    let detail = format!(
+        "{}; deadline elapsed: {}; cleanup complete: {:?}; capture truncated: {}",
+        failure.error, failure.timed_out, failure.cleanup_complete, completion.truncated
+    );
+    let mut observation = match start_target {
+        Some(target) => schema::operation(target, Value::Unknown),
+        None => schema::command(
+            "non_graph",
+            completion.started,
+            completion.completed,
+            completion.exit_code.map(integer).unwrap_or(Value::Unknown),
+            completion.stdout,
+            completion.stderr,
+        ),
+    };
+    observation.host_limited = matches!(
+        failure.error,
+        ProcessError::Bounded(_) | ProcessError::Refused(Refusal::Unavailable(_))
+    );
+    if completion.started {
+        observation = observation.with_effect(ObservedEffect {
+            class: EffectClass::Process,
+            state: RecordState::Indeterminate,
+            target: Some(program),
+            evidence: Vec::new(),
+        });
+    }
+    CapabilityOutcome::Failed {
+        detail,
+        observation,
+    }
+}
+
+/// One process failure without additional observations.
 fn process_failure(error: ProcessError) -> CapabilityOutcome {
     match error {
         ProcessError::Refused(Refusal::Denied(detail)) => CapabilityOutcome::Denied(detail),

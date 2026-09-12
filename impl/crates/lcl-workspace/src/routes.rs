@@ -233,6 +233,8 @@ impl Routes {
         if id.is_empty() || id == lcl_project::TEXT_SUFFIX {
             return Response::error(400, "a document needs a name");
         }
+        // Preserve the early response, but do not use this observation as a
+        // reservation: create_document below is the atomic authority.
         if self.workspace.exists(&id) {
             return Response::error(409, &format!("{id} already exists"));
         }
@@ -240,7 +242,7 @@ impl Routes {
             Ok(text) => text,
             Err(e) => return Response::error(422, &e.to_string()),
         };
-        match self.workspace.save(&id, text) {
+        match self.workspace.create_document(&id, text) {
             Ok(document) => Response::json(
                 Object::new()
                     .with("id", Node::string(&document.id))
@@ -251,6 +253,9 @@ impl Routes {
                     .with("bytes", Node::usize(document.text.len()))
                     .pretty(),
             ),
+            Err(crate::WorkspaceError::Document(crate::DocumentError::AlreadyExists(_))) => {
+                Response::error(409, &format!("{id} already exists"))
+            }
             Err(e) => Response::error(422, &e.to_string()),
         }
     }

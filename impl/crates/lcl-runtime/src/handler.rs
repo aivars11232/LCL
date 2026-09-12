@@ -594,6 +594,21 @@ impl<'a> Engine<'a> {
                 };
                 Some(record)
             }
+            Ok(CapabilityOutcome::Failed {
+                detail,
+                observation,
+            }) if observation.host_limited => Some(
+                self.record_of(
+                    &schema,
+                    Ok(CapabilityOutcome::Failed {
+                        detail,
+                        observation,
+                    }),
+                    planned,
+                    id,
+                )
+                .0,
+            ),
             Ok(CapabilityOutcome::Failed { .. })
             | Ok(CapabilityOutcome::Refused { .. })
             | Ok(CapabilityOutcome::Denied(_)) => Some(ResultRecord::new(&schema, "status.failed")),

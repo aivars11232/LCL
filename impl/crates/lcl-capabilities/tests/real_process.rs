@@ -213,3 +213,143 @@ fn zombie_children() -> usize {
     }
     zombies
 }
+
+// Each regression runs in a separate test process, with an external watchdog.
+// Its only descendant is a three-second sleep: even a broken adapter cannot
+// leave an unbounded fixture behind. On failure the parent waits out that
+// lifetime before dropping the owned directory. The normal repaired path must
+// terminate the holder itself, well before its natural exit.
+#[cfg(target_os = "linux")]
+fn inherited_pipe_case(name: &str, redirects: &str, wait_for_holder: bool) {
+    use std::os::unix::process::CommandExt;
+    use std::process::{Command as OsCommand, Stdio};
+    use std::time::{Duration, Instant};
+
+    if std::env::var("LCL_PROCESS_FIXTURE").as_deref() == Ok(name) {
+        let before = std::fs::read_dir("/proc/self/task").unwrap().count();
+        let pid_file = std::env::var("LCL_HOLDER_PID").unwrap();
+        let script = format!(
+            "/bin/sleep 3 {redirects} & printf '%s' \"$!\" > \"$LCL_HOLDER_PID\"; {}",
+            if wait_for_holder { "wait" } else { "exit 0" }
+        );
+        let mut command = shell(&script);
+        command
+            .environment
+            .insert("LCL_HOLDER_PID".into(), pid_file.clone());
+        let bounds = Bounds::new()
+            .with_deadline(Some(Deadline::from_nanos(200_000_000)))
+            .with_max_stream_bytes(1024);
+        let started = Instant::now();
+        let result = adapter().run(&command, &bounds);
+        let elapsed = started.elapsed();
+        assert!(
+            matches!(result, Err(ProcessError::Bounded(_))),
+            "collection must remain deadline-bound after direct-child exit: {result:?}, {elapsed:?}"
+        );
+        // 200 ms declared execution + 1 s approved teardown + scheduling slack.
+        assert!(elapsed < Duration::from_millis(1500), "{elapsed:?}");
+        let holder: u32 = std::fs::read_to_string(pid_file).unwrap().parse().unwrap();
+        let reaping = Instant::now();
+        while std::path::Path::new(&format!("/proc/{holder}")).exists()
+            && reaping.elapsed() < Duration::from_millis(200)
+        {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            !std::path::Path::new(&format!("/proc/{holder}")).exists(),
+            "owned pipe holder {holder} remains after bounded teardown"
+        );
+        assert_eq!(
+            std::fs::read_dir("/proc/self/task").unwrap().count(),
+            before,
+            "no reader thread may outlive the returned invocation"
+        );
+        assert_eq!(zombie_children(), 0);
+        return;
+    }
+
+    struct Fixture(std::path::PathBuf);
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).expect("remove this case's owned fixture");
+        }
+    }
+    let fixture = Fixture(
+        std::env::temp_dir().join(format!("lcl-inherited-pipe-{}-{name}", std::process::id())),
+    );
+    std::fs::create_dir(&fixture.0).expect("reserve an unused fixture directory");
+    let output = std::fs::File::create(fixture.0.join("output.log")).unwrap();
+    let started = Instant::now();
+    let mut child = OsCommand::new(std::env::current_exe().unwrap())
+        .args(["--exact", name, "--nocapture", "--test-threads=1"])
+        .env("LCL_PROCESS_FIXTURE", name)
+        .env("LCL_HOLDER_PID", fixture.0.join("holder.pid"))
+        .stdin(Stdio::null())
+        .stdout(output.try_clone().unwrap())
+        .stderr(output)
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if started.elapsed() >= Duration::from_secs(8) {
+            // The direct test child is still unreaped, retaining ownership of
+            // this process-group number. No process-name or wildcard killing.
+            let killed = OsCommand::new("/bin/kill")
+                .args(["-KILL", "--", &format!("-{}", child.id())])
+                .status()
+                .unwrap();
+            assert!(killed.success());
+            let status = child.wait().unwrap();
+            break status;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    if !status.success() {
+        // Current code may return early while its holder still lives. This is
+        // fixture cleanup, not extra time granted to the adapter assertion.
+        if let Some(remaining) = Duration::from_secs(4).checked_sub(started.elapsed()) {
+            std::thread::sleep(remaining);
+        }
+    }
+    let output = std::fs::read_to_string(fixture.0.join("output.log")).unwrap();
+    assert!(status.success(), "{name}: {status}\n{output}");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn inherited_stdout_remains_deadline_bound() {
+    inherited_pipe_case(
+        "inherited_stdout_remains_deadline_bound",
+        "2>/dev/null",
+        false,
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn inherited_stderr_remains_deadline_bound() {
+    inherited_pipe_case(
+        "inherited_stderr_remains_deadline_bound",
+        ">/dev/null",
+        false,
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn inherited_both_streams_remain_deadline_bound() {
+    inherited_pipe_case("inherited_both_streams_remain_deadline_bound", "", false);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn inherited_live_child_teardown_owns_readers_and_descendants() {
+    inherited_pipe_case(
+        "inherited_live_child_teardown_owns_readers_and_descendants",
+        "",
+        true,
+    );
+}

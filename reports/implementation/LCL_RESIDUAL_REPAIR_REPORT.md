@@ -1,6 +1,7 @@
 # LCL-RESIDUAL-REPAIR-01 — execution record
 
-Date: 2026-09-12. Status: **STOPPED AT B3 — NARROW PLAN AMENDMENT REQUIRED;
+Date: 2026-09-12. Status: **STOPPED AT B3 — AMENDMENT A3 REQUIRED FOR SET
+MATERIALIZATION; A1's focused checker/direction tests pass; A2 remains approved;
 B1 / VR-01 repaired for the approved
 Linux x86_64 process-group scope; B2 / VR-04 repaired; B3–B5 and final acceptance
 remain open**.
@@ -192,7 +193,7 @@ are the closure evidence. This was an evidence gap, not an observed test failure
 All 192 protected hashes still match, HEAD remains the starting revision and the
 owned `tmp/` directory is empty after B2. No changes are staged.
 
-## B3 — sort investigation stopped at the checker boundary
+## B3 — earlier checkpoint stopped at the checker boundary
 
 **BLOCKED — PLAN AMENDMENT REQUIRED, not a canonical contradiction.** No sort
 production code or checker code has been edited. The previous named-enum
@@ -280,13 +281,156 @@ and actual Rust 1.75.0 checks/tests. Only green B3 phase closure permits B4.
 All other original stages and safeguards remain unchanged. A further boundary
 expansion still requires a revised plan; no blanket checker refactor is proposed.
 
+## 2026-09-12 continuation — A1/A2 approved; SET boundary reproduced
+
+The owner replied **approved** to the proposal containing existing A1 and new
+A2 (UI-01). Both approvals persist. On resumption, local root was `/mnt/F/LCL`,
+branch `main`, with HEAD and locally recorded upstream `origin/main` at
+`0ff51b7df73639e0a9189b6c8a536545d4b8f5fb`; the working tree and index were
+clean. This is the owner's committed checkpoint, one commit after the original
+baseline, not an assistant commit. No remote refresh was performed.
+
+A1 now derives the exact contextual enum domain from the verified operation
+row and keys it to the receiving PARAMETER's source locus. The ordinary
+expression checker handles VALUE and the other typed fields. The written bare
+ENUM TYPE is recorded as that domain; generic unconstrained-type rejection and
+other parameter paths are preserved. Its internal domain identity is the
+registered slot's pointer, whose separators cannot collide with a source ID.
+No checker type-model, canonical, dependency or production sorting change was
+made.
+
+Fresh gates, system Rust 1.98.1, existing owned scratch environment:
+
+| Command (in `impl/`) | Exit / result | Log |
+| --- | --- | --- |
+| `cargo test --offline -p lcl-checker --test constructors_and_operations contextual_enum -- --nocapture` before repair | 101; admitted ENUM still rejected | `A1-checker-before.log`, `A1-checker-red-confirmed.log` |
+| `cargo check --offline -p lcl-checker --all-targets` after additive context helper | 0 | `A1-context-check.log` |
+| `cargo test --offline -p lcl-checker --test constructors_and_operations` after repair/corrected new test loci | 0; 20 passed, 0 failed/ignored | `A1-checker-confirmed.log` |
+| `cargo test --offline -p lcl-stdlib --test pure_operations sort_direction_forms -- --nocapture` | 0; all seven matrix entries executed | `A1-sort-matrix.log` |
+| `cargo test --offline -p lcl-stdlib --test pure_operations` with new tie/SET controls | 101; 22 passed, 1 failed, 0 ignored | `A1-sort-controls.log` |
+| `cargo test --offline -p lcl-stdlib --test pure_operations sort_direction_preserves_set_distinct_key_requirement -- --nocapture` with observation-only trace | 101; SET target became LIST before sorting | `A1-set-diagnostic.log` |
+| `cargo build --offline -p lcl-cli --bin lcl` for standalone diagnosis | 0 | `A1-cli-diagnostic-build.log` |
+
+Each gate has a separate `.exit` file and complete log. Two new-test defects
+were corrected without weakening product assertions: the key-parameter negative
+control must preserve both its existing unregistered-family and unconstrained
+type diagnostics; and locating invalid VALUE `TRUE` with `rfind` mistakenly
+selected a later SUCCESS member. The test now locates its exact `VALUE:` field.
+`A1-checker-after.log` retains that latter failure. The full 20-test checker
+target passes after both corrections.
+
+The unchanged direction matrix now observes:
+
+- omitted: no supplied direction, `[1, 1, 2, 3]`;
+- bare and named ascending: `Identifier("ascending")`, `[1, 1, 2, 3]`;
+- bare/named descending and DATA/constant references:
+  `Identifier("descending")`, `[3, 2, 1, 1]`.
+
+New LIST key-projection controls pass for both directions, preserving the exact
+source order of distinct equal-key members and duplicate LIST members. No
+production `pure.rs` edit is justified by the recorded direction symptom.
+The A1 change has focused evidence, but B3 phase closure, current broad gates
+and the actual Rust 1.75.0 rerun are still pending because the required SET
+control failed. Do not present earlier B1/B2/MSRV counts as those pending gates.
+
+### SORT-01-SET — newly reproduced existing preflight defect
+
+For distinct SET strings `apple` and `apricot`, the declared deterministic pure
+key fixture returns `a` for both. The canonical core.sort row requires
+`error.operation.precondition`; the actual result has no execution error.
+The test preserves that expected error and stays red. Its diagnostic wrapper
+only records observations and delegates to the actual Stdlib:
+
+```text
+checked=Some(Set(String))
+planned=List([Text("apple"), Text("apricot")])
+request_target=Some(List([Text("apple"), Text("apricot")]))
+read=List([Text("apple"), Text("apricot")])
+```
+
+Cause traced to `lcl-semantics/src/data.rs::declared_value`: inline collections
+unconditionally become `Value::List`. The corresponding expression and
+multiline-property paths in `lcl-semantics/src/eval.rs` also construct LIST
+without using the checker's receiving-family annotation. The runtime reads
+the preflight resolution as stored. `pure.rs` correctly selects its distinct-key
+guard only for a `Value::Set`, so changing the sorter alone would mask the
+upstream family loss. These preflight files are unchanged against `0ff51b7`.
+
+Authority: `03_TYPES_AND_VALUES/10_COLLECTION_OBJECT_ENUM_AND_SCHEMA_FORMS.txt`
+SET[T] at lines 13–20 and bracket typing at 52–57; also
+`03_TYPES_AND_VALUES/03_COLLECTIONS_OBJECTS_ENUMS_AND_EQUALITY.txt:8–11` and
+`operations_v0.1.0.json#/contracts/core.sort` distinct-key precondition and
+member-preservation postconditions. No canonical contradiction is alleged.
+
+Standalone CLI proof uses ordinary registered sorting, no custom key or enum
+parameter: `/mnt/F/.lcl-residual-repair-01-lxd8dwu8/sort-set-duplicates.lcl.txt`.
+It declares `SET[INTEGER]` with `[3, 1, 1]`, binds the sorted LIST output and
+verifies its member count is two. Actual published output is **`[1, 1, 3]`**;
+VERIFY is FALSE, diagnostic `error.verification.failed`, CLI exit **2**.
+Expected result is `[1, 3]`. Exact command, empty environment, cwd, output and
+exit are in `A1-cli-set-observable.record.json`, `.stdout.json`, `.stderr.log`.
+Source SHA-256: `b669fa17a99c0155221de1dfe324664125dedc3c1b8f2aa291af6fa6c749978d`.
+Exercised development CLI SHA-256:
+`39903c8617a707520172208eb07a562165dc0de547e789a2cde7562d8fb557ca`.
+No final packaged binary exists. The initial `A1-cli-set-duplicates.*` fixture
+had no bound output and an inadequate SUCCESS oracle; it is retained but is
+not the standalone proof. The observable fixture above supersedes it.
+
+### Proposed amendment LCL-RESIDUAL-REPAIR-01-A3 (awaiting approval)
+
+Extend B3 to restore typed collection materialization at preflight, before A2.
+Use the already checked receiving type and each declaration's actual SourceId;
+do not infer SET from member spelling or repair it inside the sorter.
+
+Sequential file scope:
+
+1. New `impl/crates/lcl-semantics/tests/collection_materialization.rs`:
+   direct preflight regressions for SET family and duplicate collapse, paired
+   LIST order/multiplicity controls, inline/multiline/nested forms, constants,
+   applicable default paths and imported-source annotation identity. Retain
+   existing object/constant/robustness regressions; do not restart those tasks.
+2. If shared collection construction/equality support is necessary, place it
+   on the existing Value model in `lcl-semantics/src/value.rs` and have
+   `lcl-runtime/src/eval.rs` delegate through its compatible existing interface.
+   This explicitly permits only the value-level sharing needed for canonical
+   duplicate collapse, not a new evaluator, crate, dependency or runtime rewrite.
+3. `impl/crates/lcl-semantics/src/eval.rs`: preserve the checked family when
+   constructing expression and multiline collections, evaluating members before
+   strict-equal duplicates collapse. Apply the existing canonical value rules;
+   add no ordering significance to SET storage and retain LIST multiplicity.
+4. `impl/crates/lcl-semantics/src/data.rs`: route declared collections through
+   that same path with the declaring source identity; preserve existing
+   value/source/default/assumption precedence and object/constant behavior.
+5. Reuse the red SET test in `lcl-stdlib/tests/pure_operations.rs`, expand only
+   discriminating source-to-sort controls as necessary, and update this report.
+
+Required gates: the new preflight target; the exact currently red SET target
+and full pure_operations target; all direction cases through the current CLI;
+affected checker/semantics/runtime/stdlib checks, tests and clippy; formatting;
+actual Rust 1.75.0 checks/tests. The standalone duplicate program must publish
+`[1, 3]`, pass its VERIFY and exit 0. Only then close B3 and begin approved A2.
+Canonical/equality questions that cannot be resolved from existing authority
+still require an explicit decision; A3 is not blanket permission to change
+language meaning or unrelated evaluators.
+
+A2 remains approved with its existing five-file scope: new workspace
+`tests/editor_save.cjs`, new `tests/editor_save.rs`, production `assets/app.js`,
+`impl/README.md`, and this report. Test-only Node >=22 using built-in modules
+was included in that approval; installed Node is 26.8.2. A2 binds saves to exact
+documents/submitted bytes, propagates failure, preserves later edits, handles
+line-feed normalization/tab switches, serializes per-document saves and closes
+only when the intended document has no unsaved/pending work. Real frontend/HTTP
+regressions, exact-candidate reuse and separate graphical acceptance remain
+required. Do not ask for A1/A2 approval again.
+
 ## Approved workstreams and remaining acceptance
 
 | Phase / finding | Current applicability and evidence limit | Status |
 | --- | --- | --- |
 | B1 / VR-01 | Actual inherited-pipe, capture, cleanup and effect-observation regressions pass; scope and limits recorded above. | FIXED for Linux x86_64 process-group scope |
 | B2 / VR-04 | Atomic non-overwriting publication and exclusive temporary reservation; low-level and actual concurrent HTTP evidence passes on both toolchains. | FIXED |
-| B3 / SORT-01 | Bare ENUM direction is incorrectly rejected before execution; earlier checker repair requires amendment. Original ascending-output symptom remains unconfirmed. | BLOCKED — PLAN AMENDMENT REQUIRED; new matrix red |
+| B3 / SORT-01 | A1 checker/direction matrix passes; SET materialization loses its family and duplicates. Exact failed gate and CLI proof above. | BLOCKED — A3 approval required; SET regression red |
+| A2 / UI-01 | Save/close integrity amendment approved; implementation waits for B3 closure. | APPROVED, NOT STARTED |
 | B4 / VR-03 | Source claim still accepts sparse category evidence and witnesses use prefix accounting. Version-bound obligations and faithful missing cases pending. | OPEN |
 | B5 / VR-02 | Script still builds/copies live checkout and Git-free inventory can be empty. Frozen-source and exact-candidate rebuild/install evidence pending. | OPEN |
 
@@ -294,7 +438,7 @@ Required unestablished witnesses remain CLOSURE-004, CLOSURE-006, CLOSURE-021,
 CLOSURE-022, CLOSURE-023, CLOSURE-024, CLOSURE-027, CLOSURE-055, CLOSURE-058,
 CLOSURE-059 and CLOSURE-060. Baseline green tests do not fill these obligations.
 
-Next: owner decision on amendment A1 above, then its first focused checker gate.
+Next: owner decision on A3, then its first preflight collection regression gate.
 The plan's architecture and canonical decision gates remain binding. No later
 workstream may advance while a preceding required gate fails.
 
@@ -330,3 +474,15 @@ space is 147,653,734,400 bytes. `logs/B3-stop-preservation.json` records these
 observations. Full final gates and packaging/GUI acceptance remain NOT EXECUTED.
 The continuation handoff is
 `/mnt/F/.lcl-residual-repair-01-lxd8dwu8/LCL_RESIDUAL_REPAIR_01_HANDOFF.txt`.
+
+Continuation change order after the owner's `0ff51b7` checkpoint:
+`lcl-checker/tests/constructors_and_operations.rs`, `lcl-checker/src/operation.rs`,
+`lcl-checker/src/declarations.rs`, `lcl-stdlib/tests/pure_operations.rs`, this
+report (all crate paths under `impl/crates/`). All five changes remain unstaged.
+Current root/branch/HEAD/upstream remain as recorded for this continuation.
+`logs/A1-stop-state.json` records matching hashes for all 192 protected files,
+empty owned tmp, no owned product processes, empty staged diff and approximately
+147.5 GB free disk. The original toolchain, targets and logs are retained.
+The new current handoff is
+`/mnt/F/.lcl-residual-repair-01-lxd8dwu8/LCL_RESIDUAL_REPAIR_01_HANDOFF_A3.txt`;
+the earlier handoff remains historical and must not revoke A1/A2 approval.

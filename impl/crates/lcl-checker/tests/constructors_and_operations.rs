@@ -171,6 +171,91 @@ fn an_invocation_site_must_satisfy_its_operations_parameter_contract() {
     assert_eq!(ids(&check(&duplicated)), vec!["error.operation.parameter"]);
 }
 
+fn contextual_enum_document(parameters: &str) -> String {
+    format!(
+        "LCL:\n    VERSION: \"0.1.0\"\n\n\
+         SPECIFICATION:\n    ID: test.direction\n    NAME: \"Contextual enum\"\n    \
+         VERSION: \"1.0.0\"\n    KIND: kind.task\n\n\
+         DATA:\n    ID: data.subject\n    TYPE: LIST[INTEGER]\n    VALUE: [3, 1, 2]\n\n\
+         ACTION:\n    ID: action.sort\n    OPERATION: core.sort\n    TARGET: REF(data.subject)\n\
+         {parameters}\n\
+         GOAL:\n    ID: goal.subject\n    ASSERT: TRUE\n\n\
+         SUCCESS:\n    ID: success.subject\n    ALL: [TRUE]\n\n\
+         TASK:\n    ID: task.subject\n    GOAL: REF(goal.subject)\n    \
+         ACTION: REF(action.sort)\n    SUCCESS: REF(success.subject)\n\n\
+         EXECUTE:\n    REFERENCE: REF(task.subject)\n"
+    )
+}
+
+fn enum_parameter(name: &str, member: &str) -> String {
+    format!(
+        "    PARAMETER:\n        NAME: {name}\n        TYPE: ENUM\n        \
+         REQUIRED: FALSE\n        VALUE: {member}\n"
+    )
+}
+
+/// 03_TYPES_AND_VALUES/05: bare ENUM is legal when an operation supplies one
+/// exact domain. The receiving row, not the spelling of VALUE, supplies it.
+#[test]
+fn contextual_enum_accepts_each_registered_sort_direction() {
+    for member in ["ascending", "descending"] {
+        let source = contextual_enum_document(&enum_parameter("direction", member));
+        let checked = check(&source);
+        assert_eq!(
+            checked.outcome(),
+            Outcome::Checked,
+            "{member}: {:?}",
+            ids(&checked)
+        );
+    }
+}
+
+#[test]
+fn contextual_enum_rejects_nonmembers_and_other_value_families() {
+    for member in ["sideways", "\"descending\"", "TRUE"] {
+        let source = contextual_enum_document(&enum_parameter("direction", member));
+        let checked = check(&source);
+        assert_eq!(ids(&checked), vec!["error.type.mismatch"], "{member}");
+        let diagnostic = checked.primary().expect("a value rejection");
+        let start = source.find(&format!("VALUE: {member}")).unwrap() + "VALUE: ".len();
+        assert_eq!(
+            diagnostic.span.start, start,
+            "reject VALUE, not its admitted TYPE"
+        );
+    }
+}
+
+#[test]
+fn contextual_enum_does_not_make_bare_enum_a_general_material_type() {
+    let checked = check(&value("ENUM", "descending"));
+    assert_eq!(checked.outcome(), Outcome::Rejected);
+    assert!(ids(&checked).iter().all(|id| id == "error.type.mismatch"));
+}
+
+#[test]
+fn contextual_enum_does_not_leak_to_another_parameter() {
+    // `key` registers STRING|REFERENCE, not the `direction` enum. Cover it
+    // both alone and after an admitted direction in the same ACTION.
+    for prefix in [String::new(), enum_parameter("direction", "descending")] {
+        let source =
+            contextual_enum_document(&format!("{prefix}{}", enum_parameter("key", "descending")));
+        let checked = check(&source);
+        // `key` also rejects the unregistered declared family. Preserve that
+        // existing operation-contract diagnostic alongside the type defect.
+        assert_eq!(
+            ids(&checked),
+            vec!["error.operation.parameter", "error.type.mismatch"]
+        );
+        let key_type = source.rfind("TYPE: ENUM").unwrap() + "TYPE: ".len();
+        let type_defect = checked
+            .diagnostics()
+            .iter()
+            .find(|d| d.id.to_string() == "error.type.mismatch")
+            .unwrap();
+        assert_eq!(type_defect.span.start, key_type);
+    }
+}
+
 /// `expression_fragment_contract/syntax`: "consume exactly one EXPRESSION …
 /// followed only by optional whitespace", `#/diagnostics`: "Malformed fragment
 /// syntax and invalid bindings produce error.operation.parameter", and

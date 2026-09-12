@@ -29,9 +29,10 @@
 use crate::contracts::{ContractType, OperationContract};
 use crate::declarations::field_in;
 use crate::expr::Check;
+use crate::ty::{EnumDomain, Type};
 use crate::StaticError;
-use lcl_parser::syntax::{Block, Statement, Value};
-use lcl_resolver::SourceId;
+use lcl_parser::syntax::{Block, Expr, Statement, TypeExpr, Value};
+use lcl_resolver::{FullId, SourceId};
 use std::collections::BTreeMap;
 
 /// The three invocation sites. "ACTION, HANDLER, and FALLBACK are the only
@@ -40,25 +41,80 @@ use std::collections::BTreeMap;
 const INVOCATION_BLOCKS: [&str; 2] = ["ACTION", "HANDLER"];
 
 /// Check one block as an invocation site, when it is one.
-pub(crate) fn invocation(check: &mut Check<'_>, source: &SourceId, block: &Block, name: &str) {
+pub(crate) fn invocation(
+    check: &mut Check<'_>,
+    source: &SourceId,
+    block: &Block,
+    name: &str,
+) -> BTreeMap<lcl_lexer::Span, Type> {
     if !INVOCATION_BLOCKS.contains(&name) {
-        return;
+        return BTreeMap::new();
     }
     let Some(field) = block.field("OPERATION") else {
-        return;
+        return BTreeMap::new();
     };
     let Some(identifier) = operation_identifier(field) else {
-        return;
+        return BTreeMap::new();
     };
     // A custom `DEFINE kind.operation` declares its own contract in LCL; the
     // closed core contracts are the registry's.
     let Some(contract) = check.contracts.operation(&identifier).cloned() else {
-        return;
+        return BTreeMap::new();
     };
 
     let locus = block.key.span;
     parameters(check, source, block, &contract, locus);
     target(check, source, block, &contract, name, locus);
+    enum_contexts(block, &contract)
+}
+
+/// 03_TYPES_AND_VALUES/05 permits bare ENUM only when this exact receiving
+/// operation parameter supplies one domain. Key by the PARAMETER field's
+/// locus so a sibling or nested value cannot accidentally inherit it.
+fn enum_contexts(block: &Block, contract: &OperationContract) -> BTreeMap<lcl_lexer::Span, Type> {
+    let mut contexts = BTreeMap::new();
+    for statement in &block.body {
+        let Statement::Field(field) = statement else {
+            continue;
+        };
+        if field.key.text != "PARAMETER" {
+            continue;
+        }
+        let Some(nested) = field.body.as_nested() else {
+            continue;
+        };
+        let Some(name) = parameter_name(&nested.statements) else {
+            continue;
+        };
+        let Some(spec) = contract.parameters.get(&name) else {
+            continue;
+        };
+        let ContractType::Enum(items) = &spec.ty else {
+            continue;
+        };
+        let Some(declared) = field_in(&nested.statements, "TYPE") else {
+            continue;
+        };
+        if !matches!(declared.body.as_inline(),
+            Some(Value::Expression(Expr::Type(TypeExpr::Scalar(word)))) if word.text == "ENUM")
+        {
+            continue;
+        }
+        // This internal identity is the registered slot, not a new source
+        // declaration. The pointer separators cannot collide with a source ID.
+        let id = FullId::local(format!(
+            "operations_v0.1.0.json#/contracts/{}/parameters/{name}",
+            contract.id
+        ));
+        contexts.insert(
+            field.key.span,
+            Type::Enum(EnumDomain {
+                id,
+                items: items.clone(),
+            }),
+        );
+    }
+    contexts
 }
 
 /// The `OPERATION` field's identifier, as written.

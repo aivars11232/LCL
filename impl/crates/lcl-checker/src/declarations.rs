@@ -438,12 +438,16 @@ fn block_of(check: &mut Check<'_>, source: &SourceId, block: &Block) {
         .copied();
     let declared = declaration.and_then(|index| check.declaration_types.get(&index).cloned());
 
-    crate::operation::invocation(check, source, block, &name);
+    let enum_contexts = crate::operation::invocation(check, source, block, &name);
 
     for statement in &block.body {
         match statement {
             Statement::Field(field) => {
-                field_of(check, source, &name, field, declared.as_ref(), declaration)
+                if let Some(context) = enum_contexts.get(&field.key.span) {
+                    contextual_parameter(check, source, field, context);
+                } else {
+                    field_of(check, source, &name, field, declared.as_ref(), declaration);
+                }
             }
             Statement::Property(property) => {
                 // A lowercase key outside object data is `error.field.forbidden`
@@ -460,6 +464,36 @@ fn block_of(check: &mut Check<'_>, source: &SourceId, block: &Block) {
 
     // Constraints are judged after the values they constrain.
     declared_constraints(check, source, &block.body);
+}
+
+/// The operation has resolved this PARAMETER's written bare ENUM to one exact
+/// registry domain. Record that TYPE and check every other field through the
+/// ordinary receiving-type walk, including VALUE and declared constraints.
+fn contextual_parameter(
+    check: &mut Check<'_>,
+    source: &SourceId,
+    parameter: &lcl_parser::syntax::Field,
+    context: &Type,
+) {
+    let Some(nested) = parameter.body.as_nested() else {
+        return;
+    };
+    for statement in &nested.statements {
+        match statement {
+            Statement::Field(field) if field.key.text == "TYPE" => {
+                if let Some(expr) = types::inline_expression(&field.body) {
+                    check.record_designator(source, expr.span(), context.clone());
+                }
+            }
+            Statement::Field(field) => {
+                field_of(check, source, "PARAMETER", field, Some(context), None);
+            }
+            Statement::Property(_) => {}
+            Statement::Conditional(conditional) => conditional_of(check, source, conditional),
+            Statement::ForEach(for_each) => for_each_of(check, source, for_each),
+        }
+    }
+    declared_constraints(check, source, &nested.statements);
 }
 
 fn field_of(

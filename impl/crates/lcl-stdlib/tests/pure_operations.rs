@@ -378,6 +378,105 @@ fn the_default_direction_is_ascending() {
     assert_eq!(items(&execution, "action.sort"), vec!["1", "2", "3"]);
 }
 
+fn sort_by_initial(ty: &str, members: &str, direction: &str) -> lcl_runtime::Execution {
+    struct TracedSort(Stdlib);
+    impl lcl_runtime::Operations for TracedSort {
+        fn invoke(
+            &mut self,
+            cx: &mut lcl_runtime::Invocation<'_>,
+            request: &lcl_runtime::CapabilityRequest,
+        ) -> lcl_runtime::Resolution {
+            let planned = cx
+                .plan
+                .resolutions()
+                .iter()
+                .find(|r| r.id == "data.subject")
+                .unwrap();
+            println!(
+                "SORT-01 SET trace: checked={:?}; planned={:?}; request_target={:?}; read={:?}",
+                cx.checked.declaration_type(planned.declaration),
+                planned.value,
+                request.target,
+                cx.declaration_value("data.subject")
+            );
+            self.0.invoke(cx, request)
+        }
+    }
+    let declarations = format!(
+        "{}{DIRECTION_TYPE}\nDEFINE:\n    ID: sort.initial\n    KIND: kind.operation\n    \
+         MEANING: \"Return the first character of the member.\"\n    SIDE_EFFECT: FALSE\n    \
+         DETERMINISTIC: TRUE\n    PARAMETER:\n        NAME: member\n        TYPE: STRING\n        \
+         REQUIRED: TRUE\n    RESULT:\n        TYPE: STRING\n",
+        common::data("data.subject", ty, members)
+    );
+    let action = format!(
+        "ID: action.sort\nOPERATION: core.sort\nTARGET: REF(data.subject)\n\
+         PARAMETER:\n    NAME: key\n    TYPE: REFERENCE[REF(sort.initial)]\n    \
+         REQUIRED: FALSE\n    VALUE: REF(sort.initial)\n\
+         PARAMETER:\n    NAME: direction\n    TYPE: ENUM\n    REQUIRED: FALSE\n    VALUE: {direction}"
+    );
+    let fixture = common::fixture(&common::task(&declarations, &[&action]));
+    lcl_runtime::Runtime::new(common::contracts())
+        .execute_with(
+            &fixture.planned,
+            &fixture.checked,
+            &fixture.resolved,
+            &mut TracedSort(common::stdlib().with_pure_operation("sort.initial", initial_letter())),
+            &mut MockHost::new(),
+        )
+        .expect("planned")
+}
+
+#[test]
+fn sort_direction_preserves_equal_key_list_order_and_multiplicity() {
+    for (direction, expected) in [
+        (
+            "ascending",
+            vec![
+                "\"apple\"",
+                "\"apricot\"",
+                "\"apple\"",
+                "\"beta\"",
+                "\"banana\"",
+            ],
+        ),
+        (
+            "descending",
+            vec![
+                "\"beta\"",
+                "\"banana\"",
+                "\"apple\"",
+                "\"apricot\"",
+                "\"apple\"",
+            ],
+        ),
+    ] {
+        let execution = sort_by_initial(
+            "LIST[STRING]",
+            "[\"beta\", \"apple\", \"apricot\", \"banana\", \"apple\"]",
+            direction,
+        );
+        assert_eq!(items(&execution, "action.sort"), expected, "{direction}");
+        assert!(common::errors_of(&execution, "action.sort").is_empty());
+    }
+}
+
+#[test]
+fn sort_direction_preserves_set_distinct_key_requirement() {
+    let ordered = sort_by_initial("SET[STRING]", "[\"apple\", \"beta\"]", "descending");
+    assert_eq!(
+        items(&ordered, "action.sort"),
+        vec!["\"beta\"", "\"apple\""]
+    );
+    for direction in ["ascending", "descending"] {
+        let collision = sort_by_initial("SET[STRING]", "[\"apple\", \"apricot\"]", direction);
+        assert_eq!(
+            common::errors_of(&collision, "action.sort"),
+            vec!["error.operation.precondition"]
+        );
+    }
+}
+
 #[test]
 fn an_unresolved_key_operation_is_a_precondition_failure() {
     // "a missing, ambiguous, incomplete, or out-of-bounds key-operation profile

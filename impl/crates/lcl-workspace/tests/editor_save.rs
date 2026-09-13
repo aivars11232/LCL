@@ -1,6 +1,12 @@
 //! UI-01: execute the actual served frontend against an owned workspace server.
 //! Node's controlled DOM is not evidence of a visible browser or desktop launch.
 
+/// The number of editor acceptance cases this suite is known to cover.
+///
+/// A floor, not an expected total: adding a case must not break the gate, and
+/// losing one must.
+const EXPECTED_CASES: usize = 15;
+
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -99,7 +105,30 @@ impl Process {
                 let output = self.output();
                 println!("{output}"); // complete subprocess evidence enters the cargo log
                 assert!(status.success(), "editor acceptance exited {status}");
-                assert!(output.contains("11 passed; 0 failed; 0 skipped"));
+                // Nothing failed, nothing was skipped, and the suite did not
+                // quietly shrink. A bare expected total goes stale every time a
+                // case is added and says nothing about which cases ran; this
+                // fails if any case fails, is skipped, or disappears.
+                let summary = output
+                    .lines()
+                    .rev()
+                    .find(|line| line.contains(" passed; ") && line.contains(" failed; "))
+                    .unwrap_or_else(|| panic!("no summary line in:\n{output}"))
+                    .to_string();
+                assert!(
+                    summary.contains("0 failed; 0 skipped"),
+                    "editor acceptance did not pass cleanly: {summary}"
+                );
+                let passed: usize = summary
+                    .split(" passed")
+                    .next()
+                    .and_then(|n| n.trim().parse().ok())
+                    .unwrap_or_else(|| panic!("unreadable summary: {summary}"));
+                assert!(
+                    passed >= EXPECTED_CASES,
+                    "the editor suite ran {passed} cases; it must not lose coverage \
+                     below the {EXPECTED_CASES} it had"
+                );
                 return;
             }
             assert!(

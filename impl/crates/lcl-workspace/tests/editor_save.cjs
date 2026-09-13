@@ -18,6 +18,29 @@ function deferred() {
   const promise = new Promise(done => { resolve = done; });
   return { promise, resolve };
 }
+/// Let every already-scheduled continuation run. The fixture transport answers
+/// synchronously, so this is a bounded drain and not a sleep.
+async function settle() {
+  for (let i = 0; i < 50; i++) await tick();
+}
+
+/// Wait for a condition, bounded, then confirm it still holds after everything
+/// else has run. A condition that is briefly true and then clobbered is not a
+/// pass.
+async function until(condition, label, ms = 4000) {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (condition()) {
+      await settle();
+      assert(condition(), `${label}: held briefly and was then undone`);
+      return;
+    }
+    await tick();
+  }
+  await settle();
+  assert(condition(), `${label}: not reached within ${ms}ms`);
+}
+
 async function bounded(promise, label) {
   let timer;
   try {
@@ -89,7 +112,7 @@ async function harness(options) {
     url = new URL(url, origin);
     const method = init.method || "GET";
     const id = url.searchParams.get("id");
-    const hold = method === "PUT" ? nextHold : null;
+    const hold = nextHold && method === nextHold.method ? nextHold : null;
     if (hold) nextHold = null;
     if (method === "PUT") puts.push({ id, body: init.body });
     let reply;
@@ -142,9 +165,9 @@ async function harness(options) {
   const run = code => vm.runInContext(code, context, { timeout: 3000 });
   return {
     sourceHash: hash(source), puts, get, run,
-    hold() {
+    hold(method = "PUT") {
       assert.equal(nextHold, null);
-      const held = { reached: deferred(), release: deferred() };
+      const held = { method, reached: deferred(), release: deferred() };
       nextHold = held;
       return { reached: held.reached.promise, release: () => held.release.resolve() };
     },
@@ -264,6 +287,65 @@ const cases = [
     assert.deepEqual(h.doc("legacy spaces.lcl"),{text:"final text\n",saved:"final text\n",dirty:false});
     h.close("legacy spaces.lcl"); assert.equal(h.doc("legacy spaces.lcl"),null);
     assert.equal(await h.persisted("legacy spaces.lcl"),"final text\n");
+  }],
+  // UI-02: a reload response may only replace what it was asked about.
+  ["reload from a clean buffer does not overwrite text typed while it was in flight", async h => {
+    await h.add("reload clean.lcl.txt");
+    const hold = h.hold("GET"), reloading = h.run("reload()");
+    await bounded(hold.reached, "reload requested");
+    h.edit("typed while reloading\n");
+    hold.release();
+    await bounded(reloading, "reload answered");
+    await until(
+      () => h.doc("reload clean.lcl.txt").text === "typed while reloading\n",
+      "edits made during a reload survive it",
+    );
+    assert.equal(h.doc("reload clean.lcl.txt").dirty, true, "and are still unsaved");
+    assert.equal(h.get("#code").value, "typed while reloading\n");
+  }],
+  ["a confirmed discard covers the edits it was shown, not later ones", async h => {
+    await h.add("reload dirty.lcl.txt");
+    h.edit("discarded edits\n");
+    const hold = h.hold("GET");
+    h.run("reload()");
+    h.choose("Discard and reload");
+    await bounded(hold.reached, "reload requested after the discard");
+    h.edit("typed after the discard\n");
+    hold.release();
+    await until(
+      () => h.doc("reload dirty.lcl.txt").text === "typed after the discard\n",
+      "text typed after the discard decision is not covered by it",
+    );
+    assert.equal(h.doc("reload dirty.lcl.txt").dirty, true);
+  }],
+  ["a reload response cannot reach a document that was closed and reopened", async h => {
+    await h.add("reload reopen.lcl.txt");
+    const hold = h.hold("GET");
+    h.run("reload()");
+    await bounded(hold.reached, "reload requested");
+    h.close("reload reopen.lcl.txt");
+    await bounded(h.run('openDocument("reload reopen.lcl.txt")'), "reopen");
+    h.edit("edits in the reopened document\n");
+    hold.release();
+    await until(
+      () => h.doc("reload reopen.lcl.txt").text === "edits in the reopened document\n",
+      "an old reload cannot alter a reopened document",
+    );
+    assert.equal(h.doc("reload reopen.lcl.txt").dirty, true);
+  }],
+  ["a reload of an inactive tab does not touch the active one", async h => {
+    await h.add("reload A.lcl.txt");
+    const hold = h.hold("GET"), reloading = h.run("reload()");
+    await bounded(hold.reached, "reload requested for A");
+    await h.add("reload B.lcl");
+    h.edit("B is being edited\n");
+    hold.release();
+    await bounded(reloading, "reload answered");
+    await settle();
+    assert.equal(h.get("#code").value, "B is being edited\n", "the active tab is untouched");
+    assert.equal(h.doc("reload B.lcl").text, "B is being edited\n");
+    assert.equal(h.doc("reload A.lcl.txt").text, "saved\n", "and A did reload");
+    assert.equal(h.doc("reload A.lcl.txt").dirty, false);
   }],
   ["post-save tree failure is not reported as persistence failure", async h => {
     await h.add("refresh.lcl.txt"); h.edit("persisted\n"); h.failNextListing();

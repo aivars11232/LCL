@@ -104,10 +104,27 @@ impl Json {
     }
 }
 
+/// The deepest nesting this reader will descend into.
+///
+/// Not a limit on what JSON means; a limit on what one process will do while
+/// reading it. The descent below recurses once per nested array or object, and
+/// a file is ordinary input: `lcl.project.json` sits in the user's own project
+/// directory, and a single line of nested brackets there is not a diagnostic
+/// without this — it is a stack overflow and an aborted process, which a
+/// project shell cannot report anything from.
+///
+/// The value is chosen against measured reality rather than taste: the deepest
+/// JSON in the canonical package is six levels, and the deepest anywhere in the
+/// repository is seven. This is an order of magnitude above both, so no
+/// legitimate file is affected, and it is far below the depth at which the
+/// descent was observed to fail.
+pub const MAX_NESTING: usize = 128;
+
 pub fn parse(input: &str) -> Result<Json, JsonError> {
     let mut p = Parser {
         b: input.as_bytes(),
         i: 0,
+        depth: 0,
     };
     p.skip_ws();
     let v = p.value()?;
@@ -121,6 +138,8 @@ pub fn parse(input: &str) -> Result<Json, JsonError> {
 struct Parser<'a> {
     b: &'a [u8],
     i: usize,
+    /// How many nested arrays and objects are currently open.
+    depth: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -175,7 +194,25 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Enter one nesting level, or refuse to.
+    fn descend(&mut self) -> Result<(), JsonError> {
+        if self.depth >= MAX_NESTING {
+            return Err(self.err(&format!(
+                "nesting deeper than {MAX_NESTING} levels is refused"
+            )));
+        }
+        self.depth += 1;
+        Ok(())
+    }
+
     fn object(&mut self) -> Result<Json, JsonError> {
+        self.descend()?;
+        let value = self.object_body();
+        self.depth -= 1;
+        value
+    }
+
+    fn object_body(&mut self) -> Result<Json, JsonError> {
         self.expect(b'{')?;
         let mut members: Vec<(String, Json)> = Vec::new();
         self.skip_ws();
@@ -213,6 +250,13 @@ impl<'a> Parser<'a> {
     }
 
     fn array(&mut self) -> Result<Json, JsonError> {
+        self.descend()?;
+        let value = self.array_body();
+        self.depth -= 1;
+        value
+    }
+
+    fn array_body(&mut self) -> Result<Json, JsonError> {
         self.expect(b'[')?;
         let mut items = Vec::new();
         self.skip_ws();

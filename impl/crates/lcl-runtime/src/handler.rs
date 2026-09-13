@@ -479,8 +479,10 @@ impl<'a> Engine<'a> {
         let Some(record) = self.records.get(id).and_then(|r| r.result.clone()) else {
             return true;
         };
-        if matches!(record.failure_phase, FailurePhase::None | FailurePhase::PreEffect)
-            && record.effect_state == EffectState::None
+        if matches!(
+            record.failure_phase,
+            FailurePhase::None | FailurePhase::PreEffect
+        ) && record.effect_state == EffectState::None
         {
             return true;
         }
@@ -488,7 +490,9 @@ impl<'a> Engine<'a> {
             request: request.clone(),
             previous: record.clone(),
         });
-        let evidence = context.as_ref().map(|context| self.host.retry_evidence(context));
+        let evidence = context
+            .as_ref()
+            .map(|context| self.host.retry_evidence(context));
         let (error, detail) = match (context, evidence) {
             (Some(context), Some(RetryEvidence::Established(proof)))
                 if retry_proof_matches(&context, &proof) =>
@@ -496,22 +500,37 @@ impl<'a> Engine<'a> {
                 if let Some(action) = self.action_requests.get(id) {
                     // Both the original language request and the resolved host
                     // request must remain exact at the next attempt boundary.
-                    self.retry_guards.insert(
-                        id.next_attempt(), (action.clone(), context.request),
-                    );
+                    self.retry_guards
+                        .insert(id.next_attempt(), (action.clone(), context.request));
                     self.retry_proofs.push(*proof);
                     return true;
                 }
-                (RuntimeError::RequiredMissing, "the original action request is unavailable")
+                (
+                    RuntimeError::RequiredMissing,
+                    "the original action request is unavailable",
+                )
             }
-            (Some(_), Some(RetryEvidence::Unknown)) =>
-                (RuntimeError::ValueUnknown, "the host could not establish retry safety"),
-            (Some(context), Some(RetryEvidence::Unsafe(subject))) if *subject == context =>
-                (RuntimeError::OperationPrecondition, "the host proved this exact retry unsafe"),
-            _ => (RuntimeError::RequiredMissing,
-                "exact state and retry evidence for the previous request were not established"),
+            (Some(_), Some(RetryEvidence::Unknown)) => (
+                RuntimeError::ValueUnknown,
+                "the host could not establish retry safety",
+            ),
+            (Some(context), Some(RetryEvidence::Unsafe(subject))) if *subject == context => (
+                RuntimeError::OperationPrecondition,
+                "the host proved this exact retry unsafe",
+            ),
+            _ => (
+                RuntimeError::RequiredMissing,
+                "exact state and retry evidence for the previous request were not established",
+            ),
         };
-        self.emit_at(error, planned, id, "retry safety", detail, record.failure_phase);
+        self.emit_at(
+            error,
+            planned,
+            id,
+            "retry safety",
+            detail,
+            record.failure_phase,
+        );
         false
     }
 
@@ -594,6 +613,39 @@ impl<'a> Engine<'a> {
                 } else {
                     EffectState::Applied
                 };
+                // A handler's result is a result. The ordinary dispatch path
+                // checks the closed registered field set before anything is
+                // bound, and a field set that is closed on only one path is not
+                // closed — least of all here, where the record decides whether
+                // a registered diagnostic is kept or discarded. A malformed
+                // claim of success would recover the failure it was called for
+                // and take the diagnostic with it.
+                let violations = record.schema_violations(self.contracts);
+                if !violations.is_empty() {
+                    let phase = crate::execute::phase_of(
+                        &record.observed_effects,
+                        observation.proven_effect_free,
+                    );
+                    self.emit_at(
+                        RuntimeError::HostConstraint,
+                        planned,
+                        id,
+                        "result contract",
+                        format!("{schema}: {}", violations.join("; ")),
+                        phase,
+                    );
+                    record.status = self
+                        .contracts
+                        .error(RuntimeError::HostConstraint)
+                        .default_status
+                        .clone();
+                    record
+                        .execution_errors
+                        .push(RuntimeError::HostConstraint.as_registry_str().into());
+                    record.failure_phase = phase;
+                    record.effect_state =
+                        crate::execute::effect_state_of(&record.observed_effects, phase);
+                }
                 Some(record)
             }
             Ok(CapabilityOutcome::Failed {
@@ -926,27 +978,42 @@ pub(crate) fn fallback_eligible(record: &ResultRecord) -> bool {
 /// Correspondence is checked by the core; capability-specific safety is the
 /// host's proof obligation. A proof cannot rewrite the previous attempt.
 fn retry_proof_matches(context: &RetryContext, proof: &RetryProof) -> bool {
-    if proof.context != *context || proof.post_state.trim().is_empty()
-        || proof.evidence.is_empty() || proof.evidence.iter().any(|item| item.trim().is_empty())
-        || proof.observed_effects.iter().any(|effect|
+    if proof.context != *context
+        || proof.post_state.trim().is_empty()
+        || proof.evidence.is_empty()
+        || proof.evidence.iter().any(|item| item.trim().is_empty())
+        || proof.observed_effects.iter().any(|effect| {
             effect.state == RecordState::Indeterminate
-            || !context.request.possible_effects.contains(effect.class.as_registry_str()))
+                || !context
+                    .request
+                    .possible_effects
+                    .contains(effect.class.as_registry_str())
+        })
     {
         return false;
     }
     let consistent = match proof.effect_state {
         EffectState::None => proof.observed_effects.is_empty(),
-        EffectState::Applied => !proof.observed_effects.is_empty()
-            && proof.observed_effects.iter().all(|effect| effect.state == RecordState::Applied),
-        EffectState::Partial => proof.observed_effects.iter().any(|effect| effect.state == RecordState::Partial),
+        EffectState::Applied => {
+            !proof.observed_effects.is_empty()
+                && proof
+                    .observed_effects
+                    .iter()
+                    .all(|effect| effect.state == RecordState::Applied)
+        }
+        EffectState::Partial => proof
+            .observed_effects
+            .iter()
+            .any(|effect| effect.state == RecordState::Partial),
         EffectState::Indeterminate => false,
     };
     let uncertain = context.previous.failure_phase == FailurePhase::Indeterminate
         || context.previous.effect_state == EffectState::Indeterminate;
-    consistent && if uncertain {
-        proof.method == RetryMethod::Reconcile
-    } else {
-        proof.effect_state == context.previous.effect_state
-            && proof.observed_effects == context.previous.observed_effects
-    }
+    consistent
+        && if uncertain {
+            proof.method == RetryMethod::Reconcile
+        } else {
+            proof.effect_state == context.previous.effect_state
+                && proof.observed_effects == context.previous.observed_effects
+        }
 }

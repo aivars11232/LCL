@@ -24,9 +24,11 @@
 //! and every editor in existence treats the final newline as its own business.
 //! It is stated here rather than done quietly, and the reply says it happened.
 
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 
 /// Why a document could not be read or written.
 #[derive(Debug)]
@@ -47,12 +49,20 @@ pub enum DocumentError {
         path: PathBuf,
         detail: String,
     },
+    /// A newer write to this exact path has already been published, so this
+    /// one is stale and was not applied.
+    Superseded(PathBuf),
 }
 
 impl std::fmt::Display for DocumentError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DocumentError::AlreadyExists(path) => write!(f, "{} already exists", path.display()),
+            DocumentError::Superseded(path) => write!(
+                f,
+                "{} was saved again while this write was still in flight; the newer content is kept",
+                path.display()
+            ),
             DocumentError::Outside(path) => {
                 write!(f, "{} is outside the project root", path.display())
             }
@@ -228,6 +238,9 @@ fn persist(
 ) -> Result<Document, DocumentError> {
     let path = resolve(root, relative)?;
     let (text, _) = admissible(text)?;
+    // Taken now, when this write is accepted, and not at publication: what
+    // makes one write newer than another is when it was asked for.
+    let sequence = NEXT_WRITE.fetch_add(1, Ordering::SeqCst) + 1;
 
     let directory = path.parent().unwrap_or(root);
     std::fs::create_dir_all(directory).map_err(|e| DocumentError::Io {
@@ -235,7 +248,12 @@ fn persist(
         detail: format!("the directory could not be created: {e}"),
     })?;
 
-    Temporary::prepare(directory, text.as_bytes())?.publish(&path, publication)?;
+    let prepared = Temporary::prepare(directory, text.as_bytes())?;
+
+    #[cfg(test)]
+    before_publish(&path);
+
+    prepared.publish(&path, publication, sequence)?;
 
     let digest = lcl_spec::sha256::hex_digest(text.as_bytes());
     Ok(Document {
@@ -246,6 +264,60 @@ fn persist(
 }
 
 static NEXT_TEMPORARY: AtomicU64 = AtomicU64::new(0);
+
+/// The order writes were accepted in, and the newest already published for each
+/// path.
+///
+/// ## Why ordering has to live here
+///
+/// A save is accepted, prepared and only then published, and between those
+/// moments a newer save of the same file can be accepted, prepared, published
+/// and acknowledged. The older write then renames its stale bytes over the
+/// newer ones. Nothing above this layer can prevent it: the editor's own
+/// queue is per open document, so closing a tab and reopening the same path
+/// starts a second queue that knows nothing about the first, and a queue is in
+/// any case not shared with another writer.
+///
+/// So the order is decided where the bytes actually land. Each write takes a
+/// number when it is accepted, and publication happens under one lock that
+/// refuses a number older than the one already on that path. The check and the
+/// publication are the same critical section, because a check that releases its
+/// lock before publishing is the defect again with more steps.
+///
+/// Scope, stated rather than implied: this orders the writes *this process*
+/// accepted. Two workspace processes sharing a root do not order against each
+/// other through it; atomic create-only publication is what protects them from
+/// destroying each other's files, and an explicit precondition is available to
+/// a caller that wants one.
+static NEXT_WRITE: AtomicU64 = AtomicU64::new(0);
+static PUBLISHED: Mutex<BTreeMap<PathBuf, u64>> = Mutex::new(BTreeMap::new());
+
+/// A test seam, compiled out of the product entirely. It runs after a write has
+/// taken its number and prepared its bytes, and before it publishes them —
+/// which is exactly the window a newer save can pass through.
+///
+/// Held as an `Arc` so the hook is cloned out and the lock released before it
+/// runs: the hook's whole purpose is to perform another write, and calling it
+/// under this lock would deadlock against that write.
+///
+/// It is handed the destination, because unit tests run in parallel threads
+/// over one static and a hook that fired for every writer in the process would
+/// be answering other tests' writes.
+#[cfg(test)]
+#[allow(clippy::type_complexity)]
+static BEFORE_PUBLISH: Mutex<Option<std::sync::Arc<dyn Fn(&Path) + Send + Sync>>> =
+    Mutex::new(None);
+
+#[cfg(test)]
+fn before_publish(destination: &Path) {
+    let hook = BEFORE_PUBLISH
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    if let Some(hook) = hook {
+        hook(destination);
+    }
+}
 
 /// Only a file successfully reserved by create_new belongs to this guard.
 struct Temporary {
@@ -294,11 +366,36 @@ impl Temporary {
         mut self,
         destination: &Path,
         publication: Publication,
+        sequence: u64,
     ) -> Result<(), DocumentError> {
+        // One critical section: decide whether this write is still the newest
+        // for this path, and publish it, without letting go in between. A check
+        // that released its lock before publishing would be the defect again
+        // with more steps.
+        //
+        // Ordering governs replacing saves only. A create is a reservation
+        // rather than newer content, and its refusal must keep saying that the
+        // destination is occupied — which is what the atomic create-only
+        // publication above already establishes.
+        let mut order = PUBLISHED.lock().unwrap_or_else(|e| e.into_inner());
+        let ordered = matches!(publication, Publication::Replace);
+        if ordered
+            && order
+                .get(destination)
+                .is_some_and(|newest| *newest > sequence)
+        {
+            let error = DocumentError::Superseded(destination.to_path_buf());
+            drop(order);
+            return Err(self.failure(error));
+        }
         let published = match publication {
             Publication::Create => std::fs::hard_link(&self.path, destination),
             Publication::Replace => std::fs::rename(&self.path, destination),
         };
+        if ordered && published.is_ok() {
+            order.insert(destination.to_path_buf(), sequence);
+        }
+        drop(order);
         if let Err(error) = published {
             let error = if matches!(publication, Publication::Create)
                 && error.kind() == std::io::ErrorKind::AlreadyExists
@@ -385,11 +482,11 @@ mod tests {
         let (a, b) = std::thread::scope(|scope| {
             let a = scope.spawn(|| {
                 barrier.wait();
-                left.publish(&target, Publication::Create)
+                left.publish(&target, Publication::Create, 1)
             });
             let b = scope.spawn(|| {
                 barrier.wait();
-                right.publish(&target, Publication::Create)
+                right.publish(&target, Publication::Create, 2)
             });
             (a.join().unwrap(), b.join().unwrap())
         });
@@ -400,6 +497,99 @@ mod tests {
         assert_eq!(std::fs::read_dir(&directory.0).unwrap().count(), 1);
     }
 
+    /// UI-03: an older save must not replace a newer one that was already
+    /// acknowledged.
+    ///
+    /// The exact interleaving the finding names: an older write is held
+    /// **before** its bytes are published — not merely before its response is
+    /// delivered — while the document is closed, reopened and saved again with
+    /// newer text, successfully. The older write is then released.
+    ///
+    /// A per-document queue in the editor cannot prevent this. Closing a tab
+    /// and reopening the same path creates a second document object with its
+    /// own queue, which knows nothing about the write the first one left in
+    /// flight. Delaying the response, abandoning the request in the browser or
+    /// checking the destination before renaming would all leave the same
+    /// window open, because by then the rename has already happened or is about
+    /// to. The ordering has to be decided where the bytes land.
+    #[test]
+    fn an_older_write_held_before_publication_cannot_replace_a_newer_one() {
+        let directory = Directory::new();
+        let root = directory.0.clone();
+        std::fs::write(root.join("doc.lcl.txt"), b"original\n").unwrap();
+
+        // While the older save sits between taking its number and publishing,
+        // a newer save of the same path is accepted, published and finished.
+        let newer_root = root.clone();
+        let watched = root.join("doc.lcl.txt");
+        let newer_done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = std::sync::Arc::clone(&newer_done);
+        *BEFORE_PUBLISH.lock().unwrap() = Some(std::sync::Arc::new(move |destination: &Path| {
+            // Only this case's own document, because unit tests run in
+            // parallel over one static, and only the first write through the
+            // seam — the second is the newer save this hook performs.
+            if destination != watched {
+                return;
+            }
+            if flag.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                return;
+            }
+            write(&newer_root, "doc.lcl.txt", "newer text\n")
+                .expect("the newer save is accepted and published");
+        }));
+
+        let older = write(&root, "doc.lcl.txt", "older text\n");
+        *BEFORE_PUBLISH.lock().unwrap() = None;
+
+        assert_eq!(
+            std::fs::read_to_string(root.join("doc.lcl.txt")).unwrap(),
+            "newer text\n",
+            "the acknowledged newer content must still be on disk"
+        );
+        assert!(
+            matches!(older, Err(DocumentError::Superseded(_))),
+            "and the stale write must be told it was superseded rather than \
+             reporting a success it did not have: {older:?}"
+        );
+        assert_eq!(
+            std::fs::read_dir(&root).unwrap().count(),
+            1,
+            "with no temporary left behind"
+        );
+    }
+
+    /// The control: ordinary sequential saves still replace, in order.
+    #[test]
+    fn sequential_saves_still_replace_in_order() {
+        let directory = Directory::new();
+        let root = directory.0.clone();
+        write(&root, "doc.lcl.txt", "first\n").expect("first save");
+        write(&root, "doc.lcl.txt", "second\n").expect("second save");
+        write(&root, "doc.lcl.txt", "third\n").expect("third save");
+        assert_eq!(
+            std::fs::read_to_string(root.join("doc.lcl.txt")).unwrap(),
+            "third\n"
+        );
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
+    }
+
+    /// And a create is still refused for being occupied, not for being late.
+    #[test]
+    fn a_create_over_an_existing_document_still_reports_it_exists() {
+        let directory = Directory::new();
+        let root = directory.0.clone();
+        write(&root, "doc.lcl.txt", "content\n").expect("save");
+        let created = create(&root, "doc.lcl.txt", "other\n");
+        assert!(
+            matches!(created, Err(DocumentError::AlreadyExists(_))),
+            "{created:?}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join("doc.lcl.txt")).unwrap(),
+            "content\n"
+        );
+    }
+
     #[test]
     fn failed_publication_cleans_its_temporary_and_preserves_existing_data() {
         let directory = Directory::new();
@@ -407,7 +597,7 @@ mod tests {
         std::fs::create_dir(&target).unwrap();
         std::fs::write(target.join("user.txt"), b"preserved").unwrap();
         let prepared = Temporary::prepare(&directory.0, b"replacement").unwrap();
-        assert!(prepared.publish(&target, Publication::Replace).is_err());
+        assert!(prepared.publish(&target, Publication::Replace, 1).is_err());
         assert_eq!(
             std::fs::read(target.join("user.txt")).unwrap(),
             b"preserved"

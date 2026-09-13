@@ -752,7 +752,28 @@ impl HostAdapter {
                 );
             };
             match transport.get(&address, &bounds) {
-                Ok(response) => response.body,
+                Ok(response) if is_success(response.status) => response.body,
+                // `core.download` registers the precondition "source is
+                // accessible", and a status that is not a success says it is
+                // not. The body of a 404 or a 500 is an error page and the body
+                // of a 302 is a note about somewhere else; writing either to
+                // the destination would satisfy "destination bytes equal
+                // received source" with bytes that are not the source, and
+                // report a transfer that did not happen.
+                //
+                // This is the row's own registered identifier, and the phase is
+                // the one the registry assigns it: "an immediate operation
+                // precondition fails before that operation's effects". Nothing
+                // was written and no content was transferred into scope.
+                Ok(response) => {
+                    return unmet_precondition(
+                        "source",
+                        format!(
+                            "{uri} answered with HTTP {}, so the source is not accessible",
+                            response.status
+                        ),
+                    )
+                }
                 Err(error) => return net_failure(error),
             }
         };
@@ -855,13 +876,35 @@ impl HostAdapter {
             return CapabilityOutcome::Unavailable("no network transport is installed".to_string());
         };
         match transport.put(&address, &body, &bounds) {
-            Ok(_) => completed_transfer_or_operation(
+            Ok(response) if is_success(response.status) => completed_transfer_or_operation(
                 request,
                 source_value,
                 destination_value,
                 body.len() as u64,
                 applied(EffectClass::Network, Some(uri)),
             ),
+            // The content was sent, so the network effect began and is recorded
+            // as such. What it did at the other end is not established: the
+            // row's postcondition is "destination bytes equal source bytes" and
+            // a refusing endpoint has not agreed to that. The registry admits
+            // exactly this shape -- "a postcondition may fail ... after known
+            // effects, or when the effect extent cannot be established".
+            Ok(response) => {
+                let observation = Observation::none().with_effect(ObservedEffect {
+                    class: EffectClass::Network,
+                    state: RecordState::Indeterminate,
+                    target: Some(uri.clone()),
+                    evidence: Vec::new(),
+                });
+                CapabilityOutcome::Failed {
+                    detail: format!(
+                        "{uri} answered with HTTP {}, which does not establish that the \
+                         destination holds the uploaded bytes",
+                        response.status
+                    ),
+                    observation,
+                }
+            }
             Err(error) => net_failure(error),
         }
     }
@@ -1085,6 +1128,29 @@ fn fs_failure(error: FsError, effect: Option<ObservedEffect>) -> CapabilityOutco
         FsError::Refused(Refusal::Denied(detail)) => CapabilityOutcome::Denied(detail),
         FsError::Refused(Refusal::Unavailable(detail)) => CapabilityOutcome::Unavailable(detail),
         FsError::Bounded(cancelled) => CapabilityOutcome::Unavailable(cancelled.reason),
+        // The adapter opened the target and then failed. It cannot say that
+        // nothing began, and `05_SEMANTICS/09` only permits the effect-free
+        // claim for a failure positively established as pre-effect. How much
+        // landed is not recoverable from the error, so the extent is
+        // indeterminate — which is a fact, where `none` would be a guess.
+        FsError::IoAfterChange { detail, target } => {
+            let mut observation = Observation::none();
+            if let Some(prior) = effect {
+                observation = observation.with_effect(prior);
+            }
+            observation = observation.with_effect(ObservedEffect {
+                class: EffectClass::Filesystem,
+                state: RecordState::Indeterminate,
+                target: Some(target.display().to_string()),
+                // Directly observed: the adapter opened the target itself and
+                // no declared EVIDENCE object is involved.
+                evidence: Vec::new(),
+            });
+            CapabilityOutcome::Failed {
+                detail,
+                observation,
+            }
+        }
         other => failed(other.to_string(), effect),
     }
 }
@@ -1186,6 +1252,25 @@ fn wrong_parameter(detail: impl Into<String>) -> CapabilityOutcome {
     }
 }
 
+/// Whether an HTTP status reports that the request succeeded.
+///
+/// Only 2xx. A redirect is not content, and a client or server error is not
+/// content either; each says the thing that was asked for was not delivered
+/// here. This transport does not follow redirects, so a 3xx is an answer about
+/// somewhere else rather than the source.
+fn is_success(status: u16) -> bool {
+    (200..300).contains(&status)
+}
+
+/// `error.operation.precondition`, with the row's own cause identity.
+fn unmet_precondition(cause: &str, detail: impl Into<String>) -> CapabilityOutcome {
+    CapabilityOutcome::Refused {
+        error: lcl_runtime::RuntimeError::OperationPrecondition,
+        cause: cause.to_string(),
+        detail: detail.into(),
+    }
+}
+
 /// `error.value.out_of_range`: bounds outside `0 <= start <= end <= length`.
 fn out_of_range(detail: impl Into<String>) -> CapabilityOutcome {
     CapabilityOutcome::Refused {
@@ -1257,9 +1342,22 @@ impl Range {
                 "core.read range {name} is an INTEGER"
             )));
         };
+        // `INTEGER` is "an unbounded signed whole number", so a bound this
+        // machine cannot hold is not an unreadable one: it is a perfectly well
+        // typed position that is simply outside every sequence. The row says
+        // which identifier that is — "Require 0 <= start <= end <= sequence
+        // length; otherwise error.value.out_of_range" — and reserves
+        // error.operation.parameter for "an incompatible unit/representation or
+        // wrong key/type", which this is not. Reporting a malformed parameter
+        // would answer a different question from the one the document asked.
         let Some(number) = number.to_i64() else {
-            return Err(wrong_parameter(format!(
-                "core.read range {name} is not a readable INTEGER position"
+            if !number.is_integral() {
+                return Err(wrong_parameter(format!(
+                    "core.read range {name} is an INTEGER"
+                )));
+            }
+            return Err(out_of_range(format!(
+                "core.read range {name} is {number}, outside every sequence;                  bounds are never clipped"
             )));
         };
         // "negative, inverted, or excessive bounds are never clipped."

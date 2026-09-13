@@ -433,3 +433,200 @@ fn a_relative_glob_inside_the_workspace_is_accepted() {
 fn nine() -> lcl_checker::numeric::Decimal {
     lcl_checker::numeric::Decimal::parse_integer("9").expect("9 parses")
 }
+
+// ---------------------------------------------------------------------------
+// SEM-01 — an expression this layer cannot decide is not MISSING
+// ---------------------------------------------------------------------------
+
+/// `05_SEMANTICS/06` defines MISSING as "no value/source exists", and step 3
+/// applies a DEFAULT only to MISSING. The preflight evaluator's own contract
+/// says the same thing from the other side: it returns `None` for "an
+/// expression whose value this layer cannot establish", and that `None` is
+/// "**not** `MISSING`", because the caller "must leave the obligation to the
+/// layer that demands it rather than inventing an outcome".
+///
+/// So a declaration with an explicit VALUE has a value and a source, whatever
+/// this layer manages to work out about it. Turning "I could not decide this"
+/// into "there is nothing here" both loses the explicit value and hands the
+/// declaration to DEFAULT, which the canonical order reserves for MISSING.
+///
+/// The probes change only the grouping around one explicit input, so every one
+/// of them is the same value written differently. The evaluator's budget is
+/// read from its own behaviour rather than assumed: whichever of these it can
+/// and cannot fold, the answer must never be the DEFAULT.
+fn grouped_input(parentheses: usize) -> String {
+    let value = format!("{}7{}", "(".repeat(parentheses), ")".repeat(parentheses));
+    task_document(&format!(
+        "\nINPUT:\n    ID: input.one\n    TYPE: INTEGER\n    VALUE: {value}\n    DEFAULT: 42\n{SUBJECT}"
+    ))
+}
+
+#[test]
+fn grouping_an_explicit_value_never_turns_it_into_the_default() {
+    for parentheses in [0usize, 2, 128, 129] {
+        let planned = plan_with(&grouped_input(parentheses), &Invocation::new());
+        let resolved = resolution(&planned, "input.one");
+        assert_ne!(
+            resolved.origin,
+            Origin::Default,
+            "{parentheses} parentheses around an explicit 7 took the DEFAULT; a \
+             declaration with an explicit VALUE is not MISSING, and DEFAULT \
+             applies only to MISSING"
+        );
+        assert_ne!(
+            resolved.value,
+            Value::Missing,
+            "{parentheses} parentheses around an explicit 7 resolved to MISSING"
+        );
+        // Either the value was established, or it is explicitly undecided.
+        // There is no third answer, and in particular no quietly substituted
+        // one: `05_SEMANTICS/06` gives "cannot be determined" its own name.
+        assert!(
+            resolved.value.to_string() == "7" || resolved.value == Value::Unknown,
+            "{parentheses} parentheses around an explicit 7 resolved to {:?}",
+            resolved.value
+        );
+    }
+}
+
+/// The same probes from the other direction: within the capacity this host
+/// actually has, every spelling produces the same observable value.
+#[test]
+fn equivalent_groupings_that_resolve_at_all_resolve_to_the_same_value() {
+    for parentheses in [0usize, 2, 128, 129] {
+        let planned = plan_with(&grouped_input(parentheses), &Invocation::new());
+        let resolved = resolution(&planned, "input.one");
+        // Neither sentinel is a resolved value: MISSING says there is nothing
+        // here and UNKNOWN says it could not be established. The claim is about
+        // the groupings that did produce one.
+        let decided = resolved.value != Value::Missing && resolved.value != Value::Unknown;
+        if resolved.origin == Origin::DeclaredValue && decided {
+            assert_eq!(
+                resolved.value.to_string(),
+                "7",
+                "{parentheses} parentheses around 7 is still 7"
+            );
+        }
+    }
+}
+
+/// The control the repair must not break: a declaration with genuinely no
+/// value and no supplied datum is MISSING, and DEFAULT does apply to it.
+#[test]
+fn an_absent_optional_input_still_takes_its_default() {
+    let source = task_document(&format!(
+        "\nINPUT:\n    ID: input.one\n    TYPE: INTEGER\n    REQUIRED: FALSE\n    DEFAULT: 42\n{SUBJECT}"
+    ));
+    let planned = plan_with(&source, &Invocation::new());
+    let resolved = resolution(&planned, "input.one");
+    assert_eq!(resolved.origin, Origin::Default);
+    assert_eq!(resolved.value.to_string(), "42");
+}
+
+// ---------------------------------------------------------------------------
+// MEASURE-01 — preflight keeps the family and the exact unit
+// ---------------------------------------------------------------------------
+
+/// `03_TYPES_AND_VALUES`: a MEASURE is "a number paired with one registered
+/// unit identifier". Arithmetic that preserves the unit must preserve it
+/// exactly; a result that is a bare DECIMAL is a different value family, and a
+/// preflight that produces one disagrees with the runtime about what the
+/// document says — which is the cross-stage agreement the value-fidelity
+/// contract requires.
+fn measure_value(expression: &str) -> lcl_semantics::Value {
+    let source = task_document(&format!(
+        "{}{SUBJECT}",
+        data_block("data.measured", "MEASURE", expression)
+    ));
+    let planned = plan_with(&source, &Invocation::new());
+    resolution(&planned, "data.measured").value.clone()
+}
+
+fn assert_quantity(value: &Value, magnitude: &str, unit: &str, what: &str) {
+    let Value::Quantity(actual, actual_unit) = value else {
+        panic!("{what} must stay a MEASURE, got {value:?}");
+    };
+    assert_eq!(actual.to_string(), magnitude, "{what}: magnitude");
+    assert_eq!(actual_unit.0, unit, "{what}: exact unit identifier");
+}
+
+#[test]
+fn same_unit_measure_addition_keeps_the_unit() {
+    assert_quantity(
+        &measure_value("MEASURE(5, unit.meter) + MEASURE(3, unit.meter)"),
+        "8",
+        "unit.meter",
+        "5 m + 3 m",
+    );
+}
+
+#[test]
+fn same_unit_measure_subtraction_keeps_the_unit() {
+    assert_quantity(
+        &measure_value("MEASURE(5, unit.meter) - MEASURE(3, unit.meter)"),
+        "2",
+        "unit.meter",
+        "5 m - 3 m",
+    );
+    assert_quantity(
+        &measure_value("MEASURE(3, unit.meter) - MEASURE(5, unit.meter)"),
+        "-2",
+        "unit.meter",
+        "a negative difference is still a measure",
+    );
+}
+
+#[test]
+fn a_measure_multiplied_by_a_scalar_keeps_the_unit_either_way_round() {
+    assert_quantity(
+        &measure_value("MEASURE(5, unit.meter) * 3"),
+        "15",
+        "unit.meter",
+        "5 m times an INTEGER",
+    );
+    assert_quantity(
+        &measure_value("3 * MEASURE(5, unit.meter)"),
+        "15",
+        "unit.meter",
+        "an INTEGER times 5 m",
+    );
+    assert_quantity(
+        &measure_value("MEASURE(5, unit.meter) * 1.5"),
+        "7.5",
+        "unit.meter",
+        "5 m times a DECIMAL",
+    );
+    assert_quantity(
+        &measure_value("MEASURE(5, unit.meter) * 0"),
+        "0",
+        "unit.meter",
+        "zero metres is still metres",
+    );
+    assert_quantity(
+        &measure_value("MEASURE(5, unit.meter) * -2"),
+        "-10",
+        "unit.meter",
+        "a negative multiple is still a measure",
+    );
+}
+
+/// The controls: ordinary numbers are still ordinary numbers.
+#[test]
+fn scalar_arithmetic_is_unchanged() {
+    let source = task_document(&format!(
+        "{}{}{SUBJECT}",
+        data_block("data.whole", "INTEGER", "5 + 3"),
+        data_block("data.fraction", "DECIMAL", "5 + 1.5")
+    ));
+    let planned = plan_with(&source, &Invocation::new());
+    assert_eq!(
+        resolution(&planned, "data.whole").value,
+        Value::Integer(lcl_checker::numeric::Decimal::parse_integer("8").unwrap()),
+        "INTEGER + INTEGER is an INTEGER"
+    );
+    assert_eq!(
+        resolution(&planned, "data.fraction").value.to_string(),
+        "6.5",
+        "a DECIMAL operand still gives a DECIMAL"
+    );
+}

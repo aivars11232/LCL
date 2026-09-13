@@ -352,11 +352,24 @@ async function reload() {
   const doc = current();
   if (!doc) return;
   const go = async () => {
+    // What this reload is answering for. Anything typed after this point was
+    // never shown to the person who asked for it, and a discard they confirmed
+    // covered the edits in front of them, not edits that did not exist yet.
+    const revision = doc.revision;
     const reply = await api("GET", "/api/document", { id: doc.id });
-    doc.text = reply.text;
-    doc.revision++;
+    // The tab may have been closed and reopened while the request was out; that
+    // path is a different document object with its own edits.
+    if (state.docs.get(doc.id) !== doc) return;
+    // The response is authoritative about what is on disk either way.
     doc.saved = reply.text;
     doc.digest = reply.digest;
+    if (doc.revision !== revision) {
+      renderTabs(); renderTree(); render();
+      toast(`${doc.id} was edited while it reloaded; your edits are kept.`, "warn");
+      return;
+    }
+    doc.text = reply.text;
+    doc.revision++;
     doc.index = buildIndex(doc.text);
     if (current() === doc) code.value = doc.text;
     renderTabs(); renderTree(); render();

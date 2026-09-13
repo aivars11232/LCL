@@ -270,6 +270,260 @@ fn denying_a_paused_effect_refuses_it_and_the_engine_decides_what_that_means() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// RUN-02: a denial at an operation pause is a refusal, not a hand-off
+// ---------------------------------------------------------------------------
+
+/// Every diagnostic identifier in a report.
+fn diagnostic_ids(report: &Json) -> Vec<String> {
+    report
+        .get("diagnostics")
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| text(d.get("id").unwrap()).to_string())
+        .collect()
+}
+
+/// The terminal status a completed run reached, when it reached one.
+fn terminal_status(report: &Json) -> Option<&str> {
+    report.get("completion")?.get("terminal_status")?.as_str()
+}
+
+/// A document whose ACTION only calculates: a pure row that never reaches a
+/// host at all, so denying it cannot be answered by handing it to one.
+fn calculating_document() -> String {
+    "LCL:\n    VERSION: \"0.1.0\"\n\
+     \n\
+     SPECIFICATION:\n    ID: example.calculate\n    NAME: \"Calculate one value\"\n    \
+     VERSION: \"1.0.0\"\n    KIND: kind.task\n\
+     \n\
+     OUTPUT:\n    ID: output.total\n    TYPE: INTEGER\n    FORMAT: format.plain_text\n\
+     \n\
+     GOAL:\n    ID: goal.calculate\n    ASSERT: TRUE\n\
+     \n\
+     ACTION:\n    ID: action.calculate\n    OPERATION: core.calculate\n    \
+     PARAMETER:\n        NAME: expression\n        TYPE: STRING\n        \
+     REQUIRED: TRUE\n        VALUE: \"1 + 2\"\n    \
+     OUTPUT: REF(output.total)\n\
+     \n\
+     SUCCESS:\n    ID: success.calculate\n    ALL: [REF(output.total)]\n\
+     \n\
+     TASK:\n    ID: task.calculate\n    GOAL: REF(goal.calculate)\n    \
+     ACTION: REF(action.calculate)\n    OUTPUT: REF(output.total)\n    \
+     SUCCESS: REF(success.calculate)\n\
+     \n\
+     EXECUTE:\n    REFERENCE: REF(task.calculate)\n"
+        .to_string()
+}
+
+/// Deny at an operation pause, with effect pauses switched off.
+///
+/// This is the whole point of the operation break: the operator is asked
+/// *before the standard library dispatches*, and says no. Contract 5.7 makes
+/// the host gate an independent second gate, and a product layer refusing at
+/// the first one cannot satisfy itself by passing the request to the second.
+/// The request here is otherwise entirely valid — the document authorizes it
+/// and the host grant permits it — so if the denial is dropped anywhere, the
+/// file appears and the effect the operator refused has happened.
+#[test]
+fn denying_a_paused_operation_refuses_it_without_reaching_the_host() {
+    let (scratch, running) = serve_examples("deny-operation");
+    let target = scratch.join("written.txt");
+    let grant = format!("&allow_write={}", encode(&target.display().to_string()));
+    let run = start(
+        &running,
+        "write.lcl",
+        &writing_document(&target),
+        &format!("{grant}&break_operations=1"),
+    );
+
+    let mut stream = Stream::open(&running, &run);
+    let paused = stream.wait_for("paused").expect("the run pauses");
+    let pause = lcl_spec::json::parse(&paused).expect("JSON");
+    assert_eq!(
+        text(pause.get("kind").unwrap()),
+        "operation",
+        "effect pauses are off; this is the operation break"
+    );
+    let sequence = pause.get("sequence").unwrap().as_u64().unwrap();
+    assert_eq!(answer(&running, &run, sequence, "deny"), 200);
+
+    let report = stream.wait_for("report").expect("a report");
+    let report = lcl_spec::json::parse(&report).unwrap();
+
+    assert!(
+        !target.exists(),
+        "a denied operation must not write the file"
+    );
+    assert!(
+        stream.take("effect").is_none(),
+        "a denied operation must never be invoked on the host"
+    );
+    let ids = diagnostic_ids(&report);
+    assert!(
+        ids.iter().any(|id| id == "error.permission.denied"),
+        "the denial keeps a registered refusal meaning: {ids:?}"
+    );
+}
+
+/// With both breaks on, one denial is the answer, not the first of two.
+///
+/// Re-asking at the effect boundary would make the operator's "no" mean
+/// "ask me again", and a browser that answered `continue` the second time
+/// would perform exactly the effect that was already refused.
+#[test]
+fn denying_a_paused_operation_is_not_asked_again_at_the_effect_boundary() {
+    let (scratch, running) = serve_examples("deny-operation-both");
+    let target = scratch.join("written.txt");
+    let grant = format!("&allow_write={}", encode(&target.display().to_string()));
+    let run = start(
+        &running,
+        "write.lcl",
+        &writing_document(&target),
+        &format!("{grant}&break_operations=1&break_effects=1"),
+    );
+
+    let mut stream = Stream::open(&running, &run);
+    let paused = stream.wait_for("paused").expect("the run pauses");
+    let pause = lcl_spec::json::parse(&paused).expect("JSON");
+    assert_eq!(text(pause.get("kind").unwrap()), "operation");
+    let sequence = pause.get("sequence").unwrap().as_u64().unwrap();
+    assert_eq!(answer(&running, &run, sequence, "deny"), 200);
+
+    let report = stream.wait_for("report").expect("a report");
+    let report = lcl_spec::json::parse(&report).unwrap();
+
+    assert!(!target.exists(), "a denied operation must not write");
+    assert!(
+        stream.take("paused").is_none(),
+        "one denial answers this invocation; the operator is not asked twice"
+    );
+    assert!(
+        stream.take("effect").is_none(),
+        "no host invocation follows a denial"
+    );
+    let ids = diagnostic_ids(&report);
+    assert!(
+        ids.iter().any(|id| id == "error.permission.denied"),
+        "{ids:?}"
+    );
+}
+
+/// A pure row has no host to be handed to, and denying it still refuses it.
+#[test]
+fn denying_a_paused_pure_operation_refuses_it_rather_than_computing_it() {
+    let (_scratch, running) = serve_examples("deny-pure-operation");
+    let run = start(
+        &running,
+        "calculate.lcl",
+        &calculating_document(),
+        "&break_operations=1",
+    );
+
+    let mut stream = Stream::open(&running, &run);
+    let paused = stream.wait_for("paused").expect("the run pauses");
+    let pause = lcl_spec::json::parse(&paused).expect("JSON");
+    assert_eq!(text(pause.get("kind").unwrap()), "operation");
+    assert_eq!(text(pause.get("operation").unwrap()), "core.calculate");
+    let sequence = pause.get("sequence").unwrap().as_u64().unwrap();
+    assert_eq!(answer(&running, &run, sequence, "deny"), 200);
+
+    let report = stream.wait_for("report").expect("a report");
+    let report = lcl_spec::json::parse(&report).unwrap();
+
+    assert_ne!(
+        terminal_status(&report),
+        Some("status.succeeded"),
+        "a denied operation did not succeed"
+    );
+    let ids = diagnostic_ids(&report);
+    assert!(
+        ids.iter().any(|id| id == "error.permission.denied"),
+        "a denied pure operation is refused, not reported as an absent \
+         capability the host never had: {ids:?}"
+    );
+}
+
+/// The control: the same run, answered `continue`, still performs the effect
+/// exactly once. A repair that refused everything would pass the tests above
+/// and fail this one.
+#[test]
+fn continuing_a_paused_operation_performs_the_effect_once() {
+    let (scratch, running) = serve_examples("continue-operation");
+    let target = scratch.join("written.txt");
+    let grant = format!("&allow_write={}", encode(&target.display().to_string()));
+    let run = start(
+        &running,
+        "write.lcl",
+        &writing_document(&target),
+        &format!("{grant}&break_operations=1"),
+    );
+
+    let mut stream = Stream::open(&running, &run);
+    let paused = stream.wait_for("paused").expect("the run pauses");
+    let sequence = lcl_spec::json::parse(&paused)
+        .unwrap()
+        .get("sequence")
+        .unwrap()
+        .as_u64()
+        .unwrap();
+    assert_eq!(answer(&running, &run, sequence, "continue"), 200);
+    stream.wait_for("end");
+
+    assert!(target.exists(), "continuing performs the effect");
+    assert_eq!(
+        std::fs::read_to_string(&target).expect("readable"),
+        "written by lcl",
+        "exactly the content the document declared, written once"
+    );
+}
+
+/// Cancelling at an operation pause stops the run, leaves the project intact,
+/// and does not poison later runs.
+#[test]
+fn cancelling_at_an_operation_pause_stops_the_run_and_later_runs_still_work() {
+    let (scratch, running) = serve_examples("cancel-operation");
+    let target = scratch.join("written.txt");
+    let grant = format!("&allow_write={}", encode(&target.display().to_string()));
+    let run = start(
+        &running,
+        "write.lcl",
+        &writing_document(&target),
+        &format!("{grant}&break_operations=1"),
+    );
+
+    let mut stream = Stream::open(&running, &run);
+    let paused = stream.wait_for("paused").expect("the run pauses");
+    let sequence = lcl_spec::json::parse(&paused)
+        .unwrap()
+        .get("sequence")
+        .unwrap()
+        .as_u64()
+        .unwrap();
+    assert_eq!(answer(&running, &run, sequence, "cancel"), 200);
+    stream.wait_for("end");
+
+    assert!(!target.exists(), "a cancelled run performs no effect");
+    assert!(
+        stream.take("effect").is_none(),
+        "a cancelled operation reaches no host"
+    );
+
+    let again = start(
+        &running,
+        "01_MINIMAL_TASK.lcl",
+        &common::example("01_MINIMAL_TASK.lcl"),
+        "",
+    );
+    let mut second = Stream::open(&running, &again);
+    assert!(
+        second.wait_for("report").is_some(),
+        "an unrelated later run is unaffected by an earlier denial"
+    );
+}
+
 #[test]
 fn consent_cannot_open_a_gate_the_language_kept_shut() {
     // The acceptance criterion, executed.

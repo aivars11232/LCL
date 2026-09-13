@@ -695,3 +695,414 @@ fn the_real_transport_retrieves_content_over_a_loopback_socket() {
         "the retrieved body is exactly the twenty bytes the server served"
     );
 }
+
+// ---------------------------------------------------------------------------
+// EF-01 — a failure after the target was opened is not proof of no effect
+// ---------------------------------------------------------------------------
+
+/// A document that writes `content` to `target`, authorized by its own ALLOW.
+fn writing_document(target: &str) -> String {
+    let action = format!(
+        "ID: action.write\nOPERATION: core.write\nTARGET: PATH({target:?})\n\
+         PARAMETER:\n    NAME: content\n    TYPE: STRING\n    REQUIRED: TRUE\n    \
+         VALUE: \"written by lcl\"\n\
+         PARAMETER:\n    NAME: create_if_missing\n    TYPE: BOOLEAN\n    \
+         REQUIRED: FALSE\n    VALUE: TRUE"
+    );
+    let allow = format!(
+        "\nALLOW:\n    ID: allow.write\n    OPERATION: core.write\n    \
+         TARGET: PATH({target:?})\n    AUTHORITY: 900\n"
+    );
+    common::task(&allow, &[&action])
+}
+
+/// `/dev/full` accepts an open and refuses every write with `ENOSPC`.
+///
+/// That is exactly the shape of failure this case is about, and the reason it
+/// is used rather than filling a real filesystem: the adapter has already
+/// opened the target for modification — for a replacing write, already
+/// truncated it — when the write fails. It cannot then prove that nothing
+/// began, and `05_SEMANTICS/09` only permits the effect-free claim for a
+/// failure that is *positively established* as pre-effect.
+///
+/// Linux only, because the device is.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_write_failing_after_the_target_was_opened_is_not_proven_effect_free() {
+    let grants = Grants::none().permit_write("/dev/full");
+    let mut host = HostAdapter::new(grants.clone())
+        .with_filesystem(lcl_capabilities::RealFileSystem::new(grants));
+    let execution = run_with_host(&writing_document("/dev/full"), &mut host);
+    let result = common::result_of(&execution, "action.write");
+
+    assert!(
+        !result.execution_errors.is_empty(),
+        "the write did not succeed and the record must say so"
+    );
+    assert_ne!(
+        result.failure_phase,
+        lcl_runtime::result::FailurePhase::PreEffect,
+        "a write that failed after its target was opened is not a pre-effect \
+         failure: {result:?}"
+    );
+    assert_ne!(
+        result.effect_state,
+        lcl_runtime::result::EffectState::None,
+        "and its effect state is not `none`: {result:?}"
+    );
+    assert!(
+        !result.observed_effects.is_empty(),
+        "the adapter records what it could not rule out, rather than an empty \
+         list that reads as proof of nothing: {result:?}"
+    );
+}
+
+/// The control, and the other half of the contract: a failure the adapter
+/// *can* prove is pre-effect still reports exactly that.
+#[test]
+fn a_refused_write_is_still_proven_effect_free() {
+    let scratch = std::env::temp_dir().join(format!("lcl-ef01-{}", std::process::id()));
+    std::fs::create_dir_all(&scratch).expect("owned scratch");
+    let outside = scratch.join("ungranted.txt");
+    let granted = scratch.join("granted");
+    std::fs::create_dir_all(&granted).expect("granted scope");
+
+    let grants = Grants::none().permit_write(&granted);
+    let mut host = HostAdapter::new(grants.clone())
+        .with_filesystem(lcl_capabilities::RealFileSystem::new(grants));
+    let execution = run_with_host(&writing_document(&outside.display().to_string()), &mut host);
+    let result = common::result_of(&execution, "action.write");
+
+    assert_eq!(
+        result.failure_phase,
+        lcl_runtime::result::FailurePhase::PreEffect,
+        "a grant refusal happens before any byte moves: {result:?}"
+    );
+    assert_eq!(
+        result.effect_state,
+        lcl_runtime::result::EffectState::None,
+        "and it is proven effect-free: {result:?}"
+    );
+    assert!(!outside.exists(), "and nothing was written");
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// The second control: an ordinary write into a granted scope still completes
+/// and still reports an applied effect.
+#[test]
+fn an_ordinary_write_still_completes_with_an_applied_effect() {
+    let scratch = std::env::temp_dir().join(format!("lcl-ef01-ok-{}", std::process::id()));
+    std::fs::create_dir_all(&scratch).expect("owned scratch");
+    let target = scratch.join("written.txt");
+
+    let grants = Grants::none().permit_write(&scratch);
+    let mut host = HostAdapter::new(grants.clone())
+        .with_filesystem(lcl_capabilities::RealFileSystem::new(grants));
+    let execution = run_with_host(&writing_document(&target.display().to_string()), &mut host);
+    let result = common::result_of(&execution, "action.write");
+
+    assert_eq!(
+        result.status, "status.succeeded",
+        "{:?}",
+        result.execution_errors
+    );
+    assert_eq!(
+        std::fs::read_to_string(&target).expect("readable"),
+        "written by lcl"
+    );
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+// ---------------------------------------------------------------------------
+// Q-NETDOMAIN — an HTTP status is not automatically an operation outcome, but
+// it is not nothing either
+// ---------------------------------------------------------------------------
+
+/// Serve exactly one response and close. Bounded; the thread ends with it.
+fn one_response(response: &'static str) -> (u16, std::thread::JoinHandle<()>) {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+    let port = listener.local_addr().expect("bound").port();
+    let server = std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut request = [0u8; 2048];
+            let _ = stream.read(&mut request);
+            let _ = stream.write_all(response.as_bytes());
+            let _ = stream.flush();
+        }
+    });
+    (port, server)
+}
+
+fn download_document(port: u16, destination: &std::path::Path) -> String {
+    let declarations = format!(
+        "{}{}",
+        common::data(
+            "data.endpoint",
+            "URI",
+            &format!("URI(\"http://127.0.0.1:{port}/missing.txt\")")
+        ),
+        common::data(
+            "data.destination",
+            "PATH",
+            &format!("PATH({:?})", destination.display().to_string())
+        )
+    );
+    let action = "ID: action.download\nOPERATION: core.download\nTARGET: REF(data.endpoint)\n\
+                  PARAMETER:\n    NAME: destination\n    TYPE: PATH\n    REQUIRED: TRUE\n    \
+                  VALUE: REF(data.destination)";
+    common::task(&declarations, &[action])
+}
+
+/// A `404` means the source was not accessible.
+///
+/// `operations_v0.1.0.json#/contracts/core.download` requires the precondition
+/// "source is accessible" and the postcondition "destination bytes equal
+/// received source". An error page is not the source, so writing it to the
+/// destination would satisfy that postcondition with the wrong file and report
+/// a transfer that did not happen.
+#[test]
+fn a_download_of_a_missing_resource_does_not_write_the_error_page() {
+    let scratch = std::env::temp_dir().join(format!("lcl-qnet-404-{}", std::process::id()));
+    std::fs::create_dir_all(&scratch).expect("owned scratch");
+    let destination = scratch.join("downloaded.txt");
+    let (port, server) = one_response(
+        "HTTP/1.1 404 Not Found\r\nContent-Length: 23\r\nConnection: close\r\n\r\n\
+         <html>not here</html>\r\n",
+    );
+
+    let grants = Grants::none()
+        .permit_write(&scratch)
+        .permit_network_host("127.0.0.1");
+    let mut host = HostAdapter::new(grants.clone())
+        .with_filesystem(lcl_capabilities::RealFileSystem::new(grants.clone()))
+        .with_transport(lcl_capabilities::TcpTransport::new(grants));
+    let execution = run_with_host(&download_document(port, &destination), &mut host);
+    let _ = server.join();
+
+    let result = common::result_of(&execution, "action.download");
+    assert_ne!(
+        result.status, "status.succeeded",
+        "a 404 is not a completed transfer: {result:?}"
+    );
+    assert!(
+        !destination.exists(),
+        "and no error page was written to the destination"
+    );
+    assert_eq!(
+        common::errors_of(&execution, "action.download"),
+        vec!["error.operation.precondition".to_string()],
+        "the registered identifier for an unmet precondition, and the row lists \
+         it: {result:?}"
+    );
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A `500` is the same question with a different number.
+#[test]
+fn a_download_of_a_failing_resource_does_not_write_the_error_page() {
+    let scratch = std::env::temp_dir().join(format!("lcl-qnet-500-{}", std::process::id()));
+    std::fs::create_dir_all(&scratch).expect("owned scratch");
+    let destination = scratch.join("downloaded.txt");
+    let (port, server) = one_response(
+        "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 5\r\nConnection: close\r\n\r\nboom!",
+    );
+
+    let grants = Grants::none()
+        .permit_write(&scratch)
+        .permit_network_host("127.0.0.1");
+    let mut host = HostAdapter::new(grants.clone())
+        .with_filesystem(lcl_capabilities::RealFileSystem::new(grants.clone()))
+        .with_transport(lcl_capabilities::TcpTransport::new(grants));
+    let execution = run_with_host(&download_document(port, &destination), &mut host);
+    let _ = server.join();
+
+    assert_ne!(
+        common::result_of(&execution, "action.download").status,
+        "status.succeeded"
+    );
+    assert!(!destination.exists(), "no error page was written");
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A redirect is not content either. This transport does not follow one, and
+/// the body of a `302` is certainly not the source.
+#[test]
+fn a_download_of_a_redirect_does_not_write_the_redirect_body() {
+    let scratch = std::env::temp_dir().join(format!("lcl-qnet-302-{}", std::process::id()));
+    std::fs::create_dir_all(&scratch).expect("owned scratch");
+    let destination = scratch.join("downloaded.txt");
+    let (port, server) = one_response(
+        "HTTP/1.1 302 Found\r\nLocation: /elsewhere.txt\r\nContent-Length: 9\r\n\
+         Connection: close\r\n\r\nmoved on.",
+    );
+
+    let grants = Grants::none()
+        .permit_write(&scratch)
+        .permit_network_host("127.0.0.1");
+    let mut host = HostAdapter::new(grants.clone())
+        .with_filesystem(lcl_capabilities::RealFileSystem::new(grants.clone()))
+        .with_transport(lcl_capabilities::TcpTransport::new(grants));
+    let execution = run_with_host(&download_document(port, &destination), &mut host);
+    let _ = server.join();
+
+    assert_ne!(
+        common::result_of(&execution, "action.download").status,
+        "status.succeeded"
+    );
+    assert!(!destination.exists(), "no redirect body was written");
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// The control: a `200` still downloads, and downloads exactly the body.
+#[test]
+fn a_successful_download_still_writes_exactly_the_received_content() {
+    let scratch = std::env::temp_dir().join(format!("lcl-qnet-200-{}", std::process::id()));
+    std::fs::create_dir_all(&scratch).expect("owned scratch");
+    let destination = scratch.join("downloaded.txt");
+    let (port, server) = one_response(
+        "HTTP/1.1 200 OK\r\nContent-Length: 13\r\nConnection: close\r\n\r\nreal content!",
+    );
+
+    let grants = Grants::none()
+        .permit_write(&scratch)
+        .permit_network_host("127.0.0.1");
+    let mut host = HostAdapter::new(grants.clone())
+        .with_filesystem(lcl_capabilities::RealFileSystem::new(grants.clone()))
+        .with_transport(lcl_capabilities::TcpTransport::new(grants));
+    let execution = run_with_host(&download_document(port, &destination), &mut host);
+    let _ = server.join();
+
+    let result = common::result_of(&execution, "action.download");
+    assert_eq!(
+        result.status, "status.succeeded",
+        "{:?}",
+        result.execution_errors
+    );
+    assert_eq!(
+        std::fs::read_to_string(&destination).expect("readable"),
+        "real content!"
+    );
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+// ---------------------------------------------------------------------------
+// Q-READ — exact content, and a bound that is too large to be a position
+// ---------------------------------------------------------------------------
+
+/// EXPECTED_REPRODUCTION — Q-READ, lossy decoding. Asserts the known
+/// behaviour; a passing run is **not** a product acceptance pass.
+///
+/// `core.read` means "Retrieve accessible **exact content** without changing
+/// its source", its postcondition is that "result is the **exact** requested
+/// representation", and its range contract adds that "No clipping or ambient
+/// encoding conversion occurs". The adapter decodes with
+/// `String::from_utf8_lossy`, which substitutes U+FFFD for each malformed
+/// sequence and cannot fail — so a document that reads a file and writes it
+/// back writes different bytes than it read, and the result says nothing about
+/// it.
+///
+/// The deviation is established. What is **not** settled is the repair, and it
+/// is left to the owner rather than chosen here, because both halves of it are
+/// policy this layer may not invent:
+///
+///  * `core.read`'s registered `errors` list admits
+///    `error.operation.parameter`, `error.reference.unresolved`,
+///    `error.permission.denied`, `error.scope.violation`,
+///    `error.host.constraint`, `error.operation.precondition` and
+///    `error.value.out_of_range`. It does **not** admit
+///    `error.operation.postcondition`, which is the identifier that most
+///    plainly describes "the exact representation could not be produced". The
+///    nearest admitted reading is "an incompatible unit/representation", which
+///    the row states for ranges rather than for the whole read;
+///  * refusing would change what happens to every read of a file that is not
+///    UTF-8, which is a product behaviour change and not only a diagnostic one.
+///
+/// So this records exactly what happens today, and fails the moment it changes.
+#[test]
+fn expected_reproduction_qread_a_non_utf8_read_substitutes_silently() {
+    let action = "ID: action.read\nOPERATION: core.read\nTARGET: REF(data.target)";
+    let source = common::task(
+        &common::data("data.target", "PATH", "PATH(\"/srv/data/raw.bin\")"),
+        &[action],
+    );
+    // 0xFF is not a legal UTF-8 byte in any position.
+    let filesystem = MemoryFileSystem::new()
+        .with_read_scope("/srv/data")
+        .with_file("/srv/data/raw.bin", [b'a', 0xFF, b'b']);
+    let mut host = HostAdapter::new(filesystem.grants().clone()).with_filesystem(filesystem);
+    let execution = run_with_host(&source, &mut host);
+    let result = common::result_of(&execution, "action.read");
+
+    assert_eq!(
+        result.status, "status.succeeded",
+        "the baseline is that this succeeds: {:?}",
+        result.execution_errors
+    );
+    assert!(
+        result.execution_errors.is_empty(),
+        "and says nothing about the substitution: {:?}",
+        result.execution_errors
+    );
+    assert_eq!(
+        result.fields.get("value"),
+        Some(&Value::Text("a\u{FFFD}b".to_string())),
+        "the byte 0xFF was replaced by U+FFFD and reported as the file's content"
+    );
+}
+
+/// A range bound larger than any position can be.
+///
+/// The row says "negative, inverted, or excessive bounds are never clipped",
+/// and `error.value.out_of_range` is registered for "bounds outside
+/// 0 <= start <= end <= length". A bound of 2^70 is excessive, not unreadable:
+/// it is a perfectly well typed INTEGER, since `INTEGER` is an "unbounded
+/// signed whole number". Reporting it as a malformed *parameter* would answer a
+/// different question from the one the document asked.
+#[test]
+fn q_read_a_range_bound_beyond_machine_size_is_out_of_range_not_malformed() {
+    let action = "ID: action.read\nOPERATION: core.read\nTARGET: REF(data.target)\n\
+                  PARAMETER:\n    NAME: range\n    TYPE: OBJECT\n    REQUIRED: TRUE\n    \
+                  VALUE:\n        unit: \"scalar\"\n        start: 0\n        \
+                  end: 1180591620717411303424";
+    let source = common::task(
+        &common::data("data.target", "PATH", "PATH(\"/srv/data/a.txt\")"),
+        &[action],
+    );
+    let filesystem = MemoryFileSystem::new()
+        .with_read_scope("/srv/data")
+        .with_file("/srv/data/a.txt", *b"abcd");
+    let mut host = HostAdapter::new(filesystem.grants().clone()).with_filesystem(filesystem);
+    let execution = run_with_host(&source, &mut host);
+
+    let errors = common::errors_of(&execution, "action.read");
+    println!("Q-READ excessive bound: errors={errors:?}");
+    assert_eq!(
+        errors,
+        vec!["error.value.out_of_range".to_string()],
+        "an excessive but well-typed INTEGER bound is out of range; the row \
+         says such bounds are never clipped, and it is not a malformed parameter"
+    );
+}
+
+/// The control: an ordinary range still selects, and an ordinary refusal is
+/// still the refusal it was.
+#[test]
+fn q_read_ordinary_bounds_are_unchanged() {
+    let action = "ID: action.read\nOPERATION: core.read\nTARGET: REF(data.target)\n\
+                  PARAMETER:\n    NAME: range\n    TYPE: OBJECT\n    REQUIRED: TRUE\n    \
+                  VALUE:\n        unit: \"scalar\"\n        start: 1\n        end: 3";
+    let source = common::task(
+        &common::data("data.target", "PATH", "PATH(\"/srv/data/a.txt\")"),
+        &[action],
+    );
+    let filesystem = MemoryFileSystem::new()
+        .with_read_scope("/srv/data")
+        .with_file("/srv/data/a.txt", *b"abcd");
+    let mut host = HostAdapter::new(filesystem.grants().clone()).with_filesystem(filesystem);
+    let execution = run_with_host(&source, &mut host);
+    assert!(
+        common::errors_of(&execution, "action.read").is_empty(),
+        "an ordinary range is not affected"
+    );
+}

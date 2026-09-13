@@ -931,3 +931,752 @@ private inventory pinning of exact semantic sub-run membership and rejection of
 omitted sub-runs; production population integration; formatting, clippy, actual
 Rust 1.75 and integrated gates. All 192 protected files still match. B5 and exact
 final candidate verification have not started. No staging, commit or push.
+
+## 2026-09-13 continuation — LCL-CLOSURE-4T Task LCL-CLOSE-01 entry and Phase A
+
+New package: **LCL-CLOSURE-4T v1.1**, task **LCL-CLOSE-01** (correctness, safety
+and persistence). The owner approved the presented plan with decisions D1 (safe
+std-only Unix `O_NOFOLLOW | O_EXCL` for FS-01, no unsafe FFI or parent walking),
+D2 (verify the canonical timeout contract first and stop if it is silent),
+D3 (per-path publication ordering plus an optional baseline-digest precondition),
+D4 (probe Q-JSON before proposing any repair) and D5 (new owned disk-backed
+scratch; the residual scratch is reused read-only for the Rust 1.75.0 toolchain).
+
+Root `/mnt/F/LCL`, branch `main`, HEAD `7f13aecd4af639f1373bb1180cb50f9b508cfb05`
+— the same commit the packaged audit used as its historical baseline. The
+worktree was **clean** at entry: the B4 work the previous continuation describes
+was committed at 18:57 on 2026-09-12 as `LCL final 0.1`, so nothing was pending
+in the working tree and nothing was recovered or reset. Upstream is recorded as
+`origin/main`; no fetch, staging, commit or push occurred.
+
+Owned scratch: `/mnt/F/.lcl-closure-4t-4c1cd4c659b7` (mode 700, ext2, disk-backed, 136 GB free).
+`TMPDIR` and the Cargo target directories are inside it. `/tmp` is tmpfs on this
+machine and is therefore excluded from build and test artifacts. The residual
+scratch `/mnt/F/.lcl-residual-repair-01-lxd8dwu8` was read only, for its verified
+private Rust 1.75.0 toolchain (`rustc 1.75.0 (82e1608df 2023-12-21)`,
+`cargo 1.75.0 (1d8b05cdd 2023-11-20)`) and its protected-file inventory.
+System toolchain: rustc/cargo 1.98.1. Python 3.14.7. Node v26.8.2.
+
+All **192** protected canonical, brand and previous-release files were re-hashed
+at entry and match the residual repair's recorded inventory exactly.
+
+### Entry baseline, with two pre-existing failures recorded
+
+| Gate | Actual exit | Result |
+| --- | --- | --- |
+| `cargo fmt --all -- --check` | 1 | **FAIL, pre-existing.** 23 files unformatted |
+| `cargo check --offline --locked --workspace --all-targets` | 0 | PASS |
+| `cargo clippy --offline --locked --workspace --all-targets -- -D warnings` | 101 | **FAIL, pre-existing.** One `clippy::type_complexity` at `lcl-conformance/tests/semantic_cases.rs:35` |
+| `cargo clippy` over the seven crates this task changes | 0 | PASS — the valid lint baseline for this task |
+| `cargo test --offline --locked --workspace --all-targets` | 101 | FAIL — one stale test oracle, closed below |
+| the same, after that closure | 0 | 139 suites, 1416 passed, 0 failed, 0 ignored |
+| actual Rust 1.75.0 `cargo check ... --workspace --all-targets` | 0 | PASS |
+| actual Rust 1.75.0 `cargo test ... --workspace --all-targets` | 0 | 139 suites, 1416 passed, 0 failed, 0 ignored |
+| canonical `validate_release.py --scope all` | 0 | 31 PASS, 2 OUT_OF_SCOPE, 0 FAIL/BLOCKED |
+| canonical `sha256sum -c SHA256SUMS.txt` | 0 | 175 matching entries |
+| `sha256sum -c assets/brand/BRAND_ASSETS.sha256` | 0 | 17 matching entries |
+
+Canonical package identity was verified by the implementation's own algorithm,
+not by a guessed concatenation: `lcl-spec`'s `approved_package_matches_the_anchor`
+and `identity_digest_is_reproducible` executed and passed inside the green
+baseline suite, binding `compute_identity_digest` over the real canonical root to
+`00d648b162939d06c44838481a67c39bc12c64bdd6d105035c24150148fe67ed`.
+
+**The two failing workspace-wide gates are pre-existing and belong to B4, which
+is LCL-CLOSE-02's item, not this task's.** Every one of the 23 unformatted files
+was touched by the two B4 commits (`0ff51b7..7f13aec`) and no file outside them
+is unformatted; the single clippy error is in a test file the last continuation
+added. That continuation already records "formatting, clippy, actual Rust 1.75
+and integrated gates" as open. They are not mass-formatted or lint-patched here:
+the working rule confines formatting changes to the file currently being edited,
+and those files are outside this task's approved scope. Every file this task
+edits is format-checked individually. Both gates are carried into LCL-CLOSE-02's
+entry state and must close there before any completeness claim.
+
+### Entry baseline closure — one stale test oracle
+
+`lcl-protocol/tests/engine_stages.rs::every_valid_example_reaches_completion`
+asserted that exactly **7** canonical valid examples reach `status.succeeded`.
+Eight now do. This was diagnosed read-only before anything else was edited.
+
+A control build of the previous revision `2a20cc0` was extracted into owned
+scratch (`git archive`, never a checkout or reset) and the existing
+`lcl-completion --example m8_report` was run against both trees over the same
+unchanged canonical package. Exactly one example differs:
+`03_IMPORTING_TASK.lcl`, `status.failed` at 2a20cc0 versus `status.succeeded`
+now; the other twelve are identical, and the current production M8 report itself
+counts eight. Logs `C01-diag-control-2a20cc0-m8` and
+`C01-diag-m8-example-statuses`, both exit 0.
+
+The cause is the CLOSURE-004 repair this report already records. That example's
+ACTION binds `destination` to `REF(output.copy).TARGET`. `05_SEMANTICS/01`:
+"A metadata read such as REF(output.copy).TARGET reads the declaration field
+without requiring the OUTPUT's result binding." The runtime used to answer that
+read with the field's *source spelling* as a STRING, so `core.copy` received a
+STRING where its contract requires a PATH and refused with
+`error.operation.precondition`; the example failed, and `verify.copy` was FALSE.
+Evaluating the selected field in its declaring source context restored its
+declared PATH type, so a valid canonical example whose SUCCESS is satisfiable
+now succeeds. The count was stale, not the engine.
+
+The oracle was corrected to assert the exact **named set** of succeeding
+examples rather than a count, because a count cannot distinguish a repaired
+example from a regressed one — which is precisely how this went unnoticed: no
+full workspace test ran after B0, and `lcl-protocol` was in none of B4's scoped
+runs. No assertion was weakened and no expectation was changed to match
+implementation output; the primary assertions, that every example reaches
+completion with exactly one terminal status, are untouched.
+Gate `C01-baseline-oracle-fixed`, exit 0, 21 passed.
+
+### Phase A — denial and cancellation cannot be lost
+
+**RUN-02 — FIXED_VERIFIED.** Reproduced first, in
+`lcl-workspace/tests/debugging.rs`, over the real loopback product with an
+actual event stream. With operation pauses on, effect pauses off, an otherwise
+valid and authorized `core.write`, and the operator answering **deny**, the
+denial was dropped: `WatchedOperations::invoke` returned `Resolution::host` with
+no record of the refusal, and `WatchedHost::permits` — not pausing, because
+effect breaks were off — consulted the real host. Gate `A-run02-before-corrected`,
+exit 101, preserved three distinct failures:
+
+- the run reported `error.host.constraint`, a host *limitation*, instead of the
+  operator's registered refusal. The effect did not occur only because the
+  unresolved request failed a downstream grant check — an unrelated downstream
+  failure, not the denial being honoured;
+- a denied **pure** row (`core.calculate`) was likewise handed to a host that
+  never had that capability, producing `error.host.constraint`;
+- with both breaks on, no report ever arrived: the operator was asked a **second**
+  time at the effect boundary, so one denial did not answer the invocation.
+
+The repair records the refusal against the exact `(InvocationId, operation)` and
+consults it at the host gate, which is where a refusal already has a registered
+meaning. `permits` returns `Permission::Denied` with the operator's reason and
+`invoke` is never reached; `invoke` carries the same guard for any caller that
+skips the gate. A retry is a different attempt index and a loop pass a different
+iteration path, so a recorded refusal binds one invocation and never a later
+decision. Gate `A-run02-after-formatted`, exit 0, 13 passed, including the
+pre-existing effect-deny, cancel, stale-answer and consent-cannot-open-the-gate
+controls and new controls proving `continue` still performs the effect exactly
+once and that an unrelated later run is unaffected.
+
+One correction is recorded rather than concealed: the first version of the new
+pure-operation assertion read `report.status`, which is not in the report
+schema, and panicked in the test helper. The terminal status is
+`report.completion.terminal_status`. That was a mistake in the new test, not an
+observation about the product, and the reproduction was rerun after correcting
+it (`A-run02-before` then `A-run02-before-corrected`, both exit 101).
+
+**RUN-01 — FIXED_VERIFIED.** `Session::hold` checked cancellation, released the
+lock, and only then registered the pause and cleared the answer field. Six unit
+regressions in `execution.rs` place a cancellation at each point the run thread
+and an answering thread can meet, using a deterministic barrier or a test seam
+that is `#[cfg(test)]` only and compiled out of the product, each bounded by a
+five-second external watchdog so a lost cancellation fails instead of hanging.
+Gate `A-run01-before`, exit 101, recorded two deterministic failures:
+
+- a cancellation landing in the check/register window returned `Err(Timeout)`:
+  the reset of the answer field discarded the `Cancel` the operator had already
+  given, and the run parked forever;
+- a hold outstanding when `finish` ran also parked, because the wait condition
+  watched only the answer field and not the run's terminal state.
+
+Cancellation before registration, during waiting, after a resume, and an
+ordinary answer were already correct and are retained as controls.
+
+The repair makes the liveness check and the pause registration one critical
+section, so a cancellation either precedes the section and is seen by it or
+follows it and finds a registered pause; there is no third interleaving. Waiting
+now observes `cancelled` and `finished` as well as the answer, a cancelled run
+answers `Cancel` whatever the answer field holds, and the pause is cleared on
+every exit path so no later answer can hit it. The sequence number is still
+allocated only when a pause is actually registered.
+Gate `A-run01-after`, exit 0, 8 passed.
+
+Phase A closure: `cargo test --offline --locked -p lcl-workspace --all-targets`
+exit 0, 11 suites, 98 passed, 0 failed, 0 ignored (`A-phase-closure-workspace`);
+`cargo clippy --offline --locked -p lcl-workspace --all-targets -- -D warnings`
+exit 0 (`A-phase-closure-clippy`). `rustfmt --check` passes on every edited file.
+All 192 protected files still match. Phases B to G remain open.
+
+### Phase B — filesystem confinement, bounded I/O and effect truth
+
+**FS-01 — FIXED_VERIFIED.** Reproduced against the real adapter on owned
+directories in the new `lcl-capabilities/tests/real_filesystem.rs`. Gate
+`B-fs-before` (exit 101) and `B-fs-races-before` (exit 101) recorded six
+failures, three of which are unauthorized effects rather than wrong labels:
+
+- a `core.create`-mode write through a **dangling** symbolic link inside the
+  grant **actually created its target outside every granted scope**. The link
+  resolves to nothing, so `canonicalize` failed, the path was judged by the
+  link's own location — which is inside — and the open then followed the link
+  out. The failing assertion names the escaped file;
+- a replacing write through the same link escaped identically;
+- two racing creates with overwrite disabled both returned `Ok(())`, and so did
+  two racing copies and two racing renames. A prior existence check admits every
+  writer that passes it, so the second silently destroyed the first.
+
+The repair, within decision D1 — safe standard library only, no unsafe FFI and
+no directory-relative syscalls:
+
+- `resolve` now follows a dangling final link to the destination it names, so
+  containment is judged against where the bytes would actually go;
+- every open of a resolved path passes `O_NOFOLLOW`, closing the window in which
+  another process swaps the final component for a link after the decision. The
+  flag's value is part of each platform's ABI, so it is stated per target and is
+  zero where it is not known, which is recorded rather than guessed;
+- `Create` is reserved with `create_new` — one atomic step that cannot replace a
+  file and cannot be satisfied by an existing link, dangling or not;
+- a non-overwriting copy reserves its destination with `create_new` before any
+  byte moves; a non-overwriting rename reserves with a same-directory hard link
+  and unlinks the source only once the destination is in place, the same
+  primitive already used for atomic document publication.
+
+**The remaining limit is stated, not implied**: nothing here defends against
+another process replacing a *directory* along the path between resolution and
+the operation, and a non-overwriting **directory** move still rests on its
+preceding check because a directory cannot be hard-linked. Both are documented
+in the module itself.
+
+**FS-02 — FIXED_VERIFIED.** The cap was applied to `metadata.len()` and the read
+was then unbounded. Reproduced with a file whose reported size is not its
+content: a zero-byte bound over `/proc/self/cmdline` returned 95 bytes. The read
+now takes at most one byte past the cap from the open file and checks the bytes
+actually collected, so the bound constrains what this process retains. Empty,
+exact-cap and cap-plus-one cases are controls.
+
+Gate `B-fs-after-2`, exit 0, 16 passed. Consumers unaffected: `B-fs-consumers`
+(`lcl-capabilities`, `lcl-stdlib`, `lcl-cli`), exit 0, 232 passed.
+
+**EF-01 — FIXED_VERIFIED.** Reproduced through the real `HostAdapter` into the
+runtime's own result record. A `core.write` to `/dev/full` — which accepts an
+open and refuses every write with `ENOSPC`, and is used precisely so that no
+filesystem is filled and no user data is touched — produced:
+
+```
+ResultRecord { status: "status.failed", output_binding: Unbound,
+  execution_errors: ["error.execution.action"],
+  failure_phase: PreEffect, effect_state: None, observed_effects: [] }
+```
+
+The adapter had already opened the target for modification, and for a replacing
+write already truncated it, when the write failed. It cannot prove nothing
+began, yet the record asserted exactly that. `05_SEMANTICS/09` permits the
+effect-free claim only for a failure positively established as pre-effect, and
+`Observation::none()` makes that claim explicitly through `proven_effect_free`.
+
+The adapter now distinguishes an I/O failure *before* the target was opened for
+modification from one *after* it, and the standard library maps the latter to a
+failure carrying an observed filesystem effect in the `indeterminate` state,
+preserving any effect already recorded — a completed network transfer before a
+failed local write keeps both. The extent is indeterminate rather than partial
+because `write_all` does not report how far it got; claiming `partial` would be
+as invented as claiming `none`. Gate `B-ef01-after-2`, exit 0, 23 passed.
+
+Two controls hold the other half of the contract and both passed before and
+after: a grant refusal is still `PreEffect` with `effect_state: None` and writes
+nothing, and an ordinary granted write still completes with its content on disk.
+
+Three authoring corrections in the new tests are recorded rather than concealed:
+an assertion called a `ResultRecord` method that does not exist and was also
+vacuous for a document declaring no OUTPUT, replaced by asserting the observed
+effects the record actually carries; a fixture placed its `ALLOW` block before
+the `LCL:` header and was rejected with `error.block.context`, corrected by
+passing it as a declaration to the existing task helper; and a bounded read used
+`Read::take` without the trait in scope. All three were mistakes in new test or
+adapter code, not observations about the product.
+
+Phase B closure: `cargo test --offline --locked -p lcl-capabilities -p lcl-stdlib
+-p lcl-runtime -p lcl-cli -p lcl-workspace --all-targets` exit 0, 553 passed, 0
+failed, 0 ignored (`B-phase-closure`); clippy over the three changed crates with
+`-D warnings` exit 0 (`B-phase-closure-clippy`); `rustfmt --check` passes on every
+edited file; all 192 protected files still match.
+
+### Phase C — correct, bounded transport and guarded ingress
+
+**NET-01 — FIXED_VERIFIED.** Reproduced in the new
+`lcl-capabilities/tests/transport.rs`, each case one real HTTP/1.1 response over
+a real bounded loopback listener. Gate `C-net-before`, exit 101:
+
+- a chunked response returned its body as
+  `5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n` — **the chunk-size delimiters were
+  the downloaded content**, which C06 forbids in those words;
+- a response declaring eleven bytes and delivering five returned the five as a
+  completed transfer;
+- an unterminated chunked response returned what had arrived;
+- a response declaring **both** `Content-Length` and `Transfer-Encoding` was
+  accepted, the disagreement resolved silently;
+- `Transfer-Encoding: gzip, chunked` was ignored rather than reported.
+
+The repair implements RFC 9112 §6.3 for determining the body length, §7.1 for
+decoding the chunked coding including chunk extensions and the trailer section,
+and §8 for incomplete messages. Both framings present is an error rather than a
+choice; disagreeing `Content-Length` values are an error; a coding this
+std-only transport does not implement is reported instead of passed through;
+and a close-delimited response is still read to the close, which is legal for a
+response. Gate `C-net01-closure`, exit 0. Controls for an ordinary length, a
+zero-length body, a close-delimited body and a non-2xx status all pass.
+
+**Q-NETDOMAIN — REPRODUCED, then FIXED_VERIFIED. It was a defect, not only a
+review question.** `core.download` against a `404` produced:
+
+```
+ResultRecord { schema: "result.transfer", status: "status.succeeded",
+  execution_errors: [], failure_phase: None, effect_state: Applied,
+  observed_effects: [Network Applied, Filesystem Applied],
+  fields: { bytes: 23, destination: PATH(...), source: URI(...) } }
+```
+
+— a completed transfer of a 23-byte HTML error page, written to the
+destination. The same held for `500` and for a `302` whose body is a note about
+somewhere else.
+
+The repair is taken from the row, not invented.
+`operations_v0.1.0.json#/contracts/core.download` registers the precondition
+"source is accessible" and the postcondition "destination bytes equal received
+source"; `statuses_and_errors_v0.1.0.json` defines `error.operation.precondition`
+as "a registered operation precondition ... is false, missing, or unknown" and
+places it where "an immediate operation precondition fails **before** that
+operation's effects". A non-2xx status says the source was not accessible, so
+the row's own identifier is refused before anything is written — the same shape
+as `core.read`'s range, which the outcome type already documents as a contract
+decided "over a representation already read without effect".
+
+For `core.upload` to a URI destination the content has already been sent, so a
+non-2xx is not a precondition but an unestablished postcondition: the registry
+admits exactly that — "a postcondition may fail ... after known effects, or when
+the effect extent cannot be established" — and the network effect is recorded
+as `indeterminate` rather than dropped. Gate `C-qnetdomain-after`, exit 0, 27
+passed, including the control that a `200` still writes exactly the received
+content.
+
+**WS-01 — FIXED_VERIFIED.** Reproduced against the real product server. Gate
+`C-ws01-before`, exit 101, five failures, three of which are security gates
+being satisfied by being offered a choice:
+
+- two disagreeing `Content-Length` lines were accepted, the **longer** believed,
+  and the echoed body came back as `{}GET /x\r\n\r\n` — the next request's bytes
+  swallowed into this one's body. This server's own module documentation says a
+  request whose framing is ambiguous is refused rather than guessed at;
+- `Host: evil.example` **and** the real address returned **200**. That gate is
+  the defence against DNS rebinding;
+- two `Origin` lines, one hostile, returned **200**;
+- a connection that sent nothing was still held after 20 seconds;
+- sixty-four silent connections locked the owner out: their own authenticated
+  request was reset.
+
+The repair refuses a repeated `Host`, `Origin`, `Content-Length`,
+`Transfer-Encoding` or `X-LCL-Token` as malformed while the request is being
+read — earlier and stricter than the gate — and leaves genuinely list-valued
+fields alone. Separately, an unfinished request now has a ten-second ingress
+bound, which is lifted the moment a complete request passes all three gates, so
+an authenticated event stream stays connected exactly as a debugging session
+needs. Gate `C-ws01-after`, exit 0, 20 passed, including the control proving an
+authenticated stream survives past the ingress bound and the workspace keeps
+serving.
+
+One oracle correction is recorded: the duplicate-`Host` and duplicate-`Origin`
+cases first expected 403, the gate's status. The request is refused at parse
+time with 400 and the exact reason, which is earlier and stricter; the
+assertions were corrected to the stage that actually applies, and now also
+assert the refusal text. The saturation case was likewise corrected from
+"never refused" to "recovers": while silent peers hold the slots the owner is
+refused, and that is the ceiling working; what the repair must guarantee is
+that the lockout **ends** without anyone restarting the workspace.
+
+**NET-02 — REPRODUCED; repair deliberately NOT attempted. Owner decision
+required.** A server answering every read inside a 300 ms declared bound took
+**2.003 s** and completed successfully. `Deadline` reaches the socket only as
+`set_read_timeout`/`set_write_timeout`, which are per-read; `TcpStream::connect`
+takes no timeout at all, so resolution and connection are unbounded even when a
+deadline is supplied.
+
+The authority was checked before touching anything, as decision D2 required:
+`core.execute`, `core.start` and `core.stop` each register a `timeout`
+parameter, and the process adapter honours those. **`core.download` and
+`core.upload` register no timeout parameter at all**, and no registry defines a
+network deadline. Canonical is therefore *silent* on whether a supplied bound is
+a total budget across resolution, connection, send and receive, or a per-phase
+limit — and choosing would be inventing a public timeout policy. Under D2 this
+stops at that boundary.
+
+The evidence is preserved as an explicitly labelled EXPECTED_REPRODUCTION,
+`expected_reproduction_net02_a_declared_bound_does_not_cover_the_whole_transfer`,
+which asserts the known-bad behaviour and says in its own documentation that a
+passing run of it is **not** a product acceptance pass. It fails the moment the
+bound begins to cover the transfer, at which point it must be replaced by the
+acceptance test for whichever policy is chosen.
+
+Phase C closure: `cargo test --offline --locked -p lcl-capabilities -p lcl-stdlib
+-p lcl-workspace -p lcl-runtime -p lcl-cli --all-targets` exit 0, 573 passed, 0
+failed, 0 ignored (`C-phase-closure`); clippy over the three changed crates exit
+0 (`C-phase-closure-clippy`); `rustfmt --check` passes on every edited file.
+
+### Phase D — authenticate the same specification bytes that are parsed
+
+**SPEC-01 — FIXED_VERIFIED.** The loader read the package twice. It read and
+parsed the manifest, the checksums, all twelve registries and both catalogs,
+and only then walked the tree again to hash it. The hashes that decided trust
+therefore described the *second* read, while the object handed to every later
+layer held the first.
+
+Reproduced deterministically on an owned copy of the canonical package, using a
+`#[cfg(test)]`-only seam that runs in exactly that window — the same technique
+as RUN-01, and compiled out of the product. A registry was left holding content
+that is not the release's, and restored to the release's own bytes at the moment
+parsing finished. Gate `D-spec01-before`, exit 101:
+
+> the package reports itself verified and authoritative while holding a registry
+> that was never verified
+
+`SpecPackage::open_with_anchor` returned **Ok**. The package matched its
+manifest, its checksums, its declared counts and the external trust anchor
+`00d648b1…67ed` in every particular, and its in-memory `types` registry was
+`{"types":{},"note":"not the released registry"}`. The anchor could not see it,
+because by the time the anchor looked the evidence had been put back.
+
+The repair reads every file exactly once into one capture, and derives
+everything from it: the per-file hashes, the identity digest, the manifest, the
+checksums, every registry and every catalog. Nothing reads the package a second
+time, so there is no second state for the hashes to describe. The two helpers
+that performed the separate read are removed rather than left available.
+
+Existing behaviour is preserved deliberately rather than incidentally: a file
+absent from the capture still produces the same `SpecError::Io` a direct read
+produced, so `detects_missing_file`'s fail-closed distinction between a missing
+file and a malformed one still holds and that test needed no change. Malformed
+JSON, duplicate checksum records, unsafe paths, symlinks, inventory closure,
+count mismatches, the forged-but-internally-consistent package and the
+`OUT_OF_SCOPE` classifications are all unchanged.
+
+Controls: an untouched owned copy still opens, is authoritative and still
+matches the anchor; a genuinely altered copy is still rejected. Gates
+`D-spec01-closure` exit 0 and `D-spec01-clippy` exit 0. The real engine still
+opens the unchanged canonical package: `D-spec-consumers` over `lcl-protocol`,
+`lcl-cli` and `lcl-checker`, exit 0, 230 passed. All 192 protected files match.
+
+### NET-02 — closed under the owner's decision
+
+The owner chose the total-budget reading: one declared bound covers resolution,
+connection, send and receive, with remaining-time accounting. That policy is now
+stated once, in `net.rs`, together with the fact that canonical does not decide
+it and why this layer therefore may not decide it silently.
+
+A `Budget` is taken at the start of the exchange and spent by every phase. Each
+socket wait is given what is left rather than the whole bound, so a peer cannot
+stay inside a per-read limit indefinitely and still be inside the bound it was
+given. Resolution and connection run on their own thread with a bounded wait,
+because `ToSocketAddrs` and `TcpStream::connect` have no timeout in the standard
+library; the worker owns nothing but its own attempt, its send fails silently
+into a dropped receiver, and it closes any socket it opened. With no declared
+deadline the budget is a finite thirty seconds rather than unbounded.
+
+The EXPECTED_REPRODUCTION was replaced by the acceptance test its own
+documentation demanded. Gate `C-net02-after`, exit 0, 12 passed: the trickle is
+now stopped as a host limitation near the bound instead of completing after
+2.003 s; an address that never answers is stopped by the bound instead of
+waiting on the operating system; and a prompt exchange well inside its bound
+still completes, which a budget that stopped everything would fail. The whole
+transport suite now runs in 0.50 s rather than 2.01 s, because the trickle stops.
+Consumers unaffected: `C-net02-consumers`, exit 0, 192 passed;
+`C-net02-clippy`, exit 0.
+
+### Phase E — editor read/write ownership survives asynchronous work
+
+**UI-02 — FIXED_VERIFIED.** `reload()` assigned the response to `doc.text` and
+`doc.saved` unconditionally after awaiting it, so anything typed while the
+request was out was overwritten **and marked clean**. `doc.revision` was
+incremented but never checked.
+
+Reproduced against the complete unmodified production `app.js` in the existing
+Node harness, extended to hold a GET as it already held a PUT, and with a
+bounded `until` helper that re-checks after everything else has run — so a
+condition that is briefly true and then clobbered fails rather than passes.
+Gate `E-ui02-before`, exit 101, two failures:
+
+- reload from a clean buffer, typing while the GET is held: the typed text was
+  gone;
+- a confirmed discard followed by more typing: "held briefly and was then
+  undone", the guard catching the overwrite as it happened.
+
+The repair captures the revision the reload is answering for and checks it at
+the actual update point. A response that finds the document closed and reopened
+returns without touching the new one; a response that finds newer edits still
+records what is on disk as the saved baseline — which it now knows — leaves the
+edits in place, and says so with a warning rather than silently. Only a reload
+that still matches what it was asked about replaces the buffer.
+
+Gate `E-ui02-closure`, exit 0, 15 cases passed through `editor_save.rs`, which
+runs the **real product server over real HTTP with disk assertions**, including
+all eleven pre-existing UI-01 cases and a new control proving a reload of an
+inactive tab does reload it without touching the active tab's textarea.
+
+The wrapper's `output.contains("11 passed; 0 failed; 0 skipped")` was the same
+stale-count pattern as the entry baseline oracle. It now asserts that nothing
+failed and nothing was skipped, and that the suite has not shrunk below the
+coverage it had — so adding a case cannot break the gate and losing one must.
+
+**UI-03 — FIXED_VERIFIED.** The publication boundary was an unconditional
+rename with no ordering at all. Reproduced at that boundary, with the exact
+interleaving the finding names: an older write held **before its bytes are
+published**, the document closed and reopened, a newer save accepted, published
+and acknowledged, and only then the older write released. With ordering disabled
+as a discrimination check, gate `E-ui03-before-discrimination`, exit 101:
+
+> the acknowledged newer content must still be on disk
+> left: "older text\n"   right: "newer text\n"
+
+Under decision D3 the repair is per-path publication ordering. Each write takes
+a number when it is **accepted**, and publication happens under one lock that
+refuses a number older than the one already published for that path; the check
+and the publication are the same critical section, because a check that releases
+its lock before publishing is the defect again with more steps. A superseded
+write is told so — `DocumentError::Superseded`, HTTP 409 — rather than reporting
+a success it did not have.
+
+Two boundaries are deliberate. Ordering governs **replacing saves only**: a
+create is a reservation, not newer content, and B2's atomic create-only
+publication must keep refusing with `AlreadyExists` rather than "too late",
+which the preserved unit test asserts. And ordering is **not** a disk-content
+precondition, because the task is explicit that later external edits must not be
+conflated with the stale in-flight ordering being repaired; the optional
+precondition D3 allows therefore stays optional and the editor does not send
+one, so an external edit behaves exactly as before.
+
+Scope stated rather than implied: this orders the writes one process accepted.
+Two workspace processes sharing a root do not order against each other through
+it, and atomic create-only publication remains what protects them from
+destroying each other's files.
+
+One unexpected failure was diagnosed rather than retried: the first seam was a
+process-global hook, and cargo runs unit tests in parallel, so another test's
+write could trip it and the case passed or failed depending on scheduling. The
+seam is now handed the destination and fires only for its own document. Three
+consecutive full `--lib` runs pass (`E-ui03-after-repeat-1..3`).
+
+Phase E closure: `cargo test --offline --locked -p lcl-workspace --all-targets`
+exit 0, 107 passed, 0 failed, 0 ignored (`E-phase-closure`); clippy exit 0
+(`E-phase-closure-clippy`); `rustfmt --check` passes on every edited file.
+
+### Phase F — preflight cannot alter value meaning
+
+**SEM-01 — FIXED_VERIFIED.** The preflight evaluator's own contract says its
+`None` "is **not** `MISSING`" and that the caller "must leave the obligation to
+the layer that demands it rather than inventing an outcome". Its caller wrote
+`value.unwrap_or(Value::Missing)`, which invented exactly that outcome — and
+`05_SEMANTICS/06` then admits `DEFAULT` for MISSING, so the declared value was
+not merely lost but replaced.
+
+The probes change only the grouping around one explicit input, so each is the
+same value written differently, and the evaluator's budget was read from its
+behaviour rather than assumed. Gate `F-before`, exit 101:
+
+> 129 parentheses around an explicit 7 took the DEFAULT
+
+0, 2 and 128 parentheses resolved to 7; at **129** — one past the evaluator's
+own counted budget — the explicit 7 became the DEFAULT 42. Nothing in the
+document was missing.
+
+The repair distinguishes a declaration that writes no `VALUE` at all from one
+whose written expression this layer could not fold. The first is MISSING, "no
+value/source exists", and `DEFAULT` applies to it. The second is UNKNOWN, "value
+exists but cannot be determined" — the canonical name for exactly this state —
+and `DEFAULT` does not, which is the asymmetry `05_SEMANTICS/06` states and
+which the pre-existing `a_default_never_replaces_unknown` already relied on. No
+LCL depth restriction was invented and no stack was enlarged to hide a result.
+
+Controls: a genuinely absent optional input still takes its DEFAULT, and every
+grouping that resolves at all resolves to 7. One oracle of mine needed
+correcting and is recorded: its guard excluded MISSING but not UNKNOWN, so it
+demanded a value from a case that is explicitly undecided; it now excludes both
+sentinels and additionally asserts there is no third answer.
+
+**MEASURE-01 — FIXED_VERIFIED.** Preflight arithmetic returned `Integer` when
+both operands were integers and `Decimal` otherwise, discarding the MEASURE
+family and the exact unit. Gate `F-before`, exit 101: `5 m + 3 m` gave
+`Decimal(8)`, `5 m - 3 m` gave `Decimal(2)`, `5 m * 3` gave `Decimal(15)`.
+
+The repair takes the result family from the same rule the runtime already
+applies — a quantity keeps its exact unit identifier, a percentage stays a
+percentage, a byte count stays a byte count, and INTEGER promotes to DECIMAL
+only when paired with DECIMAL — so the two stages agree rather than one of them
+being patched for one family. Two quantities in different units produce no
+arithmetic result here, because the checker already rejects that pairing with
+the registered unit-mismatch diagnostic and inventing a number in the meantime
+would decide a question that has an answer elsewhere.
+
+The cross-stage claim is evidenced end to end through the real engine, not only
+at the unit boundary. A fixture whose OUTPUT is `MEASURE(5, unit.meter) +
+MEASURE(3, unit.meter)` and whose VERIFY asserts equality with
+`MEASURE(8, unit.meter)`, run by the actual CLI against the unchanged canonical
+package with an empty environment:
+
+| | terminal status | verify.total | verify.scaled | published output | real exit |
+| --- | --- | --- | --- | --- | --- |
+| preflight family preservation disabled | `status.failed` | FALSE | FALSE | `'8'` | **2** |
+| repaired | `status.succeeded` | TRUE | TRUE | `'8 unit.meter'` | **0** |
+
+Two `error.verification.failed` diagnostics in the first row: the document's own
+verification failed because preflight and runtime disagreed about what kind of
+value it had computed. That is the cross-stage agreement on "value family,
+value, exact unit" the value-fidelity contract requires, demonstrated by its
+absence and then its presence. Fixture SHA-256
+`112cc4ef8308e120cec4fa8b0adc0004146fb379c441c54f880a910b0a33e6aa`; the CLI is a
+development binary and not a packaged candidate. Gates
+`F-measure-cli-discrimination` (exit 2) and `F-measure-cli-restored` (exit 0).
+
+Phase F closure: the **full workspace** gate, `cargo test --offline --locked
+--workspace --all-targets`, exit 0, 141 suites, 1481 passed, 0 failed, 0 ignored
+(`F-phase-closure`) — up from the 1416 of the entry baseline, with no suite lost.
+Clippy over `lcl-semantics` exit 0. `rustfmt --check` passes on every edited file.
+
+### Phase G — result parity and the bounded questions
+
+**HANDLER-01 — was a verification gap; is now a FIXED_VERIFIED defect.** The
+ordinary dispatch path checks a completed result against its registered schema
+before anything is bound. The handler path built the record and returned it
+unchecked. A field set that is closed on only one path is not closed, and this
+is the worse path to leave open: the record decides whether a registered
+diagnostic is kept or discarded.
+
+Locating the evidence took a correction worth recording. The first oracle looked
+for the handler's result in `execution.invocations()`, where it does not appear,
+so three malformed cases "passed" while proving nothing — and the well-formed
+control caught it by failing. The answer lives in the event disposition:
+`Disposition::Selected { recovered }` is "true exactly when the handler
+invocation ... recorded `status.succeeded`". Rewritten against that, gate
+`G-handler01-before-4`, exit 101, showed all three malformed claims recovering
+the diagnostic:
+
+- a completed `result.value` with **no fields at all**, where the schema
+  requires `value` for a success;
+- one carrying `exit_code`, which that schema forbids;
+- one whose `evidence` is a STRING where `LIST[REFERENCE[EVIDENCE]]` is
+  registered.
+
+Each produced the identical `handler.read recovered it`.
+
+The repair runs the same `schema_violations` check the ordinary path runs, and
+on violation records the registered `error.host.constraint`, its default status,
+and the failure phase and effect state derived from the observation — so a
+malformed claim of success neither recovers the failure it was called for nor
+takes the diagnostic with it. Gate `G-handler01-after-7`, exit 0, 5 passed,
+including two controls: a well-formed handler result still recovers, and the
+ordinary dispatch path already refused the same malformed success, which is what
+makes the asymmetry evidence rather than assertion.
+
+Two fixture corrections are recorded: the "well-formed" claim initially omitted
+`evidence`, which `result.value` registers `exactly_one` — so it was not
+well-formed, and the control was right to reject it; and a "wrong family" claim
+used an INTEGER for `value`, which is typed `meta.material_value` and admits
+one. Both were mistakes in the fixture, corrected against the registry.
+
+**Q-JSON — REPRODUCED, then FIXED_VERIFIED.** Probed first, as the decision
+required. `lcl.project.json` is read from the user's own project directory, so
+its bytes are ordinary input, and the JSON reader descends recursively per
+nested value. Each depth was parsed in a child process so a crash could be
+observed rather than taking the runner with it. Gate `G-qjson-probe`, exit 101:
+
+> the child was killed by signal 6 at depth 10000
+> thread 'child_parses_nested_manifest' has overflowed its stack
+> fatal runtime error: stack overflow, aborting
+
+Depth 1,000 survived. Depth 10,000 aborted the process. A one-line manifest
+anyone can write ends the project shell before it can report anything.
+
+The repair bounds the **host JSON reader**, not the language: no LCL depth limit
+was introduced, and the bound produces an ordinary `JsonError` that callers
+already surface as a malformed-file diagnostic. The value was chosen against
+measured reality — the deepest JSON in the canonical package is **six** levels
+and the deepest anywhere in the repository is **seven**, so the bound of 128 is
+an order of magnitude above every legitimate file and far below the depth at
+which the descent was observed to fail. Gate `G-qjson-after`, exit 0.
+
+**Q-READ — split by evidence. One half FIXED_VERIFIED, one half REPRODUCED and
+referred.** Both halves were probed before anything was changed.
+
+*Excessive range bound — repaired.* A bound of 2^70 was reported as
+`error.operation.parameter`. `INTEGER` is "an unbounded signed whole number", so
+such a bound is well typed and merely outside every sequence, and the row is
+explicit: "Require 0 <= start <= end <= sequence length; otherwise
+**error.value.out_of_range**", reserving `error.operation.parameter` for "an
+incompatible unit/representation or wrong key/type". A non-integral value still
+reports a wrong type. Gates `G-qread-probe` (exit 101, observed
+`error.operation.parameter`) and `G-qread-bound-after` (exit 0, observed
+`error.value.out_of_range`).
+
+*Lossy decoding — reproduced, repair referred to the owner.* `core.read` of the
+bytes `61 FF 62` returns `"a\u{FFFD}b"` with `status.succeeded` and no
+diagnostic: `String::from_utf8_lossy` substitutes and cannot fail. That
+contradicts the row's meaning, "Retrieve accessible **exact content** without
+changing its source", its postcondition that the result is "the **exact**
+requested representation", and its "No clipping or ambient encoding conversion
+occurs".
+
+The deviation is established; the **repair is not chosen here**, because both
+halves of it are policy this layer may not invent. `core.read`'s registered
+`errors` list does not admit `error.operation.postcondition`, which is the
+identifier that most plainly describes "the exact representation could not be
+produced"; the nearest admitted reading is "an incompatible unit/representation",
+which the row states for ranges rather than for the whole read. And refusing
+would change what happens to every read of a file that is not UTF-8, which is a
+product behaviour change and not only a diagnostic one. It is therefore recorded
+as the labelled EXPECTED_REPRODUCTION
+`expected_reproduction_qread_a_non_utf8_read_substitutes_silently`, which states
+in its own documentation that a passing run is **not** an acceptance pass and
+which fails the moment the behaviour changes.
+
+### Final gates for LCL-CLOSE-01
+
+| Gate | Toolchain | Actual exit | Result |
+| --- | --- | --- | --- |
+| `cargo test --offline --locked --workspace --all-targets` | rustc/cargo 1.98.1 | 0 | 143 suites, **1492 passed**, 0 failed, 0 ignored |
+| `cargo check --offline --locked --workspace --all-targets` | **actual Rust 1.75.0** | 0 | PASS |
+| `cargo test --offline --locked --workspace --all-targets` | **actual Rust 1.75.0** | 0 | **1492 passed**, 0 failed, 0 ignored |
+| `cargo clippy ... -D warnings` over the eight crates this task changed | 1.98.1 | 0 | PASS |
+| `rustfmt --check` on every file this task edited | 1.98.1 | 0 | PASS |
+| `cargo test -p lcl-conformance --test decision_witnesses` | 1.98.1 | 0 | 7 passed |
+| `cargo run -p lcl-conformance --example m8_conformance_report` | 1.98.1 | 0 | see below |
+| canonical `validate_release.py --scope all` | Python 3.14.7 | 0 | 31 PASS, 2 OUT_OF_SCOPE, 0 FAIL/BLOCKED |
+| canonical `sha256sum -c SHA256SUMS.txt` | system | 0 | 175 matching |
+| `sha256sum -c assets/brand/BRAND_ASSETS.sha256` | system | 0 | 17 matching |
+
+The suite grew from the entry baseline's 1416 to 1492 with no suite lost and
+nothing ignored or skipped. The MSRV run is the full workspace under the
+verified private `rustc 1.75.0 (82e1608df 2023-12-21)` and
+`cargo 1.75.0 (1d8b05cdd 2023-11-20)`, both explicitly selected.
+
+The production conformance report's structured verdict was inspected rather than
+its exit code trusted. It claims **`source_conforming`**, against 980 required
+obligations and 2,413 required probe IDs: 2,094 executed, 2,094 passed, **0
+failed**, **66 of 66** decision witnesses established, **0 missing
+source_conforming probes**, and **319 missing semantics_conforming probes**,
+each enumerated by ID in its own "limited by" lines. That is exactly the state
+the previous continuation recorded. This task neither raised nor reduced the
+achieved claim: it preserved it, and the 319 missing semantic probes remain
+LCL-CLOSE-02's B4 obligation.
+
+**Preservation.** All **192** protected canonical, brand and previous-release
+files re-hashed at task close: 0 mismatches. Canonical identity re-verified by
+the implementation's own algorithm inside the green suite —
+`approved_package_matches_the_anchor` and `identity_digest_is_reproducible` both
+executed and passed, binding `compute_identity_digest` over the real canonical
+root to `00d648b1…67ed`. No canonical byte, trust anchor, frozen archive or
+release artifact was changed. No staging, commit, push, tag, merge, publication,
+global install or change to the owner's real installation occurred, and HEAD is
+still `7f13aecd4af639f1373bb1180cb50f9b508cfb05`.
+
+**Resources.** No owned server, product process or fixture process was running
+at close. Eleven leftover fixture directories inside the owned scratch `tmp/`
+were removed one at a time, each verified to be inside that exact directory and
+owned by this user; nothing outside it was touched, and the residual repair's
+scratch was left intact. Evidence — every gate's `.log`, `.exit` and
+`.record.json` — is retained.
+
+**Still open, and owned elsewhere.** The two pre-existing workspace-wide gates
+from the entry baseline remain failing and belong to B4, which is
+LCL-CLOSE-02's item: `cargo fmt --all -- --check` over 23 files, every one of
+them touched by the B4 commits and none outside them, and one
+`clippy::type_complexity` at `lcl-conformance/tests/semantic_cases.rs:35`.
+Neither is repaired here, because the working rule confines formatting changes
+to the file currently being edited and those files are outside this task's
+approved scope.

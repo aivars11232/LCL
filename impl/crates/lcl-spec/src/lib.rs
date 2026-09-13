@@ -429,20 +429,30 @@ impl SpecPackage {
             )));
         }
 
-        let manifest = read_json(&root.join(MANIFEST_PATH))?;
+        // Every file is read exactly once, here, and nothing below reads the
+        // package again. Reading twice is what let a package be trusted for
+        // bytes it was not holding: whatever changed between the read that was
+        // parsed and the read that was hashed, the hashes described the second
+        // and the trusted object held the first.
+        let captured = capture(&root)?;
+
+        let manifest = captured_json(&captured, &root, MANIFEST_PATH)?;
         let file_records = parse_manifest_files(&manifest)?;
-        let checksums = parse_checksums(&read_text(&root.join(CHECKSUMS_PATH))?)?;
+        let checksums = parse_checksums(&captured_text(&captured, &root, CHECKSUMS_PATH)?)?;
 
         let mut registries = BTreeMap::new();
         for (name, rel) in REGISTRY_FILES {
-            registries.insert((*name).to_string(), read_json(&root.join(rel))?);
+            registries.insert((*name).to_string(), captured_json(&captured, &root, rel)?);
         }
         let mut catalogs = BTreeMap::new();
         for (name, rel) in CATALOG_FILES {
-            catalogs.insert((*name).to_string(), read_json(&root.join(rel))?);
+            catalogs.insert((*name).to_string(), captured_json(&captured, &root, rel)?);
         }
 
-        let integrity = verify(&root, &manifest, &file_records, &checksums)?;
+        #[cfg(test)]
+        before_verify();
+
+        let integrity = verify(&root, &captured, &manifest, &file_records, &checksums)?;
 
         Ok(Self {
             root,
@@ -623,26 +633,20 @@ impl SpecPackage {
 
 fn verify(
     root: &Path,
+    captured: &BTreeMap<String, Vec<u8>>,
     manifest: &Json,
     file_records: &BTreeMap<String, FileRecord>,
     checksums: &BTreeMap<String, String>,
 ) -> Result<IntegrityReport, SpecError> {
-    let on_disk = walk(root)?;
     let mut defects = Vec::new();
     let mut manifest_verified = 0usize;
     let mut checksum_verified = 0usize;
 
-    // Hash every file on disk exactly once.
+    // Hash the bytes that were captured, which are the same bytes every
+    // registry above was parsed from. Nothing is read from disk again here.
     let mut actual: BTreeMap<String, (String, u64)> = BTreeMap::new();
-    for rel in &on_disk {
-        let bytes = std::fs::read(root.join(rel)).map_err(|e| SpecError::Io {
-            path: root.join(rel),
-            source: e,
-        })?;
-        actual.insert(
-            rel.clone(),
-            (sha256::hex_digest(&bytes), bytes.len() as u64),
-        );
+    for (rel, bytes) in captured {
+        actual.insert(rel.clone(), (sha256::hex_digest(bytes), bytes.len() as u64));
     }
 
     // Manifest records: every listed file must exist and match hash and size.
@@ -950,19 +954,70 @@ fn walk(root: &Path) -> Result<Vec<String>, SpecError> {
     Ok(out)
 }
 
-fn read_text(path: &Path) -> Result<String, SpecError> {
-    let bytes = std::fs::read(path).map_err(|e| SpecError::Io {
-        path: path.to_path_buf(),
-        source: e,
-    })?;
-    String::from_utf8(bytes)
-        .map_err(|_| SpecError::Structure(format!("{} is not valid UTF-8", path.display())))
+// A test seam, compiled out of the product entirely.
+//
+// It runs after a package's bytes have been read and parsed and before they
+// are verified, which is exactly the window a loader that reads twice leaves
+// open: what it parsed and what it hashed need not be the same bytes.
+#[cfg(test)]
+thread_local! {
+    static BEFORE_VERIFY: std::cell::RefCell<Option<Box<dyn Fn()>>> =
+        std::cell::RefCell::new(None);
 }
 
-fn read_json(path: &Path) -> Result<Json, SpecError> {
-    let text = read_text(path)?;
+#[cfg(test)]
+fn before_verify() {
+    BEFORE_VERIFY.with(|hook| {
+        if let Some(hook) = hook.borrow().as_ref() {
+            hook();
+        }
+    });
+}
+
+/// Read every file in the package exactly once.
+///
+/// The returned map is the package's content for the whole of this load: its
+/// hashes, its identity digest and its parsed registries are all derived from
+/// it, so they cannot describe different bytes from one another.
+fn capture(root: &Path) -> Result<BTreeMap<String, Vec<u8>>, SpecError> {
+    let mut captured = BTreeMap::new();
+    for rel in walk(root)? {
+        let path = root.join(&rel);
+        let bytes = std::fs::read(&path).map_err(|e| SpecError::Io { path, source: e })?;
+        captured.insert(rel, bytes);
+    }
+    Ok(captured)
+}
+
+/// One captured file as text.
+fn captured_text(
+    captured: &BTreeMap<String, Vec<u8>>,
+    root: &Path,
+    rel: &str,
+) -> Result<String, SpecError> {
+    // Absent from the capture means absent from the package. This keeps the
+    // same error a direct read produced, so a caller distinguishing a missing
+    // file from a malformed one still can.
+    let bytes = captured.get(rel).ok_or_else(|| SpecError::Io {
+        path: root.join(rel),
+        source: std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("{rel} is not in the package"),
+        ),
+    })?;
+    String::from_utf8(bytes.clone())
+        .map_err(|_| SpecError::Structure(format!("{rel} is not valid UTF-8")))
+}
+
+/// One captured file as JSON.
+fn captured_json(
+    captured: &BTreeMap<String, Vec<u8>>,
+    root: &Path,
+    rel: &str,
+) -> Result<Json, SpecError> {
+    let text = captured_text(captured, root, rel)?;
     json::parse(&text).map_err(|e| SpecError::Json {
-        path: path.to_path_buf(),
+        path: root.join(rel),
         source: e,
     })
 }
@@ -970,6 +1025,139 @@ fn read_json(path: &Path) -> Result<Json, SpecError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -----------------------------------------------------------------------
+    // SPEC-01 — the bytes that are trusted are the bytes that were checked
+    // -----------------------------------------------------------------------
+
+    fn canonical_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../canonical/LCL_Core_0.1.0")
+            .canonicalize()
+            .expect("the canonical package must be present")
+    }
+
+    /// An owned copy, removed with the case. Nothing here touches `canonical/`.
+    struct OwnedCopy(PathBuf);
+
+    impl OwnedCopy {
+        fn of_canonical(name: &str) -> OwnedCopy {
+            fn copy_tree(src: &Path, dst: &Path) {
+                std::fs::create_dir_all(dst).expect("directory");
+                for entry in std::fs::read_dir(src).expect("readable") {
+                    let entry = entry.expect("entry");
+                    let to = dst.join(entry.file_name());
+                    if entry.file_type().expect("type").is_dir() {
+                        copy_tree(&entry.path(), &to);
+                    } else {
+                        std::fs::copy(entry.path(), &to).expect("copy");
+                    }
+                }
+            }
+            let root =
+                std::env::temp_dir().join(format!("lcl-spec01-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&root);
+            copy_tree(&canonical_root(), &root);
+            OwnedCopy(root)
+        }
+    }
+
+    impl Drop for OwnedCopy {
+        fn drop(&mut self) {
+            assert!(
+                self.0.starts_with(std::env::temp_dir()),
+                "refusing to remove a path outside owned scratch"
+            );
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// A package must never hold parsed content that its own integrity report
+    /// did not cover.
+    ///
+    /// The window: the loader reads and parses the manifest, the checksums and
+    /// every registry, and only then walks the tree again to hash it. Anything
+    /// that changes a file in between is parsed in one state and hashed in
+    /// another, and the hashes that decide trust describe bytes the package is
+    /// not actually holding.
+    ///
+    /// This case is that, deliberately and deterministically. A registry is
+    /// left holding content that is not the release's, and restored to the
+    /// release's own bytes at the moment parsing has finished. A loader that
+    /// hashes a second read therefore sees a package that matches its manifest,
+    /// its checksums and the external anchor in every particular — and is
+    /// carrying the other content in memory. The anchor cannot see it, because
+    /// by the time the anchor looks the evidence is gone.
+    #[test]
+    fn a_package_cannot_be_trusted_for_bytes_it_is_not_holding() {
+        let owned = OwnedCopy::of_canonical("swap");
+        let registry = owned.0.join("10_REGISTRIES/types_v0.1.0.json");
+        let released = std::fs::read(&registry).expect("the release's own bytes");
+
+        // Valid JSON, and not the release's content.
+        let substituted = br#"{"types":{},"note":"not the released registry"}"#;
+        std::fs::write(&registry, substituted).expect("substitute");
+
+        let restore = registry.clone();
+        let released_for_hook = released.clone();
+        BEFORE_VERIFY.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new(move || {
+                std::fs::write(&restore, &released_for_hook).expect("restore");
+            }));
+        });
+        let opened = SpecPackage::open_with_anchor(&owned.0, &APPROVED_PACKAGE);
+        BEFORE_VERIFY.with(|hook| *hook.borrow_mut() = None);
+
+        match opened {
+            Err(_) => {
+                // The substitution was caught. That is the correct answer.
+            }
+            Ok(package) => {
+                // If a package was produced at all, what it holds must be what
+                // was verified. Anything else is a trusted object carrying
+                // unverified content.
+                let parsed = package
+                    .registry("types")
+                    .expect("the types registry is loaded");
+                let expected =
+                    json::parse(std::str::from_utf8(&released).expect("the release is UTF-8"))
+                        .expect("the release parses");
+                assert_eq!(
+                    parsed, &expected,
+                    "the package reports itself verified and authoritative \
+                     while holding a registry that was never verified"
+                );
+            }
+        }
+    }
+
+    /// The control: the same owned copy, untouched, still loads and still
+    /// matches the external anchor. A repair that rejected everything would
+    /// pass the case above and fail this one.
+    #[test]
+    fn an_untouched_copy_still_opens_and_matches_the_anchor() {
+        let owned = OwnedCopy::of_canonical("clean");
+        let package =
+            SpecPackage::open_with_anchor(&owned.0, &APPROVED_PACKAGE).expect("an exact copy");
+        assert!(package.is_authoritative());
+        assert_eq!(package.identity_digest(), APPROVED_PACKAGE.identity_digest);
+        assert!(package.integrity().is_verified());
+    }
+
+    /// And a copy that is genuinely altered is still rejected, with the
+    /// mismatch named.
+    #[test]
+    fn an_altered_copy_is_still_rejected() {
+        let owned = OwnedCopy::of_canonical("altered");
+        let registry = owned.0.join("10_REGISTRIES/types_v0.1.0.json");
+        std::fs::write(&registry, br#"{"types":{}}"#).expect("substitute");
+
+        let opened = SpecPackage::open_with_anchor(&owned.0, &APPROVED_PACKAGE);
+        assert!(
+            opened.is_err(),
+            "an altered package is not the approved specification"
+        );
+    }
 
     #[test]
     fn rejects_unsafe_paths() {

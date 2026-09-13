@@ -37,6 +37,23 @@ use std::sync::Arc;
 /// The most connections served at once. A workspace is one browser tab.
 const MAX_CONNECTIONS: usize = 64;
 
+/// How long an unfinished request may take to arrive.
+///
+/// The ceiling above is right, and on its own it is also the attack: a peer
+/// that opens a connection and says nothing holds a thread and one of those
+/// slots for as long as it likes, needs no token to do it, and sixty-four of
+/// them take the workspace away from the person it belongs to. A bound makes
+/// the ceiling recoverable instead of permanent.
+///
+/// It applies only while the request is still being read. Once a complete
+/// request has passed all three gates the bound is lifted, because a debugging
+/// session's event stream is *meant* to stay connected — and disconnecting one
+/// every few seconds would be this repair breaking the feature it protects.
+///
+/// Ten seconds is far longer than any legitimate client on loopback needs,
+/// including an editor saving the largest document this server accepts.
+pub const INGRESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// What a route did with a request.
 pub enum Outcome {
     /// One complete response.
@@ -190,6 +207,9 @@ fn serve_one(stream: TcpStream, route: &dyn Route, expected: &Expected) {
         return;
     }
 
+    // Bounded until the request is complete and admitted.
+    let _ = stream.set_read_timeout(Some(INGRESS_TIMEOUT));
+
     let Ok(read_half) = stream.try_clone() else {
         return;
     };
@@ -218,6 +238,11 @@ fn serve_one(stream: TcpStream, route: &dyn Route, expected: &Expected) {
         let _ = refusal.write(&mut write_half);
         return;
     }
+
+    // Admitted. The ingress bound existed to stop an unfinished request from
+    // holding a slot; this one is finished, and an event stream it may turn
+    // into is long-lived by design.
+    let _ = write_half.set_read_timeout(None);
 
     match route.handle(&request) {
         Outcome::Reply(response) => {

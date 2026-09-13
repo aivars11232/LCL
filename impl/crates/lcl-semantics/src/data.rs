@@ -106,6 +106,13 @@ fn resolve_sources(engine: &mut Engine) {
         // 1. explicit VALUE.
         let mut origin = Origin::DeclaredValue;
         let mut value = declared_value(engine, &source, syntax_block);
+        // An expression this layer could not fold is undecided, not absent.
+        // `eval` says so in its own contract: its `None` "is **not** MISSING",
+        // and the caller "must leave the obligation to the layer that demands
+        // it rather than inventing an outcome". Inventing MISSING here would
+        // also hand the declaration to DEFAULT, which the canonical resolution
+        // order admits for MISSING and for nothing else.
+        let undecided = value.is_none() && writes_a_value(&syntax_block);
 
         // A `DEFINE kind.constant` is exactly its declared value and nothing
         // else. It is not a source an invocation supplies, it takes no DEFAULT
@@ -126,11 +133,15 @@ fn resolve_sources(engine: &mut Engine) {
                 block,
                 source,
                 span,
-                origin: match value.is_some() {
-                    true => Origin::DeclaredValue,
-                    false => Origin::Absent,
+                origin: match (value.is_some(), undecided) {
+                    (true, _) => Origin::DeclaredValue,
+                    (false, true) => Origin::DeclaredValue,
+                    (false, false) => Origin::Absent,
                 },
-                value: value.unwrap_or(Value::Missing),
+                value: value.unwrap_or(match undecided {
+                    true => Value::Unknown,
+                    false => Value::Missing,
+                }),
             });
             continue;
         }
@@ -144,8 +155,13 @@ fn resolve_sources(engine: &mut Engine) {
             }
         }
 
-        // A declaration with neither is MISSING: "no value/source exists".
-        let mut resolved = value.unwrap_or(Value::Missing);
+        // A declaration with neither is MISSING: "no value/source exists". One
+        // whose written expression could not be decided here is UNKNOWN: "value
+        // exists but cannot be established".
+        let mut resolved = value.unwrap_or(match undecided {
+            true => Value::Unknown,
+            false => Value::Missing,
+        });
 
         // 3. DEFAULT, and only for MISSING.
         if resolved == Value::Missing {
@@ -274,6 +290,19 @@ fn source_order(engine: &Engine, indexes: &[usize]) -> std::collections::BTreeMa
 fn declared_value(engine: &Engine, source: &SourceId, block: syntax::DeclBlock) -> Option<Value> {
     let field = block.field("VALUE")?;
     eval::field_value(engine, source, &field.body)
+}
+
+/// Whether this declaration writes an explicit `VALUE` at all.
+///
+/// The distinction the resolution order turns on. A declaration with no `VALUE`
+/// field and nothing supplied has "no value/source", which is MISSING and which
+/// `DEFAULT` exists for. A declaration that *does* write one has a value and a
+/// source whatever this layer manages to work out about the expression, so the
+/// absence of a computed result here is "cannot be established", not "is not
+/// there" — and `05_SEMANTICS/06` gives those two states different names,
+/// different fallback rules and different meanings.
+fn writes_a_value(block: &syntax::DeclBlock) -> bool {
+    block.field("VALUE").is_some()
 }
 
 /// The first applicable `ASSUME` for one target, with its evidence record.

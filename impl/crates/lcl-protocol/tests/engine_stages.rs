@@ -254,7 +254,7 @@ fn a_run_without_a_host_is_reported_rather_than_substituted() {
 #[test]
 fn every_valid_example_reaches_completion() {
     let provider = example_provider();
-    let mut succeeded = 0usize;
+    let mut succeeded: Vec<String> = Vec::new();
     for name in valid_examples() {
         let source = example(&name);
         let mut stdlib = engine()
@@ -280,12 +280,34 @@ fn every_valid_example_reaches_completion() {
         let status = report.terminal_status().expect("one terminal status");
         assert!(status.starts_with("status."), "{name} -> {status}");
         if status == "status.succeeded" {
-            succeeded += 1;
+            succeeded.push(name);
         }
     }
+    // Named, not counted: a count cannot tell a repaired example from a
+    // regressed one, and this oracle was stale for exactly that reason.
+    // `03_IMPORTING_TASK.lcl` reads `REF(output.copy).TARGET`, which
+    // `05_SEMANTICS/01` defines as a metadata read of "the declaration field
+    // without requiring the OUTPUT's result binding". The runtime used to
+    // answer it with the field's *source spelling* as a STRING, so `core.copy`
+    // received a STRING where its contract requires a PATH and refused with
+    // `error.operation.precondition`; the example therefore failed. Evaluating
+    // that field in its declaring source context restored its declared PATH
+    // type, so a valid canonical example whose SUCCESS is satisfiable now
+    // succeeds, as it should.
+    let succeeded: Vec<&str> = succeeded.iter().map(String::as_str).collect();
     assert_eq!(
-        succeeded, 7,
-        "the same seven examples the M8 report reaches success on"
+        succeeded,
+        [
+            "01_MINIMAL_TASK.lcl",
+            "02_IMPORT_LIBRARY.lcl",
+            "03_IMPORTING_TASK.lcl",
+            "04_AUTOMATED_CODING_TASK.lcl",
+            "05_CONDITION_AND_ITERATION.lcl",
+            "10_ACCEPTED_CORE_PROFILES.lcl",
+            "11_EXACT_DIVISION_AND_ROUNDING.lcl",
+            "13_TYPES_AND_REFERENCE_VALUES.lcl",
+        ],
+        "exactly the examples the M8 report reaches success on"
     );
 }
 

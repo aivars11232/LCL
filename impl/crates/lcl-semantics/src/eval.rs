@@ -568,8 +568,30 @@ fn compare(operator: BinaryOp, left: &Value, right: &Value) -> Option<Value> {
     }))
 }
 
+/// Arithmetic, with the result family the runtime will also produce.
+///
+/// A preflight that folded `MEASURE(5, unit.meter) + MEASURE(3, unit.meter)`
+/// into a bare `DECIMAL` did not compute the same value as the runtime: it
+/// computed a different *kind* of value. The two stages then disagree about
+/// what the document says, and the one that answers first wins — which is the
+/// cross-stage agreement on "value family, value, exact unit" that the value
+/// fidelity contract exists to prevent losing.
+///
+/// The families come from the same rule the runtime uses: a quantity keeps its
+/// exact unit identifier, a percentage stays a percentage, a byte count stays a
+/// byte count, and "INTEGER promotes to DECIMAL only when paired with DECIMAL
+/// outside division".
 fn arithmetic(operator: BinaryOp, left: &Value, right: &Value) -> Option<Value> {
     let (a, b) = (left.number()?, right.number()?);
+    // Two quantities in different units have no arithmetic result here. The
+    // checker rejects that pairing statically with the registered unit-mismatch
+    // diagnostic, and inventing a number for it in the meantime would be this
+    // layer deciding a question that already has an answer elsewhere.
+    if let (Value::Quantity(_, left_unit), Value::Quantity(_, right_unit)) = (left, right) {
+        if left_unit != right_unit {
+            return None;
+        }
+    }
     let result = match operator {
         BinaryOp::Add => a.add(b),
         BinaryOp::Subtract => a.sub(b),
@@ -577,6 +599,11 @@ fn arithmetic(operator: BinaryOp, left: &Value, right: &Value) -> Option<Value> 
         _ => return None,
     };
     Some(match (left, right) {
+        (Value::Quantity(_, unit), _) | (_, Value::Quantity(_, unit)) => {
+            Value::Quantity(result, unit.clone())
+        }
+        (Value::Percentage(_), _) | (_, Value::Percentage(_)) => Value::Percentage(result),
+        (Value::Bytes(_), _) | (_, Value::Bytes(_)) => Value::Bytes(result),
         (Value::Integer(_), Value::Integer(_)) => Value::Integer(result),
         _ => Value::Decimal(result),
     })

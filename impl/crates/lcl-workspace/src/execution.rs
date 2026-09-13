@@ -26,8 +26,8 @@
 //! input.
 
 use lcl_runtime::{
-    CapabilityOutcome, CapabilityRequest, Host, Invocation, Operations, Permission, Resolution,
-    Value,
+    CapabilityOutcome, CapabilityRequest, Host, Invocation, InvocationId, Operations, Permission,
+    Resolution, Value,
 };
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -83,6 +83,13 @@ struct State {
     answer: Option<Answer>,
     cancelled: bool,
     finished: bool,
+    /// Invocations the operator refused at an operation pause, by exact
+    /// invocation identity and row, with the reason they gave.
+    ///
+    /// A retry is a different attempt index and a loop pass a different
+    /// iteration path, so a refusal recorded here applies to exactly the one
+    /// invocation that was refused and never to a later decision.
+    refused: BTreeMap<(InvocationId, String), String>,
 }
 
 /// The pause the run thread is currently sitting at.
@@ -106,6 +113,13 @@ pub struct Session {
     arrived: Condvar,
     sequence: AtomicU64,
     breaks: Breaks,
+    /// A test seam, compiled out of the product entirely.
+    ///
+    /// It runs immediately before [`Session::hold`] takes the state lock, so a
+    /// regression can place a `cancel()` exactly in the window a check-then-
+    /// register implementation loses it in, instead of racing for it.
+    #[cfg(test)]
+    before_register: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
 }
 
 impl Session {
@@ -118,6 +132,8 @@ impl Session {
             arrived: Condvar::new(),
             sequence: AtomicU64::new(0),
             breaks,
+            #[cfg(test)]
+            before_register: Mutex::new(None),
         })
     }
 
@@ -214,25 +230,71 @@ impl Session {
             .cancelled
     }
 
+    /// Record that the operator refused this exact invocation.
+    ///
+    /// The refusal is kept rather than acted on here, because this crate does
+    /// not decide language outcomes. It is carried to the host gate, which is
+    /// the boundary where a refusal already has a registered meaning.
+    fn refuse(&self, request: &CapabilityRequest, reason: String) {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        state.refused.insert(
+            (request.invocation.clone(), request.operation.clone()),
+            reason,
+        );
+    }
+
+    /// The reason the operator refused this exact invocation, if they did.
+    fn refusal_for(&self, request: &CapabilityRequest) -> Option<String> {
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        state
+            .refused
+            .get(&(request.invocation.clone(), request.operation.clone()))
+            .cloned()
+    }
+
     /// Stop the run thread here and wait for an answer.
+    ///
+    /// Deciding whether the run is still live and registering the pause are one
+    /// critical section. Split in two, they leave a window where a `cancel` is
+    /// visible to neither half: it arrives too late for the check, and clearing
+    /// the answer field for the new pause then discards the one it left. The
+    /// run would park against a cancellation that had already been accepted.
+    ///
+    /// Waiting watches the run's terminal state and not only the answer field,
+    /// because `cancel` and `finish` both end a pause that nobody is going to
+    /// answer, and a cancelled run is cancelled whatever else that field holds.
     fn hold(&self, kind: Pause, request: &CapabilityRequest) -> Answer {
-        if self.cancelled() {
-            return Answer::Cancel;
+        #[cfg(test)]
+        if let Some(hook) = self
+            .before_register
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
+            hook();
         }
-        let sequence = self.sequence.fetch_add(1, Ordering::SeqCst) + 1;
-        let payload = paused_json(sequence, kind, request);
+        let sequence;
         {
             let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            if state.cancelled || state.finished {
+                return Answer::Cancel;
+            }
+            sequence = self.sequence.fetch_add(1, Ordering::SeqCst) + 1;
             state.paused = Some(PausedInner { sequence });
             state.answer = None;
         }
-        self.emit("paused", payload);
+        self.emit("paused", paused_json(sequence, kind, request));
 
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        while state.answer.is_none() {
+        while state.answer.is_none() && !state.cancelled && !state.finished {
             state = self.waiting.wait(state).unwrap_or_else(|e| e.into_inner());
         }
-        let answer = state.answer.take().unwrap_or(Answer::Continue);
+        let answer = match state.cancelled {
+            true => Answer::Cancel,
+            false => state.answer.take().unwrap_or(Answer::Continue),
+        };
+        // This pause is over however it ended, so no later answer can hit it.
+        state.paused = None;
         drop(state);
         self.emit("resumed", format!("{{\"sequence\":{sequence}}}"));
         answer
@@ -331,10 +393,20 @@ impl Operations for WatchedOperations<'_> {
         if self.session.breaks.on_operation && !self.session.cancelled() {
             match self.session.hold(Pause::Operation, request) {
                 Answer::Continue => {}
-                Answer::Deny(_) | Answer::Cancel => {
-                    // Hand it to the host, which will refuse it with a
-                    // registered meaning. Fabricating a result here would be
-                    // this crate deciding a language outcome.
+                Answer::Deny(reason) => {
+                    // Record the refusal against this exact invocation and
+                    // hand the request to the host gate, which is where a
+                    // refusal has a registered meaning. Fabricating a result
+                    // here would be this crate deciding a language outcome;
+                    // passing it on *without* the refusal would be worse
+                    // still, because a host that happens to permit the row
+                    // would then perform the effect the operator refused.
+                    self.session.refuse(request, reason);
+                    return Resolution::host(request.clone());
+                }
+                Answer::Cancel => {
+                    // `cancel` already marks the whole run, and the host gate
+                    // refuses every later request on that ground alone.
                     return Resolution::host(request.clone());
                 }
             }
@@ -373,6 +445,13 @@ impl Host for WatchedHost<'_> {
         if self.session.cancelled() {
             return Permission::Denied("the operator stopped this run".to_string());
         }
+        // A refusal already given at this invocation's operation pause is the
+        // answer to it. Asking again at the effect boundary would make "no"
+        // mean "ask me again", and permitting it because effect breaks happen
+        // to be switched off would perform exactly what was refused.
+        if let Some(reason) = self.session.refusal_for(request) {
+            return Permission::Denied(reason);
+        }
         if self.session.breaks.on_effect {
             match self.session.hold(Pause::Effect, request) {
                 Answer::Continue => {}
@@ -401,6 +480,11 @@ impl Host for WatchedHost<'_> {
     fn invoke(&mut self, request: &CapabilityRequest) -> CapabilityOutcome {
         if self.session.cancelled() {
             return CapabilityOutcome::Denied("the operator stopped this run".to_string());
+        }
+        // Reached only if a caller skipped `permits`. A refused invocation
+        // must not perform its effect by any route.
+        if let Some(reason) = self.session.refusal_for(request) {
+            return CapabilityOutcome::Denied(reason);
         }
         let outcome = self.inner.invoke(request);
         self.session.emit(
@@ -467,5 +551,230 @@ impl Runs {
             .unwrap_or_else(|e| e.into_inner())
             .get(id)
             .map(Arc::clone)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! RUN-01: a cancellation is never lost, whenever it arrives.
+    //!
+    //! A run thread parks in [`Session::hold`] waiting to be answered, and the
+    //! operator's `cancel` arrives on an HTTP thread. These place that cancel
+    //! at each point where the two threads can meet, with a deterministic
+    //! barrier or the test seam rather than a sleep, and a bounded external
+    //! watchdog so a lost cancellation fails the test instead of hanging it.
+
+    use super::*;
+    use lcl_lexer::Span;
+    use lcl_resolver::SourceId;
+    use lcl_runtime::{Authorized, IterationPath};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    /// The longest any of these may take. A lost cancellation parks forever,
+    /// so the watchdog is what turns that into a failure.
+    const WATCHDOG: Duration = Duration::from_secs(5);
+
+    fn request() -> CapabilityRequest {
+        CapabilityRequest {
+            operation: "core.write".to_string(),
+            target: None,
+            parameters: BTreeMap::new(),
+            authorization: Authorized {
+                operation: "core.write".to_string(),
+                target: None,
+                scope: None,
+                permitted_by: vec!["allow.write".to_string()],
+                overridden: Vec::new(),
+            },
+            category: "mutating".to_string(),
+            possible_effects: Default::default(),
+            possible_dependencies: Default::default(),
+            result_schema: "operation_result".to_string(),
+            invocation: InvocationId::first(0, IterationPath::root()),
+            source: SourceId::new("run.lcl"),
+            span: Span::new(0, 1),
+        }
+    }
+
+    fn session() -> Arc<Session> {
+        Session::new(
+            "run-1".to_string(),
+            Breaks {
+                on_operation: false,
+                on_effect: true,
+            },
+        )
+    }
+
+    /// Run `hold` on its own thread and wait for its answer, bounded.
+    fn hold_bounded(session: &Arc<Session>) -> Result<Answer, mpsc::RecvTimeoutError> {
+        let (tx, rx) = mpsc::channel();
+        let worker = Arc::clone(session);
+        let handle = std::thread::spawn(move || {
+            let answer = worker.hold(Pause::Effect, &request());
+            let _ = tx.send(answer);
+        });
+        let outcome = rx.recv_timeout(WATCHDOG);
+        if outcome.is_ok() {
+            handle.join().expect("the run thread finished cleanly");
+        }
+        outcome
+    }
+
+    fn assert_no_lingering_pause(session: &Arc<Session>) {
+        let state = session.state.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(
+            state.paused.is_none(),
+            "a finished hold must leave no pause for a later answer to hit"
+        );
+    }
+
+    /// 1. Cancelled before the pause is ever registered.
+    #[test]
+    fn cancellation_before_registration_is_observed() {
+        let session = session();
+        session.cancel();
+        assert_eq!(hold_bounded(&session), Ok(Answer::Cancel));
+        assert!(session.cancelled());
+        assert_no_lingering_pause(&session);
+    }
+
+    /// 2. Cancelled in the check/register window itself.
+    ///
+    /// The seam fires after a check-then-register implementation has already
+    /// decided the run is live and before it stores the pause, which is
+    /// precisely where resetting the answer field discards the cancellation.
+    #[test]
+    fn cancellation_inside_the_check_and_register_window_is_not_lost() {
+        let session = session();
+        let inner = Arc::clone(&session);
+        *session
+            .before_register
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(Box::new(move || inner.cancel()));
+
+        assert_eq!(
+            hold_bounded(&session),
+            Ok(Answer::Cancel),
+            "a cancellation that lands in the registration window still stops the run"
+        );
+        assert!(session.cancelled(), "and the run stays cancelled");
+        assert_no_lingering_pause(&session);
+    }
+
+    /// 3. Cancelled while the run thread is already waiting.
+    #[test]
+    fn cancellation_while_waiting_is_observed() {
+        let session = session();
+        let (registered, wait_for_registration) = mpsc::channel();
+        let watcher = Arc::clone(&session);
+        let waiter = std::thread::spawn(move || {
+            // Wait for the pause to be registered, deterministically, then
+            // cancel exactly once it is.
+            loop {
+                {
+                    let state = watcher.state.lock().unwrap_or_else(|e| e.into_inner());
+                    if state.paused.is_some() {
+                        break;
+                    }
+                }
+                std::thread::yield_now();
+            }
+            registered.send(()).expect("registration observed");
+            watcher.cancel();
+        });
+
+        let answer = hold_bounded(&session);
+        wait_for_registration
+            .recv_timeout(WATCHDOG)
+            .expect("the pause was registered before the cancel");
+        waiter.join().expect("the cancelling thread finished");
+
+        assert_eq!(answer, Ok(Answer::Cancel));
+        assert!(session.cancelled());
+        assert_no_lingering_pause(&session);
+    }
+
+    /// 4. Cancelled after an ordinary answer resumed the run.
+    ///
+    /// The next hold must refuse immediately rather than park: a cancelled run
+    /// does not stop at one more pause on its way out.
+    #[test]
+    fn cancellation_after_a_resume_stops_the_next_pause() {
+        let session = session();
+        let resumer = Arc::clone(&session);
+        let answered = std::thread::spawn(move || loop {
+            let sequence = {
+                let state = resumer.state.lock().unwrap_or_else(|e| e.into_inner());
+                state.paused.as_ref().map(|p| p.sequence)
+            };
+            if let Some(sequence) = sequence {
+                assert!(resumer.answer(sequence, Answer::Continue));
+                return;
+            }
+            std::thread::yield_now();
+        });
+        assert_eq!(hold_bounded(&session), Ok(Answer::Continue));
+        answered.join().expect("the answering thread finished");
+        assert_no_lingering_pause(&session);
+
+        session.cancel();
+        assert_eq!(hold_bounded(&session), Ok(Answer::Cancel));
+        assert_no_lingering_pause(&session);
+    }
+
+    /// 5. The run finishes while a pause is outstanding.
+    ///
+    /// `finish` is what the worker calls on its way out. A hold that waited
+    /// only for an answer would park forever against a finished session.
+    #[test]
+    fn a_finished_run_does_not_park_a_later_hold() {
+        let session = session();
+        let finisher = Arc::clone(&session);
+        let closing = std::thread::spawn(move || loop {
+            let paused = {
+                let state = finisher.state.lock().unwrap_or_else(|e| e.into_inner());
+                state.paused.is_some()
+            };
+            if paused {
+                finisher.finish();
+                return;
+            }
+            std::thread::yield_now();
+        });
+        let answer = hold_bounded(&session);
+        closing.join().expect("the finishing thread finished");
+        assert!(
+            answer.is_ok(),
+            "a hold outstanding when the run finished must return, not park"
+        );
+        assert!(session.is_finished());
+        assert_no_lingering_pause(&session);
+    }
+
+    /// The control: an ordinary answer is still an ordinary answer.
+    #[test]
+    fn an_uncancelled_run_still_takes_its_answer() {
+        for expected in [Answer::Continue, Answer::Deny("no".to_string())] {
+            let session = session();
+            let answering = Arc::clone(&session);
+            let reply = expected.clone();
+            let thread = std::thread::spawn(move || loop {
+                let sequence = {
+                    let state = answering.state.lock().unwrap_or_else(|e| e.into_inner());
+                    state.paused.as_ref().map(|p| p.sequence)
+                };
+                if let Some(sequence) = sequence {
+                    assert!(answering.answer(sequence, reply.clone()));
+                    return;
+                }
+                std::thread::yield_now();
+            });
+            assert_eq!(hold_bounded(&session), Ok(expected));
+            thread.join().expect("the answering thread finished");
+            assert!(!session.cancelled(), "answering is not cancelling");
+            assert_no_lingering_pause(&session);
+        }
     }
 }

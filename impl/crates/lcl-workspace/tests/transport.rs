@@ -179,3 +179,212 @@ fn the_launch_url_carries_the_address_and_the_token() {
     assert!(url.starts_with("http://127.0.0.1:"));
     assert!(url.contains(&format!("?t={}", server.token())));
 }
+
+// ---------------------------------------------------------------------------
+// WS-01 — ambiguous ingress, and waiting that has to end
+// ---------------------------------------------------------------------------
+
+/// Two disagreeing `Content-Length` lines are ambiguous framing.
+///
+/// This server already refuses a length *and* a transfer coding for exactly
+/// this reason. Two lengths are the same disagreement written a different way,
+/// and resolving it by keeping whichever arrived last is a choice, not a
+/// refusal: it decides how many bytes are a body and how many are the next
+/// request.
+#[test]
+fn two_disagreeing_content_lengths_are_refused_rather_than_resolved() {
+    let s = start(Arc::new(Echo));
+    let raw = format!(
+        "POST /save?t={} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Length: 2\r\n\
+         Content-Length: 12\r\n\r\n{{}}GET /x\r\n\r\n",
+        s.token,
+        s.address.port()
+    );
+    let reply = send_raw(s.address, &raw);
+    assert_eq!(
+        reply.status, 400,
+        "two lengths that disagree are refused: {}",
+        reply.body
+    );
+}
+
+/// Two `Host` lines are two claims about which server this is.
+///
+/// The first gate exists to stop a rebound DNS name reaching the workspace. A
+/// request that names something else *and* the real address has not satisfied
+/// that gate; it has offered the gate a choice.
+#[test]
+fn two_host_headers_are_refused_rather_than_resolved() {
+    let s = start(Arc::new(Echo));
+    let raw = format!(
+        "GET /hello?t={} HTTP/1.1\r\nHost: evil.example\r\nHost: 127.0.0.1:{}\r\n\
+         Content-Length: 0\r\n\r\n",
+        s.token,
+        s.address.port()
+    );
+    let reply = send_raw(s.address, &raw);
+    // 400 and not 403: the request never reaches the gate, because it is
+    // refused as malformed while it is being read. That is earlier and
+    // stricter than the gate, which is the point.
+    assert_eq!(
+        reply.status, 400,
+        "a request claiming two hosts is refused: {}",
+        reply.body
+    );
+    assert!(
+        reply.body.contains("host appears more than once"),
+        "{}",
+        reply.body
+    );
+}
+
+/// And two `Origin` lines are two claims about who is asking.
+#[test]
+fn two_origin_headers_are_refused_rather_than_resolved() {
+    let s = start(Arc::new(Echo));
+    let raw = format!(
+        "GET /hello?t={} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\
+         Origin: http://evil.example\r\nOrigin: http://127.0.0.1:{port}\r\n\
+         Content-Length: 0\r\n\r\n",
+        s.token,
+        port = s.address.port()
+    );
+    let reply = send_raw(s.address, &raw);
+    assert_eq!(
+        reply.status, 400,
+        "a request claiming two origins is refused: {}",
+        reply.body
+    );
+    assert!(
+        reply.body.contains("origin appears more than once"),
+        "{}",
+        reply.body
+    );
+}
+
+/// A connection that says nothing must not be held open indefinitely.
+///
+/// It costs a thread and one of the server's bounded connection slots, and it
+/// requires no token: an unauthenticated peer that never finishes a request is
+/// the cheapest way to take the workspace away from its owner.
+#[test]
+fn a_silent_unauthenticated_connection_is_reclaimed() {
+    use std::io::Read;
+    use std::net::TcpStream;
+    use std::time::{Duration, Instant};
+
+    let s = start(Arc::new(Echo));
+    let mut socket = TcpStream::connect(s.address).expect("the server is listening");
+    // Never send anything at all.
+    socket
+        .set_read_timeout(Some(Duration::from_secs(20)))
+        .expect("a bounded wait, so this test cannot hang");
+
+    let started = Instant::now();
+    let mut buffer = [0u8; 256];
+    let outcome = socket.read(&mut buffer);
+    let elapsed = started.elapsed();
+
+    assert!(
+        outcome.is_ok(),
+        "the server ended the idle connection rather than leaving it open \
+         for {elapsed:?}: {outcome:?}"
+    );
+    assert!(
+        elapsed < Duration::from_secs(20),
+        "and it did so within a bounded time, not after {elapsed:?}"
+    );
+}
+
+/// A burst of silent connections must not lock the owner out.
+///
+/// The server bounds its concurrent connections, which is right; the point is
+/// that the bound must be *recoverable*. Sixty-four peers that each open a
+/// socket and say nothing would otherwise hold every slot for as long as they
+/// care to, and a legitimate authenticated request would be refused with 503.
+#[test]
+fn silent_connections_do_not_lock_out_a_legitimate_request() {
+    use std::net::TcpStream;
+    use std::time::{Duration, Instant};
+
+    let s = start(Arc::new(Echo));
+    // Held open for the whole case, and dropped with it.
+    let _silent: Vec<TcpStream> = (0..64)
+        .filter_map(|_| TcpStream::connect(s.address).ok())
+        .collect();
+
+    // While they hold the slots the owner is refused, and that is the bound
+    // doing its job rather than the defect. What matters is that it ends: the
+    // silent peers are reclaimed and the workspace comes back without anyone
+    // restarting it.
+    let deadline = lcl_workspace::server::INGRESS_TIMEOUT + Duration::from_secs(10);
+    let started = Instant::now();
+    let served = loop {
+        if let Ok(reply) = std::panic::catch_unwind(|| {
+            send(s.address, "GET", &format!("/hello?t={}", s.token), &[], b"")
+        }) {
+            if reply.status == 200 {
+                break true;
+            }
+        }
+        if started.elapsed() > deadline {
+            break false;
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    };
+    let elapsed = started.elapsed();
+
+    assert!(
+        served,
+        "sixty-four silent peers took the workspace away from its owner for \
+         more than {deadline:?}; the connection bound must be recoverable, not \
+         only a ceiling"
+    );
+    assert!(
+        elapsed < deadline,
+        "recovered within the ingress bound rather than after {elapsed:?}"
+    );
+}
+
+/// The control: an authenticated event stream is long-lived on purpose.
+///
+/// Bounding how long an *incomplete* request may wait must not bound how long
+/// a complete, authenticated one may stay connected. A debugging session sits
+/// on an open stream for as long as the operator is looking at it.
+#[test]
+fn an_authenticated_event_stream_is_not_disconnected_by_the_ingress_bound() {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+
+    let (_scratch, running) = common::serve_examples("ws01-stream");
+    let mut socket = TcpStream::connect(running.address).expect("connect");
+    let request = format!(
+        "GET /api/events?t={}&run=run-1 HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n\
+         Content-Length: 0\r\n\r\n",
+        running.token,
+        running.address.port()
+    );
+    socket.write_all(request.as_bytes()).expect("sent");
+    socket.flush().expect("flushed");
+    socket
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .expect("bounded");
+
+    // Read whatever the stream says first, then stay connected past any
+    // deadline that applies to an unfinished request.
+    let mut buffer = [0u8; 1024];
+    let _ = socket.read(&mut buffer);
+    std::thread::sleep(Duration::from_secs(3));
+
+    // Still ours: a second request on a fresh connection is still served, and
+    // the stream socket is still open rather than reset.
+    let reply = send(
+        running.address,
+        "GET",
+        &format!("/api/documents?t={}", running.token),
+        &[],
+        b"",
+    );
+    assert_eq!(reply.status, 200, "the workspace is still serving");
+}

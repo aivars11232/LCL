@@ -32,6 +32,19 @@ pub const MAX_HEADERS: usize = 32 * 1024;
 /// effective document size ceiling for the editor.
 pub const MAX_BODY: usize = 8 * 1024 * 1024;
 
+/// Header fields whose repetition this server refuses.
+///
+/// Each one decides either how the message is framed or whether the request is
+/// admitted at all, and for those a second value is a contradiction rather than
+/// a continuation. Fields that are genuinely list-valued are unaffected.
+const AMBIGUOUS_WHEN_REPEATED: [&str; 5] = [
+    "host",
+    "origin",
+    "content-length",
+    "transfer-encoding",
+    "x-lcl-token",
+];
+
 /// Why a request could not be read.
 #[derive(Debug)]
 pub enum RequestError {
@@ -141,7 +154,22 @@ impl Request {
             let (name, value) = line
                 .split_once(':')
                 .ok_or_else(|| RequestError::Malformed("header without a colon".into()))?;
-            headers.insert(name.trim().to_ascii_lowercase(), value.trim().to_string());
+            let name = name.trim().to_ascii_lowercase();
+            // A repeated field that decides framing or passes a gate is an
+            // ambiguity, not a correction. Keeping the last one resolves the
+            // disagreement — which is the whole trick: two lengths decide where
+            // this body ends and the next request begins, and a second `Host`
+            // or `Origin` lets a request name something this server did not
+            // bind *and* something it did, so the gate is satisfied by being
+            // offered a choice. Other fields keep their previous behaviour;
+            // only these decide admission.
+            if AMBIGUOUS_WHEN_REPEATED.contains(&name.as_str()) && headers.contains_key(&name) {
+                return Err(RequestError::Malformed(format!(
+                    "{name} appears more than once; this server refuses an \
+                     ambiguous request rather than choosing which one to believe"
+                )));
+            }
+            headers.insert(name, value.trim().to_string());
         }
 
         // Exact framing only. A request carrying both a length and a transfer

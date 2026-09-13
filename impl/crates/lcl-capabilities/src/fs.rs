@@ -19,7 +19,25 @@
 //!
 //! For a path that does not exist yet, which is most of `core.create`, the
 //! nearest existing ancestor is canonicalised instead, so a new file inside a
-//! symlinked directory is judged by where that directory really is.
+//! symlinked directory is judged by where that directory really is. A final
+//! component that is a *dangling* link is resolved through the link, because
+//! that is where the bytes would actually go.
+//!
+//! ## And the decision has to survive until the syscall
+//!
+//! Deciding where a path leads is still a decision made a moment early. Two
+//! things keep it true at the operation itself: every open of a resolved path
+//! passes `O_NOFOLLOW`, so a component swapped for a link after the decision is
+//! refused rather than followed; and every reservation that must not replace
+//! something — `core.create`, a non-overwriting copy, a non-overwriting move —
+//! is made in one atomic step rather than by asking whether the target exists
+//! and then writing it. A prior existence check admits every writer that passes
+//! it, which is not a reservation at all.
+//!
+//! What this does not claim: nothing here defends against another process
+//! replacing a *directory* along the path between resolution and the operation.
+//! That needs directory-relative syscalls this module does not use. The limit
+//! is stated where the mechanism is, in [`NO_FOLLOW`].
 
 use crate::bounds::{Bounds, Cancelled};
 use crate::grant::{self, Grant, Grants, Refusal};
@@ -38,8 +56,19 @@ pub enum FsError {
     Refused(Refusal),
     /// A declared bound stopped the work.
     Bounded(Cancelled),
-    /// The operating system reported a failure.
+    /// The operating system reported a failure, before the target was opened
+    /// for modification. Nothing began, and that is established rather than
+    /// assumed: the open itself is what would have begun it.
     Io(String),
+    /// The operating system reported a failure *after* the target was opened
+    /// for modification, so what began cannot be proven not to have.
+    ///
+    /// A replacing write has already truncated by this point, an append has
+    /// already positioned, a copy has already created its destination. How much
+    /// of the intended content landed is not knowable from the error alone —
+    /// `write_all` does not say how far it got — so the extent is indeterminate
+    /// rather than partial, and it is certainly not none.
+    IoAfterChange { detail: String, target: PathBuf },
 }
 
 impl fmt::Display for FsError {
@@ -50,6 +79,13 @@ impl fmt::Display for FsError {
             FsError::Refused(refusal) => write!(f, "{refusal}"),
             FsError::Bounded(cancelled) => write!(f, "{cancelled}"),
             FsError::Io(detail) => f.write_str(detail),
+            FsError::IoAfterChange { detail, target } => {
+                write!(
+                    f,
+                    "{detail}, after {} was opened for writing",
+                    target.display()
+                )
+            }
         }
     }
 }
@@ -138,9 +174,44 @@ impl RealFileSystem {
 /// A path that does not exist yet is judged by its nearest existing ancestor,
 /// so a new file inside a symlinked directory is placed where that directory
 /// really is rather than where it is spelled.
+///
+/// A final component that is itself a symbolic link to something that does not
+/// exist is resolved through that link, not to the link's own path. The two
+/// differ exactly where it matters: `canonicalize` fails on a dangling link, so
+/// judging the link's own path would admit a write whose bytes the kernel then
+/// delivers to wherever the link points — which is the one place the grant may
+/// have been refusing.
 fn resolve(path: &Path) -> PathBuf {
+    resolve_within(path, 0)
+}
+
+/// The kernel's own symlink-chain limit, which a resolution here cannot exceed
+/// and should not try to: a longer chain is `ELOOP` at the syscall too.
+const MAX_LINK_DEPTH: usize = 40;
+
+fn resolve_within(path: &Path, depth: usize) -> PathBuf {
     if let Ok(canonical) = std::fs::canonicalize(path) {
         return canonical;
+    }
+    // A dangling final component. If it is a link, the destination it names is
+    // what any operation on this path will actually reach.
+    if depth < MAX_LINK_DEPTH {
+        if let Ok(metadata) = std::fs::symlink_metadata(path) {
+            if metadata.file_type().is_symlink() {
+                if let Ok(target) = std::fs::read_link(path) {
+                    let absolute = match target.is_absolute() {
+                        true => target,
+                        // A relative link is relative to the directory the link
+                        // lives in, not to the working directory.
+                        false => match path.parent() {
+                            Some(parent) => parent.join(target),
+                            None => target,
+                        },
+                    };
+                    return resolve_within(&absolute, depth + 1);
+                }
+            }
+        }
     }
     let mut tail = Vec::new();
     let mut current = grant::normalize(path);
@@ -168,6 +239,73 @@ fn resolve(path: &Path) -> PathBuf {
 
 fn io(error: std::io::Error) -> FsError {
     FsError::Io(error.to_string())
+}
+
+/// The same failure, reported from after the target was opened for writing.
+fn io_after_change(error: std::io::Error, target: &Path) -> FsError {
+    FsError::IoAfterChange {
+        detail: error.to_string(),
+        target: target.to_path_buf(),
+    }
+}
+
+/// `O_NOFOLLOW` for this target, or nothing where the value is not known.
+///
+/// [`resolve`] already decides *which* location a request is allowed to reach,
+/// but it decides it a moment before the syscall. Between the two, another
+/// process can replace the final component with a symbolic link, and an
+/// ordinary open would then follow it out of the granted scope. Opening the
+/// resolved path with `O_NOFOLLOW` removes that window: the resolved path's
+/// final component is never a link — it was either canonicalized or it does not
+/// exist — so refusing to follow one can only reject a component that changed
+/// underneath the decision.
+///
+/// The value is part of each platform's ABI rather than of Rust's, so it is
+/// stated per target. Where it is not known this is zero: the resolution and
+/// containment checks still apply and every other property in this module
+/// holds, but that last window is not closed, and saying so is better than a
+/// guessed constant that silently opens the wrong file.
+///
+/// Parent components are a separate matter. Nothing here defends against
+/// another process replacing a *directory* along the path between resolution
+/// and the operation; that needs directory-relative syscalls this module does
+/// not use. The threat model is stated plainly rather than overclaimed.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+const NO_FOLLOW: i32 = 0o400_000;
+#[cfg(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd",
+    target_os = "dragonfly"
+))]
+const NO_FOLLOW: i32 = 0x0100;
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "android",
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd",
+    target_os = "dragonfly"
+)))]
+const NO_FOLLOW: i32 = 0;
+
+/// Apply `O_NOFOLLOW` where this platform has it.
+#[cfg(unix)]
+fn no_follow(options: &mut std::fs::OpenOptions) -> &mut std::fs::OpenOptions {
+    use std::os::unix::fs::OpenOptionsExt;
+    match NO_FOLLOW {
+        0 => options,
+        flag => options.custom_flags(flag),
+    }
+}
+
+#[cfg(not(unix))]
+fn no_follow(options: &mut std::fs::OpenOptions) -> &mut std::fs::OpenOptions {
+    options
 }
 
 impl FileSystem for RealFileSystem {
@@ -198,6 +336,14 @@ impl FileSystem for RealFileSystem {
         })
     }
 
+    /// Read the target, bounded by the bytes this process actually collects.
+    ///
+    /// The reported size is checked first, because refusing a file that is
+    /// already known to be too large costs nothing. It is not the bound: a
+    /// file's metadata and its content need not agree — most of `/proc`
+    /// reports zero and yields content, and an ordinary file can grow between
+    /// the two calls — so the cap is enforced again on the bytes read. A cap
+    /// applied only to `stat` is a cap on the wrong number.
     fn read(&mut self, path: &Path, bounds: &Bounds) -> Result<Vec<u8>, FsError> {
         let resolved = self.admit(path, false)?;
         let meta =
@@ -205,23 +351,63 @@ impl FileSystem for RealFileSystem {
         bounds
             .check(meta.len(), bounds.max_bytes, "the read")
             .map_err(FsError::Bounded)?;
-        std::fs::read(&resolved).map_err(io)
+
+        use std::io::Read;
+        let file = no_follow(std::fs::OpenOptions::new().read(true))
+            .open(&resolved)
+            .map_err(io)?;
+        // One byte past the cap is enough to know the cap was exceeded, and is
+        // all that is ever retained beyond it.
+        let mut collected = Vec::new();
+        let limit = bounds.max_bytes.saturating_add(1);
+        file.take(limit).read_to_end(&mut collected).map_err(io)?;
+        bounds
+            .check(collected.len() as u64, bounds.max_bytes, "the read")
+            .map_err(FsError::Bounded)?;
+        Ok(collected)
     }
 
+    /// Write the target, reserving it as the operation requires.
+    ///
+    /// A `Create` is reserved with `create_new`, which is one atomic step: it
+    /// cannot replace an existing file, cannot be raced by a second writer
+    /// admitted by the same earlier check, and cannot be satisfied by an
+    /// existing symbolic link — including a dangling one, which is exactly how
+    /// a create was previously talked into writing outside its grant.
     fn write(&mut self, path: &Path, content: &[u8], mode: WriteMode) -> Result<(), FsError> {
         let resolved = self.admit(path, true)?;
-        let exists = resolved.exists();
-        match mode {
-            WriteMode::Create if exists => return Err(FsError::AlreadyExists(path.to_path_buf())),
-            WriteMode::ReplaceExisting if !exists => {
-                return Err(FsError::NotFound(path.to_path_buf()))
-            }
-            _ => {}
+        if matches!(mode, WriteMode::ReplaceExisting) && !resolved.exists() {
+            return Err(FsError::NotFound(path.to_path_buf()));
         }
         if let Some(parent) = resolved.parent() {
             std::fs::create_dir_all(parent).map_err(io)?;
         }
-        std::fs::write(&resolved, content).map_err(io)
+
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true);
+        match mode {
+            WriteMode::Create => {
+                options.create_new(true);
+            }
+            WriteMode::Replace => {
+                options.create(true).truncate(true);
+            }
+            WriteMode::ReplaceExisting => {
+                options.truncate(true);
+            }
+        }
+        let mut file = match no_follow(&mut options).open(&resolved) {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                return Err(FsError::AlreadyExists(path.to_path_buf()))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Err(FsError::NotFound(path.to_path_buf()))
+            }
+            Err(error) => return Err(io(error)),
+        };
+        file.write_all(content)
+            .map_err(|error| io_after_change(error, &resolved))
     }
 
     fn append(&mut self, path: &Path, content: &[u8]) -> Result<(), FsError> {
@@ -229,11 +415,11 @@ impl FileSystem for RealFileSystem {
         if !resolved.exists() {
             return Err(FsError::NotFound(path.to_path_buf()));
         }
-        let mut file = std::fs::OpenOptions::new()
-            .append(true)
+        let mut file = no_follow(std::fs::OpenOptions::new().append(true))
             .open(&resolved)
             .map_err(io)?;
-        file.write_all(content).map_err(io)
+        file.write_all(content)
+            .map_err(|error| io_after_change(error, &resolved))
     }
 
     fn delete(&mut self, path: &Path, recursive: bool) -> Result<bool, FsError> {
@@ -253,6 +439,18 @@ impl FileSystem for RealFileSystem {
         Ok(true)
     }
 
+    /// Move the target, reserving the destination as the operation requires.
+    ///
+    /// `rename` replaces its destination unconditionally, so a non-overwriting
+    /// move cannot be built from a prior existence check: two movers that both
+    /// passed the check both proceed, and the second silently destroys the
+    /// first. A same-directory hard link is the reservation instead — one
+    /// atomic step that fails when the destination exists — and the source is
+    /// unlinked only once the destination is safely in place.
+    ///
+    /// A directory cannot be hard-linked. For that case the checked rename
+    /// remains, and so does its window; a non-overwriting directory move is
+    /// therefore reserved only as well as the check that precedes it.
     fn rename(&mut self, from: &Path, to: &Path, overwrite: bool) -> Result<(), FsError> {
         let source = self.admit(from, true)?;
         let destination = self.admit(to, true)?;
@@ -265,9 +463,25 @@ impl FileSystem for RealFileSystem {
         if let Some(parent) = destination.parent() {
             std::fs::create_dir_all(parent).map_err(io)?;
         }
-        std::fs::rename(&source, &destination).map_err(io)
+        if overwrite || source.is_dir() {
+            return std::fs::rename(&source, &destination).map_err(io);
+        }
+        match std::fs::hard_link(&source, &destination) {
+            Ok(()) => std::fs::remove_file(&source).map_err(io),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                Err(FsError::AlreadyExists(to.to_path_buf()))
+            }
+            // A filesystem without hard links, or a cross-device move. The
+            // checked rename is the remaining answer, and it is still confined.
+            Err(_) => std::fs::rename(&source, &destination).map_err(io),
+        }
     }
 
+    /// Copy the target, reserving the destination as the operation requires.
+    ///
+    /// With overwrite off the destination is reserved with `create_new` before
+    /// any byte is copied, for the same reason as [`FileSystem::write`]: a
+    /// prior existence check admits every writer that passes it.
     fn copy(&mut self, from: &Path, to: &Path, overwrite: bool) -> Result<u64, FsError> {
         let source = self.admit(from, false)?;
         let destination = self.admit(to, true)?;
@@ -280,6 +494,22 @@ impl FileSystem for RealFileSystem {
         if let Some(parent) = destination.parent() {
             std::fs::create_dir_all(parent).map_err(io)?;
         }
-        std::fs::copy(&source, &destination).map_err(io)
+        if overwrite {
+            return std::fs::copy(&source, &destination).map_err(io);
+        }
+        let mut reader = no_follow(std::fs::OpenOptions::new().read(true))
+            .open(&source)
+            .map_err(io)?;
+        let mut writer = match no_follow(std::fs::OpenOptions::new().write(true).create_new(true))
+            .open(&destination)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                return Err(FsError::AlreadyExists(to.to_path_buf()))
+            }
+            Err(error) => return Err(io(error)),
+        };
+        std::io::copy(&mut reader, &mut writer)
+            .map_err(|error| io_after_change(error, &destination))
     }
 }

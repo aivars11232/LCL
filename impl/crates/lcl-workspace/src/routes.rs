@@ -212,6 +212,17 @@ impl Routes {
                     )
                     .pretty(),
             ),
+            // A newer save of this exact document was published while this one
+            // was still in flight. 409 and not 422: the request was well formed
+            // and the state moved under it, which is what a conflict is. It is
+            // reported rather than swallowed, so a client is never told a write
+            // succeeded when the newer content is what is on disk.
+            Err(crate::WorkspaceError::Document(crate::DocumentError::Superseded(_))) => {
+                Response::error(
+                    409,
+                    &format!("{id} was saved again while this write was in flight"),
+                )
+            }
             Err(e) => Response::error(422, &e.to_string()),
         }
     }

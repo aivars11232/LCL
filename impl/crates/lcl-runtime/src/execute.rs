@@ -942,8 +942,13 @@ impl<'a> Engine<'a> {
             }
 
             if let Some(target) = selected_output.as_ref().and_then(output_reference) {
-                self.initial_outputs.insert(attempt_id.clone(),
-                    self.bindings.output(target, iteration).cloned().unwrap_or(Value::Missing));
+                self.initial_outputs.insert(
+                    attempt_id.clone(),
+                    self.bindings
+                        .output(target, iteration)
+                        .cloned()
+                        .unwrap_or(Value::Missing),
+                );
             }
 
             let mut lifecycle = Lifecycle::planned(false);
@@ -1077,7 +1082,10 @@ impl<'a> Engine<'a> {
                     Ok(value) => Some(value),
                     Err(fault) => {
                         let occurrence = self.fault(&fault, planned, id, FailurePhase::PreEffect);
-                        return Some((self.pre_effect_failure(&operation, fault.id, planned, id), occurrence));
+                        return Some((
+                            self.pre_effect_failure(&operation, fault.id, planned, id),
+                            occurrence,
+                        ));
                     }
                 }
             }
@@ -1087,7 +1095,10 @@ impl<'a> Engine<'a> {
             Ok(parameters) => parameters,
             Err(fault) => {
                 let occurrence = self.fault(&fault, planned, id, FailurePhase::PreEffect);
-                return Some((self.pre_effect_failure(&operation, fault.id, planned, id), occurrence));
+                return Some((
+                    self.pre_effect_failure(&operation, fault.id, planned, id),
+                    occurrence,
+                ));
             }
         };
 
@@ -1134,11 +1145,23 @@ impl<'a> Engine<'a> {
         };
 
         self.action_requests.insert(id.clone(), request.clone());
-        if self.retry_guards.get(id).is_some_and(|(previous, _)| !same_retry_request(previous, &request)) {
-            let fault = Fault::new(self.contracts, RuntimeError::OperationPrecondition, planned.span,
-                "retry request changed", "the next request differs from the exact request authorized by retry evidence");
+        if self
+            .retry_guards
+            .get(id)
+            .is_some_and(|(previous, _)| !same_retry_request(previous, &request))
+        {
+            let fault = Fault::new(
+                self.contracts,
+                RuntimeError::OperationPrecondition,
+                planned.span,
+                "retry request changed",
+                "the next request differs from the exact request authorized by retry evidence",
+            );
             let occurrence = self.fault(&fault, planned, id, FailurePhase::PreEffect);
-            return Some((self.pre_effect_failure(&schema, RuntimeError::OperationPrecondition, planned, id), occurrence));
+            return Some((
+                self.pre_effect_failure(&schema, RuntimeError::OperationPrecondition, planned, id),
+                occurrence,
+            ));
         }
 
         // The operation surface answers first. An unauthorized invocation is
@@ -1161,16 +1184,30 @@ impl<'a> Engine<'a> {
                 } => {
                     let fault = Fault::new(self.contracts, error, planned.span, cause, detail);
                     let occurrence = self.fault(&fault, planned, id, FailurePhase::PreEffect);
-                    (self.pre_effect_failure(&schema, error, planned, id), occurrence)
+                    (
+                        self.pre_effect_failure(&schema, error, planned, id),
+                        occurrence,
+                    )
                 }
                 Resolution::Host(resolved_request) => {
-                    if self.retry_guards.get(id).is_some_and(|(_, previous)| !same_retry_request(previous, &resolved_request)) {
+                    if self.retry_guards.get(id).is_some_and(|(_, previous)| {
+                        !same_retry_request(previous, &resolved_request)
+                    }) {
                         let fault = Fault::new(self.contracts, RuntimeError::OperationPrecondition, planned.span,
                             "retry host request changed", "operation resolution changed the host request covered by retry evidence");
                         let occurrence = self.fault(&fault, planned, id, FailurePhase::PreEffect);
-                        return Some((self.pre_effect_failure(&schema, RuntimeError::OperationPrecondition, planned, id), occurrence));
+                        return Some((
+                            self.pre_effect_failure(
+                                &schema,
+                                RuntimeError::OperationPrecondition,
+                                planned,
+                                id,
+                            ),
+                            occurrence,
+                        ));
                     }
-                    self.host_requests.insert(id.clone(), resolved_request.as_ref().clone());
+                    self.host_requests
+                        .insert(id.clone(), resolved_request.as_ref().clone());
                     let outcome = capability::request(self.host, true, &resolved_request);
                     // "A host may not report an effect outside it." The
                     // invocation's resolved effect set is a language decision;
@@ -1190,12 +1227,23 @@ impl<'a> Engine<'a> {
                         );
                         let occurrence =
                             self.fault(&fault, planned, id, FailurePhase::Indeterminate);
-                        let mut record = ResultRecord::new(&schema,
-                            &self.contracts.error(RuntimeError::OperationPostcondition).default_status);
-                        record.execution_errors.push(RuntimeError::OperationPostcondition.as_registry_str().into());
+                        let mut record = ResultRecord::new(
+                            &schema,
+                            &self
+                                .contracts
+                                .error(RuntimeError::OperationPostcondition)
+                                .default_status,
+                        );
+                        record.execution_errors.push(
+                            RuntimeError::OperationPostcondition
+                                .as_registry_str()
+                                .into(),
+                        );
                         record.output_binding = if syntax::field_expr(&block, "OUTPUT").is_some() {
                             OutputBinding::Unbound
-                        } else { OutputBinding::NotRequested };
+                        } else {
+                            OutputBinding::NotRequested
+                        };
                         // The host says something happened and cannot say what,
                         // so neither the phase nor the effect state is knowable:
                         // "Absence of evidence never proves absence of effects."
@@ -1279,7 +1327,12 @@ impl<'a> Engine<'a> {
                 format!("{unit} has no active invocation to move to {status}"),
             );
             self.fault(&fault, planned, id, FailurePhase::PreEffect);
-            return self.pre_effect_failure("result.operation", RuntimeError::ExecutionOrder, planned, id);
+            return self.pre_effect_failure(
+                "result.operation",
+                RuntimeError::ExecutionOrder,
+                planned,
+                id,
+            );
         };
         if !permitted {
             let fault = Fault::new(
@@ -1290,7 +1343,12 @@ impl<'a> Engine<'a> {
                 format!("{unit} is in a state that does not permit {status}"),
             );
             self.fault(&fault, planned, id, FailurePhase::PreEffect);
-            return self.pre_effect_failure("result.operation", RuntimeError::ExecutionOrder, planned, id);
+            return self.pre_effect_failure(
+                "result.operation",
+                RuntimeError::ExecutionOrder,
+                planned,
+                id,
+            );
         }
         self.set_status(&target_id, status);
         let mut record = ResultRecord::new("result.operation", "status.succeeded")
@@ -1506,8 +1564,14 @@ impl<'a> Engine<'a> {
                         format!("{}: {}", schema, violations.join("; ")),
                     );
                     let occurrence = self.fault(&fault, planned, id, phase);
-                    record.status = self.contracts.error(RuntimeError::HostConstraint).default_status.clone();
-                    record.execution_errors.push(RuntimeError::HostConstraint.as_registry_str().into());
+                    record.status = self
+                        .contracts
+                        .error(RuntimeError::HostConstraint)
+                        .default_status
+                        .clone();
+                    record
+                        .execution_errors
+                        .push(RuntimeError::HostConstraint.as_registry_str().into());
                     record.failure_phase = phase;
                     record.effect_state = effect_state_of(&record.observed_effects, phase);
                     return (record, occurrence);
@@ -1525,7 +1589,10 @@ impl<'a> Engine<'a> {
             }) => {
                 let fault = Fault::new(self.contracts, error, planned.span, cause, detail);
                 let occurrence = self.fault(&fault, planned, id, FailurePhase::PreEffect);
-                (self.pre_effect_failure(schema, error, planned, id), occurrence)
+                (
+                    self.pre_effect_failure(schema, error, planned, id),
+                    occurrence,
+                )
             }
             Ok(CapabilityOutcome::Failed {
                 detail,
@@ -1592,9 +1659,19 @@ impl<'a> Engine<'a> {
     /// The status is the *resolved* one: an identifier the closed demand map
     /// lists takes its demand-resolved status here, because every failure this
     /// runtime raises is by construction a post-preflight demand.
-    fn pre_effect_failure(&self, schema: &str, error: RuntimeError, planned: &PlanNode, id: &InvocationId) -> ResultRecord {
-        let schema = self.contracts.schema(schema).or_else(|| self.contracts.operation_schema(schema))
-            .map(|schema| schema.id.as_str()).unwrap_or(schema);
+    fn pre_effect_failure(
+        &self,
+        schema: &str,
+        error: RuntimeError,
+        planned: &PlanNode,
+        id: &InvocationId,
+    ) -> ResultRecord {
+        let schema = self
+            .contracts
+            .schema(schema)
+            .or_else(|| self.contracts.operation_schema(schema))
+            .map(|schema| schema.id.as_str())
+            .unwrap_or(schema);
         let status = if self.contracts.demand().is_eligible(error) {
             self.contracts.demand().status_for(error).to_string()
         } else {
@@ -1604,46 +1681,93 @@ impl<'a> Engine<'a> {
         record.execution_errors = vec![error.as_registry_str().to_string()];
         record.failure_phase = FailurePhase::PreEffect;
         record.effect_state = EffectState::None;
-        let block = planned.declaration.and_then(|d| syntax::declaration_block(self.resolved, d));
-        let request = self.host_requests.get(id).or_else(|| self.action_requests.get(id));
-        let target = request.and_then(|r| r.target.clone()).filter(Value::is_material)
-            .or_else(|| block.as_ref().and_then(|b| syntax::field_expr(b, "TARGET"))
-                .and_then(output_reference).map(|id| Value::Reference(id.to_string())));
-        record.output_binding = if block.as_ref().and_then(|b| syntax::field_expr(b, "OUTPUT")).is_some() {
+        let block = planned
+            .declaration
+            .and_then(|d| syntax::declaration_block(self.resolved, d));
+        let request = self
+            .host_requests
+            .get(id)
+            .or_else(|| self.action_requests.get(id));
+        let target = request
+            .and_then(|r| r.target.clone())
+            .filter(Value::is_material)
+            .or_else(|| {
+                block
+                    .as_ref()
+                    .and_then(|b| syntax::field_expr(b, "TARGET"))
+                    .and_then(output_reference)
+                    .map(|id| Value::Reference(id.to_string()))
+            });
+        record.output_binding = if block
+            .as_ref()
+            .and_then(|b| syntax::field_expr(b, "OUTPUT"))
+            .is_some()
+        {
             OutputBinding::Unbound
-        } else { OutputBinding::NotRequested };
+        } else {
+            OutputBinding::NotRequested
+        };
         // These are facts known before the operation begins, not fabricated
         // completions: there are no findings/evidence, no change or delivery,
         // and target identities survive even when their values are unbound.
         let empty = || Value::List(Vec::new());
         match schema {
-            "result.value" | "result.test" => { record.fields.insert("evidence".into(), empty()); }
-            "result.validation" => { record.fields.insert("errors".into(), empty()); }
+            "result.value" | "result.test" => {
+                record.fields.insert("evidence".into(), empty());
+            }
+            "result.validation" => {
+                record.fields.insert("errors".into(), empty());
+            }
             "result.verification" => {
                 record.fields.insert("errors".into(), empty());
                 record.fields.insert("evidence".into(), empty());
             }
             "result.operation" => {
-                record.fields.insert("changed".into(), Value::Boolean(false));
-                if let Some(target) = target { record.fields.insert("target".into(), target); }
+                record
+                    .fields
+                    .insert("changed".into(), Value::Boolean(false));
+                if let Some(target) = target {
+                    record.fields.insert("target".into(), target);
+                }
             }
             "result.command" => {
-                let graph = block.as_ref().and_then(|b| self.internal_unit_target(b)).is_some();
-                record.fields.insert("mode".into(), Value::Identifier(if graph { "graph" } else { "non_graph" }.into()));
+                let graph = block
+                    .as_ref()
+                    .and_then(|b| self.internal_unit_target(b))
+                    .is_some();
+                record.fields.insert(
+                    "mode".into(),
+                    Value::Identifier(if graph { "graph" } else { "non_graph" }.into()),
+                );
                 if !graph {
-                    record.fields.insert("started".into(), Value::Boolean(false));
-                    record.fields.insert("completed".into(), Value::Boolean(false));
+                    record
+                        .fields
+                        .insert("started".into(), Value::Boolean(false));
+                    record
+                        .fields
+                        .insert("completed".into(), Value::Boolean(false));
                 }
             }
             "result.message" => {
-                record.fields.insert("delivered".into(), Value::Boolean(false));
+                record
+                    .fields
+                    .insert("delivered".into(), Value::Boolean(false));
                 record.fields.insert("message_id".into(), Value::Null);
-                if let Some(target) = target { record.fields.insert("recipient".into(), target); }
+                if let Some(target) = target {
+                    record.fields.insert("recipient".into(), target);
+                }
             }
             "result.transfer" => {
-                if let Some(target) = target { record.fields.insert("source".into(), target); }
-                if let Some(destination) = request.and_then(|r| r.parameters.get("destination")).filter(|v| v.is_material()) {
-                    record.fields.insert("destination".into(), destination.clone());
+                if let Some(target) = target {
+                    record.fields.insert("source".into(), target);
+                }
+                if let Some(destination) = request
+                    .and_then(|r| r.parameters.get("destination"))
+                    .filter(|v| v.is_material())
+                {
+                    record
+                        .fields
+                        .insert("destination".into(), destination.clone());
                 }
             }
             _ => {}
@@ -1735,7 +1859,9 @@ impl<'a> Engine<'a> {
             && record.field("mode") == Some(&Value::Identifier("non_graph".into()))
             && record.field("started") == Some(&Value::Boolean(true))
             && record.field("completed") == Some(&Value::Boolean(false))
-            && names.iter().any(|name| schema.partial_fields.contains(name));
+            && names
+                .iter()
+                .any(|name| schema.partial_fields.contains(name));
         if incomplete_stream && !schema.permits_partial(&names) {
             record.output_binding = OutputBinding::Unbound;
             return;
@@ -1936,7 +2062,7 @@ fn output_reference(expr: &lcl_parser::syntax::Expr) -> Option<&str> {
 ///
 /// "Absence of evidence never proves absence of effects": a host that cannot
 /// prove it caused no effect yields `indeterminate`, not `pre_effect`.
-fn phase_of(effects: &[ObservedEffect], proven_effect_free: bool) -> FailurePhase {
+pub(crate) fn phase_of(effects: &[ObservedEffect], proven_effect_free: bool) -> FailurePhase {
     if !effects.is_empty() {
         return FailurePhase::PostEffect;
     }
@@ -1947,7 +2073,7 @@ fn phase_of(effects: &[ObservedEffect], proven_effect_free: bool) -> FailurePhas
     }
 }
 
-fn effect_state_of(effects: &[ObservedEffect], phase: FailurePhase) -> EffectState {
+pub(crate) fn effect_state_of(effects: &[ObservedEffect], phase: FailurePhase) -> EffectState {
     if effects.is_empty() {
         return match phase {
             FailurePhase::Indeterminate => EffectState::Indeterminate,

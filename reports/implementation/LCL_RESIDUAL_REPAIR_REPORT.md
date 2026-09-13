@@ -1680,3 +1680,170 @@ them touched by the B4 commits and none outside them, and one
 Neither is repaired here, because the working rule confines formatting changes
 to the file currently being edited and those files are outside this task's
 approved scope.
+
+## 2026-09-13 continuation — LCL-CLOSURE-4T Task LCL-CLOSE-02 entry and Phase 0
+
+Task **LCL-CLOSE-02** (conformance evidence and traceability) began with a
+read-only reconciliation and a file-by-file plan. The owner approved that plan
+("Plan is approved"). The approved plan carried these decisions:
+
+- **D1, Q-READ:** repair it now as a narrow LCL-CLOSE-01 reopening. `core.read`
+  fails closed with the row's registered `error.host.constraint` when the bytes
+  are not valid UTF-8 or a `format` other than `format.plain_text` is requested.
+  No new byte representation is introduced.
+- **D2, STORE-ROLE-01** (found by source reading during planning, not yet
+  executed): a bounded amendment. Reproduce first, add a `storage` profile for
+  the engine's own stores, install it wherever profiles are installed, and
+  enforce role selection in `data::store` last.
+- **D3:** conformance-only deterministic fixture capabilities for the six rows
+  the shipped host cannot perform (`core.analyze`, `core.report`,
+  `core.generate`, `core.convert`, `core.install`, `core.uninstall`). Shipped-host
+  refusal and fixture success are recorded as separate evidence classes; no
+  product, provider or model code.
+- **D4:** a new mapping revision pins the exact sub-run membership of every
+  semantic row. All 2,413 existing probe IDs are kept, and the superseded
+  mapping file is removed after the switch.
+- **D5:** a scoped, hash-bound review ledger over every tracked file. Full
+  review covers only the files LCL-CLOSE-01 and LCL-CLOSE-02 change, the
+  conformance crate and their direct callers; everything else is recorded as
+  unreviewed.
+
+The approved new locations are the external erratum, the Task 11–16
+retrospective index, the coverage ledger, a dated correction note in
+`impl/README.md` and `reports/tasks/LCL-CLOSE-02_RESULT.md`.
+
+### Entry state
+
+Root `/mnt/F/LCL`, branch `main`, HEAD
+`aebb2f70f09179d06688c36c96f79107411f54f2` ("LCL repair task1"), which is the
+owner's commit of LCL-CLOSE-01's worktree. Upstream is recorded as
+`origin/main`, zero ahead and zero behind, with no fetch. The worktree was
+clean and nothing was stashed. Its content identity, computed read-only from
+HEAD, the tracked diff and every untracked file, is
+`2717dd4b48a5391ed930aafd7c9ad1c7e99988c72b2e8ccf28f5939551d7d8a2`.
+
+LCL-CLOSE-01's final gates recorded a worktree of 26 implementation files plus
+this report at HEAD `7f13aec`. The commit contains exactly those files plus
+`LCL-CLOSE-01_RESULT.md`. Every committed source file was last modified by
+18:33:35, before FINAL-tests started at 18:33:47. Only the two report files
+changed afterwards, and no code reads `reports/`. That is timestamp evidence,
+so Phase 0 reran the entry gates on the clean commit. The regenerated
+production report is byte-identical to FINAL-m8-report (log SHA-256
+`aec4ee69ed1822ab…`).
+
+**Correction to the LCL-CLOSE-01 record.** Its final test gates were reported
+as "0 ignored". The FINAL-tests and FINAL-msrv-tests logs each show one ignored
+test: `lcl-project/tests/manifest_input_bounds.rs::child_parses_nested_manifest`,
+marked `#[ignore = "driven by its parent, which supplies the depth"]`. It is the
+child half of the Q-JSON probe, and its two parent tests execute it in child
+processes with `--exact ... --ignored`. No acceptance was skipped, but the
+ignored count in that record was wrong. Its 1,492 passed and 0 failed stand.
+
+The owned scratch `/mnt/F/.lcl-closure-4t-4c1cd4c659b7` (mode 700) is reused.
+It gains three helpers:
+
+- `gate2.sh`: the same recorder as `gate.sh`, plus the worktree content
+  identity before and after each gate;
+- `worktree_identity.py`: computes that identity without writing to Git;
+- `verify_protected.py`: re-hashes the 192-path protected inventory.
+
+The toolchains are unchanged: system `rustc`/`cargo` 1.98.1, and the verified
+private Rust 1.75.0 in the residual scratch.
+
+### Phase 0 — entry gates, no edits
+
+| Gate | Actual exit | Result |
+| --- | --- | --- |
+| T2-P0-protected | 0 | 192 of 192 protected files match (canonical 176, assets 4, releases 12) |
+| T2-P0-canonical-checksums | 0 | 175 matching |
+| T2-P0-brand-checksums | 0 | 17 matching |
+| T2-P0-tests, `cargo test --offline --locked --workspace --all-targets` (1.98.1) | 0 | 143 suites, 1,492 passed, 0 failed, 1 ignored (the child helper above) |
+| T2-P0-m8, production `m8_conformance_report` | 0 | `source_conforming`: 980 obligations, 2,413 probes, 2,094 executed and passed, 66 of 66 witnesses, 0 missing source probes, 319 missing semantics probes |
+| T2-P0-fmt, `cargo fmt --all -- --check -l` | 1 | **FAIL, pre-existing:** 21 files (22 paths, because `witness_cases/mod.rs` is reached twice); 11 in `lcl-conformance`, 10 in checker, parser, resolver and runtime |
+| T2-P0-clippy, workspace `-D warnings` | 101 | **FAIL, pre-existing:** `clippy::type_complexity` at `lcl-conformance/tests/semantic_cases.rs:35` |
+| T2-P0-clippy-keep-going | 101 | The same single lint with `--keep-going` across every target; this is the complete inherited lint inventory |
+
+Every Phase 0 gate ran at content identity `2717dd4b…`, and none changed the
+worktree.
+
+### Findings carried into the plan
+
+1. **Q-READ:** the lossy-decoding half is still open. `host.rs` `read()` also
+   ignores the `format` parameter entirely.
+2. **STORE-ROLE-01, source-traced:**
+   `axis_contract/implementation_profile/required_roles_by_operation` names
+   `storage` for `core.memory_write` and `core.state_update`, and both rows'
+   `invocation_resolution` begins "Resolve the authorized MEMORY [or STATE]
+   storage profile". `data::store` never selects that role, no storage profile
+   exists anywhere, and existing tests expect both rows to succeed.
+3. **B4:**
+   - 317 of the 319 missing semantic probes have populations only in tests,
+     which the production report does not consume: `semantic_cases` (191
+     groups), `operation_cases` (117) and `result_cases` (9).
+     `diagnostic_policy` and `failure_lifecycle` have no population.
+   - Sub-run membership is not pinned.
+   - The report states "every registered implementation profile installed",
+     but the analysis, reporting, generation, conversion, package and storage
+     roles are not installed.
+4. **DOC-01:** every `MANIFEST.json` component count matches its registry
+   recount. `04_GRAMMAR/13_EXACT_FIELD_SIGNATURES.txt:11` says 335 fields and 67
+   distinct value-kind expressions; the registry holds 334 field uses and 68
+   distinct `value_kind` strings.
+5. **HISTORY-01:** no LCL-TASK-0011 to LCL-TASK-0016 result report exists in any
+   reachable commit.
+6. **COVERAGE-01:** no earlier coverage ledger exists on this machine.
+7. `impl/README.md:1055` still states that the gate claims
+   `semantics_conforming`.
+
+Next: Phase 1a, Q-READ.
+
+### Phase 1a — Q-READ reopened and closed under decision D1
+
+**Q-READ — the lossy-decoding half is FIXED_VERIFIED.** Its bound half was
+already FIXED_VERIFIED in LCL-CLOSE-01. A representation defect of the same
+item, established at entry, is also FIXED_VERIFIED: `host.rs` `read()`
+ignored the `format` parameter entirely.
+
+| # | File | Change | Verification |
+| --- | --- | --- | --- |
+| 1 | `lcl-stdlib/tests/external_operations.rs` | Under D1, the EXPECTED_REPRODUCTION `expected_reproduction_qread_a_non_utf8_read_substitutes_silently` is replaced by acceptance tests and controls (listed below) | T2-P1a-qread-red, exit 101, EXPECTED red: exactly the three planned tests failed |
+| 2 | `lcl-stdlib/src/host.rs` | `read()` refuses any format other than absent, MISSING or `format.plain_text` before the target is read, and decodes exactly (below) | T2-P1a-qread-green, exit 0: the same 7 tests, assertions unchanged |
+| 3 | `lcl-stdlib/tests/external_operations.rs` | Two `to_vec()` calls in the new tests removed; `with_file` takes `impl AsRef<[u8]>` | T2-P1a-stdlib-clippy, exit 101 (`clippy::unnecessary_to_owned`, those two calls) → T2-P1a-stdlib-clippy-2, exit 0 |
+
+The replacement tests in change 1:
+
+- **Acceptance:** non-UTF-8 content is refused with `error.host.constraint`,
+  `status.blocked`, phase `pre_effect`, effect state `none`, and no value bound.
+- **Acceptance:** a format this host does not implement is refused.
+- **Acceptance:** a host-boundary matrix covers every spelling a `format`
+  value can arrive in.
+- **Controls:** exact UTF-8 content, and `format.plain_text`.
+
+In the red run, the non-UTF-8 read and the `format.json` read each returned
+content with no error, and the boundary matrix saw `Identifier("format.json")`
+answered with plain text. Both controls and both existing range tests passed.
+
+In change 2, bytes that are not valid UTF-8 now produce
+`CapabilityOutcome::Unavailable`. The runtime records that as
+`error.host.constraint` before effects.
+
+| Gate | Actual exit | Result |
+| --- | --- | --- |
+| T2-P1a-stdlib-tests-2 | 0 | Every `lcl-stdlib` target: 10 suites, 115 passed, 0 failed, 0 ignored. Supersedes T2-P1a-stdlib-tests, which consumed the test file before the lint fix |
+| T2-P1a-workspace-tests | 0 | 143 suites, 1,496 passed (1,492, less the retired reproduction, plus 5 new tests), 0 failed, 1 ignored (the Q-JSON child helper). Content identity `f37be90c…`, unchanged during the gate |
+
+The reproduction recorded a baseline; it was not an acceptance test. Its
+replacement asserts the behavior the owner chose, and that assertion was red
+before the repair. Nothing was weakened.
+
+**Behavior change.** A document that reads a non-UTF-8 file, or requests a
+format other than plain text, now stops with `error.host.constraint`
+(`status.blocked`). Previously it silently received substituted text as
+successful content. The conformance read-range witnesses read UTF-8 fixtures
+and request no format, and the `decision_witnesses` suite passed inside the
+workspace gate.
+
+Rust 1.75.0 has not yet been run over this change; that belongs to the Phase 1
+closing gates.
+
+Next: Phase 1b, STORE-ROLE-01.

@@ -57,7 +57,9 @@ pub use contracts::{
 pub use dispatch::{family, Family, DISPATCHED};
 pub use fixtures::MemoryFileSystem;
 pub use host::HostAdapter;
-pub use profiles::{checking_profiles, filesystem_profiles, process_profiles, transport_profiles};
+pub use profiles::{
+    checking_profiles, filesystem_profiles, process_profiles, store_profiles, transport_profiles,
+};
 
 use lcl_capabilities::ProfileCatalog;
 use lcl_lexer::Lexicon;

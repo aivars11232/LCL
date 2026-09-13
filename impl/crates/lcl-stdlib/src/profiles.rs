@@ -94,6 +94,53 @@ pub fn checking_profiles() -> Vec<Profile> {
     )]
 }
 
+/// The identifier the engine's own MEMORY and STATE stores publish.
+pub const STORE_IMPLEMENTATION: &str = "lcl.stdlib.store";
+
+/// The profiles the engine's own MEMORY and STATE stores declare about
+/// themselves.
+///
+/// `axis_contract/implementation_profile/required_roles_by_operation` names the
+/// `storage` role for every `core.memory_write` and every `core.state_update`
+/// invocation. The rows' resolutions begin "Resolve the authorized MEMORY
+/// storage profile" and "Resolve the authorized STATE storage profile".
+///
+/// The stores this crate writes are the engine's own, reaching no host
+/// resource. Each profile therefore narrows its row's `host` dependency to none
+/// and keeps exactly the row's one effect class, which a profile "may narrow
+/// ... but never widen". Both rows are deterministic base rows, and "A profile
+/// selected by a deterministic base row must declare deterministic".
+///
+/// Installing them is deliberate, as for every other profile set. An engine
+/// that installs none refuses both rows before effects.
+pub fn store_profiles() -> Vec<Profile> {
+    [
+        ("core.memory_write", AddressClass::Memory, Effect::Memory),
+        ("core.state_update", AddressClass::State, Effect::State),
+    ]
+    .into_iter()
+    .map(|(operation, class, effect)| {
+        Profile::builder(
+            operation,
+            Role::new("storage"),
+            STORE_IMPLEMENTATION,
+            FILESYSTEM_VERSION,
+        )
+        .serving(TargetClass::Only(vec![class]))
+        .determinism(
+            Determinism::Deterministic,
+            "The exact store snapshot, the declared value, the merge flag or expected-before \
+             guard, and one immutable implementation version fix the post-state.",
+        )
+        .axes(axes(&[], &[effect]))
+        .resolving(
+            "Write the declared engine-owned store in place within one invocation; the \
+             invocation selects no external dependency and exactly the row's one effect class.",
+        )
+    })
+    .collect()
+}
+
 /// The identifier the process adapter in this crate publishes.
 pub const PROCESS_IMPLEMENTATION: &str = "lcl.stdlib.process";
 

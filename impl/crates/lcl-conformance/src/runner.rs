@@ -112,15 +112,21 @@ impl Observed {
     /// A canonical, order-stable rendering, for evidence in a report.
     pub fn serialize(&self) -> String {
         let mut out = format!("reached={}", self.reached);
-        for (index, run) in self.runs.iter().enumerate() { out.push_str(&format!(" run[{index}]{{{}}}", run.serialize())); }
-        for (key, value) in &self.component { out.push_str(&format!(" component[{key}]={value:?}")); }
+        for (index, run) in self.runs.iter().enumerate() {
+            out.push_str(&format!(" run[{index}]{{{}}}", run.serialize()));
+        }
+        for (key, value) in &self.component {
+            out.push_str(&format!(" component[{key}]={value:?}"));
+        }
         if let Some(primary) = &self.primary {
             out.push_str(&format!(" primary={primary}"));
         }
         if let Some(status) = &self.terminal_status {
             out.push_str(&format!(" terminal={status}"));
         }
-        for (id, start, end) in &self.diagnostic_loci { out.push_str(&format!(" diagnostic[{id}@{start}..{end}]")); }
+        for (id, start, end) in &self.diagnostic_loci {
+            out.push_str(&format!(" diagnostic[{id}@{start}..{end}]"));
+        }
         for (id, outcome) in &self.checks {
             out.push_str(&format!(" check[{id}]={outcome}"));
         }
@@ -128,9 +134,15 @@ impl Observed {
             out.push_str(&format!(" output[{id}]={publication}"));
         }
         for invocation in &self.invocations {
-            out.push_str(&format!(" invocation[{}:{}]={}",
-                invocation.declaration.as_deref().unwrap_or(&invocation.block),
-                invocation.id, invocation.status()));
+            out.push_str(&format!(
+                " invocation[{}:{}]={}",
+                invocation
+                    .declaration
+                    .as_deref()
+                    .unwrap_or(&invocation.block),
+                invocation.id,
+                invocation.status()
+            ));
             if let Some(initial) = &invocation.initial_output {
                 out.push_str(&format!(" initial_output={initial}"));
             }
@@ -138,9 +150,15 @@ impl Observed {
                 out.push_str(&format!(" {{{}}}", result.serialize()));
             }
         }
-        for event in &self.events { out.push_str(&format!(" event[{event}]")); }
-        for proof in &self.retry_proofs { out.push_str(&format!(" retry_proof[{proof:?}]")); }
-        for input in &self.input_evidence { out.push_str(&format!(" input[{input}]")); }
+        for event in &self.events {
+            out.push_str(&format!(" event[{event}]"));
+        }
+        for proof in &self.retry_proofs {
+            out.push_str(&format!(" retry_proof[{proof:?}]"));
+        }
+        for input in &self.input_evidence {
+            out.push_str(&format!(" input[{input}]"));
+        }
         out
     }
 }
@@ -159,21 +177,33 @@ pub enum Expectation {
     /// The lexical or grammar stage accepts; this asserts no execution result.
     SourcePass(Reached),
     /// Exact ordered actual attempt statuses for one declaration.
-    Attempts { declaration: String, statuses: Vec<String> },
+    Attempts {
+        declaration: String,
+        statuses: Vec<String>,
+    },
     /// A diagnostic must be absent from all retained evidence, not only primary.
     NoDiagnostic(String),
     /// Exact number of accepted, retained host retry proofs.
     RetryProofs(usize),
     /// An exact diagnostic must appear in the retained engine evidence.
     Diagnostic(String),
-    DiagnosticAt { id: String, start: usize, end: usize },
+    DiagnosticAt {
+        id: String,
+        start: usize,
+        end: usize,
+    },
     /// An event from this producer must have a successful selected handler.
     Recovered(String),
     /// Exact selected root publication, including UNBOUND.
     Output { id: String, value: String },
     /// Exact field of a particular actual attempt. Common result axes use
     /// their registered names, schema-local fields use their value rendering.
-    AttemptField { declaration: String, attempt: usize, field: String, value: String },
+    AttemptField {
+        declaration: String,
+        attempt: usize,
+        field: String,
+        value: String,
+    },
     /// The source must be rejected with exactly this registered identifier.
     Rejects(String),
     /// The source must pass every implemented stage without a primary
@@ -197,18 +227,35 @@ impl Expectation {
     /// Render the expectation for a report, in the catalog's own vocabulary.
     pub fn serialize(&self) -> String {
         match self {
-            Expectation::Runs(runs) => format!("all ordered runs {:?}", runs.iter().map(Self::serialize).collect::<Vec<_>>()),
+            Expectation::Runs(runs) => format!(
+                "all ordered runs {:?}",
+                runs.iter().map(Self::serialize).collect::<Vec<_>>()
+            ),
             Expectation::Component(values) => format!("exact component {values:?}"),
             Expectation::SourcePass(stage) => format!("passes source stage {stage}"),
-            Expectation::All(assertions) => assertions.iter().map(Self::serialize).collect::<Vec<_>>().join("; "),
-            Expectation::Attempts { declaration, statuses } => format!("{declaration} attempts {statuses:?}"),
+            Expectation::All(assertions) => assertions
+                .iter()
+                .map(Self::serialize)
+                .collect::<Vec<_>>()
+                .join("; "),
+            Expectation::Attempts {
+                declaration,
+                statuses,
+            } => format!("{declaration} attempts {statuses:?}"),
             Expectation::RetryProofs(count) => format!("{count} accepted retry proofs"),
             Expectation::NoDiagnostic(id) => format!("no {id} in retained diagnostics"),
-            Expectation::DiagnosticAt { id, start, end } => format!("{id} at source bytes {start}..{end}"),
+            Expectation::DiagnosticAt { id, start, end } => {
+                format!("{id} at source bytes {start}..{end}")
+            }
             Expectation::Diagnostic(id) => format!("{id} in retained diagnostics"),
             Expectation::Recovered(id) => format!("event from {id} recovered"),
             Expectation::Output { id, value } => format!("output {id} publishes {value}"),
-            Expectation::AttemptField { declaration, attempt, field, value } => format!("{declaration} attempt {attempt} {field}={value}"),
+            Expectation::AttemptField {
+                declaration,
+                attempt,
+                field,
+                value,
+            } => format!("{declaration} attempt {attempt} {field}={value}"),
             Expectation::Rejects(id) => format!("rejects with {id}"),
             Expectation::Accepts => "accepts".to_string(),
             Expectation::Check { id, outcome } => format!("check {id} records {outcome}"),
@@ -336,6 +383,7 @@ impl Runner {
                     .chain(lcl_stdlib::filesystem_profiles())
                     .chain(lcl_stdlib::process_profiles())
                     .chain(lcl_stdlib::transport_profiles())
+                    .chain(lcl_stdlib::store_profiles())
                     .collect::<Vec<_>>(),
             );
         Ok(Runner {
@@ -356,20 +404,44 @@ impl Runner {
         let lexed = Lexer::new(&self.lexicon).lex(bytes);
         let input_evidence = vec![format!("source bytes {bytes:?}")];
         if let Some(primary) = lexed.primary() {
-            return Observed { reached: Reached::Lexical,
-                primary: Some(primary.id.to_string()), primary_stage: Some("lexical".into()),
-                diagnostics: lexed.diagnostics().iter().map(|d| d.id.to_string()).collect(),
-                diagnostic_loci: lexed.diagnostics().iter().map(|d| (d.id.to_string(), d.span.start, d.span.end)).collect(),
-                input_evidence, ..Observed::default() };
+            return Observed {
+                reached: Reached::Lexical,
+                primary: Some(primary.id.to_string()),
+                primary_stage: Some("lexical".into()),
+                diagnostics: lexed
+                    .diagnostics()
+                    .iter()
+                    .map(|d| d.id.to_string())
+                    .collect(),
+                diagnostic_loci: lexed
+                    .diagnostics()
+                    .iter()
+                    .map(|d| (d.id.to_string(), d.span.start, d.span.end))
+                    .collect(),
+                input_evidence,
+                ..Observed::default()
+            };
         }
-        let parsed = Parser::new(&self.grammar).parse(&lexed)
+        let parsed = Parser::new(&self.grammar)
+            .parse(&lexed)
             .expect("a clean lexical stage permits parsing");
-        Observed { reached: Reached::Grammar,
+        Observed {
+            reached: Reached::Grammar,
             primary: parsed.primary().map(|d| d.id.to_string()),
             primary_stage: parsed.primary().map(|_| "grammar_or_schema".into()),
-            diagnostics: parsed.diagnostics().iter().map(|d| d.id.to_string()).collect(),
-            diagnostic_loci: parsed.diagnostics().iter().map(|d| (d.id.to_string(), d.span.start, d.span.end)).collect(),
-            input_evidence, ..Observed::default() }
+            diagnostics: parsed
+                .diagnostics()
+                .iter()
+                .map(|d| d.id.to_string())
+                .collect(),
+            diagnostic_loci: parsed
+                .diagnostics()
+                .iter()
+                .map(|d| (d.id.to_string(), d.span.start, d.span.end))
+                .collect(),
+            input_evidence,
+            ..Observed::default()
+        }
     }
 
     /// Carry one source through every implemented stage and report what
@@ -409,8 +481,11 @@ impl Runner {
         host: &mut dyn Host,
     ) -> Observed {
         let mut observed = self.observe_input(unit, provider, invocation, host);
-        observed.input_evidence = vec![format!("root {unit:?}"), format!("imports {provider:?}"),
-            format!("supplied {invocation:?}")];
+        observed.input_evidence = vec![
+            format!("root {unit:?}"),
+            format!("imports {provider:?}"),
+            format!("supplied {invocation:?}"),
+        ];
         observed
     }
 
@@ -421,7 +496,6 @@ impl Runner {
         invocation: &Invocation,
         host: &mut dyn Host,
     ) -> Observed {
-
         let resolved = match Resolver::new(&self.rules, &self.grammar, &self.lexicon)
             .resolve(unit, provider)
         {
@@ -458,7 +532,7 @@ impl Runner {
                 terminal_status: None,
                 checks: Vec::new(),
                 outputs: Vec::new(),
-                    ..Observed::default()
+                ..Observed::default()
             };
         }
 
@@ -490,26 +564,25 @@ impl Runner {
                 terminal_status: None,
                 checks: Vec::new(),
                 outputs: Vec::new(),
-                    ..Observed::default()
+                ..Observed::default()
             };
         }
 
-        let planned =
-            match Preflight::new(&self.preflight).plan(&checked, &resolved, invocation) {
-                Ok(planned) => planned,
-                Err(skipped) => {
-                    return Observed {
-                        reached: Reached::StaticChecking,
-                        primary: Some(skipped.primary.clone()),
-                        primary_stage: Some("static_or_expression".to_string()),
-                        diagnostics: vec![skipped.primary],
-                        terminal_status: None,
-                        checks: Vec::new(),
-                        outputs: Vec::new(),
+        let planned = match Preflight::new(&self.preflight).plan(&checked, &resolved, invocation) {
+            Ok(planned) => planned,
+            Err(skipped) => {
+                return Observed {
+                    reached: Reached::StaticChecking,
+                    primary: Some(skipped.primary.clone()),
+                    primary_stage: Some("static_or_expression".to_string()),
+                    diagnostics: vec![skipped.primary],
+                    terminal_status: None,
+                    checks: Vec::new(),
+                    outputs: Vec::new(),
                     ..Observed::default()
-                    }
                 }
-            };
+            }
+        };
         if planned.outcome() != Outcome::Planned {
             let primary = planned.primary();
             return Observed {
@@ -524,7 +597,7 @@ impl Runner {
                 terminal_status: None,
                 checks: Vec::new(),
                 outputs: Vec::new(),
-                    ..Observed::default()
+                ..Observed::default()
             };
         }
 
@@ -567,7 +640,7 @@ impl Runner {
                         terminal_status: None,
                         checks: Vec::new(),
                         outputs: Vec::new(),
-                    ..Observed::default()
+                        ..Observed::default()
                     }
                 }
             };
@@ -701,40 +774,101 @@ impl Runner {
 /// Free function, and deliberately the only place a verdict is decided.
 pub fn judge(expectation: &Expectation, observed: &Observed) -> Verdict {
     let passed = match expectation {
-        Expectation::Runs(runs) => !runs.is_empty() && runs.len() == observed.runs.len()
-            && runs.iter().zip(&observed.runs).all(|(e, o)| !o.input_evidence.is_empty() && judge(e, o) == Verdict::Passed),
-        Expectation::Component(values) => !values.is_empty() && !observed.input_evidence.is_empty()
-            && *values == observed.component,
-        Expectation::SourcePass(stage) => matches!(stage, Reached::Lexical | Reached::Grammar)
-            && (observed.reached > *stage || (observed.reached == *stage && observed.primary.is_none())),
-        Expectation::All(assertions) => !assertions.is_empty() && assertions.iter().all(|e| judge(e, observed) == Verdict::Passed),
-        Expectation::Attempts { declaration, statuses } => {
-            let actual: Vec<_> = observed.invocations.iter()
-                .filter(|i| i.declaration.as_ref() == Some(declaration)).collect();
-            actual.len() == statuses.len() && actual.iter().zip(statuses).enumerate()
-                .all(|(attempt, (record, status))| record.id.attempt == attempt && record.status() == status)
+        Expectation::Runs(runs) => {
+            !runs.is_empty()
+                && runs.len() == observed.runs.len()
+                && runs
+                    .iter()
+                    .zip(&observed.runs)
+                    .all(|(e, o)| !o.input_evidence.is_empty() && judge(e, o) == Verdict::Passed)
+        }
+        Expectation::Component(values) => {
+            !values.is_empty()
+                && !observed.input_evidence.is_empty()
+                && *values == observed.component
+        }
+        Expectation::SourcePass(stage) => {
+            matches!(stage, Reached::Lexical | Reached::Grammar)
+                && (observed.reached > *stage
+                    || (observed.reached == *stage && observed.primary.is_none()))
+        }
+        Expectation::All(assertions) => {
+            !assertions.is_empty()
+                && assertions
+                    .iter()
+                    .all(|e| judge(e, observed) == Verdict::Passed)
+        }
+        Expectation::Attempts {
+            declaration,
+            statuses,
+        } => {
+            let actual: Vec<_> = observed
+                .invocations
+                .iter()
+                .filter(|i| i.declaration.as_ref() == Some(declaration))
+                .collect();
+            actual.len() == statuses.len()
+                && actual
+                    .iter()
+                    .zip(statuses)
+                    .enumerate()
+                    .all(|(attempt, (record, status))| {
+                        record.id.attempt == attempt && record.status() == status
+                    })
         }
         Expectation::RetryProofs(count) => observed.retry_proofs.len() == *count,
-        Expectation::NoDiagnostic(id) => observed.primary.as_ref() != Some(id) && !observed.diagnostics.contains(id),
-        Expectation::DiagnosticAt { id, start, end } => observed.diagnostic_loci.contains(&(id.clone(), *start, *end)),
+        Expectation::NoDiagnostic(id) => {
+            observed.primary.as_ref() != Some(id) && !observed.diagnostics.contains(id)
+        }
+        Expectation::DiagnosticAt { id, start, end } => {
+            observed
+                .diagnostic_loci
+                .contains(&(id.clone(), *start, *end))
+        }
         Expectation::Diagnostic(id) => observed.diagnostics.contains(id),
         Expectation::Recovered(id) => observed.events.iter().any(|event| {
-            observed.invocations.iter().any(|i| i.id == event.producer && i.declaration.as_ref() == Some(id))
-                && matches!(event.disposition, lcl_runtime::Disposition::Selected { recovered: true, .. })
+            observed
+                .invocations
+                .iter()
+                .any(|i| i.id == event.producer && i.declaration.as_ref() == Some(id))
+                && matches!(
+                    event.disposition,
+                    lcl_runtime::Disposition::Selected {
+                        recovered: true,
+                        ..
+                    }
+                )
         }),
-        Expectation::Output { id, value } => observed.outputs.iter().any(|(found, actual)| found == id && actual == value),
-        Expectation::AttemptField { declaration, attempt, field, value } => {
-            observed.invocations.iter().find(|i| i.declaration.as_ref() == Some(declaration) && i.id.attempt == *attempt)
-                .and_then(|i| if field == "initial_output" {
-                    i.initial_output.as_ref().map(ToString::to_string)
-                } else { i.result.as_ref().and_then(|r| match field.as_str() {
-                    "output_binding" => Some(r.output_binding.to_string()),
-                    "failure_phase" => Some(r.failure_phase.to_string()),
-                    "effect_state" => Some(r.effect_state.to_string()),
-                    "status" => Some(r.status.clone()),
-                    "schema" => Some(r.schema.clone()),
-                    field => r.field(field).map(ToString::to_string),
-                }) }).as_ref() == Some(value)
+        Expectation::Output { id, value } => observed
+            .outputs
+            .iter()
+            .any(|(found, actual)| found == id && actual == value),
+        Expectation::AttemptField {
+            declaration,
+            attempt,
+            field,
+            value,
+        } => {
+            observed
+                .invocations
+                .iter()
+                .find(|i| i.declaration.as_ref() == Some(declaration) && i.id.attempt == *attempt)
+                .and_then(|i| {
+                    if field == "initial_output" {
+                        i.initial_output.as_ref().map(ToString::to_string)
+                    } else {
+                        i.result.as_ref().and_then(|r| match field.as_str() {
+                            "output_binding" => Some(r.output_binding.to_string()),
+                            "failure_phase" => Some(r.failure_phase.to_string()),
+                            "effect_state" => Some(r.effect_state.to_string()),
+                            "status" => Some(r.status.clone()),
+                            "schema" => Some(r.schema.clone()),
+                            field => r.field(field).map(ToString::to_string),
+                        })
+                    }
+                })
+                .as_ref()
+                == Some(value)
         }
         Expectation::Rejects(id) => {
             observed.primary.as_deref() == Some(id.as_str())
@@ -765,16 +899,37 @@ mod grouped_evidence_tests {
     #[test]
     fn grouped_evidence_requires_every_ordered_observation_and_exact_input() {
         let component = vec![("transition".into(), "refused".into())];
-        let run = Observed { component: component.clone(), input_evidence: vec!["ready -> invented".into()], ..Observed::default() };
-        let expectation = Expectation::Runs(vec![Expectation::Component(component.clone()), Expectation::Component(component)]);
-        let mut observed = Observed { runs: vec![run.clone(), run], ..Observed::default() };
+        let run = Observed {
+            component: component.clone(),
+            input_evidence: vec!["ready -> invented".into()],
+            ..Observed::default()
+        };
+        let expectation = Expectation::Runs(vec![
+            Expectation::Component(component.clone()),
+            Expectation::Component(component),
+        ]);
+        let mut observed = Observed {
+            runs: vec![run.clone(), run],
+            ..Observed::default()
+        };
         assert_eq!(judge(&expectation, &observed), Verdict::Passed);
         observed.runs[1].component[0].1 = "allowed".into();
         assert_eq!(judge(&expectation, &observed), Verdict::Failed);
         observed.runs.pop();
         assert_eq!(judge(&expectation, &observed), Verdict::Failed);
-        assert_eq!(judge(&Expectation::Runs(vec![]), &Observed::default()), Verdict::Failed);
+        assert_eq!(
+            judge(&Expectation::Runs(vec![]), &Observed::default()),
+            Verdict::Failed
+        );
         observed.runs[0].input_evidence.clear();
-        assert_eq!(judge(&Expectation::Runs(vec![Expectation::Component(observed.runs[0].component.clone())]), &observed), Verdict::Failed);
+        assert_eq!(
+            judge(
+                &Expectation::Runs(vec![Expectation::Component(
+                    observed.runs[0].component.clone()
+                )]),
+                &observed
+            ),
+            Verdict::Failed
+        );
     }
 }

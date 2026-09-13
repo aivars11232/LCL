@@ -84,8 +84,10 @@ impl Granted {
 /// Assemble the operation surface and the host from what the caller granted.
 ///
 /// A profile is installed only when the capability it describes is actually
-/// present. The in-language verifier is the exception and is always available,
-/// because it reaches nothing outside the language.
+/// present. The in-language verifier and the engine's own MEMORY and STATE
+/// stores are the exceptions and are always available, because they reach
+/// nothing outside the language: every run starts from
+/// [`lcl_capabilities::Grants::internal`], which permits exactly those stores.
 pub fn surface(engine: &Engine, granted: &Granted) -> Result<(Stdlib, HostAdapter), StdlibError> {
     let mut grants = lcl_capabilities::Grants::internal();
     for path in &granted.read {
@@ -102,6 +104,7 @@ pub fn surface(engine: &Engine, granted: &Granted) -> Result<(Stdlib, HostAdapte
     }
 
     let mut profiles = lcl_stdlib::checking_profiles();
+    profiles.extend(lcl_stdlib::store_profiles());
     let mut host = HostAdapter::new(grants.clone());
     if !granted.read.is_empty() || !granted.write.is_empty() {
         host = host.with_filesystem(RealFileSystem::new(grants.clone()));

@@ -420,6 +420,20 @@ pub(crate) fn store(
         }
     }
 
+    // Both rows name the `storage` role for every invocation, and their
+    // resolutions begin "Resolve the authorized MEMORY storage profile" and
+    // "Resolve the authorized STATE storage profile". "A missing, ambiguous,
+    // incomplete, or out-of-bounds required profile role emits
+    // error.operation.precondition before effects."
+    let target_class = if expected_block == "MEMORY" {
+        AddressClass::Memory
+    } else {
+        AddressClass::State
+    };
+    if let Some(failure) = select_profiles(stdlib, contract, target_class, None) {
+        return failure;
+    }
+
     // The host gate, decided independently of what the plan authorized.
     if let Err(refusal) = stdlib.grants().decide(&Grant::InternalStore) {
         return match refusal {

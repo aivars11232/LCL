@@ -32,8 +32,8 @@ use lcl_semantics::{Contracts as PreflightContracts, Invocation, Outcome, Planne
 use lcl_spec::SpecPackage;
 use lcl_stdlib::fixtures::{MemoryProcess, MemoryResponder, MemoryTransport};
 use lcl_stdlib::{
-    checking_profiles, family, filesystem_profiles, process_profiles, transport_profiles,
-    HostAdapter, MemoryFileSystem, Stdlib, DISPATCHED,
+    checking_profiles, family, filesystem_profiles, process_profiles, store_profiles,
+    transport_profiles, HostAdapter, MemoryFileSystem, Stdlib, DISPATCHED,
 };
 use std::path::{Path, PathBuf};
 
@@ -483,6 +483,7 @@ fn all_profiles() -> Vec<Profile> {
     profiles.extend(process_profiles());
     profiles.extend(transport_profiles());
     profiles.extend(checking_profiles());
+    profiles.extend(store_profiles());
     profiles
 }
 

@@ -990,65 +990,206 @@ fn a_successful_download_still_writes_exactly_the_received_content() {
 // Q-READ — exact content, and a bound that is too large to be a position
 // ---------------------------------------------------------------------------
 
-/// EXPECTED_REPRODUCTION — Q-READ, lossy decoding. Asserts the known
-/// behaviour; a passing run is **not** a product acceptance pass.
+/// Read `/srv/data/raw.bin` holding exactly `bytes`, with `extra` appended to
+/// the ACTION body (a `PARAMETER` block, or nothing).
+fn read_bytes(bytes: &[u8], extra: &str) -> Execution {
+    let action = format!("ID: action.read\nOPERATION: core.read\nTARGET: REF(data.target){extra}");
+    let source = common::task(
+        &common::data("data.target", "PATH", "PATH(\"/srv/data/raw.bin\")"),
+        &[action.as_str()],
+    );
+    let filesystem = MemoryFileSystem::new()
+        .with_read_scope("/srv/data")
+        .with_file("/srv/data/raw.bin", bytes);
+    let mut host = HostAdapter::new(filesystem.grants().clone()).with_filesystem(filesystem);
+    run_with_host(&source, &mut host)
+}
+
+/// A `format` PARAMETER, written the way the checker admits it today.
+fn format_parameter(value: &str) -> String {
+    format!(
+        "\nPARAMETER:\n    NAME: format\n    TYPE: STRING\n    REQUIRED: TRUE\n    VALUE: {value}"
+    )
+}
+
+/// Q-READ: bytes that are not UTF-8 are refused, never substituted.
+///
+/// This replaces the EXPECTED_REPRODUCTION
+/// `expected_reproduction_qread_a_non_utf8_read_substitutes_silently`, which
+/// recorded the baseline: `61 FF 62` read back as `"a\u{FFFD}b"` with
+/// `status.succeeded` and no diagnostic, because the adapter decoded with
+/// `String::from_utf8_lossy`.
 ///
 /// `core.read` means "Retrieve accessible **exact content** without changing
 /// its source", its postcondition is that "result is the **exact** requested
 /// representation", and its range contract adds that "No clipping or ambient
-/// encoding conversion occurs". The adapter decodes with
-/// `String::from_utf8_lossy`, which substitutes U+FFFD for each malformed
-/// sequence and cannot fail — so a document that reads a file and writes it
-/// back writes different bytes than it read, and the result says nothing about
-/// it.
+/// encoding conversion occurs". STRING is "Unicode text", so bytes that are
+/// not UTF-8 have no exact STRING representation.
 ///
-/// The deviation is established. What is **not** settled is the repair, and it
-/// is left to the owner rather than chosen here, because both halves of it are
-/// policy this layer may not invent:
-///
-///  * `core.read`'s registered `errors` list admits
-///    `error.operation.parameter`, `error.reference.unresolved`,
-///    `error.permission.denied`, `error.scope.violation`,
-///    `error.host.constraint`, `error.operation.precondition` and
-///    `error.value.out_of_range`. It does **not** admit
-///    `error.operation.postcondition`, which is the identifier that most
-///    plainly describes "the exact representation could not be produced". The
-///    nearest admitted reading is "an incompatible unit/representation", which
-///    the row states for ranges rather than for the whole read;
-///  * refusing would change what happens to every read of a file that is not
-///    UTF-8, which is a product behaviour change and not only a diagnostic one.
-///
-/// So this records exactly what happens today, and fails the moment it changes.
+/// The owner chose the repair (LCL-CLOSE-02, decision D1): the row's
+/// registered `error.host.constraint`, "A host/provider limitation outside
+/// portable LCL prevents execution", before any value is bound.
+/// `error.operation.postcondition` would describe it more directly, but the
+/// row does not register it.
 #[test]
-fn expected_reproduction_qread_a_non_utf8_read_substitutes_silently() {
-    let action = "ID: action.read\nOPERATION: core.read\nTARGET: REF(data.target)";
-    let source = common::task(
-        &common::data("data.target", "PATH", "PATH(\"/srv/data/raw.bin\")"),
-        &[action],
-    );
+fn q_read_content_that_is_not_utf8_is_refused_not_substituted() {
     // 0xFF is not a legal UTF-8 byte in any position.
-    let filesystem = MemoryFileSystem::new()
-        .with_read_scope("/srv/data")
-        .with_file("/srv/data/raw.bin", [b'a', 0xFF, b'b']);
-    let mut host = HostAdapter::new(filesystem.grants().clone()).with_filesystem(filesystem);
-    let execution = run_with_host(&source, &mut host);
+    let execution = read_bytes(&[b'a', 0xFF, b'b'], "");
     let result = common::result_of(&execution, "action.read");
-
     assert_eq!(
-        result.status, "status.succeeded",
-        "the baseline is that this succeeds: {:?}",
-        result.execution_errors
+        result.execution_errors,
+        vec!["error.host.constraint".to_string()],
+        "content this host cannot represent exactly is its limitation, not a success"
     );
+    assert_eq!(result.status, "status.blocked");
+    assert_eq!(result.failure_phase.to_string(), "pre_effect");
+    assert_eq!(result.effect_state.to_string(), "none");
+    assert_eq!(
+        result.fields.get("value"),
+        None,
+        "no substituted content is bound as the file's content"
+    );
+}
+
+/// The control: UTF-8 content is returned exactly, multi-byte scalars and line
+/// terminators included.
+#[test]
+fn q_read_utf8_content_is_returned_exactly() {
+    let text = "é😀\r\nline two\n";
+    let execution = read_bytes(text.as_bytes(), "");
+    let result = common::result_of(&execution, "action.read");
     assert!(
         result.execution_errors.is_empty(),
-        "and says nothing about the substitution: {:?}",
+        "{:?}",
+        result.execution_errors
+    );
+    assert_eq!(result.status, "status.succeeded");
+    assert_eq!(
+        result.fields.get("value"),
+        Some(&Value::Text(text.to_string()))
+    );
+}
+
+/// "Resolve the exact target representation and any requested format before
+/// selecting the range." This host produces one representation, Unicode text
+/// (`format.plain_text`, "Unicode plain text."), and implements no other
+/// registered format. A request for another format is therefore refused rather
+/// than answered with plain text that is not what was asked for.
+#[test]
+fn q_read_a_format_this_host_does_not_implement_is_refused() {
+    let execution = read_bytes(b"{\"a\": 1}", &format_parameter("\"format.json\""));
+    let result = common::result_of(&execution, "action.read");
+    assert_eq!(
+        result.execution_errors,
+        vec!["error.host.constraint".to_string()]
+    );
+    assert_eq!(result.status, "status.blocked");
+    assert_eq!(result.fields.get("value"), None);
+}
+
+/// The control: `format.plain_text` is the representation this host produces.
+#[test]
+fn q_read_the_plain_text_format_reads_utf8_content() {
+    let execution = read_bytes(b"plain", &format_parameter("\"format.plain_text\""));
+    let result = common::result_of(&execution, "action.read");
+    assert!(
+        result.execution_errors.is_empty(),
+        "{:?}",
         result.execution_errors
     );
     assert_eq!(
         result.fields.get("value"),
-        Some(&Value::Text("a\u{FFFD}b".to_string())),
-        "the byte 0xFF was replaced by U+FFFD and reported as the file's content"
+        Some(&Value::Text("plain".to_string()))
     );
+}
+
+/// A `core.read` request for one path, as the runtime would send it.
+fn read_request(path: &str) -> lcl_runtime::CapabilityRequest {
+    lcl_runtime::CapabilityRequest {
+        operation: "core.read".to_string(),
+        target: Some(Value::Constructed {
+            constructor: "PATH".to_string(),
+            text: path.to_string(),
+        }),
+        parameters: std::collections::BTreeMap::new(),
+        authorization: lcl_runtime::Authorized {
+            operation: "core.read".to_string(),
+            target: None,
+            scope: None,
+            permitted_by: Vec::new(),
+            overridden: Vec::new(),
+        },
+        category: "read_only".to_string(),
+        possible_effects: Default::default(),
+        possible_dependencies: Default::default(),
+        result_schema: "result.value".to_string(),
+        invocation: lcl_runtime::InvocationId::first(0, lcl_runtime::IterationPath::root()),
+        source: lcl_resolver::SourceId::new("root.lcl"),
+        span: lcl_lexer::Span::empty(0),
+    }
+}
+
+/// The same rule at the host boundary, for every spelling a request can carry.
+///
+/// The row types `format` as `qualified_identifier(format)`, and the checker
+/// leaves the source spelling of such a parameter to its value, so a request
+/// may carry the registered name as an identifier or as text. Only an absent or
+/// MISSING format, or exactly `format.plain_text`, reads. Every other value is
+/// refused before the target is read, and non-UTF-8 content is refused however
+/// plain text was requested.
+#[test]
+fn q_read_format_is_decided_exactly_at_the_host_boundary() {
+    use lcl_runtime::{CapabilityOutcome, Host};
+
+    let filesystem = MemoryFileSystem::new()
+        .with_read_scope("/srv/data")
+        .with_file("/srv/data/text.txt", b"plain")
+        .with_file("/srv/data/raw.bin", vec![b'a', 0xFF, b'b']);
+    let mut host = HostAdapter::new(filesystem.grants().clone()).with_filesystem(filesystem);
+    let identifier = |name: &str| Value::Identifier(name.to_string());
+    let text = |name: &str| Value::Text(name.to_string());
+    let cases: Vec<(&str, Option<Value>, bool)> = vec![
+        ("/srv/data/text.txt", None, true),
+        ("/srv/data/text.txt", Some(Value::Missing), true),
+        (
+            "/srv/data/text.txt",
+            Some(identifier("format.plain_text")),
+            true,
+        ),
+        ("/srv/data/text.txt", Some(text("format.plain_text")), true),
+        ("/srv/data/text.txt", Some(identifier("format.json")), false),
+        (
+            "/srv/data/text.txt",
+            Some(identifier("format.binary")),
+            false,
+        ),
+        ("/srv/data/text.txt", Some(text("format.markdown")), false),
+        ("/srv/data/text.txt", Some(Value::Null), false),
+        ("/srv/data/raw.bin", None, false),
+        (
+            "/srv/data/raw.bin",
+            Some(identifier("format.plain_text")),
+            false,
+        ),
+    ];
+    for (path, format, reads) in cases {
+        let mut request = read_request(path);
+        if let Some(format) = &format {
+            request
+                .parameters
+                .insert("format".to_string(), format.clone());
+        }
+        let outcome = host.invoke(&request);
+        match (&outcome, reads) {
+            (CapabilityOutcome::Completed(observation), true) => assert_eq!(
+                observation.fields.get("value"),
+                Some(&Value::Text("plain".to_string())),
+                "{path} with format {format:?}"
+            ),
+            (CapabilityOutcome::Unavailable(_), false) => {}
+            _ => panic!("{path} with format {format:?}: expected reads={reads}, got {outcome:?}"),
+        }
+    }
 }
 
 /// A range bound larger than any position can be.

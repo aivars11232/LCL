@@ -4,7 +4,7 @@ mod common;
 
 use lcl_capabilities::Grants;
 use lcl_runtime::{Execution, Runtime, Value};
-use lcl_stdlib::{filesystem_profiles, HostAdapter, MemoryFileSystem, Stdlib};
+use lcl_stdlib::{filesystem_profiles, store_profiles, HostAdapter, MemoryFileSystem, Stdlib};
 
 /// Execute one document against an installed filesystem and profile set.
 fn run_fs(source: &str, filesystem: MemoryFileSystem, grants: Grants) -> Execution {
@@ -293,7 +293,8 @@ fn core_memory_write_changes_what_a_later_read_sees() {
         "ID: action.read\nOPERATION: core.return\nTARGET: REF(memory.notes)",
     ];
     let source = common::task(MEMORY_DECLARATIONS, &actions);
-    let execution = common::run(&source);
+    let stdlib = common::stdlib().with_profiles(store_profiles());
+    let execution = common::run_with(&source, stdlib, lcl_runtime::MockHost::new());
 
     let written = common::result_of(&execution, "action.write");
     assert_eq!(
@@ -321,7 +322,8 @@ fn writing_the_value_a_store_already_holds_changed_nothing() {
                   PARAMETER:\n    NAME: value\n    TYPE: STRING\n    REQUIRED: TRUE\n    \
                   VALUE: \"kept\"";
     let source = common::task(MEMORY_DECLARATIONS, &[action]);
-    let execution = common::run(&source);
+    let stdlib = common::stdlib().with_profiles(store_profiles());
+    let execution = common::run_with(&source, stdlib, lcl_runtime::MockHost::new());
     assert_eq!(
         common::result_of(&execution, "action.write")
             .fields
@@ -338,7 +340,10 @@ fn an_ungranted_store_is_denied() {
                   PARAMETER:\n    NAME: value\n    TYPE: STRING\n    REQUIRED: TRUE\n    \
                   VALUE: \"written\"";
     let source = common::task(MEMORY_DECLARATIONS, &[action]);
-    let stdlib: Stdlib = common::stdlib().with_grants(Grants::none());
+    // The storage profile is installed, so the grant gate is what refuses.
+    let stdlib: Stdlib = common::stdlib()
+        .with_profiles(store_profiles())
+        .with_grants(Grants::none());
     let execution = common::run_with(&source, stdlib, lcl_runtime::MockHost::new());
     assert_eq!(
         common::errors_of(&execution, "action.write"),
@@ -360,5 +365,88 @@ fn a_store_row_refuses_a_target_of_the_wrong_declaration_kind() {
     assert_eq!(
         common::errors_of(&execution, "action.write"),
         vec!["error.reference.kind".to_string()]
+    );
+}
+
+// ---------------------------------------------------------------------------
+// STORE-ROLE-01 — the storage profile role both store rows require
+// ---------------------------------------------------------------------------
+
+const STATE_DECLARATIONS: &str = "\nSCOPE:\n    ID: scope.task\n    INCLUDE: REF(task.subject)\n\
+     \nSTATE:\n    ID: state.revision\n    TYPE: INTEGER\n    SCOPE: REF(scope.task)\n    \
+     MODE: mode.read_write\n    VALUE: 2\n";
+
+const MEMORY_WRITE_ACTION: &str =
+    "ID: action.write\nOPERATION: core.memory_write\nTARGET: REF(memory.notes)\n\
+     PARAMETER:\n    NAME: value\n    TYPE: STRING\n    REQUIRED: TRUE\n    VALUE: \"written\"";
+
+const STATE_UPDATE_ACTION: &str =
+    "ID: action.write\nOPERATION: core.state_update\nTARGET: REF(state.revision)\n\
+     PARAMETER:\n    NAME: value\n    TYPE: INTEGER\n    REQUIRED: TRUE\n    VALUE: 3";
+
+/// One store write refused for its missing `storage` profile, before any effect.
+fn assert_refused_before_effects(execution: &Execution) {
+    let result = common::result_of(execution, "action.write");
+    assert_eq!(
+        result.execution_errors,
+        vec!["error.operation.precondition".to_string()],
+        "a store row with no storage profile installed must fail its precondition"
+    );
+    assert_eq!(result.status, "status.failed");
+    assert_eq!(result.failure_phase.to_string(), "pre_effect");
+    assert_eq!(result.effect_state.to_string(), "none");
+    assert!(
+        result.observed_effects.is_empty(),
+        "{:?}",
+        result.observed_effects
+    );
+    // `result.operation` registers `changed` as `exactly_one`, and "changed
+    // remains present after failure". It is FALSE because the refusal happened
+    // before any requested target state changed.
+    assert_eq!(result.fields.get("changed"), Some(&Value::Boolean(false)));
+}
+
+/// STORE-ROLE-01: `core.memory_write` requires its registered `storage` profile.
+///
+/// `operations_v0.1.0.json#/axis_contract/implementation_profile` names the
+/// `storage` role in `required_roles_by_operation` for every `core.memory_write`
+/// invocation, and the row's resolution begins "Resolve the authorized MEMORY
+/// storage profile". `06_STANDARD_LIBRARY/10`: "A missing, ambiguous,
+/// incomplete, or out-of-bounds required profile role emits
+/// error.operation.precondition before effects." `common::stdlib()` installs no
+/// profile of any kind, so the write must be refused before the store changes.
+#[test]
+fn a_memory_write_without_a_storage_profile_fails_its_precondition_before_effects() {
+    let source = common::task(MEMORY_DECLARATIONS, &[MEMORY_WRITE_ACTION]);
+    assert_refused_before_effects(&common::run(&source));
+}
+
+/// STORE-ROLE-01: `core.state_update` requires the same role. Its resolution
+/// begins "Resolve the authorized STATE storage profile, including its
+/// transaction variant".
+#[test]
+fn a_state_update_without_a_storage_profile_fails_its_precondition_before_effects() {
+    let source = common::task(STATE_DECLARATIONS, &[STATE_UPDATE_ACTION]);
+    assert_refused_before_effects(&common::run(&source));
+}
+
+/// The control: with its `storage` profile installed, `core.state_update` writes
+/// the engine's own STATE store and reports the effect.
+#[test]
+fn a_state_update_with_its_storage_profile_writes_the_store() {
+    let source = common::task(STATE_DECLARATIONS, &[STATE_UPDATE_ACTION]);
+    let stdlib = common::stdlib().with_profiles(store_profiles());
+    let execution = common::run_with(&source, stdlib, lcl_runtime::MockHost::new());
+    let written = common::result_of(&execution, "action.write");
+    assert!(
+        written.execution_errors.is_empty(),
+        "{:?}",
+        written.execution_errors
+    );
+    assert_eq!(written.status, "status.succeeded");
+    assert_eq!(written.fields.get("changed"), Some(&Value::Boolean(true)));
+    assert_eq!(
+        written.observed_effects.first().map(|e| e.class),
+        Some(lcl_runtime::EffectClass::State)
     );
 }

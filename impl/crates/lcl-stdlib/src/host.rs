@@ -215,6 +215,27 @@ fn path_of(value: Option<&Value>) -> Option<PathBuf> {
     }
 }
 
+/// The refusal for a `core.read` format this adapter cannot produce, if any.
+///
+/// The row types `format` as `qualified_identifier(format)` with no declared
+/// default, so an absent or MISSING format asks for nothing beyond the target's
+/// own representation. This adapter produces exactly one, Unicode text
+/// (`format.plain_text`, "Unicode plain text."), and implements no other
+/// registered format. The checker leaves the source spelling of such a
+/// parameter to its value, so the registered name is accepted as an identifier
+/// or as text. Every other value is a host limitation, never plain text
+/// substituted for the representation that was requested.
+fn unproducible_format(requested: Option<&Value>) -> Option<CapabilityOutcome> {
+    match requested {
+        None | Some(Value::Missing) => None,
+        Some(Value::Identifier(name) | Value::Text(name)) if name == "format.plain_text" => None,
+        Some(other) => Some(CapabilityOutcome::Unavailable(format!(
+            "core.read: this host produces only format.plain_text and cannot produce the \
+             requested format {other}"
+        ))),
+    }
+}
+
 /// The URI one value addresses, when it addresses one.
 fn uri_of(value: Option<&Value>) -> Option<&str> {
     match value? {
@@ -394,11 +415,32 @@ impl HostAdapter {
             Ok(range) => range,
             Err(refusal) => return refusal,
         };
+        // "Resolve the exact target representation and any requested format
+        // before selecting the range." This adapter produces one representation,
+        // Unicode text, so a format it cannot produce is refused before the
+        // target is read, rather than answered with text that was not asked for.
+        if let Some(refusal) = unproducible_format(request.parameters.get("format")) {
+            return refusal;
+        }
         match filesystem.read(&path, &bounds) {
             Ok(bytes) => {
-                // "Resolve the exact target representation and any requested
-                // format before selecting the range."
-                let content = Value::Text(String::from_utf8_lossy(&bytes).to_string());
+                // STRING is "Unicode text", and the row promises "exact content"
+                // with "No clipping or ambient encoding conversion". Bytes that
+                // are not UTF-8 have no exact text representation, so they are
+                // this host's limitation (`error.host.constraint`, which the row
+                // registers), never a substitution reported as the content.
+                let text = match String::from_utf8(bytes) {
+                    Ok(text) => text,
+                    Err(error) => {
+                        return CapabilityOutcome::Unavailable(format!(
+                            "core.read: {} is not UTF-8 text (the first invalid byte is at \
+                             offset {}), and this host has no exact representation for it",
+                            path.display(),
+                            error.utf8_error().valid_up_to()
+                        ))
+                    }
+                };
+                let content = Value::Text(text);
                 match range {
                     None => CapabilityOutcome::Completed(schema::value(content)),
                     Some(range) => match range.select(&content) {

@@ -122,6 +122,28 @@ ordinary outcome rather than an error.
 packaging/build_release.sh
 ```
 
-Builds `--release --offline --locked`, stages the payload, writes the tarball,
-its checksum, and a provenance record naming the source commit, the toolchain,
-the package identity and the checksum of every file in the payload.
+It lists the source, records every file's mode, size and SHA-256 in
+`SOURCE_INVENTORY.tsv`, archives exactly those bytes, and builds `--release
+--offline --locked` from a snapshot unpacked from that archive and checked
+against the inventory, never from the live checkout. The candidate goes to
+`releases/candidates/<name>-<source id>`, or to `LCL_RELEASE_OUT`, which must
+not exist yet: nothing is ever written into or over an existing directory.
+Beside the payload tarball and its checksum it writes the source archive, the
+inventory and a provenance record naming the source id, the commit and
+uncommitted entries of a checkout, the toolchain, the package identity and the
+checksum of every file in the payload.
+
+A build that fails says so, publishes nothing, and keeps its working directory,
+whose path it prints, as evidence.
+
+To rebuild from a source archive, with no Git history:
+
+```sh
+tar -xzOf lcl-<version>-linux-x86_64-source.tar.gz packaging/build_release.sh > build_release.sh
+sh build_release.sh --reconstruct lcl-<version>-linux-x86_64-source.tar.gz <new directory>
+cd <new directory> && LCL_RELEASE_OUT=<new output directory> packaging/build_release.sh
+```
+
+`--reconstruct` refuses an archive that holds anything but the regular files
+its inventory names, before extracting anything. Rebuilt binaries are not
+promised to be bit-for-bit identical; the source they were built from is.

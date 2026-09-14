@@ -153,9 +153,15 @@ impl MockHost {
                 .with("count", zero()),
             "result.operation" => Observation::none()
                 .with("changed", Value::Boolean(true))
-                .with("target", request.target.clone().filter(Value::is_material)
-                    .or_else(|| request.authorization.target.clone().map(Value::Reference))
-                    .unwrap_or(Value::Null)),
+                .with(
+                    "target",
+                    request
+                        .target
+                        .clone()
+                        .filter(Value::is_material)
+                        .or_else(|| request.authorization.target.clone().map(Value::Reference))
+                        .unwrap_or(Value::Null),
+                ),
             "result.command" => Observation::none()
                 .with("mode", Value::Identifier("non_graph".to_string()))
                 .with("started", Value::Boolean(true))

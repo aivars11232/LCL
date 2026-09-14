@@ -1054,6 +1054,12 @@ witness, and the executable conformance gate was withdrawing its claim because
 of three of them. All five are closed, and the gate now claims
 `semantics_conforming` over 61 executed cases with none failing.
 
+> **Correction, 2026-09-14 (LCL-CLOSURE-4T, Task LCL-CLOSE-02).** The claim above is historical and no longer
+> current. The production conformance report now accounts for every semantic contract row against pinned sub-run
+> membership (obligation mapping revision r2) and claims `source_conforming` only. Full semantic conformance is
+> BLOCKED. The exact remaining sub-runs, and the engine defects that faithful sub-runs expose, are recorded in
+> `reports/tasks/LCL-CLOSE-02_RESULT.md` and `reports/implementation/LCL_RESIDUAL_REPAIR_REPORT.md`.
+
 Two of the five were diagnosed differently from how they were recorded. The
 `SUM`-over-empty defect was not in the reduction, which was correct; the fault
 it raised was being discarded by the layer that demanded it, so a registered

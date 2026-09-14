@@ -45,6 +45,7 @@ use lcl_parser::syntax::{
     BinaryOp, Call, Collection, Expr, Literal, LiteralKind, PropertyAccess, UnaryOp,
 };
 use lcl_resolver::{Resolved, SourceId};
+use lcl_semantics::value::REGEX_FLAG_SEPARATOR;
 use lcl_semantics::Plan;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -770,9 +771,11 @@ impl<'a> Evaluator<'a> {
             };
             return context.eval(expression, depth + 1);
         }
-        Ok(crate::syntax::declaration_field_text(self.resolved, index, field)
-            .map(Value::Text)
-            .unwrap_or(Value::Missing))
+        Ok(
+            crate::syntax::declaration_field_text(self.resolved, index, field)
+                .map(Value::Text)
+                .unwrap_or(Value::Missing),
+        )
     }
 
     fn index(&self, index: &lcl_parser::syntax::IndexAccess, depth: usize) -> Demand {
@@ -1087,10 +1090,7 @@ impl<'a> Evaluator<'a> {
                         format!("{fault:?}"),
                     ));
                 }
-                Value::Constructed {
-                    constructor: name.to_string(),
-                    text: format!("{pattern}{REGEX_FLAG_SEPARATOR}{flags}"),
-                }
+                lcl_semantics::value::regex(pattern, flags)
             }
             (_, [Value::Text(text)]) => Value::Constructed {
                 constructor: name.to_string(),
@@ -1327,10 +1327,8 @@ fn is_reserved_property(name: &str) -> bool {
 /// Split a `REGEX` value's stored text into its pattern and flags.
 ///
 /// The constructor is written `REGEX("pattern")` or `REGEX("pattern", "flags")`;
-/// the value keeps them joined by a NUL, which no LCL source string contains
-/// unescaped, so the split is unambiguous.
-pub(crate) const REGEX_FLAG_SEPARATOR: char = '\u{0}';
-
+/// `lcl_semantics::value::regex` builds the one shared text, joining non-empty
+/// flags to the pattern with a NUL.
 fn split_regex(text: &str) -> (&str, &str) {
     match text.split_once(REGEX_FLAG_SEPARATOR) {
         Some((pattern, flags)) => (pattern, flags),

@@ -1,7 +1,11 @@
 # LCL implementation conformance obligations — Core 0.1.0
 
-Status: B4 implementation in progress. This mapping defines required evidence;
-it does not report that the engine has already passed that evidence.
+Status, 2026-09-14 (LCL-CLOSURE-4T, Task LCL-CLOSE-02): conformance accounting
+and production reporting are complete; full semantic conformance is BLOCKED.
+This document defines required evidence; it does not report that the engine
+has passed that evidence. Actual outcomes are in
+`reports/tasks/LCL-CLOSE-02_RESULT.md` and
+`reports/implementation/LCL_RESIDUAL_REPAIR_REPORT.md`.
 
 Authority is the unchanged, verified `canonical/LCL_Core_0.1.0` package,
 identity `00d648b162939d06c44838481a67c39bc12c64bdd6d105035c24150148fe67ed`.
@@ -42,7 +46,36 @@ One concrete probe may cover several normative clauses. This does not create
 799 duplicate executions or turn catalog entries into executed tests. Tests of
 report arithmetic are instrument tests, never evidence about the LCL engine.
 
+## The implementation mapping, revision r2
+
+The mapping is `impl/crates/lcl-conformance/src/obligations_v0.1.0_r2.json`,
+SHA-256 `386c14994f032a57143ef731ea7ac55db3dfffde52b54f0d38e39e7b5e126b20`,
+pinned in `obligations.rs` as `MAPPING_DIGEST`. It replaces revision r1, which
+pinned probe identifiers only.
+
+- **Probes.** All 2,413 probe IDs are kept: 2,011 source and 402 semantics.
+- **Sub-runs.** Each of the 319 semantic contract rows also pins its exact
+  required sub-run labels, 3,717 in total. They are derived from the row's
+  canonical requirement clauses and registry facts, and include clauses that no
+  run exercises yet.
+- **Establishing a probe.** A grouped record establishes its probe only when
+  its judged runs carry exactly the pinned labels, each once, and every run
+  passes. The report names every missing, unexpected, duplicated or failed
+  sub-run.
+- **Loader cross-checks.** The loader refuses a mapping that leaves a semantic
+  row unpinned, or whose registry-derivable pins differ from the registries:
+  - status successor sets;
+  - error registry contracts and stage-owner mirrors;
+  - operation binding, default, bound, store, determinism and profile runs;
+  - registered error identifiers and condition indices.
+- **Known failures.** A failing sub-run that exposes an engine defect stays
+  failed evidence in the report. The conformance tests pin those probes and
+  sub-runs exactly, so any change to that set fails the tests.
+
 ## Previously unestablished decision witnesses
+
+All 66 witnesses are established in the current production report
+(LCL-CLOSE-02). The table records the discriminating cases that were required.
 
 | ID | Required discriminating case |
 | --- | --- |
@@ -72,3 +105,8 @@ an honest lower claim alone does not close B4. Any unresolved canonical conflict
 requires exact higher-authority clauses and a minimal discriminating source.
 Actual gate outcomes, counts, logs and limitations belong in the residual repair
 report and generated conformance report, not in this requirement definition.
+
+Under the LCL-CLOSE-02 exit contract, reporting-correctness may close while full
+conformance remains BLOCKED. That is not the full objective passing. The exact
+remaining sub-runs and the engine defects they expose are listed in
+`reports/tasks/LCL-CLOSE-02_RESULT.md`.

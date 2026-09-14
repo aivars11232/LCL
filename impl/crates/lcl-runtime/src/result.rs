@@ -355,7 +355,12 @@ impl ResultRecord {
             match schema.field_types.get(name) {
                 None => out.push(format!("{} forbids field {name}", self.schema)),
                 Some(ty) if !result_field_type(value, ty, contracts) => {
-                    out.push(format!("{}.{} requires {ty}, found {}", self.schema, name, value.family()));
+                    out.push(format!(
+                        "{}.{} requires {ty}, found {}",
+                        self.schema,
+                        name,
+                        value.family()
+                    ));
                 }
                 Some(_) => {}
             }
@@ -396,7 +401,8 @@ impl ResultRecord {
                     (self.field("items"), self.field("count"))
                 {
                     let actual = lcl_checker::numeric::Decimal::from_integer(
-                        lcl_checker::numeric::Integer::from_u64(items.len() as u64));
+                        lcl_checker::numeric::Integer::from_u64(items.len() as u64),
+                    );
                     if *count != actual {
                         out.push("count must equal the non-negative number of items".into());
                     }
@@ -406,16 +412,22 @@ impl ResultRecord {
                 match self.field("mode") {
                     Some(Value::Identifier(mode)) if mode == "graph" => {
                         for name in ["started", "completed", "exit_code", "stdout", "stderr"] {
-                            if present(name) { out.push(format!("graph mode forbids {name}")); }
+                            if present(name) {
+                                out.push(format!("graph mode forbids {name}"));
+                            }
                         }
                     }
                     Some(Value::Identifier(mode)) if mode == "non_graph" => {
                         for name in ["started", "completed"] {
-                            if !present(name) { out.push(format!("non_graph mode requires {name}")); }
+                            if !present(name) {
+                                out.push(format!("non_graph mode requires {name}"));
+                            }
                         }
                         if is_false("started") {
-                            if !is_false("completed") || ["exit_code", "stdout", "stderr"].iter().any(|n| present(n))
-                                || self.failure_phase != FailurePhase::PreEffect || self.effect_state != EffectState::None
+                            if !is_false("completed")
+                                || ["exit_code", "stdout", "stderr"].iter().any(|n| present(n))
+                                || self.failure_phase != FailurePhase::PreEffect
+                                || self.effect_state != EffectState::None
                             {
                                 out.push("failure to start requires completed FALSE, no exit or streams, and pre_effect/none".into());
                             }
@@ -424,7 +436,10 @@ impl ResultRecord {
                                 out.push("a started command requires both streams, including empty strings".into());
                             }
                             if present("exit_code") != is_true("completed") {
-                                out.push("exit_code is present exactly when the command completed".into());
+                                out.push(
+                                    "exit_code is present exactly when the command completed"
+                                        .into(),
+                                );
                             }
                         }
                     }
@@ -433,14 +448,21 @@ impl ResultRecord {
             }
             "result.validation" => {
                 if let Some(Value::List(errors)) = self.field("errors") {
-                    if (is_true("valid") && !errors.is_empty()) || (is_false("valid") && errors.is_empty()) {
-                        out.push("valid TRUE requires no findings; FALSE requires at least one finding".into());
+                    if (is_true("valid") && !errors.is_empty())
+                        || (is_false("valid") && errors.is_empty())
+                    {
+                        out.push(
+                            "valid TRUE requires no findings; FALSE requires at least one finding"
+                                .into(),
+                        );
                     }
                 }
             }
             "result.verification" => {
                 if present("verified") != present("observed") {
-                    out.push("verified and observed must occur together after verification runs".into());
+                    out.push(
+                        "verified and observed must occur together after verification runs".into(),
+                    );
                 }
             }
             "result.test" => {
@@ -453,7 +475,10 @@ impl ResultRecord {
                     out.push("bytes is absent before transfer begins".into());
                 }
                 if !self.observed_effects.is_empty() && !present("bytes") {
-                    out.push("bytes remains present after transfer begins, including interruption".into());
+                    out.push(
+                        "bytes remains present after transfer begins, including interruption"
+                            .into(),
+                    );
                 }
             }
             _ => {}
@@ -583,15 +608,25 @@ fn result_field_type(value: &Value, ty: &str, contracts: &crate::contracts::Cont
         "BOOLEAN" => matches!(value, Value::Boolean(_)),
         "BOOLEAN|UNKNOWN" => matches!(value, Value::Boolean(_) | Value::Unknown),
         "INTEGER" => matches!(value, Value::Integer(n) if n.is_integral()),
-        "BYTES|UNKNOWN" => matches!(value, Value::Unknown)
-            || matches!(value, Value::Bytes(n) if n.is_integral() && !n.is_negative()),
+        "BYTES|UNKNOWN" => {
+            matches!(value, Value::Unknown)
+                || matches!(value, Value::Bytes(n) if n.is_integral() && !n.is_negative())
+        }
         "STRING" => matches!(value, Value::Text(_)),
         "STRING|NULL" => matches!(value, Value::Text(_) | Value::Null),
         "OBJECT" => matches!(value, Value::Object(_)),
-        "ENUM[non_graph|graph]" => matches!(value, Value::Identifier(mode) if mode == "non_graph" || mode == "graph"),
-        "LIST[T]" => matches!(value, Value::List(items) if items.iter().all(|v| result_field_type(v, "meta.material_value", contracts))),
-        "LIST[REFERENCE[EVIDENCE]]" => matches!(value, Value::List(items) if items.iter().all(|v| matches!(v, Value::Reference(id) if id.starts_with("evidence.")))),
-        "LIST[qualified_identifier(error)]" => matches!(value, Value::List(items) if items.iter().all(|v| matches!(v, Value::Identifier(id) if contracts.diagnostics().error(id).is_some()))),
+        "ENUM[non_graph|graph]" => {
+            matches!(value, Value::Identifier(mode) if mode == "non_graph" || mode == "graph")
+        }
+        "LIST[T]" => {
+            matches!(value, Value::List(items) if items.iter().all(|v| result_field_type(v, "meta.material_value", contracts)))
+        }
+        "LIST[REFERENCE[EVIDENCE]]" => {
+            matches!(value, Value::List(items) if items.iter().all(|v| matches!(v, Value::Reference(id) if id.starts_with("evidence."))))
+        }
+        "LIST[qualified_identifier(error)]" => {
+            matches!(value, Value::List(items) if items.iter().all(|v| matches!(v, Value::Identifier(id) if contracts.diagnostics().error(id).is_some())))
+        }
         _ => false,
     }
 }

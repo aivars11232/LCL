@@ -192,6 +192,26 @@ impl fmt::Display for Value {
     }
 }
 
+/// Joins a `REGEX` value's pattern and flags in its [`Value::Constructed`] text.
+pub const REGEX_FLAG_SEPARATOR: char = '\u{0}';
+
+/// The value `REGEX(pattern, flags)` constructs, shared by every evaluator.
+///
+/// `types_v0.1.0.json#/material_identity_contract/REGEX`: "omitted flags equal
+/// empty flags". Empty flags therefore store the pattern alone, exactly as
+/// `REGEX(pattern)` does, so the two forms compare equal.
+pub fn regex(pattern: &str, flags: &str) -> Value {
+    let text = if flags.is_empty() {
+        pattern.to_string()
+    } else {
+        format!("{pattern}{REGEX_FLAG_SEPARATOR}{flags}")
+    };
+    Value::Constructed {
+        constructor: "REGEX".to_string(),
+        text,
+    }
+}
+
 /// Strict value equality used when materializing a checked homogeneous SET.
 /// Scalar numeric promotion is permitted; nested collections retain their
 /// member families. SET storage order has no semantic significance.

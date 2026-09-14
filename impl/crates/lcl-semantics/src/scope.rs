@@ -28,13 +28,16 @@ use crate::authority::{ScopeRecord, Selector, WorkspaceRecord};
 use crate::diagnostic::PreflightError;
 use crate::engine::Engine;
 use crate::syntax;
-use lcl_parser::syntax::Expr;
+use lcl_parser::syntax::{
+    Body, Call, Conditional, Executable, Expr, ForEach, Statement, Value as InlineValue,
+};
 
 /// Resolve every `SCOPE` and `WORKSPACE`, and check declared containment.
 pub(crate) fn resolve(engine: &mut Engine) {
     collect_workspaces(engine);
     collect_scopes(engine);
     check_workspace_containment(engine);
+    check_workspace_paths(engine);
 }
 
 fn collect_workspaces(engine: &mut Engine) {
@@ -231,6 +234,131 @@ fn check_workspace_containment(engine: &mut Engine) {
             cause,
             detail,
         );
+    }
+}
+
+/// Every WORKSPACE-form `PATH(REF(workspace), "relative")` a declaration writes
+/// must resolve to that WORKSPACE root or a descendant.
+///
+/// `03_TYPES_AND_VALUES/04`: "The WORKSPACE form must resolve to the workspace
+/// root or one of its descendants. Containment is checked on the resolved
+/// target, not by textual prefix ... Escape produces error.value.out_of_range."
+fn check_workspace_paths(engine: &mut Engine) {
+    let mut escapes = std::collections::BTreeMap::new();
+    for (index, declaration) in engine.resolved.declarations().all().iter().enumerate() {
+        let Some(block) = syntax::declaration_block(engine.resolved, index) else {
+            continue;
+        };
+        let mut calls = Vec::new();
+        statement_paths(block.statements(), &mut calls);
+        for call in calls {
+            if let Some(detail) = workspace_escape(&engine.workspaces, call) {
+                // A nested declaration is also walked from its parent.
+                escapes
+                    .entry((declaration.source.clone(), call.span.start, call.span.end))
+                    .or_insert((call.span, detail));
+            }
+        }
+    }
+    for ((source, _, _), (span, detail)) in escapes {
+        engine.emit(
+            PreflightError::ValueOutOfRange,
+            &source,
+            span,
+            "workspace_path",
+            detail,
+        );
+    }
+}
+
+/// The escape one WORKSPACE-form `PATH` call writes, when it writes one.
+fn workspace_escape(workspaces: &[WorkspaceRecord], call: &Call) -> Option<String> {
+    let [target, relative] = call.arguments.as_slice() else {
+        return None;
+    };
+    let id = syntax::reference_target(target)?;
+    let relative = syntax::literal_text(relative)?;
+    let root = &workspaces.iter().find(|w| w.id == id)?.path;
+    if !relative.starts_with('/') && contains(root, &join(root, &relative)) {
+        return None;
+    }
+    Some(format!(
+        "PATH(REF({id}), {relative:?}) resolves outside WORKSPACE `{root}`"
+    ))
+}
+
+/// Every `PATH` call these statements write, nested bodies included.
+fn statement_paths<'a>(statements: &'a [Statement], out: &mut Vec<&'a Call>) {
+    for statement in statements {
+        match statement {
+            Statement::Field(field) => body_paths(&field.body, out),
+            Statement::Property(property) => body_paths(&property.body, out),
+            Statement::Conditional(conditional) => conditional_paths(conditional, out),
+            Statement::ForEach(for_each) => for_each_paths(for_each, out),
+        }
+    }
+}
+
+fn executable_paths<'a>(executables: &'a [Executable], out: &mut Vec<&'a Call>) {
+    for executable in executables {
+        match executable {
+            Executable::Block(block) => statement_paths(&block.body, out),
+            Executable::Conditional(conditional) => conditional_paths(conditional, out),
+            Executable::ForEach(for_each) => for_each_paths(for_each, out),
+        }
+    }
+}
+
+fn conditional_paths<'a>(conditional: &'a Conditional, out: &mut Vec<&'a Call>) {
+    expression_paths(&conditional.condition, out);
+    executable_paths(&conditional.then_body, out);
+    if let Some(arm) = &conditional.else_body {
+        executable_paths(&arm.body, out);
+    }
+}
+
+fn for_each_paths<'a>(for_each: &'a ForEach, out: &mut Vec<&'a Call>) {
+    expression_paths(&for_each.collection, out);
+    executable_paths(&for_each.body, out);
+}
+
+fn body_paths<'a>(body: &'a Body, out: &mut Vec<&'a Call>) {
+    match body {
+        Body::Inline(InlineValue::Expression(expr)) => expression_paths(expr, out),
+        Body::Inline(InlineValue::MultilineCollection(collection)) => {
+            for member in &collection.members {
+                expression_paths(member, out);
+            }
+        }
+        Body::Nested(nested) => statement_paths(&nested.statements, out),
+    }
+}
+
+/// Every `PATH` call inside one expression, walked with an explicit stack.
+fn expression_paths<'a>(expr: &'a Expr, out: &mut Vec<&'a Call>) {
+    let mut stack = vec![expr];
+    while let Some(expr) = stack.pop() {
+        match expr {
+            Expr::Call(call) => {
+                if call.callable.text == "PATH" {
+                    out.push(call);
+                }
+                stack.extend(&call.arguments);
+            }
+            Expr::Collection(collection) => stack.extend(&collection.members),
+            Expr::Group(group) => stack.push(&group.inner),
+            Expr::Unary(unary) => stack.push(&unary.operand),
+            Expr::Binary(binary) => {
+                stack.push(&binary.left);
+                stack.push(&binary.right);
+            }
+            Expr::Property(property) => stack.push(&property.base),
+            Expr::Index(index) => {
+                stack.push(&index.base);
+                stack.push(&index.index);
+            }
+            Expr::Literal(_) | Expr::Identifier(_) | Expr::Type(_) => {}
+        }
     }
 }
 

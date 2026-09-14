@@ -174,7 +174,6 @@ fn the_grammar_stage_is_not_evaluated_after_a_lexical_failure() {
     assert_eq!(err.lexical_primary, "error.source.tab");
 }
 
-
 #[test]
 fn local_schema_validates_field_declarations_without_admitting_object_data() {
     let body = "DATA:\n    ID: data.value\n    TYPE: OBJECT\n    VALUE:\n        number: 1\n    SCHEMA:\n        FIELD:\n            NAME: number\n            TYPE: INTEGER\n            REQUIRED: TRUE\n        FIELD:\n            NAME: optional\n            TYPE: STRING\n            REQUIRED: FALSE\n";

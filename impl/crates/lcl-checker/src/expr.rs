@@ -41,7 +41,9 @@ use crate::{
     Static, StaticError,
 };
 use lcl_lexer::Span;
-use lcl_parser::syntax::{BinaryOp, Body, Call, Collection, Expr, LiteralKind, PropertyAccess, Statement, UnaryOp, Value};
+use lcl_parser::syntax::{
+    BinaryOp, Body, Call, Collection, Expr, LiteralKind, PropertyAccess, Statement, UnaryOp, Value,
+};
 use lcl_resolver::{BindingTarget, Resolved, SourceId};
 use std::collections::BTreeMap;
 
@@ -831,11 +833,15 @@ impl Check<'_> {
                 if self.contracts.is_unit(&ident.text) {
                     Judgement::plain(Static::Identifier(ident.text.clone()))
                 } else {
-                    self.emit(
-                        StaticError::OperatorOperand,
+                    // `06_STANDARD_LIBRARY/09`: "Identifiers under reserved
+                    // namespaces resolve only to this core registry." An
+                    // unregistered unit is an unknown reference, and "Unknown
+                    // references retain error.reference.unresolved"
+                    // (`operators_and_functions_v0.1.0.json#/evaluation_contract`).
+                    self.earlier_defect(
                         source,
                         ident.span,
-                        "unit_identifier",
+                        "error.reference.unresolved",
                         format!("`{}` is not a registered unit identifier", ident.text),
                     );
                     Judgement::rejected()
@@ -1205,8 +1211,17 @@ impl Check<'_> {
     /// Resolve only the selected schema-free path. This keeps deeply nested
     /// object bodies on a worklist and does not construct a recursive copy of
     /// their entire type tree. Declaration/source identities remain exact.
-    fn schema_free_selection(&mut self, source: &SourceId, base: &Expr, key: &str, span: Span) -> Judgement {
-        enum Cursor<'a> { Expression(&'a Expr), Body(&'a Body) }
+    fn schema_free_selection(
+        &mut self,
+        source: &SourceId,
+        base: &Expr,
+        key: &str,
+        span: Span,
+    ) -> Judgement {
+        enum Cursor<'a> {
+            Expression(&'a Expr),
+            Body(&'a Body),
+        }
         let resolved = self.resolved;
         let mut cursor = Cursor::Expression(base);
         let selection_source = source.clone();
@@ -1221,27 +1236,58 @@ impl Check<'_> {
                     Cursor::Expression(&property.base)
                 }
                 Cursor::Expression(Expr::Index(index)) => {
-                    let Some(key) = self.values.get(&(source.clone(), index.index.span())).and_then(Const::text) else { break };
+                    let Some(key) = self
+                        .values
+                        .get(&(source.clone(), index.index.span()))
+                        .and_then(Const::text)
+                    else {
+                        break;
+                    };
                     keys.push(key.to_string());
                     Cursor::Expression(&index.base)
                 }
                 Cursor::Expression(Expr::Call(call)) if call.is_reference() => {
-                    let Some(target) = call.reference_target() else { break };
-                    let Some(index) = self.catalog.binding(&source, target.span) else { break };
-                    if !visited.insert(index) { break; }
-                    let Some(declaration) = resolved.declarations().get(index) else { break };
-                    let Some(block) = crate::types::declaration_block(resolved, index) else { break };
-                    let Some(field) = block.field("VALUE").or_else(|| block.field("SOURCE")).or_else(|| block.field("DEFAULT")) else { break };
+                    let Some(target) = call.reference_target() else {
+                        break;
+                    };
+                    let Some(index) = self.catalog.binding(&source, target.span) else {
+                        break;
+                    };
+                    if !visited.insert(index) {
+                        break;
+                    }
+                    let Some(declaration) = resolved.declarations().get(index) else {
+                        break;
+                    };
+                    let Some(block) = crate::types::declaration_block(resolved, index) else {
+                        break;
+                    };
+                    let Some(field) = block
+                        .field("VALUE")
+                        .or_else(|| block.field("SOURCE"))
+                        .or_else(|| block.field("DEFAULT"))
+                    else {
+                        break;
+                    };
                     source = declaration.source.clone();
                     Cursor::Body(&field.body)
                 }
                 Cursor::Body(Body::Nested(nested)) => {
-                    let Some(key) = keys.pop() else { return Judgement::value(Type::ObjectFamily) };
-                    let field = nested.statements.iter().find_map(|statement| match statement {
-                        Statement::Property(property) if property.key.text == key => Some(&property.body),
-                        _ => None,
-                    });
-                    let Some(field) = field else { return Judgement::plain(Static::Missing) };
+                    let Some(key) = keys.pop() else {
+                        return Judgement::value(Type::ObjectFamily);
+                    };
+                    let field = nested
+                        .statements
+                        .iter()
+                        .find_map(|statement| match statement {
+                            Statement::Property(property) if property.key.text == key => {
+                                Some(&property.body)
+                            }
+                            _ => None,
+                        });
+                    let Some(field) = field else {
+                        return Judgement::plain(Static::Missing);
+                    };
                     Cursor::Body(field)
                 }
                 Cursor::Body(Body::Inline(Value::Expression(expr))) => {
@@ -1251,15 +1297,26 @@ impl Check<'_> {
                     }
                     Cursor::Expression(expr)
                 }
-                Cursor::Body(Body::Inline(Value::MultilineCollection(collection))) if keys.is_empty() => {
-                    let judged = self.expression(&source, &Expr::Collection(collection.clone()), &Expected::None);
+                Cursor::Body(Body::Inline(Value::MultilineCollection(collection)))
+                    if keys.is_empty() =>
+                {
+                    let judged = self.expression(
+                        &source,
+                        &Expr::Collection(collection.clone()),
+                        &Expected::None,
+                    );
                     return Judgement::plain(judged.outcome);
                 }
                 _ => break,
             };
         }
-        self.emit(StaticError::OperatorOperand, &selection_source, span, "object_selection_type",
-            "the selected schema-free object key must have one statically known value type".into());
+        self.emit(
+            StaticError::OperatorOperand,
+            &selection_source,
+            span,
+            "object_selection_type",
+            "the selected schema-free object key must have one statically known value type".into(),
+        );
         Judgement::rejected()
     }
 
@@ -1372,8 +1429,13 @@ impl Check<'_> {
             }
             (Static::Value(Type::ObjectFamily), Static::Value(Type::String)) => {
                 let Some(key) = subscript.value.as_ref().and_then(Const::text) else {
-                    self.emit(StaticError::OperatorOperand, source, index.index.span(), "index_key",
-                        "an OBJECT index selects a statically known key".into());
+                    self.emit(
+                        StaticError::OperatorOperand,
+                        source,
+                        index.index.span(),
+                        "index_key",
+                        "an OBJECT index selects a statically known key".into(),
+                    );
                     return Judgement::rejected();
                 };
                 self.schema_free_selection(source, &index.base, key, index.span)
@@ -2036,6 +2098,26 @@ impl Check<'_> {
         let numeric_pair = left.is_numeric() && right.is_numeric();
         if numeric_pair || left.accepts(right) {
             return true;
+        }
+        // "Every arithmetic, ordered-comparison, SUM, MIN, or MAX overload that
+        // requires identical MEASURE units emits error.numeric.unit_mismatch for
+        // unequal concrete unit identifiers."
+        if let (Type::Measure(Some(left_unit)), Type::Measure(Some(right_unit))) =
+            (&**left, &**right)
+        {
+            if left_unit != right_unit {
+                self.emit(
+                    StaticError::NumericUnitMismatch,
+                    source,
+                    span,
+                    "order_compatible",
+                    format!(
+                        "`{name}` requires one exact unit; found {} and {}",
+                        left_unit.0, right_unit.0
+                    ),
+                );
+                return false;
+            }
         }
         self.emit(
             StaticError::OperatorOperand,

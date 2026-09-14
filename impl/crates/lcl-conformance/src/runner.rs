@@ -80,6 +80,9 @@ impl fmt::Display for Reached {
 pub struct Observed {
     /// Ordered independent sub-runs, each retaining its own exact inputs.
     pub runs: Vec<Observed>,
+    /// The label of each entry in `runs`, in the same order. A report checks a
+    /// grouped probe's exact required sub-run membership against these labels.
+    pub run_labels: Vec<String>,
     /// Exact return values of a named production component API invocation.
     pub component: Vec<(String, String)>,
     /// The furthest stage the source reached.
@@ -113,7 +116,12 @@ impl Observed {
     pub fn serialize(&self) -> String {
         let mut out = format!("reached={}", self.reached);
         for (index, run) in self.runs.iter().enumerate() {
-            out.push_str(&format!(" run[{index}]{{{}}}", run.serialize()));
+            match self.run_labels.get(index) {
+                Some(label) => {
+                    out.push_str(&format!(" run[{index}:{label}]{{{}}}", run.serialize()))
+                }
+                None => out.push_str(&format!(" run[{index}]{{{}}}", run.serialize())),
+            }
         }
         for (key, value) in &self.component {
             out.push_str(&format!(" component[{key}]={value:?}"));
@@ -502,7 +510,7 @@ impl Runner {
             Ok(resolved) => resolved,
             Err(skipped) => {
                 // A source that fails lexing or parsing has no resolved model.
-                let stage = format!("{:?}", skipped.stage).to_lowercase();
+                let stage = skipped.stage.as_registry_str().to_string();
                 return Observed {
                     reached: if stage.contains("lexical") {
                         Reached::Lexical
@@ -930,6 +938,29 @@ mod grouped_evidence_tests {
                 &observed
             ),
             Verdict::Failed
+        );
+    }
+
+    #[test]
+    fn run_labels_render_beside_their_runs() {
+        let run = Observed {
+            component: vec![("transition".into(), "refused".into())],
+            input_evidence: vec!["ready -> invented".into()],
+            ..Observed::default()
+        };
+        let mut observed = Observed {
+            runs: vec![run.clone(), run],
+            run_labels: vec!["form/0".into(), "form/1".into()],
+            ..Observed::default()
+        };
+        let rendered = observed.serialize();
+        assert!(rendered.contains(" run[0:form/0]{"), "{rendered}");
+        assert!(rendered.contains(" run[1:form/1]{"), "{rendered}");
+        observed.run_labels.clear();
+        let unlabelled = observed.serialize();
+        assert!(
+            unlabelled.contains(" run[0]{") && !unlabelled.contains(":form/"),
+            "{unlabelled}"
         );
     }
 }

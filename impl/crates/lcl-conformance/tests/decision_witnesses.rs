@@ -160,7 +160,11 @@ fn descriptive_requirements_are_never_counted_as_executed() {
 fn all_decision_witnesses_pass_but_do_not_substitute_for_source_and_other_contracts() {
     let (report, all) = run_all();
     assert_eq!(all.len(), 83);
-    assert!(report.unsupported_witnesses().is_empty(), "{:?}", report.unsupported_witnesses());
+    assert!(
+        report.unsupported_witnesses().is_empty(),
+        "{:?}",
+        report.unsupported_witnesses()
+    );
     assert_eq!(report.failed_count(), 0);
     assert_eq!(report.claim(), ClaimLevel::None);
     assert!(!report.missing_probes(ClaimLevel::Source).is_empty());

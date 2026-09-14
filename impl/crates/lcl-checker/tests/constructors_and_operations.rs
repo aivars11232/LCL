@@ -95,11 +95,22 @@ fn a_unit_argument_must_be_registered_and_in_its_declared_category() {
         check(&value("DURATION", "DURATION(5, unit.second)")).outcome(),
         Outcome::Checked
     );
-    // "Core 0.1.0 admits only units in the closed unit registry."
-    assert_eq!(
-        ids(&check(&value("MEASURE", "MEASURE(1, unit.furlong)"))),
-        vec!["error.operator.operand"]
-    );
+    // "Core 0.1.0 admits only units in the closed unit registry." Identifiers
+    // under reserved namespaces "resolve only to this core registry"
+    // (`06_STANDARD_LIBRARY/09`), and "Unknown references retain
+    // error.reference.unresolved"
+    // (`operators_and_functions_v0.1.0.json#/evaluation_contract`): an
+    // unregistered unit is an unknown reference, not a wrong operand family.
+    let unregistered = check(&value("MEASURE", "MEASURE(1, unit.furlong)"));
+    assert_eq!(unregistered.outcome(), Outcome::Rejected);
+    assert!(ids(&unregistered).is_empty(), "{:?}", ids(&unregistered));
+    let defects = unregistered.earlier_stage_defects();
+    assert_eq!(defects.len(), 1);
+    assert_eq!(defects[0].identifier, "error.reference.unresolved");
+    assert_eq!(defects[0].stage, lcl_diagnostics::Stage::Resolution);
+    // A wrong operand family keeps error.operator.operand.
+    assert!(ids(&check(&value("MEASURE", "MEASURE(\"1\", unit.pixel)")))
+        .contains(&"error.operator.operand".to_string()));
     // "DURATION requires a registered Time-category unit."
     assert_eq!(
         ids(&check(&value("DURATION", "DURATION(5, unit.meter)"))),

@@ -37,10 +37,16 @@
 //! What changed at M8 is not the standard of evidence. It is that an engine now
 //! exists to supply it.
 
+pub mod fixtures;
 pub mod obligations;
+pub mod operation_cases;
+pub mod production;
 pub mod report;
+pub mod result_cases;
 pub mod runner;
+pub mod semantic_cases;
 pub mod source_cases;
+pub mod witness_cases;
 
 pub use report::{ConformanceReport, Coverage};
 pub use runner::{
@@ -354,8 +360,20 @@ mod tests {
         let inventory = obligations::Obligations::load(&spec).unwrap();
         assert_eq!(inventory.rows().count(), 980);
         assert_eq!(inventory.probes().count(), 2413);
-        assert_eq!(inventory.rows().filter(|r| r.id.starts_with("source/field/")).count(), 334);
-        assert_eq!(inventory.rows().filter(|r| r.id.starts_with("CLOSURE-")).count(), 66);
+        assert_eq!(
+            inventory
+                .rows()
+                .filter(|r| r.id.starts_with("source/field/"))
+                .count(),
+            334
+        );
+        assert_eq!(
+            inventory
+                .rows()
+                .filter(|r| r.id.starts_with("CLOSURE-"))
+                .count(),
+            66
+        );
         let unverified = SpecPackage::open_unverified(&root).unwrap();
         assert!(obligations::Obligations::load(&unverified).is_err());
     }

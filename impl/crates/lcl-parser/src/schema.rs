@@ -560,28 +560,46 @@ impl<'a> SchemaChecker<'a, '_> {
                 // 04_GRAMMAR/12 and the named value-kind contract: a local
                 // schema is one or more FIELD declarations, not object data.
                 // Enqueue their borrowed bodies so nesting stays stack-safe.
-                let field_schema = self.grammar.schema("FIELD").cloned()
+                let field_schema = self
+                    .grammar
+                    .schema("FIELD")
+                    .cloned()
                     .expect("the approved grammar includes FIELD");
                 for statement in nested.statements.iter().rev() {
                     match statement {
                         Statement::Field(child) if child.key.text == "FIELD" => {
                             if let Some(body) = child.body.as_nested() {
                                 work.push(Work::Body {
-                                    anchor: Anchor { key_span: child.key.span, span: child.span },
+                                    anchor: Anchor {
+                                        key_span: child.key.span,
+                                        span: child.span,
+                                    },
                                     statements: &body.statements,
                                     schema: field_schema.clone(),
                                 });
                             } else {
-                                self.emit(GrammarError::FieldType, child.body.span(),
-                                    "local_schema", "a local schema FIELD requires a nested declaration body".into());
+                                self.emit(
+                                    GrammarError::FieldType,
+                                    child.body.span(),
+                                    "local_schema",
+                                    "a local schema FIELD requires a nested declaration body"
+                                        .into(),
+                                );
                             }
                         }
-                        other => self.emit(GrammarError::BlockField, other.span(),
-                            "local_schema", "a local SCHEMA admits FIELD declarations only".into()),
+                        other => self.emit(
+                            GrammarError::BlockField,
+                            other.span(),
+                            "local_schema",
+                            "a local SCHEMA admits FIELD declarations only".into(),
+                        ),
                     }
                 }
             } else {
-                work.push(Work::ObjectData { nested, owner: sig.name.clone() });
+                work.push(Work::ObjectData {
+                    nested,
+                    owner: sig.name.clone(),
+                });
             }
         }
     }

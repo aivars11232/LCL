@@ -561,6 +561,14 @@ impl<'a> ExprParser<'a, '_> {
         c.bump();
         if self.at_symbol(c, ")") {
             let close = self.expect_symbol(c, ")", "call")?;
+            if callable.text == "REF" {
+                self.fail(
+                    Span::new(callable.span.start, close.end),
+                    "reference_call",
+                    "`REF` requires exactly one identifier".to_string(),
+                )?;
+                return None;
+            }
             return Some(Opened::Node(
                 Expr::Call(Call {
                     span: Span::new(callable.span.start, close.end),
@@ -699,6 +707,18 @@ impl<'a> ExprParser<'a, '_> {
                     }));
                 }
                 let close = self.expect_symbol(c, ")", "call")?;
+                // `REFERENCE_CALL = "REF", "(", IDENTIFIER, ")"`. `REF` is not a
+                // `CALLABLE`, so every `REF` call is a reference call.
+                if callable.text == "REF" && !matches!(arguments.as_slice(), [Expr::Identifier(_)])
+                {
+                    self.fail(
+                        Span::new(callable.span.start, close.end),
+                        "reference_call",
+                        "`REF` requires exactly one identifier, not a string or another expression"
+                            .to_string(),
+                    )?;
+                    return None;
+                }
                 Some(Closed::Operand(
                     Expr::Call(Call {
                         span: Span::new(callable.span.start, close.end),

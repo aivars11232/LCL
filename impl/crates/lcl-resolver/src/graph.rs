@@ -327,29 +327,61 @@ impl Builder<'_, '_> {
         let mut contexts: BTreeMap<usize, Vec<LoopPath>> = BTreeMap::new();
         let mut producers: BTreeMap<usize, Vec<LoopPath>> = BTreeMap::new();
         for (index, node) in self.graph.nodes.iter().enumerate() {
-            let Some(declaration) = node.declaration else { continue };
+            let Some(declaration) = node.declaration else {
+                continue;
+            };
             let loops = loops_of(index);
             contexts.entry(declaration).or_default().push(loops.clone());
-            if node.block != "ACTION" { continue; }
-            let Some(body) = self.bodies.get(&(node.source.clone(), node.span.start)) else { continue };
+            if node.block != "ACTION" {
+                continue;
+            }
+            let Some(body) = self.bodies.get(&(node.source.clone(), node.span.start)) else {
+                continue;
+            };
             let Some((_, span)) = crate::field::statement_expression(body, "OUTPUT")
-                .and_then(crate::declarations::reference_argument) else { continue };
+                .and_then(crate::declarations::reference_argument)
+            else {
+                continue;
+            };
             if let Some(output) = self.binding_at.get(&(node.source.clone(), span.start)) {
                 producers.entry(*output).or_default().push(loops);
             }
         }
-        if producers.values().all(|paths| paths.iter().all(Vec::is_empty)) { return; }
+        if producers
+            .values()
+            .all(|paths| paths.iter().all(Vec::is_empty))
+        {
+            return;
+        }
 
         let mut bodies = Vec::new();
         for (declaration, decl) in self.resolved.declarations.all().iter().enumerate() {
-            let Some(body) = self.bodies.get(&(decl.source.clone(), decl.block_span.start)) else { continue };
-            let paths = contexts.get(&declaration).cloned().unwrap_or_else(|| vec![Vec::new()]);
+            let Some(body) = self
+                .bodies
+                .get(&(decl.source.clone(), decl.block_span.start))
+            else {
+                continue;
+            };
+            let paths = contexts
+                .get(&declaration)
+                .cloned()
+                .unwrap_or_else(|| vec![Vec::new()]);
             bodies.push((&decl.source, decl.block.as_str(), *body, paths));
         }
         // EXECUTE has no declaration ID, but its exports select output values.
-        if let Some(execute) = self.resolved.units.get(&self.resolved.root)
-            .and_then(|u| u.document()).and_then(|d| d.block("EXECUTE")) {
-            bodies.push((&self.resolved.root, "EXECUTE", &execute.body, vec![Vec::new()]));
+        if let Some(execute) = self
+            .resolved
+            .units
+            .get(&self.resolved.root)
+            .and_then(|u| u.document())
+            .and_then(|d| d.block("EXECUTE"))
+        {
+            bodies.push((
+                &self.resolved.root,
+                "EXECUTE",
+                &execute.body,
+                vec![Vec::new()],
+            ));
         }
         for (source, block, body, paths) in bodies {
             for path in paths {
@@ -365,7 +397,9 @@ impl Builder<'_, '_> {
                             Statement::Conditional(c) => {
                                 reads.push((&c.condition, false, path.clone()));
                                 control_reads(source, &c.then_body, &path, &mut reads);
-                                if let Some(arm) = &c.else_body { control_reads(source, &arm.body, &path, &mut reads); }
+                                if let Some(arm) = &c.else_body {
+                                    control_reads(source, &arm.body, &path, &mut reads);
+                                }
                                 continue;
                             }
                             Statement::ForEach(f) => {
@@ -379,20 +413,33 @@ impl Builder<'_, '_> {
                         if let Body::Nested(nested) = body {
                             // Declaring blocks have their own activation paths;
                             // non-declaring PARAMETER/schema/data bodies inherit.
-                            let child = resolver.grammar().schema(block)
-                                .and_then(|s| s.field(name)).and_then(|f| f.nested_block.as_deref());
-                            if crate::field::statement_expression(&nested.statements, "ID").is_none() {
-                                pending.push((child.unwrap_or(""), &nested.statements, path.clone()));
+                            let child = resolver
+                                .grammar()
+                                .schema(block)
+                                .and_then(|s| s.field(name))
+                                .and_then(|f| f.nested_block.as_deref());
+                            if crate::field::statement_expression(&nested.statements, "ID")
+                                .is_none()
+                            {
+                                pending.push((
+                                    child.unwrap_or(""),
+                                    &nested.statements,
+                                    path.clone(),
+                                ));
                             }
                             continue;
                         }
                         let Body::Inline(value) = body else { continue };
                         let export = name == "OUTPUT" && matches!(block, "TASK" | "EXECUTE");
-                        let identity = !export && (resolver.rules().reference_slot(block, name).is_some()
-                            || name == "TYPE" || (reference_value && matches!(name, "VALUE" | "DEFAULT")));
+                        let identity = !export
+                            && (resolver.rules().reference_slot(block, name).is_some()
+                                || name == "TYPE"
+                                || (reference_value && matches!(name, "VALUE" | "DEFAULT")));
                         let expressions = match value {
                             lcl_parser::syntax::Value::Expression(expr) => vec![expr],
-                            lcl_parser::syntax::Value::MultilineCollection(c) => c.members.iter().collect(),
+                            lcl_parser::syntax::Value::MultilineCollection(c) => {
+                                c.members.iter().collect()
+                            }
                         };
                         for expression in expressions {
                             reads.push((expression, identity, path.clone()));
@@ -400,16 +447,25 @@ impl Builder<'_, '_> {
                     }
                 }
                 for (expression, identity, path) in reads {
-                            for span in value_references(expression, identity) {
-                                let Some(output) = self.binding_at.get(&(source.clone(), span.start)) else { continue };
-                                let Some(required_paths) = producers.get(output) else { continue };
-                                if required_paths.iter().any(|required| !path.starts_with(required)) {
-                                    let output_id = self.resolved.declarations.all()[*output].id.qualified();
-                                    self.emitter.emit(self.raw, ResolutionError::ReferenceUnresolved,
+                    for span in value_references(expression, identity) {
+                        let Some(output) = self.binding_at.get(&(source.clone(), span.start))
+                        else {
+                            continue;
+                        };
+                        let Some(required_paths) = producers.get(output) else {
+                            continue;
+                        };
+                        if required_paths
+                            .iter()
+                            .any(|required| !path.starts_with(required))
+                        {
+                            let output_id =
+                                self.resolved.declarations.all()[*output].id.qualified();
+                            self.emitter.emit(self.raw, ResolutionError::ReferenceUnresolved,
                                         source, span, &format!("output-instance:{output_id}"),
                                         format!("`{output_id}` has a loop-local producer; this value read selects no unique enclosing iteration"));
-                                }
-                            }
+                        }
+                    }
                 }
             }
         }
@@ -641,11 +697,13 @@ fn control_reads<'a>(
     while let Some((body, path)) = pending.pop() {
         for executable in body {
             match executable {
-                Executable::Block(_) => {},
+                Executable::Block(_) => {}
                 Executable::Conditional(c) => {
                     reads.push((&c.condition, false, path.clone()));
                     pending.push((&c.then_body, path.clone()));
-                    if let Some(arm) = &c.else_body { pending.push((&arm.body, path.clone())); }
+                    if let Some(arm) = &c.else_body {
+                        pending.push((&arm.body, path.clone()));
+                    }
                 }
                 Executable::ForEach(f) => {
                     reads.push((&f.collection, false, path.clone()));
@@ -682,11 +740,15 @@ fn value_references(expression: &lcl_parser::syntax::Expr, identity: bool) -> Ve
         match expression {
             Expr::Call(call) if call.is_reference() => {
                 if !identity {
-                    if let Some(id) = call.reference_target() { references.push(id.span); }
+                    if let Some(id) = call.reference_target() {
+                        references.push(id.span);
+                    }
                 }
             }
             Expr::Group(group) => pending.push((&group.inner, identity)),
-            Expr::Collection(collection) => pending.extend(collection.members.iter().map(|e| (e, identity))),
+            Expr::Collection(collection) => {
+                pending.extend(collection.members.iter().map(|e| (e, identity)))
+            }
             Expr::Call(call) => pending.extend(call.arguments.iter().map(|e| (e, false))),
             Expr::Unary(unary) => pending.push((&unary.operand, false)),
             Expr::Binary(binary) => {

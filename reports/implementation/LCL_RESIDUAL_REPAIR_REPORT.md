@@ -1847,3 +1847,933 @@ Rust 1.75.0 has not yet been run over this change; that belongs to the Phase 1
 closing gates.
 
 Next: Phase 1b, STORE-ROLE-01.
+
+### Phase 1b — STORE-ROLE-01 reproduced and closed under amendment D2
+
+**STORE-ROLE-01 — REPRODUCED, then FIXED_VERIFIED.**
+
+*The rule.* `axis_contract/implementation_profile/required_roles_by_operation`
+names the `storage` role for every `core.memory_write` and every
+`core.state_update` invocation. The two rows' resolutions begin "Resolve the
+authorized MEMORY storage profile" and "Resolve the authorized STATE storage
+profile". `06_STANDARD_LIBRARY/10`: "A missing, ambiguous, incomplete, or
+out-of-bounds required profile role emits error.operation.precondition before
+effects."
+
+*The defect.* `data::store` never selected that role, and no storage profile
+existed anywhere.
+
+*The reproduction.* With no profile installed, both rows wrote their store and
+reported success. Gate T2-P1b-store-role-red, exit 101, EXPECTED red: both new
+acceptance tests saw `execution_errors` `[]` where
+`["error.operation.precondition"]` is required. The other 15 tests passed.
+
+| # | File | Change | Verification |
+| --- | --- | --- | --- |
+| 1 | `lcl-stdlib/tests/data_operations.rs` | Two acceptance tests (below) | T2-P1b-store-role-red, exit 101 (expected) |
+| 2 | `lcl-stdlib/src/profiles.rs` | `STORE_IMPLEMENTATION` (`lcl.stdlib.store`) and `store_profiles()` (below) | T2-P1b-profiles-check, exit 0 |
+| 3 | `lcl-stdlib/src/lib.rs` | Re-exports `store_profiles` | T2-P1b-export-check, exit 0 |
+| 4 | `lcl-protocol/src/host.rs` | `surface()` always installs the store profiles beside the in-language verifier (below) | T2-P1b-protocol-check, exit 0 |
+| 5 | `lcl-conformance/src/runner.rs` | A formatting-only rustfmt step first, then the runner installs the store profiles (below) | T2-P1b-runner-format-tests, exit 0 (conformance lib 16, runner_seam 13); T2-P1b-runner-store-tests, exit 0 |
+| 6 | `lcl-stdlib/examples/m7_report.rs` | `all_profiles()` installs the store profiles | T2-P1b-m7-report-before, exit 0 |
+| 7 | `lcl-stdlib/tests/data_operations.rs` | Existing store tests install the profiles; a new state control (below) | T2-P1b-store-tests-before-enforcement, exit 101: the same two expected failures |
+| 8 | `lcl-stdlib/src/data.rs` | `store()` selects the `storage` role after the declaration-kind check and before the internal-store grant gate | T2-P1b-store-role-green, exit 101: see the oracle correction |
+| 9 | `lcl-stdlib/tests/data_operations.rs` | Test-oracle correction (below) | T2-P1b-store-role-green-2, exit 0, 18 passed |
+
+Details of the changes:
+
+- **Change 1.** Memory and state writes with no profile installed must fail with
+  `error.operation.precondition`, `status.failed`, phase `pre_effect`, effect
+  state `none`, and no observed effect.
+- **Change 2.** One `storage` profile per row. `core.memory_write` serves MEMORY
+  targets with the `memory` effect; `core.state_update` serves STATE targets with
+  the `state` effect. Both are deterministic. The engine's own stores reach no
+  host resource, so neither declares a dependency, narrowing the rows' `host`
+  maximum.
+- **Change 4.** Every run starts from `Grants::internal()`, which always permits
+  the engine's own stores, so installing their profiles is truthful. Shipped CLI
+  and workspace behavior is unchanged.
+- **Change 5.** The rustfmt step is token-equivalent apart from trailing commas
+  and match-arm or closure braces.
+- **Change 7.** The store-semantics tests and the ungranted-store test now install
+  the profiles, so each still exercises the property it names. A new
+  `core.state_update` control succeeds with the profile installed. The
+  wrong-declaration-kind test deliberately stays profile-free, as an ordering
+  control.
+
+**Test-oracle correction (change 9).** My new helper `assert_refused_before_effects`
+asserted that a refused store write carries no `changed` field.
+
+- *What failed.* Both acceptance tests passed every refusal assertion: the error,
+  the status, the phase, the effect state and the empty observed effects. They
+  failed only on that assertion (`data_operations.rs:403`, left
+  `Some(Boolean(false))`, right `None`).
+- *Authority.* `built_in_groups_and_results_v0.1.0.json#/result_schemas/result.operation`
+  registers `changed` with cardinality `exactly_one`, and states "changed remains
+  present after failure" and "changed is FALSE when no requested target state
+  changed". The runtime inserts exactly that for pre-effect failures.
+- *Correction.* Assert `Some(FALSE)`.
+- *Independent control.* `data_operations.rs:215` already asserts `changed` FALSE
+  for a no-change operation. Before enforcement, the same documents succeeded with
+  `changed` TRUE, so the corrected assertion still discriminates.
+- The failed gate is retained.
+
+| Gate | Actual exit | Result |
+| --- | --- | --- |
+| T2-P1b-stdlib-tests | 0 | Every `lcl-stdlib` target: 10 suites, 118 passed, 0 failed, 0 ignored |
+| T2-P1b-clippy-stdlib-protocol | 0 | `lcl-stdlib` and `lcl-protocol`, all targets, `-D warnings` |
+| T2-P1b-clippy-conformance-lib | 0 | `lcl-conformance` library and examples; its test target keeps the inherited lint, which is B4's |
+| T2-P1b-m7-report-after | 0 | Byte-identical to T2-P1b-m7-report-before (SHA-256 `d20ffb5f…`); memory and state rows still `status.succeeded completed` |
+| T2-P1-workspace-tests | 0 | 143 suites, 1,499 passed, 0 failed, 1 ignored |
+
+### An owner commit during the Phase 1 closing gate
+
+T2-P1-workspace-tests started at content identity `9bc48989…`: HEAD `aebb2f7`
+plus tracked diff SHA-256
+`67a39f5e8ad90e7cfdd628736dfa42b57fab30d45ccff6b29ae1cf9bc37321cd`.
+
+While it ran, the owner committed `298d1e2b01a0dcd4dbecb5bf401143948b1cf716`
+("LCL repair task2", 22:17:38 +02:00, parent `aebb2f7`).
+
+- **Content.** `git diff aebb2f7 298d1e2b --binary` has the identical SHA-256, so
+  the commit contains exactly the bytes the gate consumed.
+- **The flag.** The record's `worktree_changed_during_gate` is true because HEAD
+  moved; the consumed content did not change.
+- **Upstream.** The local `origin/main` ref equals HEAD. This session performed no
+  Git write, fetch or push.
+- **Tooling.** The identity helper now also records `tracked_content_sha256`, which
+  does not depend on HEAD.
+
+### Owner decision: one primary session
+
+The memory note showed a second session on this checkout, which the owner had
+asked to "start with task 3"; that session did a read-only reconciliation and
+stopped. RULES R07 allows one primary session, so this session paused, wrote
+`LCL_CLOSE_02_HANDOFF.txt` in the owned scratch, and asked.
+
+The owner approved the recommendation: this session finishes Task 2, the other
+session stays read-only, and Task 3 stays locked until Task 2 closes. Before work
+resumed, the state was confirmed unchanged: HEAD `298d1e2b`, clean, the same
+content identity, no new scratch files and no running processes.
+
+### Phase 1 closing gates, and amendment A-T2-2
+
+| Gate | Toolchain | Actual exit | Result |
+| --- | --- | --- | --- |
+| T2-P1-msrv-check | Rust 1.75.0 | 0 | Workspace, all targets, no warning. A genuine re-check of the 7 affected crates; unchanged crates were fresh from LCL-CLOSE-01's 1.75.0 builds |
+| T2-P1-msrv-tests | Rust 1.75.0 | **101** | 135 of 143 suites ran before cargo stopped (below) |
+| T2-P1-protected | — | 0 | 192 of 192 protected files match |
+
+The one failure in T2-P1-msrv-tests was
+`lcl-workspace/tests/concurrent_persistence.rs::overlapping_saves_preserve_whole_payloads_and_the_legacy_name`,
+left `(200, 409)`, right `(200, 200)`.
+
+**Diagnosis.** It was carried out under R04: read-only first, then labelled
+characterization runs.
+
+- *What the test does.* It releases the final body byte of two full `PUT` saves of
+  one document at the same instant, and asserted that both return 200. The test
+  predates UI-03.
+- *What UI-03 changed.* LCL-CLOSE-01's UI-03 repair (decision D3) orders replacing
+  saves by acceptance. A write overtaken by a newer, already-published save is
+  refused as `DocumentError::Superseded`, which `routes.rs` returns as 409
+  "... was saved again while this write was in flight". That code is commented so
+  that "a client is never told a write succeeded when the newer content is what is
+  on disk".
+- *Conclusion.* Under a true overlap, exactly one 409 is the specified outcome. The
+  old `(200, 200)` expectation held only when the saves did not overlap.
+  Earlier full-suite passes, including LCL-CLOSE-01's final gates, depended on
+  scheduling. LCL-CLOSE-01's three repeat runs covered only the `lcl-workspace`
+  library tests, never this HTTP test.
+- *Measurement.* Isolated runs of the unchanged test produced exactly one 409 in
+  3 of 20 runs on Rust 1.75.0 (T2-P1-diag-ui03-msrv) and in 9 of 20 on Rust 1.98.1
+  (T2-P1-diag-ui03-current).
+
+This is not a Rust 1.75.0 incompatibility and not a product defect.
+
+**Amendment A-T2-2 — a test-oracle correction in LCL-CLOSE-01's UI-03 area; no
+product change.** Recorded under R10:
+
+- *Authority.* The approved D3 per-path publication ordering, the documented 409
+  contract, and Task 01 Phase E UI-03.
+- *Original mistake.* The pre-UI-03 expectation that both overlapping saves
+  succeed, measured above.
+- *New oracle.* The test now accepts either two 200 replies, each digest matching
+  its own payload, or exactly one 409 that names the supersession and published
+  nothing, with the accepted save's whole payload on disk.
+- *Discriminating control.* The corrected assertions reject two refusals, mixed or
+  truncated bytes, a refused write that published, a 409 that does not name the
+  supersession, any other status, the legacy `.lcl.txt` name and leftover
+  temporaries.
+
+| Gate | Toolchain | Actual exit | Result |
+| --- | --- | --- | --- |
+| T2-P1-ui03-oracle-current | Rust 1.98.1 | 0 | The corrected test passed 20 of 20 isolated runs |
+| T2-P1-ui03-oracle-msrv | Rust 1.75.0 | 0 | 20 of 20 |
+| T2-P1-msrv-tests-2 | Rust 1.75.0 | 0 | Rerun of the failed gate: 143 suites, 1,499 passed, 0 failed, 1 ignored; `overlapping_saves` ok; content identity `72adee8c…`, unchanged during the gate |
+| T2-P1-workspace-tests-2 | Rust 1.98.1 | 0 | Rerun after the test-file change: 143 suites, 1,499 passed, 0 failed, 1 ignored; `overlapping_saves` ok; unchanged during the gate |
+
+At the Rust 1.98.1 rate, 20 isolated runs with no 409 at all have a probability of
+about 1e-5, so the 20 consecutive passes exercised both accepted outcomes.
+
+**Phase 1 is closed.** Q-READ and STORE-ROLE-01 are FIXED_VERIFIED on the current
+and minimum toolchains. Amendment A-T2-2 is recorded, and all 192 protected files
+are unchanged.
+
+Next: Phase 2, formatting-only edits of the 10 inherited files outside
+`lcl-conformance`.
+
+### Phase 2 — inherited formatting outside `lcl-conformance`
+
+Each file was formatted alone with `rustfmt --edition 2021` and checked four ways
+before the next one was touched:
+
+- `rustfmt --check` is clean;
+- `git status` shows no other file changing, including the `mod common;` children
+  that rustfmt also walks;
+- `strip_compare.py`, which compares the file at HEAD with the worktree after
+  removing all whitespace, lists every non-whitespace change;
+- the crate's `cargo check --all-targets` gate passes.
+
+Every non-whitespace change is a syntactic normalization that cannot alter
+behavior:
+
+- trailing commas added or removed;
+- a match-arm or closure body wrapped in braces;
+- `;` added after `break` or `continue` inside a `let … else` block.
+
+| # | File | Diff | Non-whitespace changes | Check gate (exit 0) |
+| --- | --- | --- | --- | --- |
+| 1 | `lcl-checker/src/expr.rs` | +80 −22 | 8 `;` after `break`, 6 `,`, 1 arm body braced | T2-P2-checker-expr-check |
+| 2 | `lcl-parser/src/schema.rs` | +25 −7 | 4 `,` | T2-P2-parser-schema-check |
+| 3 | `lcl-parser/tests/document_structure.rs` | +0 −1 | none (one blank line) | T2-P2-parser-docstructure-check |
+| 4 | `lcl-resolver/src/graph.rs` | +92 −30 | 6 `;` after `continue`, 2 `,` added, 1 `,` removed, 2 arm bodies braced | T2-P2-resolver-graph-check |
+| 5 | `lcl-resolver/tests/output_instances.rs` | +15 −4 | none | T2-P2-resolver-output-instances-check |
+| 6 | `lcl-runtime/src/contracts.rs` | +7 −2 | 1 closure body braced | T2-P2-runtime-contracts-check |
+| 7 | `lcl-runtime/src/eval.rs` | +5 −3 | 1 `,` | T2-P2-runtime-eval-check |
+| 8 | `lcl-runtime/src/mock.rs` | +9 −3 | 1 `,` | T2-P2-runtime-mock-check |
+| 9 | `lcl-runtime/src/result.rs` | +52 −17 | 5 `,`, 5 arm bodies braced | T2-P2-runtime-result-check |
+| 10 | `lcl-runtime/tests/failure_handling.rs` | +152 −39 | 9 `,` added, 3 `,` removed, 3 arm bodies braced | T2-P2-runtime-failure-handling-check |
+
+| Gate | Actual exit | Result |
+| --- | --- | --- |
+| T2-P2-crates-tests | 0 | Every target of `lcl-parser`, `lcl-resolver`, `lcl-checker` and `lcl-runtime`: 45 suites, 539 passed, 0 failed, 0 ignored |
+| T2-P2-fmt, `cargo fmt --all -- --check -l` | 1 | Remaining inherited files, all in `lcl-conformance` (below); nothing outside that crate |
+| T2-P2-clippy | 0 | The four crates, all targets, `-D warnings` |
+
+The format gate reports 10 remaining files, reached through 11 paths because
+`witness_cases/mod.rs` is also reached through the example:
+
+- `examples/m8_conformance_report.rs`
+- `src/lib.rs`
+- `src/report.rs`
+- `src/source_cases.rs`
+- `tests/decision_witnesses.rs`
+- `tests/operation_cases.rs`
+- `tests/result_cases.rs`
+- `tests/runner_seam.rs`
+- `tests/semantic_cases.rs`
+- `tests/witness_cases/mod.rs`
+
+`src/runner.rs` was already formatted in Phase 1b. Each remaining file is
+formatted at its first planned B4 edit.
+
+Next: Phase 3, the B4 accounting instrument.
+
+### Phase 3 — the B4 accounting instrument
+
+Phase 3 changes only three files in `lcl-conformance`: `runner.rs`, `obligations.rs` and `report.rs`. Each step
+changed one file, and that step's `lcl-conformance` library-test gate passed before the next file was touched.
+
+No new population is connected yet, so the production claim is unchanged. What changes is what a report can prove:
+it now names missing sub-runs, and every kind of record has a written, closed rule.
+
+| # | File | Change | Gate (exit 0) |
+| --- | --- | --- | --- |
+| 1 | `runner.rs` | `Observed.run_labels`: one label per sub-run, rendered beside it | T2-P3-runner-labels-tests (lib 17, runner_seam 13) |
+| 2 | `obligations.rs` | A private `load_mapping(spec, text, digest)`, which `load` calls with the embedded mapping; a test-only `load_mapping_text`; an optional per-row `subruns` pin and `subruns(probe)` | T2-P3-obligations-subruns-tests (lib 20) |
+| 3 | `report.rs` | Formatting only. `strip_compare.py` lists 4 trailing commas and 2 closure bodies wrapped in braces | T2-P3-report-format-tests (lib 20) |
+| 4 | `report.rs` | `ProbeState` and `ProbeAccount`, with exact sub-run membership | T2-P3-report-probe-accounts-tests (lib 24) |
+| 5 | `report.rs` | Inputless evidence counts as failed evidence | T2-P3-report-inputless-tests (lib 25) |
+| 6 | `report.rs` | Unrequired records are listed | T2-P3-report-unrequired-tests (lib 26) |
+| 7 | `report.rs` | `RunIdentity`, `record_run`, excluded records and the source snapshot | T2-P3-report-run-identity-tests (lib 27) |
+| 8 | `report.rs` | `render_verdict_json` | T2-P3-report-verdict-json-tests (lib 29) |
+| 9 | `obligations.rs` | `digest()`: the digest of the mapping text actually loaded | T2-P3-obligations-digest-tests (lib 30) |
+| 10 | `report.rs` | The run identity and the rendered report state the loaded digest, not the compiled-in constant | T2-P3-report-loaded-digest-tests (lib 30) |
+
+Net diff against HEAD, including the formatting step: `runner.rs` +32 −1, `obligations.rs` +165 −3, `report.rs` +1180 −54.
+
+**The closed report policy.** Every required probe and every record falls into exactly one defined case.
+
+- **Probe states.** Each required probe is in exactly one of four states, so at each claim level
+  `required = satisfied + failed + missing + invalid`:
+  - `satisfied`: exactly one record, which passed and carries exactly its pinned sub-runs;
+  - `failed`: exactly one record, which carries exactly its pinned sub-runs and failed;
+  - `missing`: no record;
+  - `invalid`: more than one record, or a pinned group whose judged runs differ from the pin.
+
+  `missing_probes` keeps its meaning, every state except `satisfied`, so existing callers are unchanged.
+- **Pinned sub-runs.** Membership must be exact. The probe is invalid, and each problem is listed by label, when:
+  - a pinned label has no run;
+  - a label is not pinned;
+  - a run has no label, or a label has no run;
+  - a label appears twice.
+
+  Only an exact ordered group (`Expectation::Runs` with one expectation per run) carries pinned sub-runs; a record of
+  any other shape carries none. A pinned run that fails its own expectation is named in `failed_subruns`. A pin must
+  name exactly one grouped probe with at least one label and no empty or repeated label; the loader refuses anything
+  else. Exact membership also catches a reviewed control that silently disappears.
+- **Inputless evidence.** Each of these counts as failed evidence: a record with an empty source; an observation with
+  no input evidence; a group in which any run lacks input evidence. The group rule is new protection, because
+  `Accepts` never inspects runs.
+- **Unrequired records.** A record whose ID names no required probe is listed. It satisfies no obligation and cannot
+  raise a claim. If it failed, it still counts as a failed case.
+- **Run identity.** A report's identity has six parts:
+  - implementation version;
+  - language version;
+  - package identity;
+  - the digest of the mapping it loaded;
+  - host capabilities;
+  - the implementation source snapshot, recorded at build time from `LCL_SOURCE_SNAPSHOT`, or `unrecorded`.
+
+  `record_run` admits a record only when its identity is identical. Any other record is excluded: it is listed with
+  every differing field, never counted as executed and never used as evidence. `record` remains the in-process path,
+  whose identity is the report's own.
+- **Structured verdict.** `render_verdict_json` emits one deterministic document. Record order changes nothing in it.
+  It contains:
+  - the claim, the implementation and the mapping digest;
+  - for each level, the required count, the four state lists, and a `problems` entry with sub-run detail for every
+    probe not satisfied;
+  - record counts, failed case IDs, and the unrequired and excluded records;
+  - the indexed catalogues, including witnesses not established;
+  - descriptive-only entries and claim limits.
+
+  The human-readable report states the same partition, and its claim limits name every problem.
+
+**Synthetic negative controls against the task's minimum list.** The existing instrument tests still pass. The new
+tests:
+
+| Contract control | Test |
+| --- | --- |
+| Omit one required sub-run from an otherwise passing group | `omitting_one_pinned_subrun_denies_completeness`, with an exact-membership control |
+| Unexpected, duplicated, unlabelled or ungrouped sub-runs | `unexpected_duplicated_unlabelled_or_ungrouped_subruns_are_invalid` |
+| A failed mandatory sub-run | `a_failed_pinned_subrun_fails_its_probe_and_is_named` |
+| States are disjoint and cover every required probe | `probe_states_partition_every_required_probe_exactly_once` |
+| Inputless success | `inputless_success_is_failed_evidence`, with a control whose runs carry input |
+| Unknown probe ID; an irrelevant success | `unrequired_records_are_listed_and_neither_fill_a_gap_nor_change_the_verdict` |
+| Incompatible run identity; outputs mixed from other source revisions or host configurations | `records_from_another_run_identity_are_excluded_and_listed`, one field at a time, with an own-identity control |
+| Wrong inventory digest; truncated inventory | `a_mapping_under_another_digest_is_refused`; `a_truncated_inventory_is_refused_even_under_its_own_digest` |
+| Malformed pins | `pinned_subruns_are_parsed_exactly_and_malformed_pins_are_refused` |
+| The report states the mapping it actually loaded | `an_inventory_states_the_digest_of_the_mapping_it_loaded` |
+| The structured result reconciles independently | `verdict_json_partitions_every_required_probe_and_reconciles_independently`: the parsed JSON's four lists at each level are disjoint and together equal the inventory; `problems` equals the unsatisfied list; escaping survives a round trip |
+| Duplicate one success, add an irrelevant success, reorder records | `reordering_records_changes_neither_the_verdict_nor_its_json`: forward, reversed and interleaved orders give identical claims, limits and JSON, and neither the duplicate nor the irrelevant success fills the gap |
+
+Earlier tests already cover the remaining controls:
+
+| Contract control | Test |
+| --- | --- |
+| Omitted source probe | `source_requires_every_lexical_grammar_block_and_field_probe` |
+| Omitted semantic probe | `semantic_contracts_are_required_in_addition_to_all_witnesses` |
+| Duplicated probe | `duplicate_required_probes_block_their_level` |
+| Injected failure | `forged_passing_verdict_does_not_hide_a_failed_observation` |
+
+All of these are accounting-unit tests on synthetic records. Negative tests on the real production path come in P5.
+
+### A process deviation during Phase 3: the gate build environment
+
+`gate2.sh` records `CARGO_TARGET_DIR` and `TMPDIR` but does not set them. Every earlier Task 2 gate passed both
+explicitly. After a context compaction in this session, 11 gates ran without them:
+
+- the 10 cargo gates from T2-P3-obligations-subruns-tests through T2-P3-conformance-tests;
+- T2-P3-fmt, which ran only `rustfmt`.
+
+Their records state this truthfully (`None`). The deviation came to light because cargo printed relative
+`target/debug/deps` paths.
+
+- **Effect.** Cargo wrote 1,947 build-cache files under the pre-existing, untracked `/mnt/F/LCL/impl/target/debug`
+  (dated 2026-09-11), including the example binaries `m8_conformance_report` and `m0_report`.
+- **Not affected:**
+  - tracked files and protected files;
+  - `/tmp`, where the session user has no new entry;
+  - any installed copy (no `lcl` on `PATH`).
+- **Validity.** The test outcomes stand, because each record binds the worktree content that gate consumed.
+- **Left in place.** That directory is the owner's own cache, and this session's files cannot be separated from it
+  with certainty. Whether to remove them is the owner's decision.
+- **Remediation.** `gate2.sh` now refuses to run, with exit 67 and before any evidence is written, unless both
+  variables point inside the owned scratch. Three refusal probes (variables unset, `TMPDIR` missing, the repository
+  target) wrote no evidence. T2-P3-gate-guard-control shows the admitted case, and the Phase 3 closing gates below
+  were rerun in the owned environment.
+
+### Phase 3 closing gates
+
+| Gate | Toolchain | Actual exit | Result |
+| --- | --- | --- | --- |
+| T2-P3-conformance-tests-2 | Rust 1.98.1 | 0 | Every `lcl-conformance` target, built in the owned `target-current`: lib 30, decision_witnesses 7, descriptive_index 9, operation_cases 1, result_cases 1, runner_seam 13, semantic_cases 3, doctests 0 |
+| T2-P3-msrv-conformance-tests | Rust 1.75.0 | 0 | The same 8 targets and counts, built in the owned `target-msrv` |
+| T2-P3-fmt-2 | — | 0 | `runner.rs`, `obligations.rs` and `report.rs` are rustfmt-clean |
+| T2-P3-clippy | Rust 1.98.1 | 0 | `lcl-conformance` library and examples, `-D warnings`. The test target keeps the inherited `semantic_cases.rs` lint, which P4a removes |
+| T2-P3-m8 | Rust 1.98.1 | 0 | The production report, below |
+
+**The production report after Phase 3** (T2-P3-m8):
+
+- **Claim:** `CLAIM: source_conforming`, unchanged since Phase 0.
+- **Source level:** 2,011 required, 2,011 satisfied.
+- **Semantics level:** 402 required, 83 satisfied, 0 failed, 319 missing, 0 invalid.
+- **Records:** 2,094 executed, all passed. Every one names a required probe, so none is unrequired and none is
+  excluded.
+- **Witnesses:** 66 of 66 established.
+- **Source snapshot:** `unrecorded`. The final production run sets `LCL_SOURCE_SNAPSHOT`.
+- **Claim limits:** 319, all `missing`. They are the 319 contract rows, and no population is connected to them yet.
+
+Workspace-wide tests last ran at T2-P1-workspace-tests-2 and T2-P1-msrv-tests-2, before Phases 2 and 3. The Task 2
+final gates run them again.
+
+Next: P4a. The executed semantic, operation, result and witness populations and their fixtures move into the
+library, a production entry point is added, and grouped cases label their runs.
+
+### P4a — the executed populations become library code behind one production entry
+
+A usage limit interrupted the session from 07:32 to 11:54 on 2026-09-14. On resume, before any further edit, the
+state was reconfirmed read-only: the same 15 modified tracked files, the one new untracked `src/fixtures.rs`, and no
+build process running.
+
+P4a moves the four executed populations and their shared fixtures from `tests/` into the `lcl-conformance` library.
+It adds one production entry point that runs all of them against the pinned inventory, and it makes grouped records
+label their runs. It adds no case, changes no oracle and needs no dependency change: every crate the populations use
+was already a normal dependency.
+
+**Moves.** One file changed at a time, and each change was gated before the next file was touched. Every moved file
+is proven equal to its HEAD original plus only the planned edits: `rustfmt(HEAD original + planned edits)` is
+byte-identical to the new library file. The result-schema and witness files were generated that way by script, not
+retyped.
+
+| Population | New library file | Planned edits beyond rustfmt | Test file afterwards | Gates (exit 0) |
+| --- | --- | --- | --- | --- |
+| Fixtures | `src/fixtures.rs` | `lcl_conformance` → `crate` import; the test-only `#![allow(dead_code)]` dropped | `tests/common/mod.rs`: `pub use lcl_conformance::fixtures::*;` | T2-P4a-fixtures-module-tests, T2-P4a-fixtures-module-clippy, T2-P4a-common-reexport-tests |
+| Semantic: types, operators, functions, statuses, error contracts | `src/semantic_cases.rs` | `crate` import without `Verdict`; `crate::fixtures` paths; a `TypeRow` alias, which removes the inherited clippy `type_complexity` lint; the one test that uses private helpers became a unit test | Two population tests, bodies unchanged | T2-P4a-semantic-module-tests (lib 31), T2-P4a-semantic-module-clippy, T2-P4a-semantic-thin-tests |
+| Operations: binding, errors and effects for 39 operations | `src/operation_cases.rs` | `crate` import without `Verdict`; its test removed | One population test, body unchanged | T2-P4a-operation-module-tests, T2-P4a-operation-module-clippy, T2-P4a-operation-thin-tests |
+| Result schemas (9) | `src/result_cases.rs` | `crate` import without `Verdict`; `crate::fixtures::task_document`; its test removed | One population test, body unchanged | T2-P4a-result-module-tests, T2-P4a-result-module-clippy, T2-P4a-result-thin-tests |
+| Decision witnesses (66) | `src/witness_cases.rs` | Its six `lcl_conformance::` paths written as `crate::` | `tests/witness_cases/mod.rs`: `pub use lcl_conformance::witness_cases::*;` | T2-P4a-witness-module-tests, T2-P4a-witness-module-clippy, T2-P4a-witness-reexport-tests, T2-P4a-witness-reexport-clippy |
+
+`src/lib.rs` first received a formatting-only step, passed through stdin so that rustfmt could not reach its
+unformatted child `source_cases.rs`. `strip_compare` found the stripped texts identical (T2-P4a-lib-format-tests).
+After that, `lib.rs` gained one `pub mod` line per module.
+
+**The production entry.** `src/production.rs` exposes `production::report(spec)`. Against the complete verified
+inventory it executes:
+
+- every canonical source case, with `lexical` or `grammar` coverage as before;
+- every decision-witness probe, with descriptive and not-implemented entries recorded as the witness gate records them;
+- every semantic, operation and result-schema group.
+
+Two lookups that were lenient now fail closed:
+
+- a witness absent from the canonical catalogue is an error, where the example silently used an empty contract;
+- a semantic group whose family has no reviewed coverage mapping is an error, never a guess.
+
+`examples/m8_conformance_report.rs` is now a thin front end: it prints the text report by default, the structured
+verdict with `--json`, and exits 2 with a usage message on any other argument (T2-P4a-m8-usage).
+
+**Production-path tests.** `tests/production_report.rs` runs the real report and uses real records only. It checks:
+
+- the report claims exactly what the evidence supports:
+  - no failed, unrequired or excluded record, and every witness established;
+  - every source probe satisfied;
+  - every semantic probe satisfied except the rows of the two families with no population, `diagnostic_policy` and
+    `failure_lifecycle`, which are missing;
+- the JSON verdict reconciles with the pinned inventory;
+- two runs produce identical output;
+- every grouped record labels each run exactly once, and the number of grouped records equals the populated contract
+  rows derived from the inventory (317).
+
+**Run labels, reproduced before repair.** The three group builders now record each sub-run's identifier as its label.
+Their gates are T2-P4a-semantic-labels-tests and -clippy, T2-P4a-operation-labels-tests and -clippy, and
+T2-P4a-result-labels-tests and -clippy. The label test was written before the one known collision was repaired:
+
+| Gate | Actual exit | Result |
+| --- | --- | --- |
+| T2-P4a-label-uniqueness-red | 101 | EXPECTED: exactly one violation, `semantic/result_schemas/result.value: 27 runs, 27 labels, repeated {"complete"}`, where a record-validation run and a host-boundary run shared a label. The other 3 production tests passed |
+| T2-P4a-label-uniqueness-green | 0 | After the five host-boundary runs were relabelled `boundary/…`: every target, 68 tests |
+
+Only the labels changed; the runs' sources, expectations and observations did not.
+
+**Formatting.** The last three inherited unformatted files each received a formatting-only step, verified with
+`strip_compare` and gated:
+
+| File | Non-whitespace changes | Gate (exit 0) |
+| --- | --- | --- |
+| `src/source_cases.rs` | 30 trailing commas; 7 match-arm or closure bodies wrapped in braces | T2-P4a-source-cases-format-tests |
+| `tests/decision_witnesses.rs` | None (whitespace only) | T2-P4a-decision-witnesses-format-tests |
+| `tests/runner_seam.rs` | 8 trailing commas added, 1 moved; 1 closure body wrapped in braces | T2-P4a-runner-seam-format-tests |
+
+`cargo fmt -p lcl-conformance --check` is now clean.
+
+**A failed closing gate.** T2-P4a-close-clippy was the first clippy run over `--all-targets`. It failed with two
+`type_complexity` errors in the `report.rs` unit tests written in Phase 3; every earlier clippy gate had linted only
+`--lib --examples`. The diagnostic run T2-P4a-close-clippy-keep-going confirmed that those two errors are the only
+lints in any target. The fix names the two test-local types `SubrunCase` and `IdentityAlteration` and changes no
+behavior.
+
+### P4a closing gates
+
+| Gate | Toolchain | Actual exit | Result |
+| --- | --- | --- | --- |
+| T2-P4a-close-tests | Rust 1.98.1 | 0 | Every target: lib 31, decision_witnesses 7, descriptive_index 9, operation_cases 1, production_report 4, result_cases 1, runner_seam 13, semantic_cases 2, doctests 0 (68) |
+| T2-P4a-close-msrv-tests | Rust 1.75.0 | 0 | The same 9 targets and 68 tests |
+| T2-P4a-close-fmt | — | 0 | `cargo fmt -p lcl-conformance --check` |
+| T2-P4a-close-clippy | Rust 1.98.1 | **101** | Two `type_complexity` errors in the `report.rs` unit tests (see above) |
+| T2-P4a-close-clippy-keep-going | Rust 1.98.1 | 101 | Diagnostic: those two are the only lints in any target |
+| T2-P4a-close-clippy-2 | Rust 1.98.1 | 0 | After the fix: every target, `-D warnings` |
+| T2-P4a-close-lib-tests-2 | Rust 1.98.1 | 0 | lib 31 after the fix |
+| T2-P4a-close-msrv-lib-tests-2 | Rust 1.75.0 | 0 | lib 31 after the fix |
+| T2-P4a-close-m8, T2-P4a-close-m8-json | Rust 1.98.1 | 0 | The production report, below |
+
+**The production report after P4a** (T2-P4a-close-m8 and T2-P4a-close-m8-json):
+
+- **Claim:** `source_conforming`, unchanged.
+- **Source level:** 2,011 required, 2,011 satisfied.
+- **Semantics level:** 402 required, 400 satisfied, 0 failed, 2 missing, 0 invalid.
+  - The two missing probes are `semantic/diagnostic_policy/core.error_selection` and
+    `semantic/failure_lifecycle/core.failure_lifecycle`, the two families with no population yet.
+- **Records:** 2,411 executed and all passed; none unrequired and none excluded; 66 of 66 witnesses established.
+- **Labels:** every one of the 2,752 rendered sub-runs carries its label.
+- **Independent reconciliation:** a Python check of the JSON verdict, sharing no code with the report, passed:
+  - the digest and package identity match the mapping file;
+  - at each level the four state lists are disjoint and their union is exactly that level's inventory;
+  - `required` equals the total of the four lists;
+  - `problems` names exactly the unsatisfied probes.
+
+The 400 semantic probes count as satisfied only because the current mapping pins no sub-run membership. P4b answers
+whether each group executes every clause its canonical requirement names.
+
+Next: P4b, mapping revision r2. It pins the required sub-runs of every semantic contract row, derived from that row's
+canonical requirement text.
+
+### P4b — mapping revision r2 pins the required sub-runs of every semantic contract row
+
+Revision r1 pinned probe IDs only. A group therefore counted as satisfied whatever part of its canonical requirement
+it ran. Revision r2 keeps every r1 probe ID and adds, for each of the 319 semantic contract rows, the exact sub-run
+labels that its requirement names (decision D4). Clauses that no run exercises yet are pinned too, so the report
+names them as missing instead of never seeing them.
+
+**Derivation.** The scratch generator `review/r2/generate_r2.py` reads four inputs: the canonical registries, the
+conformance catalogue (`09_CONFORMANCE/CASES/core_conformance_cases_v0.1.0.json`), r1, and the run labels recorded at
+T2-P4a-close-m8. It records every pin in `review/r2/r2_pins.tsv` with its kind, its canonical authority (the catalogue
+case ID) and a justification, then emits the mapping. The four pin kinds are:
+
+- `existing` (2,437): a label an executed run already carries. It is kept only where it names a canonical clause, and
+  checked against a registry derivation where one exists.
+- `registry` (264): a clause derived mechanically from a registry fact, such as a registered successor, a parameter
+  default, an integer bound or a registered error.
+- `relabelled` (315): an existing positional run renamed to the clause it executes (step 1 below).
+- `requirement` (701): a clause named by the row's requirement text or registered contract that no run exercises yet.
+
+Before the switch, two derivation rules were corrected. Both were found by comparing the generator's output with the
+executed labels:
+
+- The exclusive axis values `none` and `declared_state_only` are not concrete effects or dependencies, so they are
+  never pinned as forbidden. This removed 45 wrong labels.
+- Within one row, a registry-indexed `precondition/<i>` or `postcondition/<i>` pin replaces a hand label that
+  restated the same condition.
+
+| Family | Rows | Pinned sub-runs | Carried by an existing run | Of which relabelled | No run yet |
+| --- | --- | --- | --- | --- | --- |
+| type_valid | 21 | 64 | 35 | 35 | 29 |
+| type_invalid | 21 | 68 | 21 | 0 | 47 |
+| operator_valid | 19 | 228 | 181 | 181 | 47 |
+| operator_invalid | 19 | 26 | 19 | 0 | 7 |
+| function_valid | 11 | 121 | 99 | 99 | 22 |
+| function_invalid | 11 | 23 | 14 | 0 | 9 |
+| operation_binding | 39 | 652 | 525 | 0 | 127 |
+| operation_effects | 39 | 1,188 | 969 | 0 | 219 |
+| operation_errors | 39 | 516 | 214 | 0 | 302 |
+| status_transition | 12 | 299 | 299 | 0 | 0 |
+| error_contract | 77 | 221 | 181 | 0 | 40 |
+| result_schemas | 9 | 257 | 195 | 0 | 62 |
+| diagnostic_policy | 1 | 24 | 0 | 0 | 24 |
+| failure_lifecycle | 1 | 30 | 0 | 0 | 30 |
+| **Total** | **319** | **3,717** | **2,752** | **315** | **965** |
+
+The mapping file `src/obligations_v0.1.0_r2.json` is 446,927 bytes, SHA-256
+`386c14994f032a57143ef731ea7ac55db3dfffde52b54f0d38e39e7b5e126b20`, and byte-identical to the generator output. It
+adds `"revision": "r2"` and a `subruns` list to every semantic row. Source rows and all probe IDs are unchanged.
+
+**Steps.** Each step changed one file and was gated before the next.
+
+| # | File | Change | Gates (exit 0) |
+| --- | --- | --- | --- |
+| 1 | `src/semantic_cases.rs` | The type, function and operator runs carry inline clause labels instead of positional ones: 315 labels in 51 groups. Only labels changed | T2-P4b-relabel-tests (68), -clippy, -m8 |
+| 2 | `src/obligations.rs` | Test seams `with_row_subruns` and `embedded_mapping_with_subruns`. The obligation tests no longer quote r1 row text, and the truncation test cuts at a marker | T2-P4b-obligation-seam-tests (lib 32), -clippy |
+| 3 | `src/report.rs` | The instrument tests build complete synthetic populations through `satisfying()`, which gives a pinned probe a group carrying exactly its pins. Assertions unchanged | T2-P4b-report-seam-tests (lib 32), -clippy |
+| 4 | `tests/production_report.rs` | A revision-agnostic invariant (below) replaces "every populated probe is satisfied" | T2-P4b-production-invariant-tests (4), -clippy |
+| 5 | `src/obligations_v0.1.0_r2.json`, then `src/obligations.rs` | The generated mapping added, unreferenced; then `MAPPING` and `MAPPING_DIGEST` switched to it | T2-P4b-r2-switch-tests (69), -clippy, -m8, -m8-json |
+| 6 | `src/obligations.rs` | Canonical cross-checks for the registry-derivable pins (below) | T2-P4b-cross-checks-tests (70), -clippy |
+| 7 | `src/obligations_v0.1.0.json` | r1 removed, after confirming it was byte-identical to HEAD and to the digest HEAD pinned (`17fb6df8…fbed`) | T2-P4b-remove-r1-tests (70), T2-P4b-remove-r1-m8 |
+
+- **Step 1 evidence.** `review/r2/verify_relabel.py` compares T2-P4a-close-m8 with T2-P4b-relabel-m8. In each of the
+  51 planned groups:
+  - the new labels equal the plan, in order;
+  - expectations are unchanged;
+  - run sources are unchanged apart from their `SUBCASE` label headers;
+  - observations are unchanged apart from run labels.
+
+  Every other record of the 2,411 is byte-identical. The comparison passed.
+- **Expectation totals.** The recorded expected outcomes of T2-P4b-r2-switch-tests, T2-P4b-cross-checks-tests and
+  T2-P4b-remove-r1-tests each state a test total one lower than the actual count, because they omit the library test
+  added in step 2. Every target passed. The per-target counts in the logs are authoritative: 69 at the switch, then
+  70.
+
+**The production invariant (step 4).** Under r2, many populated probes are honestly invalid. Each semantic probe must
+therefore be exactly one of the following:
+
+- satisfied, in a populated family;
+- missing, only in one of the two unpopulated families;
+- invalid only because pinned sub-runs have no run yet: one record, and no unexpected, duplicated or failed sub-run.
+
+A failed probe is never accepted. The invariant held under r1 before the switch and under r2 after it.
+
+**Canonical cross-checks (step 6).** The loader now refuses a mapping, even one presented under its own digest, that:
+
+- leaves any semantic contract row without pins;
+- pins a status row with anything other than its registered successor set. That set is every registered status plus
+  `status.invented`, each for non-root and root use; `status.skipped` has no root runs;
+- drops an error row's `registry-contract` pin, or the component that mirrors its registered stage (lexer, parser,
+  resolver, checker, preflight, runtime or completion);
+- drops a registry-derived pin of an operation row:
+  - exact binding;
+  - the six parameter-default component runs per parameter, and the default binding where the registry gives a
+    default;
+  - required parameters and targets;
+  - both sides of each integer range bound;
+  - the memory-target and state-target prohibitions;
+  - the 15 determinism selection runs;
+  - for each required role: the missing, complete and ambiguous profile runs; the four incomplete-field runs; each
+    forbidden effect or dependency outside the operation's maximum; and, for deterministic operations,
+    nondeterministic-under-fixed;
+- pins an `error/<id>` that the operation does not register;
+- pins a `precondition/<i>` or `postcondition/<i>` beyond the registered conditions.
+
+`registry_derived_pins_cannot_be_dropped_invented_or_left_out` alters six rows, one mapping per row. Each altered
+mapping is refused with its specific reason. Every other test loads the unaltered r2, which passes all the checks.
+
+**The production report under r2** (T2-P4b-r2-m8 and -m8-json; T2-P4b-remove-r1-m8 is identical apart from build
+lines):
+
+- **Claim:** `source_conforming`, unchanged.
+- **Source level:** 2,011 required, 2,011 satisfied.
+- **Semantics level:** 402 required = 197 satisfied + 0 failed + 2 missing + 203 invalid.
+- **Records:** 2,411 executed, all passed; none unrequired and none excluded; 66 of 66 witnesses established.
+- **Invalid probes:** each of the 203 is invalid only because pinned sub-runs have no run. None has an unexpected,
+  duplicated or failed sub-run.
+- **Independent reconciliation:** a Python check of the JSON verdict, sharing no code with the report, passed.
+
+**The exact remaining list.** 965 pinned sub-runs, across 205 rows, have no run. The report's `problems` entry names
+every one, and scratch `review/r2/remaining_after_switch.tsv` lists them by row and label.
+
+| Family | Rows | Sub-runs without a run |
+| --- | --- | --- |
+| type_valid | 13 | 29 |
+| type_invalid | 21 | 47 |
+| operator_valid | 19 | 47 |
+| operator_invalid | 2 | 7 |
+| function_valid | 11 | 22 |
+| function_invalid | 6 | 9 |
+| operation_binding | 34 | 127 |
+| operation_effects | 39 | 219 |
+| operation_errors | 39 | 302 |
+| error_contract | 10 | 40 |
+| result_schemas | 9 | 62 |
+| diagnostic_policy | 1 | 24 |
+| failure_lifecycle | 1 | 30 |
+| **Total** | **205** | **965** |
+
+Next: P4c. The missing sub-runs are implemented family by family, types first, with each family gated. A faithful
+sub-run that exposes an engine defect stops the task for an owner amendment.
+
+### P4c, types — first execution, diagnosis, and a stop for an owner amendment
+
+A usage limit interrupted the session again before this step. On resume, the worktree identity matched the handoff
+(`7eb363bc…`) and no build process was running.
+
+**Step.** `src/semantic_cases.rs` gained the 76 pinned type sub-runs that had no run: 29 valid forms in 13 rows and 47
+rejections in 21 rows. Every oracle is taken from the canonical contracts:
+
+- `types_v0.1.0.json`: the string-literal, pattern, temporal, numeric and SET-iteration profiles;
+- the constructor registry in `operators_and_functions_v0.1.0.json`;
+- `02_LEXICAL/02`, `/07` and `/08`; `03_TYPES_AND_VALUES/04`; `04_GRAMMAR/10` and `/12`; `06_STANDARD_LIBRARY/07`.
+
+Where the contract asks for more than a round trip, the valid forms check it directly:
+
+- exact decoding without Unicode normalization;
+- unbounded exact arithmetic;
+- the first iteration of a two-member SET, which fixes the whole iteration order;
+- GLOB and REGEX matching, with negative controls.
+
+Rejections expect the identifier canon pins. The two `ITEM`-block runs pin only the `grammar_or_schema` stage,
+because canon names no single identifier for them.
+
+**Gate.** T2-P4c-types-tests exited **101**: the production claim test found 8 failed probes. The diagnostic runs
+T2-P4c-types-m8-diagnostic and T2-P4c-types-m8-json-diagnostic (both exit 0) show semantics 402 = 223 satisfied + 8
+failed + 2 missing + 169 invalid. 26 of the 34 type rows the step touched are now satisfied.
+
+**Diagnosis, read-only, before any change.**
+
+| Row | Sub-run | Observed | Classification |
+| --- | --- | --- | --- |
+| type_valid/STRING | form/escaped-control-scalar | `error.source.tab` | **Authoring defect.** The input holds a raw TAB instead of the escape `\u0009`. The inputs of form/unicode-escape and form/surrogate-pair-escape, and one operand of form/no-unicode-normalization, were also written as decoded characters. Those runs pass but do not exercise escape decoding |
+| type_invalid/OBJECT | malformed (duplicate key) | `error.field.duplicate` | **Oracle mistake.** The oracle expected `error.object.schema`. Object data keys are "OBJECT fields" (`04_GRAMMAR/12`); `error.field.duplicate` is the `grammar_or_schema` identifier for a repeated field; the earliest failing stage is selected (`06_STANDARD_LIBRARY/07`). The canonical example `11_DUPLICATE_FIELD` also expects `error.field.duplicate` |
+| type_invalid/LIST[T], type_invalid/SET[T] | item-block | primary `error.block.field`, reached grammar | **Conformance-runner defect.** For a source that fails lexing or parsing, `runner.rs` records the stage as the lowercased Debug name (`grammarorschema`), not the registry spelling. `RejectsAtStage` therefore cannot match on that path |
+| type_valid/REGEX | form/flag-i, form/flag-m, form/flag-s, form/flags-canonical-ims, form/ascii-only-case-folding | VERIFY FALSE | **Engine defect.** A flagged REGEX declared as DATA reads UNKNOWN: `lcl-semantics` `constructor_value` has no two-argument REGEX overload. Separately, `REGEX("a", "") == REGEX("a")` is FALSE, although omitted flags equal empty flags (`types_v0.1.0.json#/material_identity_contract/REGEX`). Inline flagged patterns match correctly |
+| type_invalid/REFERENCE[T] | malformed, `REF("constant.original")` | accepted | **Engine defect.** `REFERENCE_CALL = "REF", "(", IDENTIFIER, ")"` (`04_GRAMMAR/10`). A string argument produces no diagnostic, even when the value is read |
+| type_invalid/PATH | workspace-escape | accepted | **Engine defect.** "Escape produces error.value.out_of_range" (`03_TYPES_AND_VALUES/04`, `05_SEMANTICS/02`). A WORKSPACE PATH declared as DATA is accepted even when read. The runtime's own escape check is textual and is not reached on this path |
+| type_invalid/MEASURE | unregistered-unit, `unit.furlong` | `error.operator.operand` | **Engine defect, subject to owner confirmation.** The MEASURE constructor registers `operator.operand` and `reference.unresolved`. Identifiers under reserved namespaces resolve only to the core registry, and unknown unit identifiers fail (`06_STANDARD_LIBRARY/09`). The checker reports `operator.operand` |
+
+**Decomposition evidence.** Small scratch documents, built from the conformance runner's own task template, ran through
+the real `lcl run`. The CLI was built in the owned target (T2-P4c-types-cli-build), ran with its working directory
+inside scratch, and contains no file writes. Results:
+
+- TRUE, as canon requires: inline `REGEX(…)` matching with `i`, `m`, `s` and `ims`; ASCII class folding; the
+  ASCII-only folding negative; the no-flag negatives.
+- Wrong: equality with a DATA-declared `REGEX("abc", "i")` is FALSE, and matching against it is UNKNOWN;
+  `REGEX("a", "") == REGEX("a")` is FALSE; `REF("constant.original")` is accepted when read;
+  `PATH(REF(workspace.case), "../outside.txt")` is accepted when read.
+
+The worktree identity was `ed1679aa…` before and after every P4c gate and after the experiments. The only change since
+P4b is `src/semantic_cases.rs`.
+
+**Stop.** Four defects are in engine crates outside `lcl-conformance`, and one is in the conformance runner. Under the
+pack rules, an engine defect exposed by a faithful sub-run pauses the task for an owner amendment. The failing sub-runs
+stay in place as the reproduction. Nothing has been repaired yet, including the authoring defect and the oracle
+mistake.
+
+### P4c, types — amendment A-T2-3, repairs and closing gates
+
+**Owner decision.** On 2026-09-14 the owner approved a standing narrow amendment, **A-T2-3**. Each defect that a faithful
+canonical sub-run exposes is repaired under these rules:
+
+- reproduced red first;
+- minimal, one file per step;
+- gated and reported.
+
+Work still stops for any canonical change, public-interface change, new dependency or unclear canon.
+
+**Steps.** Each step changed one file and was gated before the next. Every expected-red gate recorded the exact failing
+set in advance, and every observed set matched it.
+
+| # | File | Change | Gates |
+| --- | --- | --- | --- |
+| 1 | `lcl-conformance/src/semantic_cases.rs` | Authoring defect and oracle mistake. The four escape inputs are now LCL escapes, generated from `chr(92)` and checked byte by byte. The duplicate-key oracle is `error.field.duplicate` | T2-P4c-types-authoring-tests (101, expected: exactly the six reproduction rows fail; STRING and OBJECT pass) |
+| 2 | `lcl-conformance/tests/runner_seam.rs` | Runner stage spelling reproduced: the canonical invalid example `11_DUPLICATE_FIELD` must report stage `grammar_or_schema` | T2-P4c-D1-red (101, expected: only the new test fails; `grammarorschema` observed) |
+| 3 | `lcl-conformance/src/runner.rs` | A source skipped before resolution records `Stage::as_registry_str()` | T2-P4c-D1-green (runner_seam 14); T2-P4c-D1-conformance (101, expected: the LIST[T] and SET[T] rows pass); T2-P4c-D1-clippy |
+| 4 | `lcl-parser/src/expr.rs` | A `REF` call with anything other than exactly one identifier is `error.grammar.invalid`. `REFERENCE_CALL` requires one `IDENTIFIER`, and `REF` is not a `CALLABLE` | T2-P4c-D3-parser-tests; -parser-clippy; T2-P4c-D3-conformance (101, expected: the REFERENCE[T] row passes) |
+| 5 | `lcl-conformance/src/semantic_cases.rs` | Oracle strengthening (below) | T2-P4c-oracle-guard-tests (101, expected: exposes exactly `type_valid/PATH`); T2-P4c-oracle-guard-m8-json |
+| 6 | `lcl-checker/tests/constructors_and_operations.rs` | Oracle correction for unregistered units (below), with a wrong-operand-family control | T2-P4c-D5-red (101, expected: only that test fails, observing `["error.operator.operand"]`) |
+| 7 | `lcl-checker/src/expr.rs` | An unregistered unit identifier is an earlier-stage `error.reference.unresolved` | T2-P4c-D5-checker-tests; -checker-clippy; T2-P4c-D5-conformance (101, expected: the MEASURE row passes) |
+| 8 | `lcl-semantics/src/value.rs` | One shared REGEX value constructor. Empty flags store the pattern alone, because omitted flags equal empty flags | T2-P4c-D2a-semantics-tests; -semantics-clippy |
+| 9 | `lcl-semantics/src/eval.rs` | The two-argument REGEX constructor folds through the shared constructor, so a flagged pattern declared as DATA binds | T2-P4c-D2b-semantics-tests; -semantics-clippy; T2-P4c-D2b-conformance (101, expected); T2-P4c-D2b-m8-json (only form/flags-canonical-ims still fails) |
+| 10 | `lcl-runtime/src/eval.rs` | The runtime builds REGEX values through the same constructor and splits them with the shared separator | T2-P4c-D2c-runtime-tests; -runtime-clippy; T2-P4c-D2c-conformance (101, expected: the REGEX row passes) |
+| 11 | `lcl-semantics/src/eval.rs` | `PATH(REF(workspace), "relative")` folds to the runtime's spelling when the resolved target is contained. An escape binds no value | T2-P4c-D4a-semantics-tests; -semantics-clippy; T2-P4c-D4a-conformance (101, expected: only the escape run fails) |
+| 12 | `lcl-semantics/src/scope.rs` | Preflight reports `error.value.out_of_range` for every WORKSPACE-form PATH whose resolved target leaves its root, or whose relative string is absolute | T2-P4c-D4b-semantics-tests; -semantics-clippy; T2-P4c-D4b-conformance (**0**, 71 tests) |
+
+**Step 5, oracle strengthening.** A scratch experiment showed that a WORKSPACE-form PATH declared as DATA read UNKNOWN:
+`REF(data.ok) == UNKNOWN` was TRUE, and comparing it with the constructed literal gave FALSE. The round trip
+`REF(data.actual) == REF(data.expected)` therefore passed with both sides UNKNOWN. Every round-trip form now also
+requires its DATA value to be neither UNKNOWN nor MISSING, and the WORKSPACE form compares against constructed
+literals. The guard exposed exactly that one form, so no other round-trip form had been passing on a sentinel.
+
+**Step 6, an oracle correction to an existing test.** `a_unit_argument_must_be_registered_and_in_its_declared_category`
+expected `error.operator.operand` for `MEASURE(1, unit.furlong)`. Its only citation, "Core 0.1.0 admits only units in
+the closed unit registry", establishes that the value is rejected, not which identifier rejects it.
+
+- **Contract.**
+  - `operators_and_functions_v0.1.0.json#/evaluation_contract`: "Wrong operator/function arity or operand family uses
+    error.operator.operand. Unknown references retain error.reference.unresolved." Every row's errors add to that
+    common list, which includes `error.reference.unresolved`.
+  - `06_STANDARD_LIBRARY/09`: "Identifiers under reserved namespaces resolve only to this core registry."
+  - The MEASURE constructor registers `error.reference.unresolved`.
+- **Demonstrated mistake.** An unregistered `unit.*` identifier is an unknown reference, not a wrong operand family.
+- **Discriminating controls.**
+  - A registered unit is still accepted.
+  - A registered unit of the wrong category keeps `error.numeric.unit_mismatch` for DURATION.
+  - `MEASURE("1", unit.pixel)` keeps `error.operator.operand`.
+
+**Closing gates.**
+
+| Gate | Toolchain | Actual exit | Result |
+| --- | --- | --- | --- |
+| T2-P4c-types-close-conformance-clippy | Rust 1.98.1 | 0 | `lcl-conformance --all-targets -D warnings` |
+| T2-P4c-types-close-fmt | — | 0 | `cargo fmt --all -- --check` |
+| T2-P4c-types-close-workspace-tests | Rust 1.98.1 | 0 | Every workspace target: 144 targets, 1,520 tests |
+| T2-P4c-types-close-msrv-workspace-tests | Rust 1.75.0 | 0 | The same 144 targets and 1,520 tests |
+| T2-P4c-types-close-m8, T2-P4c-types-close-m8-json | Rust 1.98.1 | 0 | The production report, below |
+
+**The production report after the type families.**
+
+- **Claim:** `source_conforming`, unchanged.
+- **Source level:** 2,011 required, 2,011 satisfied.
+- **Semantics level:** 402 required = 231 satisfied + 0 failed + 2 missing + 169 invalid. After P4b it was 197
+  satisfied and 203 invalid.
+- **Independent reconciliation of the JSON verdict: PASS.**
+  - The verdict's digest equals the mapping file's digest.
+  - At each level the state lists are disjoint, and their union equals the inventory.
+  - `problems` names exactly the unsatisfied probes.
+  - No problem carries a failed, unexpected or duplicated sub-run.
+- **Remaining:** 889 pinned sub-runs in 171 rows. That is 835 sub-runs in the 169 invalid rows, plus the 54 pins of
+  the two rows with no population.
+
+| Family | Remaining sub-runs |
+| --- | --- |
+| operator_valid | 47 |
+| operator_invalid | 7 |
+| function_valid | 22 |
+| function_invalid | 9 |
+| operation_binding | 127 |
+| operation_effects | 219 |
+| operation_errors | 302 |
+| error_contract | 40 |
+| result_schemas | 62 |
+| diagnostic_policy | 24 |
+| failure_lifecycle | 30 |
+| **Total** | **889** |
+
+**Observations for later families.** None of these is repaired, because no pinned sub-run exercises it yet:
+
+- A WORKSPACE-form PATH value is stored as its joined absolute spelling in both evaluators.
+  `material_identity_contract.PATH` instead identifies it by the workspace declaration and the relative string. The
+  pinned `equality/path-address-form-identity` sub-runs will exercise this.
+- The runtime's own WORKSPACE escape check is textual: any `..` segment or a leading `/`. A contained `src/../a.txt`
+  evaluated at runtime would therefore be refused, although canon checks the resolved target.
+- A REGEX value joins non-empty flags to its pattern with a NUL. A pattern may legally contain a NUL scalar written
+  as an escape, so such a pattern followed by flag letters would split ambiguously.
+
+Next: P4c, operators and functions (85 sub-runs). After them come error_contract and result_schemas, the three
+operation families, and the diagnostic_policy and failure_lifecycle populations.
+
+### P4c, operators and functions — sub-runs, one repair, and the owner's scope stop
+
+**Step.** `src/semantic_cases.rs` gained the 85 pinned operator and function sub-runs:
+
+- **MISSING operands** come from statically typed selections past the end of a LIST.
+- **UNKNOWN operands** come from optional typed INPUTs that the runner's invocation seam supplies as UNKNOWN.
+- **Ordering and units:** exact INTEGER/DECIMAL ordering and MEASURE unit rules.
+- **Diagnostics and edge cases** for division, ROUND, SUM, EMPTY, the quantifiers and EXISTS.
+- **Address form:** PATH address-form identity, and GLOB matching of a WORKSPACE PATH.
+- **Access:** closed-schema property and index access.
+
+**Authoring corrections before any engine change** (T2-P4c-opfn-tests exited 101; then T2-P4c-opfn-authoring-tests):
+
+- **Optional INPUTs.** They lacked the DEFAULT canon requires: "Exactly one VALUE or SOURCE unless optional with
+  DEFAULT". The engine's `error.block.conditional_requirement` was correct. DEFAULT replaces only MISSING, so a
+  supplied UNKNOWN is still read as UNKNOWN.
+- **Quantifier labels.** The quantifier rows used `special/missing` where their pinned label is
+  `quantifier/missing-member`.
+- **EXISTS witness.** The unresolved-optional-binding run now uses an optional INPUT whose SOURCE does not resolve.
+  That input reads MISSING, and `06_STANDARD_LIBRARY/04` says EXISTS is "FALSE only for MISSING, including an absent
+  optional binding".
+
+**Diagnosis of the 13 failures that remained.** Each was decomposed read-only with scratch documents run through
+`lcl run`:
+
+| Sub-runs | Observed | Cause |
+| --- | --- | --- |
+| `order/measure-unit-mismatch` (×4) | `error.operator.operand` | The checker's `order_compatible` did not apply `evaluation_contract/unit_constraint` |
+| `==`, `!=` `equality/path-address-form-identity` | VERIFY FALSE | A WORKSPACE-form PATH equals an absolute PATH with the same joined spelling. `material_identity_contract.PATH`: "Different forms are unequal" |
+| `MATCHES` `match/glob-workspace-path` | VERIFY FALSE | A WORKSPACE-form PATH value keeps no root, so GLOB matching cannot use its relative segments |
+| `-` `constraint/negative-duration-result` | VERIFY FALSE | DURATION subtraction yields a negative DURATION instead of `error.value.out_of_range` |
+| `/` `division/declared-bound` | accepted | FIELD MINIMUM and MAXIMUM are parsed but not enforced on object values: a literal `2.0` against `MAXIMUM: 1` is accepted. A quotient written inside object DATA also reads UNKNOWN |
+| `/` `division/host-capacity`, ROUND `round/host-capacity`, MATCHES `pattern/resource-limit`, SUM `sum/unit-mismatch` | VERIFY UNKNOWN | `lcl-completion` mirrors 8 identifiers and drops every other fault raised while evaluating a VERIFY assertion. Evaluated in an ACTION target, the runtime raises each registered diagnostic correctly |
+
+**Repair under A-T2-3.** `lcl-checker/src/expr.rs` `order_compatible` now reports `error.numeric.unit_mismatch` when
+two MEASURE operands have different units. Gates: T2-P4c-R1-checker-tests, T2-P4c-R1-checker-clippy and
+T2-P4c-R1-conformance. The four order rows pass.
+
+**A repair attempt, reverted.** A change to `lcl-runtime/src/eval.rs` rejected negative DURATION subtraction.
+T2-P4c-R2-runtime-tests exited **101**: `abs_keeps_a_durations_exact_unit` evaluates
+`ABS(DURATION(30, unit.second) - DURATION(90, unit.second))` through a negative intermediate DURATION. The change
+was reverted to its exact prior text before any other step, and T2-P4c-R2-revert-runtime-tests passed. That VERIFY
+sub-run would in any case still record UNKNOWN until the completion defect above is repaired.
+
+**Owner decision: stop expanding scope.** On 2026-09-14 the owner directed that Task 2 complete only work its
+contract requires, record the remaining gaps where the exit contract permits full conformance to stay BLOCKED, and
+close. The exit contract permits exactly that: "Task 02 may report reporting-correctness complete while full
+conformance remains BLOCKED, but that is not permission to declare this task's full objective passed or start
+final-release Task 03." The remaining sub-runs are required for B4 to pass, not for this closure.
+
+**Known failures kept as evidence.** The 9 failing sub-runs stay in the population as failed evidence. Two tests pin
+exactly the 8 failed probes: `tests/production_report.rs` also pins each probe's failing sub-run labels, and
+`tests/semantic_cases.rs` pins the failing groups. A repair or a new failure therefore fails the tests until the set
+is reviewed.
+
+| Gate | Actual exit | Result |
+| --- | --- | --- |
+| T2-P4c-pin-production-tests | 0 | production_report, 4 tests |
+| T2-P4c-pin-semantic-tests | 0 | semantic_cases, 2 tests |
+| T2-P4c-pin-conformance-tests | 0 | Every `lcl-conformance` target, 71 tests |
+| T2-P4c-pin-conformance-clippy | 0 | `--all-targets -D warnings` |
+
+**Closure deliverables:**
+
+- `reports/LCL_Core_0.1.0_ERRATUM_2026-09-13.md` (DOC-01);
+- `reports/tasks/LCL-TASK-0011_TO_0016_RETROSPECTIVE_INDEX.md` (HISTORY-01);
+- `reports/implementation/LCL_REVIEW_COVERAGE_LEDGER.md` and `.tsv` (COVERAGE-01);
+- the dated correction note in `impl/README.md`;
+- the r2 and BLOCKED update to `reports/implementation/LCL_CONFORMANCE_OBLIGATIONS.md`;
+- `reports/tasks/LCL-CLOSE-02_RESULT.md`.
+
+### LCL-CLOSE-02 final gates
+
+| Gate | Toolchain | Actual exit | Result |
+| --- | --- | --- | --- |
+| T2-FINAL-workspace-tests | Rust 1.98.1 | 0 | 144 targets: 1,520 passed, 0 failed, 1 ignored (the child helper its parent tests run) |
+| T2-FINAL-msrv-workspace-tests | Rust 1.75.0 | 0 | The same 144 targets: 1,520 passed, 0 failed, 1 ignored |
+| T2-FINAL-fmt | — | 0 | `cargo fmt --all -- --check` |
+| T2-FINAL-clippy | Rust 1.98.1 | 0 | `cargo clippy --workspace --all-targets -- -D warnings` |
+| T2-FINAL-m8, T2-FINAL-m8-json | Rust 1.98.1 | 0 | The production report, below |
+| T2-FINAL-canonical-checksums | — | 0 | 175 matching |
+| T2-FINAL-brand-checksums | — | 0 | 17 matching |
+| T2-FINAL-protected | — | 0 | 192 of 192 protected files match: canonical 176, assets 4, releases 12 |
+
+One command was rejected by the shell before any gate started, because its summary helper had a quoting error. No
+gate ran and no log was written; the gates were then run as listed.
+
+**The final production report** (T2-FINAL-m8 and T2-FINAL-m8-json):
+
+- **Source snapshot:** `impl-tree-sha256:04a8e853175d389398b3bf1a5d2c3b23cb33af688c52e39fee1c1daba376f5aa`, over
+  the 325 files under `impl/`, recorded at build time through `LCL_SOURCE_SNAPSHOT`.
+- **Mapping:** digest `386c1499…6b20`.
+- **Claim:** `source_conforming`.
+- **Source level:** 2,011 required, 2,011 satisfied.
+- **Semantics level:** 402 required = 261 satisfied + 8 failed + 2 missing + 131 invalid.
+- **Witnesses:** 66 of 66 established.
+- **Independent reconciliation: PASS.**
+  - The verdict's digest equals the mapping file's digest.
+  - At each level the four state lists are disjoint, and their union is exactly the inventory.
+  - `problems` names exactly the unsatisfied probes.
+  - No problem has an unexpected or duplicated sub-run.
+- **Remaining:** 813 pinned semantic sub-runs in 141 rows have no passing run.
+
+| Kind | Sub-runs | By family |
+| --- | --- | --- |
+| No run | 750 | error_contract 40, operation_binding 127, operation_effects 219, operation_errors 302, result_schemas 62 |
+| No population | 54 | diagnostic_policy 24, failure_lifecycle 30 |
+| Failed on a pinned engine defect | 9 | function_invalid 2, operator_invalid 3, operator_valid 4 |
+
+The exact list is the appendix of `reports/tasks/LCL-CLOSE-02_RESULT.md`.
+
+**Recorded but not repaired:**
+
+- **DATA division.** The semantic layer does not fold division in declared DATA, so such a value reads UNKNOWN.
+- **Textual escape check.** The runtime's WORKSPACE escape check is textual.
+- **REGEX separator.** A NUL joins non-empty REGEX flags to the pattern, which is ambiguous for a pattern that contains
+  an escaped NUL.
+- **Possible oracle question.** The earlier oracle `match/glob-absolute-path-false` expects FALSE for an absolute PATH
+  matched against a GLOB. The GLOB profile's input rule says an input that cannot supply a WORKSPACE root "uses
+  error.operator.operand". This is left for owner review.
+
+**State at close.**
+
+- **Git:** HEAD `298d1e2b01a0dcd4dbecb5bf401143948b1cf716`. Nothing is staged, and this task made no Git write.
+- **Scratch temporary directories:** removed by exact path (five `lcl-install-*` and two experiment directories).
+- **Phase 3 deviation:** the build-cache files it wrote under `impl/target/debug` remain for the owner.
+
+LCL-CLOSE-02 is closed as reporting-correct with full semantic conformance BLOCKED. LCL-CLOSE-03 stays locked.

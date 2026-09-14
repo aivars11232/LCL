@@ -341,6 +341,26 @@ fn constructor_value(engine: &Engine, name: &str, arguments: &[Value]) -> Option
         }
         ("PERCENTAGE", [value]) => Some(Value::Percentage(value.number()?.clone())),
         ("BYTES", [value]) => Some(Value::Bytes(value.number()?.clone())),
+        // `REGEX(pattern, flags)` is registered beside `REGEX(pattern)`; both
+        // evaluators build the one shared representation.
+        ("REGEX", [Value::Text(pattern), Value::Text(flags)]) => {
+            Some(crate::value::regex(pattern, flags))
+        }
+        // `PATH(REF(workspace), "relative")` "must resolve to the workspace root
+        // or one of its descendants" (`03_TYPES_AND_VALUES/04`). A contained
+        // target is the value, spelled as the runtime spells it; an escape binds
+        // no value, and preflight reports it.
+        ("PATH", [Value::Reference(id), Value::Text(relative)]) => {
+            let root = &engine.workspaces.iter().find(|w| w.id == *id)?.path;
+            let text = format!("{}/{}", root.trim_end_matches('/'), relative);
+            if relative.starts_with('/') || !crate::scope::contains(root, &text) {
+                return None;
+            }
+            Some(Value::Constructed {
+                constructor: "PATH".to_string(),
+                text,
+            })
+        }
         (_, [Value::Text(text)]) => Some(Value::Constructed {
             constructor: name.to_string(),
             text: text.clone(),

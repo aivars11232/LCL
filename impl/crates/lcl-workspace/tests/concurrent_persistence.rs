@@ -253,19 +253,48 @@ fn overlapping_saves_preserve_whole_payloads_and_the_legacy_name() {
     let left = server.prepare("PUT", "classic.lcl", &a);
     let right = server.prepare("PUT", "classic.lcl", &b);
     let (one, two) = together(left, right, b'\n', b'\n');
-    assert_eq!((one.status, two.status), (200, 200), "{one:?}; {two:?}");
+    // Replacing saves are ordered by acceptance (UI-03). When the save accepted
+    // later publishes first, the overtaken one is refused with 409 instead of
+    // replacing newer content. Both outcomes are legitimate: two 200s, or
+    // exactly one 409 that names the supersession and published nothing.
     let observed = std::fs::read(scratch.join("classic.lcl")).unwrap();
     assert!(
         observed == a || observed == b,
         "save mixed or truncated payloads"
     );
-    assert!(!scratch.join("classic.lcl.txt").exists());
-    for (reply, bytes) in [(&one, &a), (&two, &b)] {
-        let response = lcl_spec::json::parse(&reply.body).unwrap();
-        assert_eq!(
-            response.get("digest").unwrap().as_str(),
-            Some(lcl_spec::sha256::hex_digest(bytes).as_str())
-        );
+    let replies = [(&one, &a), (&two, &b)];
+    let accepted: Vec<_> = replies
+        .iter()
+        .filter(|(reply, _)| reply.status == 200)
+        .collect();
+    assert!(
+        !accepted.is_empty(),
+        "both overlapping saves were refused: {one:?}; {two:?}"
+    );
+    for (reply, bytes) in &replies {
+        match reply.status {
+            200 => {
+                let response = lcl_spec::json::parse(&reply.body).unwrap();
+                assert_eq!(
+                    response.get("digest").unwrap().as_str(),
+                    Some(lcl_spec::sha256::hex_digest(bytes).as_str())
+                );
+            }
+            409 => {
+                assert!(
+                    reply
+                        .body
+                        .contains("classic.lcl was saved again while this write was in flight"),
+                    "a refused save must name the supersession: {reply:?}"
+                );
+                assert_eq!(
+                    observed, *accepted[0].1,
+                    "an overtaken save must not replace the accepted content"
+                );
+            }
+            other => panic!("unexpected status {other}: {one:?}; {two:?}"),
+        }
     }
+    assert!(!scratch.join("classic.lcl.txt").exists());
     no_temporaries(&scratch.path);
 }

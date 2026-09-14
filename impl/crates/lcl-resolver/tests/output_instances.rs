@@ -46,13 +46,19 @@ EXECUTE:
 fn rejects(source: &str) {
     let resolved = resolve(source);
     assert_eq!(ids(&resolved), ["error.reference.unresolved"], "{source}");
-    assert!(resolved.diagnostics().iter().all(|d| d.detail.as_deref()
+    assert!(resolved.diagnostics().iter().all(|d| d
+        .detail
+        .as_deref()
         .is_some_and(|s| s.contains("loop-local producer"))));
 }
 
 fn accepts(source: &str) {
     let resolved = resolve(source);
-    assert!(resolved.diagnostics().is_empty(), "{:?}\n{source}", ids(&resolved));
+    assert!(
+        resolved.diagnostics().is_empty(),
+        "{:?}\n{source}",
+        ids(&resolved)
+    );
 }
 
 #[test]
@@ -61,7 +67,9 @@ fn outside_assertion_and_data_values_cannot_select_an_iteration() {
         "VERIFY:\n    ID: verify.outside\n    ASSERT: REF(output.item) == 1\n",
         "DATA:\n    ID: data.outside\n    TYPE: INTEGER\n    VALUE: REF(output.item)\n",
         "INPUT:\n    ID: input.outside\n    TYPE: INTEGER\n    DEFAULT: REF(output.item)\n",
-    ] { rejects(&source("", extra)); }
+    ] {
+        rejects(&source("", extra));
+    }
 }
 
 #[test]
@@ -95,7 +103,10 @@ fn execute_exports_cannot_select_a_loop_local_output() {
 fn conditions_and_nested_loop_collections_are_value_contexts() {
     let outside = "    IF (REF(output.item) == 1) THEN:\n        STEP:\n            ID: step.outside\n            ACTION:\n                ID: action.outside\n                OPERATION: core.return\n                TARGET: 1\n";
     rejects(&source(outside, ""));
-    let inside = outside.lines().map(|line| format!("    {line}\n")).collect::<String>();
+    let inside = outside
+        .lines()
+        .map(|line| format!("    {line}\n"))
+        .collect::<String>();
     accepts(&source(&inside, ""));
 }
 

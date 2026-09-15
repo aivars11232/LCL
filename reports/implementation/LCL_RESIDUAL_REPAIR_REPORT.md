@@ -2777,3 +2777,58 @@ The exact list is the appendix of `reports/tasks/LCL-CLOSE-02_RESULT.md`.
 - **Phase 3 deviation:** the build-cache files it wrote under `impl/target/debug` remain for the owner.
 
 LCL-CLOSE-02 is closed as reporting-correct with full semantic conformance BLOCKED. LCL-CLOSE-03 stays locked.
+
+## 2026-09-14 to 2026-09-15 continuation — LCL-CLOSURE-4T Task LCL-CLOSE-03
+
+On 2026-09-14 the owner declared LCL-CLOSE-02 finished and explicitly accepted its bounded scope: full semantic conformance stays BLOCKED. The owner then approved the LCL-CLOSE-03 plan:
+
+- script-owned build and output directories with `SOURCE_INVENTORY.tsv`;
+- provenance from a verified snapshot, with no forced commit;
+- headless Firefox over WebDriver BiDi, plus a manual desktop-menu check by the owner.
+
+The full record is `reports/tasks/LCL-CLOSE-03_RESULT.md`; this continuation summarizes it.
+
+### Phase A — packaging consumes frozen bytes (B5, BUILD-SAFETY)
+
+| # | File | Change | Verification |
+| --- | --- | --- | --- |
+| 1 | `impl/crates/lcl-hardening/tests/release_build.rs` (new) | seven regressions that run the real script on disposable trees with stub tools | T3-A1-release-build-red, exit 101, EXPECTED red: 0 passed, 7 failed |
+| 2 | `packaging/build_release.sh` | build only from a verified snapshot (below) | T3-A2-release-build-snapshot, exit 101, the planned partial state: 5 passed, 2 failed |
+| 3 | `packaging/build_release.sh` | owned directories and visible failure (below) | T3-A3-release-build-ownership, exit 0: 7 passed |
+| 4 | `packaging/README.md` | "Building this yourself" | documentation |
+
+Change 2 builds only from a verified snapshot:
+
+- the source listing's status is checked on its own;
+- `SOURCE_INVENTORY.tsv` is written;
+- archive members are checked before extraction;
+- `--reconstruct` makes a source export from an archive;
+- the payload archive is verified by unpacking it again;
+- the origin is recorded honestly.
+
+Change 3 owns its directories and fails visibly:
+
+- `LCL_BUILD_DIR` and `LCL_KEEP_BUILD` are refused;
+- an output must not exist;
+- artifacts are published only at the end;
+- a failed run keeps its evidence.
+
+### Phases B to F
+
+- **Freeze:** source id `b4506c8aa3d4d5464a8e31b1251582bd9ad18cbefddd40c09463dddb0a167292`, 735 files. It stayed unchanged through every later gate, including after the owner's commit `c1c6ddf` of the Task 3 files and the candidate.
+- **Final gates**, all exit 0:
+  - fmt and clippy;
+  - workspace tests on 1.98.1 and on 1.75.0: 145 suites, 1,527 passed, 0 failed, 1 ignored each;
+  - the production conformance report, bound with `LCL_SOURCE_SNAPSHOT`. It is identical to LCL-CLOSE-02's final report apart from that field: `source_conforming`, semantics BLOCKED;
+  - canonical validator 31 PASS / 2 OUT_OF_SCOPE / 0 FAIL; canonical checksums 175; brand 17; protected 192 of 192.
+- **Candidate** `releases/candidates/lcl-0.1.0-linux-x86_64-b4506c8aa3d4/`:
+  - its inventory equals the freeze byte for byte;
+  - a Git-free reconstruction and rebuild gave the same source id and 200 byte-identical payload members;
+  - only the archive containers differ, and reproducibility is not claimed.
+- **Installed-candidate acceptance** in disposable homes: CLI (E1), launcher and HTTP (E2), the real-HTTP editor-save test against the installed binary (E3), a real headless-Firefox editor workflow (E4-2), and uninstall/reinstall preservation (E5) all passed.
+- **Three harness oracles were corrected** with cited authority, each original failure kept:
+  - E1: the file extension decides nothing, so `.txt` is not refused;
+  - E4: the unsaved indicator is the status bar, not the tree;
+  - E4: saved bytes include the required final LINE FEED, backed by a byte-for-byte control.
+
+LCL-CLOSE-03 is BLOCKED only on the owner's manual desktop-menu launch check. Its procedure is in the result report, and the candidate stays BUILT_NOT_FULLY_VERIFIED until then. LCL-FEATURE-04 stays locked.

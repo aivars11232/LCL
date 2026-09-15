@@ -27,12 +27,15 @@ mkdir -p "$bin" "$data/lcl" "$data/applications" "$data/mime/packages"
 
 # Replace @KEY@ with an exact value, reading standard input.
 #
-# `awk` with the value in a variable rather than `sed`, because a substituted
-# path is arbitrary text: `&` in a sed replacement means "the whole match", and
-# a home directory holding one would install a launcher pointing somewhere
-# else. Nothing here interprets the value.
+# `awk` rather than `sed`, because a substituted path is arbitrary text: `&` in
+# a sed replacement means "the whole match", and a home directory holding one
+# would install a launcher pointing somewhere else. The value reaches awk
+# through the environment, not `-v`, because `-v` processes backslash escapes
+# and would turn a `\t` in a path into a tab. ENVIRON is read as it is, so
+# nothing here interprets the value.
 substitute() {
-    awk -v key="$1" -v value="$2" '
+    LCL_SUBSTITUTE_VALUE=$2 awk -v key="$1" '
+        BEGIN { value = ENVIRON["LCL_SUBSTITUTE_VALUE"] }
         {
             out = ""
             rest = $0
@@ -50,8 +53,18 @@ substitute() {
 # backslash ... and must be escaped with a backslash inside a quoted argument."
 # Quoting unconditionally keeps an installation under a path with a space in it
 # from silently becoming two arguments.
+#
+# The value is also a string, and string escapes "are applied before the quoting
+# rule", so every backslash the quoting wrote is doubled once more. A literal
+# percent sign is written `%%`, because `%f` and its kind are field codes.
 desktop_quote() {
-    printf '"%s"' "$(printf '%s' "$1" | sed 's/[\\"`$]/\\&/g')"
+    printf '"%s"' "$(printf '%s' "$1" | sed -e 's/[\\"`$]/\\&/g' -e 's/\\/\\\\/g' -e 's/%/%%/g')"
+}
+
+# One word a shell reads back as exactly this text: the value in single quotes,
+# with each single quote in it written as '\''.
+shell_quote() {
+    printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
 }
 
 install -m 0755 "$here/bin/lcl" "$bin/lcl"
@@ -75,11 +88,12 @@ fi
 
 # The launcher the desktop entry runs. It carries the installed binary, the
 # installed specification package and the default project directory as absolute
-# paths, so a menu launch needs no environment at all.
-substitute '@BIN@' "$bin/lcl-workspace" < "$here/share/lcl-workspace-launch.in" \
-    | substitute '@SPEC@' "$data/lcl/LCL_Core_0.1.0" \
-    | substitute '@LOCALIZED_SPEC@' "$localized" \
-    | substitute '@DEFAULT_PROJECT@' "$data/lcl/workspace" \
+# paths, so a menu launch needs no environment at all. Each is written as one
+# quoted shell word, so a space or a quote in a path stays part of the path.
+substitute '@BIN@' "$(shell_quote "$bin/lcl-workspace")" < "$here/share/lcl-workspace-launch.in" \
+    | substitute '@SPEC@' "$(shell_quote "$data/lcl/LCL_Core_0.1.0")" \
+    | substitute '@LOCALIZED_SPEC@' "$(shell_quote "$localized")" \
+    | substitute '@DEFAULT_PROJECT@' "$(shell_quote "$data/lcl/workspace")" \
     > "$bin/lcl-workspace-launch"
 chmod 0755 "$bin/lcl-workspace-launch"
 echo "installed $bin/lcl-workspace-launch"

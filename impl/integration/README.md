@@ -22,7 +22,7 @@ document's meaning comes from its bytes and the version it declares. So:
 ## Desktop registration (Linux)
 
 `linux/lcl.xml` is a shared-mime-info package defining `text/x-lcl`, with globs
-for `*.lcl` and `*.lcl.txt` and a magic rule matching the first four bytes.
+for `*.lcl` and `*.lcl.txt` and a magic rule matching a document's first bytes.
 
 `*.lcl.txt` is the ending a newly created document is given, so a document can
 be shared and edited anywhere plain text is. It is recognised **in addition to**
@@ -38,7 +38,10 @@ happen to begin with `LCL:`, because the glob decides before the magic rule is
 consulted. The magic rule is
 grounded rather than guessed: `04_GRAMMAR/01` requires that "Every document
 starts with LCL then SPECIFICATION" and `02_LEXICAL/01` requires UTF-8 with no
-byte-order mark, so every conforming document begins with exactly `LCL:`.
+byte-order mark, so a document begins with exactly `LCL:` — unless it is an LCL
+0.2.0 document opening with its locale directive, which Core 0.2.0
+`02_LEXICAL/13` places "at byte offset zero". The magic rule matches either
+start.
 
 Install it for your own user:
 

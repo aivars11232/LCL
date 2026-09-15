@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Shared MIME info for LCL Core 0.1.0 documents.
+  Shared MIME info for LCL documents.
 
   This file teaches a desktop to recognize a `.lcl` file. It changes no
   language rule and cannot: LCL Core 0.1.0 registers `format.lcl` as "A
@@ -11,8 +11,11 @@
 
   The magic rule is grounded rather than guessed. `04_GRAMMAR/01` requires that
   "Every document starts with LCL then SPECIFICATION", and `02_LEXICAL/01`
-  requires UTF-8 with no byte-order mark, so the first four bytes of every
-  conforming document are exactly `LCL:`.
+  requires UTF-8 with no byte-order mark, so a document's first four bytes are
+  exactly `LCL:`. The one exception is an LCL 0.2.0 document that opens with
+  its locale directive, which LCL Core 0.2.0 `02_LEXICAL/13` defines as
+  "@locale, one SPACE, one locale tag and LINE FEED at byte offset zero". The
+  two matches below are alternatives, so either start is recognised.
 
   Install with ./install.sh, which writes only into the invoking user's own
   ~/.local/share. Nothing here is installed by building the workspace.
@@ -34,6 +37,7 @@
     <glob pattern="*.lcl.txt"/>
     <magic priority="50">
       <match type="string" value="LCL:" offset="0"/>
+      <match type="string" value="@locale " offset="0"/>
     </magic>
   </mime-type>
 </mime-info>

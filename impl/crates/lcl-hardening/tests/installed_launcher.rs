@@ -183,6 +183,12 @@ fn make_executable(path: &Path) {
 /// which is the whole point: the old packaging only worked when it was set.
 fn install(home: &Path) -> (PathBuf, Output) {
     let payload = stage_payload(home);
+    let output = run_installer(&payload, home);
+    (payload, output)
+}
+
+/// Run one staged payload's installer against one disposable home.
+fn run_installer(payload: &Path, home: &Path) -> Output {
     let output = Command::new(payload.join("install.sh"))
         .env_clear()
         .env("HOME", home)
@@ -195,7 +201,7 @@ fn install(home: &Path) -> (PathBuf, Output) {
         "install failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    (payload, output)
+    output
 }
 
 /// One key from the installed desktop entry.
@@ -209,17 +215,37 @@ fn desktop_value(home: &Path, key: &str) -> String {
         .to_string()
 }
 
-/// Split one `Exec` value the way a desktop implementation does.
+/// Split one `Exec` value the way the Desktop Entry Specification says to.
 ///
-/// Double quotes group, a backslash inside them escapes the next character,
-/// and `%f` is the field code that carries one file. Nothing else here needs
-/// the full field-code table.
+/// The value is a string first, so `\s`, `\n`, `\t`, `\r` and `\\` are
+/// unescaped before anything else: "this escape rule is applied before the
+/// quoting rule". Any other string escape is invalid, and GLib refuses to load
+/// an entry holding one. Then double quotes group and a backslash inside them
+/// escapes the next character. Last come field codes: `%f` carries one file and
+/// `%%` is a literal percent sign. Nothing else here needs the full table.
 fn exec_argv(exec: &str, document: Option<&Path>) -> Vec<String> {
+    let mut unescaped = String::new();
+    let mut chars = exec.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            unescaped.push(ch);
+            continue;
+        }
+        match chars.next() {
+            Some('s') => unescaped.push(' '),
+            Some('n') => unescaped.push('\n'),
+            Some('t') => unescaped.push('\t'),
+            Some('r') => unescaped.push('\r'),
+            Some('\\') => unescaped.push('\\'),
+            other => panic!("the Exec value holds an invalid string escape {other:?}: {exec}"),
+        }
+    }
+
     let mut argv = Vec::new();
     let mut current = String::new();
     let mut quoted = false;
     let mut started = false;
-    let mut chars = exec.chars();
+    let mut chars = unescaped.chars();
     while let Some(ch) = chars.next() {
         match ch {
             '"' => {
@@ -254,7 +280,7 @@ fn exec_argv(exec: &str, document: Option<&Path>) -> Vec<String> {
                 expanded.push(path.display().to_string());
             }
         } else {
-            expanded.push(word);
+            expanded.push(word.replace("%%", "%"));
         }
     }
     expanded
@@ -269,7 +295,8 @@ fn stub_opener(home: &Path) -> PathBuf {
     let dir = home.join("stub-bin");
     std::fs::create_dir_all(&dir).expect("writable");
     let recorded = home.join("opened-url");
-    let script = format!("#!/bin/sh\nprintf '%s' \"$1\" > {}\n", recorded.display());
+    // Quoted, so a home whose path holds a space is still one redirection.
+    let script = format!("#!/bin/sh\nprintf '%s' \"$1\" > '{}'\n", recorded.display());
     let path = dir.join("xdg-open");
     std::fs::write(&path, script).expect("writable");
     make_executable(&path);
@@ -957,4 +984,227 @@ fn installation_does_not_take_over_the_operators_default_applications() {
             "{path} was written; installation must not choose default applications"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// LCL-REPAIR-01: install paths, the shared theme and localized documents
+// ---------------------------------------------------------------------------
+
+#[test]
+fn an_installation_under_a_home_whose_path_holds_spaces_launches() {
+    // Regression, B-01. The launcher's assignments were bare words, so an
+    // installation path holding a space became a shorter assignment followed by
+    // a command, and a menu launch never reached the workspace.
+    let home = Home::new("home with spaces");
+    install(&home);
+
+    let launched = launch(&home, None);
+    let url = await_url(&launched);
+    let (status, body) = get(&url, "/api/session");
+    assert_eq!(status, 200, "the session route refused: {body}");
+    let expected = home.join(".local/share/lcl/workspace");
+    assert!(
+        body.contains(&format!("\"root\": \"{}\"", expected.display())),
+        "the launcher lost the installed default project:\n{body}"
+    );
+}
+
+/// A path holding what means something to a shell, to `awk -v`, to a desktop
+/// entry's string escapes and quoting, and to its field codes.
+const HOSTILE: &str = r#"it's "q" $x `y` b\tz & 50% ;*"#;
+
+#[test]
+fn install_paths_reach_the_workspace_exactly() {
+    // Regression, B-01 and B-02. Each character of HOSTILE broke one layer:
+    // the launcher's bare assignments, `awk -v` turning `\t` into a tab and
+    // dropping the desktop entry's escapes, or `%` read as a field code.
+    let home = Home::new(HOSTILE);
+    let payload = stage_payload(&home);
+    // A 0.2.0 payload, so the localized package path is substituted as well.
+    copy_tree(
+        &repository().join("canonical/LCL_Core_0.2.0"),
+        &payload.join("share/LCL_Core_0.2.0"),
+    );
+    run_installer(&payload, &home);
+
+    let bin = home.join(".local/bin");
+    let data = home.join(".local/share/lcl");
+    let text = |path: &Path| path.display().to_string();
+    assert_eq!(
+        exec_argv(&desktop_value(&home, "Exec"), None),
+        [text(&bin.join("lcl-workspace-launch"))],
+        "the desktop entry must name the installed launcher as one argument"
+    );
+
+    // The installed workspace becomes a stub recording its arguments, each one
+    // NUL-terminated, so what is compared is the exact argument vector.
+    let record = home.join("argv");
+    std::fs::write(
+        bin.join("lcl-workspace"),
+        "#!/bin/sh\nprintf '%s\\0' \"$@\" > \"$LCL_ARGV_RECORD\"\n",
+    )
+    .expect("writable");
+    let recorded = |file: Option<&Path>| -> Vec<String> {
+        let _ = std::fs::remove_file(&record);
+        let argv = exec_argv(&desktop_value(&home, "Exec"), file);
+        let output = Command::new(&argv[0])
+            .args(&argv[1..])
+            .env_clear()
+            .env("HOME", &home)
+            .env("PATH", "/usr/bin:/bin")
+            .env("LCL_ARGV_RECORD", &record)
+            .current_dir(std::env::temp_dir())
+            .output()
+            .expect("the launcher runs");
+        assert!(
+            output.status.success(),
+            "the launcher failed: {}\n{}",
+            String::from_utf8_lossy(&output.stderr),
+            std::fs::read_to_string(home.join(".local/state/lcl/launch.log")).unwrap_or_default()
+        );
+        let bytes = std::fs::read(&record).expect("the stub recorded its arguments");
+        String::from_utf8(bytes)
+            .expect("UTF-8 arguments")
+            .split_terminator('\0')
+            .map(String::from)
+            .collect()
+    };
+
+    let head = [
+        "--spec".to_string(),
+        text(&data.join("LCL_Core_0.1.0")),
+        "--open".to_string(),
+        "--localized-spec".to_string(),
+        text(&data.join("LCL_Core_0.2.0")),
+    ];
+    assert_eq!(
+        recorded(None),
+        [&head[..], &[text(&data.join("workspace"))]].concat(),
+        "a menu launch must pass every installed path unchanged"
+    );
+    let doc = document(&home, "doc.lcl");
+    assert_eq!(
+        recorded(Some(&doc)),
+        [&head[..], &["--document".to_string(), text(&doc)]].concat(),
+        "a file association must pass every installed path unchanged"
+    );
+}
+
+#[test]
+fn uninstall_leaves_every_theme_directory_it_did_not_fill() {
+    // Regression, B-03. Uninstall offered every directory of the shared theme
+    // to `rmdir`, so another application's empty directory went with ours.
+    let home = Home::new("iconshared");
+    let (payload, _) = install(&home);
+    let theme = home.join(".local/share/icons/hicolor");
+    let strangers = ["scalable/apps", "22x22/apps", "48x48/places"];
+    for relative in strangers {
+        std::fs::create_dir_all(theme.join(relative)).expect("writable");
+    }
+
+    let output = Command::new(payload.join("uninstall.sh"))
+        .env_clear()
+        .env("HOME", &home)
+        .env("PATH", "/usr/bin:/bin")
+        .current_dir(std::env::temp_dir())
+        .output()
+        .expect("the uninstaller runs");
+    assert!(
+        output.status.success(),
+        "uninstall failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    for relative in strangers {
+        assert!(
+            theme.join(relative).is_dir(),
+            "uninstall removed {relative}, a theme directory it did not create"
+        );
+    }
+    assert!(
+        installed_icons(&home).is_empty(),
+        "an icon of this product survived the uninstall"
+    );
+    for relative in ["48x48/apps", "48x48/mimetypes", "256x256"] {
+        assert!(
+            !theme.join(relative).exists(),
+            "{relative} held only this product's icons and should be gone"
+        );
+    }
+}
+
+#[test]
+fn a_localized_document_is_recognised_by_its_first_bytes() {
+    // Regression, B-04. The magic rule matched only `LCL:`, but an LCL 0.2.0
+    // document may begin with its directive: "@locale, one SPACE, one locale
+    // tag and LINE FEED at byte offset zero" (02_LEXICAL/13). Magic decides
+    // only where no glob does, so these files have no extension.
+    let home = Home::new("mimemagic");
+    install(&home);
+
+    let magic = home.join(".local/share/mime/magic");
+    if !magic.is_file() {
+        eprintln!("update-mime-database produced no magic; skipping the compiled check");
+        return;
+    }
+    let compiled = std::fs::read(&magic).expect("readable");
+    for value in ["LCL:", "@locale "] {
+        assert!(
+            compiled
+                .windows(value.len())
+                .any(|bytes| bytes == value.as_bytes()),
+            "the compiled magic does not match {value:?}"
+        );
+    }
+
+    if Command::new("gio")
+        .arg("version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_err()
+    {
+        eprintln!("gio is absent; skipping the resolver check");
+        return;
+    }
+    let files = home.join("files");
+    std::fs::create_dir_all(&files).expect("writable");
+    let sources =
+        repository().join("canonical/LCL_Core_0.2.0/09_CONFORMANCE/LOCALIZATION_FIXTURES/sources");
+    for (name, fixture) in [
+        ("canonical", "canonical_en.lcl"),
+        ("directive", "explicit_lv.lcl"),
+        ("detected", "auto_lv.lcl"),
+        // A glob still decides first, so a `.txt` file stays plain text.
+        ("notes.txt", "explicit_lv.lcl"),
+    ] {
+        std::fs::copy(sources.join(fixture), files.join(name)).expect("copyable");
+    }
+    std::fs::write(files.join("prose"), "just text\n").expect("writable");
+
+    let query = |name: &str| -> String {
+        let output = Command::new("gio")
+            .args(["info", "-a", "standard::content-type"])
+            .arg(files.join(name))
+            .env_clear()
+            .env("HOME", &home)
+            .env("XDG_DATA_HOME", home.join(".local/share"))
+            .env("PATH", "/usr/bin:/bin")
+            .output()
+            .expect("gio runs");
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .find_map(|line| line.trim().strip_prefix("standard::content-type: "))
+            .unwrap_or_default()
+            .to_string()
+    };
+    assert_eq!(query("canonical"), "text/x-lcl");
+    assert_eq!(
+        query("directive"),
+        "text/x-lcl",
+        "a document opening with its locale directive is an LCL document"
+    );
+    assert_eq!(query("detected"), "text/x-lcl");
+    assert_eq!(query("notes.txt"), "text/plain");
+    assert_eq!(query("prose"), "text/plain");
 }

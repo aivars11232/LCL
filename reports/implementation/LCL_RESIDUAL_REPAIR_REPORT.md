@@ -2832,3 +2832,15 @@ Change 3 owns its directories and fails visibly:
   - E4: saved bytes include the required final LINE FEED, backed by a byte-for-byte control.
 
 LCL-CLOSE-03 is BLOCKED only on the owner's manual desktop-menu launch check. Its procedure is in the result report, and the candidate stays BUILT_NOT_FULLY_VERIFIED until then. LCL-FEATURE-04 stays locked.
+
+## 2026-09-15 reconciliation addendum — LCL Six-Task Repair Pack, LCL-REPAIR-02
+
+Added for finding B-07. Nothing above this heading was changed.
+
+The paragraph above is the state when the LCL-CLOSE-03 session stopped. Since then:
+
+- the owner committed this report as `a826716`;
+- the owner declared LCL-CLOSE-03 finished on 2026-09-15, and LCL-FEATURE-04 ran and was committed as `7ed84ba`, so "LCL-FEATURE-04 stays locked" no longer holds;
+- no result of the manual desktop-menu check is recorded, so the check remains an owner action and the candidate's recorded state is unchanged.
+
+Details are in the addendum at the end of `reports/tasks/LCL-CLOSE-03_RESULT.md`.

@@ -1,6 +1,6 @@
 [package]
 name = "lcl-project"
-description = "Project and document loading for LCL Core 0.1.0: an explicit project root, a filesystem source provider that can only answer for a source the document named, reproducible root-relative source identity, and the checksum cache and lock file that make a multi-document project reproducible. It supplies source units; it decides no language rule."
+description = "Project and document loading for LCL Core 0.1.0 and Core 0.2.0 localized documents: an explicit project root, a filesystem source provider that can only answer for a source the document named, reproducible root-relative source identity, a declared locale profile directory, and the checksum cache and lock file, with locale pins for localized units, that make a multi-document project reproducible. It supplies source units; it decides no language rule."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

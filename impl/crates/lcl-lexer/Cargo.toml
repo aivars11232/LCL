@@ -1,6 +1,6 @@
 [package]
 name = "lcl-lexer"
-description = "Deterministic, non-executing lexer for LCL Core 0.1.0. Produces tokens with exact byte spans or canonical lexical diagnostics."
+description = "Deterministic, non-executing lexer for LCL Core 0.1.0, and for Core 0.2.0 localized source through the word map of a selected locale profile. Produces tokens with exact byte spans or canonical lexical diagnostics."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

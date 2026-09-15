@@ -1,6 +1,6 @@
 [package]
 name = "lcl-protocol"
-description = "The stable headless engine surface for LCL Core 0.1.0: one facade that carries source through every canonical stage in order, and one machine-readable record of what happened, carrying exact source identity, byte spans, registered diagnostic identifiers, execution events and completion evidence. It is UI-independent and decides no language rule of its own."
+description = "The stable headless engine surface for LCL Core 0.1.0 and, when a Core 0.2.0 package is named, localized documents: one facade that carries source through every canonical stage in order, the rule that chooses the one engine judging each document, and one machine-readable record of what happened, carrying exact source identity, byte spans, registered diagnostic identifiers, execution events and completion evidence. It is UI-independent and decides no language rule of its own."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

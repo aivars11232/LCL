@@ -1,6 +1,6 @@
 [package]
 name = "lcl-parser"
-description = "Deterministic, non-executing parser for LCL Core 0.1.0. Produces a source-faithful syntax tree with exact byte spans or canonical grammar and schema diagnostics."
+description = "Deterministic, non-executing parser for LCL Core 0.1.0, and for Core 0.2.0 localized source through each token's canonical word. Produces a source-faithful syntax tree with exact byte spans or canonical grammar and schema diagnostics."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

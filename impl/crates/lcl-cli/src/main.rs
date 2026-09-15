@@ -92,12 +92,20 @@ fn run(argv: &[String]) -> Result<i32, Failure> {
             print!("{}", args::usage());
             Ok(exit::SUCCESS)
         }
-        Command::Version => {
+        Command::Version(common) => {
+            // The languages a command's engines judge documents under: Core
+            // 0.1.0 always, and Core 0.2.0 only when a package named here opens
+            // as the approved Core 0.2.0 package. One that does not open is
+            // refused before anything is printed.
+            let localized = localized_spec_root(&common, None)
+                .map(|root| open_localized(&root, &[]))
+                .transpose()?;
             println!("lcl {}", env!("CARGO_PKG_VERSION"));
             println!("protocol {}", lcl_protocol::PROTOCOL);
             println!("language 0.1.0");
-            // With a Core 0.2.0 package named, localized documents are judged too.
-            println!("language 0.2.0");
+            if localized.is_some() {
+                println!("language 0.2.0");
+            }
             Ok(exit::SUCCESS)
         }
         Command::Check(document) => stage_command(document, lcl_protocol::Command::Check),
@@ -177,12 +185,7 @@ fn engines(common: &Common, project: Option<&Project>) -> Result<Engines, Failur
         None => Vec::new(),
     };
     files.extend(common.profiles.iter().cloned());
-    let mut localized = Engine::open_localized(&root, &files).map_err(|e| {
-        Failure::environment(format!(
-            "the localized specification package {}: {e}",
-            root.display()
-        ))
-    })?;
+    let mut localized = open_localized(&root, &files)?;
     if common.locked {
         if let Some(lock) = project.and_then(|p| Lock::read(p.lock_path()).ok()) {
             let pins: BTreeMap<SourceId, Pin> = lock
@@ -202,6 +205,16 @@ fn engines(common: &Common, project: Option<&Project>) -> Result<Engines, Failur
         }
     }
     Engines::new(core, Some(localized)).map_err(|e| failed(&e))
+}
+
+/// Open the Core 0.2.0 package at `root` with its localization stage.
+fn open_localized(root: &Path, profiles: &[PathBuf]) -> Result<Engine, Failure> {
+    Engine::open_localized(root, profiles).map_err(|e| {
+        Failure::environment(format!(
+            "the localized specification package {}: {e}",
+            root.display()
+        ))
+    })
 }
 
 /// Open the project a command acts within.

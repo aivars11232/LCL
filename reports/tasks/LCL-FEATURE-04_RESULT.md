@@ -463,3 +463,17 @@ No live commercial or model provider was used or is required. Passing these loca
   3. Whether and how to commit the uncommitted Task 4 files and the candidate.
 - **Checkout against the candidate source:** after the build, only this report changed in the source tree (verified by the post-record inventory recheck in the handoff). `releases/` is never source.
 - **Handoff:** `/mnt/F/.lcl-closure-4t-4c1cd4c659b7/LCL_FEATURE_04_HANDOFF.txt`.
+
+## Reconciliation addendum — 2026-09-15, LCL-REPAIR-02
+
+Added under the LCL Six-Task Repair Pack, finding B-07. Nothing above this heading was changed; this section records what superseded the state written above.
+
+- **Commit.** The owner committed the Task 4 changes, this report and the candidate as `7ed84ba` ("LCL task 4 final"). LCL-REPAIR-01 recorded a clean worktree at that commit, so no Task 4 change remained uncommitted.
+- **Identity lines.** "This record covers phases A, B and C" and "Current state: uncommitted phase B and C changes" were written during phase C. The record covers phases A to G.
+- **Phase closures.** Each "NOT_EXECUTED" and "Next exact action" in the phase B to F closures was superseded by the next continuation. The phase G closure is the final Task 4 state.
+- **The owner decisions of that closure:**
+  1. Independent review of the Core 0.2.0 additions: still pending (repair pack owner action O-01).
+  2. Manual desktop-menu launch of the 0.2.0 candidate: no result is recorded, and it remains owner action O-02.
+  3. Commit: resolved by `7ed84ba`.
+- **Candidate.** `releases/candidates/lcl-0.2.0-linux-x86_64-a0006c38fb79/` is unchanged. It predates LCL-REPAIR-01 (committed as `7d100b7`) and LCL-REPAIR-02, so it carries neither their packaging scripts nor the repaired `lcl version`.
+- **Later work** follows the LCL Six-Task Repair Pack: see `reports/tasks/LCL-REPAIR-01_RESULT.md` and `reports/tasks/LCL-REPAIR-02_RESULT.md`.

@@ -458,11 +458,27 @@ fi
 # ---------------------------------------------------------------------------
 
 identity=$("$payload/bin/lcl" spec --spec "$payload/share/LCL_Core_0.1.0" | sed -n 's/^ *identity *//p')
-language=$("$payload/bin/lcl" version | sed -n 's/^language //p' | tr '\n' ' ' | sed 's/ *$//')
-protocol=$("$payload/bin/lcl" version | sed -n 's/^protocol //p')
+# `lcl version` names Core 0.1.0 always and Core 0.2.0 only for a named package
+# that opens, so it is asked with exactly the packages this payload carries and
+# no inherited LCL_LOCALIZED_SPEC. A language the payload does not carry, or one
+# it carries that the tool does not report, refuses the candidate.
+carried=0.1.0
+if [ "$release" = 0.2.0 ]; then
+    carried="0.1.0 0.2.0"
+    versions=$(LCL_LOCALIZED_SPEC= "$payload/bin/lcl" version \
+        --localized-spec "$payload/share/LCL_Core_0.2.0") ||
+        refuse "the built lcl could not report its versions"
+else
+    versions=$(LCL_LOCALIZED_SPEC= "$payload/bin/lcl" version) ||
+        refuse "the built lcl could not report its versions"
+fi
+language=$(printf '%s\n' "$versions" | sed -n 's/^language //p' | tr '\n' ' ' | sed 's/ *$//')
+protocol=$(printf '%s\n' "$versions" | sed -n 's/^protocol //p')
 if [ -z "$identity" ] || [ -z "$language" ] || [ -z "$protocol" ]; then
     refuse "the built lcl did not report its package identity, language and protocol"
 fi
+[ "$language" = "$carried" ] ||
+    refuse "the built lcl reports language $language, but this $release payload carries $carried"
 # The Core 0.2.0 package's identity, as the built tool's own 0.2.0 engine
 # reports it for the package's canonical-English fixture.
 localized_identity=

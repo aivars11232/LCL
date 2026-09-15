@@ -29,12 +29,18 @@ fn help_is_the_default_and_succeeds() {
     }
 }
 
+/// `version` names the languages a command's engines judge documents under:
+/// Core 0.1.0 always, and Core 0.2.0 only when its package is named. With
+/// nothing named, nothing claims Core 0.2.0.
 #[test]
 fn version_reports_the_protocol_and_the_language() {
     let run = lcl(&["version"]);
     assert_eq!(run.code, SUCCESS);
     assert!(run.stdout.contains("protocol lcl.engine/1"));
     assert!(run.stdout.contains("language 0.1.0"));
+    assert!(!run.stdout.contains("language 0.2.0"), "{}", run.stdout);
+
+    assert_eq!(lcl(&["version", "extra"]).code, USAGE);
 }
 
 #[test]

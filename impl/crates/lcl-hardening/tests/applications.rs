@@ -165,6 +165,81 @@ fn assert_succeeded(app: &str, observed: &Observable) {
     }
 }
 
+/// LCL-REPAIR-02, finding B-08: each manifest names its package relative to
+/// the project root, which `lcl-project` joins to the root and never to a
+/// working directory, so a checkout finds its own package wherever it lives.
+#[test]
+fn every_application_names_its_package_relative_to_its_root() {
+    let package = repository()
+        .join("canonical/LCL_Core_0.1.0")
+        .canonicalize()
+        .expect("the package is present");
+    for app in [
+        "small-invoice-total",
+        "medium-release-notes",
+        "large-release-pipeline",
+        "large-release-pipeline-decomposed",
+    ] {
+        let root = repository().join("apps").join(app);
+        let manifest = std::fs::read_to_string(root.join("lcl.project.json")).expect("a manifest");
+        let json = lcl_spec::json::parse(&manifest).expect("the manifest is JSON");
+        let spec = json.get("spec").and_then(|s| s.as_str()).expect("a spec");
+        assert!(!Path::new(spec).is_absolute(), "{app}: {spec}");
+        assert_eq!(
+            root.join(spec).canonicalize().ok(),
+            Some(package.clone()),
+            "{app}: {spec}"
+        );
+    }
+}
+
+/// A copy of one application and its package under another absolute root
+/// loads the copied package, not the one it was copied from.
+#[test]
+fn a_moved_checkout_loads_its_own_package() {
+    let moved = std::env::temp_dir().join(format!("lcl-moved-checkout-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&moved);
+    for (from, into) in [
+        ("apps/small-invoice-total", "apps"),
+        ("canonical/LCL_Core_0.1.0", "canonical"),
+    ] {
+        std::fs::create_dir_all(moved.join(into)).expect("writable");
+        let copied = Command::new("cp")
+            .arg("-R")
+            .arg(repository().join(from))
+            .arg(moved.join(into))
+            .status()
+            .expect("cp runs");
+        assert!(copied.success(), "could not copy {from}");
+    }
+
+    let output = Command::new(binary())
+        .arg("check")
+        .arg("--machine")
+        .arg("--project")
+        .arg(moved.join("apps/small-invoice-total"))
+        .current_dir(std::env::temp_dir())
+        .env_clear()
+        .output()
+        .expect("the binary runs");
+    let machine = String::from_utf8_lossy(&output.stdout).into_owned();
+    let loaded = lcl_spec::json::parse(&machine)
+        .ok()
+        .and_then(|json| Some(json.get("spec")?.get("root")?.as_str()?.to_string()))
+        .and_then(|root| Path::new(&root).canonicalize().ok());
+    let expected = moved.join("canonical/LCL_Core_0.1.0").canonicalize().ok();
+    let _ = std::fs::remove_dir_all(&moved);
+    assert!(
+        output.status.success(),
+        "{machine}{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        expected.is_some() && loaded == expected,
+        "loaded {loaded:?}, not {expected:?}:\n{machine}"
+    );
+}
+
 #[test]
 fn the_small_application_succeeds() {
     let observed = observable(&run("small-invoice-total", &[]));

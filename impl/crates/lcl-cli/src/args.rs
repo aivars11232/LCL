@@ -48,8 +48,8 @@ pub enum Command {
     Syntax(Common),
     /// Print usage.
     Help,
-    /// Print the tool and protocol versions.
-    Version,
+    /// Print the tool, protocol and language versions.
+    Version(Common),
 }
 
 /// One document command's subject and options.
@@ -120,7 +120,7 @@ pub fn parse(argv: &[String]) -> Result<Command, UsageError> {
     let rest = &argv[1..];
     match first.as_str() {
         "help" | "--help" | "-h" => Ok(Command::Help),
-        "version" | "--version" => Ok(Command::Version),
+        "version" | "--version" => Ok(Command::Version(only_options(rest)?)),
         "check" => Ok(Command::Check(document(rest)?)),
         "validate" => Ok(Command::Validate(document(rest)?)),
         "run" => Ok(Command::Run(document(rest)?)),
@@ -350,7 +350,7 @@ pub fn usage() -> String {
             "syntax",
             "emit registry-derived syntax metadata for editors and tooling",
         ),
-        ("version", "print the tool and protocol versions"),
+        ("version", "print the tool, protocol and language versions"),
         ("help", "print this text"),
     ] {
         out.push_str(&format!("    {name:<16}{description}\n"));

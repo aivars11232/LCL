@@ -273,3 +273,12 @@ Latest reusable successful gates: T3-C-\*, T3-D-\* and T3-E\*, all at source id 
 Plain-text handoff: `/mnt/F/.lcl-closure-4t-4c1cd4c659b7/LCL_CLOSE_03_HANDOFF.txt`.
 
 No probability estimate and no universal bug-free guarantee is offered. "No known blocker within the verified scope" is not proof of the absence of every possible defect.
+
+## Reconciliation addendum — 2026-09-15, LCL-REPAIR-02
+
+Added under the LCL Six-Task Repair Pack, finding B-07. Nothing above this heading was changed; this section records what superseded the state written above.
+
+- **Commits.** The owner committed the Task 3 files and the candidate as `c1c6ddf`, and this report with the residual-report continuation as `a826716` ("LCL task3 finish").
+- **"LCL-FEATURE-04 stays locked" is superseded.** On 2026-09-15 the owner declared LCL-CLOSE-03 finished. `reports/tasks/LCL-FEATURE-04_RESULT.md` records that statement as acceptance of `lcl-0.1.0-linux-x86_64-b4506c8aa3d4` as the frozen LCL 0.1 baseline. LCL-FEATURE-04 then ran and was committed as `7ed84ba`.
+- **The manual desktop-menu check has no recorded result.** This is not the "On PASS" addendum the closure asks for. It does not mark the check passed or LCL-CLOSE-03 COMPLETE, and the candidate's recorded state, BUILT_NOT_FULLY_VERIFIED, is unchanged. The check remains an owner action (repair pack O-02).
+- **Later work** follows the LCL Six-Task Repair Pack: see `reports/tasks/LCL-REPAIR-02_RESULT.md`.

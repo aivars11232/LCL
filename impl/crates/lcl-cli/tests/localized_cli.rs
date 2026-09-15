@@ -6,7 +6,7 @@
 
 mod common;
 
-use common::{canonical_root, lcl, scratch, write};
+use common::{canonical_root, lcl, lcl_in, scratch, write};
 use std::path::{Path, PathBuf};
 
 fn localized_root() -> PathBuf {
@@ -27,6 +27,38 @@ fn fixture(relative: &str) -> Vec<u8> {
 
 fn text(path: &Path) -> String {
     path.display().to_string()
+}
+
+/// `version` claims Core 0.2.0 only for a package named to it, by option or by
+/// environment, that opens as the approved Core 0.2.0 package.
+#[test]
+fn version_names_core_0_2_0_only_when_its_package_is_named() {
+    let languages = |stdout: &str| -> Vec<String> {
+        stdout
+            .lines()
+            .filter_map(|line| line.strip_prefix("language "))
+            .map(str::to_string)
+            .collect()
+    };
+    let root = text(&localized_root());
+
+    let named = lcl(&["version", "--localized-spec", &root]);
+    assert_eq!(named.code, 0, "{}\n{}", named.stdout, named.stderr);
+    assert_eq!(languages(&named.stdout), ["0.1.0", "0.2.0"]);
+
+    let from_environment = lcl_in(
+        &std::env::temp_dir(),
+        &["version"],
+        &[("LCL_LOCALIZED_SPEC", &root)],
+    );
+    assert_eq!(from_environment.code, 0, "{}", from_environment.stderr);
+    assert_eq!(languages(&from_environment.stdout), ["0.1.0", "0.2.0"]);
+
+    // Any other package is refused with the environment exit code, as every
+    // command refuses it, before anything is printed.
+    let other = lcl(&["version", "--localized-spec", &text(&canonical_root())]);
+    assert_eq!(other.code, 4, "{}", other.stdout);
+    assert!(other.stdout.is_empty(), "{}", other.stdout);
 }
 
 #[test]

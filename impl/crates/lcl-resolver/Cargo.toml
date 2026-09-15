@@ -1,6 +1,6 @@
 [package]
 name = "lcl-resolver"
-description = "Deterministic, non-executing resolver for LCL Core 0.1.0. Binds versions, imports, extensions, namespaces, IDs and REF across explicit source units and builds the structural candidate graph, or produces canonical resolution diagnostics."
+description = "Deterministic, non-executing resolver for LCL Core 0.1.0 and, after the localization stage, Core 0.2.0. Binds versions, imports, extensions, namespaces, IDs and REF across explicit source units and builds the structural candidate graph, or produces canonical resolution diagnostics."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

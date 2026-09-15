@@ -1,5 +1,5 @@
 {
   "format": "lcl.project/1",
-  "spec": "/mnt/F/LCL/canonical/LCL_Core_0.1.0",
+  "spec": "../../canonical/LCL_Core_0.1.0",
   "entry": "src/main.lcl"
 }

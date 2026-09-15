@@ -1,7 +1,8 @@
 # LCL implementation workspace.
 #
-# This workspace is a CONSUMER of the canonical LCL Core 0.1.0 specification.
-# It never writes to, modifies, or is packaged with `canonical/`.
+# This workspace is a CONSUMER of the canonical LCL Core 0.1.0 specification
+# and, when one is named, of the unreleased LCL Core 0.2.0 localization
+# candidate. It never writes to, modifies, or is packaged with `canonical/`.
 #
 # Milestone M0 scope: spec authority loader, diagnostics skeleton, conformance
 # skeleton.
@@ -56,6 +57,14 @@
 # defines no language rule and nothing depends on it: it drives the same
 # public surfaces a user drives.
 #
+# LCL-FEATURE-04 scope: adds `lcl-localization`, the LCL Core 0.2.0
+# localization stage -- the locale directive, locale profile validation,
+# provider-neutral locale selection and localized word classification -- which
+# runs before lexing. The lexer's word map, the resolver, `lcl-protocol`'s
+# `Engines`, the project manifest and lock, the CLI and the workspace carry it,
+# and a Core 0.2.0 package is used only when one is named. Core 0.2.0 is an
+# unreleased candidate whose independent review is pending.
+#
 # Dependency policy: std only. The spec authority loader is the trust root for
 # every later layer, so it carries no third-party supply-chain surface.
 
@@ -88,9 +97,11 @@ members = [
 
 [workspace.package]
 # The product version, which is not the language version. This workspace
-# implements LCL Core 0.1.0 and says so separately: `lcl version` prints the
-# tool version, the engine protocol and the language version on three lines,
-# and `lcl-conformance`'s report states the implementation version beside the
+# implements LCL Core 0.1.0, and the Core 0.2.0 localization stage, and says so
+# separately: `lcl version` prints the tool version, the engine protocol and one
+# `language` line for each Core version its engines judge documents under,
+# 0.1.0 always and 0.2.0 only when a Core 0.2.0 package named to it opens.
+# `lcl-conformance`'s report states the implementation version beside the
 # language version it was judged against. 0.1.0 here is the first release of
 # the implementation, frozen by LCL-TASK-0020 as the release candidate.
 version = "0.1.0"

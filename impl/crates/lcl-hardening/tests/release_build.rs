@@ -76,8 +76,12 @@ source=$(cat marker.rs) || exit 95
 {
     echo '#!/bin/sh'
     echo 'case "$1" in'
-    echo 'version) echo "lcl 0.1.0"; echo "language 0.1.0"; echo "protocol lcl.engine/1"; echo "compiled-from '"$source"'" ;;'
+    echo 'version) echo "lcl 0.1.0"; echo "language 0.1.0"'
+    echo '    case " $* " in *" --localized-spec "*) named=yes ;; *) named=${LCL_LOCALIZED_SPEC:+yes} ;; esac'
+    echo '    if [ -n "$named" ] || [ -n "${STUB_LCL_CLAIMS_0_2_0:-}" ]; then echo "language 0.2.0"; fi'
+    echo '    echo "protocol lcl.engine/1"; echo "compiled-from '"$source"'" ;;'
     echo 'spec) echo "  identity stub-identity" ;;'
+    echo 'check) echo "  \"identity_digest\": \"0123abcd\"" ;;'
     echo 'esac'
 } > "$CARGO_TARGET_DIR/release/lcl"
 chmod 0755 "$CARGO_TARGET_DIR/release/lcl"
@@ -579,6 +583,81 @@ fn a_source_export_reconstructs_and_rebuilds_with_no_git_metadata() {
     assert!(
         !rebuilt_provenance.contains(COMMIT),
         "a build with no Git metadata claimed a commit:\n{rebuilt_provenance}"
+    );
+}
+
+/// LCL-REPAIR-02, finding B-05: a candidate's provenance names only the
+/// languages the built tool reports with exactly the packages its payload
+/// carries, so an inherited `LCL_LOCALIZED_SPEC` adds nothing.
+#[test]
+fn an_inherited_localized_spec_adds_no_language_to_a_0_1_0_candidate() {
+    let case = Case::new("inherited");
+    let root = origin(&case);
+    let candidate = case.join("out/candidate");
+    build(
+        &case,
+        &root,
+        &candidate,
+        &[("LCL_LOCALIZED_SPEC", "/elsewhere/LCL_Core_0.2.0")],
+        "inherited",
+    )
+    .succeeded();
+    let recorded =
+        std::fs::read_to_string(candidate.join("lcl-0.1.0-PROVENANCE.txt")).expect("provenance");
+    assert!(recorded.contains("language version: 0.1.0\n"), "{recorded}");
+}
+
+#[test]
+fn a_tool_claiming_a_language_its_payload_lacks_is_refused() {
+    let case = Case::new("claimed");
+    let root = origin(&case);
+    let candidate = case.join("out/candidate");
+    let claimed = build(
+        &case,
+        &root,
+        &candidate,
+        &[("STUB_LCL_CLAIMS_0_2_0", "yes")],
+        "claimed",
+    );
+    assert!(
+        !claimed.output.status.success(),
+        "recorded a language the payload does not carry:\n{}",
+        claimed.stdout()
+    );
+    assert!(
+        claimed.stderr().contains("refused:") && claimed.stderr().contains("language"),
+        "{}",
+        claimed.stderr()
+    );
+    assert!(
+        candidate.symlink_metadata().is_err(),
+        "a candidate was published"
+    );
+}
+
+#[test]
+fn a_0_2_0_candidate_records_both_languages() {
+    let case = Case::new("localized");
+    let root = origin(&case);
+    write(
+        &root.join("canonical/LCL_Core_0.2.0/VERSION.txt"),
+        "0.2.0\n",
+        0o644,
+    );
+    let candidate = case.join("out/candidate");
+    build(
+        &case,
+        &root,
+        &candidate,
+        &[("LCL_RELEASE_VERSION", "0.2.0")],
+        "localized",
+    )
+    .succeeded();
+    let recorded =
+        std::fs::read_to_string(candidate.join("lcl-0.2.0-PROVENANCE.txt")).expect("provenance");
+    assert!(
+        recorded.contains("language version: 0.1.0 0.2.0\n"),
+        "{recorded}"
     );
 }
 

@@ -78,7 +78,7 @@ or per command with `--spec`, or per project in `lcl.project.json`.
 
 ```sh
 lcl help                      # commands, options and exit codes
-lcl version                   # tool, engine protocol and language versions
+lcl version                   # tool, protocol and the languages it can judge
 lcl spec                      # the package identity and whether it is authoritative
 lcl check   src/main.lcl      # canonical steps 1 to 5
 lcl validate src/main.lcl     # steps 1 to 9, before any effect
@@ -159,3 +159,9 @@ Core 0.2.0 package: `install.sh` installs both, the desktop launcher passes the
 identities. Without the variable the release version is the product version in
 `impl/Cargo.toml`, and a 0.1.0 candidate is built exactly as before. No other
 value is accepted.
+
+`lcl version` names Core 0.2.0 only when a Core 0.2.0 package is named to it,
+by `--localized-spec` or `LCL_LOCALIZED_SPEC`, and that package opens. The
+provenance's language version is what the built `lcl version` reports with
+exactly the packages the payload carries, and a candidate whose tool reports
+any other set is refused.

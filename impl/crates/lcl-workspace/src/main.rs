@@ -34,6 +34,9 @@ OPTIONS:
                         The canonical LCL Core 0.2.0 package, for localized
                         documents. Falls back to LCL_LOCALIZED_SPEC, then to
                         \"localized_spec\" in lcl.project.json.
+    --profile <FILE>    A locale profile <locale>.json for localized documents,
+                        after the project's \"profiles\" directory. Repeatable;
+                        a later file for the same locale replaces an earlier one.
     --create            Create a project here before opening it.
     --port <PORT>       Bind this loopback port instead of an ephemeral one.
     --open              Open the URL with xdg-open once the server is listening.
@@ -60,6 +63,7 @@ fn run(argv: &[String]) -> Result<(), String> {
     let mut document: Option<PathBuf> = None;
     let mut spec: Option<PathBuf> = None;
     let mut localized_spec: Option<PathBuf> = None;
+    let mut profiles: Vec<PathBuf> = Vec::new();
     let mut port: u16 = 0;
     let mut create = false;
     let mut open = false;
@@ -82,6 +86,7 @@ fn run(argv: &[String]) -> Result<(), String> {
             "--document" => document = Some(PathBuf::from(value("--document")?)),
             "--spec" => spec = Some(PathBuf::from(value("--spec")?)),
             "--localized-spec" => localized_spec = Some(PathBuf::from(value("--localized-spec")?)),
+            "--profile" => profiles.push(PathBuf::from(value("--profile")?)),
             "--port" => {
                 port = value("--port")?
                     .parse()
@@ -128,7 +133,7 @@ fn run(argv: &[String]) -> Result<(), String> {
         Workspace::create(&root, &spec).map_err(|e| e.to_string())?;
     }
     let localized_spec = Workspace::locate_localized_spec(localized_spec);
-    let workspace = Workspace::open_with(&root, &spec, localized_spec)
+    let workspace = Workspace::open_with_profiles(&root, &spec, localized_spec, &profiles)
         .map_err(|e| e.to_string())?
         .with_open_document(open_document);
 

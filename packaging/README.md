@@ -35,6 +35,20 @@ Opened from the menu with no document, it opens
 `~/.local/share/lcl/workspace`, stated rather than inherited from wherever the
 process happened to start.
 
+A 0.2.0 installation also passes the Core 0.2.0 package, but no locale
+profile: none is installed, and nothing searches for one. A localized document
+gets its profiles from its project. Put the `<locale>.json` files in a
+directory and name it in `lcl.project.json`, relative to the project root:
+
+```json
+{ "format": "lcl.project/1", "spec": "…", "profiles": "profiles" }
+```
+
+Without that a document that needs a profile is refused with
+`error.localization.profile_unavailable`, never read with canonical spellings.
+From a terminal, `lcl-workspace --profile <file>` and `lcl --profile <file>`
+add a profile file after the project's directory, by the same rule.
+
 Anything that goes wrong is written to
 `~/.local/state/lcl/launch.log` and, where a dialog tool exists, shown in one.
 A launch that fails is not a launch that silently does nothing.

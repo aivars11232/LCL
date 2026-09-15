@@ -90,6 +90,40 @@ fn a_localized_document_is_judged_by_the_0_2_0_engine() {
     assert!(core.units.iter().all(|unit| unit.locale.is_none()));
 }
 
+/// LCL-REPAIR-03 B-10: a profile file serves a project that declares no profile
+/// directory, as the command line's `--profile` does, and without one the
+/// document is refused rather than read under canonical spellings.
+#[test]
+fn a_profile_file_serves_a_project_without_a_profile_directory() {
+    let scratch = Scratch::new("workspace-localized-profile-file");
+    scratch.put("main.lcl", &fixture("sources/explicit_lv.lcl"));
+    let profile = scratch.put("lv-LV.json", &fixture("profiles/lv-LV.json"));
+    let check = |profiles: &[PathBuf]| {
+        let workspace = Workspace::open_with_profiles(
+            &scratch.path,
+            canonical_root(),
+            Some(localized_root()),
+            profiles,
+        )
+        .expect("the project opens");
+        let text = workspace.read("main.lcl").expect("it reads").text;
+        Routes::new(Arc::new(workspace))
+            .report("main.lcl", &text, Command::Check)
+            .expect("a report")
+    };
+
+    let with = check(std::slice::from_ref(&profile));
+    assert_eq!(with.outcome, Outcome::Accepted, "{:?}", with.diagnostics);
+    assert_eq!(with.spec.formal_version, "0.2.0");
+
+    let without = check(&[]);
+    assert_eq!(without.spec.formal_version, "0.2.0");
+    assert_eq!(
+        without.primary().map(|d| d.id.as_str()),
+        Some("error.localization.profile_unavailable")
+    );
+}
+
 #[test]
 fn token_spans_paint_localized_words_by_their_canonical_class() {
     let scratch = localized_project("workspace-localized-tokens");

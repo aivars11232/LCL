@@ -393,11 +393,17 @@ fn address_and_token(url: &str) -> (String, String) {
 
 /// One GET against the running workspace, over a real socket.
 fn get(url: &str, path: &str) -> (u16, String) {
+    request(url, "GET", path, "")
+}
+
+/// One request against the running workspace, over a real socket.
+fn request(url: &str, method: &str, path: &str, body: &str) -> (u16, String) {
     let (address, token) = address_and_token(url);
     let mut stream = TcpStream::connect(&address).expect("the workspace is listening");
     let request = format!(
-        "GET {path}{}t={token} HTTP/1.1\r\nHost: {address}\r\nContent-Length: 0\r\n\r\n",
-        if path.contains('?') { "&" } else { "?" }
+        "{method} {path}{}t={token} HTTP/1.1\r\nHost: {address}\r\nContent-Length: {}\r\n\r\n{body}",
+        if path.contains('?') { "&" } else { "?" },
+        body.len()
     );
     stream.write_all(request.as_bytes()).expect("request sent");
     stream.flush().expect("flushed");
@@ -555,6 +561,68 @@ fn a_document_inside_a_project_opens_against_that_project() {
     assert!(
         body.contains("\"open\": \"src/main.lcl\""),
         "the document keeps its root-relative identity:\n{body}"
+    );
+}
+
+/// LCL-REPAIR-03 B-10: an installed 0.2.0 payload judges a localized document
+/// with the locale profiles its project declares. The launcher supplies the
+/// Core 0.2.0 package and no profile; the profiles come only from the
+/// project's explicit `profiles` directory.
+#[test]
+fn a_localized_document_uses_the_profiles_its_project_declares() {
+    let home = Home::new("localized");
+    let payload = stage_payload(&home);
+    copy_tree(
+        &repository().join("canonical/LCL_Core_0.2.0"),
+        &payload.join("share/LCL_Core_0.2.0"),
+    );
+    run_installer(&payload, &home);
+
+    let fixtures =
+        repository().join("canonical/LCL_Core_0.2.0/09_CONFORMANCE/LOCALIZATION_FIXTURES");
+    let root = home.join("work");
+    std::fs::create_dir_all(root.join("profiles")).expect("writable");
+    let source =
+        std::fs::read_to_string(fixtures.join("sources/explicit_lv.lcl")).expect("the fixture");
+    let path = root.join("main.lcl");
+    std::fs::write(&path, &source).expect("writable");
+    let manifest = |profiles: &str| {
+        let spec = home.join(".local/share/lcl/LCL_Core_0.1.0");
+        let text = format!(
+            "{{\n  \"format\": \"lcl.project/1\",\n  \"spec\": {:?}{profiles}\n}}\n",
+            spec.display().to_string()
+        );
+        std::fs::write(root.join("lcl.project.json"), text).expect("writable");
+    };
+    let check = || {
+        let _ = std::fs::remove_file(home.join("opened-url"));
+        let launched = launch(&home, Some(&path));
+        let url = await_url(&launched);
+        let (status, body) = request(&url, "POST", "/api/check?id=main.lcl", &source);
+        assert_eq!(status, 200, "the check route refused: {body}");
+        body
+    };
+
+    manifest("");
+    let without = check();
+    assert!(
+        without.contains("\"formal_version\": \"0.2.0\"")
+            && without.contains("error.localization.profile_unavailable"),
+        "a project that declares no profile must refuse the document:\n{without}"
+    );
+
+    std::fs::copy(
+        fixtures.join("profiles/lv-LV.json"),
+        root.join("profiles/lv-LV.json"),
+    )
+    .expect("copyable");
+    manifest(",\n  \"profiles\": \"profiles\"");
+    let with = check();
+    assert!(
+        with.contains("\"formal_version\": \"0.2.0\"")
+            && with.contains("\"lv-LV\"")
+            && !with.contains("error.localization"),
+        "the project's declared profile must serve the document:\n{with}"
     );
 }
 

@@ -115,6 +115,19 @@ impl Workspace {
         spec: impl AsRef<Path>,
         localized: Option<PathBuf>,
     ) -> Result<Workspace, WorkspaceError> {
+        Workspace::open_with_profiles(root, spec, localized, &[])
+    }
+
+    /// [`Workspace::open_with`], with locale profile files added after the
+    /// manifest's profile directory, a later file for the same locale
+    /// replacing an earlier one. This is the command line's `--profile` rule,
+    /// so equal configuration judges a document the same way in both.
+    pub fn open_with_profiles(
+        root: impl AsRef<Path>,
+        spec: impl AsRef<Path>,
+        localized: Option<PathBuf>,
+        profiles: &[PathBuf],
+    ) -> Result<Workspace, WorkspaceError> {
         let root = root.as_ref();
         let project = match Project::open(root) {
             Ok(project) => project,
@@ -129,9 +142,10 @@ impl Workspace {
         let localized_spec_root = localized.or_else(|| project.localized_spec_path());
         let localized = match &localized_spec_root {
             Some(localized_root) => {
-                let files = project.profile_files().map_err(|e| {
+                let mut files = project.profile_files().map_err(|e| {
                     WorkspaceError::Spec(format!("the locale profile directory: {e}"))
                 })?;
+                files.extend(profiles.iter().cloned());
                 let engine = Engine::open_localized(localized_root, &files).map_err(|e| {
                     WorkspaceError::Spec(format!("the localized specification package: {e}"))
                 })?;

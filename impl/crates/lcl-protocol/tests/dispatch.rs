@@ -122,6 +122,157 @@ fn decision_d9_decides_failed_localizations() {
     );
 }
 
+/// LCL-REPAIR-03 B-11: every document is attributed to exactly one package,
+/// and its report names that package. A defect after a readable `VERSION`
+/// never moves a document to the other package; a document whose `VERSION`
+/// is not readable declares nothing and keeps its Core 0.1.0 reading unless
+/// D9 gives its localization failure the result.
+#[test]
+fn the_dispatch_matrix_attributes_each_document_to_one_package() {
+    use lcl_diagnostics::Stage::{self, GrammarOrSchema, Lexical, Localization};
+
+    let profiled = Engines::new(core(), Some(localized())).expect("engines");
+    let unprofiled = Engines::new(
+        core(),
+        Some(Engine::open_localized(canonical("0.2.0"), &[]).expect("no profiles")),
+    )
+    .expect("engines");
+    let identity = |version: &str| match version {
+        "0.1.0" => core().spec_record().identity_digest.clone(),
+        _ => localized().spec_record().identity_digest.clone(),
+    };
+    let core_fixture = |name: &str| {
+        std::fs::read(
+            canonical("0.1.0")
+                .join("09_CONFORMANCE/SOURCE_FIXTURES")
+                .join(name),
+        )
+        .expect("0.1.0 fixture")
+    };
+    let localized_fixture = |name: &str| fixture(name).bytes().to_vec();
+    let english = String::from_utf8(localized_fixture("canonical_en.lcl")).expect("UTF-8");
+    let edit = |from: &str, to: &str| {
+        assert!(english.contains(from), "{from:?}");
+        english.replacen(from, to, 1).into_bytes()
+    };
+    let quote = char::from_u32(0x201C).expect("a typographic quote");
+
+    type Row<'a> = (
+        &'a str,
+        &'a Engines,
+        Vec<u8>,
+        &'a str,
+        Option<(Stage, &'a str)>,
+    );
+    let rows: Vec<Row> = vec![
+        (
+            "valid 0.1.0",
+            &profiled,
+            core_fixture("valid_minimum.lcl"),
+            "0.1.0",
+            None,
+        ),
+        (
+            "invalid 0.1.0",
+            &profiled,
+            core_fixture("invalid_tab.lcl"),
+            "0.1.0",
+            Some((Lexical, "error.source.tab")),
+        ),
+        (
+            "valid 0.2.0 canonical English",
+            &profiled,
+            english.clone().into_bytes(),
+            "0.2.0",
+            None,
+        ),
+        (
+            "valid 0.2.0 localized",
+            &profiled,
+            localized_fixture("auto_lv.lcl"),
+            "0.2.0",
+            None,
+        ),
+        (
+            "0.2.0 explicit-locale localization failure",
+            &profiled,
+            localized_fixture("unavailable_explicit_locale.lcl"),
+            "0.2.0",
+            Some((Localization, "error.localization.profile_unavailable")),
+        ),
+        (
+            "0.2.0 canonical English, a tab after VERSION",
+            &profiled,
+            edit("    TYPE: INTEGER\n", "\tTYPE: INTEGER\n"),
+            "0.2.0",
+            Some((Lexical, "error.source.tab")),
+        ),
+        (
+            "0.2.0 canonical English, a typographic quote after VERSION",
+            &profiled,
+            edit(
+                "\"Localized minimum\"",
+                &format!("{quote}Localized minimum\""),
+            ),
+            "0.2.0",
+            Some((Lexical, "error.source.non_ascii_outside_string")),
+        ),
+        (
+            "0.2.0 canonical English, a grammar defect after VERSION",
+            &profiled,
+            edit("    VALUE: 3\n", "    VALUE: 3\n    VALUE: 3\n"),
+            "0.2.0",
+            Some((GrammarOrSchema, "error.field.duplicate")),
+        ),
+        (
+            "canonical English whose VERSION is not readable",
+            &profiled,
+            edit("    VERSION: \"0.2.0\"\n", "    VERSION: \"0.2.0\n"),
+            "0.1.0",
+            Some((Lexical, "error.literal.unclosed")),
+        ),
+        (
+            "0.2.0 canonical English, a tab before VERSION",
+            &profiled,
+            edit("    VERSION: \"0.2.0\"\n", "\tVERSION: \"0.2.0\"\n"),
+            "0.1.0",
+            Some((Lexical, "error.source.tab")),
+        ),
+        (
+            "localized source with a directive whose profile is unavailable",
+            &unprofiled,
+            localized_fixture("explicit_lv.lcl"),
+            "0.2.0",
+            Some((Localization, "error.localization.profile_unavailable")),
+        ),
+        (
+            "localized source without a directive and no profile (D9)",
+            &unprofiled,
+            localized_fixture("auto_lv.lcl"),
+            "0.1.0",
+            Some((Lexical, "error.keyword.unknown")),
+        ),
+    ];
+
+    let provider = MemoryProvider::new();
+    let mut wrong = Vec::new();
+    for (case, engines, bytes, version, primary) in rows {
+        let unit = SourceUnit::new(SourceId::new("matrix.lcl"), bytes);
+        let report = engines.engine_for(&unit).check(&unit, &provider);
+        let actual = (
+            report.spec.formal_version.as_str(),
+            report.spec.identity_digest == identity(version),
+            report.primary().map(|d| (d.stage, d.id.as_str())),
+        );
+        if actual != (version, true, primary) {
+            wrong.push(format!(
+                "{case}: expected {version} {primary:?}, got {actual:?}"
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "\n{}", wrong.join("\n"));
+}
+
 #[test]
 fn without_a_localized_engine_everything_is_core() {
     let engines = Engines::new(core(), None).expect("engines");

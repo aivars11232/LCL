@@ -45,7 +45,7 @@ use crate::record::{
 use lcl_checker::{Checked, Checker, Contracts as StaticContracts};
 use lcl_completion::{Completion, Contracts as CompletionContracts, Publication, SkipReason};
 use lcl_diagnostics::Stage;
-use lcl_lexer::{Lexicon, Position, Span};
+use lcl_lexer::{Lexicon, Position, Span, TokenKind};
 use lcl_localization::{
     localization_decides, Contract, CoverageDetector, LocaleDetector, LocaleProfileResolver,
     LocaleTag, Localization, MemoryResolver, Pin, LANGUAGE_VERSION,
@@ -842,11 +842,18 @@ impl Engines {
     ///   the 0.2.0 engine's exactly when it decides the result (D9). An
     ///   accepted reading follows its declared `VERSION` when one is readable,
     ///   and otherwise is the 0.2.0 engine's only when a profile was selected.
+    ///   A reading the lexical stage rejected declares the `VERSION` of a
+    ///   header line that precedes its first lexical defect.
     pub fn engine_for(&self, unit: &SourceUnit) -> &Engine {
         let Some(localized) = &self.localized else {
             return &self.core;
         };
-        let declared = |staged: &ResolvedUnit| staged.document().and_then(declared_lcl_version);
+        let declared = |staged: &ResolvedUnit| {
+            staged
+                .document()
+                .and_then(declared_lcl_version)
+                .or_else(|| lexed_lcl_version(staged))
+        };
         let canonical = self.core.stage(unit);
         if canonical.lexed().primary().is_none() {
             return if declared(&canonical).as_deref() == Some(LANGUAGE_VERSION) {
@@ -873,6 +880,51 @@ impl Engines {
             None => &self.core,
         }
     }
+}
+
+/// The declared `VERSION` of a unit the lexical stage rejected.
+///
+/// `DOCUMENT` begins `{ BLANK_LINE }, LCL_HEADER`, and `LCL_HEADER` is the
+/// token line `LCL : NEWLINE INDENT VERSION : SPACE STRING NEWLINE`. The
+/// declaration is readable only when that whole line precedes the unit's first
+/// lexical defect: no later stage repairs an earlier invalid stage by guessing
+/// intent (`01_FOUNDATION/03`), so nothing at or after a defect is read.
+fn lexed_lcl_version(unit: &ResolvedUnit) -> Option<String> {
+    if unit.parsed().is_some() {
+        return None;
+    }
+    let lexed = unit.lexed();
+    let boundary = lexed.diagnostics().iter().map(|d| d.span.start).min()?;
+    let mut tokens = lexed
+        .tokens()
+        .iter()
+        .skip_while(|t| t.kind == TokenKind::BlankLine);
+    let mut version = None;
+    for (kind, word) in [
+        (TokenKind::ReservedWord, "LCL"),
+        (TokenKind::Symbol, ":"),
+        (TokenKind::Newline, ""),
+        (TokenKind::Indent, ""),
+        (TokenKind::ReservedWord, "VERSION"),
+        (TokenKind::Symbol, ":"),
+        (TokenKind::Space, ""),
+        (TokenKind::String, ""),
+        (TokenKind::Newline, ""),
+    ] {
+        let token = tokens
+            .next()
+            .filter(|t| t.kind == kind && t.span.end <= boundary)?;
+        let spelled = token
+            .canonical
+            .as_deref()
+            .or_else(|| lexed.source().get(token.span.start..token.span.end))?;
+        match kind {
+            TokenKind::ReservedWord | TokenKind::Symbol if spelled != word => return None,
+            TokenKind::String => version = token.value.clone(),
+            _ => {}
+        }
+    }
+    version
 }
 
 /// Steps 1 and 3 for one unit the resolver did load.

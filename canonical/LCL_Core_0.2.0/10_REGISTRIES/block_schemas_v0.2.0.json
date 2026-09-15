@@ -1,0 +1,1109 @@
+{
+  "language": "LCL",
+  "version": "0.2.0",
+  "schemas": {
+    "LCL": {
+      "contexts": [
+        "top_level_first"
+      ],
+      "occurrence": "exactly_one",
+      "required": [
+        "VERSION"
+      ],
+      "optional": [],
+      "repeatable": [],
+      "rules": [
+        "First non-blank statement.",
+        "VERSION is one exact supported LCL semantic version."
+      ]
+    },
+    "SPECIFICATION": {
+      "contexts": [
+        "top_level_second"
+      ],
+      "occurrence": "exactly_one",
+      "required": [
+        "ID",
+        "NAME",
+        "VERSION",
+        "KIND"
+      ],
+      "optional": [
+        "DOMAIN",
+        "AUTHORITY",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "Second top-level block.",
+        "AUTHORITY defaults to 500."
+      ]
+    },
+    "IMPORT": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "SOURCE",
+        "NAMESPACE",
+        "VERSION"
+      ],
+      "optional": [
+        "CHECKSUM",
+        "AUTHORITY",
+        "REQUIRED",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "Namespace is mandatory; no merge into local namespace.",
+        "URI source requires CHECKSUM."
+      ]
+    },
+    "EXTENSION": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "SOURCE",
+        "NAMESPACE",
+        "VERSION"
+      ],
+      "optional": [
+        "CHECKSUM",
+        "REQUIRED",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "Loaded KIND is kind.extension.",
+        "May add definitions only."
+      ]
+    },
+    "DEFINE": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "KIND"
+      ],
+      "optional": [
+        "MEANING",
+        "TYPE",
+        "VALUE",
+        "BASE",
+        "ITEM",
+        "FIELD",
+        "PARAMETER",
+        "RESULT",
+        "FORMAT",
+        "ENCODING",
+        "SIDE_EFFECT",
+        "DEPENDENCY",
+        "DETERMINISTIC",
+        "EXAMPLE",
+        "DESCRIPTION"
+      ],
+      "repeatable": [
+        "ITEM",
+        "FIELD",
+        "PARAMETER",
+        "EXAMPLE"
+      ],
+      "rules": [
+        "Immutable.",
+        "Kind-specific required fields are normative.",
+        "ITEM is legal only for KIND kind.type with BASE ENUM and occurs one or more times there.",
+        "KIND kind.error, kind.event, and kind.status require BASE and MEANING and define same-domain aliases inheriting the canonical core metadata without modification.",
+        "FIELD is legal only for KIND kind.type with direct BASE OBJECT. An alias adds no FIELD or ITEM and preserves the resolved base schema or enum domain."
+      ]
+    },
+    "FIELD": {
+      "contexts": [
+        "DEFINE",
+        "SCHEMA"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "NAME",
+        "TYPE",
+        "REQUIRED"
+      ],
+      "optional": [
+        "DEFAULT",
+        "MINIMUM",
+        "MAXIMUM",
+        "TOLERANCE",
+        "PATTERN",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": []
+    },
+    "PARAMETER": {
+      "contexts": [
+        "DEFINE",
+        "ACTION",
+        "ALLOW",
+        "FORBID",
+        "HANDLER"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "NAME",
+        "TYPE",
+        "REQUIRED"
+      ],
+      "optional": [
+        "VALUE",
+        "DEFAULT",
+        "MINIMUM",
+        "MAXIMUM",
+        "TOLERANCE",
+        "PATTERN",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": []
+    },
+    "RESULT": {
+      "contexts": [
+        "DEFINE",
+        "GOAL"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "TYPE"
+      ],
+      "optional": [
+        "FORMAT",
+        "SCHEMA",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": []
+    },
+    "WORKSPACE": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "PATH",
+        "MODE"
+      ],
+      "optional": [
+        "SCOPE",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "PATH is absolute.",
+        "Relative PATH explicitly references a WORKSPACE."
+      ]
+    },
+    "INPUT": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "TYPE"
+      ],
+      "optional": [
+        "VALUE",
+        "SOURCE",
+        "FORMAT",
+        "ENCODING",
+        "SCHEMA",
+        "REQUIRED",
+        "DEFAULT",
+        "CHECKSUM",
+        "PROVENANCE",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "Exactly one VALUE or SOURCE unless optional with DEFAULT.",
+        "REQUIRED defaults TRUE."
+      ]
+    },
+    "CONTEXT": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "TYPE",
+        "SCOPE"
+      ],
+      "optional": [
+        "VALUE",
+        "SOURCE",
+        "FORMAT",
+        "ENCODING",
+        "VERSION",
+        "CHECKSUM",
+        "REQUIRED",
+        "PROVENANCE",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "Exactly one VALUE or SOURCE.",
+        "Non-authoritative and cannot add rules."
+      ]
+    },
+    "MEMORY": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "TYPE",
+        "SCOPE",
+        "MODE"
+      ],
+      "optional": [
+        "VALUE",
+        "SOURCE",
+        "FORMAT",
+        "ENCODING",
+        "VERSION",
+        "CHECKSUM",
+        "REQUIRED",
+        "PROVENANCE",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "Exactly one VALUE or SOURCE.",
+        "Writes require core.memory_write."
+      ]
+    },
+    "STATE": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "TYPE",
+        "SCOPE",
+        "MODE"
+      ],
+      "optional": [
+        "VALUE",
+        "SOURCE",
+        "FORMAT",
+        "ENCODING",
+        "VERSION",
+        "CHECKSUM",
+        "REQUIRED",
+        "PROVENANCE",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "Exactly one VALUE or SOURCE.",
+        "Read is a snapshot at declared execution point."
+      ]
+    },
+    "DATA": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "TYPE",
+        "VALUE"
+      ],
+      "optional": [
+        "FORMAT",
+        "ENCODING",
+        "SCHEMA",
+        "CHECKSUM",
+        "PROVENANCE",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "VALUE is data, not executable syntax."
+      ]
+    },
+    "SCOPE": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "INCLUDE"
+      ],
+      "optional": [
+        "EXCLUDE",
+        "OPERATION",
+        "WHEN",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "EXCLUDE wins inside the same scope."
+      ]
+    },
+    "GOAL": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID"
+      ],
+      "optional": [
+        "ASSERT",
+        "RESULT",
+        "PRIORITY",
+        "REQUIRED",
+        "DESCRIPTION"
+      ],
+      "repeatable": [
+        "RESULT"
+      ],
+      "rules": [
+        "At least ASSERT or RESULT.",
+        "REQUIRED defaults TRUE.",
+        "Optional PRIORITY defaults to 0, never inherits, and an explicit declaration overrides the default."
+      ]
+    },
+    "TASK": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "GOAL",
+        "SUCCESS"
+      ],
+      "optional": [
+        "INPUT",
+        "WORKSPACE",
+        "SCOPE",
+        "DEPENDENCY",
+        "PHASE",
+        "SEQUENCE",
+        "ACTION",
+        "OUTPUT",
+        "HANDLER",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "At least PHASE, SEQUENCE, or ACTION.",
+        "PHASE, SEQUENCE, and ACTION fields are reference/list-only; inline child blocks are forbidden."
+      ]
+    },
+    "DEPENDENCY": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "REFERENCE"
+      ],
+      "optional": [
+        "ASSERT",
+        "REQUIRED",
+        "WHEN",
+        "HANDLER",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "REQUIRED defaults TRUE.",
+        "Unresolved required dependency blocks before effects."
+      ]
+    },
+    "ACTION": {
+      "contexts": [
+        "top_level",
+        "STEP"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "OPERATION"
+      ],
+      "optional": [
+        "TARGET",
+        "PARAMETER",
+        "OUTPUT",
+        "SCOPE",
+        "WHEN",
+        "REQUIRED",
+        "RETRY",
+        "EVIDENCE",
+        "DESCRIPTION"
+      ],
+      "repeatable": [
+        "PARAMETER"
+      ],
+      "rules": [
+        "Reachable ACTION authorizes only its exact operation, target, and parameters unless FORBID applies."
+      ]
+    },
+    "ALLOW": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "OPERATION",
+        "TARGET"
+      ],
+      "optional": [
+        "PARAMETER",
+        "SCOPE",
+        "WHEN",
+        "AUTHORITY",
+        "PRIORITY",
+        "DESCRIPTION"
+      ],
+      "repeatable": [
+        "PARAMETER"
+      ],
+      "rules": [
+        "Permission only; does not require execution.",
+        "Never defeats FORBID by itself.",
+        "Optional PRIORITY defaults to 0, never inherits, and an explicit declaration overrides the default."
+      ]
+    },
+    "FORBID": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "OPERATION",
+        "TARGET"
+      ],
+      "optional": [
+        "PARAMETER",
+        "SCOPE",
+        "WHEN",
+        "AUTHORITY",
+        "PRIORITY",
+        "DESCRIPTION"
+      ],
+      "repeatable": [
+        "PARAMETER"
+      ],
+      "rules": [
+        "Hard prohibition.",
+        "Optional PRIORITY defaults to 0, never inherits, and an explicit declaration overrides the default."
+      ]
+    },
+    "REQUIRE": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID"
+      ],
+      "optional": [
+        "ASSERT",
+        "ACTION",
+        "WHEN",
+        "SCOPE",
+        "AUTHORITY",
+        "PRIORITY",
+        "EVIDENCE",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "Exactly one ASSERT or ACTION.",
+        "Hard rule.",
+        "ACTION is reference/list-only; an inline ACTION block is forbidden.",
+        "Optional PRIORITY defaults to 0, never inherits, and an explicit declaration overrides the default."
+      ]
+    },
+    "PREFER": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID"
+      ],
+      "optional": [
+        "ASSERT",
+        "ACTION",
+        "WHEN",
+        "SCOPE",
+        "AUTHORITY",
+        "PRIORITY",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "Exactly one ASSERT or ACTION.",
+        "Soft and does not authorize action.",
+        "ACTION is reference/list-only; an inline ACTION block is forbidden.",
+        "Optional PRIORITY defaults to 0, never inherits, and an explicit declaration overrides the default."
+      ]
+    },
+    "PRESERVE": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "TARGET"
+      ],
+      "optional": [
+        "PROPERTY",
+        "WHEN",
+        "SCOPE",
+        "AUTHORITY",
+        "PRIORITY",
+        "EVIDENCE",
+        "DESCRIPTION"
+      ],
+      "repeatable": [
+        "PROPERTY"
+      ],
+      "rules": [
+        "No PROPERTY means complete target.",
+        "Hard pre-state equals post-state rule.",
+        "Optional PRIORITY defaults to 0, never inherits, and an explicit declaration overrides the default."
+      ]
+    },
+    "OVERRIDE": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "WINNER",
+        "LOSER"
+      ],
+      "optional": [
+        "WHEN",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "Exact conflicting clauses only.",
+        "Lower authority cannot win."
+      ]
+    },
+    "PHASE": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID"
+      ],
+      "optional": [
+        "MODE",
+        "STEP",
+        "SEQUENCE",
+        "BEFORE",
+        "AFTER",
+        "WHEN",
+        "REQUIRED",
+        "DESCRIPTION"
+      ],
+      "repeatable": [
+        "STEP"
+      ],
+      "rules": [
+        "At least STEP, SEQUENCE, IF, or FOR EACH.",
+        "MODE defaults mode.sequential."
+      ]
+    },
+    "SEQUENCE": {
+      "contexts": [
+        "top_level",
+        "PHASE"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID"
+      ],
+      "optional": [
+        "MODE",
+        "STEP",
+        "WHEN",
+        "REQUIRED",
+        "DESCRIPTION"
+      ],
+      "repeatable": [
+        "STEP"
+      ],
+      "rules": [
+        "At least STEP, IF, or FOR EACH.",
+        "Lexical order is normative."
+      ]
+    },
+    "STEP": {
+      "contexts": [
+        "SEQUENCE",
+        "PHASE",
+        "IF",
+        "FOR_EACH",
+        "ELSE"
+      ],
+      "occurrence": "one_or_more",
+      "required": [
+        "ID"
+      ],
+      "optional": [
+        "ACTION",
+        "SEQUENCE",
+        "PHASE",
+        "TASK",
+        "BEFORE",
+        "AFTER",
+        "WHEN",
+        "REQUIRED",
+        "HANDLER",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "Exactly one ACTION, SEQUENCE, PHASE, or TASK.",
+        "SEQUENCE and PHASE fields are reference/list-only; inline SEQUENCE or PHASE blocks are forbidden."
+      ]
+    },
+    "RETRY": {
+      "contexts": [
+        "ACTION"
+      ],
+      "occurrence": "zero_or_one",
+      "required": [
+        "LIMIT"
+      ],
+      "optional": [
+        "WHEN",
+        "DELAY",
+        "HANDLER",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "LIMIT counts additional attempts and is 0 through 100.",
+        "This inline ACTION block is the only source of attempt bounds; total attempts are at most 1 + LIMIT and the first successful attempt ends retrying.",
+        "A handler using core.retry authorizes this declared RETRY and its resolved limit must equal this LIMIT.",
+        "RETRY.WHEN defaults to TRUE and RETRY.DELAY defaults to DURATION(0, unit.second). A false condition or a refused safety check prevents another attempt without manufacturing count exhaustion or success.",
+        "Count exhaustion occurs only after 1 + LIMIT actual unsuccessful attempts.",
+        "RETRY.HANDLER is in scope only for diagnostics raised by an attempt of the ACTION declaring this RETRY, including the first attempt."
+      ]
+    },
+    "HANDLER": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "EVENT",
+        "OPERATION"
+      ],
+      "optional": [
+        "TARGET",
+        "PARAMETER",
+        "WHEN",
+        "FALLBACK",
+        "LIMIT",
+        "DESCRIPTION"
+      ],
+      "repeatable": [
+        "PARAMETER"
+      ],
+      "rules": [
+        "HANDLER is an invocation site; OPERATION selects and invokes one operation under the ACTION contract.",
+        "EVENT names the event this handler activates on; the closed event model in statuses_and_errors_v0.2.0.json#/event_model raises events only from emitted diagnostics and selects at most one handler per raised diagnostic.",
+        "A required TARGET may be omitted only under the handler-context binding for REFERENCE[ACTION] or REFERENCE[meta.execution_unit] targets.",
+        "LIMIT is exactly the limit named parameter of the selected operation and is legal only when that operation registers it.",
+        "FALLBACK admits one REF to a HANDLER, or one operation identifier that requires no named parameter and whose required TARGET the handler-context binding supplies.",
+        "An injected handler-context target identifies the active owning invocation aggregate; the failed child attempt remains immutable evidence. Explicit targets follow the selected operation contract.",
+        "At most one handler is selected through event attachments; direct acyclic FALLBACK calls may invoke another HANDLER without a second event selection."
+      ]
+    },
+    "OUTPUT": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "TYPE",
+        "FORMAT"
+      ],
+      "optional": [
+        "TARGET",
+        "SCHEMA",
+        "ENCODING",
+        "REQUIRED",
+        "DEFAULT",
+        "PROPERTY",
+        "DESCRIPTION"
+      ],
+      "repeatable": [
+        "PROPERTY"
+      ],
+      "rules": [
+        "TARGET is destination, not produced VALUE.",
+        "Zero PROPERTY occurrences select the applicable default result; one selects a scalar field; two or more select a closed OBJECT in declaration order.",
+        "Every PROPERTY is unique and must name an available projectable result field."
+      ]
+    },
+    "VALIDATE": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "ASSERT"
+      ],
+      "optional": [
+        "TARGET",
+        "ERROR",
+        "WHEN",
+        "REQUIRED",
+        "EVIDENCE",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "Runs before first side effect."
+      ]
+    },
+    "VERIFY": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "ASSERT"
+      ],
+      "optional": [
+        "TARGET",
+        "ERROR",
+        "WHEN",
+        "REQUIRED",
+        "EVIDENCE",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "Runs after observed target exists.",
+        "Required failure prevents success."
+      ]
+    },
+    "TEST": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID"
+      ],
+      "optional": [
+        "TASK",
+        "ACTION",
+        "INPUT",
+        "EXPECTED",
+        "ACTUAL",
+        "ASSERT",
+        "EVIDENCE",
+        "REQUIRED",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "At least ASSERT or EXPECTED+ACTUAL.",
+        "At most one TASK/ACTION."
+      ]
+    },
+    "EVIDENCE": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "TYPE"
+      ],
+      "optional": [
+        "SOURCE",
+        "VALUE",
+        "FORMAT",
+        "ENCODING",
+        "CHECKSUM",
+        "PROVENANCE",
+        "REQUIRED",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "Exactly one SOURCE or VALUE when evaluated."
+      ]
+    },
+    "SUCCESS": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID"
+      ],
+      "optional": [
+        "ALL",
+        "ANY",
+        "NONE",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "Exactly one ALL, ANY, or NONE."
+      ]
+    },
+    "FAILURE": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "WHEN",
+        "STATUS"
+      ],
+      "optional": [
+        "ERROR",
+        "HANDLER",
+        "EVIDENCE",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "STATUS is terminal non-success.",
+        "Resolve status aliases first. A selected STATUS must be legal in the active producer current allowed_next set and scope; an illegal transition produces error.execution.order, and an execution root cannot select status.skipped.",
+        "The first TRUE FAILURE in source order maps status only when no primary unhandled diagnostic fixes it; ERROR is classification metadata and does not emit an arbitrary new diagnostic."
+      ]
+    },
+    "ASSUME": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "TARGET",
+        "VALUE",
+        "WHEN"
+      ],
+      "optional": [
+        "SCOPE",
+        "EVIDENCE",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "Never overrides explicit data.",
+        "Applied assumption appears in evidence."
+      ]
+    },
+    "EXECUTE": {
+      "contexts": [
+        "top_level"
+      ],
+      "occurrence": "zero_or_one",
+      "required": [
+        "REFERENCE"
+      ],
+      "optional": [
+        "MODE",
+        "OUTPUT",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "Reference is TASK, PHASE, SEQUENCE, ACTION, or TEST.",
+        "task/test documents require exactly one."
+      ]
+    },
+    "COMMENT": {
+      "contexts": [
+        "top_level",
+        "IF",
+        "FOR_EACH",
+        "ELSE"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "CONTENT"
+      ],
+      "optional": [],
+      "repeatable": [],
+      "rules": []
+    },
+    "EXAMPLE": {
+      "contexts": [
+        "top_level",
+        "DEFINE"
+      ],
+      "occurrence": "zero_or_more",
+      "required": [
+        "ID",
+        "CONTENT"
+      ],
+      "optional": [
+        "EXPECTED",
+        "REQUIRED",
+        "DESCRIPTION"
+      ],
+      "repeatable": [],
+      "rules": [
+        "REQUIRED defaults FALSE."
+      ]
+    }
+  },
+  "document_kind_blocks": {
+    "kind.task": [
+      "IMPORT",
+      "EXTENSION",
+      "DEFINE",
+      "WORKSPACE",
+      "DATA",
+      "CONTEXT",
+      "MEMORY",
+      "STATE",
+      "INPUT",
+      "SCOPE",
+      "GOAL",
+      "TASK",
+      "DEPENDENCY",
+      "ACTION",
+      "ALLOW",
+      "FORBID",
+      "REQUIRE",
+      "PREFER",
+      "PRESERVE",
+      "OVERRIDE",
+      "PHASE",
+      "SEQUENCE",
+      "HANDLER",
+      "OUTPUT",
+      "VALIDATE",
+      "VERIFY",
+      "TEST",
+      "EVIDENCE",
+      "SUCCESS",
+      "FAILURE",
+      "ASSUME",
+      "EXECUTE",
+      "COMMENT",
+      "EXAMPLE"
+    ],
+    "kind.library": [
+      "IMPORT",
+      "EXTENSION",
+      "DEFINE",
+      "DATA",
+      "SCOPE",
+      "ALLOW",
+      "FORBID",
+      "REQUIRE",
+      "PREFER",
+      "PRESERVE",
+      "OVERRIDE",
+      "VALIDATE",
+      "EVIDENCE",
+      "COMMENT",
+      "EXAMPLE"
+    ],
+    "kind.extension": [
+      "IMPORT",
+      "DEFINE",
+      "DATA",
+      "COMMENT",
+      "EXAMPLE"
+    ],
+    "kind.data": [
+      "IMPORT",
+      "EXTENSION",
+      "DEFINE",
+      "DATA",
+      "COMMENT",
+      "EXAMPLE"
+    ],
+    "kind.test": [
+      "IMPORT",
+      "EXTENSION",
+      "DEFINE",
+      "WORKSPACE",
+      "DATA",
+      "CONTEXT",
+      "MEMORY",
+      "STATE",
+      "INPUT",
+      "SCOPE",
+      "GOAL",
+      "TASK",
+      "DEPENDENCY",
+      "ACTION",
+      "ALLOW",
+      "FORBID",
+      "REQUIRE",
+      "PREFER",
+      "PRESERVE",
+      "OVERRIDE",
+      "PHASE",
+      "SEQUENCE",
+      "HANDLER",
+      "OUTPUT",
+      "VALIDATE",
+      "VERIFY",
+      "TEST",
+      "EVIDENCE",
+      "SUCCESS",
+      "FAILURE",
+      "ASSUME",
+      "EXECUTE",
+      "COMMENT",
+      "EXAMPLE"
+    ]
+  },
+  "execution_graph_contract": {
+    "candidate_graph": "Build the complete finite structural activation graph from EXECUTE. Include both IF branches and each FOR EACH body as source templates for static checking. TASK execution fields, PHASE and SEQUENCE executable children, the selected STEP arm, and a root TEST TASK or ACTION activate execution units. Ordinary REF, TARGET, check references, OUTPUT reads, BEFORE and AFTER never activate a producer. Explicit graph-valued operation invocations create their own child invocation under the same rules.",
+    "child_order": "TASK execution-bearing PHASE, SEQUENCE, and ACTION fields contribute children in source field order; each reference LIST expands left to right. PHASE and SEQUENCE executable children contribute in lexical order, including STEP, nested SEQUENCE where legal, IF and FOR EACH. A STEP selected reference LIST expands left to right. These are explicit exceptions to otherwise nonsemantic field order.",
+    "activation_identity": "An execution-unit source declaration has one structural activation path per candidate invocation. Multiple structural paths to the same declaration use error.execution.order before effects, including mutually exclusive branches. Structural cycles use error.reference.cycle. Explicit bounded FOR EACH instances and RETRY attempts replicate their source template with distinct invocation identities and are not duplicate activation.",
+    "ordering": "TASK and STEP child groups are sequential. PHASE and SEQUENCE use declared MODE, defaulting to mode.sequential. Sequential lexical order contributes required predecessor edges. BEFORE and AFTER add edges and never reverse a sequential edge. Endpoints must be distinct sibling execution units in the same container and iteration context; other endpoints and ordering cycles use error.execution.order. Ordering references never expand reachability. A skipped predecessor satisfies ordering completion but supplies no missing value.",
+    "parallel": "mode.parallel omits implicit sequential edges but retains BEFORE and AFTER edges. Every included pair must have proven independence: no conflicting writes, read/write dependency, shared mutable binding, or conflicting output destination. Disjoint output paths alone are insufficient. Result collection and diagnostics use declared child order, never finish order. Independent eligible children may execute in any order.",
+    "loop_instances": "FOR EACH evaluates its finite snapshot once at reachability. Iterations run sequentially in registered LIST or SET order; each body finishes before the next starts. Instance identity includes the full enclosing iteration-index path. The local binding is visible only within its body and resolves to that exact instance.",
+    "successor": "A declared successor is the unique next reachable sibling in the containing sequential group, ascending finished enclosing sequential containers when necessary. Dynamic applicability is evaluated normally. Continuation invents no unit; an absent successor or ambiguous parallel continuation uses error.execution.order."
+  }
+}

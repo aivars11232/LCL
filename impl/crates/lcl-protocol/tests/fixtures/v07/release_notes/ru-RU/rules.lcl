@@ -1,0 +1,27 @@
+LCL:
+    ВЕРСИЯ: "0.2.0"
+
+СПЕЦИФИКАЦИЯ:
+    ИД: app.release_rules
+    ИМЯ: "Release note rules"
+    ВЕРСИЯ: "1.0.0"
+    ВИД: kind.library
+    ПОЛНОМОЧИЕ: 500
+
+ОБЛАСТЬ:
+    ИД: scope.workspace
+    ВКЛЮЧИТЬ: ШАБЛОН("**")
+
+ЗАПРЕТИТЬ:
+    ИД: rule.no_delete
+    ОПЕРАЦИЯ: core.delete
+    ЦЕЛЕВОЙ_ОБЪЕКТ: ССЫЛ(scope.workspace)
+    ПОЛНОМОЧИЕ: 500
+    ПРИОРИТЕТ: 100
+
+РАЗРЕШИТЬ:
+    ИД: rule.may_write
+    ОПЕРАЦИЯ: core.create
+    ЦЕЛЕВОЙ_ОБЪЕКТ: ССЫЛ(scope.workspace)
+    ПОЛНОМОЧИЕ: 500
+    ПРИОРИТЕТ: 50

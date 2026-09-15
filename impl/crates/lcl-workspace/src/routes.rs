@@ -132,6 +132,20 @@ impl Routes {
                     .with("authority", Node::string(&spec.authority))
                     .into(),
             )
+            // The Core 0.2.0 package, when this workspace judges localized
+            // documents with it. `spec` stays the Core 0.1.0 package.
+            .with_some(
+                "localized_spec",
+                self.workspace.engines().localized().map(|engine| {
+                    let spec = engine.spec_record();
+                    Object::new()
+                        .with("root", Node::string(&spec.root))
+                        .with("formal_version", Node::string(&spec.formal_version))
+                        .with("identity_digest", Node::string(&spec.identity_digest))
+                        .with("authority", Node::string(&spec.authority))
+                        .into()
+                }),
+            )
             .with("entry", Node::optional(self.workspace.entry()))
             // The document this workspace was launched for, when a file
             // association supplied one. Separate from `entry`, which is the
@@ -277,9 +291,12 @@ impl Routes {
             Ok(text) => text,
             Err(e) => return Response::error(422, &e.to_string()),
         };
+        // The id names the document the buffer is, so a localized document is
+        // lexed by the engine that judges it.
+        let unit = intelligence::unit_of(request.param("id").unwrap_or("buffer.lcl"), text);
         Response::json(intelligence::tokens_json(
-            self.workspace.engine().lexicon(),
-            text,
+            self.workspace.engine_for(&unit),
+            &unit,
         ))
     }
 
@@ -309,7 +326,7 @@ impl Routes {
             .provider()
             .map_err(|e| e.to_string())?;
         let unit = intelligence::unit_of(id, text);
-        let engine = self.workspace.engine();
+        let engine = self.workspace.engine_for(&unit);
         Ok(match command {
             Command::Check => engine.check(&unit, &provider),
             Command::Inspect => engine.inspect(&unit, &provider, &Inputs::new()),
@@ -464,7 +481,7 @@ fn execute(
 ) -> Result<Report, String> {
     let provider = workspace.project().provider().map_err(|e| e.to_string())?;
     let unit = intelligence::unit_of(id, text);
-    let engine = workspace.engine();
+    let engine = workspace.engine_for(&unit);
 
     let (mut stdlib, mut host) =
         lcl_protocol::surface(engine, &granted).map_err(|e| e.to_string())?;

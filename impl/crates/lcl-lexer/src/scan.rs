@@ -49,6 +49,7 @@ use crate::literal;
 use crate::span::{LineIndex, Span};
 use crate::token::{Token, TokenKind};
 use crate::Lexed;
+use crate::WordMap;
 
 const BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
 /// `02_LEXICAL/02`: "One indentation level is exactly four ASCII spaces."
@@ -63,6 +64,12 @@ struct Raw {
 }
 
 pub(crate) fn lex(lexicon: &Lexicon, source: &[u8]) -> Lexed {
+    lex_with(lexicon, source, None)
+}
+
+/// Lex under an optional locale profile [`WordMap`] (LCL 0.2.0,
+/// `02_LEXICAL/13`). With `None` this is exactly [`lex`].
+pub(crate) fn lex_with(lexicon: &Lexicon, source: &[u8], words: Option<&WordMap>) -> Lexed {
     let mut raw: Vec<Raw> = Vec::new();
 
     // --- 1. Encoding gate ---------------------------------------------------
@@ -75,6 +82,11 @@ pub(crate) fn lex(lexicon: &Lexicon, source: &[u8]) -> Lexed {
             detail: Some("source begins with a UTF-8 byte-order mark".into()),
         });
         start = BOM.len();
+    }
+    if let Some(map) = words {
+        // The locale directive line is localization metadata, not source
+        // tokens. Every later token keeps its original byte offset.
+        start = start.max(map.directive_len().min(source.len()));
     }
 
     let text = match std::str::from_utf8(source) {
@@ -100,6 +112,7 @@ pub(crate) fn lex(lexicon: &Lexicon, source: &[u8]) -> Lexed {
 
     let mut scan = Scan {
         lexicon,
+        words,
         text,
         bytes: source,
         quarantined: vec![false; text.len()],
@@ -217,6 +230,8 @@ fn drop_tokens_inside_diagnostics(
 
 struct Scan<'a> {
     lexicon: &'a Lexicon,
+    /// The selected locale profile's spellings, if any.
+    words: Option<&'a WordMap>,
     text: &'a str,
     bytes: &'a [u8],
     /// Byte offsets whose character was already rejected by part 2.
@@ -628,7 +643,7 @@ impl<'a> Scan<'a> {
         if head.span.start != self.line_first_lexeme {
             return Context::Structural;
         }
-        let head_text = head.span.slice(self.text).unwrap_or("");
+        let head_text = head.word(self.text).unwrap_or("");
         match head.kind {
             TokenKind::ReservedWord => {
                 let bare_key = line.get(1).map(|t| t.span) == Some(opener);
@@ -678,7 +693,7 @@ impl<'a> Scan<'a> {
             let Some(token) = self.tokens.last() else {
                 return;
             };
-            let lexeme = token.span.slice(self.text).unwrap_or("");
+            let lexeme = token.word(self.text).unwrap_or("");
             if token.kind == TokenKind::ReservedWord
                 && token.span.start == self.line_first_lexeme
                 && self.byte(token.span.end) == Some(b':')
@@ -756,6 +771,13 @@ impl<'a> Scan<'a> {
             b'0'..=b'9' => self.scan_number(),
             b'A'..=b'Z' | b'a'..=b'z' | b'_' => self.scan_word(),
             b if b >= 0x80 => {
+                if self
+                    .words
+                    .is_some_and(|map| self.char_at(at).is_some_and(|c| map.is_letter(c)))
+                {
+                    self.scan_word();
+                    return;
+                }
                 let c = self.char_at(at).unwrap_or('\u{FFFD}');
                 let width = c.len_utf8();
                 // `02_LEXICAL/01`: "Outside STRING and MULTILINE_STRING
@@ -876,7 +898,7 @@ impl Scan<'_> {
             .tokens
             .last()
             .filter(|t| t.kind == TokenKind::ReservedWord && t.span.end == at)
-            .and_then(|t| t.span.slice(self.text));
+            .and_then(|t| t.word(self.text));
         match lexeme {
             "(" => {
                 self.delimiters.push((b'(', at));
@@ -975,11 +997,66 @@ impl Scan<'_> {
     fn scan_word(&mut self) {
         let start = self.pos;
         let mut at = start;
-        while matches!(self.byte(at), Some(c) if is_word_byte(c)) {
-            at = at.saturating_add(1);
+        let mut repertoire_letter = None;
+        loop {
+            match self.byte(at) {
+                Some(c) if is_word_byte(c) => at = at.saturating_add(1),
+                Some(c) if c >= 0x80 => match (self.words, self.char_at(at)) {
+                    (Some(map), Some(ch)) if map.is_letter(ch) => {
+                        repertoire_letter.get_or_insert((at, ch));
+                        at = at.saturating_add(ch.len_utf8());
+                    }
+                    _ => break,
+                },
+                _ => break,
+            }
         }
         self.pos = at;
         let run = self.text.get(start..at).unwrap_or("");
+
+        if let Some(map) = self.words {
+            // `02_LEXICAL/13`: a candidate word starts with an ASCII uppercase
+            // letter or a repertoire letter and contains no ASCII lowercase
+            // letter. Under a profile only the profile's spellings are
+            // reserved words; the localization stage has already rejected
+            // mixed and confusable words.
+            let candidate = !run.bytes().any(|b| b.is_ascii_lowercase())
+                && run
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_uppercase() || !c.is_ascii());
+            if candidate {
+                let span = Span::new(start, at);
+                match map.canonical(run) {
+                    Some(word) => {
+                        let mut token = Token::new(TokenKind::ReservedWord, span);
+                        token.canonical = Some(word.to_string());
+                        self.tokens.push(token);
+                    }
+                    None => self.push(
+                        LexicalError::KeywordUnknown,
+                        span,
+                        "keyword",
+                        format!("`{run}` is not a spelling of the selected locale profile"),
+                    ),
+                }
+                return;
+            }
+            if let Some((letter_at, letter)) = repertoire_letter {
+                // Not a candidate word: the Core 0.1.0 rule for a non-ASCII
+                // character outside a string literal applies.
+                self.push(
+                    LexicalError::SourceNonAsciiOutsideString,
+                    Span::new(letter_at, letter_at.saturating_add(letter.len_utf8())),
+                    "non_ascii",
+                    format!(
+                        "U+{:04X} occurs outside a string literal in `{run}`, which is not a candidate word",
+                        letter as u32
+                    ),
+                );
+                return;
+            }
+        }
 
         if is_simple_identifier(run) {
             self.finish_identifier(start, run);
@@ -1087,12 +1164,9 @@ impl Scan<'_> {
         } else {
             None
         };
-        self.tokens.push(Token {
-            kind,
-            span,
-            value: None,
-            case_folds_to,
-        });
+        let mut token = Token::new(kind, span);
+        token.case_folds_to = case_folds_to;
+        self.tokens.push(token);
     }
 
     /// The syntax-required positions of `error.keyword.case`, decided from
@@ -1734,7 +1808,7 @@ impl Scan<'_> {
             let Some(head) = self.tokens.get(index) else {
                 break;
             };
-            let name = head.span.slice(self.text).unwrap_or("");
+            let name = head.word(self.text).unwrap_or("");
             let is_call = head.kind == TokenKind::ReservedWord
                 && self
                     .tokens

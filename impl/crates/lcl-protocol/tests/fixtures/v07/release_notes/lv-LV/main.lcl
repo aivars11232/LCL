@@ -1,0 +1,136 @@
+@locale lv-LV
+LCL:
+    VERSIJA: "0.2.0"
+
+SPECIFIKĀCIJA:
+    ID: app.release_notes
+    NOSAUKUMS: "Assemble release notes"
+    VERSIJA: "1.0.0"
+    VEIDS: kind.task
+    DOMĒNS: "documentation"
+
+IMPORTĒT:
+    ID: import.rules
+    AVOTS: CEĻŠ("rules.lcl")
+    VĀRDTELPA: release_rules
+    VERSIJA: "1.0.0"
+    PILNVARA: 500
+    OBLIGĀTS: PATIESS
+
+DARBVIETA:
+    ID: workspace.notes
+    CEĻŠ: CEĻŠ("/tmp/lcl-apps/medium-release-notes")
+    REŽĪMS: mode.read_write
+
+TVĒRUMS:
+    ID: scope.task
+    IEKĻAUT: ATS(task.notes)
+
+KONTEKSTS:
+    ID: context.release
+    TIPS: OBJEKTS
+    TVĒRUMS: ATS(scope.task)
+    VĒRTĪBA:
+        product: "LCL"
+        version: "0.1.0"
+
+STĀVOKLIS:
+    ID: state.entry_count
+    TIPS: VESELS
+    TVĒRUMS: ATS(scope.task)
+    REŽĪMS: mode.read_only
+    VĒRTĪBA: 3
+
+IEVADE:
+    ID: input.entries
+    TIPS: SARAKSTS[VIRKNE]
+    VĒRTĪBA: ["parser", "resolver", "runtime"]
+
+IZVADE:
+    ID: output.headline
+    TIPS: VIRKNE
+    FORMĀTS: format.plain_text
+
+IZVADE:
+    ID: output.notes
+    TIPS: CEĻŠ
+    FORMĀTS: format.plain_text
+    ADRESĀTS: CEĻŠ(ATS(workspace.notes), "NOTES.txt")
+    ĪPAŠĪBA: target
+
+MĒRĶIS:
+    ID: goal.notes
+    APGALVOT: EKSISTĒ(ATS(output.notes))
+
+DARBĪBA:
+    ID: action.headline
+    OPERĀCIJA: core.calculate
+    ADRESĀTS: ATS(context.release)
+    PARAMETRS:
+        NOSAUKUMS: expression
+        TIPS: VIRKNE
+        OBLIGĀTS: PATIESS
+        VĒRTĪBA: "REF(context.release).product"
+    IZVADE: ATS(output.headline)
+
+SECĪBA:
+    ID: sequence.entries
+    REŽĪMS: mode.sequential
+    PAR KATRS entry IEKŠ ATS(input.entries):
+        SOLIS:
+            ID: step.entry
+            DARBĪBA:
+                ID: action.entry
+                OPERĀCIJA: core.return
+                ADRESĀTS: ATS(entry)
+
+DARBĪBA:
+    ID: action.write
+    OPERĀCIJA: core.create
+    ADRESĀTS: CEĻŠ(ATS(workspace.notes), "NOTES.txt")
+    PARAMETRS:
+        NOSAUKUMS: content
+        TIPS: VIRKNE
+        OBLIGĀTS: PATIESS
+        VĒRTĪBA: "LCL 0.1.0 release notes"
+    IZVADE: ATS(output.notes)
+
+PIERĀDĪJUMS:
+    ID: evidence.headline
+    TIPS: VIRKNE
+    VĒRTĪBA: "The headline is assembled from CONTEXT context.release."
+    IZCELSME: "Declared directly in this specification."
+    OBLIGĀTS: PATIESS
+
+PĀRBAUDĪT:
+    ID: verify.headline
+    OBLIGĀTS: PATIESS
+    APGALVOT: ATS(output.headline) == "LCL"
+    PIERĀDĪJUMS: ATS(evidence.headline)
+
+PĀRBAUDĪT:
+    ID: verify.entries
+    OBLIGĀTS: PATIESS
+    APGALVOT: SKAITS(ATS(input.entries)) == ATS(state.entry_count)
+
+PĀRBAUDĪT:
+    ID: verify.written
+    OBLIGĀTS: PATIESS
+    APGALVOT: EKSISTĒ(ATS(output.notes))
+
+PANĀKUMS:
+    ID: success.notes
+    VISI: [ATS(verify.headline), ATS(verify.entries), ATS(verify.written)]
+
+UZDEVUMS:
+    ID: task.notes
+    MĒRĶIS: ATS(goal.notes)
+    DARBVIETA: ATS(workspace.notes)
+    IEVADE: ATS(input.entries)
+    DARBĪBA: [ATS(action.headline), ATS(action.write)]
+    SECĪBA: ATS(sequence.entries)
+    IZVADE: [ATS(output.headline), ATS(output.notes)]
+    PANĀKUMS: ATS(success.notes)
+
+IZPILDĪT:
+    ATSAUCE: ATS(task.notes)

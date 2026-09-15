@@ -205,9 +205,11 @@ impl<'a> ExprParser<'a, '_> {
         span.slice(self.source).unwrap_or("")
     }
 
+    /// A reserved word: its canonical identity (the profile-mapped word for
+    /// localized source) at the author's own span.
     fn word(&self, token: &Token) -> Word {
         Word {
-            text: self.text(token.span).to_string(),
+            text: token.word(self.source).unwrap_or("").to_string(),
             span: token.span,
         }
     }
@@ -315,7 +317,7 @@ impl<'a> ExprParser<'a, '_> {
     fn collect_prefixes(&mut self, c: &mut Cursor<'a>, frame: &mut Frame) -> Option<()> {
         loop {
             let Some(t) = c.peek() else { return Some(()) };
-            if t.kind == TokenKind::ReservedWord && self.text(t.span) == "NOT" {
+            if t.kind == TokenKind::ReservedWord && t.word(self.source) == Some("NOT") {
                 // `NOT` requires the following SPACE; the grammar spells it.
                 if c.peek_at(1).map(|n| n.kind) != Some(TokenKind::Space) {
                     let span = t.span;
@@ -432,7 +434,7 @@ impl<'a> ExprParser<'a, '_> {
                 ))
             }
             TokenKind::ReservedWord => {
-                let text = self.text(span).to_string();
+                let text = token.word(self.source).unwrap_or("").to_string();
                 if self.grammar.is_literal_word(&text) {
                     let kind = match text.as_str() {
                         "TRUE" => LiteralKind::True,
@@ -507,7 +509,7 @@ impl<'a> ExprParser<'a, '_> {
         if token.kind != TokenKind::ReservedWord {
             return None;
         }
-        let text = self.text(token.span);
+        let text = token.word(self.source).unwrap_or("");
         let opens_call = self.grammar.is_callable(text)
             && c.peek_at(1).map(|n| n.kind) == Some(TokenKind::Symbol)
             && c.peek_at(1).map(|n| self.text(n.span)) == Some("(");
@@ -622,7 +624,7 @@ impl<'a> ExprParser<'a, '_> {
                         }
                     };
                     let name_span = name.span;
-                    let text = self.text(name_span).to_string();
+                    let text = name.word(self.source).unwrap_or("").to_string();
                     c.bump();
                     node = Expr::Property(PropertyAccess {
                         span: Span::new(node.span().start, name_span.end),
@@ -850,7 +852,7 @@ impl<'a> ExprParser<'a, '_> {
         if c.peek()?.kind != TokenKind::Space || word.kind != TokenKind::ReservedWord {
             return None;
         }
-        let text = self.text(word.span);
+        let text = word.word(self.source).unwrap_or("");
         let op = table.iter().find(|(w, _)| *w == text).map(|(_, o)| *o)?;
         if c.peek_at(2)?.kind != TokenKind::Space {
             return None;
@@ -891,7 +893,7 @@ impl<'a> ExprParser<'a, '_> {
         if c.peek_at(2)?.kind != TokenKind::Space {
             return None;
         }
-        let text = self.text(candidate.span);
+        let text = candidate.word(self.source).unwrap_or("");
         let op = match candidate.kind {
             TokenKind::Symbol => COMPARE_SYMBOLS
                 .iter()

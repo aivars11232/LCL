@@ -70,6 +70,12 @@
 #
 #   LCL_RELEASE_OUT=<dir>   where to write. Defaults to
 #                           releases/candidates/<name>-<short source id>.
+#   LCL_RELEASE_VERSION=<v> the language release the candidate is for: 0.1.0
+#                           or 0.2.0. Defaults to the product version in
+#                           impl/Cargo.toml. A 0.2.0 candidate bundles the
+#                           Core 0.1.0 package and the Core 0.2.0 package, whose
+#                           localized documents the tools judge alongside 0.1.0
+#                           ones; a 0.1.0 candidate bundles only Core 0.1.0.
 #
 # The directory must not exist yet and its parent must; inside the source tree
 # it may only be under releases/. It is created only after every artifact has
@@ -356,7 +362,16 @@ verify_tree "$snapshot" "$inventory"
 
 version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$snapshot/impl/Cargo.toml" | head -1)
 [ -n "$version" ] || refuse "cannot read the product version from impl/Cargo.toml"
-name=lcl-$version-linux-x86_64
+release=${LCL_RELEASE_VERSION:-$version}
+case "$release" in
+    0.1.0) ;;
+    0.2.0)
+        [ -f "$snapshot/canonical/LCL_Core_0.2.0/VERSION.txt" ] ||
+            refuse "a 0.2.0 candidate needs canonical/LCL_Core_0.2.0 in the captured source"
+        ;;
+    *) refuse "LCL_RELEASE_VERSION must be 0.1.0 or 0.2.0, not $release" ;;
+esac
+name=lcl-$release-linux-x86_64
 
 out=${LCL_RELEASE_OUT:-$root/releases/candidates/$name-$short_source_id}
 check_output "$out"
@@ -385,6 +400,9 @@ install -m 0755 "$build/release/lcl-workspace" "$payload/bin/lcl-workspace"
 # The engine refuses to load a package that is not the approved release, so the
 # package travels with the binaries rather than being looked for at run time.
 cp -r "$snapshot/canonical/LCL_Core_0.1.0" "$payload/share/LCL_Core_0.1.0"
+if [ "$release" = 0.2.0 ]; then
+    cp -r "$snapshot/canonical/LCL_Core_0.2.0" "$payload/share/LCL_Core_0.2.0"
+fi
 
 cp "$snapshot/packaging/install.sh" "$snapshot/packaging/uninstall.sh" "$payload/"
 chmod 0755 "$payload/install.sh" "$payload/uninstall.sh"
@@ -440,10 +458,22 @@ fi
 # ---------------------------------------------------------------------------
 
 identity=$("$payload/bin/lcl" spec --spec "$payload/share/LCL_Core_0.1.0" | sed -n 's/^ *identity *//p')
-language=$("$payload/bin/lcl" version | sed -n 's/^language //p')
+language=$("$payload/bin/lcl" version | sed -n 's/^language //p' | tr '\n' ' ' | sed 's/ *$//')
 protocol=$("$payload/bin/lcl" version | sed -n 's/^protocol //p')
 if [ -z "$identity" ] || [ -z "$language" ] || [ -z "$protocol" ]; then
     refuse "the built lcl did not report its package identity, language and protocol"
+fi
+# The Core 0.2.0 package's identity, as the built tool's own 0.2.0 engine
+# reports it for the package's canonical-English fixture.
+localized_identity=
+if [ "$release" = 0.2.0 ]; then
+    localized_identity=$("$payload/bin/lcl" check --machine \
+        --spec "$payload/share/LCL_Core_0.1.0" \
+        --localized-spec "$payload/share/LCL_Core_0.2.0" \
+        "$payload/share/LCL_Core_0.2.0/09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/canonical_en.lcl" |
+        sed -n 's/.*"identity_digest": *"\([0-9a-f]*\)".*/\1/p' | head -1)
+    [ -n "$localized_identity" ] ||
+        refuse "the built lcl did not report the Core 0.2.0 package identity"
 fi
 rustc_program=${RUSTC:-rustc}
 {
@@ -484,10 +514,14 @@ rustc_program=${RUSTC:-rustc}
     echo
     echo "artifact:         $name.tar.gz"
     echo "sha256:           $(cut -d' ' -f1 < "$artifacts/$name.sha256")"
+    echo "release version:  $release"
     echo "product version:  $version"
     echo "language version: $language"
     echo "engine protocol:  $protocol"
     echo "package identity: $identity"
+    if [ -n "$localized_identity" ]; then
+        echo "0.2.0 identity:   $localized_identity"
+    fi
     echo
     echo "Bit-for-bit reproducibility is not claimed. Rust embeds build paths"
     echo "and no attempt is made to normalize them, so two runs from identical"
@@ -508,14 +542,14 @@ rustc_program=${RUSTC:-rustc}
     echo "PAYLOAD, every file in the tarball: executable class, size, SHA-256, path"
     echo
     cat "$staging/payload-manifest"
-} > "$artifacts/lcl-$version-PROVENANCE.txt"
+} > "$artifacts/lcl-$release-PROVENANCE.txt"
 
 # ---------------------------------------------------------------------------
 # 6. Publish: claim the output directory, copy, and check what arrived
 # ---------------------------------------------------------------------------
 
 set -- "$name.tar.gz" "$name.sha256" "$name-source.tar.gz" "$name-source.sha256" \
-    SOURCE_INVENTORY.tsv "lcl-$version-PROVENANCE.txt"
+    SOURCE_INVENTORY.tsv "lcl-$release-PROVENANCE.txt"
 if [ -f "$artifacts/SOURCE_CHANGES.patch" ]; then
     set -- "$@" SOURCE_CHANGES.patch
 fi

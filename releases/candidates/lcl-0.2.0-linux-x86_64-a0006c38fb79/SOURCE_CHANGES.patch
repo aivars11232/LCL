@@ -1,0 +1,2698 @@
+diff --git a/impl/Cargo.lock b/impl/Cargo.lock
+index 95c1e99..115e8b2 100644
+--- a/impl/Cargo.lock
++++ b/impl/Cargo.lock
+@@ -27,6 +27,7 @@ version = "0.1.0"
+ dependencies = [
+  "lcl-capabilities",
+  "lcl-lexer",
++ "lcl-localization",
+  "lcl-project",
+  "lcl-protocol",
+  "lcl-resolver",
+@@ -102,6 +103,13 @@ dependencies = [
+  "lcl-spec",
+ ]
+ 
++[[package]]
++name = "lcl-localization"
++version = "0.1.0"
++dependencies = [
++ "lcl-spec",
++]
++
+ [[package]]
+ name = "lcl-parser"
+ version = "0.1.0"
+@@ -130,6 +138,7 @@ dependencies = [
+  "lcl-completion",
+  "lcl-diagnostics",
+  "lcl-lexer",
++ "lcl-localization",
+  "lcl-parser",
+  "lcl-resolver",
+  "lcl-runtime",
+@@ -144,6 +153,7 @@ version = "0.1.0"
+ dependencies = [
+  "lcl-diagnostics",
+  "lcl-lexer",
++ "lcl-localization",
+  "lcl-parser",
+  "lcl-spec",
+ ]
+diff --git a/impl/Cargo.toml b/impl/Cargo.toml
+index f9a3da2..29e108d 100644
+--- a/impl/Cargo.toml
++++ b/impl/Cargo.toml
+@@ -63,6 +63,7 @@
+ resolver = "2"
+ members = [
+     "crates/lcl-spec",
++    "crates/lcl-localization",
+     "crates/lcl-diagnostics",
+     "crates/lcl-lexer",
+     "crates/lcl-parser",
+diff --git a/impl/crates/lcl-cli/Cargo.toml b/impl/crates/lcl-cli/Cargo.toml
+index 76861c5..d4c48ed 100644
+--- a/impl/crates/lcl-cli/Cargo.toml
++++ b/impl/crates/lcl-cli/Cargo.toml
+@@ -16,5 +16,6 @@ lcl-project = { path = "../lcl-project" }
+ lcl-capabilities = { path = "../lcl-capabilities" }
+ lcl-stdlib = { path = "../lcl-stdlib" }
+ lcl-spec = { path = "../lcl-spec" }
++lcl-localization = { path = "../lcl-localization" }
+ lcl-resolver = { path = "../lcl-resolver" }
+ lcl-lexer = { path = "../lcl-lexer" }
+diff --git a/impl/crates/lcl-cli/src/args.rs b/impl/crates/lcl-cli/src/args.rs
+index 31e4802..4251a04 100644
+--- a/impl/crates/lcl-cli/src/args.rs
++++ b/impl/crates/lcl-cli/src/args.rs
+@@ -65,6 +65,11 @@ pub struct Document {
+ pub struct Common {
+     /// The canonical specification package root.
+     pub spec: Option<PathBuf>,
++    /// The canonical LCL Core 0.2.0 package root, whose localization stage
++    /// judges localized documents. Absent: every document is Core 0.1.0's.
++    pub localized_spec: Option<PathBuf>,
++    /// Locale profile files, in the order given.
++    pub profiles: Vec<PathBuf>,
+     /// The project root.
+     pub project: Option<PathBuf>,
+     /// Emit the machine-readable record instead of human text.
+@@ -253,6 +258,14 @@ fn split(argv: &[String]) -> Result<(Vec<String>, Common), UsageError> {
+                 }
+                 common.spec = Some(PathBuf::from(path));
+             }
++            "--localized-spec" => {
++                let path = value("--localized-spec")?;
++                if common.localized_spec.is_some() {
++                    return Err(UsageError::new("--localized-spec was given more than once"));
++                }
++                common.localized_spec = Some(PathBuf::from(path));
++            }
++            "--profile" => common.profiles.push(PathBuf::from(value("--profile")?)),
+             "--project" => {
+                 let path = value("--project")?;
+                 if common.project.is_some() {
+@@ -345,6 +358,14 @@ pub fn usage() -> String {
+     out.push_str("\nOPTIONS\n");
+     for (name, description) in [
+         ("--spec <path>", "the canonical specification package root"),
++        (
++            "--localized-spec <path>",
++            "the canonical LCL Core 0.2.0 package, for localized documents",
++        ),
++        (
++            "--profile <file>",
++            "a locale profile <locale>.json (repeatable)",
++        ),
+         (
+             "--project <dir>",
+             "the project root; defaults to the document's own directory",
+diff --git a/impl/crates/lcl-cli/src/main.rs b/impl/crates/lcl-cli/src/main.rs
+index ea6910e..d7aa033 100644
+--- a/impl/crates/lcl-cli/src/main.rs
++++ b/impl/crates/lcl-cli/src/main.rs
+@@ -36,9 +36,13 @@ mod render;
+ mod syntax;
+ 
+ use args::{Command, Common, Document, UsageError};
++use lcl_localization::{LocaleTag, Pin};
++use lcl_project::lock::LockedLocale;
+ use lcl_project::{Cache, Lock, Project};
+ use lcl_protocol::json::{Node, Object};
+-use lcl_protocol::{Engine, Inputs, Report};
++use lcl_protocol::{Engine, Engines, Inputs, Report};
++use lcl_resolver::SourceId;
++use std::collections::BTreeMap;
+ use std::path::{Path, PathBuf};
+ use std::process::ExitCode;
+ 
+@@ -92,6 +96,8 @@ fn run(argv: &[String]) -> Result<i32, Failure> {
+             println!("lcl {}", env!("CARGO_PKG_VERSION"));
+             println!("protocol {}", lcl_protocol::PROTOCOL);
+             println!("language 0.1.0");
++            // With a Core 0.2.0 package named, localized documents are judged too.
++            println!("language 0.2.0");
+             Ok(exit::SUCCESS)
+         }
+         Command::Check(document) => stage_command(document, lcl_protocol::Command::Check),
+@@ -134,6 +140,70 @@ fn spec_root(common: &Common, project: Option<&Project>) -> Result<PathBuf, Fail
+     ))
+ }
+ 
++/// Where the canonical LCL Core 0.2.0 package is, when one is named.
++///
++/// The same explicit order as [`spec_root`]: `--localized-spec`, then
++/// `LCL_LOCALIZED_SPEC`, then the manifest's `localized_spec`. Naming none is
++/// not an error: every document is then judged by Core 0.1.0.
++fn localized_spec_root(common: &Common, project: Option<&Project>) -> Option<PathBuf> {
++    if let Some(path) = &common.localized_spec {
++        return Some(path.clone());
++    }
++    if let Some(value) = std::env::var_os("LCL_LOCALIZED_SPEC") {
++        if !value.is_empty() {
++            return Some(PathBuf::from(value));
++        }
++    }
++    project.and_then(Project::localized_spec_path)
++}
++
++/// The engines a command judges documents with.
++///
++/// Core 0.1.0 always, and the Core 0.2.0 engine with its localization stage
++/// only when a 0.2.0 package is named. Its locale profiles are the project's
++/// `profiles` directory and then every `--profile` file, a later file for the
++/// same locale replacing an earlier one. Under `--locked`, the lock file's
++/// locale pins apply.
++fn engines(common: &Common, project: Option<&Project>) -> Result<Engines, Failure> {
++    let failed = |e: &dyn std::fmt::Display| Failure::environment(e.to_string());
++    let core = Engine::open(spec_root(common, project)?).map_err(|e| failed(&e))?;
++    let Some(root) = localized_spec_root(common, project) else {
++        return Engines::new(core, None).map_err(|e| failed(&e));
++    };
++    let mut files = match project {
++        Some(project) => project
++            .profile_files()
++            .map_err(|e| Failure::environment(format!("the locale profile directory: {e}")))?,
++        None => Vec::new(),
++    };
++    files.extend(common.profiles.iter().cloned());
++    let mut localized = Engine::open_localized(&root, &files).map_err(|e| {
++        Failure::environment(format!(
++            "the localized specification package {}: {e}",
++            root.display()
++        ))
++    })?;
++    if common.locked {
++        if let Some(lock) = project.and_then(|p| Lock::read(p.lock_path()).ok()) {
++            let pins: BTreeMap<SourceId, Pin> = lock
++                .locales
++                .iter()
++                .filter_map(|(unit, pinned)| {
++                    Some((
++                        SourceId::new(unit.clone()),
++                        Pin {
++                            locale: LocaleTag::parse(&pinned.locale).ok()?,
++                            identity: pinned.profile_identity.clone(),
++                        },
++                    ))
++                })
++                .collect();
++            localized = localized.with_locale_pins(pins);
++        }
++    }
++    Engines::new(core, Some(localized)).map_err(|e| failed(&e))
++}
++
+ /// Open the project a command acts within.
+ ///
+ /// `--project` names it outright. Otherwise it is the document's own directory:
+@@ -174,8 +244,7 @@ fn entry(document: &Document, project: &Project) -> Result<PathBuf, Failure> {
+ fn stage_command(document: Document, command: lcl_protocol::Command) -> Result<i32, Failure> {
+     let common = document.common.clone();
+     let project = open_project(&common, document.path.as_deref())?;
+-    let engine = Engine::open(spec_root(&common, Some(&project))?)
+-        .map_err(|e| Failure::environment(e.to_string()))?;
++    let engines = engines(&common, Some(&project))?;
+ 
+     let path = entry(&document, &project)?;
+     let provider = project
+@@ -184,6 +253,7 @@ fn stage_command(document: Document, command: lcl_protocol::Command) -> Result<i
+     let unit = provider
+         .root_unit(&path)
+         .map_err(|e| Failure::environment(e.to_string()))?;
++    let engine = engines.engine_for(&unit);
+ 
+     let mut inputs = Inputs::new();
+     for (id, expression) in &common.inputs {
+@@ -195,7 +265,7 @@ fn stage_command(document: Document, command: lcl_protocol::Command) -> Result<i
+         lcl_protocol::Command::Validate => engine.validate(&unit, &provider, &inputs),
+         lcl_protocol::Command::Inspect => engine.inspect(&unit, &provider, &inputs),
+         lcl_protocol::Command::Run => {
+-            let (mut stdlib, mut host) = lcl_protocol::surface(&engine, &common.grants)
++            let (mut stdlib, mut host) = lcl_protocol::surface(engine, &common.grants)
+                 .map_err(|e| Failure::environment(e.to_string()))?;
+             engine.run(&unit, &provider, &inputs, &mut stdlib, &mut host)
+         }
+@@ -217,15 +287,29 @@ fn stage_command(document: Document, command: lcl_protocol::Command) -> Result<i
+ 
+ /// The lock a report's own units describe.
+ fn lock_of(report: &Report) -> Option<Lock> {
+-    Some(Lock::new(
+-        report.spec.identity_digest.clone(),
+-        report.spec.formal_version.clone(),
+-        report.root()?.to_string(),
+-        report
+-            .units
+-            .iter()
+-            .map(|unit| (unit.id.clone(), unit.digest.clone())),
+-    ))
++    let locales = report.units.iter().filter_map(|unit| {
++        let selected = unit.locale.as_ref()?;
++        Some((
++            unit.id.clone(),
++            LockedLocale {
++                locale: selected.locale.clone()?,
++                method: selected.method.clone(),
++                profile_identity: selected.profile_identity.clone()?,
++            },
++        ))
++    });
++    Some(
++        Lock::new(
++            report.spec.identity_digest.clone(),
++            report.spec.formal_version.clone(),
++            report.root()?.to_string(),
++            report
++                .units
++                .iter()
++                .map(|unit| (unit.id.clone(), unit.digest.clone())),
++        )
++        .with_locales(locales),
++    )
+ }
+ 
+ /// Under `--locked`, the drift that must stop the command.
+@@ -256,8 +340,7 @@ fn locked_drift(project: &Project, report: &Report) -> Result<Option<String>, Fa
+ fn lock_command(document: Document, write: bool) -> Result<i32, Failure> {
+     let common = document.common.clone();
+     let project = open_project(&common, document.path.as_deref())?;
+-    let engine = Engine::open(spec_root(&common, Some(&project))?)
+-        .map_err(|e| Failure::environment(e.to_string()))?;
++    let engines = engines(&common, Some(&project))?;
+     let path = entry(&document, &project)?;
+     let provider = project
+         .provider()
+@@ -265,6 +348,7 @@ fn lock_command(document: Document, write: bool) -> Result<i32, Failure> {
+     let unit = provider
+         .root_unit(&path)
+         .map_err(|e| Failure::environment(e.to_string()))?;
++    let engine = engines.engine_for(&unit);
+ 
+     // Locking records what a resolution actually loaded, so it runs one. Steps
+     // 1 to 5 load every unit an import names, and nothing further is needed to
+diff --git a/impl/crates/lcl-diagnostics/src/lib.rs b/impl/crates/lcl-diagnostics/src/lib.rs
+index 7abe0d4..11a7ce5 100644
+--- a/impl/crates/lcl-diagnostics/src/lib.rs
++++ b/impl/crates/lcl-diagnostics/src/lib.rs
+@@ -2,9 +2,10 @@
+ //!
+ //! Milestone M0 component B.
+ //!
+-//! Models the **registered** diagnostic vocabulary of LCL Core 0.1.0: the
+-//! closed stage order, the 12 statuses and the 77 errors, each with its
+-//! normative stage, recoverability, event mapping and default status.
++//! Models the **registered** diagnostic vocabulary of LCL Core 0.1.0 and 0.2.0:
++//! the closed stage order, the statuses and the errors, each with its normative
++//! stage, recoverability, event mapping and default status. Core 0.2.0 adds the
++//! `localization` stage before `lexical`.
+ //!
+ //! ## What this crate is
+ //!
+@@ -41,6 +42,9 @@ use std::fmt;
+ /// completion form one stage.
+ #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+ pub enum Stage {
++    /// The Core 0.2.0 localization stage (`02_LEXICAL/13`). Core 0.1.0 has no
++    /// such stage.
++    Localization,
+     Lexical,
+     GrammarOrSchema,
+     Resolution,
+@@ -51,8 +55,11 @@ pub enum Stage {
+ }
+ 
+ impl Stage {
+-    /// The seven stages in normative order.
+-    pub const ORDER: [Stage; 7] = [
++    /// Every stage in normative order: the Core 0.2.0 order. Core 0.1.0
++    /// declares [`Stage::ORDER_0_1_0`], which is this order without
++    /// [`Stage::Localization`].
++    pub const ORDER: [Stage; 8] = [
++        Stage::Localization,
+         Stage::Lexical,
+         Stage::GrammarOrSchema,
+         Stage::Resolution,
+@@ -62,8 +69,29 @@ impl Stage {
+         Stage::VerificationOrCompletion,
+     ];
+ 
++    /// The seven stages of Core 0.1.0, in normative order.
++    pub const ORDER_0_1_0: [Stage; 7] = [
++        Stage::Lexical,
++        Stage::GrammarOrSchema,
++        Stage::Resolution,
++        Stage::StaticOrExpression,
++        Stage::Validation,
++        Stage::Execution,
++        Stage::VerificationOrCompletion,
++    ];
++
++    /// The closed stage order a package of `formal_version` declares.
++    pub fn order_for(formal_version: &str) -> &'static [Stage] {
++        if formal_version == "0.2.0" {
++            &Stage::ORDER
++        } else {
++            &Stage::ORDER_0_1_0
++        }
++    }
++
+     pub fn as_registry_str(self) -> &'static str {
+         match self {
++            Stage::Localization => "localization",
+             Stage::Lexical => "lexical",
+             Stage::GrammarOrSchema => "grammar_or_schema",
+             Stage::Resolution => "resolution",
+@@ -196,7 +224,8 @@ impl DiagnosticRegistry {
+             .iter()
+             .filter_map(|v| v.as_str().map(str::to_string))
+             .collect();
+-        let expected: Vec<String> = Stage::ORDER
++        let stage_order = Stage::order_for(spec.formal_version());
++        let expected: Vec<String> = stage_order
+             .iter()
+             .map(|s| s.as_registry_str().to_string())
+             .collect();
+@@ -248,11 +277,13 @@ impl DiagnosticRegistry {
+             .ok_or_else(|| DiagnosticsError::Malformed("missing errors".into()))?;
+         for (id, body) in error_obj {
+             let stage_str = str_field(body, "stage", id)?;
+-            let stage = Stage::from_registry_str(&stage_str).ok_or_else(|| {
+-                DiagnosticsError::UnclosedReference(format!(
+-                    "{id}: unregistered stage {stage_str:?}"
+-                ))
+-            })?;
++            let stage = Stage::from_registry_str(&stage_str)
++                .filter(|s| stage_order.contains(s))
++                .ok_or_else(|| {
++                    DiagnosticsError::UnclosedReference(format!(
++                        "{id}: unregistered stage {stage_str:?}"
++                    ))
++                })?;
+             let default_status = str_field(body, "default_status", id)?;
+             errors.insert(
+                 id.clone(),
+@@ -278,7 +309,7 @@ impl DiagnosticRegistry {
+         let me = Self {
+             statuses,
+             errors,
+-            stage_order: Stage::ORDER.to_vec(),
++            stage_order: stage_order.to_vec(),
+             selection_contract: selection.clone(),
+             event_model: reg.get("event_model").cloned().unwrap_or(Json::Null),
+             failure_lifecycle: reg.get("failure_lifecycle").cloned().unwrap_or(Json::Null),
+@@ -401,7 +432,13 @@ mod tests {
+ 
+     #[test]
+     fn stage_order_is_total_and_normative() {
+-        assert_eq!(Stage::ORDER.len(), 7);
++        // Core 0.2.0 `diagnostic_selection.stage_order` declares eight stages,
++        // `localization` first; Core 0.1.0 declares the other seven.
++        assert_eq!(Stage::ORDER.len(), 8);
++        assert_eq!(Stage::ORDER[1..], Stage::ORDER_0_1_0);
++        assert!(Stage::Localization.precedes(Stage::Lexical));
++        assert_eq!(Stage::order_for("0.1.0"), Stage::ORDER_0_1_0);
++        assert_eq!(Stage::order_for("0.2.0"), Stage::ORDER);
+         assert!(Stage::Lexical.precedes(Stage::Execution));
+         assert!(!Stage::Execution.precedes(Stage::Lexical));
+         assert!(!Stage::Validation.precedes(Stage::Validation));
+diff --git a/impl/crates/lcl-diagnostics/tests/registered_model.rs b/impl/crates/lcl-diagnostics/tests/registered_model.rs
+index 7d66a3b..41dbecc 100644
+--- a/impl/crates/lcl-diagnostics/tests/registered_model.rs
++++ b/impl/crates/lcl-diagnostics/tests/registered_model.rs
+@@ -32,7 +32,10 @@ fn loads_all_registered_errors_and_statuses() {
+ #[test]
+ fn stage_order_agrees_with_registry() {
+     let r = registry();
+-    assert_eq!(r.stage_order(), Stage::ORDER.as_slice());
++    // LCL-FEATURE-04 oracle correction: `Stage::ORDER` is now the Core 0.2.0
++    // eight-stage order; this Core 0.1.0 registry declares the seven below,
++    // which the unchanged name assertion that follows still pins exactly.
++    assert_eq!(r.stage_order(), Stage::ORDER_0_1_0.as_slice());
+     let names: Vec<&str> = r
+         .stage_order()
+         .iter()
+@@ -191,3 +194,21 @@ fn recoverable_errors_are_a_strict_subset() {
+     assert!(n > 0, "some errors are handler-recoverable");
+     assert!(n < r.error_count(), "not all errors are recoverable");
+ }
++
++/// Core 0.2.0 declares the `localization` stage first and nine errors at it.
++#[test]
++fn the_0_2_0_registry_adds_the_localization_stage_first() {
++    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
++        .join("../../../canonical/LCL_Core_0.2.0")
++        .canonicalize()
++        .expect("the 0.2.0 package is present");
++    let pkg = SpecPackage::open_with_anchor(root, &lcl_spec::anchor::APPROVED_PACKAGE_0_2_0)
++        .expect("the 0.2.0 package verifies");
++    let r = DiagnosticRegistry::load(&pkg).expect("the 0.2.0 diagnostic registry loads");
++    assert_eq!(r.stage_order(), Stage::ORDER.as_slice());
++    assert_eq!(r.stage_order().first(), Some(&Stage::Localization));
++    assert!(Stage::Localization.precedes(Stage::Lexical));
++    assert_eq!(r.error_count(), 86);
++    assert_eq!(r.errors_by_stage(Stage::Localization).len(), 9);
++    assert_eq!(r.status_count(), 12);
++}
+diff --git a/impl/crates/lcl-lexer/src/lib.rs b/impl/crates/lcl-lexer/src/lib.rs
+index fcea053..ed90e86 100644
+--- a/impl/crates/lcl-lexer/src/lib.rs
++++ b/impl/crates/lcl-lexer/src/lib.rs
+@@ -68,8 +68,57 @@ pub use lexicon::{
+ pub use span::{Position, Span};
+ pub use token::{Token, TokenKind};
+ 
++use std::collections::BTreeMap;
+ use std::fmt;
+ 
++/// The spellings of one validated locale profile, for lexing one source unit
++/// under LCL 0.2.0 (`02_LEXICAL/13_LOCALIZED_SOURCE_AND_LOCALE_DIRECTIVE.txt`).
++///
++/// The localization stage builds it after selecting and validating a profile;
++/// the lexer only applies it. Without a map, lexing is exactly Core 0.1.0.
++#[derive(Debug, Clone, Default, PartialEq, Eq)]
++pub struct WordMap {
++    directive_len: usize,
++    letters: Vec<(u32, u32)>,
++    spellings: BTreeMap<String, String>,
++}
++
++impl WordMap {
++    /// `directive_len` is the byte length of the locale directive line
++    /// including its LINE FEED, or 0; `letters` are the inclusive code point
++    /// ranges of every registered repertoire; `spellings` maps each profile
++    /// spelling to the canonical reserved word it denotes.
++    pub fn new(
++        directive_len: usize,
++        letters: Vec<(u32, u32)>,
++        spellings: BTreeMap<String, String>,
++    ) -> Self {
++        Self {
++            directive_len,
++            letters,
++            spellings,
++        }
++    }
++
++    /// Byte length of the locale directive line, or 0.
++    pub fn directive_len(&self) -> usize {
++        self.directive_len
++    }
++
++    /// True when `c` is a letter of a registered repertoire.
++    pub fn is_letter(&self, c: char) -> bool {
++        let v = c as u32;
++        self.letters
++            .iter()
++            .any(|(start, end)| (*start..=*end).contains(&v))
++    }
++
++    /// The canonical reserved word `spelling` denotes, if the profile spells it.
++    pub fn canonical(&self, spelling: &str) -> Option<&str> {
++        self.spellings.get(spelling).map(String::as_str)
++    }
++}
++
+ /// A lexer bound to a loaded vocabulary.
+ ///
+ /// Holds no mutable state: the same `Lexer` may lex any number of sources, in
+@@ -98,6 +147,15 @@ impl<'a> Lexer<'a> {
+     pub fn lex_str(&self, source: &str) -> Lexed {
+         self.lex(source.as_bytes())
+     }
++
++    /// Lex under a locale profile's [`WordMap`] (LCL 0.2.0, `02_LEXICAL/13`).
++    ///
++    /// Spans index the author's original bytes. A reserved word spelled through
++    /// the profile carries its canonical word in [`Token::canonical`]; the
++    /// locale directive line produces no token.
++    pub fn lex_localized(&self, source: &[u8], words: &WordMap) -> Lexed {
++        scan::lex_with(self.lexicon, source, Some(words))
++    }
+ }
+ 
+ /// The lexical-stage verdict on one source.
+diff --git a/impl/crates/lcl-lexer/src/scan.rs b/impl/crates/lcl-lexer/src/scan.rs
+index b8120d4..00e5158 100644
+--- a/impl/crates/lcl-lexer/src/scan.rs
++++ b/impl/crates/lcl-lexer/src/scan.rs
+@@ -49,6 +49,7 @@ use crate::literal;
+ use crate::span::{LineIndex, Span};
+ use crate::token::{Token, TokenKind};
+ use crate::Lexed;
++use crate::WordMap;
+ 
+ const BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
+ /// `02_LEXICAL/02`: "One indentation level is exactly four ASCII spaces."
+@@ -63,6 +64,12 @@ struct Raw {
+ }
+ 
+ pub(crate) fn lex(lexicon: &Lexicon, source: &[u8]) -> Lexed {
++    lex_with(lexicon, source, None)
++}
++
++/// Lex under an optional locale profile [`WordMap`] (LCL 0.2.0,
++/// `02_LEXICAL/13`). With `None` this is exactly [`lex`].
++pub(crate) fn lex_with(lexicon: &Lexicon, source: &[u8], words: Option<&WordMap>) -> Lexed {
+     let mut raw: Vec<Raw> = Vec::new();
+ 
+     // --- 1. Encoding gate ---------------------------------------------------
+@@ -76,6 +83,11 @@ pub(crate) fn lex(lexicon: &Lexicon, source: &[u8]) -> Lexed {
+         });
+         start = BOM.len();
+     }
++    if let Some(map) = words {
++        // The locale directive line is localization metadata, not source
++        // tokens. Every later token keeps its original byte offset.
++        start = start.max(map.directive_len().min(source.len()));
++    }
+ 
+     let text = match std::str::from_utf8(source) {
+         Ok(text) => text,
+@@ -100,6 +112,7 @@ pub(crate) fn lex(lexicon: &Lexicon, source: &[u8]) -> Lexed {
+ 
+     let mut scan = Scan {
+         lexicon,
++        words,
+         text,
+         bytes: source,
+         quarantined: vec![false; text.len()],
+@@ -217,6 +230,8 @@ fn drop_tokens_inside_diagnostics(
+ 
+ struct Scan<'a> {
+     lexicon: &'a Lexicon,
++    /// The selected locale profile's spellings, if any.
++    words: Option<&'a WordMap>,
+     text: &'a str,
+     bytes: &'a [u8],
+     /// Byte offsets whose character was already rejected by part 2.
+@@ -628,7 +643,7 @@ impl<'a> Scan<'a> {
+         if head.span.start != self.line_first_lexeme {
+             return Context::Structural;
+         }
+-        let head_text = head.span.slice(self.text).unwrap_or("");
++        let head_text = head.word(self.text).unwrap_or("");
+         match head.kind {
+             TokenKind::ReservedWord => {
+                 let bare_key = line.get(1).map(|t| t.span) == Some(opener);
+@@ -678,7 +693,7 @@ impl<'a> Scan<'a> {
+             let Some(token) = self.tokens.last() else {
+                 return;
+             };
+-            let lexeme = token.span.slice(self.text).unwrap_or("");
++            let lexeme = token.word(self.text).unwrap_or("");
+             if token.kind == TokenKind::ReservedWord
+                 && token.span.start == self.line_first_lexeme
+                 && self.byte(token.span.end) == Some(b':')
+@@ -756,6 +771,13 @@ impl<'a> Scan<'a> {
+             b'0'..=b'9' => self.scan_number(),
+             b'A'..=b'Z' | b'a'..=b'z' | b'_' => self.scan_word(),
+             b if b >= 0x80 => {
++                if self
++                    .words
++                    .is_some_and(|map| self.char_at(at).is_some_and(|c| map.is_letter(c)))
++                {
++                    self.scan_word();
++                    return;
++                }
+                 let c = self.char_at(at).unwrap_or('\u{FFFD}');
+                 let width = c.len_utf8();
+                 // `02_LEXICAL/01`: "Outside STRING and MULTILINE_STRING
+@@ -876,7 +898,7 @@ impl Scan<'_> {
+             .tokens
+             .last()
+             .filter(|t| t.kind == TokenKind::ReservedWord && t.span.end == at)
+-            .and_then(|t| t.span.slice(self.text));
++            .and_then(|t| t.word(self.text));
+         match lexeme {
+             "(" => {
+                 self.delimiters.push((b'(', at));
+@@ -975,12 +997,67 @@ impl Scan<'_> {
+     fn scan_word(&mut self) {
+         let start = self.pos;
+         let mut at = start;
+-        while matches!(self.byte(at), Some(c) if is_word_byte(c)) {
+-            at = at.saturating_add(1);
++        let mut repertoire_letter = None;
++        loop {
++            match self.byte(at) {
++                Some(c) if is_word_byte(c) => at = at.saturating_add(1),
++                Some(c) if c >= 0x80 => match (self.words, self.char_at(at)) {
++                    (Some(map), Some(ch)) if map.is_letter(ch) => {
++                        repertoire_letter.get_or_insert((at, ch));
++                        at = at.saturating_add(ch.len_utf8());
++                    }
++                    _ => break,
++                },
++                _ => break,
++            }
+         }
+         self.pos = at;
+         let run = self.text.get(start..at).unwrap_or("");
+ 
++        if let Some(map) = self.words {
++            // `02_LEXICAL/13`: a candidate word starts with an ASCII uppercase
++            // letter or a repertoire letter and contains no ASCII lowercase
++            // letter. Under a profile only the profile's spellings are
++            // reserved words; the localization stage has already rejected
++            // mixed and confusable words.
++            let candidate = !run.bytes().any(|b| b.is_ascii_lowercase())
++                && run
++                    .chars()
++                    .next()
++                    .is_some_and(|c| c.is_ascii_uppercase() || !c.is_ascii());
++            if candidate {
++                let span = Span::new(start, at);
++                match map.canonical(run) {
++                    Some(word) => {
++                        let mut token = Token::new(TokenKind::ReservedWord, span);
++                        token.canonical = Some(word.to_string());
++                        self.tokens.push(token);
++                    }
++                    None => self.push(
++                        LexicalError::KeywordUnknown,
++                        span,
++                        "keyword",
++                        format!("`{run}` is not a spelling of the selected locale profile"),
++                    ),
++                }
++                return;
++            }
++            if let Some((letter_at, letter)) = repertoire_letter {
++                // Not a candidate word: the Core 0.1.0 rule for a non-ASCII
++                // character outside a string literal applies.
++                self.push(
++                    LexicalError::SourceNonAsciiOutsideString,
++                    Span::new(letter_at, letter_at.saturating_add(letter.len_utf8())),
++                    "non_ascii",
++                    format!(
++                        "U+{:04X} occurs outside a string literal in `{run}`, which is not a candidate word",
++                        letter as u32
++                    ),
++                );
++                return;
++            }
++        }
++
+         if is_simple_identifier(run) {
+             self.finish_identifier(start, run);
+         } else if is_uppercase_word(run) {
+@@ -1087,12 +1164,9 @@ impl Scan<'_> {
+         } else {
+             None
+         };
+-        self.tokens.push(Token {
+-            kind,
+-            span,
+-            value: None,
+-            case_folds_to,
+-        });
++        let mut token = Token::new(kind, span);
++        token.case_folds_to = case_folds_to;
++        self.tokens.push(token);
+     }
+ 
+     /// The syntax-required positions of `error.keyword.case`, decided from
+@@ -1734,7 +1808,7 @@ impl Scan<'_> {
+             let Some(head) = self.tokens.get(index) else {
+                 break;
+             };
+-            let name = head.span.slice(self.text).unwrap_or("");
++            let name = head.word(self.text).unwrap_or("");
+             let is_call = head.kind == TokenKind::ReservedWord
+                 && self
+                     .tokens
+diff --git a/impl/crates/lcl-lexer/src/token.rs b/impl/crates/lcl-lexer/src/token.rs
+index afc4be7..1fc1aab 100644
+--- a/impl/crates/lcl-lexer/src/token.rs
++++ b/impl/crates/lcl-lexer/src/token.rs
+@@ -104,6 +104,12 @@ pub struct Token {
+     /// The registry owns its spellings, so this is an owned copy of the
+     /// registered word, not a borrow of a transcribed table.
+     pub case_folds_to: Option<String>,
++    /// The canonical reserved word of a `ReservedWord` token whose source
++    /// spelling was mapped through a locale profile (LCL 0.2.0,
++    /// `02_LEXICAL/13`). The span still covers the author's own spelling.
++    /// `None` for every token lexed without a locale profile, whose identity
++    /// is its source slice.
++    pub canonical: Option<String>,
+ }
+ 
+ impl Token {
+@@ -113,6 +119,7 @@ impl Token {
+             span,
+             value: None,
+             case_folds_to: None,
++            canonical: None,
+         }
+     }
+ 
+@@ -122,6 +129,15 @@ impl Token {
+             span,
+             value: Some(value),
+             case_folds_to: None,
++            canonical: None,
+         }
+     }
++
++    /// The identity text of this token: its canonical reserved word when one
++    /// was mapped, otherwise its exact slice of `source`.
++    pub fn word<'s>(&'s self, source: &'s str) -> Option<&'s str> {
++        self.canonical
++            .as_deref()
++            .or_else(|| self.span.slice(source))
++    }
+ }
+diff --git a/impl/crates/lcl-parser/src/block.rs b/impl/crates/lcl-parser/src/block.rs
+index 199b61c..7a18593 100644
+--- a/impl/crates/lcl-parser/src/block.rs
++++ b/impl/crates/lcl-parser/src/block.rs
+@@ -42,9 +42,11 @@ impl<'a> BlockParser<'a, '_> {
+         span.slice(self.source).unwrap_or("")
+     }
+ 
++    /// A reserved word: its canonical identity (the profile-mapped word for
++    /// localized source) at the author's own span.
+     fn word(&self, token: &Token) -> Word {
+         Word {
+-            text: self.text(token.span).to_string(),
++            text: token.word(self.source).unwrap_or("").to_string(),
+             span: token.span,
+         }
+     }
+@@ -343,7 +345,7 @@ impl<'a> BlockParser<'a, '_> {
+         if token.kind != TokenKind::ReservedWord {
+             return ControlStep::NotControl;
+         }
+-        let opened = match self.text(token.span) {
++        let opened = match token.word(self.source).unwrap_or("") {
+             "IF" => self.open_conditional(c, frames),
+             // `FOR` opens `FOR EACH`; the lexer has already rejected every
+             // unregistered loop word, so `FOR` not followed by `EACH` is a
+@@ -547,7 +549,7 @@ impl<'a> BlockParser<'a, '_> {
+             } => {
+                 // "ELSE is optional and aligned with its IF." — 04_GRAMMAR/04
+                 let has_else = c.peek().is_some_and(|t| {
+-                    t.kind == TokenKind::ReservedWord && self.text(t.span) == "ELSE"
++                    t.kind == TokenKind::ReservedWord && t.word(self.source) == Some("ELSE")
+                 });
+                 if has_else {
+                     let Some(else_token) = c.peek() else { return };
+@@ -705,7 +707,7 @@ impl<'a> BlockParser<'a, '_> {
+ 
+     fn expect_word(&mut self, c: &mut Cursor<'a>, word: &str) -> Option<()> {
+         if c.peek()
+-            .is_some_and(|t| t.kind == TokenKind::ReservedWord && self.text(t.span) == word)
++            .is_some_and(|t| t.kind == TokenKind::ReservedWord && t.word(self.source) == Some(word))
+         {
+             c.bump();
+             return Some(());
+diff --git a/impl/crates/lcl-parser/src/expr.rs b/impl/crates/lcl-parser/src/expr.rs
+index 37f7ab9..f3358c9 100644
+--- a/impl/crates/lcl-parser/src/expr.rs
++++ b/impl/crates/lcl-parser/src/expr.rs
+@@ -205,9 +205,11 @@ impl<'a> ExprParser<'a, '_> {
+         span.slice(self.source).unwrap_or("")
+     }
+ 
++    /// A reserved word: its canonical identity (the profile-mapped word for
++    /// localized source) at the author's own span.
+     fn word(&self, token: &Token) -> Word {
+         Word {
+-            text: self.text(token.span).to_string(),
++            text: token.word(self.source).unwrap_or("").to_string(),
+             span: token.span,
+         }
+     }
+@@ -315,7 +317,7 @@ impl<'a> ExprParser<'a, '_> {
+     fn collect_prefixes(&mut self, c: &mut Cursor<'a>, frame: &mut Frame) -> Option<()> {
+         loop {
+             let Some(t) = c.peek() else { return Some(()) };
+-            if t.kind == TokenKind::ReservedWord && self.text(t.span) == "NOT" {
++            if t.kind == TokenKind::ReservedWord && t.word(self.source) == Some("NOT") {
+                 // `NOT` requires the following SPACE; the grammar spells it.
+                 if c.peek_at(1).map(|n| n.kind) != Some(TokenKind::Space) {
+                     let span = t.span;
+@@ -432,7 +434,7 @@ impl<'a> ExprParser<'a, '_> {
+                 ))
+             }
+             TokenKind::ReservedWord => {
+-                let text = self.text(span).to_string();
++                let text = token.word(self.source).unwrap_or("").to_string();
+                 if self.grammar.is_literal_word(&text) {
+                     let kind = match text.as_str() {
+                         "TRUE" => LiteralKind::True,
+@@ -507,7 +509,7 @@ impl<'a> ExprParser<'a, '_> {
+         if token.kind != TokenKind::ReservedWord {
+             return None;
+         }
+-        let text = self.text(token.span);
++        let text = token.word(self.source).unwrap_or("");
+         let opens_call = self.grammar.is_callable(text)
+             && c.peek_at(1).map(|n| n.kind) == Some(TokenKind::Symbol)
+             && c.peek_at(1).map(|n| self.text(n.span)) == Some("(");
+@@ -622,7 +624,7 @@ impl<'a> ExprParser<'a, '_> {
+                         }
+                     };
+                     let name_span = name.span;
+-                    let text = self.text(name_span).to_string();
++                    let text = name.word(self.source).unwrap_or("").to_string();
+                     c.bump();
+                     node = Expr::Property(PropertyAccess {
+                         span: Span::new(node.span().start, name_span.end),
+@@ -850,7 +852,7 @@ impl<'a> ExprParser<'a, '_> {
+         if c.peek()?.kind != TokenKind::Space || word.kind != TokenKind::ReservedWord {
+             return None;
+         }
+-        let text = self.text(word.span);
++        let text = word.word(self.source).unwrap_or("");
+         let op = table.iter().find(|(w, _)| *w == text).map(|(_, o)| *o)?;
+         if c.peek_at(2)?.kind != TokenKind::Space {
+             return None;
+@@ -891,7 +893,7 @@ impl<'a> ExprParser<'a, '_> {
+         if c.peek_at(2)?.kind != TokenKind::Space {
+             return None;
+         }
+-        let text = self.text(candidate.span);
++        let text = candidate.word(self.source).unwrap_or("");
+         let op = match candidate.kind {
+             TokenKind::Symbol => COMPARE_SYMBOLS
+                 .iter()
+diff --git a/impl/crates/lcl-project/src/lib.rs b/impl/crates/lcl-project/src/lib.rs
+index 5ddd99b..a640195 100644
+--- a/impl/crates/lcl-project/src/lib.rs
++++ b/impl/crates/lcl-project/src/lib.rs
+@@ -139,6 +139,34 @@ impl Project {
+         self.manifest.cache.as_ref().map(|p| self.resolve(p))
+     }
+ 
++    /// The declared Core 0.2.0 package path, resolved against the root.
++    pub fn localized_spec_path(&self) -> Option<PathBuf> {
++        self.manifest
++            .localized_spec
++            .as_ref()
++            .map(|p| self.resolve(p))
++    }
++
++    /// The declared locale profile directory, resolved against the root.
++    pub fn profiles_path(&self) -> Option<PathBuf> {
++        self.manifest.profiles.as_ref().map(|p| self.resolve(p))
++    }
++
++    /// Every locale profile file in the declared profile directory: each
++    /// `*.json` file directly inside it, in ascending path order. Empty when
++    /// the manifest declares no profile directory.
++    pub fn profile_files(&self) -> std::io::Result<Vec<PathBuf>> {
++        let Some(directory) = self.profiles_path() else {
++            return Ok(Vec::new());
++        };
++        let mut files: Vec<PathBuf> = std::fs::read_dir(&directory)?
++            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
++            .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "json"))
++            .collect();
++        files.sort();
++        Ok(files)
++    }
++
+     /// The lock file, resolved against the root.
+     ///
+     /// Defaults to [`lock::LOCK_FILE`] in the root, so a project that wants a
+diff --git a/impl/crates/lcl-project/src/lock.rs b/impl/crates/lcl-project/src/lock.rs
+index 40e60a7..5eb79a1 100644
+--- a/impl/crates/lcl-project/src/lock.rs
++++ b/impl/crates/lcl-project/src/lock.rs
+@@ -28,6 +28,11 @@ use std::path::{Path, PathBuf};
+ /// The first line of a lock file, which fixes its format.
+ const HEADER: &str = "lcl-lock/1";
+ 
++/// The first line of a lock file that pins locale profiles (LCL 0.2.0,
++/// `02_LEXICAL/13`). Written only when at least one unit is localized, so a
++/// project without localized units keeps its `lcl-lock/1` bytes.
++const HEADER_LOCALIZED: &str = "lcl-lock/2";
++
+ /// The default lock file name inside a project root.
+ pub const LOCK_FILE: &str = "lcl.lock";
+ 
+@@ -67,6 +72,13 @@ pub enum Drift {
+     Missing { unit: String },
+     /// A unit was loaded that the lock file does not list.
+     Added { unit: String, digest: String },
++    /// A unit's pinned locale or locale profile identity differs, or a pin
++    /// appeared or disappeared. `none` stands for no pin.
++    Locale {
++        unit: String,
++        locked: String,
++        actual: String,
++    },
+ }
+ 
+ impl fmt::Display for Drift {
+@@ -91,6 +103,14 @@ impl fmt::Display for Drift {
+             Drift::Added { unit, digest } => {
+                 write!(f, "{unit} was loaded but is not locked ({digest})")
+             }
++            Drift::Locale {
++                unit,
++                locked,
++                actual,
++            } => write!(
++                f,
++                "{unit} locale profile changed: locked {locked}, now {actual}"
++            ),
+         }
+     }
+ }
+@@ -106,6 +126,25 @@ pub struct Lock {
+     pub root: String,
+     /// Unit identity -> lowercase hex SHA-256, in ascending identity order.
+     pub units: BTreeMap<String, String>,
++    /// Unit identity -> its pinned locale selection, for localized units only.
++    pub locales: BTreeMap<String, LockedLocale>,
++}
++
++/// The locale selection one localized unit resolved to.
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub struct LockedLocale {
++    /// The normalized locale tag.
++    pub locale: String,
++    /// `explicit`, `pinned` or `auto`.
++    pub method: String,
++    /// `sha256:` and the profile's lowercase hex content digest.
++    pub profile_identity: String,
++}
++
++impl LockedLocale {
++    fn render(&self) -> String {
++        format!("{} {}", self.locale, self.profile_identity)
++    }
+ }
+ 
+ impl Lock {
+@@ -121,9 +160,19 @@ impl Lock {
+             spec_version: spec_version.into(),
+             root: root.into(),
+             units: units.into_iter().collect(),
++            locales: BTreeMap::new(),
+         }
+     }
+ 
++    /// Pin the locale selection of localized units.
++    pub fn with_locales(
++        mut self,
++        locales: impl IntoIterator<Item = (String, LockedLocale)>,
++    ) -> Lock {
++        self.locales.extend(locales);
++        self
++    }
++
+     /// Read a lock file.
+     pub fn read(path: impl AsRef<Path>) -> Result<Lock, LockError> {
+         let path = path.as_ref();
+@@ -148,7 +197,11 @@ impl Lock {
+ 
+     /// The exact bytes of this lock file.
+     pub fn render(&self) -> String {
+-        let mut out = String::from(HEADER);
++        let mut out = String::from(if self.locales.is_empty() {
++            HEADER
++        } else {
++            HEADER_LOCALIZED
++        });
+         out.push('\n');
+         out.push_str(&format!("spec-version {}\n", self.spec_version));
+         out.push_str(&format!("spec-identity {}\n", self.spec_identity));
+@@ -156,21 +209,29 @@ impl Lock {
+         for (unit, digest) in &self.units {
+             out.push_str(&format!("unit {digest}  {unit}\n"));
+         }
++        for (unit, locale) in &self.locales {
++            out.push_str(&format!(
++                "locale {} {} {}  {unit}\n",
++                locale.locale, locale.method, locale.profile_identity
++            ));
++        }
+         out
+     }
+ 
+     /// Parse a lock file's text.
+     pub fn parse(text: &str) -> Result<Lock, String> {
+         let mut lines = text.lines();
+-        match lines.next() {
+-            Some(HEADER) => {}
++        let localized = match lines.next() {
++            Some(HEADER) => false,
++            Some(HEADER_LOCALIZED) => true,
+             Some(other) => return Err(format!("unknown lock format {other:?}")),
+             None => return Err("the lock file is empty".to_string()),
+-        }
++        };
+         let mut spec_identity = None;
+         let mut spec_version = None;
+         let mut root = None;
+         let mut units = BTreeMap::new();
++        let mut locales = BTreeMap::new();
+         for (number, line) in lines.enumerate() {
+             let line_number = number + 2;
+             if line.is_empty() {
+@@ -200,6 +261,42 @@ impl Lock {
+                     }
+                     units.insert(unit.to_string(), digest.to_string());
+                 }
++                "locale" if localized => {
++                    let parsed = rest.split_once("  ").and_then(|(fields, unit)| {
++                        let mut parts = fields.split(' ');
++                        let locale = parts.next()?;
++                        let method = parts.next()?;
++                        let identity = parts.next()?;
++                        let hex = identity.strip_prefix("sha256:")?;
++                        let well_formed = parts.next().is_none()
++                            && !locale.is_empty()
++                            && locale
++                                .bytes()
++                                .all(|b| b.is_ascii_alphanumeric() || b == b'-')
++                            && matches!(method, "explicit" | "pinned" | "auto")
++                            && hex.len() == 64
++                            && hex
++                                .chars()
++                                .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase())
++                            && !unit.is_empty();
++                        well_formed.then(|| {
++                            (
++                                unit.to_string(),
++                                LockedLocale {
++                                    locale: locale.to_string(),
++                                    method: method.to_string(),
++                                    profile_identity: identity.to_string(),
++                                },
++                            )
++                        })
++                    });
++                    let Some((unit, locale)) = parsed else {
++                        return Err(format!(
++                            "line {line_number} is not `locale <tag> <method> sha256:<digest>  <identity>`"
++                        ));
++                    };
++                    locales.insert(unit, locale);
++                }
+                 other => return Err(format!("line {line_number} has unknown key {other:?}")),
+             }
+         }
+@@ -208,6 +305,7 @@ impl Lock {
+             spec_version: spec_version.ok_or("no spec-version line")?,
+             root: root.ok_or("no root line")?,
+             units,
++            locales,
+         })
+     }
+ 
+@@ -228,6 +326,22 @@ impl Lock {
+                 actual: actual.root.clone(),
+             });
+         }
++        let none = || "none".to_string();
++        let mut localized: Vec<&String> =
++            self.locales.keys().chain(actual.locales.keys()).collect();
++        localized.sort();
++        localized.dedup();
++        for unit in localized {
++            let locked = self.locales.get(unit).map(LockedLocale::render);
++            let now = actual.locales.get(unit).map(LockedLocale::render);
++            if locked != now {
++                drift.push(Drift::Locale {
++                    unit: unit.clone(),
++                    locked: locked.unwrap_or_else(none),
++                    actual: now.unwrap_or_else(none),
++                });
++            }
++        }
+         for (unit, locked) in &self.units {
+             match actual.units.get(unit) {
+                 None => drift.push(Drift::Missing { unit: unit.clone() }),
+@@ -250,3 +364,72 @@ impl Lock {
+         drift
+     }
+ }
++
++#[cfg(test)]
++mod locale_pins {
++    use super::*;
++
++    fn lv(identity_digit: char) -> LockedLocale {
++        LockedLocale {
++            locale: "lv-LV".into(),
++            method: "auto".into(),
++            profile_identity: format!("sha256:{}", identity_digit.to_string().repeat(64)),
++        }
++    }
++
++    fn base() -> Lock {
++        Lock::new(
++            "i".repeat(64),
++            "0.2.0",
++            "main.lcl",
++            [("main.lcl".to_string(), "a".repeat(64))],
++        )
++    }
++
++    #[test]
++    fn a_lock_without_locales_keeps_the_version_1_format() {
++        let text = base().render();
++        assert!(text.starts_with("lcl-lock/1\n"));
++        assert!(!text.contains("\nlocale "));
++        assert_eq!(Lock::parse(&text).expect("parses"), base());
++    }
++
++    #[test]
++    fn locale_pins_round_trip_under_version_2() {
++        let lock = base().with_locales([("main.lcl".to_string(), lv('b'))]);
++        let text = lock.render();
++        assert!(text.starts_with("lcl-lock/2\n"));
++        assert!(text.contains(&format!(
++            "\nlocale lv-LV auto sha256:{}  main.lcl\n",
++            "b".repeat(64)
++        )));
++        assert_eq!(Lock::parse(&text).expect("parses"), lock);
++    }
++
++    #[test]
++    fn version_1_rejects_locale_lines_and_malformed_pins_fail() {
++        let pinned = base()
++            .with_locales([("main.lcl".to_string(), lv('b'))])
++            .render();
++        assert!(Lock::parse(&pinned.replacen("lcl-lock/2", "lcl-lock/1", 1)).is_err());
++        assert!(Lock::parse(&pinned.replace(" auto ", " guessed ")).is_err());
++        assert!(Lock::parse(&pinned.replace("sha256:", "sha1:")).is_err());
++    }
++
++    #[test]
++    fn changed_missing_and_added_pins_are_drift() {
++        let locked = base().with_locales([("main.lcl".to_string(), lv('b'))]);
++        let changed = base().with_locales([("main.lcl".to_string(), lv('c'))]);
++        assert!(matches!(
++            locked.drift(&changed).as_slice(),
++            [Drift::Locale { .. }]
++        ));
++        assert!(
++            matches!(locked.drift(&base()).as_slice(), [Drift::Locale { actual, .. }] if actual == "none")
++        );
++        assert!(
++            matches!(base().drift(&locked).as_slice(), [Drift::Locale { locked, .. }] if locked == "none")
++        );
++        assert!(locked.drift(&locked.clone()).is_empty());
++    }
++}
+diff --git a/impl/crates/lcl-project/src/manifest.rs b/impl/crates/lcl-project/src/manifest.rs
+index 31ddaee..57eb166 100644
+--- a/impl/crates/lcl-project/src/manifest.rs
++++ b/impl/crates/lcl-project/src/manifest.rs
+@@ -37,7 +37,15 @@ pub const MANIFEST_FILE: &str = "lcl.project.json";
+ pub const MANIFEST_FORMAT: &str = "lcl.project/1";
+ 
+ /// Every key a manifest may carry.
+-const KNOWN_KEYS: &[&str] = &["format", "spec", "entry", "cache", "lock"];
++const KNOWN_KEYS: &[&str] = &[
++    "format",
++    "spec",
++    "entry",
++    "cache",
++    "lock",
++    "localized_spec",
++    "profiles",
++];
+ 
+ /// Why a manifest could not be used.
+ #[derive(Debug)]
+@@ -73,6 +81,11 @@ pub struct Manifest {
+     pub cache: Option<String>,
+     /// The lock file, as written.
+     pub lock: Option<String>,
++    /// Where the canonical LCL Core 0.2.0 package, whose localization stage
++    /// judges localized documents, is, as written.
++    pub localized_spec: Option<String>,
++    /// The directory of `<locale>.json` locale profiles, as written.
++    pub profiles: Option<String>,
+ }
+ 
+ impl Manifest {
+@@ -144,6 +157,8 @@ impl Manifest {
+             entry: text_field("entry")?,
+             cache: text_field("cache")?,
+             lock: text_field("lock")?,
++            localized_spec: text_field("localized_spec")?,
++            profiles: text_field("profiles")?,
+         })
+     }
+ }
+diff --git a/impl/crates/lcl-protocol/Cargo.toml b/impl/crates/lcl-protocol/Cargo.toml
+index d1e186f..1f010b3 100644
+--- a/impl/crates/lcl-protocol/Cargo.toml
++++ b/impl/crates/lcl-protocol/Cargo.toml
+@@ -12,6 +12,7 @@ lcl-diagnostics = { path = "../lcl-diagnostics" }
+ lcl-lexer = { path = "../lcl-lexer" }
+ lcl-parser = { path = "../lcl-parser" }
+ lcl-resolver = { path = "../lcl-resolver" }
++lcl-localization = { path = "../lcl-localization" }
+ lcl-checker = { path = "../lcl-checker" }
+ lcl-semantics = { path = "../lcl-semantics" }
+ lcl-runtime = { path = "../lcl-runtime" }
+diff --git a/impl/crates/lcl-protocol/src/engine.rs b/impl/crates/lcl-protocol/src/engine.rs
+index 6c49e9f..aeab5fb 100644
+--- a/impl/crates/lcl-protocol/src/engine.rs
++++ b/impl/crates/lcl-protocol/src/engine.rs
+@@ -38,27 +38,35 @@
+ use crate::inputs::{Inputs, Supplied};
+ use crate::record::{
+     CheckRecord, Command, CompletionRecord, DeclarationRecord, DiagnosticRecord, EventRecord,
+-    EvidenceRecord, ExecutionRecord, ImportRecord, InputRecord, InvocationRecord, NavigationRecord,
+-    Outcome, OutputRecord, PlanRecord, Reached, ReferenceRecord, Report, SourceRecord, SpecRecord,
+-    StructureRecord, VerdictRecord,
++    EvidenceRecord, ExecutionRecord, ImportRecord, InputRecord, InvocationRecord, LocaleRecord,
++    NavigationRecord, Outcome, OutputRecord, PlanRecord, Reached, ReferenceRecord, Report,
++    SourceRecord, SpecRecord, StructureRecord, VerdictRecord,
+ };
+ use lcl_checker::{Checked, Checker, Contracts as StaticContracts};
+ use lcl_completion::{Completion, Contracts as CompletionContracts, Publication, SkipReason};
+ use lcl_diagnostics::Stage;
+-use lcl_lexer::{Lexer, Lexicon, Position, Span};
++use lcl_lexer::{Lexicon, Position, Span};
++use lcl_localization::{
++    localization_decides, Contract, CoverageDetector, LocaleDetector, LocaleProfileResolver,
++    LocaleTag, Localization, MemoryResolver, Pin, LANGUAGE_VERSION,
++};
+ use lcl_parser::syntax::Expr;
+ use lcl_parser::{Grammar, Parser};
+ use lcl_resolver::{
+-    BindingTarget, Resolved, ResolvedUnit, Resolver, Rules, SourceId, SourceProvider, SourceUnit,
++    declared_lcl_version, BindingTarget, LocalizationSetup, Resolved, ResolvedUnit, Resolver,
++    Rules, SourceId, SourceProvider, SourceUnit,
+ };
+ use lcl_runtime::{Contracts as RuntimeContracts, Execution, Host, Operations, Runtime};
+ use lcl_semantics::{
+     Contracts as PreflightContracts, Invocation, Outcome as PreflightOutcome, Planned, Preflight,
+ };
++use lcl_spec::anchor::APPROVED_PACKAGE_0_2_0;
+ use lcl_spec::{SpecError, SpecPackage};
+ use lcl_stdlib::{Stdlib, StdlibError};
++use std::collections::BTreeMap;
+ use std::fmt;
+-use std::path::Path;
++use std::path::{Path, PathBuf};
++use std::sync::Arc;
+ 
+ /// Why an engine could not be assembled.
+ ///
+@@ -104,6 +112,16 @@ pub struct Engine {
+     runtime: RuntimeContracts,
+     completion: CompletionContracts,
+     record: SpecRecord,
++    localization: Option<EngineLocalization>,
++}
++
++/// The Core 0.2.0 localization stage an engine applies to every unit
++/// (`02_LEXICAL/13_LOCALIZED_SOURCE_AND_LOCALE_DIRECTIVE.txt`).
++struct EngineLocalization {
++    contract: Contract,
++    resolver: Arc<dyn LocaleProfileResolver + Send + Sync>,
++    detector: Arc<dyn LocaleDetector + Send + Sync>,
++    pins: BTreeMap<SourceId, Pin>,
+ }
+ 
+ impl fmt::Debug for Engine {
+@@ -160,6 +178,7 @@ impl Engine {
+             runtime,
+             completion,
+             record,
++            localization: None,
+         })
+     }
+ 
+@@ -178,6 +197,96 @@ impl Engine {
+         &self.lexicon
+     }
+ 
++    /// Open the approved Core 0.2.0 package at `root` with its localization
++    /// stage, over the locale profiles in `profile_files`.
++    ///
++    /// The package is opened against the Core 0.2.0 trust anchor. Each profile
++    /// file is named `<locale>.json`, and a later file for the same locale
++    /// replaces an earlier one. Detection is the package's coverage detector.
++    /// This is the one way a tool builds a localized engine from files.
++    pub fn open_localized(
++        root: impl AsRef<Path>,
++        profile_files: &[PathBuf],
++    ) -> Result<Engine, EngineError> {
++        let spec = SpecPackage::open_with_anchor(root, &APPROVED_PACKAGE_0_2_0)
++            .map_err(EngineError::Package)?;
++        let mut profiles = MemoryResolver::new("lcl.profile.files");
++        for file in profile_files {
++            let refuse = |detail: String| EngineError::Contracts {
++                layer: "localization",
++                detail: format!("{}: {detail}", file.display()),
++            };
++            let locale = file
++                .file_stem()
++                .and_then(|stem| stem.to_str())
++                .and_then(|stem| LocaleTag::parse(stem).ok())
++                .ok_or_else(|| {
++                    refuse("a locale profile file is named <locale>.json".to_string())
++                })?;
++            let bytes = std::fs::read(file).map_err(|e| refuse(e.to_string()))?;
++            profiles.insert(locale, bytes);
++        }
++        Engine::assemble(spec)?.with_localization(Arc::new(profiles), Arc::new(CoverageDetector))
++    }
++
++    /// Apply the Core 0.2.0 localization stage to every unit this engine
++    /// resolves. The package must carry the localization contract, which no
++    /// Core 0.1.0 package does.
++    pub fn with_localization(
++        mut self,
++        resolver: Arc<dyn LocaleProfileResolver + Send + Sync>,
++        detector: Arc<dyn LocaleDetector + Send + Sync>,
++    ) -> Result<Engine, EngineError> {
++        let contract = Contract::load(&self.spec).map_err(|e| EngineError::Contracts {
++            layer: "localization",
++            detail: e.to_string(),
++        })?;
++        self.localization = Some(EngineLocalization {
++            contract,
++            resolver,
++            detector,
++            pins: BTreeMap::new(),
++        });
++        Ok(self)
++    }
++
++    /// Pin the locale selection of units, from a project lock. A pinned unit
++    /// must reproduce its recorded locale and profile identity exactly, or it
++    /// fails with `error.localization.profile_drift`. An engine without the
++    /// localization stage has nothing to pin and is returned unchanged.
++    pub fn with_locale_pins(mut self, pins: BTreeMap<SourceId, Pin>) -> Engine {
++        if let Some(localization) = &mut self.localization {
++            localization.pins = pins;
++        }
++        self
++    }
++
++    /// The localization contract, when this engine applies the localization
++    /// stage.
++    pub fn localization_contract(&self) -> Option<&Contract> {
++        self.localization.as_ref().map(|l| &l.contract)
++    }
++
++    /// Localize (when this engine applies the localization stage), lex and
++    /// parse one unit exactly as resolution does, without resolving it.
++    pub fn stage(&self, unit: &SourceUnit) -> ResolvedUnit {
++        self.resolver().stage(unit)
++    }
++
++    /// A resolver over this engine's layers, with its localization stage.
++    fn resolver(&self) -> Resolver<'_> {
++        let resolver = Resolver::new(&self.rules, &self.grammar, &self.lexicon);
++        match &self.localization {
++            Some(l) => resolver.with_localization(LocalizationSetup {
++                contract: &l.contract,
++                resolver: l.resolver.as_ref(),
++                detector: l.detector.as_ref(),
++                pins: &l.pins,
++            }),
++            None => resolver,
++        }
++    }
++
+     /// A fresh Core operation surface with no implementation profile installed.
+     ///
+     /// Deliberately bare. A row that requires a profile role then fails its
+@@ -269,12 +378,12 @@ impl Engine {
+         let mut report = Report {
+             command,
+             spec: self.record.clone(),
+-            units: vec![SourceRecord {
+-                id: unit.id().to_string(),
+-                digest: unit.digest(),
+-                bytes: unit.bytes().len(),
+-                root: true,
+-            }],
++            units: vec![SourceRecord::new(
++                unit.id().to_string(),
++                unit.digest(),
++                unit.bytes().len(),
++                true,
++            )],
+             reached: Reached::Lexical,
+             outcome: Outcome::Rejected,
+             inputs: Vec::new(),
+@@ -288,9 +397,7 @@ impl Engine {
+         // Steps 1 to 4. The resolver drives the lexer and parser itself, so a
+         // failure of either arrives here as a skipped stage rather than as a
+         // resolution result.
+-        let resolved = match Resolver::new(&self.rules, &self.grammar, &self.lexicon)
+-            .resolve(unit, provider)
+-        {
++        let resolved = match self.resolver().resolve(unit, provider) {
+             Ok(resolved) => resolved,
+             Err(skipped) => {
+                 // The root did not survive step 1 or 3. Its full diagnostic
+@@ -299,10 +406,17 @@ impl Engine {
+                 // Same lexer, same parser, same input: a second pass observes,
+                 // it does not decide.
+                 report.reached = match skipped.stage {
+-                    Stage::Lexical => Reached::Lexical,
++                    Stage::Localization | Stage::Lexical => Reached::Lexical,
+                     _ => Reached::Grammar,
+                 };
+-                report.diagnostics = self.early_diagnostics(unit);
++                let staged = self.stage(unit);
++                report.diagnostics = unit_diagnostics(&staged, self.localization.as_ref());
++                if let (Some(record), Some(locale)) = (
++                    report.units.first_mut(),
++                    staged.localization().and_then(locale_record),
++                ) {
++                    record.locale = Some(locale);
++                }
+                 mark_primary(&mut report.diagnostics);
+                 return report;
+             }
+@@ -311,22 +425,31 @@ impl Engine {
+         // Every loaded unit, root first, in the resolver's load order.
+         report.units = resolved
+             .units()
+-            .map(|u| SourceRecord {
+-                id: u.id().to_string(),
+-                digest: u.digest().to_string(),
+-                bytes: u.source().len(),
+-                root: u.id() == resolved.root(),
++            .map(|u| {
++                let record = SourceRecord::new(
++                    u.id().to_string(),
++                    u.digest(),
++                    u.source().len(),
++                    u.id() == resolved.root(),
++                );
++                match u.localization().and_then(locale_record) {
++                    Some(locale) => record.with_locale(locale),
++                    None => record,
++                }
+             })
+             .collect();
+ 
+         // Steps 1 to 3 for every loaded unit, including imported ones that
+         // failed an earlier stage while the root did not.
+-        let early: Vec<DiagnosticRecord> = resolved.units().flat_map(unit_diagnostics).collect();
++        let early: Vec<DiagnosticRecord> = resolved
++            .units()
++            .flat_map(|u| unit_diagnostics(u, self.localization.as_ref()))
++            .collect();
+         if !early.is_empty() {
+             report.reached = early
+                 .iter()
+                 .map(|d| match d.stage {
+-                    Stage::Lexical => Reached::Lexical,
++                    Stage::Localization | Stage::Lexical => Reached::Lexical,
+                     _ => Reached::Grammar,
+                 })
+                 .min()
+@@ -664,58 +787,133 @@ impl Engine {
+         }
+         (invocation, records)
+     }
++}
+ 
+-    /// Steps 1 and 3 over one unit's bytes, for the root that never reached
+-    /// resolution.
+-    fn early_diagnostics(&self, unit: &SourceUnit) -> Vec<DiagnosticRecord> {
+-        let source = unit.id().to_string();
+-        let lexed = Lexer::new(&self.lexicon).lex(unit.bytes());
+-        let mut records: Vec<DiagnosticRecord> = lexed
+-            .diagnostics()
+-            .iter()
+-            .map(|d| DiagnosticRecord {
+-                id: d.id.to_string(),
+-                stage: Stage::Lexical,
+-                source: source.clone(),
+-                span: d.span,
+-                position: d.position,
+-                meaning: d.meaning.clone(),
+-                default_status: d.default_status.clone(),
+-                specificity_rank: d.specificity_rank,
+-                event: None,
+-                cause: format!("{:?}", d.cause),
+-                detail: d.detail.clone(),
+-                sequence: None,
+-                primary: false,
+-            })
+-            .collect();
+-        if !records.is_empty() {
+-            return records;
++/// The Core 0.1.0 engine and, optionally, the Core 0.2.0 engine with its
++/// localization stage, with the one rule that chooses between them.
++///
++/// A document is judged by exactly one engine. `07_VERSIONING_AND_EXTENSIONS/05`
++/// keeps every document that does not declare 0.2.0 under its Core 0.1.0
++/// reading, and owner decision D9 (2026-09-15) sends a document whose
++/// localization fails to the 0.2.0 engine when that failure is the result.
++pub struct Engines {
++    core: Engine,
++    localized: Option<Engine>,
++}
++
++impl Engines {
++    /// `core` must not apply the localization stage; `localized`, when given,
++    /// must.
++    pub fn new(core: Engine, localized: Option<Engine>) -> Result<Engines, EngineError> {
++        let refuse = |detail: &str| EngineError::Contracts {
++            layer: "dispatch",
++            detail: detail.to_string(),
++        };
++        if core.localization_contract().is_some() {
++            return Err(refuse(
++                "the core engine must not apply the localization stage",
++            ));
+         }
+-        if let Ok(parsed) = Parser::new(&self.grammar).parse(&lexed) {
+-            records.extend(parsed.diagnostics().iter().map(|d| DiagnosticRecord {
+-                id: d.id.to_string(),
+-                stage: Stage::GrammarOrSchema,
+-                source: source.clone(),
+-                span: d.span,
+-                position: d.position,
+-                meaning: d.meaning.clone(),
+-                default_status: d.default_status.clone(),
+-                specificity_rank: d.specificity_rank,
+-                event: None,
+-                cause: format!("{:?}", d.cause),
+-                detail: d.detail.clone(),
+-                sequence: None,
+-                primary: false,
+-            }));
++        if localized
++            .as_ref()
++            .is_some_and(|engine| engine.localization_contract().is_none())
++        {
++            return Err(refuse(
++                "the localized engine must apply the localization stage",
++            ));
++        }
++        Ok(Engines { core, localized })
++    }
++
++    pub fn core(&self) -> &Engine {
++        &self.core
++    }
++
++    pub fn localized(&self) -> Option<&Engine> {
++        self.localized.as_ref()
++    }
++
++    /// The engine that judges `unit`.
++    ///
++    /// * When the Core 0.1.0 reading lexes, the declared `LCL` `VERSION`
++    ///   decides: exactly `0.2.0` is the 0.2.0 engine's, anything else stays
++    ///   with Core 0.1.0.
++    /// * Otherwise the localized reading decides. A rejected localization is
++    ///   the 0.2.0 engine's exactly when it decides the result (D9). An
++    ///   accepted reading follows its declared `VERSION` when one is readable,
++    ///   and otherwise is the 0.2.0 engine's only when a profile was selected.
++    pub fn engine_for(&self, unit: &SourceUnit) -> &Engine {
++        let Some(localized) = &self.localized else {
++            return &self.core;
++        };
++        let declared = |staged: &ResolvedUnit| staged.document().and_then(declared_lcl_version);
++        let canonical = self.core.stage(unit);
++        if canonical.lexed().primary().is_none() {
++            return if declared(&canonical).as_deref() == Some(LANGUAGE_VERSION) {
++                localized
++            } else {
++                &self.core
++            };
++        }
++        let staged = localized.stage(unit);
++        let Some(outcome) = staged.localization() else {
++            return &self.core;
++        };
++        if !outcome.is_accepted() {
++            return if localization_decides(outcome, unit.bytes()) {
++                localized
++            } else {
++                &self.core
++            };
++        }
++        match declared(&staged) {
++            Some(version) if version == LANGUAGE_VERSION => localized,
++            Some(_) => &self.core,
++            None if outcome.profile.is_some() => localized,
++            None => &self.core,
+         }
+-        records
+     }
+ }
+ 
+ /// Steps 1 and 3 for one unit the resolver did load.
+-fn unit_diagnostics(unit: &ResolvedUnit) -> Vec<DiagnosticRecord> {
++fn unit_diagnostics(
++    unit: &ResolvedUnit,
++    localization: Option<&EngineLocalization>,
++) -> Vec<DiagnosticRecord> {
+     let source = unit.id().to_string();
++    // A unit the localization stage rejected was not lexed under any profile;
++    // its localization diagnostics are its whole early-stage result.
++    if let (Some(outcome), Some(engine)) = (unit.localization(), localization) {
++        if !outcome.diagnostics.is_empty() {
++            return outcome
++                .diagnostics
++                .iter()
++                .map(|d| {
++                    let metadata = engine.contract.error_metadata(d.id);
++                    DiagnosticRecord {
++                        id: d.id.to_string(),
++                        stage: Stage::Localization,
++                        source: source.clone(),
++                        span: Span {
++                            start: d.offset,
++                            end: d.end,
++                        },
++                        position: position(unit.source(), d.offset),
++                        meaning: metadata.map(|m| m.meaning.clone()).unwrap_or_default(),
++                        default_status: metadata
++                            .map(|m| m.default_status.clone())
++                            .unwrap_or_default(),
++                        specificity_rank: metadata.map_or(0, |m| m.specificity_rank),
++                        event: None,
++                        cause: "localization".to_string(),
++                        detail: Some(d.detail.clone()),
++                        sequence: None,
++                        primary: false,
++                    }
++                })
++                .collect();
++        }
++    }
+     let mut records: Vec<DiagnosticRecord> = unit
+         .lexed()
+         .diagnostics()
+@@ -756,6 +954,44 @@ fn unit_diagnostics(unit: &ResolvedUnit) -> Vec<DiagnosticRecord> {
+     records
+ }
+ 
++/// The protocol record of a unit's locale selection, when one was made.
++fn locale_record(localization: &Localization) -> Option<LocaleRecord> {
++    let record = localization.record.as_ref()?;
++    Some(LocaleRecord {
++        method: record.method.as_str().to_string(),
++        locale: record.locale.as_ref().map(|l| l.as_str().to_string()),
++        profile_identity: record.profile_identity.clone(),
++        detector_identity: record.detector_identity.clone(),
++        candidate_locales: record
++            .candidate_locales
++            .iter()
++            .map(|l| l.as_str().to_string())
++            .collect(),
++        lcl_version: record.lcl_version.to_string(),
++    })
++}
++
++/// Line and column of a byte offset, derived as the lexer derives them.
++fn position(text: &str, offset: usize) -> Position {
++    let line_start = text
++        .get(..offset)
++        .and_then(|s| s.rfind('\n'))
++        .map_or(0, |i| i + 1);
++    let line = text
++        .get(..line_start)
++        .map_or(0, |s| s.matches('\n').count())
++        + 1;
++    let column = text
++        .get(line_start..offset)
++        .map_or(0, |s| s.chars().count())
++        + 1;
++    Position {
++        offset,
++        line: u32::try_from(line).unwrap_or(u32::MAX),
++        column: u32::try_from(column).unwrap_or(u32::MAX),
++    }
++}
++
+ /// Mark the first diagnostic primary.
+ ///
+ /// Correct for stages 1 to 5 and for preflight, where nothing is handled and
+diff --git a/impl/crates/lcl-protocol/src/lib.rs b/impl/crates/lcl-protocol/src/lib.rs
+index dfec71c..be927a8 100644
+--- a/impl/crates/lcl-protocol/src/lib.rs
++++ b/impl/crates/lcl-protocol/src/lib.rs
+@@ -43,7 +43,7 @@ pub mod inputs;
+ pub mod json;
+ pub mod record;
+ 
+-pub use engine::{Engine, EngineError};
++pub use engine::{Engine, EngineError, Engines};
+ pub use host::{surface, Granted};
+ pub use inputs::{Inputs, Supplied};
+ pub use json::{Node, Object};
+diff --git a/impl/crates/lcl-protocol/src/record.rs b/impl/crates/lcl-protocol/src/record.rs
+index dec7933..5fcf357 100644
+--- a/impl/crates/lcl-protocol/src/record.rs
++++ b/impl/crates/lcl-protocol/src/record.rs
+@@ -247,15 +247,76 @@ pub struct SourceRecord {
+     pub bytes: usize,
+     /// True for the unit the request named.
+     pub root: bool,
++    /// The unit's LCL 0.2.0 locale selection, when the engine applied the
++    /// localization stage and a selection was made. Presentation and
++    /// reproducibility metadata only: it never changes a verdict.
++    pub locale: Option<LocaleRecord>,
++}
++
++/// How one unit's locale was selected (`02_LEXICAL/13`).
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub struct LocaleRecord {
++    /// `explicit`, `pinned`, `auto` or `canonical`.
++    pub method: String,
++    /// The normalized locale tag, absent for canonical spelling.
++    pub locale: Option<String>,
++    /// `sha256:` and the selected profile's content digest.
++    pub profile_identity: Option<String>,
++    /// The detector whose proposal was used, for automatic selection.
++    pub detector_identity: Option<String>,
++    /// The locales that detector proposed, in its order.
++    pub candidate_locales: Vec<String>,
++    /// The language version whose localization contract applied.
++    pub lcl_version: String,
++}
++
++impl LocaleRecord {
++    fn to_json(&self) -> Node {
++        Object::new()
++            .with("method", Node::string(&self.method))
++            .with("locale", Node::optional(self.locale.as_deref()))
++            .with(
++                "profile_identity",
++                Node::optional(self.profile_identity.as_deref()),
++            )
++            .with(
++                "detector_identity",
++                Node::optional(self.detector_identity.as_deref()),
++            )
++            .with(
++                "candidate_locales",
++                Node::array(self.candidate_locales.iter().map(Node::string)),
++            )
++            .with("lcl_version", Node::string(&self.lcl_version))
++            .into()
++    }
+ }
+ 
+ impl SourceRecord {
++    /// A record of one loaded unit.
++    pub fn new(id: impl Into<String>, digest: impl Into<String>, bytes: usize, root: bool) -> Self {
++        SourceRecord {
++            id: id.into(),
++            digest: digest.into(),
++            bytes,
++            root,
++            locale: None,
++        }
++    }
++
++    /// The same record with a locale selection.
++    pub fn with_locale(mut self, locale: LocaleRecord) -> Self {
++        self.locale = Some(locale);
++        self
++    }
++
+     fn to_json(&self) -> Node {
+         Object::new()
+             .with("id", Node::string(&self.id))
+             .with("digest", Node::string(format!("sha256:{}", self.digest)))
+             .with("bytes", Node::usize(self.bytes))
+             .with("root", Node::Bool(self.root))
++            .with_some("locale", self.locale.as_ref().map(LocaleRecord::to_json))
+             .into()
+     }
+ }
+diff --git a/impl/crates/lcl-resolver/Cargo.toml b/impl/crates/lcl-resolver/Cargo.toml
+index 808ad55..7fd6eaa 100644
+--- a/impl/crates/lcl-resolver/Cargo.toml
++++ b/impl/crates/lcl-resolver/Cargo.toml
+@@ -11,3 +11,4 @@ lcl-spec = { path = "../lcl-spec" }
+ lcl-diagnostics = { path = "../lcl-diagnostics" }
+ lcl-lexer = { path = "../lcl-lexer" }
+ lcl-parser = { path = "../lcl-parser" }
++lcl-localization = { path = "../lcl-localization" }
+diff --git a/impl/crates/lcl-resolver/src/lib.rs b/impl/crates/lcl-resolver/src/lib.rs
+index 750671e..1891e3d 100644
+--- a/impl/crates/lcl-resolver/src/lib.rs
++++ b/impl/crates/lcl-resolver/src/lib.rs
+@@ -85,11 +85,45 @@ pub use source::{
+     LoadError, MemoryProvider, SourceId, SourceProvider, SourceRef, SourceRequest, SourceUnit,
+ };
+ 
+-use lcl_lexer::{Lexed, Lexer, Lexicon, Span};
++use lcl_lexer::{Lexed, Lexer, Lexicon, Span, WordMap};
++use lcl_localization::{
++    localize, Contract, LocaleDetector, LocaleProfileResolver, Localization, Pin,
++};
+ use lcl_parser::{Grammar, Parsed, Parser};
+ use std::collections::BTreeMap;
+ use std::fmt;
+ 
++/// The LCL 0.2.0 localization stage a resolver applies to every unit
++/// (`02_LEXICAL/13`).
++///
++/// Every unit is localized before it is lexed: a rejected unit fails at the
++/// localization stage, and an accepted unit is lexed through its selected
++/// profile's spellings. Without a setup, resolution is exactly Core 0.1.0.
++#[derive(Clone, Copy)]
++pub struct LocalizationSetup<'a> {
++    pub contract: &'a Contract,
++    pub resolver: &'a dyn LocaleProfileResolver,
++    pub detector: &'a dyn LocaleDetector,
++    /// A recorded locale and profile identity per unit, from a project lock.
++    pub pins: &'a BTreeMap<SourceId, Pin>,
++}
++
++impl fmt::Debug for LocalizationSetup<'_> {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.debug_struct("LocalizationSetup")
++            .field("resolver", &self.resolver.identity())
++            .field("detector", &self.detector.identity())
++            .field("pins", &self.pins.len())
++            .finish()
++    }
++}
++
++/// The `VERSION` string of a document's `LCL` block, as written.
++pub fn declared_lcl_version(document: &lcl_parser::syntax::Document) -> Option<String> {
++    let block = document.block("LCL")?;
++    field::string(block, "VERSION").map(|(version, _)| version)
++}
++
+ /// A resolver bound to loaded rules, grammar and lexicon.
+ ///
+ /// Holds no mutable state: the same `Resolver` may resolve any number of
+@@ -99,6 +133,7 @@ pub struct Resolver<'a> {
+     rules: &'a Rules,
+     grammar: &'a Grammar,
+     lexicon: &'a Lexicon,
++    localization: Option<LocalizationSetup<'a>>,
+ }
+ 
+ impl<'a> Resolver<'a> {
+@@ -107,9 +142,16 @@ impl<'a> Resolver<'a> {
+             rules,
+             grammar,
+             lexicon,
++            localization: None,
+         }
+     }
+ 
++    /// Apply the LCL 0.2.0 localization stage to every unit.
++    pub fn with_localization(mut self, setup: LocalizationSetup<'a>) -> Self {
++        self.localization = Some(setup);
++        self
++    }
++
+     pub fn rules(&self) -> &'a Rules {
+         self.rules
+     }
+@@ -166,9 +208,49 @@ impl<'a> Resolver<'a> {
+         Ok(resolved)
+     }
+ 
+-    /// Lex and parse one unit, recording whichever earlier stage failed.
+-    pub(crate) fn stage(&self, unit: &SourceUnit) -> ResolvedUnit {
+-        let lexed = Lexer::new(self.lexicon).lex(unit.bytes());
++    /// Localize (under a [`LocalizationSetup`]), lex and parse one unit,
++    /// recording whichever earlier stage failed.
++    pub fn stage(&self, unit: &SourceUnit) -> ResolvedUnit {
++        let localization = self.localization.map(|setup| {
++            localize(
++                setup.contract,
++                unit.bytes(),
++                setup.resolver,
++                setup.detector,
++                setup.pins.get(unit.id()),
++            )
++        });
++        let lexer = Lexer::new(self.lexicon);
++        if let Some(first) = localization.as_ref().and_then(|l| l.diagnostics.first()) {
++            let failure = UnitStageFailure {
++                stage: lcl_diagnostics::Stage::Localization,
++                primary: first.id.to_string(),
++                span: Span::empty(first.offset),
++            };
++            return ResolvedUnit {
++                id: unit.id().clone(),
++                digest: unit.digest(),
++                lexed: lexer.lex(unit.bytes()),
++                parsed: None,
++                stage_failure: Some(failure),
++                version_rejected: false,
++                localization,
++            };
++        }
++        let word_map = match (self.localization, localization.as_ref()) {
++            (Some(setup), Some(outcome)) => outcome.profile.as_ref().map(|profile| {
++                WordMap::new(
++                    outcome.directive_len,
++                    setup.contract.letter_ranges(),
++                    profile.spellings().clone(),
++                )
++            }),
++            _ => None,
++        };
++        let lexed = match &word_map {
++            Some(map) => lexer.lex_localized(unit.bytes(), map),
++            None => lexer.lex(unit.bytes()),
++        };
+         if let Some(primary) = lexed.primary() {
+             let failure = UnitStageFailure {
+                 stage: lcl_diagnostics::Stage::Lexical,
+@@ -182,6 +264,7 @@ impl<'a> Resolver<'a> {
+                 parsed: None,
+                 stage_failure: Some(failure),
+                 version_rejected: false,
++                localization,
+             };
+         }
+         let parsed = Parser::new(self.grammar).parse(&lexed).ok();
+@@ -199,6 +282,7 @@ impl<'a> Resolver<'a> {
+             parsed,
+             stage_failure,
+             version_rejected: false,
++            localization,
+         }
+     }
+ 
+@@ -304,6 +388,9 @@ pub struct ResolvedUnit {
+     /// "only exact supported language versions", so reading them under 0.1.0
+     /// semantics would be a guess.
+     pub(crate) version_rejected: bool,
++    /// The localization outcome, when the resolver applied a
++    /// [`LocalizationSetup`].
++    localization: Option<Localization>,
+ }
+ 
+ impl ResolvedUnit {
+@@ -333,6 +420,12 @@ impl ResolvedUnit {
+         self.parsed.as_ref().map(Parsed::document)
+     }
+ 
++    /// The localization outcome, when the resolver applied a
++    /// [`LocalizationSetup`].
++    pub fn localization(&self) -> Option<&Localization> {
++        self.localization.as_ref()
++    }
++
+     /// The earlier stage this unit failed, if any.
+     pub fn stage_failure(&self) -> Option<&UnitStageFailure> {
+         self.stage_failure.as_ref()
+diff --git a/impl/crates/lcl-spec/src/anchor.rs b/impl/crates/lcl-spec/src/anchor.rs
+index 737bc85..8f07ecb 100644
+--- a/impl/crates/lcl-spec/src/anchor.rs
++++ b/impl/crates/lcl-spec/src/anchor.rs
+@@ -61,6 +61,24 @@ pub const APPROVED_PACKAGE: TrustAnchor = TrustAnchor {
+     identity_digest: "00d648b162939d06c44838481a67c39bc12c64bdd6d105035c24150148fe67ed",
+ };
+ 
++/// The approved LCL Core 0.2.0 package: the localization feature candidate.
++///
++/// Corresponds to `canonical/LCL_Core_0.2.0` as generated on 2026-09-15 under
++/// LCL-FEATURE-04, whose `MANIFEST.json` has SHA-256
++/// `9196a29580a9c720421d606720b01c3449bbc131539abc15a88aa07809820172`. The owner
++/// approved anchoring it (decision D3, 2026-09-15). It is an unreleased
++/// candidate: its independent review is pending and no archive exists.
++///
++/// It is not the default. [`crate::SpecPackage::open`] stays pinned to
++/// [`APPROVED_PACKAGE`]; a caller selects this package explicitly through
++/// [`crate::SpecPackage::open_with_anchor`].
++pub const APPROVED_PACKAGE_0_2_0: TrustAnchor = TrustAnchor {
++    label: "LCL Core 0.2.0 Localization Feature Candidate (2026-09-15)",
++    formal_version: "0.2.0",
++    package_file_count: 216,
++    identity_digest: "e86121c734cb51065b791329738b9ed6b77c53e03e0eebbb2ad1076bea973ef0",
++};
++
+ /// Accumulates a package identity digest from `(path, content-hash)` pairs.
+ ///
+ /// Callers must supply entries in ascending path order; [`IdentityBuilder::finish`]
+diff --git a/impl/crates/lcl-spec/src/lib.rs b/impl/crates/lcl-spec/src/lib.rs
+index 5981546..c855abd 100644
+--- a/impl/crates/lcl-spec/src/lib.rs
++++ b/impl/crates/lcl-spec/src/lib.rs
+@@ -93,6 +93,79 @@ pub const CATALOG_FILES: &[(&str, &str)] = &[
+     ),
+ ];
+ 
++/// The closed registries of Core 0.2.0: the twelve Core 0.1.0 registries under
++/// their 0.2.0 names, plus the two localization registries.
++pub const REGISTRY_FILES_0_2_0: &[(&str, &str)] = &[
++    (
++        "ambiguous_replacements",
++        "10_REGISTRIES/ambiguous_replacements_v0.2.0.json",
++    ),
++    ("block_schemas", "10_REGISTRIES/block_schemas_v0.2.0.json"),
++    (
++        "built_in_groups_and_results",
++        "10_REGISTRIES/built_in_groups_and_results_v0.2.0.json",
++    ),
++    (
++        "field_signatures",
++        "10_REGISTRIES/field_signatures_v0.2.0.json",
++    ),
++    (
++        "formats_encodings_units",
++        "10_REGISTRIES/formats_encodings_units_v0.2.0.json",
++    ),
++    ("keywords", "10_REGISTRIES/keywords_v0.2.0.json"),
++    (
++        "locale_profile_schema",
++        "10_REGISTRIES/locale_profile_schema_v0.2.0.json",
++    ),
++    (
++        "localization_surface",
++        "10_REGISTRIES/localization_surface_v0.2.0.json",
++    ),
++    ("operations", "10_REGISTRIES/operations_v0.2.0.json"),
++    (
++        "operators_and_functions",
++        "10_REGISTRIES/operators_and_functions_v0.2.0.json",
++    ),
++    (
++        "semantic_meta_types",
++        "10_REGISTRIES/semantic_meta_types_v0.2.0.json",
++    ),
++    (
++        "statuses_and_errors",
++        "10_REGISTRIES/statuses_and_errors_v0.2.0.json",
++    ),
++    ("symbols", "10_REGISTRIES/symbols_v0.2.0.json"),
++    ("types", "10_REGISTRIES/types_v0.2.0.json"),
++];
++
++/// The two descriptive conformance catalogs of Core 0.2.0.
++pub const CATALOG_FILES_0_2_0: &[(&str, &str)] = &[
++    (
++        "core_conformance_cases",
++        "09_CONFORMANCE/CASES/core_conformance_cases_v0.2.0.json",
++    ),
++    (
++        "language_decision_cases",
++        "09_CONFORMANCE/CASES/language_decision_cases_v0.2.0.json",
++    ),
++];
++
++/// A set of `(short name, package-root-relative path)` pairs.
++pub type FileSet = &'static [(&'static str, &'static str)];
++
++/// The registry and catalog files read for a package's declared formal version.
++///
++/// Core 0.2.0 names its own files. Every other declaration keeps the Core 0.1.0
++/// names, so a package declaring an unapproved version is still refused by the
++/// version gate of [`SpecPackage::open_with_anchor`], exactly as before.
++pub fn package_files(formal_version: &str) -> (FileSet, FileSet) {
++    match formal_version {
++        "0.2.0" => (REGISTRY_FILES_0_2_0, CATALOG_FILES_0_2_0),
++        _ => (REGISTRY_FILES, CATALOG_FILES),
++    }
++}
++
+ // ---------------------------------------------------------------------------
+ // Errors
+ // ---------------------------------------------------------------------------
+@@ -440,12 +513,17 @@ impl SpecPackage {
+         let file_records = parse_manifest_files(&manifest)?;
+         let checksums = parse_checksums(&captured_text(&captured, &root, CHECKSUMS_PATH)?)?;
+ 
++        let declared_version = manifest
++            .get("formal_version")
++            .and_then(|v| v.as_str())
++            .unwrap_or_default();
++        let (registry_files, catalog_files) = package_files(declared_version);
+         let mut registries = BTreeMap::new();
+-        for (name, rel) in REGISTRY_FILES {
++        for (name, rel) in registry_files {
+             registries.insert((*name).to_string(), captured_json(&captured, &root, rel)?);
+         }
+         let mut catalogs = BTreeMap::new();
+-        for (name, rel) in CATALOG_FILES {
++        for (name, rel) in catalog_files {
+             catalogs.insert((*name).to_string(), captured_json(&captured, &root, rel)?);
+         }
+ 
+diff --git a/impl/crates/lcl-workspace/src/intelligence.rs b/impl/crates/lcl-workspace/src/intelligence.rs
+index 28212dc..c449fb6 100644
+--- a/impl/crates/lcl-workspace/src/intelligence.rs
++++ b/impl/crates/lcl-workspace/src/intelligence.rs
+@@ -10,8 +10,8 @@
+ //! exactly that, transcribed into JavaScript where it will drift the first time
+ //! a registry moves.
+ //!
+-//! So the real [`Lexer`] produces the spans, classified from the real
+-//! [`Lexicon`] — `is_block_name`, `is_type_word`, `is_literal_word`, each a
++//! So the real [`Lexer`](lcl_lexer::Lexer) produces the spans, classified from the real
++//! [`Lexicon`](lcl_lexer::Lexicon) — `is_block_name`, `is_type_word`, `is_literal_word`, each a
+ //! registry lookup — and the browser paints what it is given. LCL has no
+ //! comment form at all, which a hand-written highlighter would almost certainly
+ //! have invented one for.
+@@ -23,8 +23,9 @@
+ //! screen. Imports still resolve through the project's provider, from disk,
+ //! because an import names a file and that file is whatever it currently is.
+ 
+-use lcl_lexer::{Lexer, Lexicon, TokenKind};
++use lcl_lexer::TokenKind;
+ use lcl_protocol::json::{Node, Object};
++use lcl_protocol::Engine;
+ use lcl_resolver::{SourceId, SourceUnit};
+ 
+ /// One painted span.
+@@ -55,18 +56,26 @@ impl TokenSpan {
+ /// whitespace needs no class, so neither is emitted. What comes back covers
+ /// only the bytes a reader can see.
+ ///
+-/// This is total. `Lexer::lex` never panics for any input, which matters
+-/// because it runs on every keystroke over a half-typed document.
+-pub fn tokens(lexicon: &Lexicon, text: &str) -> Vec<TokenSpan> {
+-    Lexer::new(lexicon)
+-        .lex_str(text)
++/// The buffer is lexed exactly as the engine that judges it stages it. Under
++/// the Core 0.2.0 engine that is after localization, so a localized reserved
++/// word is classified by its canonical word while its span stays the author's
++/// own bytes. A buffer whose localization fails is lexed canonically.
++///
++/// This is total. Staging never panics for any input, which matters because it
++/// runs on every keystroke over a half-typed document.
++pub fn tokens(engine: &Engine, unit: &SourceUnit) -> Vec<TokenSpan> {
++    let staged = engine.stage(unit);
++    let lexicon = engine.lexicon();
++    let text = staged.source();
++    staged
++        .lexed()
+         .tokens()
+         .iter()
+         .filter(|token| token.span.end > token.span.start)
+         .filter_map(|token| {
+             let class = match token.kind {
+                 TokenKind::ReservedWord => {
+-                    let word = &text[token.span.start..token.span.end];
++                    let word = token.word(text).unwrap_or_default();
+                     if lexicon.is_block_name(word) {
+                         "block"
+                     } else if lexicon.is_type_word(word) {
+@@ -100,11 +109,11 @@ pub fn tokens(lexicon: &Lexicon, text: &str) -> Vec<TokenSpan> {
+ }
+ 
+ /// The token spans of one buffer, as JSON.
+-pub fn tokens_json(lexicon: &Lexicon, text: &str) -> String {
++pub fn tokens_json(engine: &Engine, unit: &SourceUnit) -> String {
+     Object::new()
+         .with(
+             "tokens",
+-            Node::array(tokens(lexicon, text).iter().map(TokenSpan::to_json)),
++            Node::array(tokens(engine, unit).iter().map(TokenSpan::to_json)),
+         )
+         .pretty()
+ }
+diff --git a/impl/crates/lcl-workspace/src/main.rs b/impl/crates/lcl-workspace/src/main.rs
+index 95e860a..9686016 100644
+--- a/impl/crates/lcl-workspace/src/main.rs
++++ b/impl/crates/lcl-workspace/src/main.rs
+@@ -30,6 +30,10 @@ OPTIONS:
+                         what a desktop file association passes; PROJECT is not.
+     --spec <PATH>       The canonical specification package. Falls back to
+                         LCL_SPEC, then to \"spec\" in lcl.project.json.
++    --localized-spec <PATH>
++                        The canonical LCL Core 0.2.0 package, for localized
++                        documents. Falls back to LCL_LOCALIZED_SPEC, then to
++                        \"localized_spec\" in lcl.project.json.
+     --create            Create a project here before opening it.
+     --port <PORT>       Bind this loopback port instead of an ephemeral one.
+     --open              Open the URL with xdg-open once the server is listening.
+@@ -55,6 +59,7 @@ fn run(argv: &[String]) -> Result<(), String> {
+     let mut root: Option<PathBuf> = None;
+     let mut document: Option<PathBuf> = None;
+     let mut spec: Option<PathBuf> = None;
++    let mut localized_spec: Option<PathBuf> = None;
+     let mut port: u16 = 0;
+     let mut create = false;
+     let mut open = false;
+@@ -76,6 +81,7 @@ fn run(argv: &[String]) -> Result<(), String> {
+             }
+             "--document" => document = Some(PathBuf::from(value("--document")?)),
+             "--spec" => spec = Some(PathBuf::from(value("--spec")?)),
++            "--localized-spec" => localized_spec = Some(PathBuf::from(value("--localized-spec")?)),
+             "--port" => {
+                 port = value("--port")?
+                     .parse()
+@@ -118,12 +124,13 @@ fn run(argv: &[String]) -> Result<(), String> {
+     };
+     let spec = Workspace::locate_spec(&root, spec).map_err(|e| e.to_string())?;
+ 
+-    let workspace = if create {
+-        Workspace::create(&root, &spec).map_err(|e| e.to_string())?
+-    } else {
+-        Workspace::open(&root, &spec).map_err(|e| e.to_string())?
++    if create {
++        Workspace::create(&root, &spec).map_err(|e| e.to_string())?;
+     }
+-    .with_open_document(open_document);
++    let localized_spec = Workspace::locate_localized_spec(localized_spec);
++    let workspace = Workspace::open_with(&root, &spec, localized_spec)
++        .map_err(|e| e.to_string())?
++        .with_open_document(open_document);
+ 
+     let server = Server::bind_to(port)
+         .map_err(|e| format!("could not bind loopback: {e}"))?
+@@ -135,6 +142,9 @@ fn run(argv: &[String]) -> Result<(), String> {
+         println!("  document {id}");
+     }
+     println!("  spec     {}", workspace.spec_root().display());
++    if let Some(localized) = workspace.localized_spec_root() {
++        println!("  localized {}", localized.display());
++    }
+     println!("  open     {url}");
+     println!();
+     println!("The token in that URL is what authorises access. Do not share it.");
+diff --git a/impl/crates/lcl-workspace/src/project.rs b/impl/crates/lcl-workspace/src/project.rs
+index c8e4e3f..e26c84c 100644
+--- a/impl/crates/lcl-workspace/src/project.rs
++++ b/impl/crates/lcl-workspace/src/project.rs
+@@ -18,10 +18,14 @@
+ //! trust anchor and loads seven layers' contracts. A request holds no state, so
+ //! one engine serves every request, and every request is judged against a
+ //! package whose identity digest the reply carries.
++//!
++//! A workspace that names a Core 0.2.0 package also holds the localized
++//! engine, and each document is judged by exactly one of the two.
+ 
+ use crate::document::{self, Document, DocumentError};
+ use lcl_project::{Project, ProjectError, MANIFEST_FILE};
+-use lcl_protocol::Engine;
++use lcl_protocol::{Engine, Engines};
++use lcl_resolver::SourceUnit;
+ use std::path::{Path, PathBuf};
+ 
+ /// How deep the file walk goes. A project is a source tree, not a filesystem.
+@@ -74,8 +78,10 @@ pub struct Entry {
+ /// One open project, with the engine that judges it.
+ pub struct Workspace {
+     project: Project,
+-    engine: Engine,
++    engines: Engines,
+     spec_root: PathBuf,
++    /// The Core 0.2.0 package, when this workspace judges localized documents.
++    localized_spec_root: Option<PathBuf>,
+     /// The document the frontend should open on load, when the workspace was
+     /// launched for one. A file association supplies it; an ordinary launch
+     /// does not.
+@@ -93,6 +99,21 @@ impl Workspace {
+     pub fn open(
+         root: impl AsRef<Path>,
+         spec: impl AsRef<Path>,
++    ) -> Result<Workspace, WorkspaceError> {
++        Workspace::open_with(root, spec, None)
++    }
++
++    /// Open the project at `root`, judging each document by the engine
++    /// [`Engines::engine_for`] chooses for it.
++    ///
++    /// `localized` names the Core 0.2.0 package. Without it the manifest's
++    /// `localized_spec` applies, and without either every document is judged
++    /// by Core 0.1.0 alone. The localized engine's locale profiles are the
++    /// files in the manifest's profile directory.
++    pub fn open_with(
++        root: impl AsRef<Path>,
++        spec: impl AsRef<Path>,
++        localized: Option<PathBuf>,
+     ) -> Result<Workspace, WorkspaceError> {
+         let root = root.as_ref();
+         let project = match Project::open(root) {
+@@ -103,12 +124,28 @@ impl Workspace {
+             Err(other) => return Err(WorkspaceError::Project(other)),
+         };
+         let spec_root = spec.as_ref().to_path_buf();
+-        let engine = Engine::open(&spec_root)
++        let core = Engine::open(&spec_root)
+             .map_err(|e| WorkspaceError::Spec(format!("the specification package: {e}")))?;
++        let localized_spec_root = localized.or_else(|| project.localized_spec_path());
++        let localized = match &localized_spec_root {
++            Some(localized_root) => {
++                let files = project.profile_files().map_err(|e| {
++                    WorkspaceError::Spec(format!("the locale profile directory: {e}"))
++                })?;
++                let engine = Engine::open_localized(localized_root, &files).map_err(|e| {
++                    WorkspaceError::Spec(format!("the localized specification package: {e}"))
++                })?;
++                Some(engine)
++            }
++            None => None,
++        };
++        let engines =
++            Engines::new(core, localized).map_err(|e| WorkspaceError::Spec(e.to_string()))?;
+         Ok(Workspace {
+             project,
+-            engine,
++            engines,
+             spec_root,
++            localized_spec_root,
+             open_document: None,
+         })
+     }
+@@ -136,6 +173,17 @@ impl Workspace {
+         )))
+     }
+ 
++    /// The Core 0.2.0 package a launch names: the caller's explicit choice,
++    /// then a non-empty `LCL_LOCALIZED_SPEC`. `None` leaves the choice to the
++    /// manifest's `localized_spec`, in [`Workspace::open_with`].
++    pub fn locate_localized_spec(explicit: Option<PathBuf>) -> Option<PathBuf> {
++        explicit.or_else(|| {
++            std::env::var_os("LCL_LOCALIZED_SPEC")
++                .filter(|value| !value.is_empty())
++                .map(PathBuf::from)
++        })
++    }
++
+     /// The project root and root-relative identity of one document.
+     ///
+     /// A desktop file association hands over a document, not a project, and
+@@ -242,14 +290,29 @@ impl Workspace {
+         &self.project
+     }
+ 
++    /// The Core 0.1.0 engine.
+     pub fn engine(&self) -> &Engine {
+-        &self.engine
++        self.engines.core()
++    }
++
++    pub fn engines(&self) -> &Engines {
++        &self.engines
++    }
++
++    /// The engine that judges one document's bytes.
++    pub fn engine_for(&self, unit: &SourceUnit) -> &Engine {
++        self.engines.engine_for(unit)
+     }
+ 
+     pub fn spec_root(&self) -> &Path {
+         &self.spec_root
+     }
+ 
++    /// Where the Core 0.2.0 package is, when this workspace uses one.
++    pub fn localized_spec_root(&self) -> Option<&Path> {
++        self.localized_spec_root.as_deref()
++    }
++
+     /// The document a bare command acts on, when the manifest declares one.
+     pub fn entry(&self) -> Option<String> {
+         let path = self.project.entry_path()?;
+diff --git a/impl/crates/lcl-workspace/src/routes.rs b/impl/crates/lcl-workspace/src/routes.rs
+index 935dbfc..231bbf2 100644
+--- a/impl/crates/lcl-workspace/src/routes.rs
++++ b/impl/crates/lcl-workspace/src/routes.rs
+@@ -132,6 +132,20 @@ impl Routes {
+                     .with("authority", Node::string(&spec.authority))
+                     .into(),
+             )
++            // The Core 0.2.0 package, when this workspace judges localized
++            // documents with it. `spec` stays the Core 0.1.0 package.
++            .with_some(
++                "localized_spec",
++                self.workspace.engines().localized().map(|engine| {
++                    let spec = engine.spec_record();
++                    Object::new()
++                        .with("root", Node::string(&spec.root))
++                        .with("formal_version", Node::string(&spec.formal_version))
++                        .with("identity_digest", Node::string(&spec.identity_digest))
++                        .with("authority", Node::string(&spec.authority))
++                        .into()
++                }),
++            )
+             .with("entry", Node::optional(self.workspace.entry()))
+             // The document this workspace was launched for, when a file
+             // association supplied one. Separate from `entry`, which is the
+@@ -277,9 +291,12 @@ impl Routes {
+             Ok(text) => text,
+             Err(e) => return Response::error(422, &e.to_string()),
+         };
++        // The id names the document the buffer is, so a localized document is
++        // lexed by the engine that judges it.
++        let unit = intelligence::unit_of(request.param("id").unwrap_or("buffer.lcl"), text);
+         Response::json(intelligence::tokens_json(
+-            self.workspace.engine().lexicon(),
+-            text,
++            self.workspace.engine_for(&unit),
++            &unit,
+         ))
+     }
+ 
+@@ -309,7 +326,7 @@ impl Routes {
+             .provider()
+             .map_err(|e| e.to_string())?;
+         let unit = intelligence::unit_of(id, text);
+-        let engine = self.workspace.engine();
++        let engine = self.workspace.engine_for(&unit);
+         Ok(match command {
+             Command::Check => engine.check(&unit, &provider),
+             Command::Inspect => engine.inspect(&unit, &provider, &Inputs::new()),
+@@ -464,7 +481,7 @@ fn execute(
+ ) -> Result<Report, String> {
+     let provider = workspace.project().provider().map_err(|e| e.to_string())?;
+     let unit = intelligence::unit_of(id, text);
+-    let engine = workspace.engine();
++    let engine = workspace.engine_for(&unit);
+ 
+     let (mut stdlib, mut host) =
+         lcl_protocol::surface(engine, &granted).map_err(|e| e.to_string())?;
+diff --git a/packaging/README.md b/packaging/README.md
+index d4ea8d7..68e57bc 100644
+--- a/packaging/README.md
++++ b/packaging/README.md
+@@ -68,6 +68,8 @@ binaries and you name it, once:
+ 
+ ```sh
+ export LCL_SPEC=~/.local/share/lcl/LCL_Core_0.1.0
++# a 0.2.0 candidate also installs the localized-language package:
++export LCL_LOCALIZED_SPEC=~/.local/share/lcl/LCL_Core_0.2.0
+ ```
+ 
+ or per command with `--spec`, or per project in `lcl.project.json`.
+@@ -147,3 +149,13 @@ cd <new directory> && LCL_RELEASE_OUT=<new output directory> packaging/build_rel
+ `--reconstruct` refuses an archive that holds anything but the regular files
+ its inventory names, before extracting anything. Rebuilt binaries are not
+ promised to be bit-for-bit identical; the source they were built from is.
++
++## Release version
++
++`LCL_RELEASE_VERSION=0.2.0 packaging/build_release.sh` builds a separate
++`lcl-0.2.0-linux-x86_64` candidate. It bundles the Core 0.1.0 package and the
++Core 0.2.0 package: `install.sh` installs both, the desktop launcher passes the
++0.2.0 package as `--localized-spec`, and the provenance records both package
++identities. Without the variable the release version is the product version in
++`impl/Cargo.toml`, and a 0.1.0 candidate is built exactly as before. No other
++value is accepted.
+diff --git a/packaging/build_release.sh b/packaging/build_release.sh
+index 69ace7a..56bdef6 100755
+--- a/packaging/build_release.sh
++++ b/packaging/build_release.sh
+@@ -70,6 +70,12 @@
+ #
+ #   LCL_RELEASE_OUT=<dir>   where to write. Defaults to
+ #                           releases/candidates/<name>-<short source id>.
++#   LCL_RELEASE_VERSION=<v> the language release the candidate is for: 0.1.0
++#                           or 0.2.0. Defaults to the product version in
++#                           impl/Cargo.toml. A 0.2.0 candidate bundles the
++#                           Core 0.1.0 package and the Core 0.2.0 package, whose
++#                           localized documents the tools judge alongside 0.1.0
++#                           ones; a 0.1.0 candidate bundles only Core 0.1.0.
+ #
+ # The directory must not exist yet and its parent must; inside the source tree
+ # it may only be under releases/. It is created only after every artifact has
+@@ -356,7 +362,16 @@ verify_tree "$snapshot" "$inventory"
+ 
+ version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$snapshot/impl/Cargo.toml" | head -1)
+ [ -n "$version" ] || refuse "cannot read the product version from impl/Cargo.toml"
+-name=lcl-$version-linux-x86_64
++release=${LCL_RELEASE_VERSION:-$version}
++case "$release" in
++    0.1.0) ;;
++    0.2.0)
++        [ -f "$snapshot/canonical/LCL_Core_0.2.0/VERSION.txt" ] ||
++            refuse "a 0.2.0 candidate needs canonical/LCL_Core_0.2.0 in the captured source"
++        ;;
++    *) refuse "LCL_RELEASE_VERSION must be 0.1.0 or 0.2.0, not $release" ;;
++esac
++name=lcl-$release-linux-x86_64
+ 
+ out=${LCL_RELEASE_OUT:-$root/releases/candidates/$name-$short_source_id}
+ check_output "$out"
+@@ -385,6 +400,9 @@ install -m 0755 "$build/release/lcl-workspace" "$payload/bin/lcl-workspace"
+ # The engine refuses to load a package that is not the approved release, so the
+ # package travels with the binaries rather than being looked for at run time.
+ cp -r "$snapshot/canonical/LCL_Core_0.1.0" "$payload/share/LCL_Core_0.1.0"
++if [ "$release" = 0.2.0 ]; then
++    cp -r "$snapshot/canonical/LCL_Core_0.2.0" "$payload/share/LCL_Core_0.2.0"
++fi
+ 
+ cp "$snapshot/packaging/install.sh" "$snapshot/packaging/uninstall.sh" "$payload/"
+ chmod 0755 "$payload/install.sh" "$payload/uninstall.sh"
+@@ -440,11 +458,23 @@ fi
+ # ---------------------------------------------------------------------------
+ 
+ identity=$("$payload/bin/lcl" spec --spec "$payload/share/LCL_Core_0.1.0" | sed -n 's/^ *identity *//p')
+-language=$("$payload/bin/lcl" version | sed -n 's/^language //p')
++language=$("$payload/bin/lcl" version | sed -n 's/^language //p' | tr '\n' ' ' | sed 's/ *$//')
+ protocol=$("$payload/bin/lcl" version | sed -n 's/^protocol //p')
+ if [ -z "$identity" ] || [ -z "$language" ] || [ -z "$protocol" ]; then
+     refuse "the built lcl did not report its package identity, language and protocol"
+ fi
++# The Core 0.2.0 package's identity, as the built tool's own 0.2.0 engine
++# reports it for the package's canonical-English fixture.
++localized_identity=
++if [ "$release" = 0.2.0 ]; then
++    localized_identity=$("$payload/bin/lcl" check --machine \
++        --spec "$payload/share/LCL_Core_0.1.0" \
++        --localized-spec "$payload/share/LCL_Core_0.2.0" \
++        "$payload/share/LCL_Core_0.2.0/09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/canonical_en.lcl" |
++        sed -n 's/.*"identity_digest": *"\([0-9a-f]*\)".*/\1/p' | head -1)
++    [ -n "$localized_identity" ] ||
++        refuse "the built lcl did not report the Core 0.2.0 package identity"
++fi
+ rustc_program=${RUSTC:-rustc}
+ {
+     echo "LCL product release candidate provenance"
+@@ -484,10 +514,14 @@ rustc_program=${RUSTC:-rustc}
+     echo
+     echo "artifact:         $name.tar.gz"
+     echo "sha256:           $(cut -d' ' -f1 < "$artifacts/$name.sha256")"
++    echo "release version:  $release"
+     echo "product version:  $version"
+     echo "language version: $language"
+     echo "engine protocol:  $protocol"
+     echo "package identity: $identity"
++    if [ -n "$localized_identity" ]; then
++        echo "0.2.0 identity:   $localized_identity"
++    fi
+     echo
+     echo "Bit-for-bit reproducibility is not claimed. Rust embeds build paths"
+     echo "and no attempt is made to normalize them, so two runs from identical"
+@@ -508,14 +542,14 @@ rustc_program=${RUSTC:-rustc}
+     echo "PAYLOAD, every file in the tarball: executable class, size, SHA-256, path"
+     echo
+     cat "$staging/payload-manifest"
+-} > "$artifacts/lcl-$version-PROVENANCE.txt"
++} > "$artifacts/lcl-$release-PROVENANCE.txt"
+ 
+ # ---------------------------------------------------------------------------
+ # 6. Publish: claim the output directory, copy, and check what arrived
+ # ---------------------------------------------------------------------------
+ 
+ set -- "$name.tar.gz" "$name.sha256" "$name-source.tar.gz" "$name-source.sha256" \
+-    SOURCE_INVENTORY.tsv "lcl-$version-PROVENANCE.txt"
++    SOURCE_INVENTORY.tsv "lcl-$release-PROVENANCE.txt"
+ if [ -f "$artifacts/SOURCE_CHANGES.patch" ]; then
+     set -- "$@" SOURCE_CHANGES.patch
+ fi
+diff --git a/packaging/install.sh b/packaging/install.sh
+index e46f617..17b84b4 100755
+--- a/packaging/install.sh
++++ b/packaging/install.sh
+@@ -8,6 +8,8 @@
+ #   ~/.local/bin/lcl-workspace          the editor and debugger
+ #   ~/.local/bin/lcl-workspace-launch   what the desktop entry runs
+ #   ~/.local/share/lcl/LCL_Core_0.1.0   the specification package they load
++#   ~/.local/share/lcl/LCL_Core_0.2.0   the localized-language package, when
++#                                       the payload carries one
+ #   ~/.local/share/applications         the desktop entry
+ #   ~/.local/share/mime/packages        the .lcl media type
+ #   ~/.local/share/icons/hicolor/...    the application and document icons
+@@ -61,11 +63,22 @@ rm -rf "$data/lcl/LCL_Core_0.1.0"
+ cp -r "$here/share/LCL_Core_0.1.0" "$data/lcl/LCL_Core_0.1.0"
+ echo "installed $data/lcl/LCL_Core_0.1.0"
+ 
++# A 0.2.0 payload also carries the Core 0.2.0 package. The launcher then passes
++# it as --localized-spec; with none, the launcher passes nothing extra.
++localized=
++if [ -d "$here/share/LCL_Core_0.2.0" ]; then
++    localized=$data/lcl/LCL_Core_0.2.0
++    rm -rf "$localized"
++    cp -r "$here/share/LCL_Core_0.2.0" "$localized"
++    echo "installed $localized"
++fi
++
+ # The launcher the desktop entry runs. It carries the installed binary, the
+ # installed specification package and the default project directory as absolute
+ # paths, so a menu launch needs no environment at all.
+ substitute '@BIN@' "$bin/lcl-workspace" < "$here/share/lcl-workspace-launch.in" \
+     | substitute '@SPEC@' "$data/lcl/LCL_Core_0.1.0" \
++    | substitute '@LOCALIZED_SPEC@' "$localized" \
+     | substitute '@DEFAULT_PROJECT@' "$data/lcl/workspace" \
+     > "$bin/lcl-workspace-launch"
+ chmod 0755 "$bin/lcl-workspace-launch"
+@@ -127,6 +140,11 @@ echo
+ echo "Point a command at it with --spec, or export LCL_SPEC:"
+ echo "    export LCL_SPEC=$data/lcl/LCL_Core_0.1.0"
+ echo
++if [ -n "$localized" ]; then
++    echo "Localized (LCL 0.2.0) documents also need the 0.2.0 package:"
++    echo "    export LCL_LOCALIZED_SPEC=$localized"
++    echo
++fi
+ case ":$PATH:" in
+     *":$bin:"*) ;;
+     *) echo "note: $bin is not on your PATH." ;;
+diff --git a/packaging/lcl-workspace-launch.in b/packaging/lcl-workspace-launch.in
+index 8da818d..a694847 100644
+--- a/packaging/lcl-workspace-launch.in
++++ b/packaging/lcl-workspace-launch.in
+@@ -1,8 +1,10 @@
+ #!/bin/sh
+ # The installed desktop launcher for the LCL workspace.
+ #
+-# install.sh substitutes @BIN@, @SPEC@ and @DEFAULT_PROJECT@ with absolute
+-# installed paths and writes the result to $XDG_BIN_HOME/lcl-workspace-launch.
++# install.sh substitutes @BIN@, @SPEC@, @LOCALIZED_SPEC@ and @DEFAULT_PROJECT@
++# with absolute installed paths and writes the result to
++# $XDG_BIN_HOME/lcl-workspace-launch. @LOCALIZED_SPEC@ is empty unless the
++# installed payload carried the Core 0.2.0 package.
+ # The desktop entry's Exec line names this script, not the binary.
+ #
+ # ## Why a script exists at all
+@@ -29,6 +31,7 @@ set -eu
+ 
+ bin=@BIN@
+ spec=@SPEC@
++localized_spec=@LOCALIZED_SPEC@
+ default_project=@DEFAULT_PROJECT@
+ 
+ state=${XDG_STATE_HOME:-$HOME/.local/state}/lcl
+@@ -90,6 +93,13 @@ else
+     set -- "$default_project"
+ fi
+ 
++if [ -n "$localized_spec" ]; then
++    if [ ! -d "$localized_spec" ]; then
++        fail "The LCL 0.2.0 specification package is missing from $localized_spec. Reinstall LCL."
++    fi
++    set -- --localized-spec "$localized_spec" "$@"
++fi
++
+ # Not exec: the exit status is wanted, so that a workspace which refuses to
+ # start says so in a dialog instead of appearing to do nothing.
+ "$bin" --spec "$spec" --open "$@" >>"$log" 2>&1 && exit 0
+diff --git a/packaging/uninstall.sh b/packaging/uninstall.sh
+index c8a5ac4..da518d0 100755
+--- a/packaging/uninstall.sh
++++ b/packaging/uninstall.sh
+@@ -40,6 +40,10 @@ if [ -d "$data/lcl/LCL_Core_0.1.0" ]; then
+     rm -rf "$data/lcl/LCL_Core_0.1.0"
+     echo "removed $data/lcl/LCL_Core_0.1.0"
+ fi
++if [ -d "$data/lcl/LCL_Core_0.2.0" ]; then
++    rm -rf "$data/lcl/LCL_Core_0.2.0"
++    echo "removed $data/lcl/LCL_Core_0.2.0"
++fi
+ # The default project directory holds the operator's own documents, so it is
+ # never removed. `rmdir` takes the parent only when this installation left it
+ # empty, which it does not when a project is still sitting in it.

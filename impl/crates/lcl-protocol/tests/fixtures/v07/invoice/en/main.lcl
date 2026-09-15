@@ -1,0 +1,80 @@
+LCL:
+    VERSION: "0.2.0"
+
+SPECIFICATION:
+    ID: app.invoice_total
+    NAME: "Total one invoice"
+    VERSION: "1.0.0"
+    KIND: kind.task
+    DOMAIN: "accounting"
+
+INPUT:
+    ID: input.lines
+    TYPE: LIST[INTEGER]
+    VALUE: [1250, 3400, 875]
+
+INPUT:
+    ID: input.tax_percent
+    TYPE: INTEGER
+    VALUE: 20
+
+OUTPUT:
+    ID: output.subtotal
+    TYPE: INTEGER
+    FORMAT: format.plain_text
+
+OUTPUT:
+    ID: output.total
+    TYPE: INTEGER
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.total
+    ASSERT: REF(output.total) == 6630
+
+ACTION:
+    ID: action.subtotal
+    OPERATION: core.calculate
+    TARGET: REF(input.lines)
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "SUM(REF(input.lines))"
+    OUTPUT: REF(output.subtotal)
+
+ACTION:
+    ID: action.total
+    OPERATION: core.calculate
+    TARGET: REF(output.subtotal)
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "REF(output.subtotal) * (100 + REF(input.tax_percent)) / 100"
+    OUTPUT: REF(output.total)
+
+VERIFY:
+    ID: verify.subtotal
+    REQUIRED: TRUE
+    ASSERT: REF(output.subtotal) == 5525
+
+VERIFY:
+    ID: verify.total
+    REQUIRED: TRUE
+    ASSERT: REF(output.total) == 6630
+
+SUCCESS:
+    ID: success.total
+    ALL: [REF(verify.subtotal), REF(verify.total)]
+
+TASK:
+    ID: task.total
+    GOAL: REF(goal.total)
+    INPUT: [REF(input.lines), REF(input.tax_percent)]
+    ACTION: [REF(action.subtotal), REF(action.total)]
+    OUTPUT: [REF(output.subtotal), REF(output.total)]
+    SUCCESS: REF(success.total)
+
+EXECUTE:
+    REFERENCE: REF(task.total)

@@ -68,7 +68,56 @@ pub use lexicon::{
 pub use span::{Position, Span};
 pub use token::{Token, TokenKind};
 
+use std::collections::BTreeMap;
 use std::fmt;
+
+/// The spellings of one validated locale profile, for lexing one source unit
+/// under LCL 0.2.0 (`02_LEXICAL/13_LOCALIZED_SOURCE_AND_LOCALE_DIRECTIVE.txt`).
+///
+/// The localization stage builds it after selecting and validating a profile;
+/// the lexer only applies it. Without a map, lexing is exactly Core 0.1.0.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WordMap {
+    directive_len: usize,
+    letters: Vec<(u32, u32)>,
+    spellings: BTreeMap<String, String>,
+}
+
+impl WordMap {
+    /// `directive_len` is the byte length of the locale directive line
+    /// including its LINE FEED, or 0; `letters` are the inclusive code point
+    /// ranges of every registered repertoire; `spellings` maps each profile
+    /// spelling to the canonical reserved word it denotes.
+    pub fn new(
+        directive_len: usize,
+        letters: Vec<(u32, u32)>,
+        spellings: BTreeMap<String, String>,
+    ) -> Self {
+        Self {
+            directive_len,
+            letters,
+            spellings,
+        }
+    }
+
+    /// Byte length of the locale directive line, or 0.
+    pub fn directive_len(&self) -> usize {
+        self.directive_len
+    }
+
+    /// True when `c` is a letter of a registered repertoire.
+    pub fn is_letter(&self, c: char) -> bool {
+        let v = c as u32;
+        self.letters
+            .iter()
+            .any(|(start, end)| (*start..=*end).contains(&v))
+    }
+
+    /// The canonical reserved word `spelling` denotes, if the profile spells it.
+    pub fn canonical(&self, spelling: &str) -> Option<&str> {
+        self.spellings.get(spelling).map(String::as_str)
+    }
+}
 
 /// A lexer bound to a loaded vocabulary.
 ///
@@ -97,6 +146,15 @@ impl<'a> Lexer<'a> {
     /// `source.as_bytes()`.
     pub fn lex_str(&self, source: &str) -> Lexed {
         self.lex(source.as_bytes())
+    }
+
+    /// Lex under a locale profile's [`WordMap`] (LCL 0.2.0, `02_LEXICAL/13`).
+    ///
+    /// Spans index the author's original bytes. A reserved word spelled through
+    /// the profile carries its canonical word in [`Token::canonical`]; the
+    /// locale directive line produces no token.
+    pub fn lex_localized(&self, source: &[u8], words: &WordMap) -> Lexed {
+        scan::lex_with(self.lexicon, source, Some(words))
     }
 }
 

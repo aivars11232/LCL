@@ -247,15 +247,76 @@ pub struct SourceRecord {
     pub bytes: usize,
     /// True for the unit the request named.
     pub root: bool,
+    /// The unit's LCL 0.2.0 locale selection, when the engine applied the
+    /// localization stage and a selection was made. Presentation and
+    /// reproducibility metadata only: it never changes a verdict.
+    pub locale: Option<LocaleRecord>,
+}
+
+/// How one unit's locale was selected (`02_LEXICAL/13`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocaleRecord {
+    /// `explicit`, `pinned`, `auto` or `canonical`.
+    pub method: String,
+    /// The normalized locale tag, absent for canonical spelling.
+    pub locale: Option<String>,
+    /// `sha256:` and the selected profile's content digest.
+    pub profile_identity: Option<String>,
+    /// The detector whose proposal was used, for automatic selection.
+    pub detector_identity: Option<String>,
+    /// The locales that detector proposed, in its order.
+    pub candidate_locales: Vec<String>,
+    /// The language version whose localization contract applied.
+    pub lcl_version: String,
+}
+
+impl LocaleRecord {
+    fn to_json(&self) -> Node {
+        Object::new()
+            .with("method", Node::string(&self.method))
+            .with("locale", Node::optional(self.locale.as_deref()))
+            .with(
+                "profile_identity",
+                Node::optional(self.profile_identity.as_deref()),
+            )
+            .with(
+                "detector_identity",
+                Node::optional(self.detector_identity.as_deref()),
+            )
+            .with(
+                "candidate_locales",
+                Node::array(self.candidate_locales.iter().map(Node::string)),
+            )
+            .with("lcl_version", Node::string(&self.lcl_version))
+            .into()
+    }
 }
 
 impl SourceRecord {
+    /// A record of one loaded unit.
+    pub fn new(id: impl Into<String>, digest: impl Into<String>, bytes: usize, root: bool) -> Self {
+        SourceRecord {
+            id: id.into(),
+            digest: digest.into(),
+            bytes,
+            root,
+            locale: None,
+        }
+    }
+
+    /// The same record with a locale selection.
+    pub fn with_locale(mut self, locale: LocaleRecord) -> Self {
+        self.locale = Some(locale);
+        self
+    }
+
     fn to_json(&self) -> Node {
         Object::new()
             .with("id", Node::string(&self.id))
             .with("digest", Node::string(format!("sha256:{}", self.digest)))
             .with("bytes", Node::usize(self.bytes))
             .with("root", Node::Bool(self.root))
+            .with_some("locale", self.locale.as_ref().map(LocaleRecord::to_json))
             .into()
     }
 }

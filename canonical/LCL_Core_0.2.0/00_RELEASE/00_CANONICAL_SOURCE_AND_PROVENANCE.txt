@@ -1,0 +1,62 @@
+LCL CORE 0.2.0
+CANONICAL SOURCE AND PROVENANCE
+NORMATIVE RELEASE METADATA
+
+1. CANONICAL SOURCE
+
+This package root is the only canonical source tree for LCL Core 0.2.0. Language
+meaning is determined by the artifacts inside this tree under
+00_RELEASE/02_NORMATIVE_AUTHORITY_ORDER.txt. Files outside this package root are
+not normative inputs to the language.
+
+2. CANONICAL BASE
+
+LCL Core 0.2.0 was created on 15 September 2026 under the owner-approved
+LCL-FEATURE-04 task from the released package canonical/LCL_Core_0.1.0: 176
+files with LCL-PACKAGE-IDENTITY-V1 identity
+00d648b162939d06c44838481a67c39bc12c64bdd6d105035c24150148fe67ed and archive
+LCL_Core_0.1.0_Bare_Language_2026-09-05.zip.
+
+Creation copied every file except MANIFEST.json, VALIDATION_REPORT.txt and
+SHA256SUMS.txt, and changed the language version 0.1.0 to 0.2.0 in file names,
+headers, registry versions and LCL source. Retained archive names, the frozen
+GLOB and REGEX profile identities, and historical records kept 0.1.0. Replacing
+0.2.0 by 0.1.0 in every created file reproduced its source bytes exactly. The
+0.1.0 package is unchanged and remains the immutable compatible baseline.
+
+3. CHANGES FROM 0.1.0
+
+Every later change is a deliberate Core 0.2.0 decision:
+
+- localized source spelling in
+  02_LEXICAL/13_LOCALIZED_SOURCE_AND_LOCALE_DIRECTIVE.txt,
+  10_REGISTRIES/localization_surface_v0.2.0.json and
+  10_REGISTRIES/locale_profile_schema_v0.2.0.json;
+- the localization diagnostic stage and nine error.localization identifiers,
+  with their enum group, lifecycle stage, catalog entries and prose counts;
+- amendments to 02_LEXICAL/01 and 02, 01_FOUNDATION/02 and 03, 05_SEMANTICS/09,
+  06_STANDARD_LIBRARY/06 and 07, and 09_CONFORMANCE/01;
+- TOOLS/validate_localization.py and 09_CONFORMANCE/LOCALIZATION_FIXTURES;
+- validate_release.py counts, stage lists and hash pins re-derived for the
+  relabelled and extended bytes, each re-derived pin checked against the 0.1.0
+  package or against the reverted intended change;
+- release metadata in 00_RELEASE, README.txt, VERSION.txt, CHANGELOG.txt,
+  INDEX.txt and TOOLS/generate_integrity.py.
+
+4. VERSION AND STATUS
+
+00_RELEASE/04_CHANGE_CONTROL.txt requires a minor release for added
+backward-compatible features. Every valid Core 0.1.0 program keeps its meaning,
+and localized spelling is accepted only in documents declaring VERSION "0.2.0",
+so this version is 0.2.0.
+
+The package status is UNRELEASED_CANDIDATE. The independent review of the
+localization additions is pending in 05_LANGUAGE_CLOSURE.json, and no archive of
+this package exists. Fresh MANIFEST.json, VALIDATION_REPORT.txt and
+SHA256SUMS.txt bind its bytes for integrity only.
+
+This package is the language definition only. It must never be represented as
+containing, requiring, or having been validated by a lexer, parser, interpreter,
+compiler, runtime, semantic execution engine, UI, IDE, provider integration, or
+deployment tooling. Parser and executable-semantic evidence is outside the
+package scope and is reported as OUT_OF_SCOPE, never as PASS.

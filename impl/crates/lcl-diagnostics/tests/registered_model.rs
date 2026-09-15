@@ -32,7 +32,10 @@ fn loads_all_registered_errors_and_statuses() {
 #[test]
 fn stage_order_agrees_with_registry() {
     let r = registry();
-    assert_eq!(r.stage_order(), Stage::ORDER.as_slice());
+    // LCL-FEATURE-04 oracle correction: `Stage::ORDER` is now the Core 0.2.0
+    // eight-stage order; this Core 0.1.0 registry declares the seven below,
+    // which the unchanged name assertion that follows still pins exactly.
+    assert_eq!(r.stage_order(), Stage::ORDER_0_1_0.as_slice());
     let names: Vec<&str> = r
         .stage_order()
         .iter()
@@ -190,4 +193,22 @@ fn recoverable_errors_are_a_strict_subset() {
     let n = r.recoverable_errors().len();
     assert!(n > 0, "some errors are handler-recoverable");
     assert!(n < r.error_count(), "not all errors are recoverable");
+}
+
+/// Core 0.2.0 declares the `localization` stage first and nine errors at it.
+#[test]
+fn the_0_2_0_registry_adds_the_localization_stage_first() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../canonical/LCL_Core_0.2.0")
+        .canonicalize()
+        .expect("the 0.2.0 package is present");
+    let pkg = SpecPackage::open_with_anchor(root, &lcl_spec::anchor::APPROVED_PACKAGE_0_2_0)
+        .expect("the 0.2.0 package verifies");
+    let r = DiagnosticRegistry::load(&pkg).expect("the 0.2.0 diagnostic registry loads");
+    assert_eq!(r.stage_order(), Stage::ORDER.as_slice());
+    assert_eq!(r.stage_order().first(), Some(&Stage::Localization));
+    assert!(Stage::Localization.precedes(Stage::Lexical));
+    assert_eq!(r.error_count(), 86);
+    assert_eq!(r.errors_by_stage(Stage::Localization).len(), 9);
+    assert_eq!(r.status_count(), 12);
 }

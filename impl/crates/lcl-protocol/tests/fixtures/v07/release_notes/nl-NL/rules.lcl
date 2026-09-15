@@ -1,0 +1,27 @@
+LCL:
+    VERSIE: "0.2.0"
+
+SPECIFICATIE:
+    ID: app.release_rules
+    NAAM: "Release note rules"
+    VERSIE: "1.0.0"
+    SOORT: kind.library
+    AUTORITEIT: 500
+
+BEREIK:
+    ID: scope.workspace
+    OPNEMEN: JOKERPATROON("**")
+
+VERBIED:
+    ID: rule.no_delete
+    OPERATIE: core.delete
+    DOELWIT: VERW(scope.workspace)
+    AUTORITEIT: 500
+    PRIORITEIT: 100
+
+TOESTAAN:
+    ID: rule.may_write
+    OPERATIE: core.create
+    DOELWIT: VERW(scope.workspace)
+    AUTORITEIT: 500
+    PRIORITEIT: 50

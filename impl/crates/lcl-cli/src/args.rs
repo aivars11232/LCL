@@ -65,6 +65,11 @@ pub struct Document {
 pub struct Common {
     /// The canonical specification package root.
     pub spec: Option<PathBuf>,
+    /// The canonical LCL Core 0.2.0 package root, whose localization stage
+    /// judges localized documents. Absent: every document is Core 0.1.0's.
+    pub localized_spec: Option<PathBuf>,
+    /// Locale profile files, in the order given.
+    pub profiles: Vec<PathBuf>,
     /// The project root.
     pub project: Option<PathBuf>,
     /// Emit the machine-readable record instead of human text.
@@ -253,6 +258,14 @@ fn split(argv: &[String]) -> Result<(Vec<String>, Common), UsageError> {
                 }
                 common.spec = Some(PathBuf::from(path));
             }
+            "--localized-spec" => {
+                let path = value("--localized-spec")?;
+                if common.localized_spec.is_some() {
+                    return Err(UsageError::new("--localized-spec was given more than once"));
+                }
+                common.localized_spec = Some(PathBuf::from(path));
+            }
+            "--profile" => common.profiles.push(PathBuf::from(value("--profile")?)),
             "--project" => {
                 let path = value("--project")?;
                 if common.project.is_some() {
@@ -345,6 +358,14 @@ pub fn usage() -> String {
     out.push_str("\nOPTIONS\n");
     for (name, description) in [
         ("--spec <path>", "the canonical specification package root"),
+        (
+            "--localized-spec <path>",
+            "the canonical LCL Core 0.2.0 package, for localized documents",
+        ),
+        (
+            "--profile <file>",
+            "a locale profile <locale>.json (repeatable)",
+        ),
         (
             "--project <dir>",
             "the project root; defaults to the document's own directory",

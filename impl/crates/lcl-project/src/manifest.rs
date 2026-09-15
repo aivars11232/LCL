@@ -37,7 +37,15 @@ pub const MANIFEST_FILE: &str = "lcl.project.json";
 pub const MANIFEST_FORMAT: &str = "lcl.project/1";
 
 /// Every key a manifest may carry.
-const KNOWN_KEYS: &[&str] = &["format", "spec", "entry", "cache", "lock"];
+const KNOWN_KEYS: &[&str] = &[
+    "format",
+    "spec",
+    "entry",
+    "cache",
+    "lock",
+    "localized_spec",
+    "profiles",
+];
 
 /// Why a manifest could not be used.
 #[derive(Debug)]
@@ -73,6 +81,11 @@ pub struct Manifest {
     pub cache: Option<String>,
     /// The lock file, as written.
     pub lock: Option<String>,
+    /// Where the canonical LCL Core 0.2.0 package, whose localization stage
+    /// judges localized documents, is, as written.
+    pub localized_spec: Option<String>,
+    /// The directory of `<locale>.json` locale profiles, as written.
+    pub profiles: Option<String>,
 }
 
 impl Manifest {
@@ -144,6 +157,8 @@ impl Manifest {
             entry: text_field("entry")?,
             cache: text_field("cache")?,
             lock: text_field("lock")?,
+            localized_spec: text_field("localized_spec")?,
+            profiles: text_field("profiles")?,
         })
     }
 }

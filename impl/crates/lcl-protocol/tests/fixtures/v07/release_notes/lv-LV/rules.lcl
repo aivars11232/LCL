@@ -1,0 +1,27 @@
+LCL:
+    VERSIJA: "0.2.0"
+
+SPECIFIKĀCIJA:
+    ID: app.release_rules
+    NOSAUKUMS: "Release note rules"
+    VERSIJA: "1.0.0"
+    VEIDS: kind.library
+    PILNVARA: 500
+
+TVĒRUMS:
+    ID: scope.workspace
+    IEKĻAUT: ŠABLONS("**")
+
+AIZLIEGT:
+    ID: rule.no_delete
+    OPERĀCIJA: core.delete
+    ADRESĀTS: ATS(scope.workspace)
+    PILNVARA: 500
+    PRIORITĀTE: 100
+
+ATĻAUT:
+    ID: rule.may_write
+    OPERĀCIJA: core.create
+    ADRESĀTS: ATS(scope.workspace)
+    PILNVARA: 500
+    PRIORITĀTE: 50

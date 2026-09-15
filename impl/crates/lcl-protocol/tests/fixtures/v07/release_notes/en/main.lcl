@@ -1,0 +1,135 @@
+LCL:
+    VERSION: "0.2.0"
+
+SPECIFICATION:
+    ID: app.release_notes
+    NAME: "Assemble release notes"
+    VERSION: "1.0.0"
+    KIND: kind.task
+    DOMAIN: "documentation"
+
+IMPORT:
+    ID: import.rules
+    SOURCE: PATH("rules.lcl")
+    NAMESPACE: release_rules
+    VERSION: "1.0.0"
+    AUTHORITY: 500
+    REQUIRED: TRUE
+
+WORKSPACE:
+    ID: workspace.notes
+    PATH: PATH("/tmp/lcl-apps/medium-release-notes")
+    MODE: mode.read_write
+
+SCOPE:
+    ID: scope.task
+    INCLUDE: REF(task.notes)
+
+CONTEXT:
+    ID: context.release
+    TYPE: OBJECT
+    SCOPE: REF(scope.task)
+    VALUE:
+        product: "LCL"
+        version: "0.1.0"
+
+STATE:
+    ID: state.entry_count
+    TYPE: INTEGER
+    SCOPE: REF(scope.task)
+    MODE: mode.read_only
+    VALUE: 3
+
+INPUT:
+    ID: input.entries
+    TYPE: LIST[STRING]
+    VALUE: ["parser", "resolver", "runtime"]
+
+OUTPUT:
+    ID: output.headline
+    TYPE: STRING
+    FORMAT: format.plain_text
+
+OUTPUT:
+    ID: output.notes
+    TYPE: PATH
+    FORMAT: format.plain_text
+    TARGET: PATH(REF(workspace.notes), "NOTES.txt")
+    PROPERTY: target
+
+GOAL:
+    ID: goal.notes
+    ASSERT: EXISTS(REF(output.notes))
+
+ACTION:
+    ID: action.headline
+    OPERATION: core.calculate
+    TARGET: REF(context.release)
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "REF(context.release).product"
+    OUTPUT: REF(output.headline)
+
+SEQUENCE:
+    ID: sequence.entries
+    MODE: mode.sequential
+    FOR EACH entry IN REF(input.entries):
+        STEP:
+            ID: step.entry
+            ACTION:
+                ID: action.entry
+                OPERATION: core.return
+                TARGET: REF(entry)
+
+ACTION:
+    ID: action.write
+    OPERATION: core.create
+    TARGET: PATH(REF(workspace.notes), "NOTES.txt")
+    PARAMETER:
+        NAME: content
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "LCL 0.1.0 release notes"
+    OUTPUT: REF(output.notes)
+
+EVIDENCE:
+    ID: evidence.headline
+    TYPE: STRING
+    VALUE: "The headline is assembled from CONTEXT context.release."
+    PROVENANCE: "Declared directly in this specification."
+    REQUIRED: TRUE
+
+VERIFY:
+    ID: verify.headline
+    REQUIRED: TRUE
+    ASSERT: REF(output.headline) == "LCL"
+    EVIDENCE: REF(evidence.headline)
+
+VERIFY:
+    ID: verify.entries
+    REQUIRED: TRUE
+    ASSERT: COUNT(REF(input.entries)) == REF(state.entry_count)
+
+VERIFY:
+    ID: verify.written
+    REQUIRED: TRUE
+    ASSERT: EXISTS(REF(output.notes))
+
+SUCCESS:
+    ID: success.notes
+    ALL: [REF(verify.headline), REF(verify.entries), REF(verify.written)]
+
+TASK:
+    ID: task.notes
+    GOAL: REF(goal.notes)
+    WORKSPACE: REF(workspace.notes)
+    INPUT: REF(input.entries)
+    ACTION: [REF(action.headline), REF(action.write)]
+    SEQUENCE: REF(sequence.entries)
+    OUTPUT: [REF(output.headline), REF(output.notes)]
+    SUCCESS: REF(success.notes)
+
+EXECUTE:
+    REFERENCE: REF(task.notes)

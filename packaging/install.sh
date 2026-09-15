@@ -8,6 +8,8 @@
 #   ~/.local/bin/lcl-workspace          the editor and debugger
 #   ~/.local/bin/lcl-workspace-launch   what the desktop entry runs
 #   ~/.local/share/lcl/LCL_Core_0.1.0   the specification package they load
+#   ~/.local/share/lcl/LCL_Core_0.2.0   the localized-language package, when
+#                                       the payload carries one
 #   ~/.local/share/applications         the desktop entry
 #   ~/.local/share/mime/packages        the .lcl media type
 #   ~/.local/share/icons/hicolor/...    the application and document icons
@@ -61,11 +63,22 @@ rm -rf "$data/lcl/LCL_Core_0.1.0"
 cp -r "$here/share/LCL_Core_0.1.0" "$data/lcl/LCL_Core_0.1.0"
 echo "installed $data/lcl/LCL_Core_0.1.0"
 
+# A 0.2.0 payload also carries the Core 0.2.0 package. The launcher then passes
+# it as --localized-spec; with none, the launcher passes nothing extra.
+localized=
+if [ -d "$here/share/LCL_Core_0.2.0" ]; then
+    localized=$data/lcl/LCL_Core_0.2.0
+    rm -rf "$localized"
+    cp -r "$here/share/LCL_Core_0.2.0" "$localized"
+    echo "installed $localized"
+fi
+
 # The launcher the desktop entry runs. It carries the installed binary, the
 # installed specification package and the default project directory as absolute
 # paths, so a menu launch needs no environment at all.
 substitute '@BIN@' "$bin/lcl-workspace" < "$here/share/lcl-workspace-launch.in" \
     | substitute '@SPEC@' "$data/lcl/LCL_Core_0.1.0" \
+    | substitute '@LOCALIZED_SPEC@' "$localized" \
     | substitute '@DEFAULT_PROJECT@' "$data/lcl/workspace" \
     > "$bin/lcl-workspace-launch"
 chmod 0755 "$bin/lcl-workspace-launch"
@@ -127,6 +140,11 @@ echo
 echo "Point a command at it with --spec, or export LCL_SPEC:"
 echo "    export LCL_SPEC=$data/lcl/LCL_Core_0.1.0"
 echo
+if [ -n "$localized" ]; then
+    echo "Localized (LCL 0.2.0) documents also need the 0.2.0 package:"
+    echo "    export LCL_LOCALIZED_SPEC=$localized"
+    echo
+fi
 case ":$PATH:" in
     *":$bin:"*) ;;
     *) echo "note: $bin is not on your PATH." ;;

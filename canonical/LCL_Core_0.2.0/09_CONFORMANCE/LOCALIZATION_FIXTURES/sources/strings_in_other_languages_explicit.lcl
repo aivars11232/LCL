@@ -1,0 +1,14 @@
+@locale lv-LV
+LCL:
+    VERSIJA: "0.2.0"
+
+SPECIFIKĀCIJA:
+    ID: fixture.localized_minimum
+    NOSAUKUMS: "ДАННЫЕ TASK 数据 GEGEVENS"
+    VERSIJA: "1.0.0"
+    VEIDS: kind.data
+
+DATI:
+    ID: data.count
+    TIPS: VESELS
+    VĒRTĪBA: 3

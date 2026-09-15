@@ -10,8 +10,8 @@
 //! exactly that, transcribed into JavaScript where it will drift the first time
 //! a registry moves.
 //!
-//! So the real [`Lexer`] produces the spans, classified from the real
-//! [`Lexicon`] — `is_block_name`, `is_type_word`, `is_literal_word`, each a
+//! So the real [`Lexer`](lcl_lexer::Lexer) produces the spans, classified from the real
+//! [`Lexicon`](lcl_lexer::Lexicon) — `is_block_name`, `is_type_word`, `is_literal_word`, each a
 //! registry lookup — and the browser paints what it is given. LCL has no
 //! comment form at all, which a hand-written highlighter would almost certainly
 //! have invented one for.
@@ -23,8 +23,9 @@
 //! screen. Imports still resolve through the project's provider, from disk,
 //! because an import names a file and that file is whatever it currently is.
 
-use lcl_lexer::{Lexer, Lexicon, TokenKind};
+use lcl_lexer::TokenKind;
 use lcl_protocol::json::{Node, Object};
+use lcl_protocol::Engine;
 use lcl_resolver::{SourceId, SourceUnit};
 
 /// One painted span.
@@ -55,18 +56,26 @@ impl TokenSpan {
 /// whitespace needs no class, so neither is emitted. What comes back covers
 /// only the bytes a reader can see.
 ///
-/// This is total. `Lexer::lex` never panics for any input, which matters
-/// because it runs on every keystroke over a half-typed document.
-pub fn tokens(lexicon: &Lexicon, text: &str) -> Vec<TokenSpan> {
-    Lexer::new(lexicon)
-        .lex_str(text)
+/// The buffer is lexed exactly as the engine that judges it stages it. Under
+/// the Core 0.2.0 engine that is after localization, so a localized reserved
+/// word is classified by its canonical word while its span stays the author's
+/// own bytes. A buffer whose localization fails is lexed canonically.
+///
+/// This is total. Staging never panics for any input, which matters because it
+/// runs on every keystroke over a half-typed document.
+pub fn tokens(engine: &Engine, unit: &SourceUnit) -> Vec<TokenSpan> {
+    let staged = engine.stage(unit);
+    let lexicon = engine.lexicon();
+    let text = staged.source();
+    staged
+        .lexed()
         .tokens()
         .iter()
         .filter(|token| token.span.end > token.span.start)
         .filter_map(|token| {
             let class = match token.kind {
                 TokenKind::ReservedWord => {
-                    let word = &text[token.span.start..token.span.end];
+                    let word = token.word(text).unwrap_or_default();
                     if lexicon.is_block_name(word) {
                         "block"
                     } else if lexicon.is_type_word(word) {
@@ -100,11 +109,11 @@ pub fn tokens(lexicon: &Lexicon, text: &str) -> Vec<TokenSpan> {
 }
 
 /// The token spans of one buffer, as JSON.
-pub fn tokens_json(lexicon: &Lexicon, text: &str) -> String {
+pub fn tokens_json(engine: &Engine, unit: &SourceUnit) -> String {
     Object::new()
         .with(
             "tokens",
-            Node::array(tokens(lexicon, text).iter().map(TokenSpan::to_json)),
+            Node::array(tokens(engine, unit).iter().map(TokenSpan::to_json)),
         )
         .pretty()
 }

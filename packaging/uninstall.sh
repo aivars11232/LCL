@@ -40,6 +40,10 @@ if [ -d "$data/lcl/LCL_Core_0.1.0" ]; then
     rm -rf "$data/lcl/LCL_Core_0.1.0"
     echo "removed $data/lcl/LCL_Core_0.1.0"
 fi
+if [ -d "$data/lcl/LCL_Core_0.2.0" ]; then
+    rm -rf "$data/lcl/LCL_Core_0.2.0"
+    echo "removed $data/lcl/LCL_Core_0.2.0"
+fi
 # The default project directory holds the operator's own documents, so it is
 # never removed. `rmdir` takes the parent only when this installation left it
 # empty, which it does not when a project is still sitting in it.

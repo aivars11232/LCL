@@ -1,0 +1,13 @@
+LCL:
+    VERSION: "0.2.0"
+
+SPECIFICATION:
+    ID: fixture.localized_minimum
+    NAME: "Localized minimum"
+    VERSION: "1.0.0"
+    KIND: kind.data
+
+DATA:
+    ID: data.count
+    TYPE: INTEGER
+    VALUE: 3

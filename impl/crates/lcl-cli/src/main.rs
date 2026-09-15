@@ -36,9 +36,13 @@ mod render;
 mod syntax;
 
 use args::{Command, Common, Document, UsageError};
+use lcl_localization::{LocaleTag, Pin};
+use lcl_project::lock::LockedLocale;
 use lcl_project::{Cache, Lock, Project};
 use lcl_protocol::json::{Node, Object};
-use lcl_protocol::{Engine, Inputs, Report};
+use lcl_protocol::{Engine, Engines, Inputs, Report};
+use lcl_resolver::SourceId;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -92,6 +96,8 @@ fn run(argv: &[String]) -> Result<i32, Failure> {
             println!("lcl {}", env!("CARGO_PKG_VERSION"));
             println!("protocol {}", lcl_protocol::PROTOCOL);
             println!("language 0.1.0");
+            // With a Core 0.2.0 package named, localized documents are judged too.
+            println!("language 0.2.0");
             Ok(exit::SUCCESS)
         }
         Command::Check(document) => stage_command(document, lcl_protocol::Command::Check),
@@ -134,6 +140,70 @@ fn spec_root(common: &Common, project: Option<&Project>) -> Result<PathBuf, Fail
     ))
 }
 
+/// Where the canonical LCL Core 0.2.0 package is, when one is named.
+///
+/// The same explicit order as [`spec_root`]: `--localized-spec`, then
+/// `LCL_LOCALIZED_SPEC`, then the manifest's `localized_spec`. Naming none is
+/// not an error: every document is then judged by Core 0.1.0.
+fn localized_spec_root(common: &Common, project: Option<&Project>) -> Option<PathBuf> {
+    if let Some(path) = &common.localized_spec {
+        return Some(path.clone());
+    }
+    if let Some(value) = std::env::var_os("LCL_LOCALIZED_SPEC") {
+        if !value.is_empty() {
+            return Some(PathBuf::from(value));
+        }
+    }
+    project.and_then(Project::localized_spec_path)
+}
+
+/// The engines a command judges documents with.
+///
+/// Core 0.1.0 always, and the Core 0.2.0 engine with its localization stage
+/// only when a 0.2.0 package is named. Its locale profiles are the project's
+/// `profiles` directory and then every `--profile` file, a later file for the
+/// same locale replacing an earlier one. Under `--locked`, the lock file's
+/// locale pins apply.
+fn engines(common: &Common, project: Option<&Project>) -> Result<Engines, Failure> {
+    let failed = |e: &dyn std::fmt::Display| Failure::environment(e.to_string());
+    let core = Engine::open(spec_root(common, project)?).map_err(|e| failed(&e))?;
+    let Some(root) = localized_spec_root(common, project) else {
+        return Engines::new(core, None).map_err(|e| failed(&e));
+    };
+    let mut files = match project {
+        Some(project) => project
+            .profile_files()
+            .map_err(|e| Failure::environment(format!("the locale profile directory: {e}")))?,
+        None => Vec::new(),
+    };
+    files.extend(common.profiles.iter().cloned());
+    let mut localized = Engine::open_localized(&root, &files).map_err(|e| {
+        Failure::environment(format!(
+            "the localized specification package {}: {e}",
+            root.display()
+        ))
+    })?;
+    if common.locked {
+        if let Some(lock) = project.and_then(|p| Lock::read(p.lock_path()).ok()) {
+            let pins: BTreeMap<SourceId, Pin> = lock
+                .locales
+                .iter()
+                .filter_map(|(unit, pinned)| {
+                    Some((
+                        SourceId::new(unit.clone()),
+                        Pin {
+                            locale: LocaleTag::parse(&pinned.locale).ok()?,
+                            identity: pinned.profile_identity.clone(),
+                        },
+                    ))
+                })
+                .collect();
+            localized = localized.with_locale_pins(pins);
+        }
+    }
+    Engines::new(core, Some(localized)).map_err(|e| failed(&e))
+}
+
 /// Open the project a command acts within.
 ///
 /// `--project` names it outright. Otherwise it is the document's own directory:
@@ -174,8 +244,7 @@ fn entry(document: &Document, project: &Project) -> Result<PathBuf, Failure> {
 fn stage_command(document: Document, command: lcl_protocol::Command) -> Result<i32, Failure> {
     let common = document.common.clone();
     let project = open_project(&common, document.path.as_deref())?;
-    let engine = Engine::open(spec_root(&common, Some(&project))?)
-        .map_err(|e| Failure::environment(e.to_string()))?;
+    let engines = engines(&common, Some(&project))?;
 
     let path = entry(&document, &project)?;
     let provider = project
@@ -184,6 +253,7 @@ fn stage_command(document: Document, command: lcl_protocol::Command) -> Result<i
     let unit = provider
         .root_unit(&path)
         .map_err(|e| Failure::environment(e.to_string()))?;
+    let engine = engines.engine_for(&unit);
 
     let mut inputs = Inputs::new();
     for (id, expression) in &common.inputs {
@@ -195,7 +265,7 @@ fn stage_command(document: Document, command: lcl_protocol::Command) -> Result<i
         lcl_protocol::Command::Validate => engine.validate(&unit, &provider, &inputs),
         lcl_protocol::Command::Inspect => engine.inspect(&unit, &provider, &inputs),
         lcl_protocol::Command::Run => {
-            let (mut stdlib, mut host) = lcl_protocol::surface(&engine, &common.grants)
+            let (mut stdlib, mut host) = lcl_protocol::surface(engine, &common.grants)
                 .map_err(|e| Failure::environment(e.to_string()))?;
             engine.run(&unit, &provider, &inputs, &mut stdlib, &mut host)
         }
@@ -217,15 +287,29 @@ fn stage_command(document: Document, command: lcl_protocol::Command) -> Result<i
 
 /// The lock a report's own units describe.
 fn lock_of(report: &Report) -> Option<Lock> {
-    Some(Lock::new(
-        report.spec.identity_digest.clone(),
-        report.spec.formal_version.clone(),
-        report.root()?.to_string(),
-        report
-            .units
-            .iter()
-            .map(|unit| (unit.id.clone(), unit.digest.clone())),
-    ))
+    let locales = report.units.iter().filter_map(|unit| {
+        let selected = unit.locale.as_ref()?;
+        Some((
+            unit.id.clone(),
+            LockedLocale {
+                locale: selected.locale.clone()?,
+                method: selected.method.clone(),
+                profile_identity: selected.profile_identity.clone()?,
+            },
+        ))
+    });
+    Some(
+        Lock::new(
+            report.spec.identity_digest.clone(),
+            report.spec.formal_version.clone(),
+            report.root()?.to_string(),
+            report
+                .units
+                .iter()
+                .map(|unit| (unit.id.clone(), unit.digest.clone())),
+        )
+        .with_locales(locales),
+    )
 }
 
 /// Under `--locked`, the drift that must stop the command.
@@ -256,8 +340,7 @@ fn locked_drift(project: &Project, report: &Report) -> Result<Option<String>, Fa
 fn lock_command(document: Document, write: bool) -> Result<i32, Failure> {
     let common = document.common.clone();
     let project = open_project(&common, document.path.as_deref())?;
-    let engine = Engine::open(spec_root(&common, Some(&project))?)
-        .map_err(|e| Failure::environment(e.to_string()))?;
+    let engines = engines(&common, Some(&project))?;
     let path = entry(&document, &project)?;
     let provider = project
         .provider()
@@ -265,6 +348,7 @@ fn lock_command(document: Document, write: bool) -> Result<i32, Failure> {
     let unit = provider
         .root_unit(&path)
         .map_err(|e| Failure::environment(e.to_string()))?;
+    let engine = engines.engine_for(&unit);
 
     // Locking records what a resolution actually loaded, so it runs one. Steps
     // 1 to 5 load every unit an import names, and nothing further is needed to

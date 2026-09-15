@@ -42,9 +42,11 @@ impl<'a> BlockParser<'a, '_> {
         span.slice(self.source).unwrap_or("")
     }
 
+    /// A reserved word: its canonical identity (the profile-mapped word for
+    /// localized source) at the author's own span.
     fn word(&self, token: &Token) -> Word {
         Word {
-            text: self.text(token.span).to_string(),
+            text: token.word(self.source).unwrap_or("").to_string(),
             span: token.span,
         }
     }
@@ -343,7 +345,7 @@ impl<'a> BlockParser<'a, '_> {
         if token.kind != TokenKind::ReservedWord {
             return ControlStep::NotControl;
         }
-        let opened = match self.text(token.span) {
+        let opened = match token.word(self.source).unwrap_or("") {
             "IF" => self.open_conditional(c, frames),
             // `FOR` opens `FOR EACH`; the lexer has already rejected every
             // unregistered loop word, so `FOR` not followed by `EACH` is a
@@ -547,7 +549,7 @@ impl<'a> BlockParser<'a, '_> {
             } => {
                 // "ELSE is optional and aligned with its IF." — 04_GRAMMAR/04
                 let has_else = c.peek().is_some_and(|t| {
-                    t.kind == TokenKind::ReservedWord && self.text(t.span) == "ELSE"
+                    t.kind == TokenKind::ReservedWord && t.word(self.source) == Some("ELSE")
                 });
                 if has_else {
                     let Some(else_token) = c.peek() else { return };
@@ -705,7 +707,7 @@ impl<'a> BlockParser<'a, '_> {
 
     fn expect_word(&mut self, c: &mut Cursor<'a>, word: &str) -> Option<()> {
         if c.peek()
-            .is_some_and(|t| t.kind == TokenKind::ReservedWord && self.text(t.span) == word)
+            .is_some_and(|t| t.kind == TokenKind::ReservedWord && t.word(self.source) == Some(word))
         {
             c.bump();
             return Some(());

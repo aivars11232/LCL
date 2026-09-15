@@ -1,0 +1,3 @@
+EXPECTED_ERROR: error.numeric.division_by_zero
+EXPECTED_TERMINAL_STATUS: status.invalid
+RULE: A mathematical-zero denominator is invalid even in the direct first-argument context of ROUND.

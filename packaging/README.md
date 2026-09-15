@@ -68,6 +68,8 @@ binaries and you name it, once:
 
 ```sh
 export LCL_SPEC=~/.local/share/lcl/LCL_Core_0.1.0
+# a 0.2.0 candidate also installs the localized-language package:
+export LCL_LOCALIZED_SPEC=~/.local/share/lcl/LCL_Core_0.2.0
 ```
 
 or per command with `--spec`, or per project in `lcl.project.json`.
@@ -147,3 +149,13 @@ cd <new directory> && LCL_RELEASE_OUT=<new output directory> packaging/build_rel
 `--reconstruct` refuses an archive that holds anything but the regular files
 its inventory names, before extracting anything. Rebuilt binaries are not
 promised to be bit-for-bit identical; the source they were built from is.
+
+## Release version
+
+`LCL_RELEASE_VERSION=0.2.0 packaging/build_release.sh` builds a separate
+`lcl-0.2.0-linux-x86_64` candidate. It bundles the Core 0.1.0 package and the
+Core 0.2.0 package: `install.sh` installs both, the desktop launcher passes the
+0.2.0 package as `--localized-spec`, and the provenance records both package
+identities. Without the variable the release version is the product version in
+`impl/Cargo.toml`, and a 0.1.0 candidate is built exactly as before. No other
+value is accepted.

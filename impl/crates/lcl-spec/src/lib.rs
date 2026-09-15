@@ -93,6 +93,79 @@ pub const CATALOG_FILES: &[(&str, &str)] = &[
     ),
 ];
 
+/// The closed registries of Core 0.2.0: the twelve Core 0.1.0 registries under
+/// their 0.2.0 names, plus the two localization registries.
+pub const REGISTRY_FILES_0_2_0: &[(&str, &str)] = &[
+    (
+        "ambiguous_replacements",
+        "10_REGISTRIES/ambiguous_replacements_v0.2.0.json",
+    ),
+    ("block_schemas", "10_REGISTRIES/block_schemas_v0.2.0.json"),
+    (
+        "built_in_groups_and_results",
+        "10_REGISTRIES/built_in_groups_and_results_v0.2.0.json",
+    ),
+    (
+        "field_signatures",
+        "10_REGISTRIES/field_signatures_v0.2.0.json",
+    ),
+    (
+        "formats_encodings_units",
+        "10_REGISTRIES/formats_encodings_units_v0.2.0.json",
+    ),
+    ("keywords", "10_REGISTRIES/keywords_v0.2.0.json"),
+    (
+        "locale_profile_schema",
+        "10_REGISTRIES/locale_profile_schema_v0.2.0.json",
+    ),
+    (
+        "localization_surface",
+        "10_REGISTRIES/localization_surface_v0.2.0.json",
+    ),
+    ("operations", "10_REGISTRIES/operations_v0.2.0.json"),
+    (
+        "operators_and_functions",
+        "10_REGISTRIES/operators_and_functions_v0.2.0.json",
+    ),
+    (
+        "semantic_meta_types",
+        "10_REGISTRIES/semantic_meta_types_v0.2.0.json",
+    ),
+    (
+        "statuses_and_errors",
+        "10_REGISTRIES/statuses_and_errors_v0.2.0.json",
+    ),
+    ("symbols", "10_REGISTRIES/symbols_v0.2.0.json"),
+    ("types", "10_REGISTRIES/types_v0.2.0.json"),
+];
+
+/// The two descriptive conformance catalogs of Core 0.2.0.
+pub const CATALOG_FILES_0_2_0: &[(&str, &str)] = &[
+    (
+        "core_conformance_cases",
+        "09_CONFORMANCE/CASES/core_conformance_cases_v0.2.0.json",
+    ),
+    (
+        "language_decision_cases",
+        "09_CONFORMANCE/CASES/language_decision_cases_v0.2.0.json",
+    ),
+];
+
+/// A set of `(short name, package-root-relative path)` pairs.
+pub type FileSet = &'static [(&'static str, &'static str)];
+
+/// The registry and catalog files read for a package's declared formal version.
+///
+/// Core 0.2.0 names its own files. Every other declaration keeps the Core 0.1.0
+/// names, so a package declaring an unapproved version is still refused by the
+/// version gate of [`SpecPackage::open_with_anchor`], exactly as before.
+pub fn package_files(formal_version: &str) -> (FileSet, FileSet) {
+    match formal_version {
+        "0.2.0" => (REGISTRY_FILES_0_2_0, CATALOG_FILES_0_2_0),
+        _ => (REGISTRY_FILES, CATALOG_FILES),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
@@ -440,12 +513,17 @@ impl SpecPackage {
         let file_records = parse_manifest_files(&manifest)?;
         let checksums = parse_checksums(&captured_text(&captured, &root, CHECKSUMS_PATH)?)?;
 
+        let declared_version = manifest
+            .get("formal_version")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let (registry_files, catalog_files) = package_files(declared_version);
         let mut registries = BTreeMap::new();
-        for (name, rel) in REGISTRY_FILES {
+        for (name, rel) in registry_files {
             registries.insert((*name).to_string(), captured_json(&captured, &root, rel)?);
         }
         let mut catalogs = BTreeMap::new();
-        for (name, rel) in CATALOG_FILES {
+        for (name, rel) in catalog_files {
             catalogs.insert((*name).to_string(), captured_json(&captured, &root, rel)?);
         }
 

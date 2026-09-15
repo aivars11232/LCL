@@ -1,0 +1,164 @@
+LCL CORE CHANGELOG
+
+0.2.0 LOCALIZATION FEATURE CANDIDATE - LCL-FEATURE-04
+
+- Created canonical/LCL_Core_0.2.0 from the released 0.1.0 package by copying
+  every file except the generated integrity files and relabelling
+  language-version mentions. Reversing the relabel reproduces every 0.1.0 file
+  byte for byte, and the 0.1.0 package is unchanged.
+- Added localized source spelling:
+  02_LEXICAL/13_LOCALIZED_SOURCE_AND_LOCALE_DIRECTIVE.txt,
+  10_REGISTRIES/localization_surface_v0.2.0.json derived from the other
+  registries, and 10_REGISTRIES/locale_profile_schema_v0.2.0.json with the
+  locale directive, locale tag subset, explicit letter repertoires, confusable
+  skeletons, candidate words, selection precedence, provider contract, and
+  original-byte locations.
+- Added the localization diagnostic stage before lexical and nine
+  error.localization identifiers, widened the meanings of error.keyword.unknown
+  and error.source.non_ascii_outside_string for a selected locale profile, and
+  extended the errors enum group, lifecycle stages, the 808-entry catalog, and
+  prose counts.
+- Aligned 02_LEXICAL/01 and 02, 01_FOUNDATION/02 and 03, 05_SEMANTICS/09,
+  06_STANDARD_LIBRARY/06 and 07, 07_VERSIONING_AND_EXTENSIONS/01,
+  09_CONFORMANCE/01, and the release metadata.
+- Added TOOLS/validate_localization.py and 09_CONFORMANCE/LOCALIZATION_FIXTURES:
+  four minimal fixture profiles (lv-LV, nl-NL, ru-RU, zh-CN) that prove the
+  mechanism only, 21 profile mutations, and 31 source fixtures.
+- Re-derived validate_release.py hash pins changed by the relabel (17, each
+  equal to its 0.1.0 control value) and by the added stage and errors (3, each
+  reproducing its old value when the intended change is reverted).
+- Marked the independent review of the localization additions pending. The
+  package is an UNRELEASED_CANDIDATE and no archive exists.
+
+0.1.0 BARE LANGUAGE RELEASE - LCL-TASK-0007
+
+- Retired the reference lexer/parser, semantic interpreter, and executable
+  conformance tasks as outside the LCL Core 0.1.0 project scope, and replaced the
+  final task with static validation, integrity regeneration, and bare-language
+  release packaging.
+- Revalidated the released bytes statically: path/mode hygiene, UTF-8 and LF
+  hygiene, strict JSON parsing with duplicate-key rejection, Python source
+  compilation, static EBNF graph closure, fifteen concrete source fixtures,
+  thirty-three example contracts, fifteen registry and cross-registry closure
+  gates, and the 797-entry requirements index.
+- Confirmed that parser and executable-semantic evidence is classified
+  OUT_OF_SCOPE rather than PASS or BLOCKED, and that release readiness is
+  computed from FAIL and BLOCKED counts only.
+- Corrected release documentation that still described a frozen, unpublished
+  candidate, and corrected generate_integrity.py, which hard-coded a
+  blocked-repair-candidate manifest status.
+- Regenerated MANIFEST.json, then VALIDATION_REPORT.txt, then SHA256SUMS.txt from
+  the released bytes in the documented acyclic order.
+- Packaged the release archive outside the package root, verified archive
+  integrity, extracted it, compared it byte-for-byte with the release tree, and
+  revalidated the extracted copy.
+
+0.1.0 BARE-SPECIFICATION-COMPLETE CANDIDATE - LCL-TASK-0006
+
+- Reproduced the accepted Claude handoff decisions against the actual local
+  candidate; no web-session edit was assumed present.
+- Closed deterministic diagnostic selection across seven stages with one
+  severity, exact specificity and same-cause supersession, independent
+  multiplicity, exact duplicate identity, canonical omission locations, stable
+  ordering, primary/secondary propagation, and declared-handler recovery.
+- Distinguished missing required fields and duplicate blocks or fields from
+  their generic cardinality consequences, including precise same-iteration and
+  same-retry-attempt suppression identity.
+- Resolved allowed failure phases for all 77 registered errors and specified
+  producer-relative status, effect-state, observed-effect, OUTPUT-binding,
+  retained-evidence, recovery, and indeterminate-state behavior.
+- Preserved RETRY syntax for every resolved ACTION while requiring exact safety
+  evidence after known effects, reconciliation after indeterminate effects, and
+  actual failed attempts before error.retry.exhausted.
+- Corrected the four accepted invalid-example expectations, pinned their exact
+  source and expectation bytes, and added block-local and unresolved-reference
+  static checks without claiming parser or semantic execution.
+- Expanded the descriptive requirements index to 797 entries, including exact
+  diagnostic-policy and failure-lifecycle requirements, and added twelve
+  concrete deterministic selection vectors plus cross-registry lifecycle checks.
+- Closed LCL-AUDIT-014 and LCL-AUDIT-015 and classified the language-definition
+  scope as BARE_SPECIFICATION_COMPLETE. MANIFEST.json, SHA256SUMS.txt, and
+  VALIDATION_REPORT.txt remain deliberately frozen and stale; no repair archive
+  was produced.
+
+0.1.0 BLOCKED REPAIR CANDIDATE - LCL-TASK-0005
+
+- Reproduced the accepted Claude handoff decisions against the actual local
+  candidate after receiving approval for explicit OUTPUT.PROPERTY projection;
+  no web-session edit was assumed present.
+- Closed all nine result schemas with inherited execution status, output-binding,
+  execution-error, failure-phase, effect-state, and observed-effect fields plus
+  exact schema-specific fields, cardinalities, and unknown-field rejection.
+- Separated producer execution status from domain outcomes, preserved false and
+  empty completed values, and made UNKNOWN legality agree with field types and
+  binding rules.
+- Defined zero-, one-, and multi-property OUTPUT projection, default primary
+  properties, explicit graph-command projection, and partial-output support only
+  for command stdout/stderr.
+- Distinguished command failure to start from completed nonzero exit, byte counts
+  from transferred content, and known effect truth from OUTPUT binding after
+  partial or post-effect failure.
+- Updated the affected operation postconditions and valid examples, strengthened
+  static result-contract checks, and closed all nine result-schema catalog cases.
+- Preserved the Task 0006 diagnostic/lifecycle blockers and stale integrity
+  metadata. No release archive was produced.
+
+0.1.0 BLOCKED REPAIR CANDIDATE - LCL-TASK-0004
+
+- Reproduced the accepted Claude handoff decisions against the actual local
+  candidate after presenting and receiving approval for the complete 39-row
+  operation matrix.
+- Closed every core operation's determinism category and source, possible
+  dependency/effect maxima, invocation-level resolution rule, applicable errors,
+  and inherited or transitive behavior without changing result-schema internals.
+- Defined deterministic identity over declared inputs, dependency snapshots,
+  selected profile, and implementation version; made DETERMINISTIC TRUE a
+  verified assertion rather than an override.
+- Added the precise validation-stage error.determinism.mismatch contract and
+  positive/negative conformance requirements.
+- Replaced legacy side-effect classes with closed dependency/effect vocabularies,
+  the inherited marker, 39 exact prose mirrors, and static mutation-resistant
+  validator checks.
+- Expanded the descriptive requirements index to 795 entries. Result-schema
+  cardinality/output remains for Task 0005; diagnostic selection and mixed-phase
+  lifecycle work remain for Task 0006. No release archive was produced.
+
+0.1.0 BLOCKED REPAIR CANDIDATE - LCL-TASK-0001
+
+- Replayed the five accepted Claude-web decisions against the actual extracted
+  local candidate; no web-session edit was assumed present.
+- Closed LIST/SET values on inline/multiline bracket syntax and reserved ITEM for
+  enum-member declarations only.
+- Defined all eleven typed constructors, RFC 3339 date/time profiles, resolved
+  WORKSPACE containment, absolute RFC 3986 URI behavior, and registered-unit
+  MEASURE behavior.
+- Closed conservative REGEX and workspace-relative GLOB profiles, made MATCHES a
+  semantic full-string operation, and added error.pattern.resource_limit.
+- Removed the seven accepted parent contradictions and defined optional PRIORITY
+  omission as strict integer 0 with no inheritance and explicit-value precedence.
+- Expanded the descriptive requirements index to 792 entries and strengthened the
+  static validator with data-sensitive D-001 through D-005 checks.
+- Classified parser/runtime/executable-semantic artifacts as OUT_OF_SCOPE for the
+  bare-language package; no such absence is reported as PASS or as a release
+  blocker.
+- Preserved unresolved bare-language blockers, stale integrity metadata, the
+  immutable historical tree/archive, and the no-release/no-archive status.
+
+0.1.0 BLOCKED REPAIR CANDIDATE - LCL-REPAIR-0001
+
+- Established one canonical candidate tree from the byte-verified 152-file
+  historical base without modifying the original tree or archive.
+- Declared the EBNF profile; repaired blank-line, grouping, unary, identifier,
+  type-expression, COMMENT-branch, and structural-field grammar defects.
+- Added machine-readable excluded lexemes and deterministic tokenization rules.
+- Reconciled EXISTS, SET, non-negative DURATION, PRIORITY ranges, control-operation
+  side effects, semantic meta-type references, and four pre-effect lifecycle errors.
+- Corrected two accepted source fixtures and three objective example operation
+  parameter defects.
+- Added executable static EBNF, concrete source-fixture, and release-gate validators.
+- Retained the 791-entry catalog as a requirements index; semantic execution remains
+  unverified.
+- Recorded unresolved constructor/pattern, value-kind, nested-parent, division,
+  SET sorting, PRIORITY omission, determinism/result, diagnostic-selection,
+  lifecycle, example-result, and semantic-conformance decisions.
+- Produced no repair ZIP because mandatory release gates are blocked.

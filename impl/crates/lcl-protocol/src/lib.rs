@@ -43,7 +43,7 @@ pub mod inputs;
 pub mod json;
 pub mod record;
 
-pub use engine::{Engine, EngineError};
+pub use engine::{Engine, EngineError, Engines};
 pub use host::{surface, Granted};
 pub use inputs::{Inputs, Supplied};
 pub use json::{Node, Object};

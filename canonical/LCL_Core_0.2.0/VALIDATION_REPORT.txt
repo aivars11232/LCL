@@ -1,0 +1,96 @@
+LCL CORE 0.2.0 BARE LANGUAGE SPECIFICATION - VALIDATION SNAPSHOT
+
+SNAPSHOT DATE: 2026-09-15
+PACKAGE SCOPE: BARE LANGUAGE SPECIFICATION ONLY
+LANGUAGE-DEFINITION STATUS: NOT DECLARED COMPLETE (independent review pending)
+PACKAGE STATUS: UNRELEASED_CANDIDATE
+SNAPSHOT RESULT: PASS (focused checks preceding final integrity verification)
+FORMAL VERSION: 0.2.0
+SNAPSHOT UTC: 2026-09-15T06:15:15Z
+MANIFEST SHA-256: 9196a29580a9c720421d606720b01c3449bbc131539abc15a88aa07809820172
+
+LANGUAGE CLOSURE
+
+8 of 9 decision areas in 00_RELEASE/05_LANGUAGE_CLOSURE.json are
+closed. Pending: independent_review. The Core 0.2.0 localization additions
+have not received an independent review, so no language completion status is
+declared and release_gate_permitted is false. This snapshot is static
+consistency evidence, not a formal proof of absence of every possible defect.
+
+FRESH FOCUSED CHECKS
+
+Filesystem, text, structured formats, grammar, registry and catalog scopes:
+29 PASS, 0 FAIL, 0 BLOCKED, 2 OUT_OF_SCOPE.
+
+The following results are direct fresh validator output. PASS applies only to
+each stated check, never to an executable LCL implementation.
+
+FILESYSTEM
+    path_mode_and_cache_hygiene: PASS
+
+TEXT
+    utf8_lf_and_control_hygiene: PASS
+    concrete_source_fixtures: PASS
+    localization_fixtures: PASS
+    static_example_contracts: PASS
+
+STRUCTURED
+    strict_json_parse: PASS
+    python_source_compile: PASS
+
+GRAMMAR
+    static_ebnf_graph: PASS
+    complete_example_parse_matrix: OUT_OF_SCOPE
+
+REGISTRY
+    keyword_grammar_parity: PASS
+    block_field_schema_parity: PASS
+    collection_value_and_item_contract: PASS
+    field_value_kind_closure: PASS
+    nested_parent_closure: PASS
+    operation_reference_closure: PASS
+    priority_contract: PASS
+    operation_contracts: PASS
+    operation_prose_contracts: PASS
+    result_schema_cardinality_and_output_contracts: PASS
+    division_semantics: PASS
+    set_and_sort_semantics: PASS
+    constructor_and_pattern_profiles: PASS
+    diagnostic_selection_contract: PASS
+    event_model_contract: PASS
+    custom_operation_declaration_contract: PASS
+    invocation_site_contract: PASS
+    mixed_phase_lifecycle_contracts: PASS
+    contract_type_notation: PASS
+    language_decision_contracts: PASS
+
+CATALOG
+    requirements_index_integrity: PASS
+    semantic_case_execution: OUT_OF_SCOPE
+
+LOCALIZATION
+
+validate_localization.py: localization_surface_derivation PASS
+(141 reserved words), locale_profile_schema PASS, 4 fixture
+profiles valid, 21 profile mutation cases as expected, 31 source
+fixtures matched, 0 failed. The lv-LV, nl-NL, ru-RU and zh-CN fixture profiles
+map only the reserved words of their test programs; they prove the mechanism,
+not translation quality or complete language coverage.
+
+BOUNDARIES
+
+validate_language_contracts.py: 514 static checks, 0 violations;
+66 descriptive witnesses, 0 executed LCL cases.
+The core catalog contains 808 descriptive requirements. These counts do not
+represent executed semantic conformance.
+
+GATE 9 - INTEGRITY AND RELEASE
+
+MANIFEST.json hashes 213 stable payload files out of
+216 package files, excluding itself, this report and SHA256SUMS.txt.
+This report binds the exact manifest hash above. SHA256SUMS.txt is generated
+next and hashes 215 files, excluding only itself. The full
+validate_release.py --scope all gate runs only after those steps; its actual
+result is recorded outside this package in reports/tasks/LCL-FEATURE-04_RESULT.md.
+No archive of this candidate exists. LCL Core 0.1.0 and its archive remain
+unchanged and do not substitute for the fresh results of this candidate.

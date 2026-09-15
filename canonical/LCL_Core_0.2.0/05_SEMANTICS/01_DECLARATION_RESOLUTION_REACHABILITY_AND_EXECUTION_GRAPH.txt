@@ -1,0 +1,99 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Declaration Resolution, Reachability, and Execution Graph
+LANGUAGE VERSION: 0.2.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+Definitions and source structure are immutable during one execution. Forward
+references are valid after full-document resolution; unresolved or cyclic
+prohibited references invalidate before effects.
+
+Resolution uses the complete lexical namespace environment of each declaring
+document. Imported full IDs receive the exact importing prefix; namespace
+ownership and collision rules are in
+02_LEXICAL/03_IDENTIFIERS_NAMESPACES_AND_RESERVED_NAMES.txt. Forward resolution
+does not evaluate a referenced value or start a referenced execution unit.
+
+Static checking establishes identity, type, legal fields, and dependency order.
+Value-dependent expressions are evaluated only at their declared point of
+reachability or demand. Assertions concerning OUTPUT are not evaluated before
+the producing actions merely because their references resolve statically.
+REF reads follow types_v0.2.0.json#/reference_context_contract. An ordinary read
+of a not-yet-bound OUTPUT yields MISSING; it never starts that OUTPUT's producer.
+A metadata read such as REF(output.copy).TARGET reads the declaration field
+without requiring the OUTPUT's result binding.
+
+VALIDATE and VERIFY expose the Boolean result of their declared check in value
+context. SUCCESS expressions therefore consume their check results rather than
+their reference identities. Resolving such a REF does not rerun the check or
+execute an operation. The check's registered handling of MISSING, UNKNOWN, and
+diagnostics applies before a required Boolean result can establish success.
+
+EXECUTE identifies one root. Reachability follows TASK/PHASE/SEQUENCE/STEP/
+ACTION references, TRUE branches, and applicable handlers. Unreachable ACTION
+and ALLOW declarations do not execute. Reachability does not expand SCOPE or
+permission. Each declaration evaluates at most once per declared evaluation
+point except bounded loop instances and explicit RETRY attempts. Distinct loop
+instances have distinct local binding identities; source declaration identity
+and imported namespace ownership remain fixed.
+
+CLOSED EXECUTION GRAPH
+
+Authority: 10_REGISTRIES/block_schemas_v0.2.0.json#/execution_graph_contract
+
+CANDIDATE GRAPH
+Build the complete finite structural activation graph from EXECUTE. Include
+both IF branches and each FOR EACH body as source templates for static
+checking. TASK execution fields, PHASE and SEQUENCE executable children, the
+selected STEP arm, and a root TEST TASK or ACTION activate execution units.
+Ordinary REF, TARGET, check references, OUTPUT reads, BEFORE and AFTER never
+activate a producer. Explicit graph-valued operation invocations create their
+own child invocation under the same rules.
+
+CHILD ORDER
+TASK execution-bearing PHASE, SEQUENCE, and ACTION fields contribute children
+in source field order; each reference LIST expands left to right. PHASE and
+SEQUENCE executable children contribute in lexical order, including STEP,
+nested SEQUENCE where legal, IF and FOR EACH. A STEP selected reference LIST
+expands left to right. These are explicit exceptions to otherwise nonsemantic
+field order.
+
+ACTIVATION IDENTITY
+An execution-unit source declaration has one structural activation path per
+candidate invocation. Multiple structural paths to the same declaration use
+error.execution.order before effects, including mutually exclusive branches.
+Structural cycles use error.reference.cycle. Explicit bounded FOR EACH
+instances and RETRY attempts replicate their source template with distinct
+invocation identities and are not duplicate activation.
+
+ORDERING
+TASK and STEP child groups are sequential. PHASE and SEQUENCE use declared
+MODE, defaulting to mode.sequential. Sequential lexical order contributes
+required predecessor edges. BEFORE and AFTER add edges and never reverse a
+sequential edge. Endpoints must be distinct sibling execution units in the same
+container and iteration context; other endpoints and ordering cycles use
+error.execution.order. Ordering references never expand reachability. A skipped
+predecessor satisfies ordering completion but supplies no missing value.
+
+PARALLEL
+mode.parallel omits implicit sequential edges but retains BEFORE and AFTER
+edges. Every included pair must have proven independence: no conflicting
+writes, read/write dependency, shared mutable binding, or conflicting output
+destination. Disjoint output paths alone are insufficient. Result collection
+and diagnostics use declared child order, never finish order. Independent
+eligible children may execute in any order.
+
+LOOP INSTANCES
+FOR EACH evaluates its finite snapshot once at reachability. Iterations run
+sequentially in registered LIST or SET order; each body finishes before the
+next starts. Instance identity includes the full enclosing iteration-index
+path. The local binding is visible only within its body and resolves to that
+exact instance.
+
+SUCCESSOR
+A declared successor is the unique next reachable sibling in the containing
+sequential group, ascending finished enclosing sequential containers when
+necessary. Dynamic applicability is evaluated normally. Continuation invents no
+unit; an absent successor or ambiguous parallel continuation uses
+error.execution.order.

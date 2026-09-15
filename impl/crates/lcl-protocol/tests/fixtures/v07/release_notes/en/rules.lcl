@@ -1,0 +1,27 @@
+LCL:
+    VERSION: "0.2.0"
+
+SPECIFICATION:
+    ID: app.release_rules
+    NAME: "Release note rules"
+    VERSION: "1.0.0"
+    KIND: kind.library
+    AUTHORITY: 500
+
+SCOPE:
+    ID: scope.workspace
+    INCLUDE: GLOB("**")
+
+FORBID:
+    ID: rule.no_delete
+    OPERATION: core.delete
+    TARGET: REF(scope.workspace)
+    AUTHORITY: 500
+    PRIORITY: 100
+
+ALLOW:
+    ID: rule.may_write
+    OPERATION: core.create
+    TARGET: REF(scope.workspace)
+    AUTHORITY: 500
+    PRIORITY: 50

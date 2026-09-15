@@ -63,6 +63,7 @@
 resolver = "2"
 members = [
     "crates/lcl-spec",
+    "crates/lcl-localization",
     "crates/lcl-diagnostics",
     "crates/lcl-lexer",
     "crates/lcl-parser",

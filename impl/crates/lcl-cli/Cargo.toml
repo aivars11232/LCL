@@ -16,5 +16,6 @@ lcl-project = { path = "../lcl-project" }
 lcl-capabilities = { path = "../lcl-capabilities" }
 lcl-stdlib = { path = "../lcl-stdlib" }
 lcl-spec = { path = "../lcl-spec" }
+lcl-localization = { path = "../lcl-localization" }
 lcl-resolver = { path = "../lcl-resolver" }
 lcl-lexer = { path = "../lcl-lexer" }

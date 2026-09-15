@@ -1,0 +1,136 @@
+@locale nl-NL
+LCL:
+    VERSIE: "0.2.0"
+
+SPECIFICATIE:
+    ID: app.release_notes
+    NAAM: "Assemble release notes"
+    VERSIE: "1.0.0"
+    SOORT: kind.task
+    DOMEIN: "documentation"
+
+IMPORTEER:
+    ID: import.rules
+    BRON: PAD("rules.lcl")
+    NAAMRUIMTE: release_rules
+    VERSIE: "1.0.0"
+    AUTORITEIT: 500
+    VERPLICHT: WAAR
+
+WERKRUIMTE:
+    ID: workspace.notes
+    PAD: PAD("/tmp/lcl-apps/medium-release-notes")
+    MODUS: mode.read_write
+
+BEREIK:
+    ID: scope.task
+    OPNEMEN: VERW(task.notes)
+
+CONTEXT:
+    ID: context.release
+    TYPE: OBJECT
+    BEREIK: VERW(scope.task)
+    WAARDE:
+        product: "LCL"
+        version: "0.1.0"
+
+TOESTAND:
+    ID: state.entry_count
+    TYPE: GEHEEL_GETAL
+    BEREIK: VERW(scope.task)
+    MODUS: mode.read_only
+    WAARDE: 3
+
+INVOER:
+    ID: input.entries
+    TYPE: LIJST[TEKENREEKS]
+    WAARDE: ["parser", "resolver", "runtime"]
+
+UITVOER:
+    ID: output.headline
+    TYPE: TEKENREEKS
+    FORMAAT: format.plain_text
+
+UITVOER:
+    ID: output.notes
+    TYPE: PAD
+    FORMAAT: format.plain_text
+    DOELWIT: PAD(VERW(workspace.notes), "NOTES.txt")
+    EIGENSCHAP: target
+
+DOEL:
+    ID: goal.notes
+    BEWEER: BESTAAT(VERW(output.notes))
+
+ACTIE:
+    ID: action.headline
+    OPERATIE: core.calculate
+    DOELWIT: VERW(context.release)
+    PARAMETER:
+        NAAM: expression
+        TYPE: TEKENREEKS
+        VERPLICHT: WAAR
+        WAARDE: "REF(context.release).product"
+    UITVOER: VERW(output.headline)
+
+REEKS:
+    ID: sequence.entries
+    MODUS: mode.sequential
+    VOOR ELK entry IN VERW(input.entries):
+        STAP:
+            ID: step.entry
+            ACTIE:
+                ID: action.entry
+                OPERATIE: core.return
+                DOELWIT: VERW(entry)
+
+ACTIE:
+    ID: action.write
+    OPERATIE: core.create
+    DOELWIT: PAD(VERW(workspace.notes), "NOTES.txt")
+    PARAMETER:
+        NAAM: content
+        TYPE: TEKENREEKS
+        VERPLICHT: WAAR
+        WAARDE: "LCL 0.1.0 release notes"
+    UITVOER: VERW(output.notes)
+
+BEWIJS:
+    ID: evidence.headline
+    TYPE: TEKENREEKS
+    WAARDE: "The headline is assembled from CONTEXT context.release."
+    HERKOMST: "Declared directly in this specification."
+    VERPLICHT: WAAR
+
+CONTROLEER:
+    ID: verify.headline
+    VERPLICHT: WAAR
+    BEWEER: VERW(output.headline) == "LCL"
+    BEWIJS: VERW(evidence.headline)
+
+CONTROLEER:
+    ID: verify.entries
+    VERPLICHT: WAAR
+    BEWEER: AANTAL(VERW(input.entries)) == VERW(state.entry_count)
+
+CONTROLEER:
+    ID: verify.written
+    VERPLICHT: WAAR
+    BEWEER: BESTAAT(VERW(output.notes))
+
+SUCCES:
+    ID: success.notes
+    ALLE: [VERW(verify.headline), VERW(verify.entries), VERW(verify.written)]
+
+TAAK:
+    ID: task.notes
+    DOEL: VERW(goal.notes)
+    WERKRUIMTE: VERW(workspace.notes)
+    INVOER: VERW(input.entries)
+    ACTIE: [VERW(action.headline), VERW(action.write)]
+    REEKS: VERW(sequence.entries)
+    UITVOER: [VERW(output.headline), VERW(output.notes)]
+    SUCCES: VERW(success.notes)
+
+UITVOEREN:
+    VERWIJZING: VERW(task.notes)

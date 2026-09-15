@@ -2,9 +2,10 @@
 //!
 //! Milestone M0 component B.
 //!
-//! Models the **registered** diagnostic vocabulary of LCL Core 0.1.0: the
-//! closed stage order, the 12 statuses and the 77 errors, each with its
-//! normative stage, recoverability, event mapping and default status.
+//! Models the **registered** diagnostic vocabulary of LCL Core 0.1.0 and 0.2.0:
+//! the closed stage order, the statuses and the errors, each with its normative
+//! stage, recoverability, event mapping and default status. Core 0.2.0 adds the
+//! `localization` stage before `lexical`.
 //!
 //! ## What this crate is
 //!
@@ -41,6 +42,9 @@ use std::fmt;
 /// completion form one stage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Stage {
+    /// The Core 0.2.0 localization stage (`02_LEXICAL/13`). Core 0.1.0 has no
+    /// such stage.
+    Localization,
     Lexical,
     GrammarOrSchema,
     Resolution,
@@ -51,8 +55,11 @@ pub enum Stage {
 }
 
 impl Stage {
-    /// The seven stages in normative order.
-    pub const ORDER: [Stage; 7] = [
+    /// Every stage in normative order: the Core 0.2.0 order. Core 0.1.0
+    /// declares [`Stage::ORDER_0_1_0`], which is this order without
+    /// [`Stage::Localization`].
+    pub const ORDER: [Stage; 8] = [
+        Stage::Localization,
         Stage::Lexical,
         Stage::GrammarOrSchema,
         Stage::Resolution,
@@ -62,8 +69,29 @@ impl Stage {
         Stage::VerificationOrCompletion,
     ];
 
+    /// The seven stages of Core 0.1.0, in normative order.
+    pub const ORDER_0_1_0: [Stage; 7] = [
+        Stage::Lexical,
+        Stage::GrammarOrSchema,
+        Stage::Resolution,
+        Stage::StaticOrExpression,
+        Stage::Validation,
+        Stage::Execution,
+        Stage::VerificationOrCompletion,
+    ];
+
+    /// The closed stage order a package of `formal_version` declares.
+    pub fn order_for(formal_version: &str) -> &'static [Stage] {
+        if formal_version == "0.2.0" {
+            &Stage::ORDER
+        } else {
+            &Stage::ORDER_0_1_0
+        }
+    }
+
     pub fn as_registry_str(self) -> &'static str {
         match self {
+            Stage::Localization => "localization",
             Stage::Lexical => "lexical",
             Stage::GrammarOrSchema => "grammar_or_schema",
             Stage::Resolution => "resolution",
@@ -196,7 +224,8 @@ impl DiagnosticRegistry {
             .iter()
             .filter_map(|v| v.as_str().map(str::to_string))
             .collect();
-        let expected: Vec<String> = Stage::ORDER
+        let stage_order = Stage::order_for(spec.formal_version());
+        let expected: Vec<String> = stage_order
             .iter()
             .map(|s| s.as_registry_str().to_string())
             .collect();
@@ -248,11 +277,13 @@ impl DiagnosticRegistry {
             .ok_or_else(|| DiagnosticsError::Malformed("missing errors".into()))?;
         for (id, body) in error_obj {
             let stage_str = str_field(body, "stage", id)?;
-            let stage = Stage::from_registry_str(&stage_str).ok_or_else(|| {
-                DiagnosticsError::UnclosedReference(format!(
-                    "{id}: unregistered stage {stage_str:?}"
-                ))
-            })?;
+            let stage = Stage::from_registry_str(&stage_str)
+                .filter(|s| stage_order.contains(s))
+                .ok_or_else(|| {
+                    DiagnosticsError::UnclosedReference(format!(
+                        "{id}: unregistered stage {stage_str:?}"
+                    ))
+                })?;
             let default_status = str_field(body, "default_status", id)?;
             errors.insert(
                 id.clone(),
@@ -278,7 +309,7 @@ impl DiagnosticRegistry {
         let me = Self {
             statuses,
             errors,
-            stage_order: Stage::ORDER.to_vec(),
+            stage_order: stage_order.to_vec(),
             selection_contract: selection.clone(),
             event_model: reg.get("event_model").cloned().unwrap_or(Json::Null),
             failure_lifecycle: reg.get("failure_lifecycle").cloned().unwrap_or(Json::Null),
@@ -401,7 +432,13 @@ mod tests {
 
     #[test]
     fn stage_order_is_total_and_normative() {
-        assert_eq!(Stage::ORDER.len(), 7);
+        // Core 0.2.0 `diagnostic_selection.stage_order` declares eight stages,
+        // `localization` first; Core 0.1.0 declares the other seven.
+        assert_eq!(Stage::ORDER.len(), 8);
+        assert_eq!(Stage::ORDER[1..], Stage::ORDER_0_1_0);
+        assert!(Stage::Localization.precedes(Stage::Lexical));
+        assert_eq!(Stage::order_for("0.1.0"), Stage::ORDER_0_1_0);
+        assert_eq!(Stage::order_for("0.2.0"), Stage::ORDER);
         assert!(Stage::Lexical.precedes(Stage::Execution));
         assert!(!Stage::Execution.precedes(Stage::Lexical));
         assert!(!Stage::Validation.precedes(Stage::Validation));

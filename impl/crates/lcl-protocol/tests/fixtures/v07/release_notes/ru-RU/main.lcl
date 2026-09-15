@@ -1,0 +1,136 @@
+@locale ru-RU
+LCL:
+    ВЕРСИЯ: "0.2.0"
+
+СПЕЦИФИКАЦИЯ:
+    ИД: app.release_notes
+    ИМЯ: "Assemble release notes"
+    ВЕРСИЯ: "1.0.0"
+    ВИД: kind.task
+    ДОМЕН: "documentation"
+
+ИМПОРТ:
+    ИД: import.rules
+    ИСТОЧНИК: ПУТЬ("rules.lcl")
+    ПРОСТРАНСТВО_ИМЁН: release_rules
+    ВЕРСИЯ: "1.0.0"
+    ПОЛНОМОЧИЕ: 500
+    ОБЯЗАТЕЛЬНО: ИСТИНА
+
+РАБОЧАЯ_ОБЛАСТЬ:
+    ИД: workspace.notes
+    ПУТЬ: ПУТЬ("/tmp/lcl-apps/medium-release-notes")
+    РЕЖИМ: mode.read_write
+
+ОБЛАСТЬ:
+    ИД: scope.task
+    ВКЛЮЧИТЬ: ССЫЛ(task.notes)
+
+КОНТЕКСТ:
+    ИД: context.release
+    ТИП: ОБЪЕКТ
+    ОБЛАСТЬ: ССЫЛ(scope.task)
+    ЗНАЧЕНИЕ:
+        product: "LCL"
+        version: "0.1.0"
+
+СОСТОЯНИЕ:
+    ИД: state.entry_count
+    ТИП: ЦЕЛОЕ
+    ОБЛАСТЬ: ССЫЛ(scope.task)
+    РЕЖИМ: mode.read_only
+    ЗНАЧЕНИЕ: 3
+
+ВВОД:
+    ИД: input.entries
+    ТИП: СПИСОК[СТРОКА]
+    ЗНАЧЕНИЕ: ["parser", "resolver", "runtime"]
+
+ВЫВОД:
+    ИД: output.headline
+    ТИП: СТРОКА
+    ФОРМАТ: format.plain_text
+
+ВЫВОД:
+    ИД: output.notes
+    ТИП: ПУТЬ
+    ФОРМАТ: format.plain_text
+    ЦЕЛЕВОЙ_ОБЪЕКТ: ПУТЬ(ССЫЛ(workspace.notes), "NOTES.txt")
+    СВОЙСТВО: target
+
+ЦЕЛЬ:
+    ИД: goal.notes
+    УТВЕРЖДАТЬ: СУЩЕСТВУЕТ(ССЫЛ(output.notes))
+
+ДЕЙСТВИЕ:
+    ИД: action.headline
+    ОПЕРАЦИЯ: core.calculate
+    ЦЕЛЕВОЙ_ОБЪЕКТ: ССЫЛ(context.release)
+    ПАРАМЕТР:
+        ИМЯ: expression
+        ТИП: СТРОКА
+        ОБЯЗАТЕЛЬНО: ИСТИНА
+        ЗНАЧЕНИЕ: "REF(context.release).product"
+    ВЫВОД: ССЫЛ(output.headline)
+
+ПОСЛЕДОВАТЕЛЬНОСТЬ:
+    ИД: sequence.entries
+    РЕЖИМ: mode.sequential
+    ДЛЯ КАЖДЫЙ entry В ССЫЛ(input.entries):
+        ШАГ:
+            ИД: step.entry
+            ДЕЙСТВИЕ:
+                ИД: action.entry
+                ОПЕРАЦИЯ: core.return
+                ЦЕЛЕВОЙ_ОБЪЕКТ: ССЫЛ(entry)
+
+ДЕЙСТВИЕ:
+    ИД: action.write
+    ОПЕРАЦИЯ: core.create
+    ЦЕЛЕВОЙ_ОБЪЕКТ: ПУТЬ(ССЫЛ(workspace.notes), "NOTES.txt")
+    ПАРАМЕТР:
+        ИМЯ: content
+        ТИП: СТРОКА
+        ОБЯЗАТЕЛЬНО: ИСТИНА
+        ЗНАЧЕНИЕ: "LCL 0.1.0 release notes"
+    ВЫВОД: ССЫЛ(output.notes)
+
+ДОКАЗАТЕЛЬСТВО:
+    ИД: evidence.headline
+    ТИП: СТРОКА
+    ЗНАЧЕНИЕ: "The headline is assembled from CONTEXT context.release."
+    ПРОИСХОЖДЕНИЕ: "Declared directly in this specification."
+    ОБЯЗАТЕЛЬНО: ИСТИНА
+
+ПРОВЕРИТЬ:
+    ИД: verify.headline
+    ОБЯЗАТЕЛЬНО: ИСТИНА
+    УТВЕРЖДАТЬ: ССЫЛ(output.headline) == "LCL"
+    ДОКАЗАТЕЛЬСТВО: ССЫЛ(evidence.headline)
+
+ПРОВЕРИТЬ:
+    ИД: verify.entries
+    ОБЯЗАТЕЛЬНО: ИСТИНА
+    УТВЕРЖДАТЬ: КОЛИЧЕСТВО(ССЫЛ(input.entries)) == ССЫЛ(state.entry_count)
+
+ПРОВЕРИТЬ:
+    ИД: verify.written
+    ОБЯЗАТЕЛЬНО: ИСТИНА
+    УТВЕРЖДАТЬ: СУЩЕСТВУЕТ(ССЫЛ(output.notes))
+
+УСПЕХ:
+    ИД: success.notes
+    ВСЕ: [ССЫЛ(verify.headline), ССЫЛ(verify.entries), ССЫЛ(verify.written)]
+
+ЗАДАЧА:
+    ИД: task.notes
+    ЦЕЛЬ: ССЫЛ(goal.notes)
+    РАБОЧАЯ_ОБЛАСТЬ: ССЫЛ(workspace.notes)
+    ВВОД: ССЫЛ(input.entries)
+    ДЕЙСТВИЕ: [ССЫЛ(action.headline), ССЫЛ(action.write)]
+    ПОСЛЕДОВАТЕЛЬНОСТЬ: ССЫЛ(sequence.entries)
+    ВЫВОД: [ССЫЛ(output.headline), ССЫЛ(output.notes)]
+    УСПЕХ: ССЫЛ(success.notes)
+
+ВЫПОЛНИТЬ:
+    ССЫЛКА: ССЫЛ(task.notes)

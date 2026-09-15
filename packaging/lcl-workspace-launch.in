@@ -1,8 +1,10 @@
 #!/bin/sh
 # The installed desktop launcher for the LCL workspace.
 #
-# install.sh substitutes @BIN@, @SPEC@ and @DEFAULT_PROJECT@ with absolute
-# installed paths and writes the result to $XDG_BIN_HOME/lcl-workspace-launch.
+# install.sh substitutes @BIN@, @SPEC@, @LOCALIZED_SPEC@ and @DEFAULT_PROJECT@
+# with absolute installed paths and writes the result to
+# $XDG_BIN_HOME/lcl-workspace-launch. @LOCALIZED_SPEC@ is empty unless the
+# installed payload carried the Core 0.2.0 package.
 # The desktop entry's Exec line names this script, not the binary.
 #
 # ## Why a script exists at all
@@ -29,6 +31,7 @@ set -eu
 
 bin=@BIN@
 spec=@SPEC@
+localized_spec=@LOCALIZED_SPEC@
 default_project=@DEFAULT_PROJECT@
 
 state=${XDG_STATE_HOME:-$HOME/.local/state}/lcl
@@ -88,6 +91,13 @@ if [ "$#" -eq 1 ] && [ -n "$1" ]; then
 else
     mkdir -p "$default_project"
     set -- "$default_project"
+fi
+
+if [ -n "$localized_spec" ]; then
+    if [ ! -d "$localized_spec" ]; then
+        fail "The LCL 0.2.0 specification package is missing from $localized_spec. Reinstall LCL."
+    fi
+    set -- --localized-spec "$localized_spec" "$@"
 fi
 
 # Not exec: the exit status is wanted, so that a workspace which refuses to

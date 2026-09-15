@@ -28,6 +28,11 @@ use std::path::{Path, PathBuf};
 /// The first line of a lock file, which fixes its format.
 const HEADER: &str = "lcl-lock/1";
 
+/// The first line of a lock file that pins locale profiles (LCL 0.2.0,
+/// `02_LEXICAL/13`). Written only when at least one unit is localized, so a
+/// project without localized units keeps its `lcl-lock/1` bytes.
+const HEADER_LOCALIZED: &str = "lcl-lock/2";
+
 /// The default lock file name inside a project root.
 pub const LOCK_FILE: &str = "lcl.lock";
 
@@ -67,6 +72,13 @@ pub enum Drift {
     Missing { unit: String },
     /// A unit was loaded that the lock file does not list.
     Added { unit: String, digest: String },
+    /// A unit's pinned locale or locale profile identity differs, or a pin
+    /// appeared or disappeared. `none` stands for no pin.
+    Locale {
+        unit: String,
+        locked: String,
+        actual: String,
+    },
 }
 
 impl fmt::Display for Drift {
@@ -91,6 +103,14 @@ impl fmt::Display for Drift {
             Drift::Added { unit, digest } => {
                 write!(f, "{unit} was loaded but is not locked ({digest})")
             }
+            Drift::Locale {
+                unit,
+                locked,
+                actual,
+            } => write!(
+                f,
+                "{unit} locale profile changed: locked {locked}, now {actual}"
+            ),
         }
     }
 }
@@ -106,6 +126,25 @@ pub struct Lock {
     pub root: String,
     /// Unit identity -> lowercase hex SHA-256, in ascending identity order.
     pub units: BTreeMap<String, String>,
+    /// Unit identity -> its pinned locale selection, for localized units only.
+    pub locales: BTreeMap<String, LockedLocale>,
+}
+
+/// The locale selection one localized unit resolved to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LockedLocale {
+    /// The normalized locale tag.
+    pub locale: String,
+    /// `explicit`, `pinned` or `auto`.
+    pub method: String,
+    /// `sha256:` and the profile's lowercase hex content digest.
+    pub profile_identity: String,
+}
+
+impl LockedLocale {
+    fn render(&self) -> String {
+        format!("{} {}", self.locale, self.profile_identity)
+    }
 }
 
 impl Lock {
@@ -121,7 +160,17 @@ impl Lock {
             spec_version: spec_version.into(),
             root: root.into(),
             units: units.into_iter().collect(),
+            locales: BTreeMap::new(),
         }
+    }
+
+    /// Pin the locale selection of localized units.
+    pub fn with_locales(
+        mut self,
+        locales: impl IntoIterator<Item = (String, LockedLocale)>,
+    ) -> Lock {
+        self.locales.extend(locales);
+        self
     }
 
     /// Read a lock file.
@@ -148,7 +197,11 @@ impl Lock {
 
     /// The exact bytes of this lock file.
     pub fn render(&self) -> String {
-        let mut out = String::from(HEADER);
+        let mut out = String::from(if self.locales.is_empty() {
+            HEADER
+        } else {
+            HEADER_LOCALIZED
+        });
         out.push('\n');
         out.push_str(&format!("spec-version {}\n", self.spec_version));
         out.push_str(&format!("spec-identity {}\n", self.spec_identity));
@@ -156,21 +209,29 @@ impl Lock {
         for (unit, digest) in &self.units {
             out.push_str(&format!("unit {digest}  {unit}\n"));
         }
+        for (unit, locale) in &self.locales {
+            out.push_str(&format!(
+                "locale {} {} {}  {unit}\n",
+                locale.locale, locale.method, locale.profile_identity
+            ));
+        }
         out
     }
 
     /// Parse a lock file's text.
     pub fn parse(text: &str) -> Result<Lock, String> {
         let mut lines = text.lines();
-        match lines.next() {
-            Some(HEADER) => {}
+        let localized = match lines.next() {
+            Some(HEADER) => false,
+            Some(HEADER_LOCALIZED) => true,
             Some(other) => return Err(format!("unknown lock format {other:?}")),
             None => return Err("the lock file is empty".to_string()),
-        }
+        };
         let mut spec_identity = None;
         let mut spec_version = None;
         let mut root = None;
         let mut units = BTreeMap::new();
+        let mut locales = BTreeMap::new();
         for (number, line) in lines.enumerate() {
             let line_number = number + 2;
             if line.is_empty() {
@@ -200,6 +261,42 @@ impl Lock {
                     }
                     units.insert(unit.to_string(), digest.to_string());
                 }
+                "locale" if localized => {
+                    let parsed = rest.split_once("  ").and_then(|(fields, unit)| {
+                        let mut parts = fields.split(' ');
+                        let locale = parts.next()?;
+                        let method = parts.next()?;
+                        let identity = parts.next()?;
+                        let hex = identity.strip_prefix("sha256:")?;
+                        let well_formed = parts.next().is_none()
+                            && !locale.is_empty()
+                            && locale
+                                .bytes()
+                                .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+                            && matches!(method, "explicit" | "pinned" | "auto")
+                            && hex.len() == 64
+                            && hex
+                                .chars()
+                                .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase())
+                            && !unit.is_empty();
+                        well_formed.then(|| {
+                            (
+                                unit.to_string(),
+                                LockedLocale {
+                                    locale: locale.to_string(),
+                                    method: method.to_string(),
+                                    profile_identity: identity.to_string(),
+                                },
+                            )
+                        })
+                    });
+                    let Some((unit, locale)) = parsed else {
+                        return Err(format!(
+                            "line {line_number} is not `locale <tag> <method> sha256:<digest>  <identity>`"
+                        ));
+                    };
+                    locales.insert(unit, locale);
+                }
                 other => return Err(format!("line {line_number} has unknown key {other:?}")),
             }
         }
@@ -208,6 +305,7 @@ impl Lock {
             spec_version: spec_version.ok_or("no spec-version line")?,
             root: root.ok_or("no root line")?,
             units,
+            locales,
         })
     }
 
@@ -227,6 +325,22 @@ impl Lock {
                 locked: self.root.clone(),
                 actual: actual.root.clone(),
             });
+        }
+        let none = || "none".to_string();
+        let mut localized: Vec<&String> =
+            self.locales.keys().chain(actual.locales.keys()).collect();
+        localized.sort();
+        localized.dedup();
+        for unit in localized {
+            let locked = self.locales.get(unit).map(LockedLocale::render);
+            let now = actual.locales.get(unit).map(LockedLocale::render);
+            if locked != now {
+                drift.push(Drift::Locale {
+                    unit: unit.clone(),
+                    locked: locked.unwrap_or_else(none),
+                    actual: now.unwrap_or_else(none),
+                });
+            }
         }
         for (unit, locked) in &self.units {
             match actual.units.get(unit) {
@@ -248,5 +362,74 @@ impl Lock {
             }
         }
         drift
+    }
+}
+
+#[cfg(test)]
+mod locale_pins {
+    use super::*;
+
+    fn lv(identity_digit: char) -> LockedLocale {
+        LockedLocale {
+            locale: "lv-LV".into(),
+            method: "auto".into(),
+            profile_identity: format!("sha256:{}", identity_digit.to_string().repeat(64)),
+        }
+    }
+
+    fn base() -> Lock {
+        Lock::new(
+            "i".repeat(64),
+            "0.2.0",
+            "main.lcl",
+            [("main.lcl".to_string(), "a".repeat(64))],
+        )
+    }
+
+    #[test]
+    fn a_lock_without_locales_keeps_the_version_1_format() {
+        let text = base().render();
+        assert!(text.starts_with("lcl-lock/1\n"));
+        assert!(!text.contains("\nlocale "));
+        assert_eq!(Lock::parse(&text).expect("parses"), base());
+    }
+
+    #[test]
+    fn locale_pins_round_trip_under_version_2() {
+        let lock = base().with_locales([("main.lcl".to_string(), lv('b'))]);
+        let text = lock.render();
+        assert!(text.starts_with("lcl-lock/2\n"));
+        assert!(text.contains(&format!(
+            "\nlocale lv-LV auto sha256:{}  main.lcl\n",
+            "b".repeat(64)
+        )));
+        assert_eq!(Lock::parse(&text).expect("parses"), lock);
+    }
+
+    #[test]
+    fn version_1_rejects_locale_lines_and_malformed_pins_fail() {
+        let pinned = base()
+            .with_locales([("main.lcl".to_string(), lv('b'))])
+            .render();
+        assert!(Lock::parse(&pinned.replacen("lcl-lock/2", "lcl-lock/1", 1)).is_err());
+        assert!(Lock::parse(&pinned.replace(" auto ", " guessed ")).is_err());
+        assert!(Lock::parse(&pinned.replace("sha256:", "sha1:")).is_err());
+    }
+
+    #[test]
+    fn changed_missing_and_added_pins_are_drift() {
+        let locked = base().with_locales([("main.lcl".to_string(), lv('b'))]);
+        let changed = base().with_locales([("main.lcl".to_string(), lv('c'))]);
+        assert!(matches!(
+            locked.drift(&changed).as_slice(),
+            [Drift::Locale { .. }]
+        ));
+        assert!(
+            matches!(locked.drift(&base()).as_slice(), [Drift::Locale { actual, .. }] if actual == "none")
+        );
+        assert!(
+            matches!(base().drift(&locked).as_slice(), [Drift::Locale { locked, .. }] if locked == "none")
+        );
+        assert!(locked.drift(&locked.clone()).is_empty());
     }
 }

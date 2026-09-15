@@ -1,0 +1,722 @@
+{
+  "language": "LCL",
+  "version": "0.2.0",
+  "closed": true,
+  "signature_notation": {
+    "scope": "Only constructor, operator, and pure-function signatures in this registry. This is specification notation, never source TYPE syntax; operation/result contract notation is separately closed by operations_v0.2.0.json#/contract_type_notation.",
+    "structure": "A parameters array lists positional parameters. Each operands-array entry is an alternative complete operand tuple: commas separate operands, vertical bars form alternatives within an operand, and square brackets bind a collection element domain. A single compatibility designator denotes the whole binary tuple. Bare LIST and SET accept any one material member type. T binds one identical static type throughout one signature application. Built-in names have their types_v0.2.0.json meanings. No unnamed overload, coercion, named function argument, or additional type variable is admitted.",
+    "operand_designators": {
+      "numeric": "INTEGER or DECIMAL only.",
+      "same_unit_MEASURE": "MEASURE; every MEASURE operand in the tuple must carry the same exact unit identifier.",
+      "same_unit_MEASURE_collection": "LIST[MEASURE] or SET[MEASURE] whose members all carry the same exact unit identifier.",
+      "ordered": "Material values mutually order-compatible under ordered_types and ordered_type_rules; same static type except INTEGER/DECIMAL comparison, and identical unit for MEASURE.",
+      "nonempty_collection[ordered]": "A LIST or SET with at least one material member, with every pair of members order-compatible.",
+      "equality_compatible": "Any two material values or permitted singleton sentinels. Different material static types are unequal except INTEGER/DECIMAL numeric promotion. Two REFERENCE values compare identity. Same-type values compare under the registered structural equality rules.",
+      "order_compatible": "Two ordered values of the same static type, or an INTEGER/DECIMAL pair; MEASURE requires the same exact unit. Sentinel handling follows evaluation_contract.",
+      "property_name": "One grammar PROPERTY_ACCESS name; lowercase selects an evaluated OBJECT field, while a reserved uppercase name directly following REF selects declaration metadata under types_v0.2.0.json#/reference_context_contract.",
+      "any_expression_or_reference": "One expression evaluated once under the ordinary value-read reference rules, including a permitted MISSING or UNKNOWN sentinel.",
+      "LIST[BOOLEAN|UNKNOWN]": "A material LIST[BOOLEAN], or the non-material immediate Boolean argument sequence defined by quantifier_argument; never a source union type.",
+      "qualified_identifier(unit)": "One exact identifier in formats_encodings_units_v0.2.0.json#/units, subject to the constructor's declared unit restriction.",
+      "REFERENCE[WORKSPACE]": "One reference identity resolving to a WORKSPACE declaration; this explicit constructor receiving context retains identity."
+    },
+    "result_designators": {
+      "same_numeric_family": "INTEGER for INTEGER, DECIMAL for DECIMAL, or MEASURE with the operand's exact unit and numeric-component family.",
+      "promoted_numeric_or_measure": "INTEGER for two INTEGER operands, DECIMAL when either scalar numeric operand is DECIMAL, or MEASURE with its original unit and numeric component promoted by the same scalar rule.",
+      "promoted_family": "Scalar numeric promotion as above, normalized DURATION for two DURATION operands, or same-unit MEASURE with scalar promotion of its numeric components.",
+      "same_family_nonnegative": "The operand's static family with exact absolute magnitude; DURATION remains normalized and MEASURE preserves its exact unit and numeric-component family.",
+      "promoted_member_family": "INTEGER for INTEGER members, DECIMAL for DECIMAL members, normalized DURATION for DURATION members, or MEASURE with the common exact unit and DECIMAL numeric component iff any member has a DECIMAL component.",
+      "member_type": "The collection's exact static member type; for OBJECT index access, the selected field's declared or inferred type.",
+      "declared_property_type": "The selected OBJECT or declaration field's registered or inferred static type, with repeated declaration fields handled by reference_context_contract."
+    },
+    "sentinel_lifting": "A result signature states its normal material family. evaluation_contract may additionally yield a permitted non-material sentinel; that does not introduce a storable sentinel type."
+  },
+  "evaluation_contract": {
+    "static_validation": "Resolve names, arity, receiving contexts, and operand types before evaluation. Every subexpression is statically checked, including a branch that Boolean short-circuit will skip. Wrong operator/function arity or operand family uses error.operator.operand. Unknown references retain error.reference.unresolved; unresolved collection type uses error.type.mismatch.",
+    "order": "Evaluate operator operands, constructor arguments, function arguments, collection members, and postfix bases/indices in source order from left to right. Stop evaluation at the first diagnostic. The only lazy forms are AND and OR; evaluating an immediate quantifier argument evaluates all of its member expressions before reduction.",
+    "short_circuit": "AND evaluates its right operand unless the left result is FALSE; OR evaluates its right operand unless the left result is TRUE. UNKNOWN on the left never skips the right. NOT, AND, and OR use the complete strong Kleene truth tables in unknown_logic.",
+    "missing": "A consumed MISSING operand emits error.required.missing except for ==, !=, and EXISTS. Property or index access may itself produce MISSING when an otherwise valid selection is absent. An operand in a skipped Boolean branch is not consumed.",
+    "unknown": "After evaluating all required operands and checking MISSING, any UNKNOWN operand yields UNKNOWN for a constructor, arithmetic operation, ordered comparison, membership, containment, pattern match, ordinary pure function, property access, or index access. Equality, EXISTS, Boolean logic, and quantifier reduction use their explicit special rules. A concrete evaluation diagnostic is never hidden by another operand's UNKNOWN. A required material receiving site rejects UNKNOWN with error.value.unknown.",
+    "equality": "== always yields a BOOLEAN and != is its Boolean negation. MISSING and UNKNOWN are distinct singleton values for equality only: each equals itself, each differs from the other and every material value. Different material static types are unequal except INTEGER/DECIMAL promotion. MEASURE equality requires both the identical unit identifier and exact equal numeric magnitude; different units yield FALSE rather than a unit error. Same-unit restrictions on ordered comparison and arithmetic remain in force. No other implicit coercion exists. Constructed material identities are closed by types_v0.2.0.json#/material_identity_contract and OBJECT type equivalence by its object_type_contract.",
+    "reference_read": "Apply types_v0.2.0.json#/reference_context_contract before using the resulting operand. Ordinary functions and operators read a value-bearing REF once; a stored REFERENCE value is not recursively dereferenced.",
+    "errors": [
+      "error.operator.operand",
+      "error.type.mismatch",
+      "error.reference.unresolved",
+      "error.reference.kind",
+      "error.reference.cycle",
+      "error.required.missing",
+      "error.value.unknown",
+      "error.numeric.unit_mismatch"
+    ],
+    "error_union": "Each row's errors add to these common evaluation errors and applicable errors of evaluated subexpressions; a row's short list is not an exemption from the common rules.",
+    "unit_constraint": "Every arithmetic, ordered-comparison, SUM, MIN, or MAX overload that requires identical MEASURE units emits error.numeric.unit_mismatch for unequal concrete unit identifiers. Equality and inequality instead use their explicit different-unit FALSE/TRUE rules."
+  },
+  "collection_expression": {
+    "default_family": "An ordinary bracket literal denotes LIST unless its immediate expected type is one exact SET[T]; that context selects SET and strict-equal duplicate source values collapse after member evaluation.",
+    "member_type": "One exact expected collection member type supplies the type of every member, including nested empty literals. Otherwise every material member must have the same static type, which becomes T. No numeric promotion occurs merely to construct a collection.",
+    "empty": "An empty bracket literal is valid only when its immediate context supplies one unique member type. An unconstrained SUM([]), MIN([]), MAX([]), COUNT([]), or EMPTY([]) has no unique member type and uses error.type.mismatch. ALL([]), ANY([]), and NONE([]) supply BOOLEAN context. An already typed empty collection is a valid COUNT/EMPTY argument, but the nonempty reductions reject it with error.operator.operand.",
+    "materiality": "Every ordinary collection member is material. MISSING and UNKNOWN cannot become material collection members. quantifier_argument is the sole immediate Boolean sequence exception and produces no material collection."
+  },
+  "quantifier_argument": {
+    "forms": "ALL, ANY, and NONE accept one material LIST[BOOLEAN] or one immediate bracket sequence, allowing parentheses around that sequence, whose members evaluate to BOOLEAN or UNKNOWN.",
+    "evaluation": "Every immediate member is statically Boolean-compatible, and is evaluated left to right before reduction. MISSING emits error.required.missing; another material family emits error.operator.operand. The empty immediate sequence has BOOLEAN context.",
+    "boundary": "An immediate sequence containing UNKNOWN is a transient argument sequence, not LIST material data. It cannot be assigned, returned, indexed, nested as collection data, persisted, or passed through another function. This immediate quantifier-argument position explicitly permits UNKNOWN literals, including outside another condition; it permits no escape of the sequence into material data. Whole-argument UNKNOWN propagates; whole-argument MISSING errors.",
+    "all": "FALSE if any member is FALSE; otherwise UNKNOWN if any member is UNKNOWN; otherwise TRUE, including empty input.",
+    "any": "TRUE if any member is TRUE; otherwise UNKNOWN if any member is UNKNOWN; otherwise FALSE, including empty input.",
+    "none": "NOT of the ANY reduction; TRUE for empty input."
+  },
+  "numeric_promotion": {
+    "INTEGER+INTEGER": "INTEGER",
+    "INTEGER+DECIMAL": "DECIMAL",
+    "DECIMAL+INTEGER": "DECIMAL",
+    "DECIMAL+DECIMAL": "DECIMAL"
+  },
+  "ordered_types": [
+    "INTEGER",
+    "DECIMAL",
+    "STRING",
+    "DATE",
+    "TIME",
+    "DATETIME",
+    "DURATION",
+    "PERCENTAGE",
+    "BYTES",
+    "MEASURE[same unit]"
+  ],
+  "ordered_type_rules": {
+    "INTEGER": "mathematical numeric value",
+    "DECIMAL": "mathematical numeric value",
+    "STRING": "lexicographic by Unicode scalar value",
+    "DATE": "chronological Gregorian value of the RFC 3339 full-date; exact validity and order keys are defined by types_v0.2.0.json#/temporal_literal_contract",
+    "TIME": "subtract the declared offset, or +00:00 when omitted, from the RFC 3339 partial-time on a common nominal local date; retain signed previous-day or next-day displacement without modulo-24-hour wrapping and compare the resulting chronological value; exact validity and order keys are defined by types_v0.2.0.json#/temporal_literal_contract",
+    "DATETIME": "exact UTC instant after applying the RFC 3339 declared offset, or +00:00 when omitted; exact validity and order keys are defined by types_v0.2.0.json#/temporal_literal_contract",
+    "DURATION": "normalized exact elapsed-time magnitude under formats_encodings_units_v0.2.0.json#/duration_normalization",
+    "PERCENTAGE": "exact numeric magnitude",
+    "BYTES": "exact byte-count magnitude",
+    "MEASURE[same unit]": "numeric component after requiring the same exact unit identifier"
+  },
+  "ordered_value_equality": "Within one declared ordered type, equal canonical order keys are strict-equal semantic values; equal offset-normalized TIME or DATETIME values and equal normalized DURATION magnitudes therefore collapse as SET duplicates before ordering.",
+  "cross_type_numeric_order": "INTEGER and DECIMAL compare by exact mathematical value after INTEGER-to-DECIMAL promotion.",
+  "non_material_ordering": "MISSING and UNKNOWN are not orderable values.",
+  "string_order": "lexicographic by Unicode scalar value",
+  "unknown_logic": {
+    "NOT FALSE": "TRUE",
+    "NOT TRUE": "FALSE",
+    "NOT UNKNOWN": "UNKNOWN",
+    "FALSE AND FALSE": "FALSE",
+    "FALSE AND TRUE": "FALSE",
+    "FALSE AND UNKNOWN": "FALSE",
+    "TRUE AND FALSE": "FALSE",
+    "TRUE AND TRUE": "TRUE",
+    "TRUE AND UNKNOWN": "UNKNOWN",
+    "UNKNOWN AND FALSE": "FALSE",
+    "UNKNOWN AND TRUE": "UNKNOWN",
+    "UNKNOWN AND UNKNOWN": "UNKNOWN",
+    "FALSE OR FALSE": "FALSE",
+    "FALSE OR TRUE": "TRUE",
+    "FALSE OR UNKNOWN": "UNKNOWN",
+    "TRUE OR FALSE": "TRUE",
+    "TRUE OR TRUE": "TRUE",
+    "TRUE OR UNKNOWN": "TRUE",
+    "UNKNOWN OR FALSE": "UNKNOWN",
+    "UNKNOWN OR TRUE": "TRUE",
+    "UNKNOWN OR UNKNOWN": "UNKNOWN"
+  },
+  "constructors": {
+    "PATH": {
+      "overloads": [
+        {
+          "parameters": [
+            "STRING"
+          ],
+          "constraint": "The string is absolute, except that one relative string is legal only as IMPORT.SOURCE or EXTENSION.SOURCE and resolves from the importing document."
+        },
+        {
+          "parameters": [
+            "REFERENCE[WORKSPACE]",
+            "STRING"
+          ],
+          "constraint": "The string is relative and the resolved path is the WORKSPACE root or one of its descendants."
+        }
+      ],
+      "result": "PATH",
+      "variadic": false,
+      "workspace_escape_error": "error.value.out_of_range",
+      "errors": [
+        "error.operator.operand",
+        "error.literal.invalid",
+        "error.reference.kind",
+        "error.reference.unresolved",
+        "error.value.out_of_range"
+      ]
+    },
+    "URI": {
+      "overloads": [
+        {
+          "parameters": [
+            "STRING"
+          ]
+        }
+      ],
+      "result": "URI",
+      "profile": "RFC 3986 absolute-URI with a scheme",
+      "relative_references_allowed": false,
+      "errors": [
+        "error.operator.operand",
+        "error.literal.invalid"
+      ]
+    },
+    "GLOB": {
+      "overloads": [
+        {
+          "parameters": [
+            "STRING"
+          ]
+        }
+      ],
+      "result": "GLOB",
+      "profile": "types.pattern_profiles.GLOB",
+      "errors": [
+        "error.operator.operand",
+        "error.literal.invalid",
+        "error.pattern.resource_limit"
+      ]
+    },
+    "REGEX": {
+      "overloads": [
+        {
+          "parameters": [
+            "STRING"
+          ]
+        },
+        {
+          "parameters": [
+            "STRING",
+            "STRING"
+          ]
+        }
+      ],
+      "result": "REGEX",
+      "profile": "types.pattern_profiles.REGEX",
+      "second_parameter": "canonical flags string",
+      "errors": [
+        "error.operator.operand",
+        "error.literal.invalid",
+        "error.pattern.resource_limit"
+      ]
+    },
+    "DATE": {
+      "overloads": [
+        {
+          "parameters": [
+            "STRING"
+          ]
+        }
+      ],
+      "result": "DATE",
+      "profile": "RFC 3339 full-date narrowed exactly by types_v0.2.0.json#/temporal_literal_contract",
+      "errors": [
+        "error.operator.operand",
+        "error.literal.invalid"
+      ]
+    },
+    "TIME": {
+      "overloads": [
+        {
+          "parameters": [
+            "STRING"
+          ]
+        }
+      ],
+      "result": "TIME",
+      "profile": "RFC 3339 partial-time with optional time-offset narrowed exactly by types_v0.2.0.json#/temporal_literal_contract",
+      "omitted_timezone": "UTC",
+      "errors": [
+        "error.operator.operand",
+        "error.literal.invalid"
+      ]
+    },
+    "DATETIME": {
+      "overloads": [
+        {
+          "parameters": [
+            "STRING"
+          ]
+        }
+      ],
+      "result": "DATETIME",
+      "profile": "RFC 3339 full-date T partial-time with optional time-offset narrowed exactly by types_v0.2.0.json#/temporal_literal_contract",
+      "omitted_timezone": "UTC",
+      "errors": [
+        "error.operator.operand",
+        "error.literal.invalid"
+      ]
+    },
+    "DURATION": {
+      "overloads": [
+        {
+          "parameters": [
+            "INTEGER|DECIMAL",
+            "qualified_identifier(unit)"
+          ]
+        }
+      ],
+      "result": "DURATION",
+      "unit_category": "Time",
+      "normalization": "formats_encodings_units_v0.2.0.json#/duration_normalization",
+      "minimum": 0,
+      "errors": [
+        "error.operator.operand",
+        "error.numeric.unit_mismatch",
+        "error.value.out_of_range"
+      ]
+    },
+    "PERCENTAGE": {
+      "overloads": [
+        {
+          "parameters": [
+            "INTEGER|DECIMAL"
+          ]
+        }
+      ],
+      "result": "PERCENTAGE",
+      "minimum": 0,
+      "maximum": 100,
+      "errors": [
+        "error.operator.operand",
+        "error.value.out_of_range"
+      ]
+    },
+    "BYTES": {
+      "overloads": [
+        {
+          "parameters": [
+            "INTEGER"
+          ]
+        }
+      ],
+      "result": "BYTES",
+      "minimum": 0,
+      "errors": [
+        "error.operator.operand",
+        "error.value.out_of_range"
+      ]
+    },
+    "MEASURE": {
+      "overloads": [
+        {
+          "parameters": [
+            "INTEGER|DECIMAL",
+            "qualified_identifier(unit)"
+          ]
+        }
+      ],
+      "result": "MEASURE",
+      "unit_rule": "Any registered unit is accepted, including Time-category units, unless a more specific normative field or operation contract narrows it.",
+      "errors": [
+        "error.operator.operand",
+        "error.reference.unresolved"
+      ]
+    }
+  },
+  "operators": {
+    "NOT": {
+      "arity": 1,
+      "operands": [
+        "BOOLEAN|UNKNOWN"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "precedence": 70,
+      "associativity": "right"
+    },
+    "unary -": {
+      "arity": 1,
+      "operands": [
+        "INTEGER|DECIMAL|MEASURE"
+      ],
+      "result": "same_numeric_family",
+      "precedence": 70,
+      "associativity": "right"
+    },
+    "*": {
+      "arity": 2,
+      "operands": [
+        "numeric,numeric",
+        "MEASURE,numeric",
+        "numeric,MEASURE"
+      ],
+      "result": "promoted_numeric_or_measure",
+      "precedence": 60,
+      "associativity": "left"
+    },
+    "/": {
+      "arity": 2,
+      "overloads": [
+        {
+          "left": "INTEGER",
+          "right": "INTEGER",
+          "result": "DECIMAL"
+        },
+        {
+          "left": "INTEGER",
+          "right": "DECIMAL",
+          "result": "DECIMAL"
+        },
+        {
+          "left": "DECIMAL",
+          "right": "INTEGER",
+          "result": "DECIMAL"
+        },
+        {
+          "left": "DECIMAL",
+          "right": "DECIMAL",
+          "result": "DECIMAL"
+        },
+        {
+          "left": "MEASURE",
+          "right": "INTEGER",
+          "result": "MEASURE",
+          "numeric_component": "DECIMAL",
+          "unit": "preserve_left_exact_unit"
+        },
+        {
+          "left": "MEASURE",
+          "right": "DECIMAL",
+          "result": "MEASURE",
+          "numeric_component": "DECIMAL",
+          "unit": "preserve_left_exact_unit"
+        },
+        {
+          "left": "MEASURE",
+          "right": "MEASURE",
+          "constraint": "same_exact_unit",
+          "result": "DECIMAL",
+          "unit": "cancel_identical_units"
+        }
+      ],
+      "exactness": {
+        "evaluation": "exact_mathematical_quotient",
+        "finite_decimal_rule": "After reducing the quotient to lowest terms, the denominator has no prime factors other than 2 and 5.",
+        "implicit_rounding": false,
+        "non_terminating_error": "error.numeric.non_terminating"
+      },
+      "rounding_context": "A direct first argument of ROUND is evaluated as an exact quotient and rounded once by that function.",
+      "tolerance_role": "TOLERANCE is an acceptance constraint and never selects or rounds a quotient.",
+      "zero_denominator_error": "error.numeric.division_by_zero",
+      "unsupported_operand_error": "error.operator.operand",
+      "different_measure_unit_error": "error.numeric.unit_mismatch",
+      "declared_bound_error": "error.value.out_of_range",
+      "host_capacity_error": "error.host.constraint",
+      "overflow_behavior": "No wrap, saturation, underflow-to-zero, Infinity, or NaN.",
+      "errors": [
+        "error.operator.operand",
+        "error.numeric.division_by_zero",
+        "error.numeric.non_terminating",
+        "error.numeric.unit_mismatch",
+        "error.value.out_of_range",
+        "error.host.constraint"
+      ],
+      "precedence": 60,
+      "associativity": "left"
+    },
+    "+": {
+      "arity": 2,
+      "operands": [
+        "numeric,numeric",
+        "DURATION,DURATION",
+        "same_unit_MEASURE,same_unit_MEASURE"
+      ],
+      "result": "promoted_family",
+      "precedence": 50,
+      "associativity": "left"
+    },
+    "-": {
+      "arity": 2,
+      "operands": [
+        "numeric,numeric",
+        "DURATION,DURATION",
+        "same_unit_MEASURE,same_unit_MEASURE"
+      ],
+      "result": "promoted_family",
+      "constraints": [
+        "DURATION subtraction must produce a non-negative DURATION; a negative result is invalid."
+      ],
+      "errors": [
+        "error.value.out_of_range"
+      ],
+      "precedence": 50,
+      "associativity": "left"
+    },
+    "==": {
+      "arity": 2,
+      "operands": [
+        "equality_compatible"
+      ],
+      "result": "BOOLEAN",
+      "precedence": 40,
+      "associativity": "none"
+    },
+    "!=": {
+      "arity": 2,
+      "operands": [
+        "equality_compatible"
+      ],
+      "result": "BOOLEAN",
+      "precedence": 40,
+      "associativity": "none"
+    },
+    "<": {
+      "arity": 2,
+      "operands": [
+        "order_compatible"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "precedence": 40,
+      "associativity": "none"
+    },
+    "<=": {
+      "arity": 2,
+      "operands": [
+        "order_compatible"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "precedence": 40,
+      "associativity": "none"
+    },
+    ">": {
+      "arity": 2,
+      "operands": [
+        "order_compatible"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "precedence": 40,
+      "associativity": "none"
+    },
+    ">=": {
+      "arity": 2,
+      "operands": [
+        "order_compatible"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "precedence": 40,
+      "associativity": "none"
+    },
+    "IN": {
+      "arity": 2,
+      "operands": [
+        "T,LIST[T]|SET[T]"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "semantics": "TRUE iff the left value is strict-equal to at least one member of the right collection; FALSE for an empty collection.",
+      "precedence": 40,
+      "associativity": "none"
+    },
+    "CONTAINS": {
+      "arity": 2,
+      "operands": [
+        "STRING,STRING",
+        "LIST[T]|SET[T],T",
+        "OBJECT,STRING"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "semantics": "STRING containment is exact contiguous Unicode-scalar substring occurrence, including the empty substring. Collection containment is reversed IN. OBJECT containment tests exact presence of the STRING key without reading its value.",
+      "precedence": 40,
+      "associativity": "none"
+    },
+    "MATCHES": {
+      "arity": 2,
+      "operands": [
+        "STRING,REGEX",
+        "PATH|STRING,GLOB"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "non_match_result": "FALSE",
+      "match_semantics": "full_string",
+      "full_match_implementation": "semantic_boundary_check_not_multiline_anchors",
+      "errors": [
+        "error.operator.operand",
+        "error.pattern.resource_limit"
+      ],
+      "precedence": 40,
+      "associativity": "none"
+    },
+    "AND": {
+      "arity": 2,
+      "operands": [
+        "BOOLEAN|UNKNOWN,BOOLEAN|UNKNOWN"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "precedence": 30,
+      "associativity": "left"
+    },
+    "OR": {
+      "arity": 2,
+      "operands": [
+        "BOOLEAN|UNKNOWN,BOOLEAN|UNKNOWN"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "precedence": 20,
+      "associativity": "left"
+    },
+    "property access": {
+      "arity": 2,
+      "operands": [
+        "OBJECT|REFERENCE,property_name"
+      ],
+      "result": "declared_property_type|MISSING",
+      "semantics": "Lowercase selects the exact OBJECT property. A known required field must be present; an absent optional field yields MISSING. A field absent from a closed schema is error.operator.operand; an absent field of a schema-free OBJECT yields MISSING. A reserved uppercase property directly following REF selects declaration metadata under types_v0.2.0.json#/reference_context_contract; no other uppercase value property is admitted.",
+      "precedence": 90,
+      "associativity": "left"
+    },
+    "index access": {
+      "arity": 2,
+      "operands": [
+        "LIST,INTEGER",
+        "OBJECT,STRING"
+      ],
+      "result": "member_type|MISSING",
+      "semantics": "LIST indices are zero-based exact INTEGER values. Every index below zero or greater than or equal to the member count yields MISSING, with no negative-index wrapping. OBJECT STRING indices select exact property names under the same presence rules as lowercase property access. The selected OBJECT key must be statically known so its result has one exact field type; a runtime-varying key uses error.operator.operand. SET and STRING indexing and all other index families produce error.operator.operand.",
+      "precedence": 90,
+      "associativity": "left"
+    }
+  },
+  "functions": {
+    "ABS": {
+      "parameters": [
+        "INTEGER|DECIMAL|DURATION|MEASURE"
+      ],
+      "result": "same_family_nonnegative",
+      "errors": [
+        "error.operator.operand"
+      ]
+    },
+    "COUNT": {
+      "parameters": [
+        "STRING|LIST|SET|OBJECT|BYTES"
+      ],
+      "result": "INTEGER",
+      "semantics": "STRING counts Unicode scalar values; LIST counts occurrences; SET counts unique members; OBJECT counts present properties; BYTES(n) returns the exact INTEGER n. Empty values have count zero.",
+      "errors": [
+        "error.operator.operand"
+      ]
+    },
+    "SUM": {
+      "parameters": [
+        "LIST[numeric]|SET[numeric]|LIST[DURATION]|SET[DURATION]|same_unit_MEASURE_collection"
+      ],
+      "result": "promoted_member_family",
+      "minimum_count": 1,
+      "semantics": "Require at least one member, then return the exact mathematical sum in promoted_member_family. SET order has no effect on this exact sum. MEASURE members require one exact unit. An empty typed collection produces error.operator.operand; no zero value or unit is inferred.",
+      "errors": [
+        "error.operator.operand",
+        "error.numeric.unit_mismatch"
+      ]
+    },
+    "MIN": {
+      "parameters": [
+        "nonempty_collection[ordered]"
+      ],
+      "result": "member_type",
+      "minimum_count": 1,
+      "semantics": "Return the least semantic value under the registered total-order profile. Equal canonical keys denote the same semantic value. An empty typed collection produces error.operator.operand.",
+      "errors": [
+        "error.operator.operand"
+      ]
+    },
+    "MAX": {
+      "parameters": [
+        "nonempty_collection[ordered]"
+      ],
+      "result": "member_type",
+      "minimum_count": 1,
+      "semantics": "Return the greatest semantic value under the registered total-order profile. Equal canonical keys denote the same semantic value. An empty typed collection produces error.operator.operand.",
+      "errors": [
+        "error.operator.operand"
+      ]
+    },
+    "ROUND": {
+      "overloads": [
+        {
+          "parameters": [
+            "DECIMAL",
+            "INTEGER"
+          ],
+          "result": "DECIMAL"
+        },
+        {
+          "parameters": [
+            "MEASURE",
+            "INTEGER"
+          ],
+          "result": "MEASURE",
+          "unit": "preserve_exact_unit"
+        }
+      ],
+      "digits": "nonnegative_fractional_digits",
+      "rounding": "round-half-to-even",
+      "quotient_context": "The first argument may be an otherwise non-terminating direct division quotient; round the exact mathematical quotient once.",
+      "tolerance_role": "independent_acceptance_constraint_only",
+      "errors": [
+        "error.operator.operand",
+        "error.value.out_of_range",
+        "error.numeric.division_by_zero",
+        "error.numeric.unit_mismatch",
+        "error.host.constraint"
+      ]
+    },
+    "EXISTS": {
+      "parameters": [
+        "any_expression_or_reference"
+      ],
+      "result": "BOOLEAN",
+      "special": "FALSE only for MISSING or unresolved optional binding; UNKNOWN exists and returns TRUE",
+      "errors": []
+    },
+    "EMPTY": {
+      "parameters": [
+        "STRING|LIST|SET|OBJECT|BYTES"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "semantics": "For every admitted material family, return TRUE iff COUNT(value) is zero; FALSE otherwise. BYTES(0) is empty, while NULL is an invalid operand.",
+      "errors": [
+        "error.operator.operand"
+      ]
+    },
+    "ALL": {
+      "parameters": [
+        "LIST[BOOLEAN|UNKNOWN]"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "logic": "strong Kleene conjunction",
+      "empty_result": true,
+      "argument_contract": "quantifier_argument",
+      "errors": [
+        "error.operator.operand"
+      ]
+    },
+    "ANY": {
+      "parameters": [
+        "LIST[BOOLEAN|UNKNOWN]"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "logic": "strong Kleene disjunction",
+      "empty_result": false,
+      "argument_contract": "quantifier_argument",
+      "errors": [
+        "error.operator.operand"
+      ]
+    },
+    "NONE": {
+      "parameters": [
+        "LIST[BOOLEAN|UNKNOWN]"
+      ],
+      "result": "BOOLEAN|UNKNOWN",
+      "logic": "NOT ANY(values)",
+      "empty_result": true,
+      "argument_contract": "quantifier_argument",
+      "errors": [
+        "error.operator.operand"
+      ]
+    }
+  }
+}

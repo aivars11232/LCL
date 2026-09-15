@@ -1,0 +1,58 @@
+LCL CORE 0.2.0 RELEASE CANDIDATE
+WHITESPACE, INDENTATION, AND LINES
+NORMATIVE
+
+- One indentation level is exactly four ASCII spaces.
+- In NORMAL mode, a non-blank line begins with a number of spaces divisible by four.
+- Indentation may increase by exactly one level after a block-opening colon or
+  after the opening [ of MULTILINE_COLLECTION. Collection members are one level
+  deeper than their containing declaration; closing ] is on its own line aligned
+  with that declaration. This does not permit arbitrary expression line wrapping.
+- Dedentation closes all deeper blocks before processing the new line.
+- Empty blocks are invalid.
+- LINE FEED terminates inline declarations and expression statements.
+- Semicolons do not terminate statements and are forbidden outside strings.
+- A colon followed by one SPACE and a value creates an inline field.
+- A colon followed immediately by LINE FEED opens an indented block.
+- Exactly one SPACE follows a comma in an inline sequence.
+- There is no ignorable comment syntax. COMMENT is an explicit data block.
+
+TOKENIZATION
+
+- The lexer has NORMAL, STRING, and MULTILINE_STRING modes. Delimiters and escapes
+  change mode only as defined by the literal rules; token recognition does not run
+  inside string content.
+- In NORMAL mode the lexer selects the longest complete adopted symbol or reserved
+  word at the current byte position. Thus """ precedes ", <= precedes <, >=
+  precedes >, and a longer reserved word such as INCLUDE precedes its IN prefix.
+- A reserved word is complete only when neither adjacent source character is an
+  ASCII letter, digit, or underscore. An unregistered uppercase run is one invalid
+  token and is not split into shorter reserved words.
+- Under a selected locale profile, words follow
+  02_LEXICAL/13_LOCALIZED_SOURCE_AND_LOCALE_DIRECTIVE.txt: a letter of a
+  registered repertoire is also a word character, a complete run is matched as a
+  whole against the profile's spellings, and an unmatched run is one invalid
+  token that is never split. That chapter selects its diagnostic.
+- Incorrect case uses error.keyword.case only when a case-insensitive match to
+  a registered word occurs in a syntax-required position: a block or field key
+  outside object data, a required connector or operator, a registered callable
+  immediately before its opening parenthesis, or a built-in type position.
+  A mixed-case token matching a registered word also uses error.keyword.case,
+  because mixed-case identifiers are forbidden. The matching word is not silently
+  corrected. An all-uppercase unregistered word uses error.keyword.unknown.
+- Where a lowercase identifier is permitted, its case-folded spelling never
+  selects a keyword or literal. Thus an object key status and ID example.count
+  remain identifiers; VALUE: true contains an identifier rather than TRUE and
+  receives the ordinary domain or type diagnostic if incompatible. String
+  content is never checked for keyword case. This contextual lexical decision
+  precedes grammar diagnostics at the same locus and requires no name lookup.
+- A lowercase identifier is consumed maximally. If it contains one or more complete
+  dot-separated lowercase segments, the whole sequence is one QUALIFIED_IDENTIFIER;
+  otherwise it is one SIMPLE_IDENTIFIER. Consequently a bare `a.b` is a qualified
+  identifier, while the dot following a completed non-identifier primary in
+  `REF(a).b` is PROPERTY_ACCESS.
+- An excluded multi-character form such as ->, ..., //, /*, &&, or || is reported
+  as that invalid form rather than split into otherwise adopted prefix symbols.
+- Indentation is evaluated only for non-blank lines in NORMAL mode. A blank line
+  emits one BLANK_LINE token, emits no INDENT or DEDENT token, and is legal only at
+  a BLANK_LINE position in the grammar.

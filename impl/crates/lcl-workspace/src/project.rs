@@ -18,10 +18,14 @@
 //! trust anchor and loads seven layers' contracts. A request holds no state, so
 //! one engine serves every request, and every request is judged against a
 //! package whose identity digest the reply carries.
+//!
+//! A workspace that names a Core 0.2.0 package also holds the localized
+//! engine, and each document is judged by exactly one of the two.
 
 use crate::document::{self, Document, DocumentError};
 use lcl_project::{Project, ProjectError, MANIFEST_FILE};
-use lcl_protocol::Engine;
+use lcl_protocol::{Engine, Engines};
+use lcl_resolver::SourceUnit;
 use std::path::{Path, PathBuf};
 
 /// How deep the file walk goes. A project is a source tree, not a filesystem.
@@ -74,8 +78,10 @@ pub struct Entry {
 /// One open project, with the engine that judges it.
 pub struct Workspace {
     project: Project,
-    engine: Engine,
+    engines: Engines,
     spec_root: PathBuf,
+    /// The Core 0.2.0 package, when this workspace judges localized documents.
+    localized_spec_root: Option<PathBuf>,
     /// The document the frontend should open on load, when the workspace was
     /// launched for one. A file association supplies it; an ordinary launch
     /// does not.
@@ -94,6 +100,21 @@ impl Workspace {
         root: impl AsRef<Path>,
         spec: impl AsRef<Path>,
     ) -> Result<Workspace, WorkspaceError> {
+        Workspace::open_with(root, spec, None)
+    }
+
+    /// Open the project at `root`, judging each document by the engine
+    /// [`Engines::engine_for`] chooses for it.
+    ///
+    /// `localized` names the Core 0.2.0 package. Without it the manifest's
+    /// `localized_spec` applies, and without either every document is judged
+    /// by Core 0.1.0 alone. The localized engine's locale profiles are the
+    /// files in the manifest's profile directory.
+    pub fn open_with(
+        root: impl AsRef<Path>,
+        spec: impl AsRef<Path>,
+        localized: Option<PathBuf>,
+    ) -> Result<Workspace, WorkspaceError> {
         let root = root.as_ref();
         let project = match Project::open(root) {
             Ok(project) => project,
@@ -103,12 +124,28 @@ impl Workspace {
             Err(other) => return Err(WorkspaceError::Project(other)),
         };
         let spec_root = spec.as_ref().to_path_buf();
-        let engine = Engine::open(&spec_root)
+        let core = Engine::open(&spec_root)
             .map_err(|e| WorkspaceError::Spec(format!("the specification package: {e}")))?;
+        let localized_spec_root = localized.or_else(|| project.localized_spec_path());
+        let localized = match &localized_spec_root {
+            Some(localized_root) => {
+                let files = project.profile_files().map_err(|e| {
+                    WorkspaceError::Spec(format!("the locale profile directory: {e}"))
+                })?;
+                let engine = Engine::open_localized(localized_root, &files).map_err(|e| {
+                    WorkspaceError::Spec(format!("the localized specification package: {e}"))
+                })?;
+                Some(engine)
+            }
+            None => None,
+        };
+        let engines =
+            Engines::new(core, localized).map_err(|e| WorkspaceError::Spec(e.to_string()))?;
         Ok(Workspace {
             project,
-            engine,
+            engines,
             spec_root,
+            localized_spec_root,
             open_document: None,
         })
     }
@@ -134,6 +171,17 @@ impl Workspace {
         Err(WorkspaceError::Spec(format!(
             "no specification package: pass one, set LCL_SPEC, or declare \"spec\" in {MANIFEST_FILE}"
         )))
+    }
+
+    /// The Core 0.2.0 package a launch names: the caller's explicit choice,
+    /// then a non-empty `LCL_LOCALIZED_SPEC`. `None` leaves the choice to the
+    /// manifest's `localized_spec`, in [`Workspace::open_with`].
+    pub fn locate_localized_spec(explicit: Option<PathBuf>) -> Option<PathBuf> {
+        explicit.or_else(|| {
+            std::env::var_os("LCL_LOCALIZED_SPEC")
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from)
+        })
     }
 
     /// The project root and root-relative identity of one document.
@@ -242,12 +290,27 @@ impl Workspace {
         &self.project
     }
 
+    /// The Core 0.1.0 engine.
     pub fn engine(&self) -> &Engine {
-        &self.engine
+        self.engines.core()
+    }
+
+    pub fn engines(&self) -> &Engines {
+        &self.engines
+    }
+
+    /// The engine that judges one document's bytes.
+    pub fn engine_for(&self, unit: &SourceUnit) -> &Engine {
+        self.engines.engine_for(unit)
     }
 
     pub fn spec_root(&self) -> &Path {
         &self.spec_root
+    }
+
+    /// Where the Core 0.2.0 package is, when this workspace uses one.
+    pub fn localized_spec_root(&self) -> Option<&Path> {
+        self.localized_spec_root.as_deref()
     }
 
     /// The document a bare command acts on, when the manifest declares one.

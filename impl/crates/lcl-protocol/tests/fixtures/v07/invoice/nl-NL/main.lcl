@@ -1,0 +1,80 @@
+LCL:
+    VERSIE: "0.2.0"
+
+SPECIFICATIE:
+    ID: app.invoice_total
+    NAAM: "Total one invoice"
+    VERSIE: "1.0.0"
+    SOORT: kind.task
+    DOMEIN: "accounting"
+
+INVOER:
+    ID: input.lines
+    TYPE: LIJST[GEHEEL_GETAL]
+    WAARDE: [1250, 3400, 875]
+
+INVOER:
+    ID: input.tax_percent
+    TYPE: GEHEEL_GETAL
+    WAARDE: 20
+
+UITVOER:
+    ID: output.subtotal
+    TYPE: GEHEEL_GETAL
+    FORMAAT: format.plain_text
+
+UITVOER:
+    ID: output.total
+    TYPE: GEHEEL_GETAL
+    FORMAAT: format.plain_text
+
+DOEL:
+    ID: goal.total
+    BEWEER: VERW(output.total) == 6630
+
+ACTIE:
+    ID: action.subtotal
+    OPERATIE: core.calculate
+    DOELWIT: VERW(input.lines)
+    PARAMETER:
+        NAAM: expression
+        TYPE: TEKENREEKS
+        VERPLICHT: WAAR
+        WAARDE: "SUM(REF(input.lines))"
+    UITVOER: VERW(output.subtotal)
+
+ACTIE:
+    ID: action.total
+    OPERATIE: core.calculate
+    DOELWIT: VERW(output.subtotal)
+    PARAMETER:
+        NAAM: expression
+        TYPE: TEKENREEKS
+        VERPLICHT: WAAR
+        WAARDE: "REF(output.subtotal) * (100 + REF(input.tax_percent)) / 100"
+    UITVOER: VERW(output.total)
+
+CONTROLEER:
+    ID: verify.subtotal
+    VERPLICHT: WAAR
+    BEWEER: VERW(output.subtotal) == 5525
+
+CONTROLEER:
+    ID: verify.total
+    VERPLICHT: WAAR
+    BEWEER: VERW(output.total) == 6630
+
+SUCCES:
+    ID: success.total
+    ALLE: [VERW(verify.subtotal), VERW(verify.total)]
+
+TAAK:
+    ID: task.total
+    DOEL: VERW(goal.total)
+    INVOER: [VERW(input.lines), VERW(input.tax_percent)]
+    ACTIE: [VERW(action.subtotal), VERW(action.total)]
+    UITVOER: [VERW(output.subtotal), VERW(output.total)]
+    SUCCES: VERW(success.total)
+
+UITVOEREN:
+    VERWIJZING: VERW(task.total)

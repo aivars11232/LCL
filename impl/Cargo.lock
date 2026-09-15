@@ -27,6 +27,7 @@ version = "0.1.0"
 dependencies = [
  "lcl-capabilities",
  "lcl-lexer",
+ "lcl-localization",
  "lcl-project",
  "lcl-protocol",
  "lcl-resolver",
@@ -103,6 +104,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "lcl-localization"
+version = "0.1.0"
+dependencies = [
+ "lcl-spec",
+]
+
+[[package]]
 name = "lcl-parser"
 version = "0.1.0"
 dependencies = [
@@ -130,6 +138,7 @@ dependencies = [
  "lcl-completion",
  "lcl-diagnostics",
  "lcl-lexer",
+ "lcl-localization",
  "lcl-parser",
  "lcl-resolver",
  "lcl-runtime",
@@ -144,6 +153,7 @@ version = "0.1.0"
 dependencies = [
  "lcl-diagnostics",
  "lcl-lexer",
+ "lcl-localization",
  "lcl-parser",
  "lcl-spec",
 ]

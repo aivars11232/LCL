@@ -1,0 +1,80 @@
+LCL:
+    版本: "0.2.0"
+
+规范:
+    标识: app.invoice_total
+    名称: "Total one invoice"
+    版本: "1.0.0"
+    种类: kind.task
+    领域: "accounting"
+
+输入:
+    标识: input.lines
+    类型: 列表[整数]
+    值: [1250, 3400, 875]
+
+输入:
+    标识: input.tax_percent
+    类型: 整数
+    值: 20
+
+输出:
+    标识: output.subtotal
+    类型: 整数
+    格式: format.plain_text
+
+输出:
+    标识: output.total
+    类型: 整数
+    格式: format.plain_text
+
+目标:
+    标识: goal.total
+    断言: 引用(output.total) == 6630
+
+动作:
+    标识: action.subtotal
+    操作: core.calculate
+    作用对象: 引用(input.lines)
+    参数:
+        名称: expression
+        类型: 字符串
+        必需: 真
+        值: "SUM(REF(input.lines))"
+    输出: 引用(output.subtotal)
+
+动作:
+    标识: action.total
+    操作: core.calculate
+    作用对象: 引用(output.subtotal)
+    参数:
+        名称: expression
+        类型: 字符串
+        必需: 真
+        值: "REF(output.subtotal) * (100 + REF(input.tax_percent)) / 100"
+    输出: 引用(output.total)
+
+验证:
+    标识: verify.subtotal
+    必需: 真
+    断言: 引用(output.subtotal) == 5525
+
+验证:
+    标识: verify.total
+    必需: 真
+    断言: 引用(output.total) == 6630
+
+成功:
+    标识: success.total
+    全部: [引用(verify.subtotal), 引用(verify.total)]
+
+任务:
+    标识: task.total
+    目标: 引用(goal.total)
+    输入: [引用(input.lines), 引用(input.tax_percent)]
+    动作: [引用(action.subtotal), 引用(action.total)]
+    输出: [引用(output.subtotal), 引用(output.total)]
+    成功: 引用(success.total)
+
+执行:
+    参照: 引用(task.total)

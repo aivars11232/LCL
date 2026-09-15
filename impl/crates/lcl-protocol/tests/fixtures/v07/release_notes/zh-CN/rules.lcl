@@ -1,0 +1,27 @@
+LCL:
+    版本: "0.2.0"
+
+规范:
+    标识: app.release_rules
+    名称: "Release note rules"
+    版本: "1.0.0"
+    种类: kind.library
+    权限: 500
+
+范围:
+    标识: scope.workspace
+    包含: 通配("**")
+
+禁止:
+    标识: rule.no_delete
+    操作: core.delete
+    作用对象: 引用(scope.workspace)
+    权限: 500
+    优先级: 100
+
+允许:
+    标识: rule.may_write
+    操作: core.create
+    作用对象: 引用(scope.workspace)
+    权限: 500
+    优先级: 50

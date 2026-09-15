@@ -1,0 +1,59 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Literals and Escape Sequences
+LANGUAGE VERSION: 0.2.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+STRING
+    "exact text"
+
+MULTILINE STRING
+    triple double quote on the value line, content on following lines, and
+    closing triple double quote aligned with the declaration.
+
+Escapes
+    \" quote; \\ backslash; \n LF; \r carriage return; \t tab;
+    \u followed by four hexadecimal digits.
+
+INTEGER
+    0|[1-9][0-9]*
+
+DECIMAL
+    (0|[1-9][0-9]*)\.[0-9]+
+
+The hyphen-minus is a separate unary operator token; it is not part of either
+numeric literal token. Negative numeric expressions are parsed by applying the
+unary operator to an unsigned INTEGER or DECIMAL literal. Repeated unary
+operators group from the right.
+
+Boolean/special
+    TRUE FALSE NULL MISSING UNKNOWN
+
+Leading plus signs, numeric separators, exponent notation, NaN, and infinity
+are invalid in Core 0.2.0.
+
+STRING VALUE DECODING
+
+Single-line STRING decodes exactly the characters between its quotes. Multiline
+STRING has an opening triple quote immediately followed by LF and a closing
+triple quote alone on a line at the containing declaration's indentation. An
+unescaped triple quote is only that closing delimiter, never content.
+The opening LF and closing-line indentation are syntax and contribute no value.
+Each nonblank content line must begin with the declaration's indentation plus
+four ASCII spaces; strip exactly that prefix. Preserve any additional spaces
+and the LF ending every content line. A blank content line contributes one LF.
+Adjacent opening and closing lines yield the empty STRING. A missing content
+prefix or misaligned delimiter uses error.literal.invalid. These content lines
+do not emit structural INDENT, DEDENT, or BLANK_LINE tokens.
+
+After removing delimiters and the multiline indentation prefix, decode escapes
+exactly once from left to right. No Unicode normalization is performed. The
+control scalars produced by \n, \r, \t, and Unicode escapes are legal values even
+though those controls, except source LF, cannot appear raw in source. A decoded
+backslash is material text and does not begin a second escape-decoding pass.
+A \uHHHH escape outside D800..DFFF denotes that Unicode scalar. A high-surrogate
+escape in D800..DBFF must immediately be followed by a low-surrogate escape in
+DC00..DFFF; together they denote U+10000 + (high - D800) * 400 + (low - DC00),
+where all numbers in that formula are hexadecimal. An unpaired surrogate, an
+invalid pair, or any malformed or unsupported escape uses error.literal.escape.

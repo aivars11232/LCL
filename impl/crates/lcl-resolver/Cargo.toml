@@ -11,3 +11,4 @@ lcl-spec = { path = "../lcl-spec" }
 lcl-diagnostics = { path = "../lcl-diagnostics" }
 lcl-lexer = { path = "../lcl-lexer" }
 lcl-parser = { path = "../lcl-parser" }
+lcl-localization = { path = "../lcl-localization" }

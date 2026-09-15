@@ -1,0 +1,80 @@
+LCL:
+    ВЕРСИЯ: "0.2.0"
+
+СПЕЦИФИКАЦИЯ:
+    ИД: app.invoice_total
+    ИМЯ: "Total one invoice"
+    ВЕРСИЯ: "1.0.0"
+    ВИД: kind.task
+    ДОМЕН: "accounting"
+
+ВВОД:
+    ИД: input.lines
+    ТИП: СПИСОК[ЦЕЛОЕ]
+    ЗНАЧЕНИЕ: [1250, 3400, 875]
+
+ВВОД:
+    ИД: input.tax_percent
+    ТИП: ЦЕЛОЕ
+    ЗНАЧЕНИЕ: 20
+
+ВЫВОД:
+    ИД: output.subtotal
+    ТИП: ЦЕЛОЕ
+    ФОРМАТ: format.plain_text
+
+ВЫВОД:
+    ИД: output.total
+    ТИП: ЦЕЛОЕ
+    ФОРМАТ: format.plain_text
+
+ЦЕЛЬ:
+    ИД: goal.total
+    УТВЕРЖДАТЬ: ССЫЛ(output.total) == 6630
+
+ДЕЙСТВИЕ:
+    ИД: action.subtotal
+    ОПЕРАЦИЯ: core.calculate
+    ЦЕЛЕВОЙ_ОБЪЕКТ: ССЫЛ(input.lines)
+    ПАРАМЕТР:
+        ИМЯ: expression
+        ТИП: СТРОКА
+        ОБЯЗАТЕЛЬНО: ИСТИНА
+        ЗНАЧЕНИЕ: "SUM(REF(input.lines))"
+    ВЫВОД: ССЫЛ(output.subtotal)
+
+ДЕЙСТВИЕ:
+    ИД: action.total
+    ОПЕРАЦИЯ: core.calculate
+    ЦЕЛЕВОЙ_ОБЪЕКТ: ССЫЛ(output.subtotal)
+    ПАРАМЕТР:
+        ИМЯ: expression
+        ТИП: СТРОКА
+        ОБЯЗАТЕЛЬНО: ИСТИНА
+        ЗНАЧЕНИЕ: "REF(output.subtotal) * (100 + REF(input.tax_percent)) / 100"
+    ВЫВОД: ССЫЛ(output.total)
+
+ПРОВЕРИТЬ:
+    ИД: verify.subtotal
+    ОБЯЗАТЕЛЬНО: ИСТИНА
+    УТВЕРЖДАТЬ: ССЫЛ(output.subtotal) == 5525
+
+ПРОВЕРИТЬ:
+    ИД: verify.total
+    ОБЯЗАТЕЛЬНО: ИСТИНА
+    УТВЕРЖДАТЬ: ССЫЛ(output.total) == 6630
+
+УСПЕХ:
+    ИД: success.total
+    ВСЕ: [ССЫЛ(verify.subtotal), ССЫЛ(verify.total)]
+
+ЗАДАЧА:
+    ИД: task.total
+    ЦЕЛЬ: ССЫЛ(goal.total)
+    ВВОД: [ССЫЛ(input.lines), ССЫЛ(input.tax_percent)]
+    ДЕЙСТВИЕ: [ССЫЛ(action.subtotal), ССЫЛ(action.total)]
+    ВЫВОД: [ССЫЛ(output.subtotal), ССЫЛ(output.total)]
+    УСПЕХ: ССЫЛ(success.total)
+
+ВЫПОЛНИТЬ:
+    ССЫЛКА: ССЫЛ(task.total)

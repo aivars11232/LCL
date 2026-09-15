@@ -1,0 +1,27 @@
+LCL CORE 0.2.0 BARE LANGUAGE SPECIFICATION
+CHANGE CONTROL
+NORMATIVE
+
+Published release artifacts are immutable. The September 5, 2026 completion
+under the owner's instruction retains Core version 0.1.0 and creates a distinct
+archive; existing historical trees and archives remain unchanged. A modified
+working tree may not claim the checksum, validation results or completeness of
+any previous snapshot. It requires a fresh decision review and release gate.
+
+LCL Core 0.2.0 is a minor release candidate created on September 15, 2026 under
+the owner's instruction. It adds localized source spelling as a
+backward-compatible feature: every valid Core 0.1.0 program keeps its meaning,
+and localized spelling is accepted only in documents declaring VERSION "0.2.0".
+The Core 0.1.0 package and its archive remain unchanged.
+
+For an established release, corrections that change no meaning require a patch
+release, added backward-compatible features require a minor release, and breaking
+lexical, grammar, type, or semantic changes require a major release. Candidate
+corrections must document their decisions and align every normative surface
+before final release validation.
+
+Integrity metadata is regenerated only at the final release stage, after language
+decisions and static consistency checks are complete. Generate the manifest,
+validation report, and checksums in their documented acyclic order, run the full
+release gate, and bind any new archive to those exact bytes. Never reuse an older
+archive name to overwrite retained historical evidence.

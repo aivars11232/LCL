@@ -1,0 +1,10 @@
+[package]
+name = "lcl-localization"
+description = "The LCL 0.2.0 localization stage: locale directive, locale profile validation, provider-neutral locale selection and localized word classification. No grammar, AST or execution."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lcl-spec = { path = "../lcl-spec" }

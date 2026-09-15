@@ -139,6 +139,34 @@ impl Project {
         self.manifest.cache.as_ref().map(|p| self.resolve(p))
     }
 
+    /// The declared Core 0.2.0 package path, resolved against the root.
+    pub fn localized_spec_path(&self) -> Option<PathBuf> {
+        self.manifest
+            .localized_spec
+            .as_ref()
+            .map(|p| self.resolve(p))
+    }
+
+    /// The declared locale profile directory, resolved against the root.
+    pub fn profiles_path(&self) -> Option<PathBuf> {
+        self.manifest.profiles.as_ref().map(|p| self.resolve(p))
+    }
+
+    /// Every locale profile file in the declared profile directory: each
+    /// `*.json` file directly inside it, in ascending path order. Empty when
+    /// the manifest declares no profile directory.
+    pub fn profile_files(&self) -> std::io::Result<Vec<PathBuf>> {
+        let Some(directory) = self.profiles_path() else {
+            return Ok(Vec::new());
+        };
+        let mut files: Vec<PathBuf> = std::fs::read_dir(&directory)?
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "json"))
+            .collect();
+        files.sort();
+        Ok(files)
+    }
+
     /// The lock file, resolved against the root.
     ///
     /// Defaults to [`lock::LOCK_FILE`] in the root, so a project that wants a

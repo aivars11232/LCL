@@ -1,0 +1,136 @@
+@locale zh-CN
+LCL:
+    版本: "0.2.0"
+
+规范:
+    标识: app.release_notes
+    名称: "Assemble release notes"
+    版本: "1.0.0"
+    种类: kind.task
+    领域: "documentation"
+
+导入:
+    标识: import.rules
+    源: 路径("rules.lcl")
+    命名空间: release_rules
+    版本: "1.0.0"
+    权限: 500
+    必需: 真
+
+工作区:
+    标识: workspace.notes
+    路径: 路径("/tmp/lcl-apps/medium-release-notes")
+    模式: mode.read_write
+
+范围:
+    标识: scope.task
+    包含: 引用(task.notes)
+
+上下文:
+    标识: context.release
+    类型: 对象
+    范围: 引用(scope.task)
+    值:
+        product: "LCL"
+        version: "0.1.0"
+
+状态:
+    标识: state.entry_count
+    类型: 整数
+    范围: 引用(scope.task)
+    模式: mode.read_only
+    值: 3
+
+输入:
+    标识: input.entries
+    类型: 列表[字符串]
+    值: ["parser", "resolver", "runtime"]
+
+输出:
+    标识: output.headline
+    类型: 字符串
+    格式: format.plain_text
+
+输出:
+    标识: output.notes
+    类型: 路径
+    格式: format.plain_text
+    作用对象: 路径(引用(workspace.notes), "NOTES.txt")
+    属性: target
+
+目标:
+    标识: goal.notes
+    断言: 存在(引用(output.notes))
+
+动作:
+    标识: action.headline
+    操作: core.calculate
+    作用对象: 引用(context.release)
+    参数:
+        名称: expression
+        类型: 字符串
+        必需: 真
+        值: "REF(context.release).product"
+    输出: 引用(output.headline)
+
+序列:
+    标识: sequence.entries
+    模式: mode.sequential
+    对于 每个 entry 属于 引用(input.entries):
+        步骤:
+            标识: step.entry
+            动作:
+                标识: action.entry
+                操作: core.return
+                作用对象: 引用(entry)
+
+动作:
+    标识: action.write
+    操作: core.create
+    作用对象: 路径(引用(workspace.notes), "NOTES.txt")
+    参数:
+        名称: content
+        类型: 字符串
+        必需: 真
+        值: "LCL 0.1.0 release notes"
+    输出: 引用(output.notes)
+
+证据:
+    标识: evidence.headline
+    类型: 字符串
+    值: "The headline is assembled from CONTEXT context.release."
+    来源: "Declared directly in this specification."
+    必需: 真
+
+验证:
+    标识: verify.headline
+    必需: 真
+    断言: 引用(output.headline) == "LCL"
+    证据: 引用(evidence.headline)
+
+验证:
+    标识: verify.entries
+    必需: 真
+    断言: 计数(引用(input.entries)) == 引用(state.entry_count)
+
+验证:
+    标识: verify.written
+    必需: 真
+    断言: 存在(引用(output.notes))
+
+成功:
+    标识: success.notes
+    全部: [引用(verify.headline), 引用(verify.entries), 引用(verify.written)]
+
+任务:
+    标识: task.notes
+    目标: 引用(goal.notes)
+    工作区: 引用(workspace.notes)
+    输入: 引用(input.entries)
+    动作: [引用(action.headline), 引用(action.write)]
+    序列: 引用(sequence.entries)
+    输出: [引用(output.headline), 引用(output.notes)]
+    成功: 引用(success.notes)
+
+执行:
+    参照: 引用(task.notes)

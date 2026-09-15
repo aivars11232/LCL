@@ -104,6 +104,12 @@ pub struct Token {
     /// The registry owns its spellings, so this is an owned copy of the
     /// registered word, not a borrow of a transcribed table.
     pub case_folds_to: Option<String>,
+    /// The canonical reserved word of a `ReservedWord` token whose source
+    /// spelling was mapped through a locale profile (LCL 0.2.0,
+    /// `02_LEXICAL/13`). The span still covers the author's own spelling.
+    /// `None` for every token lexed without a locale profile, whose identity
+    /// is its source slice.
+    pub canonical: Option<String>,
 }
 
 impl Token {
@@ -113,6 +119,7 @@ impl Token {
             span,
             value: None,
             case_folds_to: None,
+            canonical: None,
         }
     }
 
@@ -122,6 +129,15 @@ impl Token {
             span,
             value: Some(value),
             case_folds_to: None,
+            canonical: None,
         }
+    }
+
+    /// The identity text of this token: its canonical reserved word when one
+    /// was mapped, otherwise its exact slice of `source`.
+    pub fn word<'s>(&'s self, source: &'s str) -> Option<&'s str> {
+        self.canonical
+            .as_deref()
+            .or_else(|| self.span.slice(source))
     }
 }

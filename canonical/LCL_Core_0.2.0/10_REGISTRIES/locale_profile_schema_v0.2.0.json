@@ -1,0 +1,231 @@
+{
+  "language": "LCL",
+  "version": "0.2.0",
+  "closed": true,
+  "purpose": "Closed contract for locale profiles, the locale directive, locale selection, localized word recognition and source mapping in LCL 0.2.0. A locale profile is data, not code; it changes only which source spellings denote canonical reserved words.",
+  "profile_format": "lcl-locale-profile/1",
+  "profile_document": {
+    "encoding": "UTF-8 without byte-order mark, one JSON object (RFC 8259). Duplicate object keys, other top-level fields, and non-string keys are invalid.",
+    "fields": {
+      "format": "Exact string lcl-locale-profile/1.",
+      "lcl_version": "Exact string 0.2.0. Any other value is error.localization.profile_invalid (incompatible version).",
+      "locale": "One locale tag well formed under locale_tag, written in its normalized form.",
+      "repertoires": "Non-empty array of distinct lexical_repertoires identifiers in ascending order.",
+      "spellings": "Non-empty object mapping each localized source spelling to exactly one canonical reserved word classified localized_lexeme in localization_surface_v0.2.0.json.",
+      "preferred": "Object mapping canonical reserved words to their preferred spelling for rendering and completion. Every key is a value of spellings and every value is a spelling that maps to that key.",
+      "coverage": "Object with mapped_reserved_words (INTEGER equal to the number of distinct values of spellings) and complete (BOOLEAN, TRUE exactly when every localized_lexeme is mapped).",
+      "provenance": "Object with provider_class (one of provider_classes) and provider_identity (non-empty ASCII string naming the provider product or fixture, never a credential, token, key, or personal data)."
+    },
+    "optional_fields": {
+      "display_labels": "Object mapping registered identifiers from localized_preferred_display_only domains to display labels. Labels are presentation only and never accepted as source."
+    },
+    "provider_classes": [
+      "fixture",
+      "cache",
+      "project",
+      "dynamic_resolver"
+    ]
+  },
+  "content_identity": {
+    "algorithm": "SHA-256",
+    "input": "The exact profile bytes that were validated.",
+    "form": "sha256: followed by 64 lowercase hexadecimal digits.",
+    "rule": "Identity is computed before parsing and bound to the parsed result. Any byte change, including reformatting, is a different profile. An evaluation records the identity of the profile it used."
+  },
+  "locale_tag": {
+    "grammar": "language [\"-\" script] [\"-\" region]",
+    "language": "2 or 3 ASCII letters",
+    "script": "4 ASCII letters",
+    "region": "2 ASCII letters or 3 ASCII digits",
+    "normalization": "Comparison is ASCII case-insensitive. The normalized form writes language in lowercase, script with an uppercase first letter and lowercase rest, and region in uppercase.",
+    "invalid": "Any other subtag, extension, private-use or grandfathered form, empty subtag, LOW LINE separator, or non-ASCII character is error.localization.locale_invalid."
+  },
+  "lexical_repertoires": {
+    "latin": {
+      "letters": [
+        "U+0041..U+005A",
+        "U+00C0..U+00D6",
+        "U+00D8..U+00DE",
+        "U+0100",
+        "U+0102",
+        "U+0104",
+        "U+0106",
+        "U+0108",
+        "U+010A",
+        "U+010C",
+        "U+010E",
+        "U+0110",
+        "U+0112",
+        "U+0114",
+        "U+0116",
+        "U+0118",
+        "U+011A",
+        "U+011C",
+        "U+011E",
+        "U+0120",
+        "U+0122",
+        "U+0124",
+        "U+0126",
+        "U+0128",
+        "U+012A",
+        "U+012C",
+        "U+012E",
+        "U+0130",
+        "U+0132",
+        "U+0134",
+        "U+0136",
+        "U+0139",
+        "U+013B",
+        "U+013D",
+        "U+013F",
+        "U+0141",
+        "U+0143",
+        "U+0145",
+        "U+0147",
+        "U+014A",
+        "U+014C",
+        "U+014E",
+        "U+0150",
+        "U+0152",
+        "U+0154",
+        "U+0156",
+        "U+0158",
+        "U+015A",
+        "U+015C",
+        "U+015E",
+        "U+0160",
+        "U+0162",
+        "U+0164",
+        "U+0166",
+        "U+0168",
+        "U+016A",
+        "U+016C",
+        "U+016E",
+        "U+0170",
+        "U+0172",
+        "U+0174",
+        "U+0176",
+        "U+0178..U+0179",
+        "U+017B",
+        "U+017D"
+      ],
+      "letter_count": 119
+    },
+    "cyrillic": {
+      "letters": [
+        "U+0400..U+042F"
+      ],
+      "letter_count": 48
+    },
+    "cjk_unified": {
+      "letters": [
+        "U+4E00..U+9FFF"
+      ],
+      "letter_count": 20992
+    },
+    "word_continuation": "After its first scalar a word may also contain ASCII digits U+0030..U+0039 and LOW LINE U+005F.",
+    "authoring_provenance": "Letter ranges were computed from Unicode 16.0.0 General_Category Lu (latin, cyrillic) and Lo (cjk_unified); the ranges above are normative data and no host Unicode database is consulted."
+  },
+  "spelling_rules": [
+    "A spelling has 1 to 64 Unicode scalar values.",
+    "Its first scalar is a letter of one repertoire listed by the profile, and every later letter belongs to that same repertoire; later scalars may also be word_continuation scalars.",
+    "It contains no ASCII lowercase letter, combining mark, control, format character, space, or symbol.",
+    "It does not match SIMPLE_IDENTIFIER or QUALIFIED_IDENTIFIER.",
+    "If it equals a canonical reserved word, it maps to that same reserved word.",
+    "It maps to exactly one reserved word; a reserved word may have several spellings.",
+    "No two distinct spellings of a profile have the same confusable skeleton.",
+    "No spelling has the confusable skeleton of a canonical reserved word other than the reserved word it maps to."
+  ],
+  "matching": {
+    "normalization": "None. A source word matches a spelling only by exact Unicode scalar sequence equality. Source bytes are never normalized, case-folded, or rewritten.",
+    "case": "Exact. No case folding is applied to localized words.",
+    "host_independence": "Recognition uses only the ranges and tables of this registry and never a locale-sensitive or host-provided Unicode function."
+  },
+  "confusable_skeleton": {
+    "map": {
+      "U+0401": "U+00CB",
+      "U+0405": "U+0053",
+      "U+0406": "U+0049",
+      "U+0407": "U+00CF",
+      "U+0408": "U+004A",
+      "U+0410": "U+0041",
+      "U+0412": "U+0042",
+      "U+0415": "U+0045",
+      "U+041A": "U+004B",
+      "U+041C": "U+004D",
+      "U+041D": "U+0048",
+      "U+041E": "U+004F",
+      "U+0420": "U+0050",
+      "U+0421": "U+0043",
+      "U+0422": "U+0054",
+      "U+0423": "U+0059",
+      "U+0425": "U+0058"
+    },
+    "rule": "The skeleton of a word replaces every scalar that is a key of map by its value and leaves every other scalar unchanged."
+  },
+  "locale_directive": {
+    "form": "@locale, one SPACE, one locale tag, LINE FEED.",
+    "placement": "Only as the first line, beginning at byte offset zero. Any other line beginning with @locale, a second directive, or a malformed directive is error.localization.directive_invalid.",
+    "classification": "LOCALE_DIRECTIVE is a canonical_invariant structural source class and is not an AST node, token, statement, or execution input.",
+    "source_effect": "The directive line is excluded from the canonical token stream. Every later token keeps its original byte offsets."
+  },
+  "source_words": {
+    "candidate_word": "Outside STRING and MULTILINE_STRING literals and the locale directive, a word is a maximal run of ASCII letters, ASCII digits, LOW LINE, and letters of any registered repertoire. A word is a candidate word when its first scalar is an ASCII uppercase letter or a repertoire letter and it contains no ASCII lowercase letter. Every other word, including SIMPLE_IDENTIFIER and QUALIFIED_IDENTIFIER segments, keeps the LCL 0.1.0 identifier and keyword-case rules.",
+    "non_canonical_word": "A candidate word that is not a canonical reserved word.",
+    "canonical_document": "Without a directive, pinned selection, or non_canonical_word, the document is interpreted with canonical reserved words exactly as in LCL 0.1.0 lexical rules and no profile is selected.",
+    "under_selected_profile": [
+      "A candidate word that is a spelling of the selected profile is the canonical reserved word it maps to.",
+      "Otherwise a canonical reserved word is error.localization.mixed.",
+      "Otherwise a word that mixes repertoires, or whose confusable skeleton equals the skeleton of a spelling of the selected profile, is error.localization.confusable.",
+      "Otherwise it is error.keyword.unknown."
+    ],
+    "non_ascii_outside_string": "Any other non-ASCII scalar outside a string literal remains error.source.non_ascii_outside_string. All other LCL 0.1.0 source-text rules, including UTF-8 validity, byte-order mark, LINE FEED, TAB, control character, trailing SPACE, and final LINE FEED rules, are unchanged."
+  },
+  "selection": {
+    "precedence": [
+      "explicit",
+      "pinned",
+      "auto",
+      "canonical"
+    ],
+    "explicit": "A valid directive selects its locale. No detector result is consulted. If a pin for the document names a different locale or profile identity, the result is error.localization.profile_drift.",
+    "pinned": "Without a directive, a project or cache pin selects its recorded locale and requires a resolved profile with exactly the recorded content identity; otherwise error.localization.profile_drift, or error.localization.profile_unavailable when no profile is obtained.",
+    "auto": "Without a directive or pin and with at least one non_canonical_word, a detector proposes candidate locales and the resolver supplies profiles for them. After validation, the profiles that spell at least one non_canonical_word are matches. Exactly one match is selected. More than one match is error.localization.detection_ambiguous. No match is error.localization.detection_failed, or error.localization.profile_unavailable when no detector or resolver is available.",
+    "canonical": "Without a directive, pin, or non_canonical_word, no profile is selected.",
+    "failure": "Every localization-stage error stops the source unit before lexical interpretation of words, grammar, AST construction, resolution, and execution."
+  },
+  "selection_record": {
+    "fields": {
+      "method": "explicit, pinned, auto, or canonical",
+      "locale": "normalized locale tag, absent for canonical",
+      "profile_identity": "content identity of the selected profile, absent for canonical",
+      "detector_identity": "identity of the detector whose proposal was used, present for auto",
+      "candidate_locales": "normalized tags proposed by the detector in its order, present for auto",
+      "lcl_version": "0.2.0"
+    },
+    "rule": "The record is presentation and reproducibility metadata. It never changes canonical tokens, grammar, semantics, diagnostics identifiers, or results."
+  },
+  "provider_contract": {
+    "detector": "A provider-neutral function from candidate words and available locales to an ordered list of candidate locale tags with a detector identity. It performs no parsing and cannot select a profile by itself.",
+    "resolver": "A provider-neutral function from one normalized locale tag to profile bytes and a provider class, or unavailability. It is not consulted when an explicit or pinned selection already has the exact pinned bytes.",
+    "trust": "Detector and resolver output is untrusted until the returned profile validates under this schema. Invalid output is error.localization.profile_invalid and is never partially used.",
+    "pinning": "A project or cache pin binds a document to a locale and profile identity. Later resolver output with another identity never replaces it silently.",
+    "no_network_requirement": "A conforming implementation needs no network access, credentials, or vendor service; fixture, cache, and project profiles are sufficient."
+  },
+  "source_map": {
+    "rule": "Every token, diagnostic, and AST span refers to byte offsets of the original localized source. A localized token carries its canonical reserved word as its identity. No canonical-spelling rendering of the source is produced, persisted, or used for locations.",
+    "persistence": "Saving a document writes the author's bytes. Localization never rewrites the file."
+  },
+  "diagnostics": {
+    "directive": "error.localization.directive_invalid",
+    "locale_tag": "error.localization.locale_invalid",
+    "profile_schema_or_collision": "error.localization.profile_invalid",
+    "profile_missing_or_resolver_absent": "error.localization.profile_unavailable",
+    "pin_mismatch": "error.localization.profile_drift",
+    "auto_multiple_matches": "error.localization.detection_ambiguous",
+    "auto_no_match": "error.localization.detection_failed",
+    "canonical_word_under_profile": "error.localization.mixed",
+    "mixed_repertoire_or_confusable_word": "error.localization.confusable",
+    "unmapped_word_under_profile": "error.keyword.unknown"
+  }
+}

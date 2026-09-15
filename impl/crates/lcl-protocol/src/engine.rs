@@ -38,27 +38,35 @@
 use crate::inputs::{Inputs, Supplied};
 use crate::record::{
     CheckRecord, Command, CompletionRecord, DeclarationRecord, DiagnosticRecord, EventRecord,
-    EvidenceRecord, ExecutionRecord, ImportRecord, InputRecord, InvocationRecord, NavigationRecord,
-    Outcome, OutputRecord, PlanRecord, Reached, ReferenceRecord, Report, SourceRecord, SpecRecord,
-    StructureRecord, VerdictRecord,
+    EvidenceRecord, ExecutionRecord, ImportRecord, InputRecord, InvocationRecord, LocaleRecord,
+    NavigationRecord, Outcome, OutputRecord, PlanRecord, Reached, ReferenceRecord, Report,
+    SourceRecord, SpecRecord, StructureRecord, VerdictRecord,
 };
 use lcl_checker::{Checked, Checker, Contracts as StaticContracts};
 use lcl_completion::{Completion, Contracts as CompletionContracts, Publication, SkipReason};
 use lcl_diagnostics::Stage;
-use lcl_lexer::{Lexer, Lexicon, Position, Span};
+use lcl_lexer::{Lexicon, Position, Span};
+use lcl_localization::{
+    localization_decides, Contract, CoverageDetector, LocaleDetector, LocaleProfileResolver,
+    LocaleTag, Localization, MemoryResolver, Pin, LANGUAGE_VERSION,
+};
 use lcl_parser::syntax::Expr;
 use lcl_parser::{Grammar, Parser};
 use lcl_resolver::{
-    BindingTarget, Resolved, ResolvedUnit, Resolver, Rules, SourceId, SourceProvider, SourceUnit,
+    declared_lcl_version, BindingTarget, LocalizationSetup, Resolved, ResolvedUnit, Resolver,
+    Rules, SourceId, SourceProvider, SourceUnit,
 };
 use lcl_runtime::{Contracts as RuntimeContracts, Execution, Host, Operations, Runtime};
 use lcl_semantics::{
     Contracts as PreflightContracts, Invocation, Outcome as PreflightOutcome, Planned, Preflight,
 };
+use lcl_spec::anchor::APPROVED_PACKAGE_0_2_0;
 use lcl_spec::{SpecError, SpecPackage};
 use lcl_stdlib::{Stdlib, StdlibError};
+use std::collections::BTreeMap;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Why an engine could not be assembled.
 ///
@@ -104,6 +112,16 @@ pub struct Engine {
     runtime: RuntimeContracts,
     completion: CompletionContracts,
     record: SpecRecord,
+    localization: Option<EngineLocalization>,
+}
+
+/// The Core 0.2.0 localization stage an engine applies to every unit
+/// (`02_LEXICAL/13_LOCALIZED_SOURCE_AND_LOCALE_DIRECTIVE.txt`).
+struct EngineLocalization {
+    contract: Contract,
+    resolver: Arc<dyn LocaleProfileResolver + Send + Sync>,
+    detector: Arc<dyn LocaleDetector + Send + Sync>,
+    pins: BTreeMap<SourceId, Pin>,
 }
 
 impl fmt::Debug for Engine {
@@ -160,6 +178,7 @@ impl Engine {
             runtime,
             completion,
             record,
+            localization: None,
         })
     }
 
@@ -176,6 +195,96 @@ impl Engine {
     /// The lexicon, for a caller that needs the closed vocabulary as data.
     pub fn lexicon(&self) -> &Lexicon {
         &self.lexicon
+    }
+
+    /// Open the approved Core 0.2.0 package at `root` with its localization
+    /// stage, over the locale profiles in `profile_files`.
+    ///
+    /// The package is opened against the Core 0.2.0 trust anchor. Each profile
+    /// file is named `<locale>.json`, and a later file for the same locale
+    /// replaces an earlier one. Detection is the package's coverage detector.
+    /// This is the one way a tool builds a localized engine from files.
+    pub fn open_localized(
+        root: impl AsRef<Path>,
+        profile_files: &[PathBuf],
+    ) -> Result<Engine, EngineError> {
+        let spec = SpecPackage::open_with_anchor(root, &APPROVED_PACKAGE_0_2_0)
+            .map_err(EngineError::Package)?;
+        let mut profiles = MemoryResolver::new("lcl.profile.files");
+        for file in profile_files {
+            let refuse = |detail: String| EngineError::Contracts {
+                layer: "localization",
+                detail: format!("{}: {detail}", file.display()),
+            };
+            let locale = file
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .and_then(|stem| LocaleTag::parse(stem).ok())
+                .ok_or_else(|| {
+                    refuse("a locale profile file is named <locale>.json".to_string())
+                })?;
+            let bytes = std::fs::read(file).map_err(|e| refuse(e.to_string()))?;
+            profiles.insert(locale, bytes);
+        }
+        Engine::assemble(spec)?.with_localization(Arc::new(profiles), Arc::new(CoverageDetector))
+    }
+
+    /// Apply the Core 0.2.0 localization stage to every unit this engine
+    /// resolves. The package must carry the localization contract, which no
+    /// Core 0.1.0 package does.
+    pub fn with_localization(
+        mut self,
+        resolver: Arc<dyn LocaleProfileResolver + Send + Sync>,
+        detector: Arc<dyn LocaleDetector + Send + Sync>,
+    ) -> Result<Engine, EngineError> {
+        let contract = Contract::load(&self.spec).map_err(|e| EngineError::Contracts {
+            layer: "localization",
+            detail: e.to_string(),
+        })?;
+        self.localization = Some(EngineLocalization {
+            contract,
+            resolver,
+            detector,
+            pins: BTreeMap::new(),
+        });
+        Ok(self)
+    }
+
+    /// Pin the locale selection of units, from a project lock. A pinned unit
+    /// must reproduce its recorded locale and profile identity exactly, or it
+    /// fails with `error.localization.profile_drift`. An engine without the
+    /// localization stage has nothing to pin and is returned unchanged.
+    pub fn with_locale_pins(mut self, pins: BTreeMap<SourceId, Pin>) -> Engine {
+        if let Some(localization) = &mut self.localization {
+            localization.pins = pins;
+        }
+        self
+    }
+
+    /// The localization contract, when this engine applies the localization
+    /// stage.
+    pub fn localization_contract(&self) -> Option<&Contract> {
+        self.localization.as_ref().map(|l| &l.contract)
+    }
+
+    /// Localize (when this engine applies the localization stage), lex and
+    /// parse one unit exactly as resolution does, without resolving it.
+    pub fn stage(&self, unit: &SourceUnit) -> ResolvedUnit {
+        self.resolver().stage(unit)
+    }
+
+    /// A resolver over this engine's layers, with its localization stage.
+    fn resolver(&self) -> Resolver<'_> {
+        let resolver = Resolver::new(&self.rules, &self.grammar, &self.lexicon);
+        match &self.localization {
+            Some(l) => resolver.with_localization(LocalizationSetup {
+                contract: &l.contract,
+                resolver: l.resolver.as_ref(),
+                detector: l.detector.as_ref(),
+                pins: &l.pins,
+            }),
+            None => resolver,
+        }
     }
 
     /// A fresh Core operation surface with no implementation profile installed.
@@ -269,12 +378,12 @@ impl Engine {
         let mut report = Report {
             command,
             spec: self.record.clone(),
-            units: vec![SourceRecord {
-                id: unit.id().to_string(),
-                digest: unit.digest(),
-                bytes: unit.bytes().len(),
-                root: true,
-            }],
+            units: vec![SourceRecord::new(
+                unit.id().to_string(),
+                unit.digest(),
+                unit.bytes().len(),
+                true,
+            )],
             reached: Reached::Lexical,
             outcome: Outcome::Rejected,
             inputs: Vec::new(),
@@ -288,9 +397,7 @@ impl Engine {
         // Steps 1 to 4. The resolver drives the lexer and parser itself, so a
         // failure of either arrives here as a skipped stage rather than as a
         // resolution result.
-        let resolved = match Resolver::new(&self.rules, &self.grammar, &self.lexicon)
-            .resolve(unit, provider)
-        {
+        let resolved = match self.resolver().resolve(unit, provider) {
             Ok(resolved) => resolved,
             Err(skipped) => {
                 // The root did not survive step 1 or 3. Its full diagnostic
@@ -299,10 +406,17 @@ impl Engine {
                 // Same lexer, same parser, same input: a second pass observes,
                 // it does not decide.
                 report.reached = match skipped.stage {
-                    Stage::Lexical => Reached::Lexical,
+                    Stage::Localization | Stage::Lexical => Reached::Lexical,
                     _ => Reached::Grammar,
                 };
-                report.diagnostics = self.early_diagnostics(unit);
+                let staged = self.stage(unit);
+                report.diagnostics = unit_diagnostics(&staged, self.localization.as_ref());
+                if let (Some(record), Some(locale)) = (
+                    report.units.first_mut(),
+                    staged.localization().and_then(locale_record),
+                ) {
+                    record.locale = Some(locale);
+                }
                 mark_primary(&mut report.diagnostics);
                 return report;
             }
@@ -311,22 +425,31 @@ impl Engine {
         // Every loaded unit, root first, in the resolver's load order.
         report.units = resolved
             .units()
-            .map(|u| SourceRecord {
-                id: u.id().to_string(),
-                digest: u.digest().to_string(),
-                bytes: u.source().len(),
-                root: u.id() == resolved.root(),
+            .map(|u| {
+                let record = SourceRecord::new(
+                    u.id().to_string(),
+                    u.digest(),
+                    u.source().len(),
+                    u.id() == resolved.root(),
+                );
+                match u.localization().and_then(locale_record) {
+                    Some(locale) => record.with_locale(locale),
+                    None => record,
+                }
             })
             .collect();
 
         // Steps 1 to 3 for every loaded unit, including imported ones that
         // failed an earlier stage while the root did not.
-        let early: Vec<DiagnosticRecord> = resolved.units().flat_map(unit_diagnostics).collect();
+        let early: Vec<DiagnosticRecord> = resolved
+            .units()
+            .flat_map(|u| unit_diagnostics(u, self.localization.as_ref()))
+            .collect();
         if !early.is_empty() {
             report.reached = early
                 .iter()
                 .map(|d| match d.stage {
-                    Stage::Lexical => Reached::Lexical,
+                    Stage::Localization | Stage::Lexical => Reached::Lexical,
                     _ => Reached::Grammar,
                 })
                 .min()
@@ -664,58 +787,133 @@ impl Engine {
         }
         (invocation, records)
     }
+}
 
-    /// Steps 1 and 3 over one unit's bytes, for the root that never reached
-    /// resolution.
-    fn early_diagnostics(&self, unit: &SourceUnit) -> Vec<DiagnosticRecord> {
-        let source = unit.id().to_string();
-        let lexed = Lexer::new(&self.lexicon).lex(unit.bytes());
-        let mut records: Vec<DiagnosticRecord> = lexed
-            .diagnostics()
-            .iter()
-            .map(|d| DiagnosticRecord {
-                id: d.id.to_string(),
-                stage: Stage::Lexical,
-                source: source.clone(),
-                span: d.span,
-                position: d.position,
-                meaning: d.meaning.clone(),
-                default_status: d.default_status.clone(),
-                specificity_rank: d.specificity_rank,
-                event: None,
-                cause: format!("{:?}", d.cause),
-                detail: d.detail.clone(),
-                sequence: None,
-                primary: false,
-            })
-            .collect();
-        if !records.is_empty() {
-            return records;
+/// The Core 0.1.0 engine and, optionally, the Core 0.2.0 engine with its
+/// localization stage, with the one rule that chooses between them.
+///
+/// A document is judged by exactly one engine. `07_VERSIONING_AND_EXTENSIONS/05`
+/// keeps every document that does not declare 0.2.0 under its Core 0.1.0
+/// reading, and owner decision D9 (2026-09-15) sends a document whose
+/// localization fails to the 0.2.0 engine when that failure is the result.
+pub struct Engines {
+    core: Engine,
+    localized: Option<Engine>,
+}
+
+impl Engines {
+    /// `core` must not apply the localization stage; `localized`, when given,
+    /// must.
+    pub fn new(core: Engine, localized: Option<Engine>) -> Result<Engines, EngineError> {
+        let refuse = |detail: &str| EngineError::Contracts {
+            layer: "dispatch",
+            detail: detail.to_string(),
+        };
+        if core.localization_contract().is_some() {
+            return Err(refuse(
+                "the core engine must not apply the localization stage",
+            ));
         }
-        if let Ok(parsed) = Parser::new(&self.grammar).parse(&lexed) {
-            records.extend(parsed.diagnostics().iter().map(|d| DiagnosticRecord {
-                id: d.id.to_string(),
-                stage: Stage::GrammarOrSchema,
-                source: source.clone(),
-                span: d.span,
-                position: d.position,
-                meaning: d.meaning.clone(),
-                default_status: d.default_status.clone(),
-                specificity_rank: d.specificity_rank,
-                event: None,
-                cause: format!("{:?}", d.cause),
-                detail: d.detail.clone(),
-                sequence: None,
-                primary: false,
-            }));
+        if localized
+            .as_ref()
+            .is_some_and(|engine| engine.localization_contract().is_none())
+        {
+            return Err(refuse(
+                "the localized engine must apply the localization stage",
+            ));
         }
-        records
+        Ok(Engines { core, localized })
+    }
+
+    pub fn core(&self) -> &Engine {
+        &self.core
+    }
+
+    pub fn localized(&self) -> Option<&Engine> {
+        self.localized.as_ref()
+    }
+
+    /// The engine that judges `unit`.
+    ///
+    /// * When the Core 0.1.0 reading lexes, the declared `LCL` `VERSION`
+    ///   decides: exactly `0.2.0` is the 0.2.0 engine's, anything else stays
+    ///   with Core 0.1.0.
+    /// * Otherwise the localized reading decides. A rejected localization is
+    ///   the 0.2.0 engine's exactly when it decides the result (D9). An
+    ///   accepted reading follows its declared `VERSION` when one is readable,
+    ///   and otherwise is the 0.2.0 engine's only when a profile was selected.
+    pub fn engine_for(&self, unit: &SourceUnit) -> &Engine {
+        let Some(localized) = &self.localized else {
+            return &self.core;
+        };
+        let declared = |staged: &ResolvedUnit| staged.document().and_then(declared_lcl_version);
+        let canonical = self.core.stage(unit);
+        if canonical.lexed().primary().is_none() {
+            return if declared(&canonical).as_deref() == Some(LANGUAGE_VERSION) {
+                localized
+            } else {
+                &self.core
+            };
+        }
+        let staged = localized.stage(unit);
+        let Some(outcome) = staged.localization() else {
+            return &self.core;
+        };
+        if !outcome.is_accepted() {
+            return if localization_decides(outcome, unit.bytes()) {
+                localized
+            } else {
+                &self.core
+            };
+        }
+        match declared(&staged) {
+            Some(version) if version == LANGUAGE_VERSION => localized,
+            Some(_) => &self.core,
+            None if outcome.profile.is_some() => localized,
+            None => &self.core,
+        }
     }
 }
 
 /// Steps 1 and 3 for one unit the resolver did load.
-fn unit_diagnostics(unit: &ResolvedUnit) -> Vec<DiagnosticRecord> {
+fn unit_diagnostics(
+    unit: &ResolvedUnit,
+    localization: Option<&EngineLocalization>,
+) -> Vec<DiagnosticRecord> {
     let source = unit.id().to_string();
+    // A unit the localization stage rejected was not lexed under any profile;
+    // its localization diagnostics are its whole early-stage result.
+    if let (Some(outcome), Some(engine)) = (unit.localization(), localization) {
+        if !outcome.diagnostics.is_empty() {
+            return outcome
+                .diagnostics
+                .iter()
+                .map(|d| {
+                    let metadata = engine.contract.error_metadata(d.id);
+                    DiagnosticRecord {
+                        id: d.id.to_string(),
+                        stage: Stage::Localization,
+                        source: source.clone(),
+                        span: Span {
+                            start: d.offset,
+                            end: d.end,
+                        },
+                        position: position(unit.source(), d.offset),
+                        meaning: metadata.map(|m| m.meaning.clone()).unwrap_or_default(),
+                        default_status: metadata
+                            .map(|m| m.default_status.clone())
+                            .unwrap_or_default(),
+                        specificity_rank: metadata.map_or(0, |m| m.specificity_rank),
+                        event: None,
+                        cause: "localization".to_string(),
+                        detail: Some(d.detail.clone()),
+                        sequence: None,
+                        primary: false,
+                    }
+                })
+                .collect();
+        }
+    }
     let mut records: Vec<DiagnosticRecord> = unit
         .lexed()
         .diagnostics()
@@ -754,6 +952,44 @@ fn unit_diagnostics(unit: &ResolvedUnit) -> Vec<DiagnosticRecord> {
         }));
     }
     records
+}
+
+/// The protocol record of a unit's locale selection, when one was made.
+fn locale_record(localization: &Localization) -> Option<LocaleRecord> {
+    let record = localization.record.as_ref()?;
+    Some(LocaleRecord {
+        method: record.method.as_str().to_string(),
+        locale: record.locale.as_ref().map(|l| l.as_str().to_string()),
+        profile_identity: record.profile_identity.clone(),
+        detector_identity: record.detector_identity.clone(),
+        candidate_locales: record
+            .candidate_locales
+            .iter()
+            .map(|l| l.as_str().to_string())
+            .collect(),
+        lcl_version: record.lcl_version.to_string(),
+    })
+}
+
+/// Line and column of a byte offset, derived as the lexer derives them.
+fn position(text: &str, offset: usize) -> Position {
+    let line_start = text
+        .get(..offset)
+        .and_then(|s| s.rfind('\n'))
+        .map_or(0, |i| i + 1);
+    let line = text
+        .get(..line_start)
+        .map_or(0, |s| s.matches('\n').count())
+        + 1;
+    let column = text
+        .get(line_start..offset)
+        .map_or(0, |s| s.chars().count())
+        + 1;
+    Position {
+        offset,
+        line: u32::try_from(line).unwrap_or(u32::MAX),
+        column: u32::try_from(column).unwrap_or(u32::MAX),
+    }
 }
 
 /// Mark the first diagnostic primary.

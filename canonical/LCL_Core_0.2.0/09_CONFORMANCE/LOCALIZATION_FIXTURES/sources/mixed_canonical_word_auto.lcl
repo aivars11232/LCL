@@ -1,0 +1,13 @@
+LCL:
+    VERSIJA: "0.2.0"
+
+SPECIFIKĀCIJA:
+    ID: fixture.localized_minimum
+    NOSAUKUMS: "Localized minimum"
+    VERSIJA: "1.0.0"
+    VEIDS: kind.data
+
+DATI:
+    ID: data.count
+    TYPE: VESELS
+    VĒRTĪBA: 3

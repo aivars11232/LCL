@@ -1,0 +1,80 @@
+LCL:
+    VERSIJA: "0.2.0"
+
+SPECIFIKĀCIJA:
+    ID: app.invoice_total
+    NOSAUKUMS: "Total one invoice"
+    VERSIJA: "1.0.0"
+    VEIDS: kind.task
+    DOMĒNS: "accounting"
+
+IEVADE:
+    ID: input.lines
+    TIPS: SARAKSTS[VESELS]
+    VĒRTĪBA: [1250, 3400, 875]
+
+IEVADE:
+    ID: input.tax_percent
+    TIPS: VESELS
+    VĒRTĪBA: 20
+
+IZVADE:
+    ID: output.subtotal
+    TIPS: VESELS
+    FORMĀTS: format.plain_text
+
+IZVADE:
+    ID: output.total
+    TIPS: VESELS
+    FORMĀTS: format.plain_text
+
+MĒRĶIS:
+    ID: goal.total
+    APGALVOT: ATS(output.total) == 6630
+
+DARBĪBA:
+    ID: action.subtotal
+    OPERĀCIJA: core.calculate
+    ADRESĀTS: ATS(input.lines)
+    PARAMETRS:
+        NOSAUKUMS: expression
+        TIPS: VIRKNE
+        OBLIGĀTS: PATIESS
+        VĒRTĪBA: "SUM(REF(input.lines))"
+    IZVADE: ATS(output.subtotal)
+
+DARBĪBA:
+    ID: action.total
+    OPERĀCIJA: core.calculate
+    ADRESĀTS: ATS(output.subtotal)
+    PARAMETRS:
+        NOSAUKUMS: expression
+        TIPS: VIRKNE
+        OBLIGĀTS: PATIESS
+        VĒRTĪBA: "REF(output.subtotal) * (100 + REF(input.tax_percent)) / 100"
+    IZVADE: ATS(output.total)
+
+PĀRBAUDĪT:
+    ID: verify.subtotal
+    OBLIGĀTS: PATIESS
+    APGALVOT: ATS(output.subtotal) == 5525
+
+PĀRBAUDĪT:
+    ID: verify.total
+    OBLIGĀTS: PATIESS
+    APGALVOT: ATS(output.total) == 6630
+
+PANĀKUMS:
+    ID: success.total
+    VISI: [ATS(verify.subtotal), ATS(verify.total)]
+
+UZDEVUMS:
+    ID: task.total
+    MĒRĶIS: ATS(goal.total)
+    IEVADE: [ATS(input.lines), ATS(input.tax_percent)]
+    DARBĪBA: [ATS(action.subtotal), ATS(action.total)]
+    IZVADE: [ATS(output.subtotal), ATS(output.total)]
+    PANĀKUMS: ATS(success.total)
+
+IZPILDĪT:
+    ATSAUCE: ATS(task.total)

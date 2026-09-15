@@ -1,0 +1,96 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Localized Source and Locale Directive
+LANGUAGE VERSION: 0.2.0
+STATUS: NORMATIVE
+DATE: 2026-09-15
+
+
+LCL 0.2.0 lets a document spell reserved words in a human language. LCL stays
+one language: one canonical token universe, one grammar, one AST model and one
+semantics. The machine-readable contract is
+10_REGISTRIES/localization_surface_v0.2.0.json and
+10_REGISTRIES/locale_profile_schema_v0.2.0.json. This text summarizes those
+registries and cannot change them.
+
+WHAT MAY BE LOCALIZED
+
+Only the reserved words classified localized_lexeme may have localized
+spellings. Symbols, SPACE, LINE FEED, indentation, the locale directive and
+every registered qualified identifier, including status, error, unit, kind,
+format, encoding, mode, event and core operation identifiers, keep their
+canonical spelling. A tool may show a display label for such an identifier, but
+source never accepts it. Identifiers, STRING and MULTILINE_STRING content,
+numbers, constructor argument content, and the text of COMMENT, DESCRIPTION,
+EXAMPLE, NAME and MEANING are author data and are never translated.
+
+LOCALE PROFILES
+
+A locale profile is a JSON data document, never code. It names its LCL version,
+its locale, its letter repertoires, the spellings that denote each reserved
+word, preferred spellings for rendering, its coverage and its provenance. Its
+identity is the SHA-256 of its exact bytes. A profile that fails any schema
+rule, including a spelling collision, a confusable collision, an unknown
+reserved word or another LCL version, is invalid as a whole and is never
+partially used.
+
+LOCALE DIRECTIVE
+
+    @locale lv-LV
+
+A document may begin with exactly one locale directive: @locale, one SPACE, one
+locale tag and LINE FEED at byte offset zero. It selects a locale profile before
+any word is interpreted. It is not a token, statement or AST node and has no
+other effect. A misplaced, malformed or repeated directive is
+error.localization.directive_invalid, and a malformed tag is
+error.localization.locale_invalid.
+
+SELECTION
+
+A valid directive always wins; no detector is consulted. Without a directive, a
+project or cache pin selects its recorded locale and exact profile identity.
+Without either, a document whose candidate words are all canonical reserved
+words uses canonical spellings and selects no profile. Otherwise detection is
+automatic: exactly one validated profile that spells at least one
+non-canonical word is selected. Several such profiles are
+error.localization.detection_ambiguous, and none is
+error.localization.detection_failed. A pin whose identity differs is
+error.localization.profile_drift, and a profile that cannot be obtained is
+error.localization.profile_unavailable. Every localization-stage error stops the
+source unit before words, grammar, resolution or execution are processed.
+Canonical spellings are never substituted for an unavailable profile.
+
+WORD RECOGNITION
+
+Outside string literals, a word is a maximal run of ASCII letters, ASCII
+digits, LOW LINE and letters of registered repertoires. It is a candidate word
+when it starts with an ASCII uppercase letter or a repertoire letter and
+contains no ASCII lowercase letter; every other word keeps the LCL 0.1.0
+identifier and keyword-case rules. Under a selected profile, a spelling of that
+profile is its canonical
+reserved word. A canonical reserved word that the profile does not spell is
+error.localization.mixed. A word that mixes repertoires or is confusable with a
+profile spelling is error.localization.confusable. Any other candidate word is
+error.keyword.unknown. Matching compares exact Unicode scalar sequences with no
+normalization and no case folding. Source bytes are never normalized or
+rewritten. Every other source-text rule of 02_LEXICAL/01 applies unchanged.
+
+LOCATIONS AND PERSISTENCE
+
+Every token, diagnostic and AST location is a byte offset into the original
+localized source. A localized token carries its canonical reserved word as its
+identity. No canonical-spelling copy of the source is produced or used for
+locations, and saving a document writes the author's bytes.
+
+EQUIVALENCE
+
+Documents that differ only in the spelling of reserved words under their
+selected profiles, and in the presence of a directive line, have the same
+canonical token identities, AST, diagnostics identifiers, validation decisions,
+execution, effects, outputs, evidence and terminal status. Only byte locations
+and presentation metadata differ.
+
+VERSION
+
+These rules apply only to a document whose LCL block declares VERSION "0.2.0".
+A document declaring VERSION "0.1.0" is processed only under LCL 0.1.0 rules,
+where a locale directive or localized word is invalid source.

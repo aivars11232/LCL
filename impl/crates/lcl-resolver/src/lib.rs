@@ -85,10 +85,44 @@ pub use source::{
     LoadError, MemoryProvider, SourceId, SourceProvider, SourceRef, SourceRequest, SourceUnit,
 };
 
-use lcl_lexer::{Lexed, Lexer, Lexicon, Span};
+use lcl_lexer::{Lexed, Lexer, Lexicon, Span, WordMap};
+use lcl_localization::{
+    localize, Contract, LocaleDetector, LocaleProfileResolver, Localization, Pin,
+};
 use lcl_parser::{Grammar, Parsed, Parser};
 use std::collections::BTreeMap;
 use std::fmt;
+
+/// The LCL 0.2.0 localization stage a resolver applies to every unit
+/// (`02_LEXICAL/13`).
+///
+/// Every unit is localized before it is lexed: a rejected unit fails at the
+/// localization stage, and an accepted unit is lexed through its selected
+/// profile's spellings. Without a setup, resolution is exactly Core 0.1.0.
+#[derive(Clone, Copy)]
+pub struct LocalizationSetup<'a> {
+    pub contract: &'a Contract,
+    pub resolver: &'a dyn LocaleProfileResolver,
+    pub detector: &'a dyn LocaleDetector,
+    /// A recorded locale and profile identity per unit, from a project lock.
+    pub pins: &'a BTreeMap<SourceId, Pin>,
+}
+
+impl fmt::Debug for LocalizationSetup<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LocalizationSetup")
+            .field("resolver", &self.resolver.identity())
+            .field("detector", &self.detector.identity())
+            .field("pins", &self.pins.len())
+            .finish()
+    }
+}
+
+/// The `VERSION` string of a document's `LCL` block, as written.
+pub fn declared_lcl_version(document: &lcl_parser::syntax::Document) -> Option<String> {
+    let block = document.block("LCL")?;
+    field::string(block, "VERSION").map(|(version, _)| version)
+}
 
 /// A resolver bound to loaded rules, grammar and lexicon.
 ///
@@ -99,6 +133,7 @@ pub struct Resolver<'a> {
     rules: &'a Rules,
     grammar: &'a Grammar,
     lexicon: &'a Lexicon,
+    localization: Option<LocalizationSetup<'a>>,
 }
 
 impl<'a> Resolver<'a> {
@@ -107,7 +142,14 @@ impl<'a> Resolver<'a> {
             rules,
             grammar,
             lexicon,
+            localization: None,
         }
+    }
+
+    /// Apply the LCL 0.2.0 localization stage to every unit.
+    pub fn with_localization(mut self, setup: LocalizationSetup<'a>) -> Self {
+        self.localization = Some(setup);
+        self
     }
 
     pub fn rules(&self) -> &'a Rules {
@@ -166,9 +208,49 @@ impl<'a> Resolver<'a> {
         Ok(resolved)
     }
 
-    /// Lex and parse one unit, recording whichever earlier stage failed.
-    pub(crate) fn stage(&self, unit: &SourceUnit) -> ResolvedUnit {
-        let lexed = Lexer::new(self.lexicon).lex(unit.bytes());
+    /// Localize (under a [`LocalizationSetup`]), lex and parse one unit,
+    /// recording whichever earlier stage failed.
+    pub fn stage(&self, unit: &SourceUnit) -> ResolvedUnit {
+        let localization = self.localization.map(|setup| {
+            localize(
+                setup.contract,
+                unit.bytes(),
+                setup.resolver,
+                setup.detector,
+                setup.pins.get(unit.id()),
+            )
+        });
+        let lexer = Lexer::new(self.lexicon);
+        if let Some(first) = localization.as_ref().and_then(|l| l.diagnostics.first()) {
+            let failure = UnitStageFailure {
+                stage: lcl_diagnostics::Stage::Localization,
+                primary: first.id.to_string(),
+                span: Span::empty(first.offset),
+            };
+            return ResolvedUnit {
+                id: unit.id().clone(),
+                digest: unit.digest(),
+                lexed: lexer.lex(unit.bytes()),
+                parsed: None,
+                stage_failure: Some(failure),
+                version_rejected: false,
+                localization,
+            };
+        }
+        let word_map = match (self.localization, localization.as_ref()) {
+            (Some(setup), Some(outcome)) => outcome.profile.as_ref().map(|profile| {
+                WordMap::new(
+                    outcome.directive_len,
+                    setup.contract.letter_ranges(),
+                    profile.spellings().clone(),
+                )
+            }),
+            _ => None,
+        };
+        let lexed = match &word_map {
+            Some(map) => lexer.lex_localized(unit.bytes(), map),
+            None => lexer.lex(unit.bytes()),
+        };
         if let Some(primary) = lexed.primary() {
             let failure = UnitStageFailure {
                 stage: lcl_diagnostics::Stage::Lexical,
@@ -182,6 +264,7 @@ impl<'a> Resolver<'a> {
                 parsed: None,
                 stage_failure: Some(failure),
                 version_rejected: false,
+                localization,
             };
         }
         let parsed = Parser::new(self.grammar).parse(&lexed).ok();
@@ -199,6 +282,7 @@ impl<'a> Resolver<'a> {
             parsed,
             stage_failure,
             version_rejected: false,
+            localization,
         }
     }
 
@@ -304,6 +388,9 @@ pub struct ResolvedUnit {
     /// "only exact supported language versions", so reading them under 0.1.0
     /// semantics would be a guess.
     pub(crate) version_rejected: bool,
+    /// The localization outcome, when the resolver applied a
+    /// [`LocalizationSetup`].
+    localization: Option<Localization>,
 }
 
 impl ResolvedUnit {
@@ -331,6 +418,12 @@ impl ResolvedUnit {
 
     pub fn document(&self) -> Option<&lcl_parser::syntax::Document> {
         self.parsed.as_ref().map(Parsed::document)
+    }
+
+    /// The localization outcome, when the resolver applied a
+    /// [`LocalizationSetup`].
+    pub fn localization(&self) -> Option<&Localization> {
+        self.localization.as_ref()
     }
 
     /// The earlier stage this unit failed, if any.

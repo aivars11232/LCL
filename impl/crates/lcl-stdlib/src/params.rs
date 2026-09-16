@@ -168,6 +168,7 @@ pub fn classify(cx: &Invocation<'_>, value: &Value) -> AddressClass {
             "URI" => AddressClass::Uri,
             _ => AddressClass::Material,
         },
+        Value::WorkspacePath { .. } => AddressClass::Path,
         Value::Reference(id) => classify_reference(cx, id),
         _ => AddressClass::Material,
     }
@@ -187,6 +188,7 @@ fn classify_reference(cx: &Invocation<'_>, id: &str) -> AddressClass {
         // number is not an address at all.
         _ => match cx.declaration_value(declaration_id) {
             Value::Constructed { constructor, .. } if constructor == "PATH" => AddressClass::Path,
+            Value::WorkspacePath { .. } => AddressClass::Path,
             Value::Constructed { constructor, .. } if constructor == "URI" => AddressClass::Uri,
             _ => AddressClass::Material,
         },

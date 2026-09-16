@@ -12508,7 +12508,8 @@
       ],
       "subruns": [
         "registry-contract",
-        "runtime"
+        "runtime",
+        "completion"
       ]
     },
     {
@@ -12689,7 +12690,8 @@
       "subruns": [
         "registry-contract",
         "lexer",
-        "runtime"
+        "runtime",
+        "completion"
       ]
     },
     {
@@ -12739,6 +12741,7 @@
         "registry-contract",
         "checker",
         "runtime",
+        "completion",
         "behavior/scalar-denominator",
         "behavior/measure-denominator",
         "behavior/round-quotient"
@@ -12755,6 +12758,7 @@
         "registry-contract",
         "checker",
         "runtime",
+        "completion",
         "behavior/quotient-outside-round"
       ]
     },
@@ -12769,6 +12773,7 @@
         "registry-contract",
         "checker",
         "runtime",
+        "completion",
         "behavior/unit-outside-required-category",
         "behavior/exact-unit-mismatch-same-category"
       ]
@@ -13128,7 +13133,8 @@
         "registry-contract",
         "checker",
         "preflight",
-        "runtime"
+        "runtime",
+        "completion"
       ]
     },
     {
@@ -13193,6 +13199,7 @@
         "registry-contract",
         "checker",
         "runtime",
+        "completion",
         "behavior/pattern-resource-exhaustion"
       ]
     },

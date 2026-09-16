@@ -356,9 +356,10 @@ fn constructor_value(engine: &Engine, name: &str, arguments: &[Value]) -> Option
             if relative.starts_with('/') || !crate::scope::contains(root, &text) {
                 return None;
             }
-            Some(Value::Constructed {
-                constructor: "PATH".to_string(),
-                text,
+            Some(Value::WorkspacePath {
+                workspace: id.clone(),
+                relative: relative.clone(),
+                resolved: text,
             })
         }
         (_, [Value::Text(text)]) => Some(Value::Constructed {
@@ -539,6 +540,9 @@ fn equality(left: &Value, right: &Value) -> Option<bool> {
                 text: tb,
             },
         ) => Some(ca == cb && ta == tb),
+        (Value::WorkspacePath { .. }, Value::WorkspacePath { .. }) => {
+            Some(crate::value::strict_equal(left, right))
+        }
         (Value::Quantity(a, ua), Value::Quantity(b, ub)) => {
             // Different units are not compared here: the exact unit rule is
             // `error.numeric.unit_mismatch`, which is a diagnostic, not a

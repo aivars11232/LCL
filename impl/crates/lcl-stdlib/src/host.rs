@@ -211,6 +211,7 @@ fn path_of(value: Option<&Value>) -> Option<PathBuf> {
         Value::Constructed { constructor, text } if constructor == "PATH" => {
             Some(PathBuf::from(text))
         }
+        Value::WorkspacePath { resolved, .. } => Some(PathBuf::from(resolved)),
         _ => None,
     }
 }
@@ -276,6 +277,7 @@ fn is_secure(request: &CapabilityRequest) -> bool {
 fn program_of(request: &CapabilityRequest) -> Option<String> {
     match request.target.as_ref()? {
         Value::Constructed { constructor, text } if constructor == "PATH" => Some(text.clone()),
+        Value::WorkspacePath { resolved, .. } => Some(resolved.clone()),
         // "A PATH, URI, or STRING core.execute target requires the execution
         // role"; a STRING target is the command line, whose first word is the
         // program.

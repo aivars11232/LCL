@@ -538,7 +538,20 @@ impl<'a> Evaluator<'a> {
             BinaryOp::Multiply => a.mul(b),
             _ => return Err(self.operand(span, "not an arithmetic operator")),
         };
-        Ok(self.numeric_result(left, right, result))
+        let value = self.numeric_result(left, right, result);
+        // `03_TYPES_AND_VALUES/06`: "Subtracting one DURATION from another is
+        // valid only when the result is non-negative; otherwise evaluation
+        // produces error.value.out_of_range."
+        if order_profile::is_duration(&value) && value.number().is_some_and(Decimal::is_negative) {
+            return Err(Fault::new(
+                self.contracts,
+                RuntimeError::ValueOutOfRange,
+                span,
+                "DURATION",
+                "a DURATION is not negative",
+            ));
+        }
+        Ok(value)
     }
 
     /// The family of an arithmetic result.
@@ -678,7 +691,25 @@ impl<'a> Evaluator<'a> {
                     .and_then(|flags| Regex::compile(body, flags))
                     .and_then(|compiled| compiled.matches(subject))
             }
-            "GLOB" => Glob::compile(pattern_text).and_then(|compiled| compiled.matches(subject)),
+            // `03_TYPES_AND_VALUES/07`: "A PATH input requires an explicit
+            // WORKSPACE root retained by the value ...; its normalized relative
+            // segments are used. ... No root or filesystem expansion is
+            // inferred."
+            "GLOB" => {
+                let relative;
+                let subject = match input {
+                    Value::WorkspacePath { relative: text, .. } => {
+                        relative = text
+                            .split('/')
+                            .filter(|segment| !segment.is_empty() && *segment != ".")
+                            .collect::<Vec<_>>()
+                            .join("/");
+                        relative.as_str()
+                    }
+                    _ => subject,
+                };
+                Glob::compile(pattern_text).and_then(|compiled| compiled.matches(subject))
+            }
             other => {
                 return Err(self.operand(span, format!("MATCHES is not registered for {other}")))
             }
@@ -1064,9 +1095,10 @@ impl<'a> Evaluator<'a> {
                         format!("{relative:?} is not inside the WORKSPACE root"),
                     ));
                 }
-                Value::Constructed {
-                    constructor: "PATH".to_string(),
-                    text: format!("{}/{}", root.trim_end_matches('/'), relative),
+                Value::WorkspacePath {
+                    workspace: id.to_string(),
+                    relative: relative.clone(),
+                    resolved: format!("{}/{}", root.trim_end_matches('/'), relative),
                 }
             }
             // `REGEX(pattern)` and `REGEX(pattern, flags)` are both

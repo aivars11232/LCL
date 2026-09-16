@@ -50,6 +50,16 @@ pub enum Value {
         constructor: String,
         text: String,
     },
+    /// A `PATH(REF(workspace), "relative")`. `types_v0.1.0.json` material
+    /// identity: "WORKSPACE form uses the resolved workspace declaration
+    /// identity and exact decoded relative STRING ... Different forms are
+    /// unequal." `resolved` is the contained absolute target a capability
+    /// addresses; it takes no part in identity.
+    WorkspacePath {
+        workspace: String,
+        relative: String,
+        resolved: String,
+    },
     /// A registered qualified identifier: a format, encoding, kind, mode,
     /// status, event, error or unit.
     Identifier(String),
@@ -107,6 +117,7 @@ impl Value {
         match self {
             Value::Text(t) | Value::Identifier(t) | Value::Reference(t) => Some(t),
             Value::Constructed { text, .. } => Some(text),
+            Value::WorkspacePath { resolved, .. } => Some(resolved),
             _ => None,
         }
     }
@@ -122,6 +133,7 @@ impl Value {
             Value::Text(_) => "STRING",
             Value::Quantity(_, _) => "MEASURE",
             Value::Constructed { constructor, .. } => constructor,
+            Value::WorkspacePath { .. } => "PATH",
             Value::Identifier(_) => "identifier",
             Value::List(_) => "LIST",
             Value::Set(_) => "SET",
@@ -153,6 +165,7 @@ impl fmt::Display for Value {
             Value::Text(t) => write!(f, "{t:?}"),
             Value::Quantity(d, unit) => write!(f, "{d} {}", unit.0),
             Value::Constructed { constructor, text } => write!(f, "{constructor}({text:?})"),
+            Value::WorkspacePath { resolved, .. } => write!(f, "PATH({resolved:?})"),
             Value::Identifier(id) => f.write_str(id),
             Value::List(items) => {
                 f.write_str("[")?;
@@ -242,6 +255,18 @@ pub fn strict_equal(left: &Value, right: &Value) -> bool {
                     ta == tb
                 }
         }
+        (
+            Value::WorkspacePath {
+                workspace: wa,
+                relative: ra,
+                ..
+            },
+            Value::WorkspacePath {
+                workspace: wb,
+                relative: rb,
+                ..
+            },
+        ) => wa == wb && ra == rb,
         (Value::Quantity(a, ua), Value::Quantity(b, ub)) => {
             ua == ub && a.compare(b) == Ordering::Equal
         }

@@ -39,6 +39,14 @@
 //!   already valid". A check's own `ASSERT` is such a demand, and the fault it
 //!   raises is raised here or nowhere.
 //!
+//! * `error.host.constraint`, `error.literal.invalid`,
+//!   `error.numeric.division_by_zero`, `error.numeric.non_terminating`,
+//!   `error.numeric.unit_mismatch`, `error.pattern.resource_limit` and
+//!   `error.value.out_of_range` — the remaining identifiers the shared
+//!   evaluator raises when a check's `ASSERT` is demanded. Dropping one because
+//!   this enum could not spell it lost a registered diagnostic the demand
+//!   produced (LCL-REPAIR-05, S5).
+//!
 //! Every one of them keeps its **registered** stage here. A reused identifier
 //! is not relabelled `verification_or_completion` because completion happened
 //! to emit it: `errors.<id>.stage` is verbatim registry data, and
@@ -70,9 +78,21 @@ pub enum CompletionError {
     /// A requested terminal transition is not in the current state's
     /// `allowed_next`, or an execution root requested `status.skipped`.
     ExecutionOrder,
+    /// A demanded exact computation exceeds the host's declared capacity.
+    HostConstraint,
+    /// A demanded constructor rejects a dynamically supplied value.
+    LiteralInvalid,
+    /// A demanded division or ROUND quotient has a zero denominator.
+    NumericDivisionByZero,
+    /// A demanded exact division has no finite base-10 result.
+    NumericNonTerminating,
+    /// Demanded MEASURE or DURATION values violate the exact unit rule.
+    NumericUnitMismatch,
     /// A demanded SUM, MIN or MAX reduction received an empty material
     /// collection. Eligible for `expression_demand_resolution`.
     OperatorOperand,
+    /// A demanded GLOB or REGEX exhausts its finite pattern-resource limit.
+    PatternResourceLimit,
     /// A prerequisite cycle among selected checks.
     ReferenceCycle,
     /// A required demanded condition or check result yields MISSING.
@@ -80,6 +100,8 @@ pub enum CompletionError {
     /// `SUCCESS` is unsatisfied and nothing else already fixed a non-success
     /// outcome.
     SuccessUnsatisfied,
+    /// A demanded material value violates an exact registered bound.
+    ValueOutOfRange,
     /// A required demanded condition yields UNKNOWN.
     ValueUnknown,
     /// A required post-execution FALSE `VERIFY` or `TEST` assertion.
@@ -88,13 +110,20 @@ pub enum CompletionError {
 
 impl CompletionError {
     /// Every identifier this layer mirrors, in registry order.
-    pub const ALL: [CompletionError; 8] = [
+    pub const ALL: [CompletionError; 15] = [
         CompletionError::EvidenceMissing,
         CompletionError::ExecutionOrder,
+        CompletionError::HostConstraint,
+        CompletionError::LiteralInvalid,
+        CompletionError::NumericDivisionByZero,
+        CompletionError::NumericNonTerminating,
+        CompletionError::NumericUnitMismatch,
         CompletionError::OperatorOperand,
+        CompletionError::PatternResourceLimit,
         CompletionError::ReferenceCycle,
         CompletionError::RequiredMissing,
         CompletionError::SuccessUnsatisfied,
+        CompletionError::ValueOutOfRange,
         CompletionError::ValueUnknown,
         CompletionError::VerificationFailed,
     ];
@@ -111,10 +140,17 @@ impl CompletionError {
         match self {
             CompletionError::EvidenceMissing => "error.evidence.missing",
             CompletionError::ExecutionOrder => "error.execution.order",
+            CompletionError::HostConstraint => "error.host.constraint",
+            CompletionError::LiteralInvalid => "error.literal.invalid",
+            CompletionError::NumericDivisionByZero => "error.numeric.division_by_zero",
+            CompletionError::NumericNonTerminating => "error.numeric.non_terminating",
+            CompletionError::NumericUnitMismatch => "error.numeric.unit_mismatch",
             CompletionError::OperatorOperand => "error.operator.operand",
+            CompletionError::PatternResourceLimit => "error.pattern.resource_limit",
             CompletionError::ReferenceCycle => "error.reference.cycle",
             CompletionError::RequiredMissing => "error.required.missing",
             CompletionError::SuccessUnsatisfied => "error.success.unsatisfied",
+            CompletionError::ValueOutOfRange => "error.value.out_of_range",
             CompletionError::ValueUnknown => "error.value.unknown",
             CompletionError::VerificationFailed => "error.verification.failed",
         }

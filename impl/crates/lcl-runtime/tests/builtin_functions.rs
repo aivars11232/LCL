@@ -54,13 +54,14 @@ fn abs_keeps_a_durations_exact_unit() {
     // DURATION and MEASURE are one value shape with a registered unit, and a
     // magnitude changes neither the family nor the unit.
     //
-    // A negative DURATION cannot be written: the type "declares an inclusive
-    // minimum of 0", so the checker rejects the literal. The reachable negative
-    // is a computed one, which is exactly the case ABS exists for.
+    // A negative DURATION is not reachable either: the type "declares an
+    // inclusive minimum of 0", and `03_TYPES_AND_VALUES/06` makes a negative
+    // DURATION subtraction produce error.value.out_of_range (LCL-REPAIR-05,
+    // S3). ABS still accepts a DURATION and keeps its unit.
     assert_eq!(
         common::value(
             "DURATION",
-            "ABS(DURATION(30, unit.second) - DURATION(90, unit.second))"
+            "ABS(DURATION(90, unit.second) - DURATION(30, unit.second))"
         ),
         common::value("DURATION", "DURATION(60, unit.second)")
     );

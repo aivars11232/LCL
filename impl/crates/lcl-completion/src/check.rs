@@ -44,6 +44,7 @@ use crate::contracts::Contracts;
 use crate::diagnostic::CompletionError;
 use crate::engine::{Emission, Engine};
 use crate::syntax;
+use lcl_diagnostics::Stage;
 use lcl_lexer::Span;
 use lcl_resolver::SourceId;
 use lcl_runtime::Value;
@@ -746,13 +747,18 @@ fn assertion_outcome(engine: &mut Engine, declaration: usize, check: &Selected) 
 
 /// Emit one evaluation fault raised by this layer's own demand.
 ///
-/// Only an identifier the registry lists in `expression_demand_resolution`
-/// reaches a diagnostic: `exclusion_rule` says "No source structure, token,
-/// name resolution, type-family, signature arity, receiving-type, or required
+/// An identifier the registry lists in `expression_demand_resolution` reaches
+/// a diagnostic: `exclusion_rule` says "No source structure, token, name
+/// resolution, type-family, signature arity, receiving-type, or required
 /// static-validation defect qualifies", and the evaluator has already read
-/// eligibility from the registry into `Fault::demand_resolved`. An ineligible
-/// fault would be a defect in an earlier layer that this one must not relabel,
-/// so it keeps today's behavior of reporting no outcome.
+/// eligibility from the registry into `Fault::demand_resolved`. So does an
+/// identifier registered at the `execution` stage itself, such as
+/// `error.host.constraint`: "If a host cannot perform the required exact
+/// computation within its declared capacity, it produces error.host.constraint"
+/// (`03_TYPES_AND_VALUES/06`), which is an outcome of this demand rather than a
+/// defect of an earlier layer, and it keeps its registered stage. Any other
+/// ineligible fault would be an earlier layer's defect that this one must not
+/// relabel, so it keeps today's behavior of reporting no outcome.
 fn report_demand_fault(
     engine: &mut Engine,
     fault: &lcl_runtime::Fault,
@@ -761,12 +767,12 @@ fn report_demand_fault(
     id: &str,
     field: &str,
 ) {
-    if !fault.demand_resolved {
-        return;
-    }
     let Some(mirrored) = CompletionError::from_registry_str(fault.id.as_registry_str()) else {
         return;
     };
+    if !fault.demand_resolved && engine.contracts.error(mirrored).stage != Stage::Execution {
+        return;
+    }
     let phase = engine.observed_phase();
     engine.emit(Emission {
         id: mirrored,

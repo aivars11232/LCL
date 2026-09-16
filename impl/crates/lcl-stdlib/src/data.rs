@@ -330,9 +330,9 @@ fn row_preconditions(
                 ));
             }
             let current = match target {
-                Some(Value::Constructed { text, .. }) => {
-                    text.rsplit('/').next().unwrap_or(text.as_str()).to_string()
-                }
+                Some(
+                    Value::Constructed { text, .. } | Value::WorkspacePath { resolved: text, .. },
+                ) => text.rsplit('/').next().unwrap_or(text.as_str()).to_string(),
                 _ => String::new(),
             };
             if !current.is_empty() && &current == new_name {

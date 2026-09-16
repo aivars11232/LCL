@@ -39,7 +39,7 @@ use crate::state::{Bindings, IterationPath};
 use crate::value::Value;
 use lcl_checker::numeric::{Decimal, DivisionDefect, Integer, Rational};
 use lcl_checker::ty::{Type, UnitId};
-use lcl_checker::{Checked, Static};
+use lcl_checker::{Checked, FieldConstraints, ObjectSchema, Static};
 use lcl_lexer::Span;
 use lcl_parser::syntax::{
     BinaryOp, Call, Collection, Expr, Literal, LiteralKind, PropertyAccess, UnaryOp,
@@ -204,9 +204,46 @@ impl<'a> Evaluator<'a> {
     /// The order is the canonical reading order: a loop-local instance, then a
     /// resolved invocation datum, then a bound `OUTPUT`, then a scheduled check
     /// result. Anything else is absent, which is `MISSING`.
+    ///
+    /// A reader with no fault channel. A declaration whose written value is
+    /// undecided until demand reads as UNKNOWN only if its demand faults, and
+    /// every site that can report a fault demands it through
+    /// [`Evaluator::demand_declaration`] first.
     pub fn declaration_value(&self, id: &str) -> Value {
+        self.declaration_at(id, 0).unwrap_or(Value::Unknown)
+    }
+
+    /// Demand the current value of one declaration.
+    ///
+    /// The same reading order as [`Evaluator::declaration_value`]. A resolution
+    /// that preflight left undecided — a written `VALUE` or `DEFAULT` it could
+    /// not fold, such as an exact division — is evaluated here with runtime
+    /// semantics, and a fault it raises is returned rather than frozen as
+    /// UNKNOWN.
+    pub fn demand_declaration(&self, id: &str) -> Demand {
+        self.declaration_at(id, 0)
+    }
+
+    /// Demand every declaration a retained reference, or a collection of them,
+    /// will be read through, so that its fault surfaces at this demand point.
+    pub fn demand_referents(&self, value: &Value) -> Result<(), Fault> {
+        match value {
+            Value::Reference(id) => self
+                .declaration_at(id.split('#').next().unwrap_or(id), 0)
+                .map(drop),
+            Value::List(members) | Value::Set(members) => {
+                members.iter().try_for_each(|member| match member {
+                    Value::Reference(_) => self.demand_referents(member),
+                    _ => Ok(()),
+                })
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn declaration_at(&self, id: &str, depth: usize) -> Demand {
         if let Some(value) = self.bindings.local(id, &self.iteration) {
-            return value.clone();
+            return Ok(value.clone());
         }
         // A written MEMORY or STATE store supersedes the declared value the
         // plan resolved. `05_SEMANTICS/07` calls MEMORY "retained data" and
@@ -214,24 +251,186 @@ impl<'a> Evaluator<'a> {
         // after an authorized write would report the sample rather than the
         // state.
         if let Some(value) = self.bindings.store(id) {
-            return value.clone();
+            return Ok(value.clone());
         }
         if let Some(resolution) = self.plan.resolutions().iter().find(|r| r.id == id) {
-            return resolution.value.clone();
+            let value = match resolution.undecided {
+                true => self.undecided(resolution, depth)?,
+                false => resolution.value.clone(),
+            };
+            // "Defaults and constraints govern construction/validation": an
+            // object is constructed against its schema's declared constraints
+            // when it is demanded, whichever resolution step supplied it.
+            if let Some(schema) = self.checked.object_schema(resolution.declaration) {
+                self.constrain_object(&value, schema, resolution.span)?;
+            }
+            return Ok(value);
         }
         if let Some(value) = self.bindings.output(id, &self.iteration) {
-            return value.clone();
+            return Ok(value.clone());
         }
         // "VALIDATE and VERIFY expose the Boolean result of their declared
         // check in value context." A skipped check has no result, and reading
         // an absent result is ordinary MISSING behaviour, "never implicit
         // TRUE".
         if let Some(check) = self.plan.checks().iter().find(|c| c.id == id) {
-            return check.outcome.clone().unwrap_or(Value::Missing);
+            return Ok(check.outcome.clone().unwrap_or(Value::Missing));
         }
         // "Within a valid instance an output not yet bound yields MISSING", and
         // reading it never starts its producer.
-        Value::Missing
+        Ok(Value::Missing)
+    }
+
+    /// Evaluate the written `VALUE` or `DEFAULT` preflight left undecided, in
+    /// the declaring unit, whose bytes its spans belong to.
+    fn undecided(&self, resolution: &lcl_semantics::Resolution, depth: usize) -> Demand {
+        use lcl_parser::syntax::{Body, Value as Written};
+        let field = match resolution.origin {
+            lcl_semantics::Origin::Default => "DEFAULT",
+            _ => "VALUE",
+        };
+        let Some(body) = crate::syntax::declaration_block(self.resolved, resolution.declaration)
+            .and_then(|block| block.field(field))
+            .map(|field| &field.body)
+        else {
+            return Ok(resolution.value.clone());
+        };
+        let context = self.in_unit(&resolution.source);
+        match body {
+            Body::Inline(Written::Expression(expr)) => context.eval(expr, depth + 1),
+            Body::Inline(Written::MultilineCollection(collection)) => {
+                context.collection(collection, depth + 1)
+            }
+            Body::Nested(nested) => context.object_at(nested, depth + 1),
+        }
+    }
+
+    /// This evaluator, reading spans in another unit's bytes.
+    fn in_unit(&self, source: &SourceId) -> Evaluator<'a> {
+        Evaluator {
+            contracts: self.contracts,
+            resolved: self.resolved,
+            checked: self.checked,
+            plan: self.plan,
+            bindings: self.bindings,
+            source: source.clone(),
+            iteration: self.iteration.clone(),
+        }
+    }
+
+    /// Judge one demanded value against its declared constraints.
+    ///
+    /// `03_TYPES_AND_VALUES/07`: "MINIMUM and MAXIMUM are inclusive. ... PATTERN
+    /// is GLOB or REGEX". The comparison and the match are this evaluator's own
+    /// registered `<`, `>` and `MATCHES`, so no second ordering or pattern rule
+    /// exists. A non-material value has nothing to judge: requiredness is a
+    /// separate contract.
+    pub fn constrain(
+        &self,
+        value: &Value,
+        span: Span,
+        declared: &FieldConstraints,
+    ) -> Result<(), Fault> {
+        if !value.is_material() {
+            return Ok(());
+        }
+        let context = self.in_unit(&declared.source);
+        for (bound, operator, which) in [
+            (&declared.minimum, BinaryOp::Less, "minimum"),
+            (&declared.maximum, BinaryOp::Greater, "maximum"),
+        ] {
+            let Some(bound) = bound else { continue };
+            let bound = context.eval(bound, 1)?;
+            if self.compare(operator, value, &bound, span)? == Value::Boolean(true) {
+                return Err(Fault::new(
+                    self.contracts,
+                    RuntimeError::ValueOutOfRange,
+                    span,
+                    "declared_bound",
+                    format!("the value is outside its inclusive declared {which}"),
+                ));
+            }
+        }
+        if let Some(pattern) = &declared.pattern {
+            let pattern = context.eval(pattern, 1)?;
+            if self.matches(value, &pattern, span)? == Value::Boolean(false) {
+                return Err(Fault::new(
+                    self.contracts,
+                    RuntimeError::PatternMismatch,
+                    span,
+                    "declared_pattern",
+                    "the value does not match its declared pattern",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Judge every present field of one object, and every nested object whose
+    /// field names a defined object type, against its schema's constraints.
+    fn constrain_object(
+        &self,
+        value: &Value,
+        schema: &ObjectSchema,
+        span: Span,
+    ) -> Result<(), Fault> {
+        let Value::Object(fields) = value else {
+            return Ok(());
+        };
+        for (name, declared) in schema {
+            let Some(field) = fields.get(name) else {
+                continue;
+            };
+            self.constrain(field, span, declared)?;
+            if let Some(nested) = declared.schema.and_then(|d| self.checked.object_schema(d)) {
+                self.constrain_object(field, nested, span)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The object one indented `VALUE` body declares, demanded property by
+    /// property.
+    ///
+    /// "Property order has no semantic effect", so the result is keyed rather
+    /// than ordered. A statement that is not a property is not object data:
+    /// the grammar stage has already emitted `error.field.duplicate` for a
+    /// repeated property and `error.block.field` for an uppercase key inside
+    /// object data, so nothing here judges the shape a second time; it reports
+    /// no object rather than guessing what a surviving oddity meant.
+    pub fn object(&self, nested: &lcl_parser::syntax::Nested) -> Demand {
+        self.object_at(nested, 0)
+    }
+
+    fn object_at(&self, nested: &lcl_parser::syntax::Nested, depth: usize) -> Demand {
+        use lcl_parser::syntax::Statement;
+        let mut fields = BTreeMap::new();
+        for statement in &nested.statements {
+            let Statement::Property(property) = statement else {
+                continue;
+            };
+            let value = match (&property.body.as_inline(), property.body.as_nested()) {
+                (Some(inline), _) => match inline.as_expression() {
+                    Some(expr) => self.eval(expr, depth + 1)?,
+                    None => continue,
+                },
+                (None, Some(inner)) => {
+                    if depth > MAX_DEPTH {
+                        return Err(Fault::new(
+                            self.contracts,
+                            RuntimeError::PatternResourceLimit,
+                            inner.span,
+                            "expression depth",
+                            "the object nests deeper than this runtime evaluates",
+                        ));
+                    }
+                    self.object_at(inner, depth + 1)?
+                }
+                (None, None) => continue,
+            };
+            fields.insert(property.key.text.clone(), value);
+        }
+        Ok(Value::Object(fields))
     }
 
     // -----------------------------------------------------------------------
@@ -878,7 +1077,7 @@ impl<'a> Evaluator<'a> {
                     loop_local,
                 )));
             }
-            return Ok(self.declaration_value(&target.text));
+            return self.declaration_at(&target.text, depth + 1);
         }
 
         let name = call.callable.text.as_str();
@@ -1016,6 +1215,30 @@ impl<'a> Evaluator<'a> {
             return Err(self.missing(span, "constructor argument"));
         }
 
+        // "A well-typed registered constructor rejects a dynamically supplied
+        // material value under its declared value-domain constraint": the same
+        // closed literal profile the lexical stage applies to a source literal.
+        for (position, argument) in arguments.iter().enumerate() {
+            let Value::Text(text) = argument else {
+                continue;
+            };
+            let verdict = self
+                .contracts
+                .statics()
+                .lexicon()
+                .validate_constructor_argument(name, arguments.len(), position, text);
+            if let Err(detail) = verdict {
+                let span = call.arguments.get(position).map_or(span, |a| a.span());
+                return Err(Fault::new(
+                    self.contracts,
+                    RuntimeError::LiteralInvalid,
+                    span,
+                    "constructor value",
+                    detail,
+                ));
+            }
+        }
+
         let row = self.contracts.statics().constructor(name);
         let value = match (name, arguments) {
             ("DURATION", [magnitude, unit]) => {
@@ -1123,6 +1346,17 @@ impl<'a> Evaluator<'a> {
                     ));
                 }
                 lcl_semantics::value::regex(pattern, flags)
+            }
+            // "A one-STRING relative PATH is legal only as IMPORT.SOURCE or
+            // EXTENSION.SOURCE", neither of which this evaluator demands.
+            ("PATH", [Value::Text(text)]) if !text.starts_with('/') => {
+                return Err(Fault::new(
+                    self.contracts,
+                    RuntimeError::LiteralInvalid,
+                    span,
+                    "constructor value",
+                    "a one-STRING PATH requires an absolute form here",
+                ));
             }
             (_, [Value::Text(text)]) => Value::Constructed {
                 constructor: name.to_string(),

@@ -196,9 +196,6 @@ pub enum DemandKind {
     /// A reduction over a collection whose emptiness is not statically known:
     /// `error.operator.operand`.
     NonemptyReduction,
-    /// A required material site fed by a value that may be `MISSING` or
-    /// `UNKNOWN` only at demand.
-    RequiredValue,
     /// A registered constructor whose material value arrives only at demand:
     /// `error.literal.invalid` under `expression_demand_resolution`.
     ConstructorValue,
@@ -214,7 +211,6 @@ impl DemandKind {
             DemandKind::DeclaredPattern => "error.pattern.mismatch",
             DemandKind::SetMemberOrder => "error.type.mismatch",
             DemandKind::NonemptyReduction => "error.operator.operand",
-            DemandKind::RequiredValue => "error.required.missing",
             DemandKind::ConstructorValue => "error.literal.invalid",
         }
     }
@@ -225,6 +221,38 @@ impl fmt::Display for DemandKind {
         f.write_str(self.identifier())
     }
 }
+
+/// One object field's declared value constraints.
+///
+/// `types_v0.1.0.json#/object_type_contract`: "Defaults and constraints govern
+/// construction/validation, not object type identity". They are therefore kept
+/// beside an object's [`ObjectType`], never in it, for the layer that
+/// constructs a field value this stage could not know. `TOLERANCE` is not
+/// carried: the canonical text states no value it is measured against.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldConstraints {
+    /// The unit whose bytes the constraint expressions' spans belong to.
+    pub source: SourceId,
+    /// `MINIMUM`, inclusive.
+    pub minimum: Option<lcl_parser::syntax::Expr>,
+    /// `MAXIMUM`, inclusive.
+    pub maximum: Option<lcl_parser::syntax::Expr>,
+    /// `PATTERN`, a `GLOB` or `REGEX`.
+    pub pattern: Option<lcl_parser::syntax::Expr>,
+    /// The `DEFINE kind.type` whose object schema this field's own object value
+    /// uses, when its `TYPE` names one.
+    pub schema: Option<usize>,
+}
+
+impl FieldConstraints {
+    /// True when the field declares no constraint of its own.
+    pub fn is_empty(&self) -> bool {
+        self.minimum.is_none() && self.maximum.is_none() && self.pattern.is_none()
+    }
+}
+
+/// The declared constraints of one object schema, by field name.
+pub type ObjectSchema = BTreeMap<String, FieldConstraints>;
 
 /// One value obligation this stage proved it cannot decide, handed to the layer
 /// that demands the value.
@@ -416,6 +444,11 @@ impl<'a> Checker<'a> {
             deferred: check.deferred,
             diagnostics: diagnostic::select(check.raw, self.contracts.supersedes()),
             earlier: check.earlier,
+            object_schemas: check
+                .schemas
+                .into_iter()
+                .map(|(declaration, schema)| (declaration, schema.constraints()))
+                .collect(),
         })
     }
 }
@@ -512,6 +545,10 @@ pub struct Checked {
     pub(crate) deferred: Vec<DemandObligation>,
     pub(crate) diagnostics: Vec<Diagnostic>,
     pub(crate) earlier: Vec<EarlierStageDefect>,
+    /// Every object schema's declared constraints, by the declaration whose
+    /// value uses it: a direct `BASE OBJECT` definition, and every declaration
+    /// that selects one through `TYPE` or a `SCHEMA`.
+    pub(crate) object_schemas: BTreeMap<usize, ObjectSchema>,
 }
 
 impl Checked {
@@ -541,6 +578,12 @@ impl Checked {
 
     pub fn declaration_types(&self) -> impl Iterator<Item = (&usize, &Type)> {
         self.declaration_types.iter()
+    }
+
+    /// The declared field constraints of the object schema one declaration's
+    /// value uses, when it uses one.
+    pub fn object_schema(&self, declaration: usize) -> Option<&ObjectSchema> {
+        self.object_schemas.get(&declaration)
     }
 
     /// Every value obligation handed to the demanding layer, in source order.

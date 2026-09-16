@@ -23,6 +23,29 @@
 use crate::lexicon::RegexFlagContract;
 use std::cmp::Ordering;
 
+/// Judge one decoded constructor `STRING` argument against its profile.
+pub(crate) fn argument(
+    profile: crate::lexicon::LiteralProfile,
+    position: usize,
+    value: &str,
+    flags: &RegexFlagContract,
+) -> Result<(), String> {
+    use crate::lexicon::LiteralProfile;
+    match (profile, position) {
+        (LiteralProfile::Regex, 0) => {
+            regex_pattern(value).map_err(|e| format!("REGEX pattern: {e}"))
+        }
+        (LiteralProfile::Regex, _) => {
+            regex_flags(value, flags).map_err(|e| format!("REGEX flags: {e}"))
+        }
+        (LiteralProfile::Glob, _) => glob_pattern(value).map_err(|e| format!("GLOB pattern: {e}")),
+        (LiteralProfile::Date, _) => date(value).map_err(|e| format!("DATE: {e}")),
+        (LiteralProfile::Time, _) => time(value).map_err(|e| format!("TIME: {e}")),
+        (LiteralProfile::Datetime, _) => datetime(value).map_err(|e| format!("DATETIME: {e}")),
+        (LiteralProfile::Uri, _) => uri(value).map_err(|e| format!("URI: {e}")),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // REGEX flags
 // ---------------------------------------------------------------------------

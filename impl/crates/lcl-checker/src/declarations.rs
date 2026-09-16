@@ -20,7 +20,7 @@ use crate::expr::{Check, Const, Expected};
 use crate::schema::{Schema, SchemaField};
 use crate::ty::{ObjectField, ObjectType, Type};
 use crate::types::{self, TypeCatalog};
-use crate::{DemandKind, StaticError};
+use crate::{DemandKind, FieldConstraints, StaticError};
 use lcl_lexer::Span;
 use lcl_parser::syntax::{
     Block, Body, Conditional, Executable, Expr, ForEach, Nested, Statement, TopLevel, Value,
@@ -70,7 +70,9 @@ fn declared_types(check: &mut Check<'_>) {
     }
 }
 
-/// Every declaration that carries a schema, resolved.
+/// Every object schema, resolved: each direct `BASE OBJECT` definition's own,
+/// then each declaration's, whether a `SCHEMA` states it or its `TYPE` names a
+/// defined object type.
 fn schemas(check: &mut Check<'_>) {
     let declarations: Vec<(usize, SourceId)> = check
         .resolved
@@ -81,11 +83,43 @@ fn schemas(check: &mut Check<'_>) {
         .map(|(index, declaration)| (index, declaration.source.clone()))
         .collect();
 
+    // "A direct BASE OBJECT requires one or more FIELD and defines their exact
+    // object schema." Built silently: the walk judges every FIELD block, with
+    // its diagnostics, where it is written.
+    for (index, source) in &declarations {
+        let Some(syntax) = types::declaration_block(check.resolved, *index) else {
+            continue;
+        };
+        let direct_object = syntax
+            .field("BASE")
+            .and_then(|field| types::inline_expression(&field.body))
+            .is_some_and(is_direct_object);
+        if !direct_object {
+            continue;
+        }
+        let silent = check.silent;
+        check.silent = true;
+        let schema = local_schema(check, source, &syntax.body);
+        check.silent = silent;
+        if let Some(schema) = schema {
+            check.schemas.insert(*index, schema);
+        }
+    }
+
     for (index, source) in declarations {
         let Some(syntax) = types::declaration_block(check.resolved, index) else {
             continue;
         };
+        // The defined object type this declaration's `TYPE` names, if any.
+        let selected = syntax
+            .field("TYPE")
+            .and_then(|field| types::inline_expression(&field.body))
+            .and_then(|expr| nominal_object(check, &source, expr))
+            .and_then(|defining| check.schemas.get(&defining).cloned());
         let Some(field) = syntax.field("SCHEMA") else {
+            if let Some(selected) = selected {
+                check.schemas.insert(index, selected);
+            }
             continue;
         };
         // "A schema is either REF(identifier) to a defined OBJECT type or a
@@ -93,7 +127,11 @@ fn schemas(check: &mut Check<'_>) {
         let schema = match &field.body {
             Body::Nested(nested) => local_schema(check, &source, &nested.statements),
             Body::Inline(Value::Expression(expr)) => match check.catalog.resolve(&source, expr) {
-                Ok(Type::Object(object)) => Some(from_object_type(&object, field.key.span)),
+                Ok(Type::Object(object)) => Some(
+                    nominal_object(check, &source, expr)
+                        .and_then(|defining| check.schemas.get(&defining).cloned())
+                        .unwrap_or_else(|| from_object_type(&object, &source, field.key.span)),
+                ),
                 Ok(_) => {
                     check.emit(
                         StaticError::ObjectSchema,
@@ -117,7 +155,6 @@ fn schemas(check: &mut Check<'_>) {
         // have an identical field/type/requiredness map and identical defaults
         // and constraints after alias resolution; otherwise error.object.schema."
         if let Some(Type::Object(declared)) = check.declaration_types.get(&index).cloned() {
-            let selected = defining_schema(check, &source, &declared);
             let identical = match &selected {
                 // Both sides are full schemas: compare defaults and constraints
                 // as well as the field/type/requiredness map.
@@ -144,6 +181,47 @@ fn schemas(check: &mut Check<'_>) {
         }
         check.schemas.insert(index, schema);
     }
+}
+
+/// `BASE: OBJECT`, written directly.
+fn is_direct_object(expr: &Expr) -> bool {
+    matches!(expr, Expr::Type(lcl_parser::syntax::TypeExpr::Scalar(word)) if word.text == "OBJECT")
+}
+
+/// The direct `BASE OBJECT` definition a type expression names, through
+/// `OBJECT[...]` and any chain of transparent aliases.
+///
+/// Object types are structural, so two definitions with the same shape are the
+/// same type and the type alone cannot say whose constraints apply. The written
+/// reference can: "Transparent aliases preserve ... object schema".
+fn nominal_object(check: &Check<'_>, source: &SourceId, expr: &Expr) -> Option<usize> {
+    let mut source = source.clone();
+    let mut expr = expr.clone();
+    // Each step follows one BASE; a cyclic chain is the catalog's defect.
+    for _ in 0..=check.resolved.declarations().all().len() {
+        let reference = match &expr {
+            Expr::Type(lcl_parser::syntax::TypeExpr::Object(bracket)) => bracket.argument.as_ref(),
+            other => other,
+        };
+        let Expr::Call(call) = reference else {
+            return None;
+        };
+        let identifier = call.reference_target()?;
+        let declaration = check.catalog.binding(&source, identifier.span)?;
+        let block = types::declaration_block(check.resolved, declaration)?;
+        let base = types::inline_expression(&block.field("BASE")?.body)?;
+        if is_direct_object(base) {
+            return Some(declaration);
+        }
+        source = check
+            .resolved
+            .declarations()
+            .get(declaration)?
+            .source
+            .clone();
+        expr = base.clone();
+    }
+    None
 }
 
 /// A local `SCHEMA` block's `FIELD` children.
@@ -181,8 +259,15 @@ fn local_schema(
             SchemaField {
                 ty,
                 required: declared.required.unwrap_or(true),
-                default: declared.default.map(|expr| format!("{:?}", expr)),
-                constraints: Vec::new(),
+                default: declared.default.map(lcl_parser::syntax::render),
+                constraints: declared.rendered_constraints(),
+                declared: FieldConstraints {
+                    source: source.clone(),
+                    minimum: declared.minimum.cloned(),
+                    maximum: declared.maximum.cloned(),
+                    pattern: declared.pattern.cloned(),
+                    schema: nominal_object(check, source, type_expr),
+                },
                 span: declared.span,
             },
         );
@@ -193,41 +278,7 @@ fn local_schema(
     Some(Schema { fields })
 }
 
-/// The full schema of the `DEFINE kind.type` that introduced this object type,
-/// when one declared it here.
-fn defining_schema(
-    check: &mut Check<'_>,
-    source: &SourceId,
-    object: &ObjectType,
-) -> Option<Schema> {
-    let candidates: Vec<usize> = check
-        .resolved
-        .declarations()
-        .all()
-        .iter()
-        .enumerate()
-        .filter(|(_, declaration)| {
-            declaration.block == "DEFINE"
-                && declaration.definition_kind.as_deref() == Some("kind.type")
-        })
-        .map(|(index, _)| index)
-        .collect();
-    for index in candidates {
-        let Some(crate::types::Definition::Type(Type::Object(defined))) =
-            check.catalog.definition(index)
-        else {
-            continue;
-        };
-        if defined != object {
-            continue;
-        }
-        let block = types::declaration_block(check.resolved, index)?;
-        return local_schema(check, source, &block.body);
-    }
-    None
-}
-
-fn from_object_type(object: &ObjectType, span: Span) -> Schema {
+fn from_object_type(object: &ObjectType, source: &SourceId, span: Span) -> Schema {
     Schema {
         fields: object
             .fields()
@@ -240,6 +291,13 @@ fn from_object_type(object: &ObjectType, span: Span) -> Schema {
                         required: field.required,
                         default: None,
                         constraints: Vec::new(),
+                        declared: FieldConstraints {
+                            source: source.clone(),
+                            minimum: None,
+                            maximum: None,
+                            pattern: None,
+                            schema: None,
+                        },
                         span,
                     },
                 )
@@ -734,39 +792,89 @@ pub(crate) fn field_in<'a>(
 }
 
 fn declared_constraints(check: &mut Check<'_>, source: &SourceId, block: &[Statement]) {
-    let Some(subject) = field_in(block, "VALUE")
-        .or_else(|| field_in(block, "DEFAULT"))
-        .and_then(|field| types::inline_expression(&field.body))
-    else {
-        return;
+    let value = field_in(block, "VALUE").and_then(|field| types::inline_expression(&field.body));
+    let (subject, demanded) = match value {
+        Some(value) => (value, true),
+        None => {
+            let Some(default) =
+                field_in(block, "DEFAULT").and_then(|field| types::inline_expression(&field.body))
+            else {
+                return;
+            };
+            (default, false)
+        }
     };
-    let Some(value) = check.value_at(source, subject.span()) else {
+    let bound = |key: &str| field_in(block, key).and_then(|f| types::inline_expression(&f.body));
+    let declared = FieldConstraints {
+        source: source.clone(),
+        minimum: bound("MINIMUM").cloned(),
+        maximum: bound("MAXIMUM").cloned(),
+        pattern: bound("PATTERN").cloned(),
+        schema: None,
+    };
+    judge_constraints(check, source, subject.span(), &declared, demanded);
+}
+
+/// Judge one value against its declared constraints when the value and the
+/// constraint are statically known, and hand the obligation to the demanding
+/// layer otherwise.
+///
+/// `demanded` says whether a later layer constructs this value and so consumes
+/// an obligation for a value this stage cannot know. A written `DEFAULT` is
+/// not constructed by any later layer, so an unknown default is not deferred.
+fn judge_constraints(
+    check: &mut Check<'_>,
+    source: &SourceId,
+    subject: Span,
+    declared: &FieldConstraints,
+    demanded: bool,
+) {
+    let Some(value) = check.value_at(source, subject) else {
+        if demanded {
+            if declared.minimum.is_some() || declared.maximum.is_some() {
+                check.defer(
+                    source,
+                    subject,
+                    DemandKind::DeclaredBound,
+                    "a declared bound constrains this value".to_string(),
+                );
+            }
+            if declared.pattern.is_some() {
+                check.defer(
+                    source,
+                    subject,
+                    DemandKind::DeclaredPattern,
+                    "a declared PATTERN constrains this value".to_string(),
+                );
+            }
+        }
         return;
     };
 
-    for (key, kind) in [("MINIMUM", true), ("MAXIMUM", false)] {
-        let Some(bound_expr) = field_in(block, key).and_then(|f| types::inline_expression(&f.body))
-        else {
+    for (key, bound_expr, minimum) in [
+        ("MINIMUM", &declared.minimum, true),
+        ("MAXIMUM", &declared.maximum, false),
+    ] {
+        let Some(bound_expr) = bound_expr else {
             continue;
         };
         let (Some(actual), Some(bound)) = (
             value.number(),
-            check
-                .value_at(source, bound_expr.span())
+            constraint_value(check, &declared.source, bound_expr)
                 .as_ref()
                 .and_then(Const::number)
                 .cloned(),
         ) else {
             check.defer(
                 source,
-                subject.span(),
+                subject,
                 DemandKind::DeclaredBound,
                 format!("`{key}` bounds this value"),
             );
             continue;
         };
         let ordering = actual.compare(&bound);
-        let violated = if kind {
+        let violated = if minimum {
             ordering == std::cmp::Ordering::Less
         } else {
             ordering == std::cmp::Ordering::Greater
@@ -775,7 +883,7 @@ fn declared_constraints(check: &mut Check<'_>, source: &SourceId, block: &[State
             check.emit(
                 StaticError::ValueOutOfRange,
                 source,
-                subject.span(),
+                subject,
                 "declared_bound",
                 format!(
                     "this value violates the inclusive declared {}",
@@ -787,20 +895,18 @@ fn declared_constraints(check: &mut Check<'_>, source: &SourceId, block: &[State
 
     // "PATTERN is GLOB or REGEX and does not silently coerce the target to
     // STRING."
-    let Some(pattern_expr) =
-        field_in(block, "PATTERN").and_then(|f| types::inline_expression(&f.body))
-    else {
+    let Some(pattern_expr) = &declared.pattern else {
         return;
     };
     let Some(Const::Pattern {
         kind,
         pattern,
         flags,
-    }) = check.value_at(source, pattern_expr.span())
+    }) = constraint_value(check, &declared.source, pattern_expr)
     else {
         check.defer(
             source,
-            subject.span(),
+            subject,
             DemandKind::DeclaredPattern,
             "a declared PATTERN constrains this value".to_string(),
         );
@@ -809,7 +915,7 @@ fn declared_constraints(check: &mut Check<'_>, source: &SourceId, block: &[State
     let Some(text) = value.text() else {
         check.defer(
             source,
-            subject.span(),
+            subject,
             DemandKind::DeclaredPattern,
             "a declared PATTERN constrains this value".to_string(),
         );
@@ -822,13 +928,13 @@ fn declared_constraints(check: &mut Check<'_>, source: &SourceId, block: &[State
         Ok(false) => check.emit(
             StaticError::PatternMismatch,
             source,
-            subject.span(),
+            subject,
             "declared_pattern",
             "this value does not match its declared pattern".to_string(),
         ),
         Err(crate::pattern::PatternError::ResourceLimit) => check.emit(
             StaticError::PatternResourceLimit,
-            source,
+            &declared.source,
             pattern_expr.span(),
             "pattern_resource_limit",
             "this pattern exhausts the declared finite pattern-resource limit".to_string(),
@@ -837,6 +943,23 @@ fn declared_constraints(check: &mut Check<'_>, source: &SourceId, block: &[State
         // stage, which M1 already judged for every source literal.
         Err(crate::pattern::PatternError::Malformed) => {}
     }
+}
+
+/// The statically known value of one constraint expression.
+///
+/// A block's own constraints were judged just before, so their value is
+/// recorded. An object field's constraints are written in the schema's
+/// definition, which the walk may not have reached yet; they are judged
+/// silently here, and judged again with diagnostics where they are written.
+fn constraint_value(check: &mut Check<'_>, source: &SourceId, expr: &Expr) -> Option<Const> {
+    if let Some(value) = check.value_at(source, expr.span()) {
+        return Some(value);
+    }
+    let silent = check.silent;
+    check.silent = true;
+    let judgement = check.expression(source, expr, &Expected::None);
+    check.silent = silent;
+    judgement.value
 }
 
 /// The closed enum group one axis-declaration value kind draws from.
@@ -1085,9 +1208,20 @@ fn object_body<'a>(
             .clone()
             .map(Expected::Type)
             .unwrap_or(Expected::None);
+        let declared = frame
+            .schema
+            .as_ref()
+            .and_then(|schema| schema.fields.get(&name))
+            .map(|field| field.declared.clone());
         match &property.body {
             Body::Inline(Value::Expression(expr)) => {
                 let judgement = check.expression(source, expr, &expectation);
+                // "Defaults and constraints govern construction/validation".
+                if let Some(declared) = declared.as_ref().filter(|d| !d.is_empty()) {
+                    if judgement.ty().is_some() {
+                        judge_constraints(check, source, expr.span(), declared, true);
+                    }
+                }
                 // A field the source wrote is present whatever its value's type
                 // turned out to be: reporting it absent as well would report one
                 // defect twice.
@@ -1103,7 +1237,9 @@ fn object_body<'a>(
                 children.push(ObjectFrame {
                     nested: inner,
                     declared: inner_declared.clone(),
-                    schema: None,
+                    schema: declared
+                        .and_then(|declared| declared.schema)
+                        .and_then(|defining| check.schemas.get(&defining).cloned()),
                     key: name.clone(),
                 });
                 if let Some(ty) = inner_declared {

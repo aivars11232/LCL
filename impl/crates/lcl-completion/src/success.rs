@@ -184,7 +184,24 @@ fn evaluate_success(engine: &mut Engine) -> Option<SuccessOutcome> {
     if references.is_empty() {
         if let Some(expr) = syntax::inline_expr(&field.body) {
             let expr = expr.clone();
-            let value = engine.evaluator().demand(&expr).unwrap_or(Value::Unknown);
+            let value = match engine.evaluator().demand(&expr) {
+                Ok(value) => value,
+                // A faulted member cannot establish truth, and its registered
+                // diagnostic is reported rather than discarded.
+                Err(fault) => {
+                    let source = engine
+                        .resolved
+                        .declarations()
+                        .get(declaration)
+                        .map(|d| d.source.clone())
+                        .unwrap_or_else(|| engine.root_source());
+                    let field = quantifier.field();
+                    crate::check::report_demand_fault(
+                        engine, &fault, &source, "SUCCESS", &id, field,
+                    );
+                    Value::Unknown
+                }
+            };
             members.push((lcl_runtime::syntax::render(&expr), value));
         }
     } else {
@@ -352,7 +369,13 @@ fn select_failure(
                 });
                 continue;
             }
-            Ok(_) | Err(_) => continue,
+            // "follows ordinary diagnostic handling before a later clause is
+            // considered": the evaluator's own registered diagnostic.
+            Err(fault) => {
+                crate::check::report_demand_fault(engine, &fault, &source, "FAILURE", &id, "WHEN");
+                continue;
+            }
+            Ok(_) => continue,
         }
     }
     None

@@ -46,6 +46,7 @@ use crate::engine::{Emission, Engine};
 use crate::syntax;
 use lcl_diagnostics::Stage;
 use lcl_lexer::Span;
+use lcl_parser::syntax::Expr;
 use lcl_resolver::SourceId;
 use lcl_runtime::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -200,11 +201,11 @@ impl Checks {
 }
 
 /// One selected check, before evaluation.
-struct Selected {
-    declaration: usize,
-    id: String,
-    kind: CheckKind,
-    source: SourceId,
+pub(crate) struct Selected {
+    pub(crate) declaration: usize,
+    pub(crate) id: String,
+    pub(crate) kind: CheckKind,
+    pub(crate) source: SourceId,
     span: Span,
     required: bool,
     selection: Selection,
@@ -585,9 +586,11 @@ fn evaluate(engine: &mut Engine, selected: Vec<Selected>) -> Checks {
             })
             .unwrap_or_default();
 
-        let outcome = match check.kind {
+        // `reported` is true when demanding the assertion already emitted the
+        // registered diagnostic for its cause: MISSING or an evaluator fault.
+        let (outcome, reported) = match check.kind {
             CheckKind::Verify => assertion_outcome(engine, check.declaration, &check),
-            CheckKind::Test => crate::test_root::outcome(engine, check.declaration, &check.id),
+            CheckKind::Test => crate::test_root::outcome(engine, &check),
         };
 
         // Publish the result so a later check or the root SUCCESS can read it.
@@ -608,9 +611,16 @@ fn evaluate(engine: &mut Engine, selected: Vec<Selected>) -> Checks {
         // "A required post-execution FALSE VERIFY or TEST assertion uses
         // error.verification.failed. Optional FALSE checks retain their Boolean
         // domain outcome without emitting a required-check failure."
-        if result.blocks() {
+        // "Required demanded MISSING and UNKNOWN use error.required.missing and
+        // error.value.unknown." A cause already reported keeps that diagnostic
+        // alone rather than gaining a generic verification failure.
+        if result.blocks() && !reported {
+            let id = match result.outcome {
+                Value::Boolean(false) => CompletionError::VerificationFailed,
+                _ => CompletionError::ValueUnknown,
+            };
             engine.emit(Emission {
-                id: CompletionError::VerificationFailed,
+                id,
                 source: &result.source,
                 span: result.span,
                 declaration: Some(result.id.clone()),
@@ -691,31 +701,53 @@ fn applicability(engine: &mut Engine, declaration: usize) -> Applicability {
             });
             Applicability::Faulted(CompletionError::ValueUnknown.to_string())
         }
-        Ok(_) | Err(_) => {
-            // A non-Boolean or faulted condition is an M4/M6 concern that
-            // already has its own diagnostic; treating it as applicable here
-            // would invent an outcome for a condition nobody could read.
+        // The demand itself faulted: report the evaluator's own registered
+        // diagnostic, which nothing else will, and do not treat the check as
+        // applicable.
+        Err(fault) => {
+            let owner = id.unwrap_or_default();
+            report_demand_fault(engine, &fault, &source, "VERIFY", &owner, "WHEN");
+            Applicability::Faulted(fault.id.as_registry_str().to_string())
+        }
+        Ok(_) => {
+            // A non-Boolean condition is an M4 concern that already has its own
+            // diagnostic; treating it as applicable here would invent an
+            // outcome for a condition nobody could read.
             Applicability::Faulted("error.operator.operand".to_string())
         }
     }
 }
 
 /// Demand one `VERIFY`'s `ASSERT` and reduce it to a Boolean domain outcome.
-fn assertion_outcome(engine: &mut Engine, declaration: usize, check: &Selected) -> Value {
+fn assertion_outcome(engine: &mut Engine, declaration: usize, check: &Selected) -> (Value, bool) {
     let Some(block) = lcl_runtime::syntax::declaration_block(engine.resolved, declaration) else {
-        return Value::Unknown;
+        return (Value::Unknown, false);
     };
     let Some(expr) = lcl_runtime::syntax::field_expr(&block, "ASSERT") else {
         // `VERIFY` requires `ASSERT`; a document without one never reaches
         // here, because M2 rejects it at grammar stage.
-        return Value::Unknown;
+        return (Value::Unknown, false);
     };
     let expr = expr.clone();
-    match engine.evaluator().demand(&expr) {
-        Ok(Value::Boolean(held)) => Value::Boolean(held),
+    demand_assertion(engine, &expr, check, "ASSERT")
+}
+
+/// Demand one check assertion, keeping TRUE, FALSE, UNKNOWN, MISSING and an
+/// evaluator fault distinct.
+///
+/// Returns the Boolean domain outcome and whether a diagnostic was already
+/// emitted for its cause.
+pub(crate) fn demand_assertion(
+    engine: &mut Engine,
+    expr: &Expr,
+    check: &Selected,
+    field: &str,
+) -> (Value, bool) {
+    match engine.evaluator().demand(expr) {
+        Ok(Value::Boolean(held)) => (Value::Boolean(held), false),
         // "verified ... UNKNOWN when [it] cannot be established." UNKNOWN is a
         // transient observation, never a bound value.
-        Ok(Value::Unknown) => Value::Unknown,
+        Ok(Value::Unknown) => (Value::Unknown, false),
         Ok(Value::Missing) => {
             let phase = engine.observed_phase();
             engine.emit(Emission {
@@ -723,12 +755,12 @@ fn assertion_outcome(engine: &mut Engine, declaration: usize, check: &Selected) 
                 source: &check.source,
                 span: expr.span(),
                 declaration: Some(check.id.clone()),
-                cause: "ASSERT".to_string(),
+                cause: field.to_string(),
                 detail: format!("{} `{}` demanded a MISSING assertion", check.kind, check.id),
                 phase,
                 demand_resolved: false,
             });
-            Value::Missing
+            (Value::Missing, true)
         }
         // `expression_demand_resolution` covers a demand made "during a
         // reachable invocation, condition, verification, or completion step",
@@ -738,10 +770,11 @@ fn assertion_outcome(engine: &mut Engine, declaration: usize, check: &Selected) 
         // registry says this demand produces.
         Err(fault) => {
             let kind = check.kind.to_string();
-            report_demand_fault(engine, &fault, &check.source, &kind, &check.id, "ASSERT");
-            Value::Unknown
+            let reported =
+                report_demand_fault(engine, &fault, &check.source, &kind, &check.id, field);
+            (Value::Unknown, reported)
         }
-        Ok(_) => Value::Unknown,
+        Ok(_) => (Value::Unknown, false),
     }
 }
 
@@ -759,19 +792,21 @@ fn assertion_outcome(engine: &mut Engine, declaration: usize, check: &Selected) 
 /// defect of an earlier layer, and it keeps its registered stage. Any other
 /// ineligible fault would be an earlier layer's defect that this one must not
 /// relabel, so it keeps today's behavior of reporting no outcome.
-fn report_demand_fault(
+///
+/// Returns whether a diagnostic was emitted.
+pub(crate) fn report_demand_fault(
     engine: &mut Engine,
     fault: &lcl_runtime::Fault,
     source: &SourceId,
     kind: &str,
     id: &str,
     field: &str,
-) {
+) -> bool {
     let Some(mirrored) = CompletionError::from_registry_str(fault.id.as_registry_str()) else {
-        return;
+        return false;
     };
     if !fault.demand_resolved && engine.contracts.error(mirrored).stage != Stage::Execution {
-        return;
+        return false;
     }
     let phase = engine.observed_phase();
     engine.emit(Emission {
@@ -784,4 +819,5 @@ fn report_demand_fault(
         phase,
         demand_resolved: true,
     });
+    true
 }

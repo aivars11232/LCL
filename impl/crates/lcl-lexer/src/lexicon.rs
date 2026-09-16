@@ -755,6 +755,27 @@ impl Lexicon {
         self.literal_constructors.get(word)
     }
 
+    /// Judge one decoded `STRING` argument of a registered constructor call
+    /// against the same closed literal profile the lexical stage applies to a
+    /// source literal, for text that arrives only at demand.
+    ///
+    /// `Ok` when the constructor has no literal profile or `arity` is not one
+    /// of its all-`STRING` overloads.
+    pub fn validate_constructor_argument(
+        &self,
+        constructor: &str,
+        arity: usize,
+        position: usize,
+        text: &str,
+    ) -> Result<(), String> {
+        match self.literal_constructor(constructor) {
+            Some(literal) if literal.literal_arities.contains(&arity) => {
+                crate::literal::argument(literal.profile, position, text, &self.regex_flags)
+            }
+            _ => Ok(()),
+        }
+    }
+
     /// The registry facts for one lexical error.
     pub fn error(&self, id: LexicalError) -> &RegisteredLexicalError {
         // Total: `load` populates every variant of the closed enum or fails.

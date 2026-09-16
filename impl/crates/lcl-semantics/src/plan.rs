@@ -158,6 +158,11 @@ pub struct Resolution {
     pub span: Span,
     pub origin: Origin,
     pub value: Value,
+    /// The written `VALUE` or `DEFAULT` that `origin` names is an expression
+    /// this layer could not decide before effects, so `value` is the UNKNOWN
+    /// placeholder "value exists but cannot be established" rather than a
+    /// decided value. The layer that demands it evaluates that expression.
+    pub undecided: bool,
 }
 
 /// Which step of the canonical resolution order supplied a value.

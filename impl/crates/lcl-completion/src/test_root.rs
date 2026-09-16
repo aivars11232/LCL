@@ -31,31 +31,50 @@
 //! conjunction rather than preferring one, and an UNKNOWN on either side makes
 //! the conjunction UNKNOWN unless the other side is already FALSE.
 
+use crate::check::{demand_assertion, report_demand_fault, Selected};
 use crate::engine::Engine;
 use lcl_runtime::{strict_equal, Value};
 
 /// Evaluate one `TEST` root's declared comparison.
-pub(crate) fn outcome(engine: &mut Engine, declaration: usize, id: &str) -> Value {
-    let Some(block) = lcl_runtime::syntax::declaration_block(engine.resolved, declaration) else {
-        return Value::Unknown;
+///
+/// Returns the Boolean domain outcome and whether a diagnostic was already
+/// emitted for its cause, exactly as a `VERIFY` assertion does.
+pub(crate) fn outcome(engine: &mut Engine, check: &Selected) -> (Value, bool) {
+    let id = check.id.as_str();
+    let Some(block) = lcl_runtime::syntax::declaration_block(engine.resolved, check.declaration)
+    else {
+        return (Value::Unknown, false);
     };
     let assertion = lcl_runtime::syntax::field_expr(&block, "ASSERT").cloned();
     let expected = lcl_runtime::syntax::field_expr(&block, "EXPECTED").cloned();
     let actual = lcl_runtime::syntax::field_expr(&block, "ACTUAL").cloned();
 
-    let asserted = assertion.map(|expr| match engine.evaluator().demand(&expr) {
-        Ok(Value::Boolean(held)) => Value::Boolean(held),
-        Ok(Value::Unknown) => Value::Unknown,
-        // A MISSING or non-Boolean assertion cannot establish a pass. It is not
-        // fabricated into FALSE either: the domain outcome is simply not
-        // establishable.
-        Ok(_) | Err(_) => Value::Unknown,
+    // A MISSING or non-Boolean assertion cannot establish a pass. It is not
+    // fabricated into FALSE either: the domain outcome is simply not
+    // establishable. MISSING and an evaluator fault are reported at their own
+    // registered identifiers.
+    let mut reported = false;
+    let asserted = assertion.map(|expr| {
+        let (value, emitted) = demand_assertion(engine, &expr, check, "ASSERT");
+        reported |= emitted;
+        match value {
+            Value::Missing => Value::Unknown,
+            other => other,
+        }
     });
 
     let compared = match (expected, actual) {
         (Some(expected), Some(actual)) => {
-            let expected = engine.evaluator().demand(&expected);
-            let actual = engine.evaluator().demand(&actual);
+            let mut demand = |expr: &lcl_parser::syntax::Expr, field: &str| {
+                let demanded = engine.evaluator().demand(expr);
+                if let Err(fault) = &demanded {
+                    let kind = check.kind.to_string();
+                    reported |= report_demand_fault(engine, fault, &check.source, &kind, id, field);
+                }
+                demanded
+            };
+            let expected = demand(&expected, "EXPECTED");
+            let actual = demand(&actual, "ACTUAL");
             Some(match (expected, actual) {
                 (Ok(expected), Ok(actual)) => {
                     // "Expected-and-actual form always uses the registered ==
@@ -76,7 +95,7 @@ pub(crate) fn outcome(engine: &mut Engine, declaration: usize, id: &str) -> Valu
         (None, None) => None,
     };
 
-    match (asserted, compared) {
+    let value = match (asserted, compared) {
         (Some(asserted), None) => asserted,
         (None, Some(compared)) => compared,
         // "if both are present they must both hold."
@@ -88,7 +107,8 @@ pub(crate) fn outcome(engine: &mut Engine, declaration: usize, id: &str) -> Valu
             );
             Value::Unknown
         }
-    }
+    };
+    (value, reported)
 }
 
 /// Three-valued AND: FALSE dominates, then UNKNOWN.

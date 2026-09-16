@@ -1101,6 +1101,24 @@ impl<'a> Engine<'a> {
                 ));
             }
         };
+        // An operation reads a retained reference through to its declaration.
+        // Demand that declaration now, so a fault its undecided value raises is
+        // this invocation's pre-effect failure rather than an UNKNOWN the
+        // operation silently reads.
+        let referents = {
+            let evaluator = self.evaluator(&planned.source, iteration);
+            target
+                .iter()
+                .chain(parameters.values())
+                .try_for_each(|value| evaluator.demand_referents(value))
+        };
+        if let Err(fault) = referents {
+            let occurrence = self.fault(&fault, planned, id, FailurePhase::PreEffect);
+            return Some((
+                self.pre_effect_failure(&operation, fault.id, planned, id),
+                occurrence,
+            ));
+        }
 
         // `core.cancel` and `core.stop` over an internal execution unit change
         // the runtime's own lifecycle state, which no host owns:
@@ -1457,9 +1475,26 @@ impl<'a> Engine<'a> {
             let mut name = None;
             let mut value_expr = None;
             let mut value_object = None;
+            let mut declared = lcl_checker::FieldConstraints {
+                source: planned.source.clone(),
+                minimum: None,
+                maximum: None,
+                pattern: None,
+                schema: None,
+            };
             for statement in &statements {
                 if let lcl_parser::syntax::Statement::Field(field) = statement {
+                    let inline = || {
+                        field
+                            .body
+                            .as_inline()
+                            .and_then(|v| v.as_expression())
+                            .cloned()
+                    };
                     match field.key.text.as_str() {
+                        "MINIMUM" => declared.minimum = inline(),
+                        "MAXIMUM" => declared.maximum = inline(),
+                        "PATTERN" => declared.pattern = inline(),
                         "NAME" => {
                             name = field
                                 .body
@@ -1494,6 +1529,12 @@ impl<'a> Engine<'a> {
                 }
                 (None, None) => None,
             };
+            // A PARAMETER's own declared constraints over the value it demands.
+            if let Some(value) = &value {
+                let span = value_expr.as_ref().map_or(planned.span, |expr| expr.span());
+                self.evaluator(&planned.source, iteration)
+                    .constrain(value, span, &declared)?;
+            }
             if let (Some(name), Some(value)) = (name, value) {
                 out.insert(name, value);
             }
@@ -1501,38 +1542,14 @@ impl<'a> Engine<'a> {
         Ok(out)
     }
 
-    /// The object one indented `VALUE` body declares, demanded property by
-    /// property.
-    ///
-    /// "Property order has no semantic effect", so the result is keyed rather
-    /// than ordered. A statement that is not a property is not object data:
-    /// the grammar stage has already emitted `error.field.duplicate` for a
-    /// repeated property and `error.block.field` for an uppercase key inside
-    /// object data, so nothing here judges the shape a second time; it reports
-    /// no object rather than guessing what a surviving oddity meant.
+    /// The object one indented `VALUE` body declares; see [`Evaluator::object`].
     fn object_value(
         &mut self,
         nested: &lcl_parser::syntax::Nested,
         source: &SourceId,
         iteration: &IterationPath,
     ) -> Result<Value, Fault> {
-        use lcl_parser::syntax::Statement;
-        let mut fields = BTreeMap::new();
-        for statement in &nested.statements {
-            let Statement::Property(property) = statement else {
-                continue;
-            };
-            let value = match (&property.body.as_inline(), property.body.as_nested()) {
-                (Some(inline), _) => match inline.as_expression() {
-                    Some(expr) => self.evaluator(source, iteration).demand(expr)?,
-                    None => continue,
-                },
-                (None, Some(inner)) => self.object_value(inner, source, iteration)?,
-                (None, None) => continue,
-            };
-            fields.insert(property.key.text.clone(), value);
-        }
-        Ok(Value::Object(fields))
+        self.evaluator(source, iteration).object(nested)
     }
 
     /// Turn a boundary outcome into a producer result record.

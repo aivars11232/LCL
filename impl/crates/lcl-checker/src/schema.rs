@@ -22,6 +22,7 @@
 //! implicit merging or overriding of two schemas occurs."
 
 use crate::ty::{ObjectField, ObjectType};
+use crate::{FieldConstraints, ObjectSchema};
 use lcl_lexer::Span;
 use lcl_parser::syntax::{Block, Body, Expr, Statement};
 use std::collections::BTreeMap;
@@ -56,10 +57,15 @@ pub(crate) struct Schema {
 pub(crate) struct SchemaField {
     pub(crate) ty: crate::ty::Type,
     pub(crate) required: bool,
-    /// Source text of the declared default, for the combined-schema identity
-    /// comparison. Values are not evaluated here.
+    /// The declared default as written, for the combined-schema identity
+    /// comparison. Values are not evaluated here, and the rendering carries no
+    /// span, so the same default written in two places compares identical.
     pub(crate) default: Option<String>,
+    /// Every declared constraint as written, `TOLERANCE` included, for the
+    /// same comparison.
     pub(crate) constraints: Vec<String>,
+    /// The declared constraints a constructed value is validated against.
+    pub(crate) declared: FieldConstraints,
     pub(crate) span: Span,
 }
 
@@ -82,6 +88,14 @@ impl Schema {
         )
     }
 
+    /// The construction half: every field's declared constraints.
+    pub(crate) fn constraints(&self) -> ObjectSchema {
+        self.fields
+            .iter()
+            .map(|(name, field)| (name.clone(), field.declared.clone()))
+            .collect()
+    }
+
     /// "identical field/type/requiredness map and identical defaults and
     /// constraints after alias resolution".
     pub(crate) fn identical_to(&self, other: &Schema) -> bool {
@@ -96,6 +110,23 @@ impl Schema {
                     && field.constraints == theirs.constraints
             })
         })
+    }
+}
+
+impl FieldDecl<'_> {
+    /// Every declared constraint as written, in a fixed order.
+    pub(crate) fn rendered_constraints(&self) -> Vec<String> {
+        [
+            ("MINIMUM", self.minimum),
+            ("MAXIMUM", self.maximum),
+            ("TOLERANCE", self.tolerance),
+            ("PATTERN", self.pattern),
+        ]
+        .into_iter()
+        .filter_map(|(key, expr)| {
+            expr.map(|expr| format!("{key} {}", lcl_parser::syntax::render(expr)))
+        })
+        .collect()
     }
 }
 

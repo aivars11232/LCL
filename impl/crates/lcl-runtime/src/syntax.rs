@@ -203,49 +203,7 @@ fn push_executables<'a>(
     }
 }
 
-/// Render one expression exactly as its structure declares it.
-///
-/// A *rendering*, not an evaluation: `PATH("/a")` renders as `PATH("/a")` and
-/// never as a resolved filesystem path.
-pub fn render(expr: &Expr) -> String {
-    match expr {
-        Expr::Literal(literal) => match literal.kind {
-            lcl_parser::syntax::LiteralKind::String
-            | lcl_parser::syntax::LiteralKind::MultilineString => format!("{:?}", literal.text),
-            _ => literal.text.clone(),
-        },
-        Expr::Identifier(ident) => ident.text.clone(),
-        Expr::Call(call) => {
-            let arguments: Vec<String> = call.arguments.iter().map(render).collect();
-            format!("{}({})", call.callable.text, arguments.join(", "))
-        }
-        Expr::Collection(collection) => {
-            let members: Vec<String> = collection.members.iter().map(render).collect();
-            format!("[{}]", members.join(", "))
-        }
-        Expr::Group(group) => format!("({})", render(&group.inner)),
-        Expr::Unary(unary) => format!("{}{}", unary.operator.lexeme(), render(&unary.operand)),
-        Expr::Binary(binary) => format!(
-            "{} {} {}",
-            render(&binary.left),
-            binary.operator.lexeme(),
-            render(&binary.right)
-        ),
-        Expr::Property(property) => format!("{}.{}", render(&property.base), property.name),
-        Expr::Index(index) => format!("{}[{}]", render(&index.base), render(&index.index)),
-        Expr::Type(ty) => render_type(ty),
-    }
-}
-
-fn render_type(ty: &lcl_parser::syntax::TypeExpr) -> String {
-    use lcl_parser::syntax::TypeExpr;
-    match ty {
-        TypeExpr::Scalar(word) => word.text.clone(),
-        TypeExpr::List(b) | TypeExpr::Set(b) | TypeExpr::Object(b) | TypeExpr::Reference(b) => {
-            format!("{}[{}]", b.word.text, render(&b.argument))
-        }
-    }
-}
+pub use lcl_parser::syntax::render;
 
 // ---------------------------------------------------------------------------
 // Control forms

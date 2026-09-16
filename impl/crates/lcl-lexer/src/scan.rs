@@ -1858,22 +1858,7 @@ impl Scan<'_> {
             return;
         }
         let value = token.value.clone().unwrap_or_default();
-        let verdict = match (profile, position) {
-            (LiteralProfile::Regex, 0) => {
-                literal::regex_pattern(&value).map_err(|e| format!("REGEX pattern: {e}"))
-            }
-            (LiteralProfile::Regex, _) => literal::regex_flags(&value, self.lexicon.regex_flags())
-                .map_err(|e| format!("REGEX flags: {e}")),
-            (LiteralProfile::Glob, _) => {
-                literal::glob_pattern(&value).map_err(|e| format!("GLOB pattern: {e}"))
-            }
-            (LiteralProfile::Date, _) => literal::date(&value).map_err(|e| format!("DATE: {e}")),
-            (LiteralProfile::Time, _) => literal::time(&value).map_err(|e| format!("TIME: {e}")),
-            (LiteralProfile::Datetime, _) => {
-                literal::datetime(&value).map_err(|e| format!("DATETIME: {e}"))
-            }
-            (LiteralProfile::Uri, _) => literal::uri(&value).map_err(|e| format!("URI: {e}")),
-        };
+        let verdict = literal::argument(profile, position, &value, self.lexicon.regex_flags());
         if let Err(detail) = verdict {
             self.push(
                 LexicalError::LiteralInvalid,

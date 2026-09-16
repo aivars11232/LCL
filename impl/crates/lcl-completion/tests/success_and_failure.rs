@@ -439,3 +439,55 @@ VERIFY:
         .any(|d| d.id.as_registry_str() == "error.success.unsatisfied"));
     assert_eq!(completion.terminal_status(), "status.failed");
 }
+
+/// `05_SEMANTICS/10`: a FAILURE condition "follows ordinary diagnostic handling
+/// before a later clause is considered."
+///
+/// Regression, PRETEST-01 F05. `Err(_) => continue` discarded the demand
+/// fault, so the later clause silently selected `status.stopped`.
+#[test]
+fn a_faulted_failure_condition_reports_its_diagnostic_before_a_later_clause() {
+    let completion = complete(&task_with(
+        "
+FAILURE:
+    ID: failure.fault
+    WHEN: 1 / (REF(output.value) - 7) == 1
+    STATUS: status.partial
+
+FAILURE:
+    ID: failure.later
+    WHEN: TRUE
+    STATUS: status.stopped
+",
+        "    ALL: TRUE",
+    ));
+    let ids: Vec<&str> = completion
+        .diagnostics()
+        .iter()
+        .map(|d| d.id.as_registry_str())
+        .collect();
+    assert_eq!(
+        ids,
+        vec!["error.numeric.division_by_zero"],
+        "{}",
+        completion.serialize()
+    );
+    assert_ne!(completion.terminal_status(), "status.stopped");
+    assert!(!completion.succeeded());
+}
+
+/// Regression, PRETEST-01 F05 (same root). A root `SUCCESS` expression whose
+/// demand faulted was recorded as UNKNOWN and the fault was discarded.
+#[test]
+fn a_faulted_success_expression_reports_its_diagnostic() {
+    let completion = complete(&task_with("", "    ALL: 1 / (REF(output.value) - 7) == 1"));
+    assert!(
+        completion
+            .diagnostics()
+            .iter()
+            .any(|d| d.id.as_registry_str() == "error.numeric.division_by_zero"),
+        "{}",
+        completion.serialize()
+    );
+    assert!(!completion.succeeded());
+}

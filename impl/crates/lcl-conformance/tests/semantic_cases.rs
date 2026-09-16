@@ -14,9 +14,9 @@ use lcl_conformance::{judge, Expectation, Verdict};
 /// stays BLOCKED (LCL-CLOSE-02; residual report, "P4c, operators and functions"),
 /// in sorted order. The production report test pins their exact failing
 /// sub-runs. A repair, or any new failure, changes this list.
-/// LCL-REPAIR-05 repaired eight of the nine original sub-runs;
-/// `division/declared-bound` stays pinned by owner decision (S4 BLOCKED).
-const KNOWN_FAILED_GROUPS: [&str; 1] = ["semantic/operator_invalid//"];
+/// LCL-REPAIR-05 repaired eight of the nine original sub-runs; PRETEST-01 (F01)
+/// repaired the ninth, `division/declared-bound`.
+const KNOWN_FAILED_GROUPS: [&str; 0] = [];
 
 #[test]
 fn additional_semantic_cases_execute() {

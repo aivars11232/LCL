@@ -146,6 +146,20 @@ fn a_default_replaces_missing() {
     assert_eq!(resolved.value.to_string(), "42");
 }
 
+/// Regression, PRETEST-01 F02. A written DEFAULT this layer cannot fold is
+/// undecided, not MISSING: it exists, and the demanding layer evaluates it.
+#[test]
+fn an_undecided_default_is_recorded_as_undecided_not_missing() {
+    let source = task_document(&format!(
+        "\nINPUT:\n    ID: input.one\n    TYPE: DECIMAL\n    REQUIRED: FALSE\n    DEFAULT: 3 / 2\n{SUBJECT}"
+    ));
+    let planned = plan(&source);
+    let resolved = resolution(&planned, "input.one");
+    assert_eq!(resolved.origin, Origin::Default);
+    assert!(resolved.undecided);
+    assert_eq!(resolved.value, Value::Unknown);
+}
+
 #[test]
 fn a_default_never_replaces_null() {
     // "DEFAULT never replaces NULL/UNKNOWN unless a rule explicitly maps them
@@ -297,6 +311,19 @@ fn a_required_dependency_asserting_false_blocks_before_effects() {
         planned.primary().map(|d| d.failure_phase.to_string()),
         Some("pre_effect".to_string())
     );
+}
+
+/// Regression, PRETEST-01 F02. A pre-effect reader of a declaration whose
+/// value preflight left undecided must not read the UNKNOWN placeholder as a
+/// decided UNKNOWN and invent `error.dependency.unsatisfied`.
+#[test]
+fn a_dependency_reading_an_undecided_value_invents_no_failure() {
+    let source = task_document(&format!(
+        "\nDATA:\n    ID: data.ready\n    TYPE: BOOLEAN\n    VALUE: 1 / 2 == 0.5\n\nDEPENDENCY:\n    ID: dependency.one\n    REFERENCE: REF(data.ready)\n    ASSERT: REF(data.ready)\n{SUBJECT}"
+    ));
+    let planned = plan(&source);
+    assert!(resolution(&planned, "data.ready").undecided);
+    assert!(ids(&planned).is_empty(), "{:?}", ids(&planned));
 }
 
 #[test]

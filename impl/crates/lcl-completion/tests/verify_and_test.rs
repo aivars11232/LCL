@@ -551,3 +551,167 @@ EXECUTE:
         "a TRUE ASSERT does not rescue a FALSE comparison"
     );
 }
+
+/// Every registered identifier completion emitted, in emission order.
+fn emitted(completion: &Completion) -> Vec<&'static str> {
+    completion
+        .diagnostics()
+        .iter()
+        .map(|d| d.id.as_registry_str())
+        .collect()
+}
+
+/// `05_SEMANTICS/10`, DEMAND: "Required demanded MISSING and UNKNOWN use
+/// error.required.missing and error.value.unknown." FAILURE: only "A required
+/// post-execution FALSE VERIFY or TEST assertion uses
+/// error.verification.failed."
+///
+/// Regression, PRETEST-01 F04. A required UNKNOWN assertion emitted
+/// `error.verification.failed`.
+#[test]
+fn a_required_unknown_verify_uses_value_unknown_not_verification_failed() {
+    let completion = complete(&task_with(
+        "
+VERIFY:
+    ID: verify.unknown
+    REQUIRED: TRUE
+    ASSERT: UNKNOWN AND TRUE
+",
+        "[REF(verify.unknown)]",
+    ));
+    assert_eq!(
+        emitted(&completion),
+        vec!["error.value.unknown"],
+        "{}",
+        completion.serialize()
+    );
+    assert!(completion
+        .checks()
+        .result("verify.unknown")
+        .expect("selected")
+        .blocks());
+    assert!(!completion.succeeded());
+}
+
+/// Regression, PRETEST-01 F04. A required MISSING assertion emitted
+/// `error.required.missing` and then a second, generic
+/// `error.verification.failed` for the same cause.
+#[test]
+fn a_required_missing_verify_uses_required_missing_only() {
+    let completion = complete(&task_with(
+        "
+VERIFY:
+    ID: verify.skipped
+    REQUIRED: FALSE
+    WHEN: FALSE
+    ASSERT: TRUE
+
+VERIFY:
+    ID: verify.missing
+    REQUIRED: TRUE
+    ASSERT: REF(verify.skipped)
+",
+        "[REF(verify.missing)]",
+    ));
+    assert_eq!(
+        emitted(&completion),
+        vec!["error.required.missing"],
+        "{}",
+        completion.serialize()
+    );
+    assert!(!completion.succeeded());
+}
+
+/// Regression, PRETEST-01 F04. A demand fault kept its registered identifier
+/// but was followed by a misleading `error.verification.failed`.
+#[test]
+fn a_required_verify_fault_keeps_only_the_evaluators_diagnostic() {
+    let completion = complete(&task_with(
+        "
+VERIFY:
+    ID: verify.fault
+    REQUIRED: TRUE
+    ASSERT: 1 / (REF(output.value) - 7) == 1
+",
+        "[REF(verify.fault)]",
+    ));
+    assert_eq!(
+        emitted(&completion),
+        vec!["error.numeric.division_by_zero"],
+        "{}",
+        completion.serialize()
+    );
+    assert!(!completion.succeeded());
+}
+
+/// The same outcomes on an optional check block nothing and emit nothing
+/// for UNKNOWN: "Optional FALSE checks retain their Boolean domain outcome".
+#[test]
+fn an_optional_unknown_verify_emits_nothing() {
+    let completion = complete(&task_with(
+        "
+VERIFY:
+    ID: verify.unknown
+    REQUIRED: FALSE
+    ASSERT: UNKNOWN AND TRUE
+",
+        "TRUE",
+    ));
+    assert!(
+        emitted(&completion).is_empty(),
+        "{}",
+        completion.serialize()
+    );
+}
+
+/// Regression, PRETEST-01 F05 (same root in check applicability). A faulted
+/// `WHEN` skipped the check silently and nobody reported the fault.
+#[test]
+fn a_faulted_verify_when_reports_the_evaluators_diagnostic() {
+    let completion = complete(&task_with(
+        "
+VERIFY:
+    ID: verify.guarded
+    WHEN: 1 / (REF(output.value) - 7) == 1
+    ASSERT: TRUE
+",
+        "TRUE",
+    ));
+    assert_eq!(
+        emitted(&completion),
+        vec!["error.numeric.division_by_zero"],
+        "{}",
+        completion.serialize()
+    );
+    assert!(!completion.succeeded());
+}
+
+/// Regression, PRETEST-01 F04 on a `TEST` root, which shares the required-check
+/// emission. Its demand fault was discarded and replaced by
+/// `error.verification.failed`.
+#[test]
+fn a_test_root_fault_keeps_only_the_evaluators_diagnostic() {
+    let source = task_document(
+        "
+INPUT:
+    ID: input.value
+    TYPE: INTEGER
+    VALUE: 7
+
+TEST:
+    ID: test.fault
+    ASSERT: 1 / (REF(input.value) - 7) == 1
+
+EXECUTE:
+    REFERENCE: REF(test.fault)
+",
+    );
+    let completion = complete(&source);
+    assert_eq!(
+        emitted(&completion),
+        vec!["error.numeric.division_by_zero"],
+        "{}",
+        completion.serialize()
+    );
+    assert!(!completion.succeeded());
+}

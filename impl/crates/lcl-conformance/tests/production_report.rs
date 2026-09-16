@@ -21,10 +21,9 @@ const UNPOPULATED: [&str; 2] = ["semantic/diagnostic_policy/", "semantic/failure
 /// stays BLOCKED (LCL-CLOSE-02; residual report, "P4c, operators and functions").
 /// Each entry is a failed probe and exactly the sub-runs that fail. A repair, or
 /// any new failure, changes this set and fails the test until it is reviewed.
-/// LCL-REPAIR-05 repaired eight of the nine original sub-runs;
-/// `division/declared-bound` stays pinned by owner decision (S4 BLOCKED).
-const KNOWN_FAILED: [(&str, &[&str]); 1] =
-    [("semantic/operator_invalid//", &["division/declared-bound"])];
+/// LCL-REPAIR-05 repaired eight of the nine original sub-runs; PRETEST-01 (F01)
+/// repaired the ninth, `division/declared-bound`.
+const KNOWN_FAILED: [(&str, &[&str]); 0] = [];
 
 #[test]
 fn the_production_report_executes_every_population_and_claims_exactly_what_it_supports() {

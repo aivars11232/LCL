@@ -309,6 +309,11 @@ fn call_value(
 /// The resolved value of one declaration reference.
 fn reference_value(engine: &Engine, id: &str) -> Option<Value> {
     if let Some(resolution) = engine.plan.resolutions.iter().find(|r| r.id == id) {
+        // An undecided declaration is "not decidable here", which is `None`,
+        // never the UNKNOWN placeholder read back as though it were decided.
+        if resolution.undecided {
+            return None;
+        }
         return Some(resolution.value.clone());
     }
     // An `OUTPUT` that no producer has bound reads as `MISSING`, and reading it

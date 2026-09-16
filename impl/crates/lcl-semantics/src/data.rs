@@ -142,6 +142,7 @@ fn resolve_sources(engine: &mut Engine) {
                     true => Value::Unknown,
                     false => Value::Missing,
                 }),
+                undecided,
             });
             continue;
         }
@@ -163,19 +164,28 @@ fn resolve_sources(engine: &mut Engine) {
             false => Value::Missing,
         });
 
-        // 3. DEFAULT, and only for MISSING.
+        // Only a written `VALUE` can be undecided; a supplied datum is decided.
+        let mut undecided = undecided && origin == Origin::DeclaredValue;
+
+        // 3. DEFAULT, and only for MISSING. A written DEFAULT this layer cannot
+        // decide is undecided exactly as a written VALUE is: it exists, so it
+        // is not MISSING, and the demanding layer evaluates it.
         if resolved == Value::Missing {
-            if let Some(default) = syntax_block
-                .field("DEFAULT")
-                .and_then(|field| eval::field_value(engine, &source, &field.body))
-            {
+            if let Some(field) = syntax_block.field("DEFAULT") {
                 origin = Origin::Default;
-                resolved = default;
+                match eval::field_value(engine, &source, &field.body) {
+                    Some(default) => resolved = default,
+                    None => {
+                        resolved = Value::Unknown;
+                        undecided = true;
+                    }
+                }
             }
         }
 
-        // 4. applicable explicit ASSUME.
-        if !resolved.is_material() {
+        // 4. applicable explicit ASSUME. An undecided value is not known to be
+        // non-material, so no assumption replaces it.
+        if !resolved.is_material() && !undecided {
             if let Some((assumption, assumed)) = applicable_assumption(engine, &id) {
                 origin = Origin::Assumption;
                 resolved = assumed;
@@ -195,6 +205,7 @@ fn resolve_sources(engine: &mut Engine) {
             span,
             origin,
             value: resolved,
+            undecided,
         });
     }
 

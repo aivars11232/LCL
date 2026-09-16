@@ -322,6 +322,49 @@ impl Expr {
     }
 }
 
+/// Render one expression exactly as its structure declares it.
+///
+/// A *rendering*, not an evaluation: `PATH("/a")` renders as `PATH("/a")` and
+/// never as a resolved filesystem path. It carries no span, so two occurrences
+/// of the same written expression render identically wherever they appear.
+pub fn render(expr: &Expr) -> String {
+    match expr {
+        Expr::Literal(literal) => match literal.kind {
+            LiteralKind::String | LiteralKind::MultilineString => format!("{:?}", literal.text),
+            _ => literal.text.clone(),
+        },
+        Expr::Identifier(ident) => ident.text.clone(),
+        Expr::Call(call) => {
+            let arguments: Vec<String> = call.arguments.iter().map(render).collect();
+            format!("{}({})", call.callable.text, arguments.join(", "))
+        }
+        Expr::Collection(collection) => {
+            let members: Vec<String> = collection.members.iter().map(render).collect();
+            format!("[{}]", members.join(", "))
+        }
+        Expr::Group(group) => format!("({})", render(&group.inner)),
+        Expr::Unary(unary) => format!("{}{}", unary.operator.lexeme(), render(&unary.operand)),
+        Expr::Binary(binary) => format!(
+            "{} {} {}",
+            render(&binary.left),
+            binary.operator.lexeme(),
+            render(&binary.right)
+        ),
+        Expr::Property(property) => format!("{}.{}", render(&property.base), property.name),
+        Expr::Index(index) => format!("{}[{}]", render(&index.base), render(&index.index)),
+        Expr::Type(ty) => render_type(ty),
+    }
+}
+
+fn render_type(ty: &TypeExpr) -> String {
+    match ty {
+        TypeExpr::Scalar(word) => word.text.clone(),
+        TypeExpr::List(b) | TypeExpr::Set(b) | TypeExpr::Object(b) | TypeExpr::Reference(b) => {
+            format!("{}[{}]", b.word.text, render(&b.argument))
+        }
+    }
+}
+
 /// `LITERAL = STRING | MULTILINE_STRING | INTEGER_LITERAL | DECIMAL_LITERAL |
 ///  "TRUE" | "FALSE" | "NULL" | "MISSING" | "UNKNOWN"`
 #[derive(Debug, Clone, PartialEq, Eq)]

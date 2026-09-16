@@ -626,6 +626,167 @@ fn a_localized_document_uses_the_profiles_its_project_declares() {
     );
 }
 
+/// LCL-REPAIR-06 B-14: an installed 0.2.0 payload, through its own
+/// command-line tool, from install to reinstall. Both packages are installed
+/// and open as the approved ones, a localized document is judged by the 0.2.0
+/// engine, a 0.1.0 document is judged exactly as without 0.2.0, and uninstall
+/// takes the 0.2.0 package but leaves the operator's projects and profiles.
+#[test]
+fn a_0_2_0_installation_checks_both_languages_and_uninstalls_only_its_own() {
+    let home = Home::new("localized-lifecycle");
+    let payload = stage_payload(&home);
+    copy_tree(
+        &repository().join("canonical/LCL_Core_0.2.0"),
+        &payload.join("share/LCL_Core_0.2.0"),
+    );
+    run_installer(&payload, &home);
+
+    let text = |path: &Path| path.display().to_string();
+    let lcl = home.join(".local/bin/lcl");
+    let core = home.join(".local/share/lcl/LCL_Core_0.1.0");
+    let localized = home.join(".local/share/lcl/LCL_Core_0.2.0");
+    let run = |args: &[String]| {
+        let output = Command::new(&lcl)
+            .args(args)
+            .env_clear()
+            .current_dir(std::env::temp_dir())
+            .output()
+            .expect("the installed lcl runs");
+        (
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+        )
+    };
+    let arguments = |args: &[&str]| args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
+
+    // Both packages are installed, and each opens as the approved package.
+    let (code, version) = run(&arguments(&[
+        "version",
+        "--localized-spec",
+        &text(&localized),
+    ]));
+    assert_eq!(code, Some(0), "{version}");
+    assert!(
+        version.contains("language 0.1.0\n") && version.contains("language 0.2.0\n"),
+        "{version}"
+    );
+
+    // A localized document, and a profile the operator keeps with it.
+    let fixtures =
+        repository().join("canonical/LCL_Core_0.2.0/09_CONFORMANCE/LOCALIZATION_FIXTURES");
+    let work = home.join("work");
+    std::fs::create_dir_all(&work).expect("writable");
+    std::fs::copy(
+        fixtures.join("sources/explicit_lv.lcl"),
+        work.join("main.lcl"),
+    )
+    .expect("copyable");
+    std::fs::copy(
+        fixtures.join("profiles/lv-LV.json"),
+        work.join("lv-LV.json"),
+    )
+    .expect("copyable");
+    let check_localized = || {
+        let (code, report) = run(&arguments(&[
+            "check",
+            "--machine",
+            "--spec",
+            &text(&core),
+            "--localized-spec",
+            &text(&localized),
+            "--profile",
+            &text(&work.join("lv-LV.json")),
+            &text(&work.join("main.lcl")),
+        ]));
+        assert_eq!(code, Some(0), "{report}");
+        assert!(
+            report.contains("\"formal_version\": \"0.2.0\"")
+                && report.contains("\"lv-LV\"")
+                && !report.contains("error.localization"),
+            "the 0.2.0 engine must judge the localized document:\n{report}"
+        );
+        report
+    };
+    let localized_report = check_localized();
+
+    // A 0.1.0 document is judged the same with the 0.2.0 package present.
+    std::fs::copy(
+        repository()
+            .join("canonical/LCL_Core_0.1.0/09_CONFORMANCE/SOURCE_FIXTURES/valid_minimum.lcl"),
+        work.join("minimum.lcl"),
+    )
+    .expect("copyable");
+    let minimum = text(&work.join("minimum.lcl"));
+    let alone = run(&arguments(&[
+        "check",
+        "--machine",
+        "--spec",
+        &text(&core),
+        &minimum,
+    ]));
+    let beside = run(&arguments(&[
+        "check",
+        "--machine",
+        "--spec",
+        &text(&core),
+        "--localized-spec",
+        &text(&localized),
+        &minimum,
+    ]));
+    assert_eq!(alone.0, Some(0), "{}", alone.1);
+    assert!(
+        alone.1.contains("\"formal_version\": \"0.1.0\""),
+        "{}",
+        alone.1
+    );
+    assert_eq!(beside, alone, "0.2.0 support changed a 0.1.0 result");
+
+    // The operator's own profiles in the default project directory.
+    let kept = home.join(".local/share/lcl/workspace/profiles/lv-LV.json");
+    std::fs::create_dir_all(kept.parent().expect("a parent")).expect("writable");
+    std::fs::copy(fixtures.join("profiles/lv-LV.json"), &kept).expect("copyable");
+
+    let output = Command::new(payload.join("uninstall.sh"))
+        .env_clear()
+        .env("HOME", &home)
+        .env("PATH", "/usr/bin:/bin")
+        .current_dir(std::env::temp_dir())
+        .output()
+        .expect("the uninstaller runs");
+    assert!(
+        output.status.success(),
+        "uninstall failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !localized.exists(),
+        "the 0.2.0 package survived the uninstall"
+    );
+    assert!(!core.exists(), "the 0.1.0 package survived the uninstall");
+    assert!(!lcl.exists(), "the tool survived the uninstall");
+    assert!(kept.is_file(), "uninstall removed the operator's profile");
+    for name in ["main.lcl", "lv-LV.json", "minimum.lcl"] {
+        assert!(work.join(name).is_file(), "uninstall removed work/{name}");
+    }
+
+    run_installer(&payload, &home);
+    assert!(
+        localized.join("SHA256SUMS.txt").is_file(),
+        "reinstall did not restore the 0.2.0 package"
+    );
+    let launcher = std::fs::read_to_string(home.join(".local/bin/lcl-workspace-launch"))
+        .expect("the launcher is installed");
+    assert!(
+        launcher.contains(&text(&localized)),
+        "the reinstalled launcher must name the 0.2.0 package:\n{launcher}"
+    );
+    assert_eq!(
+        check_localized(),
+        localized_report,
+        "reinstall changed the localized result"
+    );
+}
+
 #[test]
 fn the_launcher_needs_no_spec_in_the_environment() {
     // The environment every launch above ran in had no LCL_SPEC, which is the

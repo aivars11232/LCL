@@ -659,6 +659,23 @@ fn a_0_2_0_candidate_records_both_languages() {
         recorded.contains("language version: 0.1.0 0.2.0\n"),
         "{recorded}"
     );
+
+    // LCL-REPAIR-06 B-14: the payload carries both canonical packages.
+    let unpacked = case.join("unpacked");
+    std::fs::create_dir_all(&unpacked).expect("writable");
+    shell(&[
+        r#"tar -xzf "$1" -C "$2""#,
+        s(&candidate.join("lcl-0.2.0-linux-x86_64.tar.gz")),
+        s(&unpacked),
+    ]);
+    let share = unpacked.join("lcl-0.2.0-linux-x86_64/share");
+    for version in ["0.1.0", "0.2.0"] {
+        assert_eq!(
+            std::fs::read_to_string(share.join(format!("LCL_Core_{version}/VERSION.txt"))).ok(),
+            Some(format!("{version}\n")),
+            "the 0.2.0 payload lacks Core {version}"
+        );
+    }
 }
 
 #[test]

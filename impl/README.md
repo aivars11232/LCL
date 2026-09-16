@@ -924,7 +924,7 @@ Every command needs a specification package, from `--spec`, `LCL_SPEC` or the
 project manifest's `"spec"`. None of them searches for one.
 
 All are read-only with respect to `canonical/`. Integrity tests that need to
-mutate a package operate on a throwaway copy under `target/test-tmp/`, and the
+mutate a package operate on a throwaway copy under Cargo's `CARGO_TARGET_TMPDIR`, and the
 `.lcl` desktop registration in `integration/linux/` is never installed by
 building the workspace.
 
@@ -1066,6 +1066,8 @@ of three of them. All five are closed, and the gate now claims
 > membership (obligation mapping revision r2) and claims `source_conforming` only. Full semantic conformance is
 > BLOCKED. The exact remaining sub-runs, and the engine defects that faithful sub-runs expose, are recorded in
 > `reports/tasks/LCL-CLOSE-02_RESULT.md` and `reports/implementation/LCL_RESIDUAL_REPAIR_REPORT.md`.
+> As of 2026-09-16 (LCL-REPAIR-05/06) the claim is still `source_conforming`; the current semantic counts and the
+> one remaining failed sub-run are recorded in `reports/tasks/LCL-REPAIR-06_RESULT.md`.
 
 Two of the five were diagnosed differently from how they were recorded. The
 `SUM`-over-empty defect was not in the reduction, which was correct; the fault

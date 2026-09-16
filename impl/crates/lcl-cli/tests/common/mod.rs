@@ -55,11 +55,9 @@ pub fn lcl_in(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Run {
     Run::of(command.output().expect("the binary runs"))
 }
 
-/// A clean throwaway directory under `target/test-tmp/`.
+/// A clean throwaway directory under Cargo's `CARGO_TARGET_TMPDIR`.
 pub fn scratch(name: &str) -> PathBuf {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/test-tmp")
-        .join(name);
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
     if dir.exists() {
         std::fs::remove_dir_all(&dir).expect("clear scratch");
     }

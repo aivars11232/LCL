@@ -1,7 +1,7 @@
 //! Shared test helpers.
 //!
-//! Every fixture is built under `target/test-tmp/`, which is the convention the
-//! workspace already uses for tests that need real files. Nothing here writes
+//! Every fixture is built under Cargo's per-target `CARGO_TARGET_TMPDIR`, so
+//! separate target directories never share scratch. Nothing here writes
 //! anywhere else, and `canonical/` is only ever read.
 
 #![allow(dead_code)]
@@ -15,11 +15,9 @@ pub fn canonical_root() -> PathBuf {
         .expect("canonical package must be present")
 }
 
-/// A clean throwaway directory under `target/test-tmp/`.
+/// A clean throwaway directory under Cargo's `CARGO_TARGET_TMPDIR`.
 pub fn scratch(name: &str) -> PathBuf {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/test-tmp")
-        .join(name);
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
     if dir.exists() {
         std::fs::remove_dir_all(&dir).expect("clear scratch");
     }

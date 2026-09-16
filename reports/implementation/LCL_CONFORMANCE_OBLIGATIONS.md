@@ -49,13 +49,13 @@ report arithmetic are instrument tests, never evidence about the LCL engine.
 ## The implementation mapping, revision r2
 
 The mapping is `impl/crates/lcl-conformance/src/obligations_v0.1.0_r2.json`,
-SHA-256 `386c14994f032a57143ef731ea7ac55db3dfffde52b54f0d38e39e7b5e126b20`,
+SHA-256 `32b3e634dd135784163b90dd94736fae4522b68945dbbfaede05e454296fbf8e`,
 pinned in `obligations.rs` as `MAPPING_DIGEST`. It replaces revision r1, which
 pinned probe identifiers only.
 
 - **Probes.** All 2,413 probe IDs are kept: 2,011 source and 402 semantics.
 - **Sub-runs.** Each of the 319 semantic contract rows also pins its exact
-  required sub-run labels, 3,717 in total. They are derived from the row's
+  required sub-run labels, 3,724 in total. They are derived from the row's
   canonical requirement clauses and registry facts, and include clauses that no
   run exercises yet.
 - **Establishing a probe.** A grouped record establishes its probe only when

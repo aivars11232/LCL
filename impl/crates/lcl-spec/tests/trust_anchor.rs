@@ -5,7 +5,7 @@
 //! checksum records regenerated to match the alteration — and proves that
 //! internal verification accepts it while the external anchor does not.
 //!
-//! All mutation happens on throwaway copies under `target/test-tmp/`. The
+//! All mutation happens on throwaway copies under Cargo's `CARGO_TARGET_TMPDIR`. The
 //! canonical release is never written to.
 
 use lcl_spec::{Authority, SpecError, SpecPackage, TrustAnchor, APPROVED_PACKAGE};
@@ -19,9 +19,7 @@ fn canonical_root() -> PathBuf {
 }
 
 fn scratch(name: &str) -> PathBuf {
-    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/test-tmp")
-        .join(name);
+    let p = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
     if p.exists() {
         std::fs::remove_dir_all(&p).expect("clear scratch");
     }

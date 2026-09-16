@@ -20,9 +20,7 @@ fn canonical_root() -> PathBuf {
 }
 
 fn scratch(name: &str) -> PathBuf {
-    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/test-tmp")
-        .join(name);
+    let p = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
     if p.exists() {
         std::fs::remove_dir_all(&p).expect("clear scratch");
     }

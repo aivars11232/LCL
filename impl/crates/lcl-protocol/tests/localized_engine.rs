@@ -145,3 +145,67 @@ fn a_core_0_1_0_engine_takes_no_localization_and_rejects_0_2_0_source() {
     );
     assert!(refused.is_err());
 }
+
+/// LCL-REPAIR-04: `01_FOUNDATION/03` decodes UTF-8 before the localization
+/// stage, and `02_LEXICAL/01` forbids repairing source before validation.
+/// Wherever invalid bytes sit, the unit's only diagnostic is
+/// `error.encoding.invalid` on exactly those original bytes, and no locale is
+/// selected. The lexer keeps no text for such a unit, so line and column cannot
+/// be derived and stay 1:1.
+#[test]
+fn invalid_utf8_is_never_localized() {
+    let engine = localized_engine();
+    let cases: [(&str, &str, &[u8]); 5] = [
+        ("mixed_canonical_word_explicit.lcl", "DATA:", b"\xff"),
+        ("explicit_lv.lcl", "\nLCL:", b"\xe2\x80"),
+        ("confusable_mixed_script_word.lcl", "ДАННЫ", b"\xd0"),
+        ("explicit_ru.lcl", ": 3\n", b"\xff"),
+        ("canonical_en.lcl", " minimum\"", b"\x80"),
+    ];
+    let mut observed = Vec::new();
+    let mut expected = Vec::new();
+    for (name, before, invalid) in cases {
+        let base = std::fs::read(fixtures().join("sources").join(name)).expect("source");
+        let at = base
+            .windows(before.len())
+            .position(|window| window == before.as_bytes())
+            .expect("the marker is in the fixture");
+        let bytes = [&base[..at], invalid, &base[at..]].concat();
+        let report = engine.check(
+            &SourceUnit::new(SourceId::new(name), bytes.clone()),
+            &MemoryProvider::new(),
+        );
+        let diagnostics: Vec<_> = report
+            .diagnostics
+            .iter()
+            .map(|d| {
+                (
+                    d.id.clone(),
+                    d.stage,
+                    bytes.get(d.span.start..d.span.end).map(<[u8]>::to_vec),
+                    (d.span.start, d.span.end),
+                    (d.position.offset, d.position.line, d.position.column),
+                )
+            })
+            .collect();
+        observed.push((
+            name,
+            report.outcome,
+            diagnostics,
+            report.units[0].locale.is_some(),
+        ));
+        expected.push((
+            name,
+            Outcome::Rejected,
+            vec![(
+                "error.encoding.invalid".to_string(),
+                Stage::Lexical,
+                Some(invalid.to_vec()),
+                (at, at + invalid.len()),
+                (at, 1, 1),
+            )],
+            false,
+        ));
+    }
+    assert_eq!(observed, expected);
+}

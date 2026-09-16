@@ -1130,11 +1130,17 @@ pub fn localize(
     detector: &dyn LocaleDetector,
     pin: Option<&Pin>,
 ) -> Localization {
-    let text = String::from_utf8_lossy(source);
+    // `01_FOUNDATION/03` decodes UTF-8 before this stage, and `02_LEXICAL/01`
+    // forbids repairing source before validation: bytes that are not UTF-8 hold
+    // no words to localize. Nothing is selected, and the lexical stage reports
+    // `error.encoding.invalid` on the original offending bytes.
+    let Ok(text) = std::str::from_utf8(source) else {
+        return Localization::failed(Vec::new());
+    };
     let chars: Vec<char> = text.chars().collect();
     let offsets = byte_offsets(&chars);
 
-    let (tag, mut problems) = directive(&text);
+    let (tag, mut problems) = directive(text);
     if !problems.is_empty() {
         problems.sort_by(|a, b| (a.offset, a.id).cmp(&(b.offset, b.id)));
         return Localization::failed(problems);

@@ -44,6 +44,10 @@ pub const PROFILE_FORMAT: &str = "lcl-locale-profile/1";
 /// Upper bound on the bytes read for one locale profile.
 pub const MAX_PROFILE_BYTES: usize = 1 << 20;
 
+/// Host ceiling on the locale profile files one engine is given. A product
+/// limit on configuration, not a language rule.
+pub const MAX_PROFILE_FILES: usize = 256;
+
 /// Identity of the built-in [`CoverageDetector`].
 pub const COVERAGE_DETECTOR_IDENTITY: &str = "lcl.detector.profile_coverage/1";
 
@@ -972,17 +976,23 @@ impl LocaleProfileResolver for DirectoryResolver {
 
     fn resolve(&self, locale: &LocaleTag) -> Result<Option<Vec<u8>>, ProviderUnavailable> {
         let path = self.dir.join(format!("{}.json", locale.as_str()));
-        let file = match std::fs::File::open(&path) {
-            Ok(file) => file,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(e) => return Err(ProviderUnavailable(format!("{}: {e}", path.display()))),
-        };
-        let mut bytes = Vec::new();
-        file.take(MAX_PROFILE_BYTES as u64 + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|e| ProviderUnavailable(format!("{}: {e}", path.display())))?;
-        Ok(Some(bytes))
+        match read_profile_file(&path) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(ProviderUnavailable(format!("{}: {e}", path.display()))),
+        }
     }
+}
+
+/// Read a locale profile file, bounded before allocation: at most
+/// [`MAX_PROFILE_BYTES`] + 1 bytes, so an oversized or endless file is rejected
+/// by [`validate_profile`] as too large instead of being read whole.
+pub fn read_profile_file(path: &Path) -> std::io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)?
+        .take(MAX_PROFILE_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 /// A resolver that cannot be consulted.

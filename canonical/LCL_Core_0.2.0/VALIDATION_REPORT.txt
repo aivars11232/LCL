@@ -1,13 +1,13 @@
 LCL CORE 0.2.0 BARE LANGUAGE SPECIFICATION - VALIDATION SNAPSHOT
 
-SNAPSHOT DATE: 2026-09-15
+SNAPSHOT DATE: 2026-09-17
 PACKAGE SCOPE: BARE LANGUAGE SPECIFICATION ONLY
 LANGUAGE-DEFINITION STATUS: NOT DECLARED COMPLETE (independent review pending)
 PACKAGE STATUS: UNRELEASED_CANDIDATE
 SNAPSHOT RESULT: PASS (focused checks preceding final integrity verification)
 FORMAL VERSION: 0.2.0
-SNAPSHOT UTC: 2026-09-15T06:15:15Z
-MANIFEST SHA-256: 9196a29580a9c720421d606720b01c3449bbc131539abc15a88aa07809820172
+SNAPSHOT UTC: 2026-09-17T05:13:49Z
+MANIFEST SHA-256: 2e029a0ce19bc6a5a453659abd351054fdd6a646d339dbdf3fd511e0ee968357
 
 LANGUAGE CLOSURE
 
@@ -71,7 +71,8 @@ CATALOG
 LOCALIZATION
 
 validate_localization.py: localization_surface_derivation PASS
-(141 reserved words), locale_profile_schema PASS, 4 fixture
+(141 reserved words), locale_profile_schema PASS,
+invalid_utf8_rejected_on_original_bytes PASS, 4 fixture
 profiles valid, 21 profile mutation cases as expected, 31 source
 fixtures matched, 0 failed. The lv-LV, nl-NL, ru-RU and zh-CN fixture profiles
 map only the reserved words of their test programs; they prove the mechanism,
@@ -91,6 +92,6 @@ MANIFEST.json hashes 213 stable payload files out of
 This report binds the exact manifest hash above. SHA256SUMS.txt is generated
 next and hashes 215 files, excluding only itself. The full
 validate_release.py --scope all gate runs only after those steps; its actual
-result is recorded outside this package in reports/tasks/LCL-FEATURE-04_RESULT.md.
+result is recorded outside this package in reports/tasks/PRETEST-03_RESULT.md.
 No archive of this candidate exists. LCL Core 0.1.0 and its archive remain
 unchanged and do not substitute for the fresh results of this candidate.

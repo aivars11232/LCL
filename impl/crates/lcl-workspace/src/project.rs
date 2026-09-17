@@ -151,6 +151,16 @@ impl Workspace {
                 })?;
                 Some(engine)
             }
+            // A profile file is used only by the localization stage; without
+            // a localized package it would be silently ignored.
+            None if !profiles.is_empty() => {
+                return Err(WorkspaceError::Spec(
+                    "a locale profile file needs a localized specification package: pass \
+                     --localized-spec <path>, set LCL_LOCALIZED_SPEC, or declare \
+                     \"localized_spec\" in lcl.project.json"
+                        .to_string(),
+                ))
+            }
             None => None,
         };
         let engines =

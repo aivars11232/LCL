@@ -98,8 +98,11 @@ fn run(argv: &[String]) -> Result<i32, Failure> {
             // as the approved Core 0.2.0 package. One that does not open is
             // refused before anything is printed.
             let localized = localized_spec_root(&common, None)
-                .map(|root| open_localized(&root, &[]))
+                .map(|root| open_localized(&root, &common.profiles))
                 .transpose()?;
+            if localized.is_none() {
+                refuse_inactive_profiles(&common)?;
+            }
             println!("lcl {}", env!("CARGO_PKG_VERSION"));
             println!("protocol {}", lcl_protocol::PROTOCOL);
             println!("language 0.1.0");
@@ -176,6 +179,7 @@ fn engines(common: &Common, project: Option<&Project>) -> Result<Engines, Failur
     let failed = |e: &dyn std::fmt::Display| Failure::environment(e.to_string());
     let core = Engine::open(spec_root(common, project)?).map_err(|e| failed(&e))?;
     let Some(root) = localized_spec_root(common, project) else {
+        refuse_inactive_profiles(common)?;
         return Engines::new(core, None).map_err(|e| failed(&e));
     };
     let mut files = match project {
@@ -205,6 +209,19 @@ fn engines(common: &Common, project: Option<&Project>) -> Result<Engines, Failur
         }
     }
     Engines::new(core, Some(localized)).map_err(|e| failed(&e))
+}
+
+/// A `--profile` is used only by the Core 0.2.0 localization stage. Without a
+/// localized package it would be silently ignored, so it is refused.
+fn refuse_inactive_profiles(common: &Common) -> Result<(), Failure> {
+    if common.profiles.is_empty() {
+        return Ok(());
+    }
+    Err(Failure::usage(
+        "--profile needs a localized specification package: pass \
+         --localized-spec <path>, set LCL_LOCALIZED_SPEC, or declare \
+         \"localized_spec\" in lcl.project.json",
+    ))
 }
 
 /// Open the Core 0.2.0 package at `root` with its localization stage.

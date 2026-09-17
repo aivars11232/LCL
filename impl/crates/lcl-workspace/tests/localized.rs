@@ -201,3 +201,29 @@ fn saving_and_reopening_keeps_the_localized_bytes() {
         Some("lv-LV")
     );
 }
+
+/// PRETEST-03 F13: a profile file is never silently ignored. Without a
+/// localized specification package the workspace refuses to open, as the
+/// command line refuses `--profile`.
+#[test]
+fn a_profile_file_without_a_localized_package_is_refused() {
+    let scratch = Scratch::new("workspace-localized-profile-inactive");
+    scratch.put("main.lcl", &fixture("sources/explicit_lv.lcl"));
+    let profile = scratch.put("lv-LV.json", &fixture("profiles/lv-LV.json"));
+    let refused = Workspace::open_with_profiles(
+        &scratch.path,
+        canonical_root(),
+        None,
+        std::slice::from_ref(&profile),
+    );
+    match refused {
+        Err(error) => assert!(
+            error
+                .to_string()
+                .contains("localized specification package"),
+            "{error}"
+        ),
+        Ok(_) => panic!("a profile without a localized package was ignored"),
+    }
+    assert!(Workspace::open_with_profiles(&scratch.path, canonical_root(), None, &[]).is_ok());
+}

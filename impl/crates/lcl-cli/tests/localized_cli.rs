@@ -160,3 +160,41 @@ fn a_lock_pins_the_locale_profile_and_detects_its_drift() {
         "{output}"
     );
 }
+
+/// PRETEST-03 F13: an explicit `--profile` is never silently ignored. Without
+/// a localized specification package it is a usage error, before anything is
+/// printed; `version` opens the profiles it is given.
+#[test]
+fn a_profile_without_a_localized_package_is_a_usage_error() {
+    let dir = scratch("localized-cli-profile-inactive");
+    write(dir.join("main.lcl"), fixture("sources/auto_lv.lcl"));
+    write(dir.join("lv-LV.json"), fixture("profiles/lv-LV.json"));
+    let profile = text(&dir.join("lv-LV.json"));
+    let spec = text(&canonical_root());
+    let document = text(&dir.join("main.lcl"));
+    for args in [
+        vec!["check", "--spec", &spec, "--profile", &profile, &document],
+        vec!["run", "--spec", &spec, "--profile", &profile, &document],
+        vec!["version", "--profile", &profile],
+    ] {
+        let refused = lcl(&args);
+        assert_eq!(refused.code, 3, "{args:?}\n{}", refused.stdout);
+        assert!(refused.stdout.is_empty(), "{args:?}\n{}", refused.stdout);
+        assert!(
+            refused.stderr.contains("--profile"),
+            "{args:?}\n{}",
+            refused.stderr
+        );
+    }
+
+    let missing = text(&dir.join("nl-NL.json"));
+    let unreadable = lcl(&[
+        "version",
+        "--localized-spec",
+        &text(&localized_root()),
+        "--profile",
+        &missing,
+    ]);
+    assert_eq!(unreadable.code, 4, "{}", unreadable.stdout);
+    assert!(unreadable.stdout.is_empty(), "{}", unreadable.stdout);
+}

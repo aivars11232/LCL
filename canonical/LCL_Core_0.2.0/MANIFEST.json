@@ -17,7 +17,7 @@
     "deployment_tooling"
   ],
   "package_root": "LCL_Core_0.2.0",
-  "generated_utc": "2026-09-15T06:15:13Z",
+  "generated_utc": "2026-09-17T05:13:49Z",
   "package_file_count": 216,
   "manifest_record_count": 213,
   "checksum_record_count": 215,
@@ -1008,8 +1008,8 @@
     },
     {
       "path": "09_CONFORMANCE/TOOLS/validate_localization.py",
-      "bytes": 34274,
-      "sha256": "cef525de0a82491965a43e75f8778459ef7674e8b6b4683cdabcc0f48411d7ff"
+      "bytes": 35679,
+      "sha256": "92da47ba9df052f50d6606f91b12c5fe93a1664d4b76482ceb9944a5f610bf9d"
     },
     {
       "path": "09_CONFORMANCE/TOOLS/validate_release.py",
@@ -1113,8 +1113,8 @@
     },
     {
       "path": "CHANGELOG.txt",
-      "bytes": 9989,
-      "sha256": "c731b161c0fad720efe4106ee8bb27f4bdc1ed6b4fb8603887447b11e1438d2e"
+      "bytes": 10668,
+      "sha256": "90e7a351b1402e20e172b7dea1ef24a437a57e8a3e6c9014f583ce0453f4c0e5"
     },
     {
       "path": "INDEX.txt",

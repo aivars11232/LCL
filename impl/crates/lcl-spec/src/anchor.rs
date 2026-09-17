@@ -64,10 +64,13 @@ pub const APPROVED_PACKAGE: TrustAnchor = TrustAnchor {
 /// The approved LCL Core 0.2.0 package: the localization feature candidate.
 ///
 /// Corresponds to `canonical/LCL_Core_0.2.0` as generated on 2026-09-15 under
-/// LCL-FEATURE-04, whose `MANIFEST.json` has SHA-256
-/// `9196a29580a9c720421d606720b01c3449bbc131539abc15a88aa07809820172`. The owner
-/// approved anchoring it (decision D3, 2026-09-15). It is an unreleased
-/// candidate: its independent review is pending and no archive exists.
+/// LCL-FEATURE-04 (the owner approved anchoring it, decision D3, 2026-09-15)
+/// and regenerated under PRETEST-03 after the strict-UTF-8 repair of
+/// `TOOLS/validate_localization.py`; its `MANIFEST.json` has SHA-256
+/// `2e029a0ce19bc6a5a453659abd351054fdd6a646d339dbdf3fd511e0ee968357`. The
+/// previous identity was
+/// `e86121c734cb51065b791329738b9ed6b77c53e03e0eebbb2ad1076bea973ef0`. It is an
+/// unreleased candidate: its independent review is pending and no archive exists.
 ///
 /// It is not the default. [`crate::SpecPackage::open`] stays pinned to
 /// [`APPROVED_PACKAGE`]; a caller selects this package explicitly through
@@ -76,7 +79,7 @@ pub const APPROVED_PACKAGE_0_2_0: TrustAnchor = TrustAnchor {
     label: "LCL Core 0.2.0 Localization Feature Candidate (2026-09-15)",
     formal_version: "0.2.0",
     package_file_count: 216,
-    identity_digest: "e86121c734cb51065b791329738b9ed6b77c53e03e0eebbb2ad1076bea973ef0",
+    identity_digest: "6e7303157f5ba378b4e8c0b89852a7a81b00b6dd26b85cac36a8977532690ceb",
 };
 
 /// Accumulates a package identity digest from `(path, content-hash)` pairs.

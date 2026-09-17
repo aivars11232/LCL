@@ -47,8 +47,9 @@ use lcl_completion::{Completion, Contracts as CompletionContracts, Publication, 
 use lcl_diagnostics::Stage;
 use lcl_lexer::{Lexicon, Position, Span, TokenKind};
 use lcl_localization::{
-    localization_decides, Contract, CoverageDetector, LocaleDetector, LocaleProfileResolver,
-    LocaleTag, Localization, MemoryResolver, Pin, LANGUAGE_VERSION,
+    localization_decides, read_profile_file, Contract, CoverageDetector, LocaleDetector,
+    LocaleProfileResolver, LocaleTag, Localization, MemoryResolver, Pin, LANGUAGE_VERSION,
+    MAX_PROFILE_FILES,
 };
 use lcl_parser::syntax::Expr;
 use lcl_parser::{Grammar, Parser};
@@ -203,6 +204,8 @@ impl Engine {
     /// The package is opened against the Core 0.2.0 trust anchor. Each profile
     /// file is named `<locale>.json`, and a later file for the same locale
     /// replaces an earlier one. Detection is the package's coverage detector.
+    /// Each file is read bounded, and more than [`MAX_PROFILE_FILES`] files is
+    /// refused as a host limit.
     /// This is the one way a tool builds a localized engine from files.
     pub fn open_localized(
         root: impl AsRef<Path>,
@@ -210,6 +213,15 @@ impl Engine {
     ) -> Result<Engine, EngineError> {
         let spec = SpecPackage::open_with_anchor(root, &APPROVED_PACKAGE_0_2_0)
             .map_err(EngineError::Package)?;
+        if profile_files.len() > MAX_PROFILE_FILES {
+            return Err(EngineError::Contracts {
+                layer: "localization",
+                detail: format!(
+                    "{} locale profile files exceed the host limit of {MAX_PROFILE_FILES}",
+                    profile_files.len()
+                ),
+            });
+        }
         let mut profiles = MemoryResolver::new("lcl.profile.files");
         for file in profile_files {
             let refuse = |detail: String| EngineError::Contracts {
@@ -223,7 +235,7 @@ impl Engine {
                 .ok_or_else(|| {
                     refuse("a locale profile file is named <locale>.json".to_string())
                 })?;
-            let bytes = std::fs::read(file).map_err(|e| refuse(e.to_string()))?;
+            let bytes = read_profile_file(file).map_err(|e| refuse(e.to_string()))?;
             profiles.insert(locale, bytes);
         }
         Engine::assemble(spec)?.with_localization(Arc::new(profiles), Arc::new(CoverageDetector))
@@ -840,8 +852,8 @@ impl Engines {
     ///   with Core 0.1.0.
     /// * Otherwise the localized reading decides. A rejected localization is
     ///   the 0.2.0 engine's exactly when it decides the result (D9). An
-    ///   accepted reading follows its declared `VERSION` when one is readable,
-    ///   and otherwise is the 0.2.0 engine's only when a profile was selected.
+    ///   accepted reading is the 0.2.0 engine's only when it declares exactly
+    ///   `0.2.0`; a selected profile never establishes that authority.
     ///   A reading the lexical stage rejected declares the `VERSION` of a
     ///   header line that precedes its first lexical defect.
     pub fn engine_for(&self, unit: &SourceUnit) -> &Engine {
@@ -873,11 +885,12 @@ impl Engines {
                 &self.core
             };
         }
-        match declared(&staged) {
-            Some(version) if version == LANGUAGE_VERSION => localized,
-            Some(_) => &self.core,
-            None if outcome.profile.is_some() => localized,
-            None => &self.core,
+        // `02_LEXICAL/13`: localization applies only to a document that
+        // declares VERSION "0.2.0". A selected profile is not a declaration.
+        if declared(&staged).as_deref() == Some(LANGUAGE_VERSION) {
+            localized
+        } else {
+            &self.core
         }
     }
 }

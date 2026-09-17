@@ -408,7 +408,12 @@ def words(contract: Contract, text: str, mask: list[bool], offsets: list[int], s
 
 def evaluate_source(contract: Contract, data: bytes, profiles: dict[str, dict[str, Any]], outside_string_mask: Any,
                     pin: dict[str, str] | None = None, resolver_available: bool = True) -> dict[str, Any]:
-    text = data.decode("utf-8", errors="replace")
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        # Invalid UTF-8 holds no words to localize; the offset is the first
+        # offending byte of the original source, never of a replacement text.
+        return {"error": "error.encoding.invalid", "offset": error.start}
     offsets = byte_offsets(text)
     tag, problems = directive(text, offsets)
     if problems:
@@ -534,6 +539,24 @@ def mutation_cases(contract: Contract, fixtures: Path) -> list[dict[str, Any]]:
     return results
 
 
+def check_invalid_utf8(contract: Contract, fixtures: Path, profiles: dict[str, dict[str, Any]], outside_string_mask: Any) -> dict[str, Any]:
+    """Invalid UTF-8 before or after VERSION is rejected at its original byte offset."""
+    base = (fixtures / "sources" / "auto_lv.lcl").read_bytes()
+    after = base.index(b"\n", base.index(b"VERSIJA")) + 1
+    cases = [
+        ("before_version", b"\xff" + base, 0),
+        ("after_version", base[:after] + b"\xe2\x82" + base[after:], after),
+        ("after_directive", b"@locale lv-LV\n\xc3\x28" + base, 14),
+    ]
+    problems = []
+    for name, data, offset in cases:
+        actual = evaluate_source(contract, data, profiles, outside_string_mask)
+        view = {"error": actual.get("error"), "offset": actual.get("offset")}
+        if view != {"error": "error.encoding.invalid", "offset": offset}:
+            problems.append({"case": name, "expected_offset": offset, "actual": view})
+    return {"check": "invalid_utf8_rejected_on_original_bytes", "passed": not problems, "problems": problems}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
@@ -578,6 +601,7 @@ def main() -> int:
             actual_view = {key: actual[key] for key in case["expected"] if key in actual}
             source_results.append({"source": relative, "expected": case["expected"], "actual": actual_view,
                                    "passed": actual_view == case["expected"]})
+        checks.append(check_invalid_utf8(contract, fixtures, profiles, outside_string_mask))
         mutations = mutation_cases(contract, fixtures)
         passed = (all(check["passed"] for check in checks) and all(result["passed"] for result in profile_results)
                   and all(result["passed"] for result in source_results) and all(result["passed"] for result in mutations))

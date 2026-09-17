@@ -1,5 +1,17 @@
 LCL CORE CHANGELOG
 
+0.2.0 LOCALIZATION FEATURE CANDIDATE - PRETEST-03
+
+- TOOLS/validate_localization.py decodes fixture source strictly. Invalid UTF-8
+  is error.encoding.invalid at the first offending byte of the original source;
+  it was previously decoded with replacement characters, which accepted the
+  source and could shift byte offsets. Added the self-check
+  invalid_utf8_rejected_on_original_bytes (invalid bytes before VERSION, after
+  VERSION and after a locale directive).
+- Regenerated MANIFEST.json, VALIDATION_REPORT.txt and SHA256SUMS.txt. No
+  normative text, registry or fixture changed. The independent review remains
+  pending and the package remains an UNRELEASED_CANDIDATE.
+
 0.2.0 LOCALIZATION FEATURE CANDIDATE - LCL-FEATURE-04
 
 - Created canonical/LCL_Core_0.2.0 from the released 0.1.0 package by copying

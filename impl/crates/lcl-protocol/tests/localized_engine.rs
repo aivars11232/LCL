@@ -209,3 +209,39 @@ fn invalid_utf8_is_never_localized() {
     }
     assert_eq!(observed, expected);
 }
+
+/// PRETEST-03 F12: a locale profile file is read only up to its size bound, so
+/// an endless file is rejected as an invalid profile instead of exhausting
+/// memory.
+#[cfg(unix)]
+#[test]
+fn a_profile_file_is_bounded_before_it_is_allocated() {
+    let dir = std::env::temp_dir().join(format!("lcl-p3-profile-bound-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("scratch");
+    let endless = dir.join("lv-LV.json");
+    std::os::unix::fs::symlink("/dev/zero", &endless).expect("symlink");
+
+    let engine = Engine::open_localized(canonical("0.2.0"), &[endless]).expect("it opens");
+    let (_, report) = check(&engine, "explicit_lv.lcl");
+    let primary = report.primary().expect("a diagnostic");
+    assert_eq!(
+        (primary.stage, primary.id.as_str()),
+        (Stage::Localization, "error.localization.profile_invalid")
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// PRETEST-03 F12: the number of profile files one engine holds has a finite
+/// host ceiling. Exceeding it refuses the engine; it is not a language error.
+#[test]
+fn the_profile_file_count_has_a_host_ceiling() {
+    let profile = fixtures().join("profiles/lv-LV.json");
+    let at_limit = vec![profile.clone(); lcl_localization::MAX_PROFILE_FILES];
+    assert!(Engine::open_localized(canonical("0.2.0"), &at_limit).is_ok());
+    let over = vec![profile; lcl_localization::MAX_PROFILE_FILES + 1];
+    match Engine::open_localized(canonical("0.2.0"), &over) {
+        Err(error) => assert!(error.to_string().contains("host limit"), "{error}"),
+        Ok(_) => panic!("the profile file count is unbounded"),
+    }
+}

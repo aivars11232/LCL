@@ -129,7 +129,7 @@ fn decision_d9_decides_failed_localizations() {
 /// D9 gives its localization failure the result.
 #[test]
 fn the_dispatch_matrix_attributes_each_document_to_one_package() {
-    use lcl_diagnostics::Stage::{self, GrammarOrSchema, Lexical, Localization};
+    use lcl_diagnostics::Stage::{self, GrammarOrSchema, Lexical, Localization, Resolution};
 
     let profiled = Engines::new(core(), Some(localized())).expect("engines");
     let unprofiled = Engines::new(
@@ -156,6 +156,11 @@ fn the_dispatch_matrix_attributes_each_document_to_one_package() {
         english.replacen(from, to, 1).into_bytes()
     };
     let quote = char::from_u32(0x201C).expect("a typographic quote");
+    let lv = String::from_utf8(localized_fixture("auto_lv.lcl")).expect("UTF-8");
+    let localized_edit = |from: &str, to: &str| {
+        assert!(lv.contains(from), "{from:?}");
+        lv.replacen(from, to, 1).into_bytes()
+    };
 
     type Row<'a> = (
         &'a str,
@@ -244,6 +249,65 @@ fn the_dispatch_matrix_attributes_each_document_to_one_package() {
             localized_fixture("explicit_lv.lcl"),
             "0.2.0",
             Some((Localization, "error.localization.profile_unavailable")),
+        ),
+        // PRETEST-03 F09: localization success never manufactures 0.2.0
+        // authority; only a readable declared VERSION does.
+        (
+            "localized spelling whose VERSION is not readable",
+            &profiled,
+            localized_edit("    VERSIJA: \"0.2.0\"\n", "    VERSIJA: \"0.2.0\n"),
+            "0.1.0",
+            Some((Lexical, "error.keyword.unknown")),
+        ),
+        (
+            "localized spelling with no VERSION line",
+            &profiled,
+            localized_edit("LCL:\n    VERSIJA: \"0.2.0\"\n\n", ""),
+            "0.1.0",
+            Some((Lexical, "error.keyword.unknown")),
+        ),
+        (
+            "localized spelling declaring VERSION 0.1.0",
+            &profiled,
+            localized_edit("    VERSIJA: \"0.2.0\"\n", "    VERSIJA: \"0.1.0\"\n"),
+            "0.1.0",
+            Some((Lexical, "error.keyword.unknown")),
+        ),
+        (
+            "localized spelling with a malformed VERSION",
+            &profiled,
+            localized_edit("    VERSIJA: \"0.2.0\"\n", "    VERSIJA: \"0.2\"\n"),
+            "0.1.0",
+            Some((Lexical, "error.keyword.unknown")),
+        ),
+        (
+            "canonical English with a malformed VERSION",
+            &profiled,
+            edit("    VERSION: \"0.2.0\"\n", "    VERSION: \"0.2\"\n"),
+            "0.1.0",
+            Some((Resolution, "error.version.unsupported")),
+        ),
+        // PRETEST-03 F10: bytes that are not UTF-8 are never decoded lossily.
+        // The lexical stage produces no token, so no VERSION is readable and
+        // the unit keeps its Core 0.1.0 reading. Canon does not settle which
+        // package owns a unit rejected before its VERSION is resolved; this
+        // pins the current attribution pending an owner decision.
+        (
+            "invalid UTF-8 before VERSION",
+            &profiled,
+            [b"\xff".as_slice(), english.as_bytes()].concat(),
+            "0.1.0",
+            Some((Lexical, "error.encoding.invalid")),
+        ),
+        (
+            "invalid UTF-8 after VERSION",
+            &profiled,
+            edit("    VERSION: \"0.2.0\"\n", "    VERSION: \"0.2.0\"\n\u{1}")
+                .into_iter()
+                .map(|b| if b == 1 { 0xff } else { b })
+                .collect(),
+            "0.1.0",
+            Some((Lexical, "error.encoding.invalid")),
         ),
         (
             "localized source without a directive and no profile (D9)",

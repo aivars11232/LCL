@@ -91,6 +91,9 @@ pub enum CompletionError {
     /// A demanded SUM, MIN or MAX reduction received an empty material
     /// collection. Eligible for `expression_demand_resolution`.
     OperatorOperand,
+    /// A dynamically supplied value fails a declared GLOB or REGEX value
+    /// constraint. Eligible for `expression_demand_resolution`.
+    PatternMismatch,
     /// A demanded GLOB or REGEX exhausts its finite pattern-resource limit.
     PatternResourceLimit,
     /// A prerequisite cycle among selected checks.
@@ -110,7 +113,7 @@ pub enum CompletionError {
 
 impl CompletionError {
     /// Every identifier this layer mirrors, in registry order.
-    pub const ALL: [CompletionError; 15] = [
+    pub const ALL: [CompletionError; 16] = [
         CompletionError::EvidenceMissing,
         CompletionError::ExecutionOrder,
         CompletionError::HostConstraint,
@@ -119,6 +122,7 @@ impl CompletionError {
         CompletionError::NumericNonTerminating,
         CompletionError::NumericUnitMismatch,
         CompletionError::OperatorOperand,
+        CompletionError::PatternMismatch,
         CompletionError::PatternResourceLimit,
         CompletionError::ReferenceCycle,
         CompletionError::RequiredMissing,
@@ -146,6 +150,7 @@ impl CompletionError {
             CompletionError::NumericNonTerminating => "error.numeric.non_terminating",
             CompletionError::NumericUnitMismatch => "error.numeric.unit_mismatch",
             CompletionError::OperatorOperand => "error.operator.operand",
+            CompletionError::PatternMismatch => "error.pattern.mismatch",
             CompletionError::PatternResourceLimit => "error.pattern.resource_limit",
             CompletionError::ReferenceCycle => "error.reference.cycle",
             CompletionError::RequiredMissing => "error.required.missing",

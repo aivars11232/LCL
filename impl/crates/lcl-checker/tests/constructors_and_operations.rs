@@ -571,3 +571,62 @@ fn a_range_this_stage_cannot_read_is_left_to_a_later_one() {
         ids(&checked)
     );
 }
+
+fn fallback_document(fallback: &str) -> String {
+    format!(
+        concat!(
+            "LCL:\n    VERSION: \"0.1.0\"\n\n",
+            "SPECIFICATION:\n    ID: test.task\n    NAME: \"T\"\n    VERSION: \"1.0.0\"\n    KIND: kind.task\n\n",
+            "DATA:\n    ID: data.path\n    TYPE: PATH\n    VALUE: PATH(\"/srv/data/report.txt\")\n\n",
+            "HANDLER:\n    ID: handler.other\n    EVENT: event.host_constraint\n    OPERATION: core.stop\n\n",
+            "HANDLER:\n    ID: handler.fix\n    EVENT: event.host_constraint\n    OPERATION: core.stop\n    FALLBACK: {}\n\n",
+            "ACTION:\n    ID: action.one\n    OPERATION: core.inspect\n    TARGET: REF(data.path)\n\n",
+            "GOAL:\n    ID: goal.one\n    ASSERT: TRUE\n\n",
+            "SUCCESS:\n    ID: success.one\n    ALL: TRUE\n\n",
+            "TASK:\n    ID: task.one\n    GOAL: REF(goal.one)\n    ACTION: REF(action.one)\n    HANDLER: REF(handler.fix)\n    SUCCESS: REF(success.one)\n\n",
+            "EXECUTE:\n    REFERENCE: REF(task.one)\n"
+        ),
+        fallback
+    )
+}
+
+#[test]
+fn a_fallback_operation_identifier_is_an_invocation_site() {
+    // `05_SEMANTICS/06`: "One operation identifier is legal only when the
+    // operation registers no required named parameter and its required target,
+    // if any, is supplied by the original handler-context binding above. An
+    // operation identifier that cannot satisfy its contract under those limits
+    // uses error.operation.parameter".
+    for illegal in [
+        // Requires `destination`, and its target is not a handler context.
+        "core.move",
+        // Requires `content`.
+        "core.append",
+        "core.write",
+        // Its required target is one no handler-context binding supplies.
+        "core.delete",
+    ] {
+        let checked = check(&fallback_document(illegal));
+        assert!(
+            ids(&checked).contains(&"error.operation.parameter".to_string()),
+            "FALLBACK {illegal}: {:?}",
+            ids(&checked)
+        );
+        assert_eq!(
+            checked.terminal_status(),
+            Some("status.invalid"),
+            "{illegal}"
+        );
+    }
+    // A control operation whose target admits the execution unit, and the REF
+    // form, which carries the referenced handler's own invocation data.
+    for legal in ["core.stop", "REF(handler.other)"] {
+        let checked = check(&fallback_document(legal));
+        assert_eq!(
+            checked.outcome(),
+            Outcome::Checked,
+            "FALLBACK {legal}: {:?}",
+            ids(&checked)
+        );
+    }
+}

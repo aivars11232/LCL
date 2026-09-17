@@ -169,6 +169,27 @@ fn many_flooding_children_in_sequence_leave_nothing_behind() {
     // A leak shows up as an accumulation. Twenty children, each printing past
     // the pipe buffer, must all be reaped: a zombie would still be a child of
     // this process, and `wait` would find it.
+    //
+    // `zombie_children` counts every child of the process it runs in, and the
+    // harness runs sibling tests as threads of one process whose own children
+    // may be momentarily unreaped. The count is therefore taken in a process
+    // of this test's own, so it sees only the children this test started.
+    const NAME: &str = "many_flooding_children_in_sequence_leave_nothing_behind";
+    if std::env::var("LCL_PROCESS_FIXTURE").as_deref() != Ok(NAME) {
+        let run = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", NAME, "--nocapture", "--test-threads=1"])
+            .env("LCL_PROCESS_FIXTURE", NAME)
+            .stdin(std::process::Stdio::null())
+            .output()
+            .expect("the isolated test process starts");
+        assert!(
+            run.status.success(),
+            "isolated run failed: {}\n{}",
+            String::from_utf8_lossy(&run.stdout),
+            String::from_utf8_lossy(&run.stderr)
+        );
+        return;
+    }
     let mut process = adapter();
     for round in 0..20 {
         let completion = process

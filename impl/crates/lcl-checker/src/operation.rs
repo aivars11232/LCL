@@ -37,7 +37,8 @@ use std::collections::BTreeMap;
 
 /// The three invocation sites. "ACTION, HANDLER, and FALLBACK are the only
 /// invocation sites; every required target and named parameter rule applies
-/// identically on each of them."
+/// identically on each of them." ACTION and HANDLER are blocks; FALLBACK is a
+/// HANDLER field, judged by [`fallback`] with its handler.
 const INVOCATION_BLOCKS: [&str; 2] = ["ACTION", "HANDLER"];
 
 /// Check one block as an invocation site, when it is one.
@@ -49,6 +50,9 @@ pub(crate) fn invocation(
 ) -> BTreeMap<lcl_lexer::Span, Type> {
     if !INVOCATION_BLOCKS.contains(&name) {
         return BTreeMap::new();
+    }
+    if name == "HANDLER" {
+        fallback(check, source, block);
     }
     let Some(field) = block.field("OPERATION") else {
         return BTreeMap::new();
@@ -263,6 +267,61 @@ fn target(
         "missing_target",
         format!("`{}` marks TARGET required", contract.id),
     );
+}
+
+/// A HANDLER's operation-identifier `FALLBACK`, the third invocation site.
+///
+/// `05_SEMANTICS/06`: "It is a second invocation site with no target or
+/// parameter surface of its own ... One operation identifier is legal only when
+/// the operation registers no required named parameter and its required target,
+/// if any, is supplied by the original handler-context binding above. An
+/// operation identifier that cannot satisfy its contract under those limits
+/// uses error.operation.parameter". The `REF` form carries the referenced
+/// handler's own invocation data, which is judged where that handler is
+/// written; a custom operation's contract is its own, exactly as at ACTION.
+fn fallback(check: &mut Check<'_>, source: &SourceId, block: &Block) {
+    let Some(field) = block.field("FALLBACK") else {
+        return;
+    };
+    let Some(identifier) = operation_identifier(field) else {
+        return;
+    };
+    let Some(contract) = check.contracts.operation(&identifier).cloned() else {
+        return;
+    };
+    let span = field
+        .body
+        .as_inline()
+        .map_or(field.key.span, |value| match value {
+            Value::Expression(expr) => expr.span(),
+            _ => field.key.span,
+        });
+    for (name, spec) in &contract.parameters {
+        if spec.required {
+            check.emit(
+                StaticError::OperationParameter,
+                source,
+                span,
+                "fallback_parameter",
+                format!(
+                    "FALLBACK `{}` requires the named parameter `{name}`, and a FALLBACK supplies none",
+                    contract.id
+                ),
+            );
+        }
+    }
+    if contract.target.required && !admits_handler_context(&contract.target.ty) {
+        check.emit(
+            StaticError::OperationParameter,
+            source,
+            span,
+            "fallback_target",
+            format!(
+                "FALLBACK `{}` marks TARGET required, and no handler-context binding supplies it",
+                contract.id
+            ),
+        );
+    }
 }
 
 /// True when the contract's target type "admits REFERENCE[ACTION] or

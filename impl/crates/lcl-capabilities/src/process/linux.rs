@@ -25,6 +25,7 @@ const P_PID: c_int = 1;
 const WNOHANG: c_int = 1;
 const WEXITED: c_int = 4;
 const WNOWAIT: c_int = 0x0100_0000;
+const ESRCH: i32 = 3;
 
 extern "C" {
     fn fcntl(fd: c_int, command: c_int, ...) -> c_int;
@@ -121,7 +122,7 @@ fn remaining_group_members(leader: u32) -> io::Result<Vec<u32>> {
         }
         let stat = match std::fs::read_to_string(entry.path().join("stat")) {
             Ok(stat) => stat,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) if vanished(&error) => continue,
             Err(error) => return Err(error),
         };
         let fields = stat
@@ -137,6 +138,12 @@ fn remaining_group_members(leader: u32) -> io::Result<Vec<u32>> {
         }
     }
     Ok(members)
+}
+
+/// Whether a `/proc/<pid>` read failed because the process is gone. One that
+/// exits between the directory listing and the read reports ENOENT or ESRCH.
+fn vanished(error: &io::Error) -> bool {
+    error.kind() == io::ErrorKind::NotFound || error.raw_os_error() == Some(ESRCH)
 }
 
 fn teardown(child: &mut Child) -> Result<Option<i64>, String> {
@@ -281,6 +288,16 @@ pub(crate) fn run(
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn a_process_that_exits_during_the_group_scan_is_not_a_member() {
+        // Reading `/proc/<pid>/stat` of a process that exited after the
+        // directory listing fails with ESRCH as well as ENOENT. Either way the
+        // process is gone, and the scan is not an observation failure.
+        assert!(vanished(&io::Error::from_raw_os_error(2)));
+        assert!(vanished(&io::Error::from_raw_os_error(3)));
+        assert!(!vanished(&io::Error::from_raw_os_error(13)));
+    }
 
     #[test]
     fn a_nonblocking_empty_pipe_does_not_wait_for_its_writer() {

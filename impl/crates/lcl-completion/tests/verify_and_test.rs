@@ -715,3 +715,90 @@ EXECUTE:
     );
     assert!(!completion.succeeded());
 }
+
+/// Regression, FINAL-01 (PRETEST-05 O1). `expression_demand_resolution` makes
+/// `error.pattern.mismatch` demand-eligible: "A dynamically supplied value
+/// fails a declared GLOB or REGEX value constraint". Completion did not mirror
+/// that identifier, so the demand fault was dropped and the required check
+/// reported a generic `error.value.unknown` in its place.
+#[test]
+fn a_required_verify_keeps_a_demanded_pattern_mismatch() {
+    let source = task_document(
+        "
+DEFINE:
+    ID: type.coded
+    KIND: kind.type
+    BASE: OBJECT
+    FIELD:
+        NAME: code
+        TYPE: STRING
+        REQUIRED: TRUE
+        PATTERN: GLOB(\"a*\")
+
+DEFINE:
+    ID: const.fallback
+    KIND: kind.constant
+    TYPE: OBJECT[REF(type.coded)]
+    VALUE:
+        code: \"abc\"
+
+INPUT:
+    ID: input.coded
+    TYPE: OBJECT[REF(type.coded)]
+    REQUIRED: FALSE
+    DEFAULT: REF(const.fallback)
+
+GOAL:
+    ID: goal.coded
+    ASSERT: TRUE
+
+ACTION:
+    ID: action.coded
+    OPERATION: core.inspect
+    TARGET: REF(goal.coded)
+
+VERIFY:
+    ID: verify.code
+    REQUIRED: TRUE
+    ASSERT: REF(input.coded).code == \"b\"
+
+SUCCESS:
+    ID: success.root
+    ALL: [REF(verify.code)]
+
+TASK:
+    ID: task.coded
+    GOAL: REF(goal.coded)
+    INPUT: REF(input.coded)
+    ACTION: REF(action.coded)
+    SUCCESS: REF(success.root)
+
+EXECUTE:
+    REFERENCE: REF(task.coded)
+",
+    );
+    let supplied = lcl_runtime::Value::Object(
+        [("code".to_string(), lcl_runtime::Value::Text("b".into()))]
+            .into_iter()
+            .collect(),
+    );
+    let fixture = execute_with(
+        &source,
+        lcl_semantics::Invocation::new().with("input.coded", supplied),
+    );
+    let completion = Completion::of(
+        completion_contracts(),
+        &fixture.planned,
+        &fixture.checked,
+        &fixture.resolved,
+        &fixture.execution,
+    )
+    .expect("the fixture executed, so it completes");
+    assert_eq!(
+        emitted(&completion),
+        vec!["error.pattern.mismatch"],
+        "{}",
+        completion.serialize()
+    );
+    assert!(!completion.succeeded());
+}

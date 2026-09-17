@@ -12897,7 +12897,8 @@
       "subruns": [
         "registry-contract",
         "checker",
-        "runtime"
+        "runtime",
+        "completion"
       ]
     },
     {

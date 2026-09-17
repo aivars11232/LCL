@@ -447,12 +447,12 @@ impl fmt::Debug for Contracts {
 }
 
 impl Contracts {
-    /// Build the static-checking vocabulary from a verified package.
     /// The M1 lexicon this package loaded.
     pub fn lexicon(&self) -> &Lexicon {
         &self.lexicon
     }
 
+    /// Build the static-checking vocabulary from a verified package.
     pub fn load(spec: &SpecPackage) -> Result<Self, ContractsLoadError> {
         if !spec.is_authoritative() {
             return Err(ContractsLoadError::UnverifiedPackage(spec.authority()));

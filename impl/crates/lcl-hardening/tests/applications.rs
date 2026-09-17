@@ -46,11 +46,63 @@ fn binary() -> PathBuf {
 /// running them at once would have each emptying the other's workspace.
 static WORKSPACES: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// The absolute `WORKSPACE` prefix the applications declare in their own
+/// source. `04_GRAMMAR/08` requires a WORKSPACE PATH to be absolute, so an
+/// application in the repository has to name one; a test run never uses it.
+const DECLARED_WORKSPACES: &str = "/tmp/lcl-apps/";
+
+/// Everything this test process writes: under the temporary directory the run
+/// was given, and private to this process.
+fn stage() -> PathBuf {
+    std::env::temp_dir().join(format!("lcl-apps-{}", std::process::id()))
+}
+
 fn workspace(app: &str) -> PathBuf {
-    let root = PathBuf::from("/tmp/lcl-apps").join(app);
+    let root = stage().join("workspaces").join(app);
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("the workspace is writable");
     root
+}
+
+/// A private copy of one application whose declared WORKSPACE is under
+/// [`stage`], with nothing else changed.
+///
+/// Each copy sits beside a link to the repository's `canonical/`, so the
+/// manifest's relative package path resolves exactly as it does in the
+/// repository.
+fn project(app: &str) -> PathBuf {
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let copy = stage().join(format!(
+        "copy-{}",
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    let _ = std::fs::remove_dir_all(&copy);
+    std::fs::create_dir_all(copy.join("apps")).expect("writable");
+    std::os::unix::fs::symlink(repository().join("canonical"), copy.join("canonical"))
+        .expect("the package link");
+    let copied = Command::new("cp")
+        .arg("-R")
+        .arg(repository().join("apps").join(app))
+        .arg(copy.join("apps"))
+        .status()
+        .expect("cp runs");
+    assert!(copied.success(), "could not copy {app}");
+
+    let workspaces = format!("{}/", stage().join("workspaces").display());
+    assert!(
+        !workspaces.contains(['"', '\\']),
+        "the temporary directory cannot be spelled in an LCL string: {workspaces}"
+    );
+    let project = copy.join("apps").join(app);
+    for entry in std::fs::read_dir(project.join("src")).expect("sources") {
+        let path = entry.expect("an entry").path();
+        let text = std::fs::read_to_string(&path).expect("a source");
+        if text.contains(DECLARED_WORKSPACES) {
+            std::fs::write(&path, text.replace(DECLARED_WORKSPACES, &workspaces))
+                .expect("writable");
+        }
+    }
+    project
 }
 
 /// Run one application, granting exactly what its own declaration needs.
@@ -59,18 +111,21 @@ fn workspace(app: &str) -> PathBuf {
 /// discovered nothing: the project root comes from the argument, and the
 /// specification package from the manifest.
 fn run(app: &str, grants: &[(&str, PathBuf)]) -> String {
+    let project = project(app);
     let mut command = Command::new(binary());
     command
         .arg("run")
         .arg("--machine")
         .arg("--project")
-        .arg(repository().join("apps").join(app))
+        .arg(&project)
         .current_dir(std::env::temp_dir())
         .env_clear();
     for (flag, path) in grants {
         command.arg(flag).arg(path);
     }
     let output = command.output().expect("the binary runs");
+    // The copy, not the package its link names: removal never follows a link.
+    let _ = std::fs::remove_dir_all(project.parent().and_then(Path::parent).expect("a copy"));
     String::from_utf8(output.stdout).expect("machine output is UTF-8")
 }
 
@@ -389,4 +444,17 @@ fn every_application_repeats_itself_exactly() {
         }
         assert_eq!(runs[0], runs[1], "{app} produced two different results");
     }
+}
+
+/// PRETEST-04 F24: an application's workspace belongs to this test run, under
+/// the temporary directory it was given, never a fixed path every run shares.
+#[test]
+fn application_workspaces_belong_to_this_run() {
+    let _serial = WORKSPACES.lock().unwrap_or_else(|e| e.into_inner());
+    let root = workspace("medium-release-notes");
+    assert!(
+        root.starts_with(std::env::temp_dir()) && !root.starts_with("/tmp/lcl-apps"),
+        "{}",
+        root.display()
+    );
 }

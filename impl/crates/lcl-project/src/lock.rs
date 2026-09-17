@@ -176,7 +176,7 @@ impl Lock {
     /// Read a lock file.
     pub fn read(path: impl AsRef<Path>) -> Result<Lock, LockError> {
         let path = path.as_ref();
-        let text = std::fs::read_to_string(path).map_err(|e| LockError::Io {
+        let text = crate::read_text(path).map_err(|e| LockError::Io {
             path: path.to_path_buf(),
             detail: format!("the lock file is not readable: {e}"),
         })?;

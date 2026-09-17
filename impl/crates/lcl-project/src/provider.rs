@@ -119,7 +119,7 @@ impl FileProvider {
             detail: format!("the document is not readable: {source}"),
         })?;
         let id = self.identity(&canonical)?;
-        let bytes = std::fs::read(&canonical).map_err(|source| ProjectPathError {
+        let bytes = crate::read_file(&canonical).map_err(|source| ProjectPathError {
             path: canonical.clone(),
             detail: format!("the document is not readable: {source}"),
         })?;
@@ -202,7 +202,7 @@ impl SourceProvider for FileProvider {
                 let id = self
                     .identity(&canonical)
                     .map_err(|e| LoadError::new(e.detail))?;
-                let bytes = std::fs::read(&canonical).map_err(|source| {
+                let bytes = crate::read_file(&canonical).map_err(|source| {
                     LoadError::new(format!("{path:?} is not readable: {source}"))
                 })?;
                 self.loaded.borrow_mut().insert(id.clone());

@@ -242,7 +242,7 @@ impl RealFileSystem {
 /// judging the link's own path would admit a write whose bytes the kernel then
 /// delivers to wherever the link points — which is the one place the grant may
 /// have been refusing.
-fn resolve(path: &Path) -> PathBuf {
+pub fn resolve(path: &Path) -> PathBuf {
     resolve_within(path, 0)
 }
 

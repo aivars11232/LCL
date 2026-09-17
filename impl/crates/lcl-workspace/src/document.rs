@@ -193,7 +193,7 @@ pub fn resolve(root: &Path, relative: &str) -> Result<PathBuf, DocumentError> {
 /// Read one document.
 pub fn read(root: &Path, relative: &str) -> Result<Document, DocumentError> {
     let path = resolve(root, relative)?;
-    let bytes = std::fs::read(&path).map_err(|e| DocumentError::Io {
+    let bytes = lcl_project::read_file(&path).map_err(|e| DocumentError::Io {
         path: path.clone(),
         detail: format!("the document is not readable: {e}"),
     })?;

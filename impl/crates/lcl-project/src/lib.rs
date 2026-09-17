@@ -47,6 +47,90 @@ pub use provider::{FileProvider, ProjectPathError};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+/// The largest file this product reads whole: a project document, the manifest,
+/// a lock file, the cache index, a cached blob, or a file being vendored.
+///
+/// A host limit, not a language rule. It equals the workspace's request-body
+/// ceiling, so the editor can open whatever it can save.
+pub const MAX_FILE_BYTES: u64 = 8 * 1024 * 1024;
+
+/// Read one whole file, holding at most [`MAX_FILE_BYTES`] + 1 bytes.
+///
+/// One byte past the limit is enough to know the limit was exceeded, so a
+/// larger or endless file is refused without being allocated.
+pub fn read_file(path: &Path) -> std::io::Result<Vec<u8>> {
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)?
+        .take(MAX_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("the file exceeds the product limit of {MAX_FILE_BYTES} bytes"),
+        ));
+    }
+    Ok(bytes)
+}
+
+/// [`read_file`], as UTF-8 text.
+pub(crate) fn read_text(path: &Path) -> std::io::Result<String> {
+    String::from_utf8(read_file(path)?)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+}
+
+/// The project root a document belongs to, and its root-relative identity.
+///
+/// Every product asks this one question the same way, so a document never
+/// receives a different root, identity or declared specification package
+/// depending on which product opened it. A relative `document` is taken from
+/// the working directory where the caller runs, once.
+///
+/// `07_VERSIONING_AND_EXTENSIONS/02` resolves a `SOURCE PATH` "relative only to
+/// importing file or explicit WORKSPACE", so the root is the nearest ancestor
+/// that declares itself one with a manifest. When no ancestor does, the
+/// document's own directory is the root: a rootless project, which keeps
+/// containment without inventing a manifest.
+///
+/// The search stops at the first manifest and never leaves the path it was
+/// given. Nothing is discovered by scanning, and no file outside the returned
+/// root becomes reachable.
+pub fn locate_document(document: &Path) -> Result<(PathBuf, String), ProjectPathError> {
+    let document = document.canonicalize().map_err(|e| ProjectPathError {
+        path: document.to_path_buf(),
+        detail: format!("the document is not readable: {e}"),
+    })?;
+    if !document.is_file() {
+        return Err(ProjectPathError {
+            path: document,
+            detail: "a document is a file; pass a directory as the project instead".to_string(),
+        });
+    }
+    let directory = document
+        .parent()
+        .ok_or_else(|| ProjectPathError {
+            path: document.clone(),
+            detail: "the document has no containing directory".to_string(),
+        })?
+        .to_path_buf();
+    let root = directory
+        .ancestors()
+        .find(|ancestor| ancestor.join(MANIFEST_FILE).is_file())
+        .unwrap_or(directory.as_path())
+        .to_path_buf();
+    let identity = document
+        .strip_prefix(&root)
+        .map_err(|_| ProjectPathError {
+            path: document.clone(),
+            detail: "the document is outside its project root".to_string(),
+        })?
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().to_string())
+        .collect::<Vec<_>>()
+        .join("/");
+    Ok((root, identity))
+}
+
 /// Why a project could not be opened.
 #[derive(Debug)]
 pub enum ProjectError {
@@ -54,6 +138,8 @@ pub enum ProjectError {
     NoManifest(PathBuf),
     Manifest(ManifestError),
     Path(ProjectPathError),
+    /// The manifest declares a package cache that will not open.
+    Cache(CacheError),
 }
 
 impl fmt::Display for ProjectError {
@@ -64,6 +150,7 @@ impl fmt::Display for ProjectError {
             }
             ProjectError::Manifest(inner) => write!(f, "{inner}"),
             ProjectError::Path(inner) => write!(f, "{inner}"),
+            ProjectError::Cache(inner) => write!(f, "the declared package cache: {inner}"),
         }
     }
 }
@@ -178,17 +265,40 @@ impl Project {
         }
     }
 
+    /// Where `package lock` may write the lock file.
+    ///
+    /// A manifest may name a lock outside the project for reading; a shared,
+    /// read-only lock is a legitimate reference. Writing is a product effect,
+    /// and a manifest must not direct it at an arbitrary path, so the
+    /// destination must really lie inside the project root, judged where it
+    /// leads, links included.
+    pub fn lock_destination(&self) -> Result<PathBuf, ProjectPathError> {
+        let path = self.lock_path();
+        let resolved = lcl_capabilities::fs::resolve(&path);
+        if lcl_capabilities::contains(&self.root, &resolved) {
+            return Ok(path);
+        }
+        Err(ProjectPathError {
+            detail: format!(
+                "the lock file resolves to {}, outside the project root {}; \
+                 `package lock` writes only inside the project",
+                resolved.display(),
+                self.root.display()
+            ),
+            path,
+        })
+    }
+
     /// A provider over this project, with the declared cache when there is one.
+    ///
+    /// A declared cache that will not open is a fault in the project's
+    /// configuration and is returned as one. Dropping it would turn a damaged
+    /// store into a project without a cache, and every `URI` import into a
+    /// missing one.
     pub fn provider(&self) -> Result<FileProvider, ProjectError> {
         let provider = FileProvider::new(&self.root).map_err(ProjectError::Path)?;
         match self.cache_path() {
-            Some(dir) => match Cache::open(&dir) {
-                Ok(cache) => Ok(provider.with_cache(cache)),
-                // A cache that will not open is a real fault, but it is the
-                // caller's to report: the provider without it simply cannot
-                // answer a URI, and says so when asked.
-                Err(_) => Ok(provider),
-            },
+            Some(dir) => Ok(provider.with_cache(Cache::open(&dir).map_err(ProjectError::Cache)?)),
             None => Ok(provider),
         }
     }

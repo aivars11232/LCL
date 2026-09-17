@@ -366,3 +366,177 @@ fn validate_performs_no_effect_even_when_granted() {
     assert_eq!(run.code, SUCCESS, "{}{}", run.stdout, run.stderr);
     assert!(!target.exists(), "preflight performs no effect");
 }
+
+// ---------------------------------------------------------------------------
+// PRETEST-04: one document root, bounded reads, contained writes
+// ---------------------------------------------------------------------------
+
+/// One byte over the product read limit.
+const OVERSIZED: u64 = lcl_project::MAX_FILE_BYTES + 1;
+
+/// One sparse file of `OVERSIZED` bytes.
+fn oversized(path: &Path) {
+    std::fs::File::create(path)
+        .and_then(|file| file.set_len(OVERSIZED))
+        .expect("an oversized fixture");
+}
+
+/// F20 and F21: a document inside a project is judged in that project however
+/// it is named, and a relative path is resolved once.
+///
+/// `lcl-workspace --document` opens the nearest enclosing project, so the
+/// command line must too: otherwise the same file receives a different root,
+/// identity and specification package depending on which product opened it.
+#[test]
+fn a_nested_document_is_judged_in_its_enclosing_project() {
+    let root = importing_project("project_nested_document");
+    let elsewhere = scratch("project_nested_document_elsewhere");
+    let from_entry = lcl_in(&root, &["check", "--machine"], &[]);
+    assert_eq!(
+        from_entry.code, SUCCESS,
+        "{}{}",
+        from_entry.stdout, from_entry.stderr
+    );
+
+    let absolute = root.join("src/main.lcl").display().to_string();
+    for (cwd, document) in [
+        (root.as_path(), "src/main.lcl"),
+        (root.join("src").as_path(), "main.lcl"),
+        (elsewhere.as_path(), absolute.as_str()),
+    ] {
+        let run = lcl_in(cwd, &["check", "--machine", document], &[]);
+        assert_eq!(
+            run.code,
+            SUCCESS,
+            "{document} from {}: {}{}",
+            cwd.display(),
+            run.stdout,
+            run.stderr
+        );
+        assert_eq!(
+            run.stdout,
+            from_entry.stdout,
+            "{document} from {}",
+            cwd.display()
+        );
+    }
+}
+
+/// F17: a configured cache that will not open is a configuration fault, not a
+/// project without a cache.
+#[test]
+fn a_configured_cache_that_will_not_open_stops_the_command() {
+    let root = importing_project("project_cache_unopenable");
+    write(root.join(".lcl-cache/index"), "lcl-cache/99\n");
+    let run = lcl_in(&root, &["check"], &[]);
+    assert_eq!(run.code, ENVIRONMENT, "{}{}", run.stdout, run.stderr);
+    assert!(run.stderr.contains("cache"), "{}", run.stderr);
+}
+
+/// F18: a vendored URI must be one the cache index can hold as one entry.
+#[test]
+fn a_vendored_uri_cannot_inject_a_cache_entry() {
+    let root = importing_project("project_vendor_injection");
+    let source = root.join("src/02_IMPORT_LIBRARY.lcl");
+    let forged = format!(
+        "https://example.invalid/lib.lcl\n{}  https://example.invalid/forged.lcl",
+        "0".repeat(64)
+    );
+    for uri in [
+        forged.as_str(),
+        "https://example.invalid/a b.lcl",
+        "not a uri",
+    ] {
+        let run = lcl_in(
+            &root,
+            &["package", "vendor", uri, &source.display().to_string()],
+            &[],
+        );
+        assert_eq!(run.code, 3, "{uri:?}: {}{}", run.stdout, run.stderr);
+    }
+    assert!(
+        !root.join(".lcl-cache/index").exists(),
+        "nothing was cached"
+    );
+}
+
+/// F19: vendored bytes and the manifest are read within a product limit.
+#[test]
+fn oversized_project_inputs_are_refused_before_they_are_read() {
+    let root = importing_project("project_oversized_vendor");
+    let huge = root.join("huge.lcl");
+    oversized(&huge);
+    let run = lcl_in(
+        &root,
+        &[
+            "package",
+            "vendor",
+            "https://example.invalid/huge.lcl",
+            &huge.display().to_string(),
+        ],
+        &[],
+    );
+    assert_eq!(run.code, ENVIRONMENT, "{}{}", run.stdout, run.stderr);
+    assert!(run.stderr.contains("limit"), "{}", run.stderr);
+
+    let manifest = scratch("project_oversized_manifest");
+    oversized(&manifest.join("lcl.project.json"));
+    let run = lcl_in(&manifest, &["check"], &[]);
+    assert_eq!(run.code, ENVIRONMENT, "{}{}", run.stdout, run.stderr);
+    assert!(run.stderr.contains("limit"), "{}", run.stderr);
+}
+
+/// F22: a manifest may name a lock outside the project for reading, but
+/// `package lock` writes only inside the project.
+#[test]
+fn package_lock_never_writes_outside_the_project() {
+    let root = importing_project("project_lock_escape");
+    let outside = scratch("project_lock_escape_outside");
+    let manifest = std::fs::read_to_string(root.join("lcl.project.json")).unwrap();
+    let external = outside.join("external.lock");
+    write(
+        root.join("lcl.project.json"),
+        manifest.replace(
+            "\"cache\"",
+            &format!(
+                "\"lock\": {:?},\n  \"cache\"",
+                external.display().to_string()
+            ),
+        ),
+    );
+    let run = lcl_in(&root, &["package", "lock"], &[]);
+    assert_eq!(run.code, ENVIRONMENT, "{}{}", run.stdout, run.stderr);
+    assert!(
+        !external.exists(),
+        "the lock was written outside the project"
+    );
+
+    // Reading an external lock stays legitimate.
+    std::fs::write(root.join("lcl.project.json"), &manifest).unwrap();
+    assert_eq!(lcl_in(&root, &["package", "lock"], &[]).code, SUCCESS);
+    std::fs::rename(root.join("lcl.lock"), &external).unwrap();
+    write(
+        root.join("lcl.project.json"),
+        manifest.replace(
+            "\"cache\"",
+            &format!(
+                "\"lock\": {:?},\n  \"cache\"",
+                external.display().to_string()
+            ),
+        ),
+    );
+    let verified = lcl_in(&root, &["package", "verify"], &[]);
+    assert_eq!(
+        verified.code, SUCCESS,
+        "{}{}",
+        verified.stdout, verified.stderr
+    );
+
+    // A link inside the project is judged where it leads.
+    std::fs::write(root.join("lcl.project.json"), &manifest).unwrap();
+    let target = outside.join("linked.lock");
+    std::os::unix::fs::symlink(&target, root.join("lcl.lock")).unwrap();
+    let run = lcl_in(&root, &["package", "lock"], &[]);
+    assert_eq!(run.code, ENVIRONMENT, "{}{}", run.stdout, run.stderr);
+    assert!(!target.exists(), "the lock was written through a link");
+}

@@ -13,7 +13,7 @@
 //! made of it. Nothing is mocked; a double would only agree with itself.
 
 use lcl_capabilities::bounds::{Bounds, Deadline};
-use lcl_capabilities::grant::Grants;
+use lcl_capabilities::grant::{Grants, Refusal};
 use lcl_capabilities::net::{Address, NetError, Transport};
 use lcl_capabilities::TcpTransport;
 use std::io::{Read, Write};
@@ -326,4 +326,68 @@ fn an_unanswering_connection_is_stopped_by_the_declared_bound() {
         elapsed < Duration::from_secs(10),
         "and the wait ended near the declared bound rather than after {elapsed:?}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// PRETEST-04 F25: valid URI forms
+// ---------------------------------------------------------------------------
+
+/// Every valid URI form becomes an address this transport can reach, or is
+/// refused as a host limitation. None is a malformed address, because the
+/// `URI` literal profile already accepted it.
+#[test]
+fn valid_uri_forms_are_addresses_or_host_limitations() {
+    let parsed = |uri: &str| Address::parse(uri).unwrap_or_else(|e| panic!("{uri}: {e:?}"));
+    let address = parsed("http://user@[2001:db8::1]:8080/a/b?c=d");
+    assert_eq!(
+        (address.host.as_str(), address.port, address.target.as_str()),
+        ("[2001:db8::1]", 8080, "/a/b?c=d")
+    );
+    let address = parsed("http://[::1]/x");
+    assert_eq!((address.host.as_str(), address.port), ("[::1]", 80));
+    let address = parsed("http://example.invalid?q=1");
+    assert_eq!(
+        (address.host.as_str(), address.port, address.target.as_str()),
+        ("example.invalid", 80, "/?q=1")
+    );
+    assert_eq!(parsed("http://example.invalid:/x").port, 80);
+    assert!(parsed("HTTPS://example.invalid/x").is_secure());
+
+    for uri in [
+        "ftp://example.invalid/x",
+        "ftp://example.invalid:21/x",
+        "mailto:someone@example.invalid",
+        "urn:example:lib",
+        "file:///etc/hosts",
+        "http://example.invalid:65536/x",
+    ] {
+        match Address::parse(uri) {
+            Err(NetError::Refused(Refusal::Unavailable(_))) => {}
+            other => panic!("{uri}: {other:?}"),
+        }
+    }
+}
+
+/// An IP-literal host is connected to without its brackets.
+#[test]
+fn an_ipv6_literal_host_is_reached() {
+    let Ok(listener) = TcpListener::bind("[::1]:0") else {
+        return; // this machine has no IPv6 loopback to reach
+    };
+    let port = listener.local_addr().expect("bound").port();
+    let server = std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut request = [0u8; 2048];
+            let _ = stream.read(&mut request);
+            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
+        }
+    });
+    let address = Address::parse(&format!("http://[::1]:{port}/resource")).expect("valid");
+    let result = TcpTransport::new(Grants::none().permit_network_host("[::1]"))
+        .get(&address, &bounds())
+        .map(|response| response.body);
+    // A client that never connected would leave the listener waiting forever.
+    let _ = TcpStream::connect(("::1", port));
+    let _ = server.join();
+    assert_eq!(result, Ok(b"ok".to_vec()));
 }

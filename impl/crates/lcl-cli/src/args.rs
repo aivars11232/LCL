@@ -368,7 +368,7 @@ pub fn usage() -> String {
         ),
         (
             "--project <dir>",
-            "the project root; defaults to the document's own directory",
+            "the project root; defaults to the document's nearest enclosing directory holding lcl.project.json, else its own directory",
         ),
         (
             "--input <id>=<expr>",

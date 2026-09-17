@@ -560,3 +560,32 @@ fn a_created_document_is_checked_and_run_like_any_other() {
         invalid.body
     );
 }
+
+/// PRETEST-04 F15: the frontend never hands text to the HTML parser. A startup
+/// failure carries a server or transport message, which is text, and a message
+/// holding markup must not become markup.
+#[test]
+fn the_frontend_never_assigns_markup() {
+    let source = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/app.js"),
+    )
+    .expect("the frontend script is readable");
+    let mut sinks = Vec::new();
+    for (number, line) in source.lines().enumerate() {
+        let code = line.trim_start();
+        if code.starts_with('*') || code.starts_with("//") || code.starts_with("/*") {
+            continue;
+        }
+        for sink in [
+            "innerHTML",
+            "outerHTML",
+            "insertAdjacentHTML",
+            "document.write",
+        ] {
+            if code.contains(sink) {
+                sinks.push(format!("{}: {}", number + 1, code));
+            }
+        }
+    }
+    assert!(sinks.is_empty(), "markup sinks in app.js: {sinks:#?}");
+}

@@ -195,6 +195,15 @@ impl HostAdapter {
         if effects("network") && self.transport.is_none() {
             return Some("no network transport is installed".to_string());
         }
+        // A valid URI this host cannot address is a limitation of the host,
+        // decided before any grant, because no grant could make it reachable.
+        let to_person = request.possible_dependencies.iter().any(|d| d == "human");
+        if effects("network") || (effects("message") && !to_person) {
+            if let Some(Err(NetError::Refused(Refusal::Unavailable(detail)))) = address_of(request)
+            {
+                return Some(detail);
+            }
+        }
         if request.possible_dependencies.iter().any(|d| d == "human") && self.responder.is_none() {
             return Some("no human responder is installed".to_string());
         }
@@ -275,32 +284,24 @@ fn uri_of(value: Option<&Value>) -> Option<&str> {
     }
 }
 
-/// The network host one request reaches, from whichever side is a URI.
-fn host_of(request: &CapabilityRequest) -> Option<String> {
+/// The network address one request reaches, from whichever side is a URI,
+/// parsed by the transport's own [`Address::parse`], so that the grant decided
+/// and the address reached are the same.
+fn address_of(request: &CapabilityRequest) -> Option<Result<Address, NetError>> {
     let uri = uri_of(request.target.as_ref())
         .or_else(|| uri_of(request.parameters.get("destination")))
         .or_else(|| uri_of(request.parameters.get("recipient")))?;
-    let without_scheme = uri.split_once("://").map(|(_, rest)| rest).unwrap_or(uri);
-    let authority = without_scheme
-        .split(['/', '?', '#'])
-        .next()
-        .unwrap_or(without_scheme);
-    let host = authority
-        .rsplit_once('@')
-        .map(|(_, host)| host)
-        .unwrap_or(authority);
-    Some(host.split(':').next().unwrap_or(host).to_string())
+    Some(Address::parse(uri))
+}
+
+/// The network host one request reaches.
+fn host_of(request: &CapabilityRequest) -> Option<String> {
+    address_of(request)?.ok().map(|address| address.host)
 }
 
 /// Whether the addressed scheme requires a secure transport.
 fn is_secure(request: &CapabilityRequest) -> bool {
-    let uri = uri_of(request.target.as_ref())
-        .or_else(|| uri_of(request.parameters.get("destination")))
-        .or_else(|| uri_of(request.parameters.get("recipient")));
-    uri.is_some_and(|uri| {
-        let scheme = uri.split("://").next().unwrap_or_default();
-        matches!(scheme, "https" | "wss" | "ftps")
-    })
+    matches!(address_of(request), Some(Ok(address)) if address.is_secure())
 }
 
 /// The program one execution request runs.

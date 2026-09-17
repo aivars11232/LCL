@@ -59,6 +59,12 @@ pub enum CacheError {
         digest: String,
         actual: String,
     },
+    /// Text that is not a URI under the `URI` literal profile, which the index
+    /// could not hold as exactly one entry and no import could name.
+    Uri {
+        uri: String,
+        detail: String,
+    },
 }
 
 impl fmt::Display for CacheError {
@@ -72,6 +78,7 @@ impl fmt::Display for CacheError {
                 f,
                 "the cached blob stored as {digest} now hashes to {actual}"
             ),
+            CacheError::Uri { uri, detail } => write!(f, "{uri:?} is not a URI: {detail}"),
         }
     }
 }
@@ -102,7 +109,7 @@ impl Cache {
                 index: BTreeMap::new(),
             });
         }
-        let text = std::fs::read_to_string(&index_path).map_err(|e| CacheError::Io {
+        let text = crate::read_text(&index_path).map_err(|e| CacheError::Io {
             path: index_path.clone(),
             detail: format!("the cache index is not readable: {e}"),
         })?;
@@ -139,7 +146,7 @@ impl Cache {
             )));
         };
         let path = self.blob(digest);
-        let bytes = std::fs::read(&path).map_err(|e| {
+        let bytes = crate::read_file(&path).map_err(|e| {
             LoadError::new(format!(
                 "the cache lists {uri:?} but its blob is unreadable: {e}"
             ))
@@ -161,7 +168,15 @@ impl Cache {
     /// who vendors a source again is stating that the new bytes are the ones
     /// they mean, and the importing document's `CHECKSUM` decides whether the
     /// language accepts them.
+    ///
+    /// `uri` must meet the `URI` literal profile, the only form an import can
+    /// name. That profile admits no whitespace or control character, so the
+    /// index line holding it cannot be split or forged.
     pub fn put(&mut self, uri: &str, bytes: &[u8]) -> Result<String, CacheError> {
+        lcl_lexer::uri_profile(uri).map_err(|detail| CacheError::Uri {
+            uri: uri.to_string(),
+            detail,
+        })?;
         let digest = lcl_spec::sha256::hex_digest(bytes);
         let blobs = self.dir.join(BLOBS);
         std::fs::create_dir_all(&blobs).map_err(|e| CacheError::Io {
@@ -185,7 +200,7 @@ impl Cache {
         let mut faults = Vec::new();
         for (uri, digest) in &self.index {
             let path = self.blob(digest);
-            match std::fs::read(&path) {
+            match crate::read_file(&path) {
                 Err(e) => faults.push(CacheError::Io {
                     path: path.clone(),
                     detail: format!("the blob for {uri:?} is unreadable: {e}"),

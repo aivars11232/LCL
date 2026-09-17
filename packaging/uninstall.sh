@@ -21,9 +21,10 @@ done
 # Exactly the icon files this installation wrote, one at a time. The hicolor
 # theme is shared with every other application on the machine, so a recursive
 # removal here would take other products' icons with it. Only the directories
-# those files lived in, and the theme root above them, are offered to `rmdir`,
-# which declines unless this installation left them empty. Every other
-# directory in the theme belongs to someone else, even an empty one. Never -r.
+# those files lived in are offered to `rmdir`, which declines unless this
+# installation left them empty. Every other directory in the theme belongs to
+# someone else, even an empty one, and so do the shared roots `icons/` and
+# `icons/hicolor/`, which are never removed. Never -r.
 icons=$data/icons/hicolor
 for relative in */apps/lcl-workspace.png */mimetypes/text-x-lcl.png; do
     for path in "$icons"/$relative; do
@@ -35,7 +36,6 @@ for relative in */apps/lcl-workspace.png */mimetypes/text-x-lcl.png; do
         fi
     done
 done
-rmdir "$icons" "$data/icons" 2>/dev/null || true
 if [ -d "$data/lcl/LCL_Core_0.1.0" ]; then
     rm -rf "$data/lcl/LCL_Core_0.1.0"
     echo "removed $data/lcl/LCL_Core_0.1.0"

@@ -1045,13 +1045,17 @@ fn uninstall_takes_only_this_products_icons() {
 }
 
 #[test]
-fn an_empty_theme_directory_is_removed_but_the_shared_root_is_never_recursive() {
-    // With nothing else in the theme, uninstall should leave no empty skeleton
-    // behind either. The two cases together state the whole rule: remove our
-    // files, remove the directories only we filled, never remove the rest.
+fn an_empty_theme_directory_is_removed_but_the_shared_icon_roots_stay() {
+    // With nothing else in the theme, uninstall leaves no empty skeleton of the
+    // directories only this product filled. The icon roots are not among them:
+    // `icons/` and the `hicolor` fallback theme belong to every application on
+    // the machine, even when they happen to be empty (PRETEST-04 F23). The
+    // cases together state the whole rule: remove our files, remove the
+    // directories only we filled, never remove the rest.
     let home = Home::new("icontidy");
     let (payload, _) = install(&home);
-    let theme = home.join(".local/share/icons/hicolor");
+    let icons = home.join(".local/share/icons");
+    let theme = icons.join("hicolor");
     assert!(theme.join("256x256/apps/lcl-workspace.png").is_file());
 
     let output = Command::new(payload.join("uninstall.sh"))
@@ -1063,10 +1067,13 @@ fn an_empty_theme_directory_is_removed_but_the_shared_root_is_never_recursive() 
         .expect("the uninstaller runs");
     assert!(output.status.success());
     assert!(
-        !theme.exists(),
-        "an installation that filled the theme by itself should leave none of \
-         it behind: {} is still there",
-        theme.display()
+        !theme.join("256x256").exists(),
+        "a size directory only this product filled should be gone"
+    );
+    assert!(
+        theme.is_dir() && icons.is_dir(),
+        "uninstall removed a shared icon root: {}",
+        String::from_utf8_lossy(&output.stdout)
     );
 }
 

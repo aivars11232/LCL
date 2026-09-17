@@ -1247,3 +1247,73 @@ fn q_read_ordinary_bounds_are_unchanged() {
         "an ordinary range is not affected"
     );
 }
+
+// ---------------------------------------------------------------------------
+// PRETEST-04 F25: valid URI forms through the host adapter
+// ---------------------------------------------------------------------------
+
+/// A download from `uri`, with `host` granted and the memory transport
+/// answering for `bound` only.
+fn download_from(uri: &str, host: &str, bound: &str) -> Execution {
+    let declarations = format!(
+        "{}{}",
+        common::data("data.endpoint", "URI", &format!("URI({uri:?})")),
+        common::data("data.destination", "PATH", "PATH(\"/srv/out/data.txt\")")
+    );
+    let action = "ID: action.download\nOPERATION: core.download\nTARGET: REF(data.endpoint)\n\
+                  PARAMETER:\n    NAME: destination\n    TYPE: PATH\n    REQUIRED: TRUE\n    \
+                  VALUE: REF(data.destination)";
+    let source = common::task(&declarations, &[action]);
+    let grants = Grants::none()
+        .permit_write("/srv/out")
+        .permit_network_host(host);
+    let mut adapter = HostAdapter::new(grants)
+        .with_filesystem(MemoryFileSystem::new().with_scope("/srv/out"))
+        .with_transport(MemoryTransport::new().with_resource(bound, "retrieved bytes"));
+    run_with_host(&source, &mut adapter)
+}
+
+/// A valid URI is reached at the host it names when this host can address
+/// it, and is a host limitation when it cannot. It is never read as another
+/// host, silently sent in cleartext, or reported as a failed operation.
+#[test]
+fn valid_uri_forms_are_reached_or_are_host_limitations() {
+    for (uri, host, bound) in [
+        (
+            "http://[2001:db8::1]:8080/data.txt",
+            "[2001:db8::1]",
+            "http://[2001:db8::1]/data.txt",
+        ),
+        (
+            "http://example.invalid?name=data",
+            "example.invalid",
+            "http://example.invalid/?name=data",
+        ),
+        (
+            "HTTP://example.invalid/data.txt",
+            "example.invalid",
+            "http://example.invalid/data.txt",
+        ),
+    ] {
+        let execution = download_from(uri, host, bound);
+        let result = common::result_of(&execution, "action.download");
+        assert_eq!(
+            result.status, "status.succeeded",
+            "{uri}: {:?}",
+            result.execution_errors
+        );
+    }
+    for uri in [
+        "ftp://example.invalid/data.txt",
+        "mailto:someone@example.invalid",
+        "HTTPS://example.invalid:443/data.txt",
+        "http://example.invalid:65536/data.txt",
+    ] {
+        let execution = download_from(uri, "example.invalid", "http://example.invalid/data.txt");
+        assert_eq!(
+            common::errors_of(&execution, "action.download"),
+            vec!["error.host.constraint".to_string()],
+            "{uri}"
+        );
+    }
+}

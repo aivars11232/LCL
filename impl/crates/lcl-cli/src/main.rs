@@ -18,9 +18,13 @@
 //! The specification package comes from `--spec`, then `LCL_SPEC`, then the
 //! project manifest — and if none of those names one, the command stops rather
 //! than looking for one. The project root is the directory a caller named, or
-//! the document's own directory; no parent is searched. `05_SEMANTICS/02` is
-//! the reason: "Ambient current directory and implied nearby files do not exist
-//! in portable LCL", and a tool that guessed either would put the ambience back.
+//! the one a named document declares by [`lcl_project::locate_document`]: its
+//! nearest ancestor holding a manifest, else its own directory. That is the
+//! workspace's rule too, so a document is never judged under a different root
+//! or package depending on which product opened it. `05_SEMANTICS/02` is why
+//! nothing further is searched: "Ambient current directory and implied nearby
+//! files do not exist in portable LCL", and a tool that guessed would put the
+//! ambience back.
 //!
 //! ## A run is granted nothing by default
 //!
@@ -38,7 +42,7 @@ mod syntax;
 use args::{Command, Common, Document, UsageError};
 use lcl_localization::{LocaleTag, Pin};
 use lcl_project::lock::LockedLocale;
-use lcl_project::{Cache, Lock, Project};
+use lcl_project::{Cache, CacheError, Lock, Project};
 use lcl_protocol::json::{Node, Object};
 use lcl_protocol::{Engine, Engines, Inputs, Report};
 use lcl_resolver::SourceId;
@@ -236,18 +240,17 @@ fn open_localized(root: &Path, profiles: &[PathBuf]) -> Result<Engine, Failure> 
 
 /// Open the project a command acts within.
 ///
-/// `--project` names it outright. Otherwise it is the document's own directory:
-/// exactly one directory, examined once, with no walk upward. A project root
-/// found by searching parent directories would be an implied nearby file by
-/// another name.
+/// `--project` names it outright. Otherwise a named document declares it, by
+/// the rule every product shares ([`lcl_project::locate_document`]); with
+/// neither, it is the directory the command runs in.
 fn open_project(common: &Common, document: Option<&Path>) -> Result<Project, Failure> {
     let root = match (&common.project, document) {
         (Some(root), _) => root.clone(),
-        (None, Some(path)) => path
-            .parent()
-            .filter(|p| !p.as_os_str().is_empty())
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from(".")),
+        (None, Some(path)) => {
+            lcl_project::locate_document(path)
+                .map_err(|e| Failure::environment(e.to_string()))?
+                .0
+        }
         (None, None) => PathBuf::from("."),
     };
     if root.join(lcl_project::MANIFEST_FILE).is_file() {
@@ -258,9 +261,18 @@ fn open_project(common: &Common, document: Option<&Path>) -> Result<Project, Fai
 }
 
 /// The document a command acts on: the one named, or the manifest's entry.
+///
+/// A named document is a path from where the command runs, resolved here once.
+/// The provider derives its root-relative identity from that resolution and
+/// never joins it to the project root a second time.
 fn entry(document: &Document, project: &Project) -> Result<PathBuf, Failure> {
     match &document.path {
-        Some(path) => Ok(path.clone()),
+        Some(path) => path.canonicalize().map_err(|e| {
+            Failure::environment(format!(
+                "{}: the document is not readable: {e}",
+                path.display()
+            ))
+        }),
         None => project.entry_path().ok_or_else(|| {
             Failure::usage("no document: name one, or declare \"entry\" in lcl.project.json")
         }),
@@ -370,6 +382,14 @@ fn locked_drift(project: &Project, report: &Report) -> Result<Option<String>, Fa
 fn lock_command(document: Document, write: bool) -> Result<i32, Failure> {
     let common = document.common.clone();
     let project = open_project(&common, document.path.as_deref())?;
+    // Only a write is confined to the project; a manifest may name an external
+    // lock for `verify` to read.
+    let lock_path = match write {
+        true => project
+            .lock_destination()
+            .map_err(|e| Failure::environment(e.to_string()))?,
+        false => project.lock_path(),
+    };
     let engines = engines(&common, Some(&project))?;
     let path = entry(&document, &project)?;
     let provider = project
@@ -390,7 +410,6 @@ fn lock_command(document: Document, write: bool) -> Result<i32, Failure> {
         ));
     };
 
-    let lock_path = project.lock_path();
     if write {
         actual
             .write(&lock_path)
@@ -470,12 +489,13 @@ fn vendor(uri: &str, file: &Path, common: &Common) -> Result<i32, Failure> {
     let dir = project
         .cache_path()
         .ok_or_else(|| Failure::usage("no package cache: declare \"cache\" in lcl.project.json"))?;
-    let bytes = std::fs::read(file)
+    let bytes = lcl_project::read_file(file)
         .map_err(|e| Failure::environment(format!("{}: not readable: {e}", file.display())))?;
     let mut cache = Cache::open(&dir).map_err(|e| Failure::environment(e.to_string()))?;
-    let digest = cache
-        .put(uri, &bytes)
-        .map_err(|e| Failure::environment(e.to_string()))?;
+    let digest = cache.put(uri, &bytes).map_err(|e| match e {
+        CacheError::Uri { .. } => Failure::usage(e.to_string()),
+        _ => Failure::environment(e.to_string()),
+    })?;
 
     if common.machine {
         print!(

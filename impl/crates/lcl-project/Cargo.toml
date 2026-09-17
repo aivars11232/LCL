@@ -10,8 +10,6 @@ publish.workspace = true
 lcl-spec = { path = "../lcl-spec" }
 lcl-resolver = { path = "../lcl-resolver" }
 lcl-capabilities = { path = "../lcl-capabilities" }
-
-[dev-dependencies]
-# Tests build real project trees and assert on exact source identity and byte
-# spans, which needs the lexer's `Span` and the trust root's SHA-256.
+# The cache holds a vendored URI to the lexer's own `URI` literal profile, and
+# tests assert on exact byte spans with the lexer's `Span`.
 lcl-lexer = { path = "../lcl-lexer" }

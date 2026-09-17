@@ -64,43 +64,83 @@ pub struct Address {
 
 impl Address {
     /// Parse one absolute URI into the parts a transport needs.
+    ///
+    /// The text has already met the `URI` literal profile, RFC 3986
+    /// `absolute-URI`, so what is decided here is only whether a host transport
+    /// can address it. A valid URI that none can, because it names no
+    /// authority (`mailto:`, `urn:`, `file:///`), uses a scheme other than
+    /// `http` or `https`, or names a port no socket has, is a host limitation,
+    /// `Refused(Unavailable)`, which "never changes LCL meaning". It is not a
+    /// malformed address. `Malformed` remains only for text the profile would
+    /// have refused.
+    ///
+    /// The scheme is case-insensitive and is held in lowercase, so `HTTPS` is
+    /// secure too. An IP-literal host keeps its brackets, as the URI spells it
+    /// and as grants and the `Host` header name it.
     pub fn parse(uri: &str) -> Result<Address, NetError> {
+        let unavailable = |detail: String| NetError::Refused(Refusal::Unavailable(detail));
+        let malformed = |detail: &str| NetError::Malformed(format!("{uri} {detail}"));
         let (scheme, rest) = uri
-            .split_once("://")
-            .ok_or_else(|| NetError::Malformed(format!("{uri} declares no scheme")))?;
-        let (authority, path) = match rest.find('/') {
-            Some(index) => (&rest[..index], &rest[index..]),
-            None => (rest, "/"),
+            .split_once(':')
+            .ok_or_else(|| malformed("declares no scheme"))?;
+        let scheme = scheme.to_ascii_lowercase();
+        if scheme != "http" && scheme != "https" {
+            return Err(unavailable(format!(
+                "this host's transport speaks HTTP only, so {uri} cannot be reached"
+            )));
+        }
+        let Some(rest) = rest.strip_prefix("//") else {
+            return Err(unavailable(format!(
+                "{uri} names no host, so no transport can reach it"
+            )));
+        };
+        // The authority ends at the path or the query. An absolute URI has no
+        // fragment.
+        let (authority, target) = rest.split_at(rest.find(['/', '?']).unwrap_or(rest.len()));
+        let target = match target.starts_with('/') {
+            true => target.to_string(),
+            false => format!("/{target}"),
         };
         let authority = authority
             .rsplit_once('@')
             .map(|(_, host)| host)
             .unwrap_or(authority);
-        let (host, port) = match authority.rsplit_once(':') {
-            Some((host, port)) => (
-                host,
-                port.parse::<u16>()
-                    .map_err(|_| NetError::Malformed(format!("{uri} declares no valid port")))?,
-            ),
-            None => (
-                authority,
-                match scheme {
-                    "http" => 80,
-                    "https" => 443,
-                    other => {
-                        return Err(NetError::Malformed(format!("{other} has no default port")))
-                    }
-                },
-            ),
+        let (host, port) = match authority.find(']') {
+            Some(close) if authority.starts_with('[') => {
+                let (host, after) = authority.split_at(close + 1);
+                match after {
+                    "" => (host, ""),
+                    _ => (
+                        host,
+                        after
+                            .strip_prefix(':')
+                            .ok_or_else(|| malformed("declares no valid port"))?,
+                    ),
+                }
+            }
+            _ if authority.starts_with('[') => return Err(malformed("leaves its IP literal open")),
+            _ => authority.rsplit_once(':').unwrap_or((authority, "")),
+        };
+        if !port.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(malformed("declares no valid port"));
+        }
+        let port = match port {
+            "" if scheme == "http" => 80,
+            "" => 443,
+            digits => digits.parse::<u16>().map_err(|_| {
+                unavailable(format!("{uri} names port {digits}, which no socket has"))
+            })?,
         };
         if host.is_empty() {
-            return Err(NetError::Malformed(format!("{uri} declares no host")));
+            return Err(unavailable(format!(
+                "{uri} names no host, so no transport can reach it"
+            )));
         }
         Ok(Address {
-            scheme: scheme.to_string(),
+            scheme,
             host: host.to_string(),
             port,
-            target: path.to_string(),
+            target,
         })
     }
 
@@ -283,7 +323,14 @@ fn sent_error(error: std::io::Error, budget: &Budget) -> NetError {
 /// may have opened when it finishes.
 fn connect_within(address: &Address, budget: &Budget) -> Result<TcpStream, NetError> {
     let left = budget.remaining().ok_or_else(|| budget.elapsed_error())?;
-    let host = address.host.clone();
+    // An IP-literal is connected to by its address, without the brackets the
+    // URI spells it with.
+    let host = address
+        .host
+        .strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(&address.host)
+        .to_string();
     let port = address.port;
     let (tx, rx) = std::sync::mpsc::channel();
 

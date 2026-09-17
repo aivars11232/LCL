@@ -299,3 +299,131 @@ fn a_lock_file_written_to_disk_reads_back() {
     let back = Lock::read(project.lock_path()).expect("read back");
     assert_eq!(back, lock);
 }
+
+// ---------------------------------------------------------------------------
+// PRETEST-04: cache faults surface, index entries stay whole, reads are bounded
+// ---------------------------------------------------------------------------
+
+/// One sparse file one byte over the product read limit.
+fn oversized(path: &Path) {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("parent");
+    }
+    std::fs::File::create(path)
+        .and_then(|file| file.set_len(lcl_project::MAX_FILE_BYTES + 1))
+        .expect("an oversized fixture");
+}
+
+/// F17: a declared cache that will not open is reported, not dropped.
+#[test]
+fn a_declared_cache_that_will_not_open_is_a_project_fault() {
+    let root = scratch("cache_declared_unopenable");
+    write(
+        root.join("lcl.project.json"),
+        common::manifest_with(",\n  \"cache\": \".lcl-cache\""),
+    );
+    let project = Project::open(&root).expect("the project opens");
+    assert!(
+        project.provider().is_ok(),
+        "an absent cache is an empty cache"
+    );
+
+    write(root.join(".lcl-cache/index"), "lcl-cache/99\n");
+    let error = project
+        .provider()
+        .err()
+        .expect("the malformed index is a fault");
+    assert!(error.to_string().contains("cache"), "{error}");
+}
+
+/// F18: a URI that the index could not hold as exactly one entry is refused
+/// before anything is written.
+#[test]
+fn a_uri_outside_the_uri_profile_is_not_cached() {
+    let dir = scratch("cache_uri_profile");
+    let mut cache = Cache::open(&dir).expect("opens");
+    let forged = format!(
+        "https://example.invalid/lib.lcl\n{}  https://example.invalid/forged.lcl",
+        "0".repeat(64)
+    );
+    for uri in [
+        forged.as_str(),
+        "https://example.invalid/a b",
+        "relative/path",
+        "",
+    ] {
+        assert!(cache.put(uri, b"bytes").is_err(), "{uri:?} was cached");
+    }
+    assert!(!dir.join("index").exists(), "nothing was written");
+    // Valid URI forms remain cacheable.
+    for uri in ["https://[2001:db8::1]:8443/lib.lcl?v=1", "urn:example:lib"] {
+        cache.put(uri, b"bytes").expect("a valid URI is cached");
+    }
+    assert_eq!(Cache::open(&dir).expect("reopens").entries().count(), 2);
+}
+
+/// F19: the manifest, the lock, the cache index and a cached blob are read
+/// within the product limit.
+#[test]
+fn project_machinery_reads_are_bounded() {
+    let root = scratch("bounded_machinery");
+    oversized(&root.join("lcl.project.json"));
+    let error = Project::open(&root).expect_err("an oversized manifest");
+    assert!(error.to_string().contains("limit"), "{error}");
+
+    oversized(&root.join("lcl.lock"));
+    let error = Lock::read(root.join("lcl.lock")).expect_err("an oversized lock");
+    assert!(error.to_string().contains("limit"), "{error}");
+
+    let index = scratch("bounded_index");
+    oversized(&index.join("index"));
+    let error = Cache::open(&index).expect_err("an oversized index");
+    assert!(error.to_string().contains("limit"), "{error}");
+
+    let blobs = scratch("bounded_blob");
+    let mut cache = Cache::open(&blobs).expect("opens");
+    let digest = cache
+        .put("https://example.invalid/lib.lcl", b"original")
+        .expect("cached");
+    oversized(&blobs.join("sha256").join(&digest));
+    let Err(error) = cache.get("https://example.invalid/lib.lcl") else {
+        panic!("an oversized blob was returned");
+    };
+    assert!(error.message().contains("limit"), "{}", error.message());
+    let faults = cache.verify();
+    assert_eq!(faults.len(), 1);
+    assert!(faults[0].to_string().contains("limit"), "{}", faults[0]);
+}
+
+/// F22: `package lock` may write only inside the project, judged where the
+/// destination really leads; reading an external lock stays possible.
+#[test]
+fn the_lock_destination_is_inside_the_project() {
+    let root = scratch("lock_destination");
+    let outside = scratch("lock_destination_outside");
+    write(root.join("lcl.project.json"), common::manifest_with(""));
+    let project = Project::open(&root).expect("opens");
+    assert_eq!(project.lock_destination(), Ok(root.join("lcl.lock")));
+
+    let external = outside.join("shared.lock");
+    for declared in [
+        external.display().to_string(),
+        "../lock_destination_outside/shared.lock".to_string(),
+    ] {
+        write(
+            root.join("lcl.project.json"),
+            common::manifest_with(&format!(",\n  \"lock\": {declared:?}")),
+        );
+        let project = Project::open(&root).expect("opens");
+        assert!(project.lock_destination().is_err(), "{declared}");
+        assert!(
+            project.lock_path().ends_with("shared.lock"),
+            "reading still names the external lock"
+        );
+    }
+
+    write(root.join("lcl.project.json"), common::manifest_with(""));
+    std::os::unix::fs::symlink(&external, root.join("lcl.lock")).expect("symlink");
+    let project = Project::open(&root).expect("opens");
+    assert!(project.lock_destination().is_err(), "a dangling link out");
+}

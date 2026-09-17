@@ -92,7 +92,7 @@ impl Manifest {
     /// Read and validate the manifest at `path`.
     pub fn read(path: impl AsRef<Path>) -> Result<Manifest, ManifestError> {
         let path = path.as_ref();
-        let text = std::fs::read_to_string(path).map_err(|e| ManifestError::Io {
+        let text = crate::read_text(path).map_err(|e| ManifestError::Io {
             path: path.to_path_buf(),
             detail: format!("the project manifest is not readable: {e}"),
         })?;

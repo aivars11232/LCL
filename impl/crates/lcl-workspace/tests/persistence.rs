@@ -371,3 +371,48 @@ fn saving_a_classic_document_never_renames_it() {
         "saving created a second document under the default name"
     );
 }
+
+// ---------------------------------------------------------------------------
+// PRETEST-04: the tree stays inside the project, and reads are bounded
+// ---------------------------------------------------------------------------
+
+/// F14: the project tree never enumerates through a link that leaves the
+/// project, and still lists one that stays inside it.
+#[test]
+fn the_project_tree_never_lists_through_a_link_out_of_the_project() {
+    let (scratch, workspace) = project_of_examples("tree-link");
+    let outside = Scratch::new("tree-link-target");
+    outside.put("private/secret.lcl", &example("01_MINIMAL_TASK.lcl"));
+    outside.put("loose.lcl", &example("01_MINIMAL_TASK.lcl"));
+    std::os::unix::fs::symlink(outside.join("private"), scratch.join("linked-dir")).unwrap();
+    std::os::unix::fs::symlink(outside.join("loose.lcl"), scratch.join("linked.lcl")).unwrap();
+    scratch.put("inner/kept.lcl", &example("01_MINIMAL_TASK.lcl"));
+    std::os::unix::fs::symlink(scratch.join("inner"), scratch.join("alias")).unwrap();
+
+    let ids: Vec<String> = workspace
+        .documents()
+        .expect("it lists")
+        .into_iter()
+        .map(|entry| entry.id)
+        .collect();
+    assert!(!ids.iter().any(|id| id.starts_with("linked")), "{ids:?}");
+    assert!(ids.contains(&"inner/kept.lcl".to_string()), "{ids:?}");
+    assert!(ids.contains(&"alias/kept.lcl".to_string()), "{ids:?}");
+    assert_eq!(
+        workspace.read("alias/kept.lcl").expect("inside").text,
+        example("01_MINIMAL_TASK.lcl")
+    );
+}
+
+/// F16: a document larger than the product read limit is refused, not held.
+#[test]
+fn an_oversized_document_is_refused_rather_than_read() {
+    let (scratch, workspace) = project_of_examples("oversized-document");
+    std::fs::File::create(scratch.join("huge.lcl"))
+        .and_then(|file| file.set_len(lcl_project::MAX_FILE_BYTES + 1))
+        .expect("an oversized fixture");
+    let Err(refused) = workspace.read("huge.lcl") else {
+        panic!("an oversized document was read");
+    };
+    assert!(refused.to_string().contains("limit"), "{refused}");
+}

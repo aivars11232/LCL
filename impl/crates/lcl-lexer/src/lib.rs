@@ -68,6 +68,14 @@ pub use lexicon::{
 pub use span::{Position, Span};
 pub use token::{Token, TokenKind};
 
+/// Judge text against the closed `URI` literal profile: RFC 3986
+/// `absolute-URI`, ASCII, with a scheme and no fragment. This is the rule a
+/// `URI "..."` literal meets, for product code that must hold URI text to the
+/// same rule rather than to one of its own.
+pub fn uri_profile(text: &str) -> Result<(), String> {
+    literal::uri(text)
+}
+
 use std::collections::BTreeMap;
 use std::fmt;
 

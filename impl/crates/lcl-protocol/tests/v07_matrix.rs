@@ -36,9 +36,19 @@ use std::sync::{Arc, Mutex};
 const LOCALES: [&str; 4] = ["lv-LV", "nl-NL", "ru-RU", "zh-CN"];
 const VARIANTS: [&str; 5] = ["en", "lv-LV", "nl-NL", "ru-RU", "zh-CN"];
 
-/// The medium application declares this workspace in its own source.
+/// The medium application declares this workspace in its own source. A run
+/// here never uses it: see [`notes_workspace`].
 const NOTES_WORKSPACE: &str = "/tmp/lcl-apps/medium-release-notes";
 static WORKSPACE: Mutex<()> = Mutex::new(());
+
+/// The workspace a run of the medium application uses instead: under the
+/// temporary directory this test run was given, private to this process.
+fn notes_workspace() -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "lcl-apps-{}/medium-release-notes",
+        std::process::id()
+    ))
+}
 
 fn repository() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -450,12 +460,34 @@ fn every_variant_reaches_the_same_static_decisions_on_its_own_bytes() {
 
 fn run(engine: &Engine, program: &Program) -> Report {
     let mut granted = Granted::none();
-    if program.files.len() > 1 {
-        let root = PathBuf::from(NOTES_WORKSPACE);
+    let relocated;
+    let program = if program.files.len() > 1 {
+        let root = notes_workspace();
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("the workspace is writable");
+        let spelled = root.display().to_string();
+        assert!(!spelled.contains(['"', '\\']), "unspellable: {spelled}");
+        // Every variant names the same declared workspace, so every variant is
+        // relocated identically and their reports stay comparable.
+        relocated = Program {
+            variant: program.variant,
+            files: program
+                .files
+                .iter()
+                .map(|(name, bytes)| {
+                    let text = String::from_utf8(bytes.clone()).expect("UTF-8 source");
+                    (
+                        name.clone(),
+                        text.replace(NOTES_WORKSPACE, &spelled).into_bytes(),
+                    )
+                })
+                .collect(),
+        };
         granted.write.push(root);
-    }
+        &relocated
+    } else {
+        program
+    };
     let (mut stdlib, mut host) =
         lcl_protocol::surface(engine, &granted).expect("an operation surface");
     engine.run(
@@ -508,7 +540,7 @@ fn every_variant_runs_exactly_as_the_core_0_1_0_application() {
             assert_eq!(normalized(&report), expected, "{at}");
             if name == "release_notes" {
                 assert!(
-                    Path::new(NOTES_WORKSPACE).join("NOTES.txt").is_file(),
+                    notes_workspace().join("NOTES.txt").is_file(),
                     "{at}: the granted effect did not happen"
                 );
             }

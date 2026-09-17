@@ -328,3 +328,57 @@ fn a_rootless_project_still_contains() {
         .expect("the document loads");
     assert_eq!(unit.id().as_str(), "main.lcl");
 }
+
+/// F16: a project document, named as the root unit or imported by PATH, is
+/// read within the product limit.
+#[test]
+fn project_documents_are_read_within_the_product_limit() {
+    let root = scratch("boundary_oversized");
+    std::fs::File::create(root.join("huge.lcl"))
+        .and_then(|file| file.set_len(lcl_project::MAX_FILE_BYTES + 1))
+        .expect("an oversized fixture");
+    let provider = FileProvider::new(&root).expect("opens");
+    let Err(error) = provider.root_unit(root.join("huge.lcl")) else {
+        panic!("an oversized root unit was read");
+    };
+    assert!(error.to_string().contains("limit"), "{error}");
+    let Err(error) = provider.load(&request("main.lcl", "huge.lcl")) else {
+        panic!("an oversized import was read");
+    };
+    assert!(error.message().contains("limit"), "{}", error.message());
+}
+
+/// F21: one rule gives a document its project root and identity: the nearest
+/// ancestor holding a manifest, else the document's own directory.
+#[test]
+fn a_document_belongs_to_its_nearest_enclosing_project() {
+    let root = scratch("boundary_locate");
+    write(root.join("lcl.project.json"), common::manifest_with(""));
+    write(
+        root.join("src/deep/main.lcl"),
+        example("01_MINIMAL_TASK.lcl"),
+    );
+    assert_eq!(
+        lcl_project::locate_document(&root.join("src/deep/./main.lcl")),
+        Ok((root.clone(), "src/deep/main.lcl".to_string()))
+    );
+
+    write(root.join("src/lcl.project.json"), common::manifest_with(""));
+    assert_eq!(
+        lcl_project::locate_document(&root.join("src/deep/main.lcl")),
+        Ok((root.join("src"), "deep/main.lcl".to_string())),
+        "the nearest manifest wins"
+    );
+
+    let loose = scratch("boundary_locate_loose");
+    write(loose.join("one.lcl"), example("01_MINIMAL_TASK.lcl"));
+    assert_eq!(
+        lcl_project::locate_document(&loose.join("one.lcl")),
+        Ok((loose.clone(), "one.lcl".to_string())),
+        "no manifest: the document's own directory"
+    );
+    assert!(
+        lcl_project::locate_document(&loose).is_err(),
+        "a directory is not a document"
+    );
+}

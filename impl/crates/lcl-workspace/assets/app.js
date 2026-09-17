@@ -1492,8 +1492,9 @@ function scheduleAnalysis() {
     renderCapabilities();
     $("#hint").textContent = "Ctrl+S save · F12 definition · Shift+F12 references";
   } catch (e) {
-    document.body.innerHTML =
-      `<div style="padding:40px;font:14px system-ui;color:#e0645f">` +
-      `Could not start: ${e.message}</div>`;
+    /* The message is text from the server or the transport, never markup. */
+    const failure = el("div", null, `Could not start: ${e.message}`);
+    failure.style.cssText = "padding:40px;font:14px system-ui;color:#e0645f";
+    document.body.replaceChildren(failure);
   }
 })();

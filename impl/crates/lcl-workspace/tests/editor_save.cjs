@@ -161,7 +161,7 @@ async function harness(options) {
     ? await (await fetch(new URL(`/app.js?t=${token}`, origin), { signal: AbortSignal.timeout(4000) })).text()
     : await fs.readFile(options.app, "utf8");
   await bounded(vm.runInContext(source, context, { filename: "production-app.js", timeout: 3000 }), "frontend boot");
-  assert(!document.body.innerHTML, document.body.innerHTML || "frontend boot failed");
+  assert(!document.body.children.length, document.body.children.map(node => node.textContent).join("\n") || "frontend boot failed");
   const run = code => vm.runInContext(code, context, { timeout: 3000 });
   return {
     sourceHash: hash(source), puts, get, run,

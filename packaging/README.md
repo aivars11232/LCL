@@ -65,7 +65,8 @@ recorded with its checksum in `assets/brand/`.
 
 The theme directory is shared with every other application, so the installer
 copies its own files in one at a time and the uninstaller removes exactly those
-files. Neither ever removes a directory it did not fill, and no icon cache is
+files. Neither ever removes a directory it did not fill, the shared `icons/`
+and `icons/hicolor/` roots are never removed even when empty, and no icon cache is
 generated: the icon theme specification resolves an icon by reading the
 directories, and writing a cache would put a shared file there that this
 installation could not safely take back.

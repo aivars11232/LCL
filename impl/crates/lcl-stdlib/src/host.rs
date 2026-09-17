@@ -485,7 +485,8 @@ impl HostAdapter {
                     },
                 }
             }
-            Err(error) => fs_failure(error, None),
+            // "target exists and is readable".
+            Err(error) => registered_precondition(error, "target"),
         }
     }
 
@@ -499,6 +500,11 @@ impl HostAdapter {
             Err(outcome) => return outcome,
         };
         match filesystem.metadata(path.location()) {
+            // "target exists".
+            Ok(metadata) if !metadata.exists => unmet_precondition(
+                "target",
+                format!("{} does not exist", path.path.display()),
+            ),
             Ok(metadata) => {
                 let mut fields = std::collections::BTreeMap::new();
                 fields.insert("exists".to_string(), Value::Boolean(metadata.exists));
@@ -537,7 +543,8 @@ impl HostAdapter {
         };
         match filesystem.write(path.location(), &content, mode) {
             Ok(()) => completed_write(target, path.path),
-            Err(error) => fs_failure(error, None),
+            // "target does not exist when fail_if_exists is TRUE".
+            Err(error) => registered_precondition(error, "target"),
         }
     }
 
@@ -559,6 +566,10 @@ impl HostAdapter {
         };
         match filesystem.write(path.location(), &content, mode) {
             Ok(()) => completed_write(target, path.path),
+            // "target exists unless create_if_missing is TRUE".
+            Err(error @ FsError::NotFound(_)) if mode == WriteMode::ReplaceExisting => {
+                registered_precondition(error, "target")
+            }
             Err(error) => fs_failure(error, None),
         }
     }
@@ -576,7 +587,8 @@ impl HostAdapter {
         };
         match filesystem.append(path.location(), &content) {
             Ok(()) => completed_write(target, path.path),
-            Err(error) => fs_failure(error, None),
+            // "target exists and supports append".
+            Err(error) => registered_precondition(error, "target"),
         }
     }
 
@@ -587,15 +599,34 @@ impl HostAdapter {
         };
         let change = content_bytes(request.parameters.get("change"));
         let target = request.target.clone().unwrap_or(Value::Null);
+        let bounds = self.bounds.clone();
         let filesystem = match self.filesystem() {
             Ok(filesystem) => filesystem,
             Err(outcome) => return outcome,
         };
+        // "expected_before matches when supplied": the pre-state guard is read
+        // before anything changes.
+        if let Some(expected) = request.parameters.get("expected_before") {
+            match filesystem.read(path.location(), &bounds) {
+                Ok(current) if current == content_bytes(Some(expected)) => {}
+                Ok(_) => {
+                    return unmet_precondition(
+                        "expected_before",
+                        format!(
+                            "{} does not hold the expected pre-state",
+                            path.path.display()
+                        ),
+                    )
+                }
+                Err(error) => return registered_precondition(error, "target"),
+            }
+        }
         // A modification requires the target to exist; it changes content, and
         // it does not create.
         match filesystem.write(path.location(), &change, WriteMode::ReplaceExisting) {
             Ok(()) => completed_write(target, path.path),
-            Err(error) => fs_failure(error, None),
+            // "target exists".
+            Err(error) => registered_precondition(error, "target"),
         }
     }
 
@@ -611,13 +642,32 @@ impl HostAdapter {
             Ok(filesystem) => filesystem,
             Err(outcome) => return outcome,
         };
+        // "recursive deletion is explicitly authorized when needed": a
+        // directory holding entries needs recursive TRUE before anything is
+        // removed.
+        if !recursive {
+            match filesystem.metadata(path.location()) {
+                Ok(metadata) if metadata.is_directory && !metadata.entries.is_empty() => {
+                    return unmet_precondition(
+                        "recursive",
+                        format!(
+                            "{} holds entries and recursive deletion is not authorized",
+                            path.path.display()
+                        ),
+                    )
+                }
+                Ok(_) => {}
+                Err(error) => return fs_failure(error, None),
+            }
+        }
         match filesystem.delete(path.location(), recursive) {
             // "changed is FALSE when no requested target state changed": an
             // absent target that need not exist is a completed no-change.
             Ok(false) if !require_exists => {
                 CapabilityOutcome::Completed(schema::operation(target, Value::Boolean(false)))
             }
-            Ok(false) => fs_failure(FsError::NotFound(path.path), None),
+            // "target exists unless require_exists is FALSE".
+            Ok(false) => registered_precondition(FsError::NotFound(path.path), "target"),
             Ok(true) => completed_write(target, path.path),
             Err(error) => fs_failure(error, None),
         }
@@ -643,7 +693,10 @@ impl HostAdapter {
         };
         match filesystem.rename(path.location(), destination.location(), overwrite) {
             Ok(()) => completed_write(target, destination.path),
-            Err(error) => fs_failure(error, None),
+            // "target exists"; "renamed destination is absent unless overwrite
+            // is TRUE".
+            Err(error @ FsError::AlreadyExists(_)) => registered_precondition(error, "new_name"),
+            Err(error) => registered_precondition(error, "target"),
         }
     }
 
@@ -680,7 +733,7 @@ impl HostAdapter {
                         ),
                     ),
                 ),
-                Err(error) => fs_failure(error, None),
+                Err(error) => transfer_precondition(error),
             };
         }
         match filesystem.copy(source.location(), destination.location(), overwrite) {
@@ -697,7 +750,7 @@ impl HostAdapter {
                     Some(destination.path.display().to_string()),
                 )),
             ),
-            Err(error) => fs_failure(error, None),
+            Err(error) => transfer_precondition(error),
         }
     }
 }
@@ -825,6 +878,22 @@ impl HostAdapter {
             .cloned()
             .unwrap_or(Value::Null);
         let bounds = self.request_bounds(request);
+        // "destination is absent unless overwrite is TRUE" holds before the
+        // primary download begins.
+        if !flag(request, "overwrite") {
+            if let Some(filesystem) = self.filesystem.as_mut() {
+                match filesystem.metadata(destination.location()) {
+                    Ok(metadata) if metadata.exists => {
+                        return unmet_precondition(
+                            "destination",
+                            format!("{} already exists", destination.path.display()),
+                        )
+                    }
+                    Ok(_) => {}
+                    Err(error) => return fs_failure(error, None),
+                }
+            }
+        }
 
         let body = {
             let Some(transport) = self.transport.as_mut() else {
@@ -908,7 +977,8 @@ impl HostAdapter {
                 };
                 match filesystem.read(path.location(), &bounds) {
                     Ok(bytes) => bytes,
-                    Err(error) => return fs_failure(error, None),
+                    // "source exists".
+                    Err(error) => return registered_precondition(error, "source"),
                 }
             }
             None => content_bytes(request.target.as_ref()),
@@ -938,6 +1008,10 @@ impl HostAdapter {
                         Some(destination.path.display().to_string()),
                     ),
                 ),
+                // "destination is absent unless overwrite (or replace) is TRUE".
+                Err(error @ FsError::AlreadyExists(_)) => {
+                    registered_precondition(error, "destination")
+                }
                 Err(error) => fs_failure(error, None),
             };
         }
@@ -1348,6 +1422,28 @@ fn wrong_parameter(detail: impl Into<String>) -> CapabilityOutcome {
 /// somewhere else rather than the source.
 fn is_success(status: u16) -> bool {
     (200..300).contains(&status)
+}
+
+/// A filesystem answer that falsifies the row's registered precondition on
+/// `cause`: an absent target or source, or an existing destination, is
+/// `error.operation.precondition` before effects. Every other error keeps its
+/// own mapping.
+fn registered_precondition(error: FsError, cause: &str) -> CapabilityOutcome {
+    match error {
+        FsError::NotFound(_) | FsError::AlreadyExists(_) => {
+            unmet_precondition(cause, error.to_string())
+        }
+        other => fs_failure(other, None),
+    }
+}
+
+/// `core.move` and `core.copy`: "source exists"; "destination absent unless
+/// overwrite is TRUE".
+fn transfer_precondition(error: FsError) -> CapabilityOutcome {
+    match error {
+        FsError::AlreadyExists(_) => registered_precondition(error, "destination"),
+        other => registered_precondition(other, "source"),
+    }
 }
 
 /// `error.operation.precondition`, with the row's own cause identity.

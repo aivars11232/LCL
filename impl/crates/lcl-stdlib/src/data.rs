@@ -52,12 +52,23 @@ pub(crate) fn invoke(
     // Read every reference through to the address it names, so the host sees a
     // resolved address and never a language-level reference.
     let target = request.target.as_ref().map(|t| pure::read_through(cx, t));
-    let parameters = resolved_parameters(cx, parameters);
-
-    let target_class = target
-        .as_ref()
-        .map(|value| params::classify(cx, value))
+    // "A REFERENCE used as an address is classified by the address class of
+    // its resolved target, never by REFERENCE syntax": the declaration a
+    // reference names decides its class, not the value it currently holds.
+    let target_class = params::referenced_declaration(cx, "TARGET")
+        .map(|id| params::classify(cx, &Value::Reference(id)))
+        .or_else(|| request.target.as_ref().map(|value| params::classify(cx, value)))
         .unwrap_or(AddressClass::Material);
+    let destination_class = parameters
+        .get("destination")
+        .map(|value| params::classify(cx, value));
+    // core.send: "Resolve host and optional network from the recipient or
+    // endpoint". Observing the recipient's address adds its dependency.
+    let recipient_axes = match (contract.operation.as_str(), parameters.get("recipient")) {
+        ("core.send", Some(recipient)) => params::classify(cx, recipient).observation(),
+        _ => Axes::inert(),
+    };
+    let parameters = resolved_parameters(cx, parameters);
 
     // "MEMORY and STATE targets are prohibited; use core.memory_write or
     // core.state_update."
@@ -87,8 +98,8 @@ pub(crate) fn invoke(
         return failure;
     }
 
-    let resolved = match resolve_axes(cx, contract, target_class, &parameters) {
-        Ok(axes) => axes,
+    let resolved = match resolve_axes(contract, target_class, destination_class) {
+        Ok(axes) => axes.union(&recipient_axes),
         Err(failure) => return failure,
     };
     // "For core.execute, non_graph applies exactly to PATH, URI, or STRING
@@ -133,15 +144,10 @@ pub(crate) fn invoke(
 /// mutating invocation that resolves no concrete effect at all, "each emit
 /// error.operation.precondition before effects".
 fn resolve_axes(
-    cx: &Invocation<'_>,
     contract: &OperationContract,
     target_class: AddressClass,
-    parameters: &BTreeMap<String, Value>,
+    destination_class: Option<AddressClass>,
 ) -> Result<Axes, Resolution> {
-    let destination_class = parameters
-        .get("destination")
-        .map(|value| params::classify(cx, value));
-
     let from_addresses = match destination_class {
         // With a declared destination, the target is observed and the
         // destination is mutated.
@@ -258,7 +264,7 @@ fn mandatory_axes(operation: &str) -> Axes {
 }
 
 /// Select every profile role the row requires, before effects.
-fn select_profiles(
+pub(crate) fn select_profiles(
     stdlib: &Stdlib,
     contract: &OperationContract,
     target_class: AddressClass,
@@ -309,6 +315,16 @@ fn row_preconditions(
             }
             None
         }
+        // "at least content or target_type is supplied".
+        "core.create" => (!parameters.contains_key("content")
+            && !parameters.contains_key("target_type"))
+        .then(|| {
+            Resolution::failed(
+                RuntimeError::OperationPrecondition,
+                "content",
+                "core.create requires content or target_type",
+            )
+        }),
         // "core.rename requires new_name to differ from the current name", and
         // its registry constraints require a non-empty name with no separator.
         "core.rename" => {

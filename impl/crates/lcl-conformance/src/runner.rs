@@ -370,6 +370,44 @@ pub struct Runner {
 impl Runner {
     /// Assemble every layer from one verified package.
     pub fn new(spec: &SpecPackage) -> Result<Runner, RunnerError> {
+        Runner::with_profiles(spec, Runner::shipped_profiles())
+    }
+
+    /// Every implementation profile the shipped adapters declare.
+    ///
+    /// A `Stdlib` starts with none, which makes every profile-requiring row
+    /// fail its precondition before effects — correct for an engine with
+    /// nothing installed, and useless for a conformance runner, which must be
+    /// able to reach the rows the registry actually defines.
+    pub fn shipped_profiles() -> Vec<lcl_capabilities::Profile> {
+        lcl_stdlib::checking_profiles()
+            .into_iter()
+            .chain(lcl_stdlib::filesystem_profiles())
+            .chain(lcl_stdlib::process_profiles())
+            .chain(lcl_stdlib::transport_profiles())
+            .chain(lcl_stdlib::store_profiles())
+            .collect()
+    }
+
+    /// Assemble every layer with exactly `profiles` installed.
+    ///
+    /// A case about profile selection states the catalog it selects from — a
+    /// missing, ambiguous, incomplete or out-of-bounds role, or a fixture
+    /// profile for a row the shipped adapters cannot perform — and the rest of
+    /// the engine is the same one [`Runner::new`] assembles.
+    pub fn with_profiles(
+        spec: &SpecPackage,
+        profiles: Vec<lcl_capabilities::Profile>,
+    ) -> Result<Runner, RunnerError> {
+        Runner::with_surface(spec, |stdlib| stdlib.with_profiles(profiles))
+    }
+
+    /// Assemble every layer with the operation surface an embedder configured:
+    /// its installed profiles and pure custom-operation implementations.
+    pub fn with_surface(
+        spec: &SpecPackage,
+        configure: impl FnOnce(Stdlib) -> Stdlib,
+    ) -> Result<Runner, RunnerError> {
         let e = |d: String| RunnerError::Spec(d);
         let lexicon = Lexicon::load(spec).map_err(|x| e(format!("{x}")))?;
         let grammar = Grammar::load(spec).map_err(|x| e(format!("{x}")))?;
@@ -378,22 +416,7 @@ impl Runner {
         let preflight = PreflightContracts::load(spec).map_err(|x| e(format!("{x}")))?;
         let runtime = RuntimeContracts::load(spec).map_err(|x| e(format!("{x}")))?;
         let completion = CompletionContracts::load(spec).map_err(|x| e(format!("{x}")))?;
-        // Every registered implementation profile is installed. A `Stdlib`
-        // starts with none, which makes every profile-requiring row fail its
-        // precondition before effects — correct for an engine with nothing
-        // installed, and useless for a conformance runner, which must be able
-        // to reach the rows the registry actually defines.
-        let stdlib = Stdlib::load(spec)
-            .map_err(|x| e(format!("{x}")))?
-            .with_profiles(
-                lcl_stdlib::checking_profiles()
-                    .into_iter()
-                    .chain(lcl_stdlib::filesystem_profiles())
-                    .chain(lcl_stdlib::process_profiles())
-                    .chain(lcl_stdlib::transport_profiles())
-                    .chain(lcl_stdlib::store_profiles())
-                    .collect::<Vec<_>>(),
-            );
+        let stdlib = configure(Stdlib::load(spec).map_err(|x| e(format!("{x}")))?);
         Ok(Runner {
             lexicon,
             grammar,
@@ -404,6 +427,11 @@ impl Runner {
             completion,
             stdlib: RefCell::new(stdlib),
         })
+    }
+
+    /// The profile catalog the assembled operation surface selects from.
+    pub fn stdlib_catalog(&self) -> lcl_capabilities::ProfileCatalog {
+        self.stdlib.borrow().catalog().clone()
     }
 
     /// Execute exact bytes through the real lexer and parser, retaining all

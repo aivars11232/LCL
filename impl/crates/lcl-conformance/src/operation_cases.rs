@@ -4,6 +4,8 @@ use lcl_runtime::Value;
 use lcl_spec::{json::Json, SpecPackage};
 use std::collections::BTreeMap;
 
+mod clauses;
+
 /// One row's fixture: the declarations it needs, and the action that invokes it.
 struct Row {
     operation: &'static str,
@@ -342,7 +344,7 @@ fn document(row: &Row) -> String {
          NAME: \"Coverage\"\n    VERSION: \"1.0.0\"\n    KIND: kind.task\n{}\
          \nACTION:\n    ID: action.subject\n    {}\n\
          \nGOAL:\n    ID: goal.subject\n    ASSERT: TRUE\n\
-         \nSUCCESS:\n    ID: success.subject\n    ALL: [TRUE]\n\
+         \nSUCCESS:\n    ID: success.subject\n    ALL: TRUE\n\
          \nTASK:\n    ID: task.subject\n    GOAL: REF(goal.subject)\n    \
          ACTION: [REF(action.subject), REF(action.other)]\n    SUCCESS: REF(success.subject)\n\
          \nEXECUTE:\n    REFERENCE: REF(task.subject)\n",
@@ -552,18 +554,40 @@ fn defaults(spec: &SpecPackage, operation: &str) -> Vec<ExecutedCase> {
 
 pub fn execute(spec: &SpecPackage, runner: &Runner) -> Vec<ExecutedCase> {
     let contracts = lcl_stdlib::Contracts::load(spec).unwrap();
+    let runners = clauses::Runners {
+        shipped: runner,
+        fixture: Runner::with_profiles(
+            spec,
+            Runner::shipped_profiles()
+                .into_iter()
+                .chain(clauses::fixture_profiles())
+                .collect(),
+        )
+        .expect("the engine assembles with the D3 fixture profiles"),
+        spec,
+    };
     let mut out = Vec::new();
     for row in rows() {
         let contract = contracts.operation(row.operation).unwrap();
         let mut runs = vec![baseline(runner, &row, &contract.result_schema)];
         runs.extend(defaults(spec, row.operation));
+        runs.extend(clauses::binding(&runners, &row));
         out.push(group(format!("semantic/operation_binding/{}", row.operation), "exact target/parameter binding, per-invocation defaults and completed or explicitly refused registered operation", runs));
+        let mut errors = error_cases(runner, &row, contract);
+        errors.extend(clauses::errors(&runners, &row));
+        errors.extend(clauses::transfer_source_preconditions(&runners, &row));
+        errors.extend(clauses::specific(&runners, &row, "errors"));
+        errors.extend(clauses::lifecycle(&runners, &row, "errors"));
         out.push(group(
             format!("semantic/operation_errors/{}", row.operation),
             "all named binding failures and concrete operation-specific error paths",
-            error_cases(runner, &row, contract),
+            errors,
         ));
-        out.push(group(format!("semantic/operation_effects/{}", row.operation), "observable post-state, resolved effects and complete registered determinism/profile constraints", effect_cases(spec, runner, &row, contract)));
+        let mut effects = effect_cases(spec, runner, &row, contract);
+        effects.extend(clauses::effects(&runners, &row));
+        effects.extend(clauses::specific(&runners, &row, "effects"));
+        effects.extend(clauses::lifecycle(&runners, &row, "effects"));
+        out.push(group(format!("semantic/operation_effects/{}", row.operation), "observable post-state, resolved effects and complete registered determinism/profile constraints", effects));
     }
     out
 }

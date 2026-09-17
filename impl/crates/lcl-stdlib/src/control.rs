@@ -57,6 +57,18 @@ pub(crate) fn invoke(
         // core.cancel, core.stop and core.ask reach the runtime's lifecycle or
         // the host, neither of which this module decides.
         _ => {
+            // "Each listed role applies to every invocation except
+            // core.execute": core.stop selects its stop role before crossing.
+            let target_class = request
+                .target
+                .as_ref()
+                .map(|value| params::classify(cx, &pure::read_through(cx, value)))
+                .unwrap_or(lcl_capabilities::AddressClass::Material);
+            if let Some(failure) =
+                crate::data::select_profiles(stdlib, contract, target_class, None)
+            {
+                return failure;
+            }
             let mut resolved = request.clone();
             resolved.parameters = parameters.clone();
             Resolution::Host(Box::new(resolved))

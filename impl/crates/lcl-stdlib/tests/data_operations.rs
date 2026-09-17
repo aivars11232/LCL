@@ -450,3 +450,161 @@ fn a_state_update_with_its_storage_profile_writes_the_store() {
         Some(lcl_runtime::EffectClass::State)
     );
 }
+
+// ---------------------------------------------------------------------------
+// FINAL-02: registered filesystem preconditions and address classification
+// ---------------------------------------------------------------------------
+
+/// One action over `/srv/data`, as `(id suffix, operation line and fields)`.
+fn precondition_document(action: &str) -> String {
+    common::task(
+        &format!(
+            "{}{}",
+            common::data("data.target", "PATH", "PATH(\"/srv/data/report.txt\")"),
+            common::data("data.other", "PATH", "PATH(\"/srv/data/other.txt\")")
+        ),
+        &[&format!("ID: action.subject\n{action}")],
+    )
+}
+
+fn parameter(name: &str, ty: &str, value: &str) -> String {
+    format!("\nPARAMETER:\n    NAME: {name}\n    TYPE: {ty}\n    REQUIRED: FALSE\n    VALUE: {value}")
+}
+
+/// Every registered filesystem precondition the shipped adapter can observe
+/// fails with `error.operation.precondition` before any effect:
+/// "A registered operation precondition ... is false" (statuses_and_errors),
+/// "an immediate operation precondition fails before that operation's
+/// effects" (failure_lifecycle).
+#[test]
+fn registered_filesystem_preconditions_fail_before_effects() {
+    let absent = "TARGET: PATH(\"/srv/data/absent.txt\")";
+    let cases: Vec<(&str, String, Vec<(&str, &str)>)> = vec![
+        ("read: target exists and is readable", format!("OPERATION: core.read\n{absent}"), vec![]),
+        ("inspect: target exists", format!("OPERATION: core.inspect\n{absent}"), vec![]),
+        (
+            "create: target does not exist when fail_if_exists is TRUE",
+            format!("OPERATION: core.create\nTARGET: REF(data.target){}", parameter("content", "STRING", "\"new\"")),
+            vec![],
+        ),
+        (
+            "create: at least content or target_type is supplied",
+            "OPERATION: core.create\nTARGET: REF(data.other)".to_string(),
+            vec![],
+        ),
+        (
+            "write: target exists unless create_if_missing is TRUE",
+            format!("OPERATION: core.write\n{absent}{}", parameter("content", "STRING", "\"x\"").replace("REQUIRED: FALSE", "REQUIRED: TRUE")),
+            vec![],
+        ),
+        (
+            "append: target exists and supports append",
+            format!("OPERATION: core.append\n{absent}{}", parameter("content", "STRING", "\"x\"").replace("REQUIRED: FALSE", "REQUIRED: TRUE")),
+            vec![],
+        ),
+        (
+            "modify: target exists",
+            format!("OPERATION: core.modify\n{absent}{}", parameter("change", "STRING", "\"x\"").replace("REQUIRED: FALSE", "REQUIRED: TRUE")),
+            vec![],
+        ),
+        (
+            "modify: expected_before matches when supplied",
+            format!(
+                "OPERATION: core.modify\nTARGET: REF(data.target){}{}",
+                parameter("change", "STRING", "\"x\"").replace("REQUIRED: FALSE", "REQUIRED: TRUE"),
+                parameter("expected_before", "STRING", "\"not the content\"")
+            ),
+            vec![],
+        ),
+        ("delete: target exists unless require_exists is FALSE", format!("OPERATION: core.delete\n{absent}"), vec![]),
+        (
+            "delete: recursive deletion is explicitly authorized when needed",
+            "OPERATION: core.delete\nTARGET: PATH(\"/srv/data/tree\")".to_string(),
+            vec![("/srv/data/tree/leaf.txt", "leaf")],
+        ),
+        (
+            "rename: target exists",
+            format!("OPERATION: core.rename\n{absent}{}", parameter("new_name", "STRING", "\"renamed.txt\"").replace("REQUIRED: FALSE", "REQUIRED: TRUE")),
+            vec![],
+        ),
+        (
+            "rename: renamed destination is absent unless overwrite is TRUE",
+            format!("OPERATION: core.rename\nTARGET: REF(data.target){}", parameter("new_name", "STRING", "\"other.txt\"").replace("REQUIRED: FALSE", "REQUIRED: TRUE")),
+            vec![("/srv/data/other.txt", "old")],
+        ),
+        (
+            "copy: source exists",
+            format!("OPERATION: core.copy\n{absent}{}", parameter("destination", "PATH", "REF(data.other)").replace("REQUIRED: FALSE", "REQUIRED: TRUE")),
+            vec![],
+        ),
+        (
+            "copy: destination absent unless overwrite is TRUE",
+            format!("OPERATION: core.copy\nTARGET: REF(data.target){}", parameter("destination", "PATH", "REF(data.other)").replace("REQUIRED: FALSE", "REQUIRED: TRUE")),
+            vec![("/srv/data/other.txt", "old")],
+        ),
+        (
+            "move: destination absent unless overwrite is TRUE",
+            format!("OPERATION: core.move\nTARGET: REF(data.target){}", parameter("destination", "PATH", "REF(data.other)").replace("REQUIRED: FALSE", "REQUIRED: TRUE")),
+            vec![("/srv/data/other.txt", "old")],
+        ),
+    ];
+    let mut wrong = Vec::new();
+    for (name, action, extra) in cases {
+        let mut filesystem = MemoryFileSystem::new()
+            .with_scope("/srv/data")
+            .with_file("/srv/data/report.txt", "content");
+        for (path, content) in extra {
+            filesystem = filesystem.with_file(path, content);
+        }
+        let execution = run_fs(
+            &precondition_document(&action),
+            filesystem,
+            Grants::none().permit_write("/srv/data"),
+        );
+        let result = common::result_of(&execution, "action.subject");
+        let observed = (
+            result.execution_errors.clone(),
+            result.failure_phase.to_string(),
+            result.effect_state.to_string(),
+        );
+        let expected = (
+            vec!["error.operation.precondition".to_string()],
+            "pre_effect".to_string(),
+            "none".to_string(),
+        );
+        if observed != expected {
+            wrong.push(format!("{name}: {observed:?}"));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// "A REFERENCE used as an address is classified by the address class of its
+/// resolved target, never by REFERENCE syntax ... mutation of OUTPUT ...
+/// resolves state." An unbound OUTPUT reads MISSING; the address is still the
+/// OUTPUT, so its mutation resolves the state effect and reaches the host.
+#[test]
+fn a_reference_address_is_classified_by_its_declaration_not_its_current_value() {
+    let source = common::task(
+        "\nOUTPUT:\n    ID: output.log\n    TYPE: STRING\n    FORMAT: format.plain_text\n",
+        &["ID: action.subject\nOPERATION: core.append\nTARGET: REF(output.log)\n\
+           PARAMETER:\n    NAME: content\n    TYPE: STRING\n    REQUIRED: TRUE\n    VALUE: \"x\""],
+    );
+    let mut stdlib = common::stdlib();
+    let mut host = lcl_runtime::MockHost::new();
+    let fixture = common::fixture(&source);
+    let execution = Runtime::new(common::contracts())
+        .execute_with(&fixture.planned, &fixture.checked, &fixture.resolved, &mut stdlib, &mut host)
+        .expect("the document planned");
+    assert!(
+        common::errors_of(&execution, "action.subject").is_empty(),
+        "{:?}",
+        common::errors_of(&execution, "action.subject")
+    );
+    let request = host.requests().first().expect("the append crossed the boundary");
+    assert_eq!(
+        request.possible_effects.iter().collect::<Vec<_>>(),
+        vec!["state"],
+        "{request:?}"
+    );
+}

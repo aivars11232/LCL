@@ -429,7 +429,7 @@ fn every_control_row_that_reaches_no_capability_says_so() {
         &common::data("data.service", "PATH", "PATH(\"/srv/run/service\")"),
         &[action],
     );
-    let mut stdlib = common::stdlib();
+    let mut stdlib = common::stdlib().with_profiles(lcl_stdlib::process_profiles());
     let mut host =
         lcl_stdlib::HostAdapter::new(lcl_capabilities::Grants::none().permit_any_program())
             .with_filesystem(MemoryFileSystem::new().with_scope("/srv/run"));
@@ -447,4 +447,47 @@ fn every_control_row_that_reaches_no_capability_says_so() {
         common::errors_of(&execution, "action.stop"),
         vec!["error.host.constraint".to_string()]
     );
+}
+
+/// `core.stop=stop`: "Each listed role applies to every invocation except
+/// core.execute", and "a missing, ambiguous, incomplete, or out-of-bounds
+/// required profile role emits error.operation.precondition before effects".
+/// A process stop therefore selects its stop profile before its request
+/// crosses the boundary.
+#[test]
+fn a_process_stop_without_its_stop_profile_fails_its_precondition_before_effects() {
+    let action = "ID: action.stop\nOPERATION: core.stop\nTARGET: REF(data.service)";
+    let source = common::task(
+        &common::data("data.service", "STRING", "\"report\""),
+        &[action],
+    );
+    let run = |mut stdlib: lcl_stdlib::Stdlib| {
+        let mut host = lcl_runtime::MockHost::new();
+        let fixture = common::fixture(&source);
+        let execution = Runtime::new(common::contracts())
+            .execute_with(
+                &fixture.planned,
+                &fixture.checked,
+                &fixture.resolved,
+                &mut stdlib,
+                &mut host,
+            )
+            .expect("planned");
+        (execution, host.count("core.stop"))
+    };
+
+    let (execution, crossed) = run(common::stdlib());
+    assert_eq!(
+        common::errors_of(&execution, "action.stop"),
+        vec!["error.operation.precondition".to_string()]
+    );
+    let result = common::result_of(&execution, "action.stop");
+    assert_eq!(result.failure_phase, lcl_runtime::FailurePhase::PreEffect);
+    assert_eq!(result.effect_state, lcl_runtime::EffectState::None);
+    assert_eq!(crossed, 0, "no request crosses without the stop profile");
+
+    // Control: with the shipped stop profile the request reaches the host.
+    let (execution, crossed) = run(common::stdlib().with_profiles(lcl_stdlib::process_profiles()));
+    assert!(common::errors_of(&execution, "action.stop").is_empty());
+    assert_eq!(crossed, 1);
 }

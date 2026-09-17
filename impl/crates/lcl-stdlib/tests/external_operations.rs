@@ -1317,3 +1317,33 @@ fn valid_uri_forms_are_reached_or_are_host_limitations() {
         );
     }
 }
+
+/// `core.send`: "Resolve host and optional network from the recipient or
+/// endpoint and resolve the message effect from the selected transport
+/// profile." A URI recipient is a network endpoint, so the invocation resolves
+/// the network dependency beside host, and still exactly the message effect.
+#[test]
+fn a_uri_recipient_adds_the_network_dependency_to_a_send() {
+    let source = common::task(
+        &format!(
+            "{}{}",
+            common::data("data.body", "STRING", "\"hello\""),
+            common::data("data.endpoint", "URI", "URI(\"http://example.invalid/inbox\")")
+        ),
+        &["ID: action.send\nOPERATION: core.send\nTARGET: REF(data.body)\n\
+           PARAMETER:\n    NAME: recipient\n    TYPE: URI\n    REQUIRED: TRUE\n    VALUE: REF(data.endpoint)"],
+    );
+    let mut stdlib = common::stdlib().with_profiles(lcl_stdlib::transport_profiles());
+    let mut host = lcl_runtime::MockHost::new();
+    let fixture = common::fixture(&source);
+    let execution = lcl_runtime::Runtime::new(common::contracts())
+        .execute_with(&fixture.planned, &fixture.checked, &fixture.resolved, &mut stdlib, &mut host)
+        .expect("the document planned");
+    assert!(common::errors_of(&execution, "action.send").is_empty());
+    let request = host.requests().first().expect("the send crossed the boundary");
+    assert_eq!(
+        request.possible_dependencies.iter().collect::<Vec<_>>(),
+        vec!["host", "network"]
+    );
+    assert_eq!(request.possible_effects.iter().collect::<Vec<_>>(), vec!["message"]);
+}

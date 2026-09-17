@@ -130,6 +130,84 @@ fn matches_applies_the_closed_pattern_profiles() {
     assert_eq!(compared(&regex), Value::Boolean(true));
 }
 
+/// PRETEST-02 F07: `core.compare` MATCHES consumes the same subjects as the
+/// expression operator, through the one shared rule.
+fn workspace_compare(left_type: &str, left: &str, right: &str) -> String {
+    compare_document(left_type, left, "GLOB", right, Some("MATCHES")).replacen(
+        "KIND: kind.task\n",
+        "KIND: kind.task\n\nWORKSPACE:\n    ID: workspace.case\n    PATH: PATH(\"/case\")\n    \
+         MODE: mode.read_only\n",
+        1,
+    )
+}
+
+#[test]
+fn matches_consumes_a_workspace_path_by_its_relative_segments() {
+    let inside = workspace_compare(
+        "PATH",
+        r#"PATH(REF(workspace.case), "src/a.py")"#,
+        r#"GLOB("src/*.py")"#,
+    );
+    let execution = run_checked(&inside);
+    assert!(common::errors_of(&execution, "action.compare").is_empty());
+    assert_eq!(compared(&inside), Value::Boolean(true));
+
+    let outside = workspace_compare(
+        "PATH",
+        r#"PATH(REF(workspace.case), "lib/a.py")"#,
+        r#"GLOB("src/*.py")"#,
+    );
+    assert_eq!(compared(&outside), Value::Boolean(false));
+}
+
+#[test]
+fn matches_refuses_an_absolute_path_and_a_malformed_string_subject() {
+    for (ty, subject) in [
+        ("PATH", r#"PATH("/case/src/a.py")"#),
+        ("STRING", r#""/src/a.py""#),
+    ] {
+        let source = workspace_compare(ty, subject, r#"GLOB("**")"#);
+        assert_eq!(
+            common::errors_of(&run_checked(&source), "action.compare"),
+            vec!["error.operator.operand".to_string()],
+            "{subject}"
+        );
+    }
+}
+
+#[test]
+fn matches_reads_regex_flags_as_the_expression_operator_does() {
+    let flagged = compare_document(
+        "STRING",
+        "\"ABC\"",
+        "REGEX",
+        "REGEX(\"[a-z]+\", \"i\")",
+        Some("MATCHES"),
+    );
+    assert_eq!(compared(&flagged), Value::Boolean(true));
+}
+
+#[test]
+fn matches_keeps_the_missing_projection_rule() {
+    // "A supplied non-==/!= criterion that encounters MISSING uses
+    // error.required.missing."
+    let declarations = format!(
+        "\nDATA:\n    ID: data.left\n    TYPE: OBJECT\n    VALUE:\n        name: \"src/a.py\"\n{}\
+         \nDATA:\n    ID: data.criteria\n    TYPE: OBJECT\n    VALUE:\n        \
+         operator: \"MATCHES\"\n        left: \"absent\"\n",
+        common::data("data.right", "GLOB", r#"GLOB("**")"#)
+    );
+    let action = "ID: action.compare\nOPERATION: core.compare\nTARGET: REF(data.left)\n\
+                  PARAMETER:\n    NAME: against\n    TYPE: GLOB\n    REQUIRED: TRUE\n    \
+                  VALUE: REF(data.right)\nPARAMETER:\n    NAME: criteria\n    TYPE: OBJECT\n    \
+                  REQUIRED: FALSE\n    VALUE: REF(data.criteria)";
+    let source = common::task(&declarations, &[action]);
+    assert_eq!(
+        common::errors_of(&run_checked(&source), "action.compare"),
+        vec!["error.required.missing".to_string()]
+    );
+}
+
 #[test]
 fn an_unregistered_criterion_is_refused() {
     let source = compare_document("INTEGER", "3", "INTEGER", "4", Some("~="));

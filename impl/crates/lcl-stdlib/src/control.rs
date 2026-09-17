@@ -20,7 +20,7 @@ use crate::contracts::OperationContract;
 use crate::{params, pure, schema, Stdlib};
 use lcl_runtime::diagnostic::RuntimeError;
 use lcl_runtime::operations::{Invocation, Resolution};
-use lcl_runtime::pattern::{Flags, Glob, Regex};
+use lcl_runtime::pattern::{MatchFault, PatternFault};
 use lcl_runtime::{capability::CapabilityRequest, order_profile, strict_equal, Value};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -256,68 +256,21 @@ fn membership(collection: &Value, member: &Value) -> Result<Value, CompareFault>
     }
 }
 
-/// `MATCHES` against a compiled GLOB or REGEX.
-fn matches(subject: &Value, pattern: &Value) -> Result<Value, CompareFault> {
-    if subject == &Value::Unknown || pattern == &Value::Unknown {
-        return Ok(Value::Unknown);
-    }
-    let Value::Text(input) = subject else {
-        return Err(CompareFault(
-            RuntimeError::OperatorOperand,
-            format!(
-                "MATCHES requires a STRING subject, found {}",
-                subject.family()
-            ),
-        ));
-    };
-    let Value::Constructed { constructor, text } = pattern else {
-        return Err(CompareFault(
-            RuntimeError::OperatorOperand,
-            format!(
-                "MATCHES requires a GLOB or REGEX pattern, found {}",
-                pattern.family()
-            ),
-        ));
-    };
-    let outcome = match constructor.as_str() {
-        "GLOB" => Glob::compile(text).and_then(|glob| glob.matches(input)),
-        "REGEX" => {
-            // A REGEX literal carries its flags in its own text; the closed
-            // profile parses both together.
-            let (pattern, flags) = split_regex(text);
-            Regex::compile(&pattern, flags).and_then(|regex| regex.matches(input))
-        }
-        other => {
-            return Err(CompareFault(
-                RuntimeError::OperatorOperand,
-                format!("{other} is not a pattern constructor"),
-            ))
-        }
-    };
-    match outcome {
-        Ok(matched) => Ok(Value::Boolean(matched)),
-        // "MATCHES resource exhaustion uses error.pattern.resource_limit."
-        Err(lcl_runtime::PatternFault::ResourceLimit(detail)) => {
-            Err(CompareFault(RuntimeError::PatternResourceLimit, detail))
-        }
-        Err(fault) => Err(CompareFault(
-            RuntimeError::OperatorOperand,
-            format!("{fault:?}"),
-        )),
-    }
-}
-
-/// Split a REGEX value's stored text into its pattern and flags.
+/// `MATCHES` through the rule the expression operator uses.
 ///
-/// The lexer stores a two-argument `REGEX("p", "i")` as its pattern followed by
-/// a tab and its flags; a one-argument literal has no flags.
-fn split_regex(text: &str) -> (String, Flags) {
-    match text.split_once('\t') {
-        // An unparsable flag set is one the lexer would already have refused,
-        // so an empty set here is totality rather than a silent default.
-        Some((pattern, flags)) => (pattern.to_string(), Flags::parse(flags).unwrap_or_default()),
-        None => (text.to_string(), Flags::default()),
-    }
+/// Only the identifiers are this row's own: an invalid pattern is not one
+/// `core.compare` registers, so it stays an operand defect here.
+fn matches(subject: &Value, pattern: &Value) -> Result<Value, CompareFault> {
+    lcl_runtime::pattern::matches(subject, pattern).map_err(|fault| match fault {
+        MatchFault::Operand(detail) => CompareFault(RuntimeError::OperatorOperand, detail),
+        // "MATCHES resource exhaustion uses error.pattern.resource_limit."
+        MatchFault::Pattern(PatternFault::ResourceLimit(detail)) => {
+            CompareFault(RuntimeError::PatternResourceLimit, detail)
+        }
+        MatchFault::Pattern(PatternFault::Invalid(detail)) => {
+            CompareFault(RuntimeError::OperatorOperand, detail)
+        }
+    })
 }
 
 /// `core.validate`: whether the target satisfies its declared rules.

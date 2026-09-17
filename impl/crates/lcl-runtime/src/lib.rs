@@ -62,7 +62,7 @@ pub use execute::{position_of, Execution, InvocationRecord, NotPlanned, Runtime}
 pub use mock::MockHost;
 pub use operations::{DeferAll, Invocation, Operations, Resolution};
 pub use order_profile::{DurationProfile, OrderKey, DURATION_UNIT};
-pub use pattern::{Flags, Glob, PatternFault, Regex};
+pub use pattern::{Flags, Glob, MatchFault, PatternFault, Regex};
 pub use result::{
     EffectClass, EffectState, FailurePhase, ObservedEffect, OutputBinding, RecordState,
     ResultRecord,

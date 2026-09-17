@@ -34,7 +34,7 @@
 use crate::contracts::Contracts;
 use crate::diagnostic::RuntimeError;
 use crate::order_profile::{self, DURATION_UNIT};
-use crate::pattern::{Flags, Glob, PatternFault, Regex};
+use crate::pattern::{Flags, MatchFault, PatternFault};
 use crate::state::{Bindings, IterationPath};
 use crate::value::Value;
 use lcl_checker::numeric::{Decimal, DivisionDefect, Integer, Rational};
@@ -45,7 +45,6 @@ use lcl_parser::syntax::{
     BinaryOp, Call, Collection, Expr, Literal, LiteralKind, PropertyAccess, UnaryOp,
 };
 use lcl_resolver::{Resolved, SourceId};
-use lcl_semantics::value::REGEX_FLAG_SEPARATOR;
 use lcl_semantics::Plan;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -855,74 +854,17 @@ impl<'a> Evaluator<'a> {
     }
 
     fn matches(&self, input: &Value, pattern: &Value, span: Span) -> Demand {
-        // "any UNKNOWN operand yields UNKNOWN for a ... pattern match"
-        if input == &Value::Unknown || pattern == &Value::Unknown {
-            return Ok(Value::Unknown);
-        }
-        let Value::Constructed {
-            constructor,
-            text: pattern_text,
-        } = pattern
-        else {
-            return Err(self.operand(
-                span,
-                format!(
-                    "MATCHES requires a REGEX or GLOB, found {}",
-                    pattern.family()
-                ),
-            ));
-        };
-        let Some(subject) = input.text() else {
-            return Err(self.operand(
-                span,
-                format!(
-                    "MATCHES requires a STRING or PATH, found {}",
-                    input.family()
-                ),
-            ));
-        };
-        // "It compares the entire input under the selected closed pattern
-        // profile. A non-match returns FALSE."
-        let outcome = match constructor.as_str() {
-            "REGEX" => {
-                let (body, flags) = split_regex(pattern_text);
-                Flags::parse(flags)
-                    .and_then(|flags| Regex::compile(body, flags))
-                    .and_then(|compiled| compiled.matches(subject))
-            }
-            // `03_TYPES_AND_VALUES/07`: "A PATH input requires an explicit
-            // WORKSPACE root retained by the value ...; its normalized relative
-            // segments are used. ... No root or filesystem expansion is
-            // inferred."
-            "GLOB" => {
-                let relative;
-                let subject = match input {
-                    Value::WorkspacePath { relative: text, .. } => {
-                        relative = text
-                            .split('/')
-                            .filter(|segment| !segment.is_empty() && *segment != ".")
-                            .collect::<Vec<_>>()
-                            .join("/");
-                        relative.as_str()
-                    }
-                    _ => subject,
-                };
-                Glob::compile(pattern_text).and_then(|compiled| compiled.matches(subject))
-            }
-            other => {
-                return Err(self.operand(span, format!("MATCHES is not registered for {other}")))
-            }
-        };
-        match outcome {
-            Ok(accepted) => Ok(Value::Boolean(accepted)),
-            Err(PatternFault::ResourceLimit(detail)) => Err(Fault::new(
+        match crate::pattern::matches(input, pattern) {
+            Ok(outcome) => Ok(outcome),
+            Err(MatchFault::Operand(detail)) => Err(self.operand(span, detail)),
+            Err(MatchFault::Pattern(PatternFault::ResourceLimit(detail))) => Err(Fault::new(
                 self.contracts,
                 RuntimeError::PatternResourceLimit,
                 span,
                 "pattern resource limit",
                 detail,
             )),
-            Err(PatternFault::Invalid(detail)) => Err(Fault::new(
+            Err(MatchFault::Pattern(PatternFault::Invalid(detail))) => Err(Fault::new(
                 self.contracts,
                 RuntimeError::LiteralInvalid,
                 span,
@@ -1291,8 +1233,10 @@ impl<'a> Evaluator<'a> {
             },
             // "PATH(REFERENCE[WORKSPACE], STRING)": "The string is relative
             // and the resolved path is the WORKSPACE root or one of its
-            // descendants." M5 already proved containment before effects; this
-            // resolves the value the runtime hands to a capability.
+            // descendants." M5 proved lexical containment before effects; this
+            // resolves the value the runtime hands to a capability, keeping the
+            // root so the filesystem adapter can prove containment on the real
+            // target, where links are visible.
             ("PATH", [reference, Value::Text(relative)]) => {
                 let Some(id) = reference.text() else {
                     return Err(self.operand(
@@ -1322,6 +1266,7 @@ impl<'a> Evaluator<'a> {
                     workspace: id.to_string(),
                     relative: relative.clone(),
                     resolved: format!("{}/{}", root.trim_end_matches('/'), relative),
+                    root,
                 }
             }
             // `REGEX(pattern)` and `REGEX(pattern, flags)` are both
@@ -1588,18 +1533,6 @@ fn is_reserved_property(name: &str) -> bool {
         && name
             .chars()
             .all(|c| c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit())
-}
-
-/// Split a `REGEX` value's stored text into its pattern and flags.
-///
-/// The constructor is written `REGEX("pattern")` or `REGEX("pattern", "flags")`;
-/// `lcl_semantics::value::regex` builds the one shared text, joining non-empty
-/// flags to the pattern with a NUL.
-fn split_regex(text: &str) -> (&str, &str) {
-    match text.split_once(REGEX_FLAG_SEPARATOR) {
-        Some((pattern, flags)) => (pattern, flags),
-        None => (text, ""),
-    }
 }
 
 /// Strict equality, which "always returns BOOLEAN".

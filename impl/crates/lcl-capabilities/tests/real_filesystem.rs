@@ -16,7 +16,7 @@
 //! thing under test is what the kernel does with two descriptors and a link.
 
 use lcl_capabilities::bounds::Bounds;
-use lcl_capabilities::fs::{FileSystem, FsError, RealFileSystem, WriteMode};
+use lcl_capabilities::fs::{FileSystem, FsError, Location, RealFileSystem, WriteMode};
 use lcl_capabilities::grant::Grants;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -97,7 +97,7 @@ fn a_create_through_a_dangling_link_does_not_write_outside_the_grant() {
     assert!(!escape.exists(), "the link dangles before the operation");
 
     let mut fs = adapter(&inside);
-    let result = fs.write(&spelled, b"escaped", WriteMode::Create);
+    let result = fs.write((&spelled).into(), b"escaped", WriteMode::Create);
 
     assert!(
         !escape.exists(),
@@ -128,7 +128,7 @@ fn a_replacing_write_through_a_dangling_link_does_not_escape_the_grant() {
     link(&escape, &spelled);
 
     let mut fs = adapter(&inside);
-    let _ = fs.write(&spelled, b"escaped", WriteMode::Replace);
+    let _ = fs.write((&spelled).into(), b"escaped", WriteMode::Replace);
 
     assert!(
         !escape.exists(),
@@ -158,7 +158,7 @@ fn two_racing_creates_leave_exactly_one_winner_with_whole_content() {
         handles.push(std::thread::spawn(move || {
             let mut fs = adapter(&scope);
             barrier.wait();
-            fs.write(&target, &content, WriteMode::Create)
+            fs.write((&target).into(), &content, WriteMode::Create)
         }));
     }
     let results: Vec<_> = handles
@@ -206,7 +206,7 @@ fn a_non_overwriting_copy_does_not_replace_an_existing_destination() {
             .permit_write(&inside)
             .permit_read(inside.clone()),
     );
-    let result = fs.copy(&source, &destination, false);
+    let result = fs.copy((&source).into(), (&destination).into(), false);
 
     assert!(
         matches!(result, Err(FsError::AlreadyExists(_))),
@@ -231,7 +231,7 @@ fn a_non_overwriting_rename_does_not_replace_an_existing_destination() {
     std::fs::write(&destination, b"existing bytes").expect("destination");
 
     let mut fs = adapter(&inside);
-    let result = fs.rename(&source, &destination, false);
+    let result = fs.rename((&source).into(), (&destination).into(), false);
 
     assert!(
         matches!(result, Err(FsError::AlreadyExists(_))),
@@ -270,7 +270,7 @@ fn two_racing_copies_leave_exactly_one_winner() {
                     .permit_read(scope.clone()),
             );
             barrier.wait();
-            fs.copy(&source, &destination, false)
+            fs.copy((&source).into(), (&destination).into(), false)
         }));
     }
     let results: Vec<_> = handles
@@ -313,7 +313,7 @@ fn two_racing_renames_leave_exactly_one_winner() {
         handles.push(std::thread::spawn(move || {
             let mut fs = adapter(&scope);
             barrier.wait();
-            fs.rename(&source, &destination, false)
+            fs.rename((&source).into(), (&destination).into(), false)
         }));
     }
     let results: Vec<_> = handles
@@ -349,7 +349,7 @@ fn an_ordinary_create_inside_the_grant_still_works() {
     let target = inside.join("new.txt");
 
     let mut fs = adapter(&inside);
-    fs.write(&target, b"hello", WriteMode::Create)
+    fs.write((&target).into(), b"hello", WriteMode::Create)
         .expect("an ordinary create inside the grant");
     assert_eq!(std::fs::read(&target).expect("readable"), b"hello");
 }
@@ -362,7 +362,7 @@ fn creating_over_an_existing_file_is_refused_and_preserves_it() {
     std::fs::write(&target, b"original").expect("original");
 
     let mut fs = adapter(&inside);
-    let result = fs.write(&target, b"replacement", WriteMode::Create);
+    let result = fs.write((&target).into(), b"replacement", WriteMode::Create);
 
     assert!(
         matches!(result, Err(FsError::AlreadyExists(_))),
@@ -379,7 +379,7 @@ fn an_allowed_overwrite_still_replaces_the_content() {
     std::fs::write(&target, b"original").expect("original");
 
     let mut fs = adapter(&inside);
-    fs.write(&target, b"replacement", WriteMode::Replace)
+    fs.write((&target).into(), b"replacement", WriteMode::Replace)
         .expect("a replacing write is allowed to replace");
     assert_eq!(std::fs::read(&target).expect("readable"), b"replacement");
 }
@@ -395,7 +395,7 @@ fn a_link_to_a_safe_in_grant_target_still_resolves_normally() {
     link(&real, &spelled);
 
     let mut fs = adapter(&inside);
-    fs.write(&spelled, b"through the link", WriteMode::Replace)
+    fs.write((&spelled).into(), b"through the link", WriteMode::Replace)
         .expect("a link wholly inside the grant is ordinary");
     assert_eq!(
         std::fs::read(&real).expect("readable"),
@@ -412,7 +412,7 @@ fn a_write_spelled_outside_the_grant_is_refused() {
     let target = outside.join("secret.txt");
 
     let mut fs = adapter(&inside);
-    let result = fs.write(&target, b"escaped", WriteMode::Create);
+    let result = fs.write((&target).into(), b"escaped", WriteMode::Create);
 
     assert!(matches!(result, Err(FsError::Refused(_))), "{result:?}");
     assert!(!target.exists(), "and nothing was written");
@@ -424,7 +424,7 @@ fn a_write_spelled_outside_the_grant_is_refused() {
 
 fn read_with_cap(path: &Path, scope: &Path, cap: u64) -> Result<Vec<u8>, FsError> {
     let mut fs = RealFileSystem::new(Grants::none().permit_read(scope));
-    fs.read(path, &Bounds::new().with_max_bytes(cap))
+    fs.read(path.into(), &Bounds::new().with_max_bytes(cap))
 }
 
 #[test]
@@ -483,11 +483,148 @@ fn a_bound_constrains_the_bytes_collected_and_not_the_reported_size() {
     assert!(actual > 0, "and which nevertheless has content");
 
     let mut fs = RealFileSystem::new(Grants::none().permit_read("/proc/self"));
-    let result = fs.read(path, &Bounds::new().with_max_bytes(0));
+    let result = fs.read(path.into(), &Bounds::new().with_max_bytes(0));
 
     assert!(
         matches!(result, Err(FsError::Bounded(_))),
         "a zero-byte bound cannot be satisfied by a file with {actual} bytes of \
          content, whatever its metadata reports: {result:?}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// PRETEST-02 F08 — a WORKSPACE root is a boundary no grant widens
+// ---------------------------------------------------------------------------
+
+/// A WORKSPACE `ws` with a sibling `outside`, under a grant of `/`.
+fn workspace(owned: &Owned) -> (PathBuf, PathBuf, RealFileSystem) {
+    let ws = owned.join("ws");
+    let outside = owned.join("outside");
+    std::fs::create_dir_all(ws.join("src")).expect("workspace");
+    std::fs::create_dir_all(&outside).expect("outside");
+    std::fs::write(outside.join("secret.txt"), "not yours").expect("secret");
+    (
+        ws,
+        outside,
+        RealFileSystem::new(Grants::none().permit_write("/")),
+    )
+}
+
+fn within<'a>(path: &'a Path, root: &'a Path) -> Location<'a> {
+    Location {
+        path,
+        within: Some(root),
+    }
+}
+
+fn is_escape<T: std::fmt::Debug>(result: &Result<T, FsError>) -> bool {
+    matches!(result, Err(FsError::Escape { .. }))
+}
+
+#[test]
+fn parent_traversal_out_of_the_workspace_is_an_escape() {
+    let owned = Owned::new("ws-dotdot");
+    let (ws, _outside, mut fs) = workspace(&owned);
+    let spelled = ws.join("src/../../outside/secret.txt");
+    let read = fs.read(within(&spelled, &ws), &Bounds::new());
+    assert!(is_escape(&read), "{read:?}");
+    let created = ws.join("src/../../outside/new.txt");
+    let write = fs.write(within(&created, &ws), b"x", WriteMode::Create);
+    assert!(is_escape(&write), "{write:?}");
+    assert!(!owned.join("outside/new.txt").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_out_of_the_workspace_is_an_escape_under_a_broad_grant() {
+    let owned = Owned::new("ws-link");
+    let (ws, outside, mut fs) = workspace(&owned);
+    link(&outside, &ws.join("src/linked"));
+    let spelled = ws.join("src/linked/secret.txt");
+
+    let read = fs.read(within(&spelled, &ws), &Bounds::new());
+    assert!(is_escape(&read), "{read:?}");
+    let delete = fs.delete(within(&spelled, &ws), false);
+    assert!(is_escape(&delete), "{delete:?}");
+    assert!(outside.join("secret.txt").exists());
+
+    // The same path as an absolute PATH is confined by the grant alone.
+    assert_eq!(
+        fs.read(spelled.as_path().into(), &Bounds::new())
+            .expect("granted"),
+        b"not yours"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_new_destination_under_a_symlinked_ancestor_is_an_escape() {
+    let owned = Owned::new("ws-ancestor");
+    let (ws, outside, mut fs) = workspace(&owned);
+    link(&outside, &ws.join("src/linked"));
+    let created = ws.join("src/linked/deeper/new.txt");
+
+    let write = fs.write(within(&created, &ws), b"x", WriteMode::Replace);
+    assert!(is_escape(&write), "{write:?}");
+    let source = ws.join("src/a.txt");
+    std::fs::write(&source, "a").expect("source");
+    let copy = fs.copy(within(&source, &ws), within(&created, &ws), false);
+    assert!(is_escape(&copy), "{copy:?}");
+    assert!(
+        !outside.join("deeper").exists(),
+        "nothing was created outside"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_dangling_link_out_of_the_workspace_is_an_escape() {
+    let owned = Owned::new("ws-dangling");
+    let (ws, outside, mut fs) = workspace(&owned);
+    let spelled = ws.join("src/looks-local.txt");
+    link(&outside.join("created.txt"), &spelled);
+
+    let write = fs.write(within(&spelled, &ws), b"x", WriteMode::Replace);
+    assert!(is_escape(&write), "{write:?}");
+    assert!(!outside.join("created.txt").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn legitimate_nested_workspace_paths_still_work() {
+    let owned = Owned::new("ws-inside");
+    let (ws, _outside, mut fs) = workspace(&owned);
+    link(&ws.join("src"), &ws.join("alias"));
+    let root_alias = owned.join("ws-alias");
+    link(&ws, &root_alias);
+
+    let nested = ws.join("src/deep/a.txt");
+    fs.write(within(&nested, &ws), b"hello", WriteMode::Create)
+        .expect("a new nested file inside the WORKSPACE");
+    let through_link = ws.join("alias/deep/a.txt");
+    assert_eq!(
+        fs.read(within(&through_link, &ws), &Bounds::new())
+            .expect("a link that stays inside"),
+        b"hello"
+    );
+    let through_root = root_alias.join("src/deep/a.txt");
+    assert_eq!(
+        fs.read(within(&through_root, &root_alias), &Bounds::new())
+            .expect("a root spelled through a link"),
+        b"hello"
+    );
+    let root = fs.metadata(within(&ws, &ws)).expect("the root itself");
+    assert!(root.is_directory);
+}
+
+#[cfg(unix)]
+#[test]
+fn the_workspace_does_not_replace_the_host_grant() {
+    let owned = Owned::new("ws-grant");
+    let (ws, outside, _) = workspace(&owned);
+    let mut fs = RealFileSystem::new(Grants::none().permit_write(&outside));
+    let target = ws.join("src/a.txt");
+    let write = fs.write(within(&target, &ws), b"x", WriteMode::Create);
+    assert!(matches!(write, Err(FsError::Refused(_))), "{write:?}");
+    assert!(!target.exists());
 }

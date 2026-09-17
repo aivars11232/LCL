@@ -41,7 +41,7 @@ pub mod profile;
 
 pub use address::{verify_vocabulary, AddressClass, Axes, Dependency, Effect, VocabularyMismatch};
 pub use bounds::{Bounds, Cancelled, Deadline};
-pub use fs::{FileSystem, FsError, Metadata, RealFileSystem, WriteMode};
+pub use fs::{FileSystem, FsError, Location, Metadata, RealFileSystem, WriteMode};
 pub use grant::{contains, normalize, Grant, Grants, Refusal, Scope};
 pub use net::{Address, NetError, Response, TcpTransport, Transport};
 pub use process::{Command, Completion, Process, ProcessError, RealProcess, Responder};

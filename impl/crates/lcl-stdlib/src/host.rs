@@ -28,7 +28,7 @@
 //! were never asked about.
 
 use crate::schema;
-use lcl_capabilities::fs::{FileSystem, FsError, WriteMode};
+use lcl_capabilities::fs::{FileSystem, FsError, Location, WriteMode};
 use lcl_capabilities::net::{Address, NetError, Transport};
 use lcl_capabilities::process::{Command, Process, ProcessError, ProcessFailure, Responder};
 use lcl_capabilities::{Bounds, Dependency, Effect, Grant, Grants, Refusal};
@@ -216,6 +216,36 @@ fn path_of(value: Option<&Value>) -> Option<PathBuf> {
     }
 }
 
+/// One filesystem address a request names, with the WORKSPACE root a
+/// WORKSPACE-form PATH may not leave.
+///
+/// The root travels to the filesystem rather than being checked here, because
+/// only the adapter that opens the target can decide containment on the same
+/// resolution it opens.
+struct Addressed {
+    path: PathBuf,
+    within: Option<PathBuf>,
+}
+
+impl Addressed {
+    fn location(&self) -> Location<'_> {
+        Location {
+            path: &self.path,
+            within: self.within.as_deref(),
+        }
+    }
+}
+
+fn addressed(value: Option<&Value>) -> Option<Addressed> {
+    match value? {
+        Value::WorkspacePath { root, resolved, .. } => Some(Addressed {
+            path: PathBuf::from(resolved),
+            within: Some(PathBuf::from(root)),
+        }),
+        other => path_of(Some(other)).map(|path| Addressed { path, within: None }),
+    }
+}
+
 /// The refusal for a `core.read` format this adapter cannot produce, if any.
 ///
 /// The row types `format` as `qualified_identifier(format)` with no declared
@@ -379,8 +409,8 @@ impl HostAdapter {
         })
     }
 
-    fn target_path(&self, request: &CapabilityRequest) -> Result<PathBuf, CapabilityOutcome> {
-        path_of(request.target.as_ref()).ok_or_else(|| {
+    fn target_path(&self, request: &CapabilityRequest) -> Result<Addressed, CapabilityOutcome> {
+        addressed(request.target.as_ref()).ok_or_else(|| {
             failed(
                 format!(
                     "{} needs a PATH target, and the resolved target is not one",
@@ -391,8 +421,11 @@ impl HostAdapter {
         })
     }
 
-    fn destination_path(&self, request: &CapabilityRequest) -> Result<PathBuf, CapabilityOutcome> {
-        path_of(request.parameters.get("destination")).ok_or_else(|| {
+    fn destination_path(
+        &self,
+        request: &CapabilityRequest,
+    ) -> Result<Addressed, CapabilityOutcome> {
+        addressed(request.parameters.get("destination")).ok_or_else(|| {
             failed(
                 format!(
                     "{} needs a PATH destination, and the resolved destination is not one",
@@ -424,7 +457,7 @@ impl HostAdapter {
         if let Some(refusal) = unproducible_format(request.parameters.get("format")) {
             return refusal;
         }
-        match filesystem.read(&path, &bounds) {
+        match filesystem.read(path.location(), &bounds) {
             Ok(bytes) => {
                 // STRING is "Unicode text", and the row promises "exact content"
                 // with "No clipping or ambient encoding conversion". Bytes that
@@ -437,7 +470,7 @@ impl HostAdapter {
                         return CapabilityOutcome::Unavailable(format!(
                             "core.read: {} is not UTF-8 text (the first invalid byte is at \
                              offset {}), and this host has no exact representation for it",
-                            path.display(),
+                            path.path.display(),
                             error.utf8_error().valid_up_to()
                         ))
                     }
@@ -464,7 +497,7 @@ impl HostAdapter {
             Ok(filesystem) => filesystem,
             Err(outcome) => return outcome,
         };
-        match filesystem.metadata(&path) {
+        match filesystem.metadata(path.location()) {
             Ok(metadata) => {
                 let mut fields = std::collections::BTreeMap::new();
                 fields.insert("exists".to_string(), Value::Boolean(metadata.exists));
@@ -501,8 +534,8 @@ impl HostAdapter {
             Ok(filesystem) => filesystem,
             Err(outcome) => return outcome,
         };
-        match filesystem.write(&path, &content, mode) {
-            Ok(()) => completed_write(target, path),
+        match filesystem.write(path.location(), &content, mode) {
+            Ok(()) => completed_write(target, path.path),
             Err(error) => fs_failure(error, None),
         }
     }
@@ -523,8 +556,8 @@ impl HostAdapter {
             Ok(filesystem) => filesystem,
             Err(outcome) => return outcome,
         };
-        match filesystem.write(&path, &content, mode) {
-            Ok(()) => completed_write(target, path),
+        match filesystem.write(path.location(), &content, mode) {
+            Ok(()) => completed_write(target, path.path),
             Err(error) => fs_failure(error, None),
         }
     }
@@ -540,8 +573,8 @@ impl HostAdapter {
             Ok(filesystem) => filesystem,
             Err(outcome) => return outcome,
         };
-        match filesystem.append(&path, &content) {
-            Ok(()) => completed_write(target, path),
+        match filesystem.append(path.location(), &content) {
+            Ok(()) => completed_write(target, path.path),
             Err(error) => fs_failure(error, None),
         }
     }
@@ -559,8 +592,8 @@ impl HostAdapter {
         };
         // A modification requires the target to exist; it changes content, and
         // it does not create.
-        match filesystem.write(&path, &change, WriteMode::ReplaceExisting) {
-            Ok(()) => completed_write(target, path),
+        match filesystem.write(path.location(), &change, WriteMode::ReplaceExisting) {
+            Ok(()) => completed_write(target, path.path),
             Err(error) => fs_failure(error, None),
         }
     }
@@ -577,14 +610,14 @@ impl HostAdapter {
             Ok(filesystem) => filesystem,
             Err(outcome) => return outcome,
         };
-        match filesystem.delete(&path, recursive) {
+        match filesystem.delete(path.location(), recursive) {
             // "changed is FALSE when no requested target state changed": an
             // absent target that need not exist is a completed no-change.
             Ok(false) if !require_exists => {
                 CapabilityOutcome::Completed(schema::operation(target, Value::Boolean(false)))
             }
-            Ok(false) => fs_failure(FsError::NotFound(path), None),
-            Ok(true) => completed_write(target, path),
+            Ok(false) => fs_failure(FsError::NotFound(path.path), None),
+            Ok(true) => completed_write(target, path.path),
             Err(error) => fs_failure(error, None),
         }
     }
@@ -597,15 +630,18 @@ impl HostAdapter {
         let Some(Value::Text(new_name)) = request.parameters.get("new_name") else {
             return failed("core.rename needs a STRING new_name".to_string(), None);
         };
-        let destination = path.with_file_name(new_name);
+        let destination = Addressed {
+            path: path.path.with_file_name(new_name),
+            within: path.within.clone(),
+        };
         let overwrite = flag(request, "overwrite");
         let target = request.target.clone().unwrap_or(Value::Null);
         let filesystem = match self.filesystem() {
             Ok(filesystem) => filesystem,
             Err(outcome) => return outcome,
         };
-        match filesystem.rename(&path, &destination, overwrite) {
-            Ok(()) => completed_write(target, destination),
+        match filesystem.rename(path.location(), destination.location(), overwrite) {
+            Ok(()) => completed_write(target, destination.path),
             Err(error) => fs_failure(error, None),
         }
     }
@@ -634,19 +670,19 @@ impl HostAdapter {
         };
 
         if remove_source {
-            return match filesystem.rename(&source, &destination, overwrite) {
+            return match filesystem.rename(source.location(), destination.location(), overwrite) {
                 Ok(()) => CapabilityOutcome::Completed(
                     schema::transfer(source_value, destination_value, Value::Unknown).with_effect(
                         applied(
                             EffectClass::Filesystem,
-                            Some(destination.display().to_string()),
+                            Some(destination.path.display().to_string()),
                         ),
                     ),
                 ),
                 Err(error) => fs_failure(error, None),
             };
         }
-        match filesystem.copy(&source, &destination, overwrite) {
+        match filesystem.copy(source.location(), destination.location(), overwrite) {
             Ok(bytes) => CapabilityOutcome::Completed(
                 schema::transfer(
                     source_value,
@@ -657,7 +693,7 @@ impl HostAdapter {
                 )
                 .with_effect(applied(
                     EffectClass::Filesystem,
-                    Some(destination.display().to_string()),
+                    Some(destination.path.display().to_string()),
                 )),
             ),
             Err(error) => fs_failure(error, None),
@@ -833,13 +869,13 @@ impl HostAdapter {
         } else {
             WriteMode::Create
         };
-        match filesystem.write(&destination, &body, mode) {
+        match filesystem.write(destination.location(), &body, mode) {
             Ok(()) => CapabilityOutcome::Completed(
                 schema::transfer(source, destination_value, bytes_value(bytes))
                     .with_effect(applied(EffectClass::Network, Some(uri.to_string())))
                     .with_effect(applied(
                         EffectClass::Filesystem,
-                        Some(destination.display().to_string()),
+                        Some(destination.path.display().to_string()),
                     )),
             ),
             // The transfer happened and the write did not: the effect state is
@@ -862,14 +898,14 @@ impl HostAdapter {
 
         // The content is whichever side names it: a PATH target is read, and a
         // material target is its own content.
-        let body = match path_of(request.target.as_ref()) {
+        let body = match addressed(request.target.as_ref()) {
             Some(path) => {
                 let Some(filesystem) = self.filesystem.as_mut() else {
                     return CapabilityOutcome::Unavailable(
                         "no filesystem capability is installed".to_string(),
                     );
                 };
-                match filesystem.read(&path, &bounds) {
+                match filesystem.read(path.location(), &bounds) {
                     Ok(bytes) => bytes,
                     Err(error) => return fs_failure(error, None),
                 }
@@ -879,7 +915,7 @@ impl HostAdapter {
 
         // A PATH destination is a filesystem publication; a URI destination is
         // a network one.
-        if let Some(destination) = path_of(request.parameters.get("destination")) {
+        if let Some(destination) = addressed(request.parameters.get("destination")) {
             let Some(filesystem) = self.filesystem.as_mut() else {
                 return CapabilityOutcome::Unavailable(
                     "no filesystem capability is installed".to_string(),
@@ -890,7 +926,7 @@ impl HostAdapter {
             } else {
                 WriteMode::Create
             };
-            return match filesystem.write(&destination, &body, mode) {
+            return match filesystem.write(destination.location(), &body, mode) {
                 Ok(()) => completed_transfer_or_operation(
                     request,
                     source_value,
@@ -898,7 +934,7 @@ impl HostAdapter {
                     body.len() as u64,
                     applied(
                         EffectClass::Filesystem,
-                        Some(destination.display().to_string()),
+                        Some(destination.path.display().to_string()),
                     ),
                 ),
                 Err(error) => fs_failure(error, None),
@@ -1171,6 +1207,13 @@ fn fs_failure(error: FsError, effect: Option<ObservedEffect>) -> CapabilityOutco
         // the runtime maps them to two different registered identifiers.
         FsError::Refused(Refusal::Denied(detail)) => CapabilityOutcome::Denied(detail),
         FsError::Refused(Refusal::Unavailable(detail)) => CapabilityOutcome::Unavailable(detail),
+        // Not the host's refusal: the language's own boundary. "Escape produces
+        // error.value.out_of_range."
+        escape @ FsError::Escape { .. } => CapabilityOutcome::Refused {
+            error: lcl_runtime::RuntimeError::ValueOutOfRange,
+            cause: "workspace".to_string(),
+            detail: escape.to_string(),
+        },
         FsError::Bounded(cancelled) => CapabilityOutcome::Unavailable(cancelled.reason),
         // The adapter opened the target and then failed. It cannot say that
         // nothing began, and `05_SEMANTICS/09` only permits the effect-free

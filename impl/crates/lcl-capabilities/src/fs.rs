@@ -34,6 +34,16 @@
 //! and then writing it. A prior existence check admits every writer that passes
 //! it, which is not a reservation at all.
 //!
+//! ## A WORKSPACE is a second boundary, not a grant
+//!
+//! A WORKSPACE-form PATH arrives as a [`Location`] that names its declared
+//! root. `03_TYPES_AND_VALUES/04`: "Containment is checked on the resolved
+//! target, not by textual prefix, so parent traversal, links, or equivalent
+//! indirection cannot escape the root." That is decided on the same resolution
+//! the operation opens, and before the grant: a host that grants `/` has not
+//! authorized a document to leave its WORKSPACE, so the grant is never asked to
+//! stand in for that decision. An escape is [`FsError::Escape`].
+//!
 //! What this does not claim: nothing here defends against another process
 //! replacing a *directory* along the path between resolution and the operation.
 //! That needs directory-relative syscalls this module does not use. The limit
@@ -45,6 +55,25 @@ use std::fmt;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+/// One path a request addresses, and the WORKSPACE root it may not leave.
+///
+/// Both are host paths. `within` is present exactly for a WORKSPACE-form PATH;
+/// an absolute PATH is confined by grants alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Location<'a> {
+    pub path: &'a Path,
+    pub within: Option<&'a Path>,
+}
+
+impl<'a, P: AsRef<Path> + ?Sized> From<&'a P> for Location<'a> {
+    fn from(path: &'a P) -> Location<'a> {
+        Location {
+            path: path.as_ref(),
+            within: None,
+        }
+    }
+}
+
 /// What one filesystem request could not do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FsError {
@@ -54,6 +83,8 @@ pub enum FsError {
     AlreadyExists(PathBuf),
     /// The host refuses or cannot supply the access.
     Refused(Refusal),
+    /// The resolved target leaves the WORKSPACE its location names.
+    Escape { path: PathBuf, resolved: PathBuf },
     /// A declared bound stopped the work.
     Bounded(Cancelled),
     /// The operating system reported a failure, before the target was opened
@@ -77,6 +108,12 @@ impl fmt::Display for FsError {
             FsError::NotFound(path) => write!(f, "{} does not exist", path.display()),
             FsError::AlreadyExists(path) => write!(f, "{} already exists", path.display()),
             FsError::Refused(refusal) => write!(f, "{refusal}"),
+            FsError::Escape { path, resolved } => write!(
+                f,
+                "{} resolves to {}, outside its WORKSPACE",
+                path.display(),
+                resolved.display()
+            ),
             FsError::Bounded(cancelled) => write!(f, "{cancelled}"),
             FsError::Io(detail) => f.write_str(detail),
             FsError::IoAfterChange { detail, target } => {
@@ -116,15 +153,26 @@ pub enum WriteMode {
 
 /// The primitive filesystem capability.
 pub trait FileSystem {
-    fn metadata(&mut self, path: &Path) -> Result<Metadata, FsError>;
-    fn read(&mut self, path: &Path, bounds: &Bounds) -> Result<Vec<u8>, FsError>;
-    fn write(&mut self, path: &Path, content: &[u8], mode: WriteMode) -> Result<(), FsError>;
-    fn append(&mut self, path: &Path, content: &[u8]) -> Result<(), FsError>;
+    fn metadata(&mut self, path: Location<'_>) -> Result<Metadata, FsError>;
+    fn read(&mut self, path: Location<'_>, bounds: &Bounds) -> Result<Vec<u8>, FsError>;
+    fn write(&mut self, path: Location<'_>, content: &[u8], mode: WriteMode)
+        -> Result<(), FsError>;
+    fn append(&mut self, path: Location<'_>, content: &[u8]) -> Result<(), FsError>;
     /// Remove the target. Returns whether anything was removed.
-    fn delete(&mut self, path: &Path, recursive: bool) -> Result<bool, FsError>;
-    fn rename(&mut self, from: &Path, to: &Path, overwrite: bool) -> Result<(), FsError>;
+    fn delete(&mut self, path: Location<'_>, recursive: bool) -> Result<bool, FsError>;
+    fn rename(
+        &mut self,
+        from: Location<'_>,
+        to: Location<'_>,
+        overwrite: bool,
+    ) -> Result<(), FsError>;
     /// Copy the target. Returns the number of bytes copied.
-    fn copy(&mut self, from: &Path, to: &Path, overwrite: bool) -> Result<u64, FsError>;
+    fn copy(
+        &mut self,
+        from: Location<'_>,
+        to: Location<'_>,
+        overwrite: bool,
+    ) -> Result<u64, FsError>;
 }
 
 /// The real filesystem, confined to granted scopes.
@@ -142,8 +190,22 @@ impl RealFileSystem {
         &self.grants
     }
 
-    /// Decide the host gate, then verify containment against real locations.
-    fn admit(&self, path: &Path, write: bool) -> Result<PathBuf, FsError> {
+    /// Prove the WORKSPACE, then decide the host gate, both against real
+    /// locations.
+    fn admit(&self, location: Location<'_>, write: bool) -> Result<PathBuf, FsError> {
+        let path = location.path;
+        // The language gate first, on the resolution the operation will open.
+        // A root spelled through a link is judged where it really is.
+        let resolved = resolve(path);
+        if let Some(root) = location.within {
+            if !grant::contains(&resolve(root), &resolved) {
+                return Err(FsError::Escape {
+                    path: path.to_path_buf(),
+                    resolved,
+                });
+            }
+        }
+
         let grant = if write {
             Grant::WritePath(path.to_path_buf())
         } else {
@@ -151,9 +213,8 @@ impl RealFileSystem {
         };
         self.grants.decide(&grant).map_err(FsError::Refused)?;
 
-        // Resolve symlinks and re-check. A lexical check cannot see a link that
+        // Re-check the resolution. A lexical check cannot see a link that
         // leaves the scope, and this one can.
-        let resolved = resolve(path);
         let inside = self.grants.scopes().iter().any(|scope| {
             let root = std::fs::canonicalize(&scope.root).unwrap_or_else(|_| scope.root.clone());
             grant::contains(&root, &resolved) && (scope.writable || !write)
@@ -309,8 +370,8 @@ fn no_follow(options: &mut std::fs::OpenOptions) -> &mut std::fs::OpenOptions {
 }
 
 impl FileSystem for RealFileSystem {
-    fn metadata(&mut self, path: &Path) -> Result<Metadata, FsError> {
-        let resolved = self.admit(path, false)?;
+    fn metadata(&mut self, location: Location<'_>) -> Result<Metadata, FsError> {
+        let resolved = self.admit(location, false)?;
         let Ok(meta) = std::fs::metadata(&resolved) else {
             return Ok(Metadata {
                 exists: false,
@@ -344,8 +405,9 @@ impl FileSystem for RealFileSystem {
     /// reports zero and yields content, and an ordinary file can grow between
     /// the two calls — so the cap is enforced again on the bytes read. A cap
     /// applied only to `stat` is a cap on the wrong number.
-    fn read(&mut self, path: &Path, bounds: &Bounds) -> Result<Vec<u8>, FsError> {
-        let resolved = self.admit(path, false)?;
+    fn read(&mut self, location: Location<'_>, bounds: &Bounds) -> Result<Vec<u8>, FsError> {
+        let path = location.path;
+        let resolved = self.admit(location, false)?;
         let meta =
             std::fs::metadata(&resolved).map_err(|_| FsError::NotFound(path.to_path_buf()))?;
         bounds
@@ -374,8 +436,14 @@ impl FileSystem for RealFileSystem {
     /// admitted by the same earlier check, and cannot be satisfied by an
     /// existing symbolic link — including a dangling one, which is exactly how
     /// a create was previously talked into writing outside its grant.
-    fn write(&mut self, path: &Path, content: &[u8], mode: WriteMode) -> Result<(), FsError> {
-        let resolved = self.admit(path, true)?;
+    fn write(
+        &mut self,
+        location: Location<'_>,
+        content: &[u8],
+        mode: WriteMode,
+    ) -> Result<(), FsError> {
+        let path = location.path;
+        let resolved = self.admit(location, true)?;
         if matches!(mode, WriteMode::ReplaceExisting) && !resolved.exists() {
             return Err(FsError::NotFound(path.to_path_buf()));
         }
@@ -410,8 +478,9 @@ impl FileSystem for RealFileSystem {
             .map_err(|error| io_after_change(error, &resolved))
     }
 
-    fn append(&mut self, path: &Path, content: &[u8]) -> Result<(), FsError> {
-        let resolved = self.admit(path, true)?;
+    fn append(&mut self, location: Location<'_>, content: &[u8]) -> Result<(), FsError> {
+        let path = location.path;
+        let resolved = self.admit(location, true)?;
         if !resolved.exists() {
             return Err(FsError::NotFound(path.to_path_buf()));
         }
@@ -422,8 +491,8 @@ impl FileSystem for RealFileSystem {
             .map_err(|error| io_after_change(error, &resolved))
     }
 
-    fn delete(&mut self, path: &Path, recursive: bool) -> Result<bool, FsError> {
-        let resolved = self.admit(path, true)?;
+    fn delete(&mut self, location: Location<'_>, recursive: bool) -> Result<bool, FsError> {
+        let resolved = self.admit(location, true)?;
         let Ok(meta) = std::fs::metadata(&resolved) else {
             return Ok(false);
         };
@@ -451,9 +520,15 @@ impl FileSystem for RealFileSystem {
     /// A directory cannot be hard-linked. For that case the checked rename
     /// remains, and so does its window; a non-overwriting directory move is
     /// therefore reserved only as well as the check that precedes it.
-    fn rename(&mut self, from: &Path, to: &Path, overwrite: bool) -> Result<(), FsError> {
+    fn rename(
+        &mut self,
+        from: Location<'_>,
+        to: Location<'_>,
+        overwrite: bool,
+    ) -> Result<(), FsError> {
         let source = self.admit(from, true)?;
         let destination = self.admit(to, true)?;
+        let (from, to) = (from.path, to.path);
         if !source.exists() {
             return Err(FsError::NotFound(from.to_path_buf()));
         }
@@ -482,9 +557,15 @@ impl FileSystem for RealFileSystem {
     /// With overwrite off the destination is reserved with `create_new` before
     /// any byte is copied, for the same reason as [`FileSystem::write`]: a
     /// prior existence check admits every writer that passes it.
-    fn copy(&mut self, from: &Path, to: &Path, overwrite: bool) -> Result<u64, FsError> {
+    fn copy(
+        &mut self,
+        from: Location<'_>,
+        to: Location<'_>,
+        overwrite: bool,
+    ) -> Result<u64, FsError> {
         let source = self.admit(from, false)?;
         let destination = self.admit(to, true)?;
+        let (from, to) = (from.path, to.path);
         if !source.exists() {
             return Err(FsError::NotFound(from.to_path_buf()));
         }

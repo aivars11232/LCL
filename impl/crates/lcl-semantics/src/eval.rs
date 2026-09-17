@@ -364,6 +364,7 @@ fn constructor_value(engine: &Engine, name: &str, arguments: &[Value]) -> Option
             Some(Value::WorkspacePath {
                 workspace: id.clone(),
                 relative: relative.clone(),
+                root: root.clone(),
                 resolved: text,
             })
         }

@@ -54,10 +54,12 @@ pub enum Value {
     /// identity: "WORKSPACE form uses the resolved workspace declaration
     /// identity and exact decoded relative STRING ... Different forms are
     /// unequal." `resolved` is the contained absolute target a capability
-    /// addresses; it takes no part in identity.
+    /// addresses, and `root` is the declared WORKSPACE root it may not leave on
+    /// the real filesystem; neither takes part in identity.
     WorkspacePath {
         workspace: String,
         relative: String,
+        root: String,
         resolved: String,
     },
     /// A registered qualified identifier: a format, encoding, kind, mode,

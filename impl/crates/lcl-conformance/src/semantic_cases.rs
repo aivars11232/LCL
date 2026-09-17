@@ -977,6 +977,14 @@ fn operator_specials(name: &str) -> Vec<SpecialRun> {
                 r#"PATH(REF(workspace.case), "src/a.py") MATCHES GLOB("src/*.py") AND NOT (PATH(REF(workspace.case), "lib/a.py") MATCHES GLOB("src/*.py"))"#,
                 Special::Holds(WORKSPACE.to_string()),
             ),
+            // `pattern_profiles/GLOB/input`: an absolute PATH retains no
+            // WORKSPACE root, so it "cannot supply this form" and "uses
+            // error.operator.operand; no root is inferred" (PRETEST-02 F06).
+            special(
+                "match/glob-absolute-path-operand",
+                r#"PATH("/case/a.txt") MATCHES GLOB("*.txt")"#,
+                Special::Rejects("error.operator.operand", String::new()),
+            ),
             missing(r#"REF(data.strs)[5] MATCHES REGEX("a")"#.into()),
             unknown(
                 r#"(REF(input.us) MATCHES REGEX("a")) == UNKNOWN"#.into(),
@@ -1507,10 +1515,6 @@ pub fn execute_operators(runner: &Runner) -> Vec<ExecutedCase> {
                     "(\"xabc\" MATCHES REGEX(\"a.*\")) == FALSE",
                 ),
                 ("match/glob-string", "\"a.txt\" MATCHES GLOB(\"*.txt\")"),
-                (
-                    "match/glob-absolute-path-false",
-                    "(PATH(\"/case/a.txt\") MATCHES GLOB(\"*.txt\")) == FALSE",
-                ),
             ],
             "property access" | "index access" | "AND" | "OR" | "==" | "!=" | "*" | "/" | "+"
             | "-" | "<" | "<=" | ">" | ">=" => vec![],

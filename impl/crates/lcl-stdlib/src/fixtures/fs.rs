@@ -9,7 +9,7 @@
 //! that permitted what the real one refuses would let a conformance test pass
 //! against behavior no real run could reproduce.
 
-use lcl_capabilities::fs::{FileSystem, FsError, Metadata, WriteMode};
+use lcl_capabilities::fs::{FileSystem, FsError, Location, Metadata, WriteMode};
 use lcl_capabilities::{Bounds, Grant, Grants};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -77,14 +77,26 @@ impl MemoryFileSystem {
         &self.grants
     }
 
-    fn admit(&self, path: &Path, write: bool) -> Result<PathBuf, FsError> {
+    /// The same two gates as the real adapter, in the same order. This
+    /// filesystem has no links, so its resolution is lexical.
+    fn admit(&self, location: Location<'_>, write: bool) -> Result<PathBuf, FsError> {
+        let path = location.path;
+        let resolved = lcl_capabilities::normalize(path);
+        if let Some(root) = location.within {
+            if !lcl_capabilities::contains(&lcl_capabilities::normalize(root), &resolved) {
+                return Err(FsError::Escape {
+                    path: path.to_path_buf(),
+                    resolved,
+                });
+            }
+        }
         let grant = if write {
             Grant::WritePath(path.to_path_buf())
         } else {
             Grant::ReadPath(path.to_path_buf())
         };
         self.grants.decide(&grant).map_err(FsError::Refused)?;
-        Ok(lcl_capabilities::normalize(path))
+        Ok(resolved)
     }
 
     fn is_directory(&self, path: &Path) -> bool {
@@ -97,8 +109,8 @@ impl MemoryFileSystem {
 }
 
 impl FileSystem for MemoryFileSystem {
-    fn metadata(&mut self, path: &Path) -> Result<Metadata, FsError> {
-        let resolved = self.admit(path, false)?;
+    fn metadata(&mut self, location: Location<'_>) -> Result<Metadata, FsError> {
+        let resolved = self.admit(location, false)?;
         if let Some(content) = self.files.get(&resolved) {
             return Ok(Metadata {
                 exists: true,
@@ -132,8 +144,9 @@ impl FileSystem for MemoryFileSystem {
         })
     }
 
-    fn read(&mut self, path: &Path, bounds: &Bounds) -> Result<Vec<u8>, FsError> {
-        let resolved = self.admit(path, false)?;
+    fn read(&mut self, location: Location<'_>, bounds: &Bounds) -> Result<Vec<u8>, FsError> {
+        let path = location.path;
+        let resolved = self.admit(location, false)?;
         let content = self
             .files
             .get(&resolved)
@@ -144,8 +157,14 @@ impl FileSystem for MemoryFileSystem {
         Ok(content.clone())
     }
 
-    fn write(&mut self, path: &Path, content: &[u8], mode: WriteMode) -> Result<(), FsError> {
-        let resolved = self.admit(path, true)?;
+    fn write(
+        &mut self,
+        location: Location<'_>,
+        content: &[u8],
+        mode: WriteMode,
+    ) -> Result<(), FsError> {
+        let path = location.path;
+        let resolved = self.admit(location, true)?;
         let exists = self.files.contains_key(&resolved);
         match mode {
             WriteMode::Create if exists => return Err(FsError::AlreadyExists(path.to_path_buf())),
@@ -158,8 +177,9 @@ impl FileSystem for MemoryFileSystem {
         Ok(())
     }
 
-    fn append(&mut self, path: &Path, content: &[u8]) -> Result<(), FsError> {
-        let resolved = self.admit(path, true)?;
+    fn append(&mut self, location: Location<'_>, content: &[u8]) -> Result<(), FsError> {
+        let path = location.path;
+        let resolved = self.admit(location, true)?;
         let existing = self
             .files
             .get_mut(&resolved)
@@ -168,8 +188,9 @@ impl FileSystem for MemoryFileSystem {
         Ok(())
     }
 
-    fn delete(&mut self, path: &Path, recursive: bool) -> Result<bool, FsError> {
-        let resolved = self.admit(path, true)?;
+    fn delete(&mut self, location: Location<'_>, recursive: bool) -> Result<bool, FsError> {
+        let path = location.path;
+        let resolved = self.admit(location, true)?;
         if self.files.remove(&resolved).is_some() {
             return Ok(true);
         }
@@ -195,9 +216,15 @@ impl FileSystem for MemoryFileSystem {
         Ok(false)
     }
 
-    fn rename(&mut self, from: &Path, to: &Path, overwrite: bool) -> Result<(), FsError> {
+    fn rename(
+        &mut self,
+        from: Location<'_>,
+        to: Location<'_>,
+        overwrite: bool,
+    ) -> Result<(), FsError> {
         let source = self.admit(from, true)?;
         let destination = self.admit(to, true)?;
+        let (from, to) = (from.path, to.path);
         if !self.files.contains_key(&source) {
             return Err(FsError::NotFound(from.to_path_buf()));
         }
@@ -209,9 +236,15 @@ impl FileSystem for MemoryFileSystem {
         Ok(())
     }
 
-    fn copy(&mut self, from: &Path, to: &Path, overwrite: bool) -> Result<u64, FsError> {
+    fn copy(
+        &mut self,
+        from: Location<'_>,
+        to: Location<'_>,
+        overwrite: bool,
+    ) -> Result<u64, FsError> {
         let source = self.admit(from, false)?;
         let destination = self.admit(to, true)?;
+        let (from, to) = (from.path, to.path);
         let content = self
             .files
             .get(&source)

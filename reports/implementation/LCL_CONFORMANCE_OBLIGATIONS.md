@@ -49,7 +49,7 @@ report arithmetic are instrument tests, never evidence about the LCL engine.
 ## The implementation mapping, revision r2
 
 The mapping is `impl/crates/lcl-conformance/src/obligations_v0.1.0_r2.json`,
-SHA-256 `32b3e634dd135784163b90dd94736fae4522b68945dbbfaede05e454296fbf8e`,
+SHA-256 `27e3271fc2db2a86291c58e9fe55f54d24a130b71efa6b9e9f28d2b9acb6e385`,
 pinned in `obligations.rs` as `MAPPING_DIGEST`. It replaces revision r1, which
 pinned probe identifiers only.
 

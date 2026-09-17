@@ -774,43 +774,51 @@ struct SharedFs(std::rc::Rc<std::cell::RefCell<lcl_stdlib::MemoryFileSystem>>);
 impl lcl_capabilities::FileSystem for SharedFs {
     fn metadata(
         &mut self,
-        p: &std::path::Path,
+        p: lcl_capabilities::Location<'_>,
     ) -> Result<lcl_capabilities::Metadata, lcl_capabilities::FsError> {
         self.0.borrow_mut().metadata(p)
     }
     fn read(
         &mut self,
-        p: &std::path::Path,
+        p: lcl_capabilities::Location<'_>,
         b: &lcl_capabilities::Bounds,
     ) -> Result<Vec<u8>, lcl_capabilities::FsError> {
         self.0.borrow_mut().read(p, b)
     }
     fn write(
         &mut self,
-        p: &std::path::Path,
+        p: lcl_capabilities::Location<'_>,
         c: &[u8],
         m: lcl_capabilities::WriteMode,
     ) -> Result<(), lcl_capabilities::FsError> {
         self.0.borrow_mut().write(p, c, m)
     }
-    fn append(&mut self, p: &std::path::Path, c: &[u8]) -> Result<(), lcl_capabilities::FsError> {
+    fn append(
+        &mut self,
+        p: lcl_capabilities::Location<'_>,
+        c: &[u8],
+    ) -> Result<(), lcl_capabilities::FsError> {
         self.0.borrow_mut().append(p, c)
     }
-    fn delete(&mut self, p: &std::path::Path, r: bool) -> Result<bool, lcl_capabilities::FsError> {
+    fn delete(
+        &mut self,
+        p: lcl_capabilities::Location<'_>,
+        r: bool,
+    ) -> Result<bool, lcl_capabilities::FsError> {
         self.0.borrow_mut().delete(p, r)
     }
     fn rename(
         &mut self,
-        p: &std::path::Path,
-        q: &std::path::Path,
+        p: lcl_capabilities::Location<'_>,
+        q: lcl_capabilities::Location<'_>,
         o: bool,
     ) -> Result<(), lcl_capabilities::FsError> {
         self.0.borrow_mut().rename(p, q, o)
     }
     fn copy(
         &mut self,
-        p: &std::path::Path,
-        q: &std::path::Path,
+        p: lcl_capabilities::Location<'_>,
+        q: lcl_capabilities::Location<'_>,
         o: bool,
     ) -> Result<u64, lcl_capabilities::FsError> {
         self.0.borrow_mut().copy(p, q, o)

@@ -37,6 +37,8 @@
 //! [`PatternFault::ResourceLimit`], which the caller reports as the registered
 //! `error.pattern.resource_limit` rather than hanging or panicking.
 
+use crate::value::Value;
+use lcl_semantics::value::REGEX_FLAG_SEPARATOR;
 use std::collections::BTreeSet;
 
 /// The declared finite resource limits.
@@ -57,6 +59,101 @@ pub enum PatternFault {
     /// "Compiling or matching a demanded, well-typed GLOB or REGEX exhausts its
     /// declared finite pattern-resource limit."
     ResourceLimit(String),
+}
+
+// ---------------------------------------------------------------------------
+// MATCHES
+// ---------------------------------------------------------------------------
+
+/// Why one `MATCHES` could not be decided.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MatchFault {
+    /// An operand the operator does not consume, which each caller reports as
+    /// `error.operator.operand`.
+    Operand(String),
+    /// The pattern could not be compiled or applied.
+    Pattern(PatternFault),
+}
+
+/// `MATCHES`, the one rule the expression operator and `core.compare` share.
+///
+/// `05_SEMANTICS/12`: "MATCHES consumes STRING and REGEX, or PATH/STRING and
+/// GLOB. It compares the entire input under the selected closed pattern
+/// profile. A non-match returns FALSE." Any UNKNOWN operand yields UNKNOWN.
+pub fn matches(input: &Value, pattern: &Value) -> Result<Value, MatchFault> {
+    if input == &Value::Unknown || pattern == &Value::Unknown {
+        return Ok(Value::Unknown);
+    }
+    let accepted = match pattern {
+        Value::Constructed { constructor, text } if constructor == "REGEX" => {
+            let Value::Text(subject) = input else {
+                return Err(MatchFault::Operand(format!(
+                    "a REGEX MATCHES requires a STRING, found {}",
+                    input.family()
+                )));
+            };
+            let (body, flags) = text
+                .split_once(REGEX_FLAG_SEPARATOR)
+                .unwrap_or((text.as_str(), ""));
+            Flags::parse(flags)
+                .and_then(|flags| Regex::compile(body, flags))
+                .and_then(|compiled| compiled.matches(subject))
+        }
+        Value::Constructed { constructor, text } if constructor == "GLOB" => {
+            let subject = glob_subject(input)?;
+            Glob::compile(text).and_then(|compiled| compiled.matches(&subject))
+        }
+        other => {
+            return Err(MatchFault::Operand(format!(
+                "MATCHES requires a REGEX or GLOB, found {}",
+                other.family()
+            )))
+        }
+    };
+    accepted.map(Value::Boolean).map_err(MatchFault::Pattern)
+}
+
+/// The relative segment sequence one GLOB operand supplies.
+///
+/// `types_v0.1.0.json#/pattern_profiles/GLOB/input`: "A STRING operand denotes
+/// either the empty relative path or nonempty slash-separated segments, with no
+/// empty, . or .. segment and no leading or trailing slash. A PATH operand
+/// requires an explicit WORKSPACE root retained by that value ... and is
+/// compared using its normalized relative segment sequence. An input that
+/// cannot supply this form uses error.operator.operand; no root is inferred."
+fn glob_subject(input: &Value) -> Result<String, MatchFault> {
+    match input {
+        Value::Text(text) => {
+            if text.is_empty() || text.split('/').all(|s| !matches!(s, "" | "." | "..")) {
+                Ok(text.clone())
+            } else {
+                Err(MatchFault::Operand(format!(
+                    "{text:?} is not a relative GLOB segment sequence"
+                )))
+            }
+        }
+        Value::WorkspacePath { relative, .. } => {
+            let mut segments: Vec<&str> = Vec::new();
+            for segment in relative.split('/') {
+                match segment {
+                    "" | "." => {}
+                    ".." => {
+                        if segments.pop().is_none() {
+                            return Err(MatchFault::Operand(format!(
+                                "{relative:?} leaves its WORKSPACE root"
+                            )));
+                        }
+                    }
+                    other => segments.push(other),
+                }
+            }
+            Ok(segments.join("/"))
+        }
+        // An absolute PATH names no WORKSPACE, and none is inferred from its text.
+        other => Err(MatchFault::Operand(format!(
+            "a GLOB MATCHES requires a STRING or a WORKSPACE-form PATH, found {other}"
+        ))),
+    }
 }
 
 // ---------------------------------------------------------------------------

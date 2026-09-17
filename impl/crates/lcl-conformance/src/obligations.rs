@@ -12,7 +12,7 @@ use lcl_spec::{
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAPPING: &str = include_str!("obligations_v0.1.0_r2.json");
-pub const MAPPING_DIGEST: &str = "32b3e634dd135784163b90dd94736fae4522b68945dbbfaede05e454296fbf8e";
+pub const MAPPING_DIGEST: &str = "27e3271fc2db2a86291c58e9fe55f54d24a130b71efa6b9e9f28d2b9acb6e385";
 
 #[derive(Debug, Clone)]
 pub struct Obligation {

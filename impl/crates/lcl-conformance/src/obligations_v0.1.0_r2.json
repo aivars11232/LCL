@@ -7609,7 +7609,7 @@
         "match/regex-full-match",
         "match/regex-partial-is-false",
         "match/glob-string",
-        "match/glob-absolute-path-false",
+        "match/glob-absolute-path-operand",
         "match/glob-workspace-path",
         "special/missing",
         "special/unknown"

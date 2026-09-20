@@ -94,3 +94,7 @@ VERSION
 These rules apply only to a document whose LCL block declares VERSION "0.2.0".
 A document declaring VERSION "0.1.0" is processed only under LCL 0.1.0 rules,
 where a locale directive or localized word is invalid source.
+A source unit that is not valid UTF-8 declares no VERSION: 02_LEXICAL/01 makes
+decoding atomic, so these rules never apply to it, a locale directive in its
+readable bytes selects nothing, and its error.encoding.invalid belongs to the
+LCL Core 0.1.0 reading at the first offending original byte.

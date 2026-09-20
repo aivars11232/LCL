@@ -287,11 +287,10 @@ fn the_dispatch_matrix_attributes_each_document_to_one_package() {
             "0.1.0",
             Some((Resolution, "error.version.unsupported")),
         ),
-        // PRETEST-03 F10: bytes that are not UTF-8 are never decoded lossily.
-        // The lexical stage produces no token, so no VERSION is readable and
-        // the unit keeps its Core 0.1.0 reading. Canon does not settle which
-        // package owns a unit rejected before its VERSION is resolved; this
-        // pins the current attribution pending an owner decision.
+        // F10, owner decision A (2026-09-20), `02_LEXICAL/01`: decoding is
+        // atomic, so a unit that is not valid UTF-8 resolves no VERSION and
+        // keeps its Core 0.1.0 reading. `invalid_utf8_is_attributed_to_core_0_1_0`
+        // covers every byte position and the locale directive.
         (
             "invalid UTF-8 before VERSION",
             &profiled,
@@ -331,6 +330,68 @@ fn the_dispatch_matrix_attributes_each_document_to_one_package() {
         if actual != (version, true, primary) {
             wrong.push(format!(
                 "{case}: expected {version} {primary:?}, got {actual:?}"
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "\n{}", wrong.join("\n"));
+}
+
+/// F10, owner decision `F10_DECISION=A` (2026-09-20): `02_LEXICAL/01` makes
+/// UTF-8 decoding atomic over the complete unit, so no VERSION is resolved
+/// wherever the first invalid byte falls, `02_LEXICAL/13` never applies, and
+/// `error.encoding.invalid` stays at that original byte under the Core 0.1.0
+/// reading. Reading B, attribution from a valid prefix, is not implemented.
+#[test]
+fn invalid_utf8_is_attributed_to_core_0_1_0() {
+    let engines = Engines::new(core(), Some(localized())).expect("engines");
+    let provider = MemoryProvider::new();
+    let english = fixture("canonical_en.lcl").bytes().to_vec();
+    let lv = fixture("explicit_lv.lcl").bytes().to_vec();
+    // One 0xFF replaces the ASCII byte that follows `after`, so the first
+    // invalid byte is at a known original offset and nothing else moves.
+    let corrupt = |source: &[u8], after: &str| {
+        let at = std::str::from_utf8(source)
+            .expect("UTF-8 fixture")
+            .find(after)
+            .expect("a marker")
+            + after.len();
+        let mut bytes = source.to_vec();
+        assert!(bytes[at].is_ascii(), "{after:?} must precede an ASCII byte");
+        bytes[at] = 0xff;
+        (bytes, at)
+    };
+
+    let mut wrong = Vec::new();
+    for (case, (bytes, at)) in [
+        ("before VERSION", corrupt(&english, "LC")),
+        ("inside VERSION", corrupt(&english, "VERSI")),
+        (
+            "inside the VERSION literal",
+            corrupt(&english, "VERSION: \"0."),
+        ),
+        (
+            "immediately after a complete VERSION",
+            corrupt(&english, "VERSION: \"0.2.0\"\n"),
+        ),
+        ("late in the document", corrupt(&english, "    VALUE: ")),
+        ("inside the locale directive", corrupt(&lv, "@loca")),
+        ("inside a localized VERSION", corrupt(&lv, "VERSI")),
+        (
+            "after a complete localized VERSION",
+            corrupt(&lv, "VERSIJA: \"0.2.0\"\n"),
+        ),
+    ] {
+        let unit = SourceUnit::new(SourceId::new("f10.lcl"), bytes);
+        let report = engines.engine_for(&unit).check(&unit, &provider);
+        let primary = report.primary().expect("a rejected unit has a primary");
+        let actual = (
+            report.spec.formal_version.as_str(),
+            primary.id.as_str(),
+            primary.span.start,
+        );
+        if actual != ("0.1.0", "error.encoding.invalid", at) {
+            wrong.push(format!(
+                "{case}: expected 0.1.0 error.encoding.invalid at {at}, got {actual:?}"
             ));
         }
     }

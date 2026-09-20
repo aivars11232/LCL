@@ -17,7 +17,7 @@
     "deployment_tooling"
   ],
   "package_root": "LCL_Core_0.2.0",
-  "generated_utc": "2026-09-17T05:13:49Z",
+  "generated_utc": "2026-09-20T20:33:20Z",
   "package_file_count": 216,
   "manifest_record_count": 213,
   "checksum_record_count": 215,
@@ -123,8 +123,8 @@
     },
     {
       "path": "02_LEXICAL/01_CHARACTER_ENCODING_AND_SOURCE_TEXT.txt",
-      "bytes": 1173,
-      "sha256": "a7c46bd61cbf8fdaa43aa0b43e3f6266a4826747d4ec5f2539b9067425061ad2"
+      "bytes": 1836,
+      "sha256": "d0e033806f66c225f4eb50ff8e7dbac8344bc4ad72db6345977d01d9bd11dc5b"
     },
     {
       "path": "02_LEXICAL/02_WHITESPACE_INDENTATION_AND_LINES.txt",
@@ -183,8 +183,8 @@
     },
     {
       "path": "02_LEXICAL/13_LOCALIZED_SOURCE_AND_LOCALE_DIRECTIVE.txt",
-      "bytes": 4700,
-      "sha256": "e8235bc7d85eac51d664ebb2fd5ca8d2cc20b575eba1a1b083b67d8890d6d873"
+      "bytes": 4995,
+      "sha256": "5fa95a08bf012fc73c20e34df0d1af42f684f9bdb4b2c305d887fafcf7ce8d18"
     },
     {
       "path": "03_TYPES_AND_VALUES/01_TYPE_SYSTEM_RULES.txt",
@@ -1113,8 +1113,8 @@
     },
     {
       "path": "CHANGELOG.txt",
-      "bytes": 10668,
-      "sha256": "90e7a351b1402e20e172b7dea1ef24a437a57e8a3e6c9014f583ce0453f4c0e5"
+      "bytes": 11952,
+      "sha256": "dca6e59115e5bc8ae2095fd7b1666b0df134f623137b4197f1b88189450fa03e"
     },
     {
       "path": "INDEX.txt",

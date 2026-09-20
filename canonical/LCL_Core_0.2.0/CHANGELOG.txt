@@ -1,5 +1,25 @@
 LCL CORE CHANGELOG
 
+0.2.0 LOCALIZATION FEATURE CANDIDATE - FINAL-03
+
+- Closed the invalid-UTF-8 version-attribution ambiguity (blocker F10) with the
+  owner decision F10_DECISION=A, atomic decode, recorded 2026-09-20. Canon now
+  has exactly one rule: UTF-8 decoding is atomic over the complete source unit,
+  no declaration including VERSION is resolved from a unit that is not valid
+  UTF-8, no prefix is decoded to recover one, error.encoding.invalid stays at
+  the first offending byte of the original source, and the unit keeps the
+  default LCL Core 0.1.0 reading. Reading B, valid-prefix attribution, was
+  rejected by the owner and is not implemented.
+- Stated the rule in 02_LEXICAL/01_CHARACTER_ENCODING_AND_SOURCE_TEXT.txt and
+  its consequence for localization in the VERSION section of
+  02_LEXICAL/13_LOCALIZED_SOURCE_AND_LOCALE_DIRECTIVE.txt. No registry,
+  fixture, tool, example or other normative text changed, and no previously
+  accepted document changes meaning: the rule states the behaviour the
+  implementation and TOOLS/validate_localization.py already had.
+- Regenerated MANIFEST.json, VALIDATION_REPORT.txt and SHA256SUMS.txt from the
+  current bytes. The independent review remains pending and the package remains
+  an UNRELEASED_CANDIDATE with release_gate_permitted false.
+
 0.2.0 LOCALIZATION FEATURE CANDIDATE - PRETEST-03
 
 - TOOLS/validate_localization.py decodes fixture source strictly. Invalid UTF-8

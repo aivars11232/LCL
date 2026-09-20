@@ -18,8 +18,10 @@
 
 use super::{attempt, document, with_action, Row};
 use crate::{ExecutedCase, Expectation, Runner};
-use lcl_capabilities::{AddressClass, Axes, Dependency, Determinism, Effect, Profile, Role, TargetClass};
-use lcl_runtime::{CapabilityOutcome, EffectClass, MockHost, Observation, ObservedEffect, RecordState};
+use lcl_capabilities::{AddressClass, Dependency, Determinism, Effect, Profile, Role, TargetClass};
+use lcl_runtime::{
+    CapabilityOutcome, EffectClass, MockHost, Observation, ObservedEffect, RecordState,
+};
 use lcl_spec::SpecPackage;
 
 /// The rows no shipped adapter performs (LCL-CLOSE-02 decision D3).
@@ -58,7 +60,11 @@ impl Runners<'_> {
 /// the concrete axes that row's own invocation rule resolves, and claims no
 /// class outside the row's maximum.
 pub(super) fn fixture_profiles() -> Vec<Profile> {
-    let fixture = |operation: &str, role: &str, category: Determinism, deps: &[Dependency], effects: &[Effect]| {
+    let fixture = |operation: &str,
+                   role: &str,
+                   category: Determinism,
+                   deps: &[Dependency],
+                   effects: &[Effect]| {
         Profile::builder(operation, Role::new(role), "conformance.fixture", "1")
             .serving(TargetClass::Any)
             .determinism(
@@ -70,8 +76,20 @@ pub(super) fn fixture_profiles() -> Vec<Profile> {
     };
     use Determinism::{Deterministic, Nondeterministic};
     vec![
-        fixture("core.analyze", "analysis", Nondeterministic, &[Dependency::Host, Dependency::Model], &[]),
-        fixture("core.report", "reporting", Nondeterministic, &[Dependency::Model], &[]),
+        fixture(
+            "core.analyze",
+            "analysis",
+            Nondeterministic,
+            &[Dependency::Host, Dependency::Model],
+            &[],
+        ),
+        fixture(
+            "core.report",
+            "reporting",
+            Nondeterministic,
+            &[Dependency::Model],
+            &[],
+        ),
         fixture(
             "core.generate",
             "generation",
@@ -79,7 +97,13 @@ pub(super) fn fixture_profiles() -> Vec<Profile> {
             &[Dependency::Host, Dependency::Model],
             &[Effect::Filesystem],
         ),
-        fixture("core.convert", "conversion", Deterministic, &[Dependency::Host], &[Effect::Filesystem]),
+        fixture(
+            "core.convert",
+            "conversion",
+            Deterministic,
+            &[Dependency::Host],
+            &[Effect::Filesystem],
+        ),
         fixture(
             "core.install",
             "package",
@@ -107,6 +131,30 @@ fn default_status(spec: &SpecPackage, error: &str) -> String {
         .clone()
 }
 
+/// The status one error resolves to at a producer: the registered default,
+/// or the `expression_demand_resolution` status where that closed map makes
+/// the identifier eligible after preflight.
+fn resolved_status(spec: &SpecPackage, error: &str) -> String {
+    let demand = spec
+        .registry("statuses_and_errors")
+        .and_then(|registry| registry.get("diagnostic_selection"))
+        .and_then(|selection| selection.get("expression_demand_resolution"));
+    let eligible = demand
+        .and_then(|demand| demand.get("eligible_errors"))
+        .and_then(lcl_spec::json::Json::as_object)
+        .is_some_and(|errors| errors.iter().any(|(id, _)| id == error));
+    if !eligible {
+        return default_status(spec, error);
+    }
+    demand
+        .and_then(|demand| demand.get("default_status_overrides"))
+        .and_then(|overrides| overrides.get(error))
+        .or_else(|| demand.and_then(|demand| demand.get("default_status")))
+        .and_then(lcl_spec::json::Json::as_str)
+        .unwrap_or_default()
+        .to_string()
+}
+
 /// The subject invocation failed with exactly this error, phase and effect
 /// state, and its one attempt took the error's registered default status.
 fn failed_with(spec: &SpecPackage, error: &str, phase: &str, effect_state: &str) -> Expectation {
@@ -114,7 +162,7 @@ fn failed_with(spec: &SpecPackage, error: &str, phase: &str, effect_state: &str)
         Expectation::Diagnostic(error.into()),
         Expectation::Attempts {
             declaration: "action.subject".into(),
-            statuses: vec![default_status(spec, error)],
+            statuses: vec![resolved_status(spec, error)],
         },
         attempt("failure_phase", phase.into()),
         attempt("effect_state", effect_state.into()),
@@ -132,7 +180,9 @@ fn on_mock(
     fixture: &str,
 ) -> ExecutedCase {
     let mut case = runner.execute_on(label, clause, source, expectation, &mut host);
-    case.observed.input_evidence.push(format!("host: lcl-runtime MockHost; {fixture}"));
+    case.observed
+        .input_evidence
+        .push(format!("host: lcl-runtime MockHost; {fixture}"));
     case.observed
         .input_evidence
         .push(format!("actual host requests: {:?}", host.requests()));
@@ -271,17 +321,27 @@ fn postcondition(runners: &Runners<'_>, row: &Row) -> ExecutedCase {
         "error/operation.postcondition",
         "failure_lifecycle: a postcondition fails when the effect extent cannot be established",
         &reaching_source(row),
-        failed_with(runners.spec, "error.operation.postcondition", "indeterminate", "indeterminate"),
+        failed_with(
+            runners.spec,
+            "error.operation.postcondition",
+            "indeterminate",
+            "indeterminate",
+        ),
         MockHost::new().script(
             row.operation,
-            vec![CapabilityOutcome::Completed(Observation::none().with_effect(ObservedEffect {
-                class,
-                state: RecordState::Applied,
-                target: None,
-                evidence: Vec::new(),
-            }))],
+            vec![CapabilityOutcome::Completed(
+                Observation::none().with_effect(ObservedEffect {
+                    class,
+                    state: RecordState::Applied,
+                    target: None,
+                    evidence: Vec::new(),
+                }),
+            )],
         ),
-        &format!("{} completes claiming an unresolved {class:?} effect", row.operation),
+        &format!(
+            "{} completes claiming an unresolved {class:?} effect",
+            row.operation
+        ),
     )
 }
 
@@ -308,7 +368,12 @@ fn forbidden_state_target(runners: &Runners<'_>, row: &Row) -> ExecutedCase {
         "forbidden-state-target",
         "10_CORE_OPERATION_PARAMETER_RULES: a STATE target is prohibited before effects",
         &with_action(row, &retargeted(row, "REF(state.revision)")),
-        failed_with(runners.spec, "error.operation.precondition", "pre_effect", "none"),
+        failed_with(
+            runners.spec,
+            "error.operation.precondition",
+            "pre_effect",
+            "none",
+        ),
     )
 }
 
@@ -360,7 +425,11 @@ fn profile_scenarios(
         ("ambiguous", ambiguous),
         (
             "out-of-bounds",
-            with(selected.clone().axes(selected.axes.clone().with_effect(outside))),
+            with(
+                selected
+                    .clone()
+                    .axes(selected.axes.clone().with_effect(outside)),
+            ),
         ),
     ]
 }
@@ -376,7 +445,10 @@ fn profile_preconditions(
     outside: Effect,
 ) -> Vec<ExecutedCase> {
     let base = if FIXTURE_ROWS.contains(&row.operation) {
-        Runner::shipped_profiles().into_iter().chain(fixture_profiles()).collect::<Vec<_>>()
+        Runner::shipped_profiles()
+            .into_iter()
+            .chain(fixture_profiles())
+            .collect::<Vec<_>>()
     } else {
         Runner::shipped_profiles()
     };
@@ -437,38 +509,104 @@ pub(super) fn errors(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
         match name {
             "permission" => matches!(
                 op,
-                "core.analyze" | "core.append" | "core.convert" | "core.copy" | "core.create"
-                    | "core.delete" | "core.download" | "core.execute" | "core.generate"
-                    | "core.install" | "core.memory_write" | "core.modify" | "core.move"
-                    | "core.publish" | "core.rename" | "core.report" | "core.send" | "core.start"
-                    | "core.state_update" | "core.stop" | "core.uninstall" | "core.upload"
-                    | "core.validate" | "core.verify" | "core.write"
+                "core.analyze"
+                    | "core.append"
+                    | "core.convert"
+                    | "core.copy"
+                    | "core.create"
+                    | "core.delete"
+                    | "core.download"
+                    | "core.execute"
+                    | "core.generate"
+                    | "core.install"
+                    | "core.memory_write"
+                    | "core.modify"
+                    | "core.move"
+                    | "core.publish"
+                    | "core.rename"
+                    | "core.report"
+                    | "core.send"
+                    | "core.start"
+                    | "core.state_update"
+                    | "core.stop"
+                    | "core.uninstall"
+                    | "core.upload"
+                    | "core.validate"
+                    | "core.verify"
+                    | "core.write"
             ),
             "host" => matches!(
                 op,
-                "core.analyze" | "core.append" | "core.convert" | "core.copy" | "core.create"
-                    | "core.delete" | "core.download" | "core.execute" | "core.generate"
-                    | "core.install" | "core.modify" | "core.move" | "core.publish"
-                    | "core.rename" | "core.report" | "core.send" | "core.start" | "core.stop"
-                    | "core.uninstall" | "core.upload" | "core.write"
+                "core.analyze"
+                    | "core.append"
+                    | "core.convert"
+                    | "core.copy"
+                    | "core.create"
+                    | "core.delete"
+                    | "core.download"
+                    | "core.execute"
+                    | "core.generate"
+                    | "core.install"
+                    | "core.modify"
+                    | "core.move"
+                    | "core.publish"
+                    | "core.rename"
+                    | "core.report"
+                    | "core.send"
+                    | "core.start"
+                    | "core.stop"
+                    | "core.uninstall"
+                    | "core.upload"
+                    | "core.write"
             ),
             "action" | "postcondition" => matches!(
                 op,
-                "core.append" | "core.convert" | "core.copy" | "core.create" | "core.delete"
-                    | "core.download" | "core.execute" | "core.generate" | "core.install"
-                    | "core.modify" | "core.move" | "core.publish" | "core.rename" | "core.send"
-                    | "core.start" | "core.stop" | "core.uninstall" | "core.upload" | "core.write"
+                "core.append"
+                    | "core.convert"
+                    | "core.copy"
+                    | "core.create"
+                    | "core.delete"
+                    | "core.download"
+                    | "core.execute"
+                    | "core.generate"
+                    | "core.install"
+                    | "core.modify"
+                    | "core.move"
+                    | "core.publish"
+                    | "core.rename"
+                    | "core.send"
+                    | "core.start"
+                    | "core.stop"
+                    | "core.uninstall"
+                    | "core.upload"
+                    | "core.write"
             ),
             "positional" => matches!(
                 op,
-                "core.continue" | "core.delete" | "core.execute" | "core.inspect" | "core.install"
-                    | "core.read" | "core.report" | "core.return" | "core.sort" | "core.start"
-                    | "core.stop" | "core.uninstall" | "core.validate"
+                "core.continue"
+                    | "core.delete"
+                    | "core.execute"
+                    | "core.inspect"
+                    | "core.install"
+                    | "core.read"
+                    | "core.report"
+                    | "core.return"
+                    | "core.sort"
+                    | "core.start"
+                    | "core.stop"
+                    | "core.uninstall"
+                    | "core.validate"
             ),
             "state" => matches!(
                 op,
-                "core.append" | "core.create" | "core.delete" | "core.generate" | "core.modify"
-                    | "core.move" | "core.rename" | "core.write"
+                "core.append"
+                    | "core.create"
+                    | "core.delete"
+                    | "core.generate"
+                    | "core.modify"
+                    | "core.move"
+                    | "core.rename"
+                    | "core.write"
             ),
             "unresolved" => matches!(op, "core.calculate" | "core.test"),
             _ => unreachable!(),
@@ -496,14 +634,57 @@ pub(super) fn errors(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
         runs.push(unresolved_optional_target(runners, row));
     }
     match op {
-        "core.analyze" => runs.extend(profile_preconditions(runners, row, "analysis", "", Effect::Filesystem)),
-        "core.report" => runs.extend(profile_preconditions(runners, row, "reporting", "", Effect::Filesystem)),
-        "core.verify" => runs.extend(profile_preconditions(runners, row, "verification", "", Effect::Filesystem)),
-        "core.publish" => runs.extend(profile_preconditions(runners, row, "publication", "", Effect::Process)),
-        "core.execute" => runs.extend(profile_preconditions(runners, row, "execution", "", Effect::Memory)),
+        "core.analyze" => runs.extend(profile_preconditions(
+            runners,
+            row,
+            "analysis",
+            "",
+            Effect::Filesystem,
+        )),
+        "core.report" => runs.extend(profile_preconditions(
+            runners,
+            row,
+            "reporting",
+            "",
+            Effect::Filesystem,
+        )),
+        "core.verify" => runs.extend(profile_preconditions(
+            runners,
+            row,
+            "verification",
+            "",
+            Effect::Filesystem,
+        )),
+        "core.publish" => runs.extend(profile_preconditions(
+            runners,
+            row,
+            "publication",
+            "",
+            Effect::Process,
+        )),
+        // `precondition/profile-out-of-bounds` is not authored for core.execute:
+        // its row maxima admit every registered effect class and every
+        // registered dependency, so no profile can declare axes outside them.
+        "core.execute" => runs.extend(
+            profile_preconditions(runners, row, "execution", "", Effect::Memory)
+                .into_iter()
+                .take(3),
+        ),
         "core.download" => {
-            runs.extend(profile_preconditions(runners, row, "source", "source-", Effect::Process));
-            runs.extend(profile_preconditions(runners, row, "transfer", "transfer-", Effect::Process));
+            runs.extend(profile_preconditions(
+                runners,
+                row,
+                "source",
+                "source-",
+                Effect::Process,
+            ));
+            runs.extend(profile_preconditions(
+                runners,
+                row,
+                "transfer",
+                "transfer-",
+                Effect::Process,
+            ));
         }
         _ => {}
     }
@@ -576,7 +757,11 @@ fn resolved_axes(
         .iter()
         .filter(|i| i.declaration.as_deref() == Some("action.subject"))
         .filter_map(|i| i.result.as_ref())
-        .flat_map(|r| r.observed_effects.iter().map(|e| e.class.as_registry_str().to_string()))
+        .flat_map(|r| {
+            r.observed_effects
+                .iter()
+                .map(|e| e.class.as_registry_str().to_string())
+        })
         .collect();
     let operation = source
         .split("ID: action.subject\n    OPERATION: ")
@@ -604,7 +789,10 @@ fn resolved_axes(
     let expectation = Expectation::Component(expected);
     let mut observed = observed;
     observed.component = actual;
-    observed.input_evidence.push(format!("host: lcl-runtime MockHost; requests={:?}", host.requests()));
+    observed.input_evidence.push(format!(
+        "host: lcl-runtime MockHost; requests={:?}",
+        host.requests()
+    ));
     let verdict = crate::judge(&expectation, &observed);
     ExecutedCase {
         id: label.into(),
@@ -736,9 +924,7 @@ fn fixture_axes(op: &str) -> Option<(Vec<(&'static str, &'static str)>, &'static
         // Every non-graph invocation has the process effect.
         "core.execute" | "core.start" => crossing("[host]", "[process]", "[process]"),
         // Package state from the selected transaction.
-        "core.install" | "core.uninstall" => {
-            crossing("[host]", "[package, process]", "[package]")
-        }
+        "core.install" | "core.uninstall" => crossing("[host]", "[package, process]", "[package]"),
         // Host and optional network from the URI recipient; the message effect.
         "core.send" => crossing("[host, network]", "[message]", "[message]"),
         // One authoritative human responder; the request is a message effect.
@@ -786,7 +972,8 @@ fn target_address_classes(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase>
             (true, _) => "[model]",
         }
     };
-    let output = "\nOUTPUT:\n    ID: output.addressed\n    TYPE: STRING\n    FORMAT: format.plain_text\n";
+    let output =
+        "\nOUTPUT:\n    ID: output.addressed\n    TYPE: STRING\n    FORMAT: format.plain_text\n";
     // A row with a required profile role reaches its host for a URI or an
     // OUTPUT address only through a profile serving that class; the shipped
     // filesystem profiles serve PATH alone.
@@ -801,7 +988,10 @@ fn target_address_classes(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase>
                 .next()
         })
         .flatten();
-    let serving = |class: AddressClass, deps: &[Dependency], effects: &[Effect]| -> Option<Runner> {
+    let serving = |class: AddressClass,
+                   deps: &[Dependency],
+                   effects: &[Effect]|
+     -> Option<Runner> {
         let role = role.clone()?;
         let mut profiles = Runner::shipped_profiles();
         profiles.extend(fixture_profiles());
@@ -817,7 +1007,11 @@ fn target_address_classes(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase>
         );
         Some(Runner::with_profiles(runners.spec, profiles).expect("the engine assembles"))
     };
-    let uri_runner = serving(AddressClass::Uri, &[Dependency::Network], &[Effect::Network]);
+    let uri_runner = serving(
+        AddressClass::Uri,
+        &[Dependency::Network],
+        &[Effect::Network],
+    );
     let output_runner = serving(AddressClass::Output, &[], &[Effect::State]);
     vec![
         resolved_axes(
@@ -866,8 +1060,13 @@ pub(super) fn effects(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
     }
     if matches!(
         op,
-        "core.append" | "core.create" | "core.delete" | "core.generate" | "core.modify"
-            | "core.rename" | "core.write"
+        "core.append"
+            | "core.create"
+            | "core.delete"
+            | "core.generate"
+            | "core.modify"
+            | "core.rename"
+            | "core.write"
     ) {
         runs.extend(target_address_classes(runners, row));
     }
@@ -1062,7 +1261,14 @@ pub(super) fn effects(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                 shipped,
                 "precondition/2",
                 "precondition: expected_before matches when supplied",
-                &with_action(row, &action_with(row, None, &named("expected_before", "STRING", "FALSE", "\"not the content\""))),
+                &with_action(
+                    row,
+                    &action_with(
+                        row,
+                        None,
+                        &named("expected_before", "STRING", "FALSE", "\"not the content\""),
+                    ),
+                ),
                 &[REPORT],
                 refused_before_effects(spec, "error.operation.precondition"),
                 &[REPORT],
@@ -1092,7 +1298,13 @@ pub(super) fn effects(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                 shipped,
                 "precondition/2",
                 "precondition: new_name is legal (no path separator)",
-                &with_action(row, &format!("OPERATION: core.rename\n    TARGET: REF(data.path){}", named("new_name", "STRING", "TRUE", "\"nested/renamed.txt\""))),
+                &with_action(
+                    row,
+                    &format!(
+                        "OPERATION: core.rename\n    TARGET: REF(data.path){}",
+                        named("new_name", "STRING", "TRUE", "\"nested/renamed.txt\"")
+                    ),
+                ),
                 &[REPORT],
                 refused_before_effects(spec, "error.operation.precondition"),
                 &[REPORT],
@@ -1101,7 +1313,13 @@ pub(super) fn effects(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                 shipped,
                 "precondition/3",
                 "precondition: new_name differs from the current target name",
-                &with_action(row, &format!("OPERATION: core.rename\n    TARGET: REF(data.path){}", named("new_name", "STRING", "TRUE", "\"report.txt\""))),
+                &with_action(
+                    row,
+                    &format!(
+                        "OPERATION: core.rename\n    TARGET: REF(data.path){}",
+                        named("new_name", "STRING", "TRUE", "\"report.txt\"")
+                    ),
+                ),
                 &[REPORT],
                 refused_before_effects(spec, "error.operation.precondition"),
                 &[REPORT],
@@ -1110,7 +1328,13 @@ pub(super) fn effects(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                 shipped,
                 "precondition/4",
                 "precondition: the renamed destination is absent unless overwrite is TRUE",
-                &with_action(row, &format!("OPERATION: core.rename\n    TARGET: REF(data.path){}", named("new_name", "STRING", "TRUE", "\"other.txt\""))),
+                &with_action(
+                    row,
+                    &format!(
+                        "OPERATION: core.rename\n    TARGET: REF(data.path){}",
+                        named("new_name", "STRING", "TRUE", "\"other.txt\"")
+                    ),
+                ),
                 &[REPORT, OTHER],
                 refused_before_effects(spec, "error.operation.precondition"),
                 &[REPORT, OTHER],
@@ -1141,7 +1365,10 @@ pub(super) fn effects(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
 
 /// The `error/operation.precondition` runs of the transfer rows whose
 /// registered source precondition the shared fixture can falsify.
-pub(super) fn transfer_source_preconditions(runners: &Runners<'_>, row: &Row) -> Option<ExecutedCase> {
+pub(super) fn transfer_source_preconditions(
+    runners: &Runners<'_>,
+    row: &Row,
+) -> Option<ExecutedCase> {
     matches!(row.operation, "core.copy" | "core.upload").then(|| {
         on_files(
             runners.shipped,
@@ -1195,16 +1422,23 @@ fn bound_parameters(
         ),
     ]);
     case.observed.component = actual;
-    case.observed
-        .input_evidence
-        .push(format!("host: lcl-runtime MockHost; requests={:?}", host.requests()));
+    case.observed.input_evidence.push(format!(
+        "host: lcl-runtime MockHost; requests={:?}",
+        host.requests()
+    ));
     case.verdict = crate::judge(&case.expectation, &case.observed);
     case
 }
 
 /// `binding/default/<name>`: the registered non-null default is the exact
 /// value the invocation binds when the optional parameter is omitted.
-fn default_binding(runners: &Runners<'_>, row: &Row, name: &str, rendered: &str, source: String) -> ExecutedCase {
+fn default_binding(
+    runners: &Runners<'_>,
+    row: &Row,
+    name: &str,
+    rendered: &str,
+    source: String,
+) -> ExecutedCase {
     bound_parameters(
         runners.reaching(row.operation),
         &format!("binding/default/{name}"),
@@ -1217,7 +1451,14 @@ fn default_binding(runners: &Runners<'_>, row: &Row, name: &str, rendered: &str,
 
 /// `binding/<role>-profile-role`: exactly one installed immutable profile for
 /// the named role is selected and the invocation reaches its host.
-fn profile_role(runners: &Runners<'_>, row: &Row, label: &str, role: &str, class: AddressClass, source: String) -> ExecutedCase {
+fn profile_role(
+    runners: &Runners<'_>,
+    row: &Row,
+    label: &str,
+    role: &str,
+    class: AddressClass,
+    source: String,
+) -> ExecutedCase {
     let runner = runners.reaching(row.operation);
     let catalog = runner.stdlib_catalog();
     let selection = lcl_capabilities::Selection {
@@ -1250,27 +1491,44 @@ fn profile_role(runners: &Runners<'_>, row: &Row, label: &str, role: &str, class
 }
 
 /// A D3 fixture row completes on its scripted fixture capability.
-fn fixture_success(runners: &Runners<'_>, row: &Row, observation: Observation, fields: &[(&str, &str)]) -> ExecutedCase {
+fn fixture_success(
+    runners: &Runners<'_>,
+    row: &Row,
+    observation: Observation,
+    fields: &[(&str, &str)],
+) -> ExecutedCase {
     let mut assertions = vec![
         succeeded(),
         Expectation::NoDiagnostic("error.operation.precondition".into()),
         Expectation::NoDiagnostic("error.host.constraint".into()),
     ];
-    assertions.extend(fields.iter().map(|(name, value)| attempt(name, value.to_string())));
+    assertions.extend(
+        fields
+            .iter()
+            .map(|(name, value)| attempt(name, value.to_string())),
+    );
     on_mock(
         &runners.fixture,
         "fixture/success",
         "LCL-CLOSE-02 D3: a conformance-only deterministic fixture capability completes the row",
         &document(row),
         Expectation::All(assertions),
-        MockHost::new().script(row.operation, vec![CapabilityOutcome::Completed(observation.clone())]),
+        MockHost::new().script(
+            row.operation,
+            vec![CapabilityOutcome::Completed(observation.clone())],
+        ),
         &format!("D3 fixture completion {observation:?}"),
     )
 }
 
 /// The same rejection a binding clause names, evidenced against the shared
 /// filesystem fixture.
-fn store_target_rejected(runners: &Runners<'_>, row: &Row, label: &str, target: &str) -> ExecutedCase {
+fn store_target_rejected(
+    runners: &Runners<'_>,
+    row: &Row,
+    label: &str,
+    target: &str,
+) -> ExecutedCase {
     on_files(
         runners.shipped,
         label,
@@ -1302,13 +1560,15 @@ fn pure_operation(id: &str, parameter: &str, result: &str, meaning: &str) -> Str
 
 /// An engine with the shipped profiles and exactly these pure custom
 /// operation implementations installed.
-fn with_pure(runners: &Runners<'_>, operations: Vec<(&'static str, lcl_stdlib::PureOperation)>) -> Runner {
+fn with_pure(
+    runners: &Runners<'_>,
+    operations: Vec<(&'static str, lcl_stdlib::PureOperation)>,
+) -> Runner {
     Runner::with_surface(runners.spec, move |stdlib| {
-        operations
-            .into_iter()
-            .fold(stdlib.with_profiles(Runner::shipped_profiles()), |stdlib, (id, implementation)| {
-                stdlib.with_pure_operation(id, implementation)
-            })
+        operations.into_iter().fold(
+            stdlib.with_profiles(Runner::shipped_profiles()),
+            |stdlib, (id, implementation)| stdlib.with_pure_operation(id, implementation),
+        )
     })
     .expect("the engine assembles with pure operation implementations")
 }
@@ -1338,21 +1598,44 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
             lcl_stdlib::schema::value(Value::Object(
                 [
                     ("facts".to_string(), Value::List(vec![text("content")])),
-                    ("inferences".to_string(), Value::List(vec![text("neutral tone")])),
+                    (
+                        "inferences".to_string(),
+                        Value::List(vec![text("neutral tone")]),
+                    ),
                 ]
                 .into_iter()
                 .collect(),
             )),
-            &[("value", "{facts: [\"content\"], inferences: [\"neutral tone\"]}")],
+            &[(
+                "value",
+                "{facts: [\"content\"], inferences: [\"neutral tone\"]}",
+            )],
         )),
         "core.report" => {
-            runs.push(default_binding(runners, row, "format", "format.plain_text", doc()));
-            runs.push(default_binding(runners, row, "include_evidence", "TRUE", doc()));
+            runs.push(default_binding(
+                runners,
+                row,
+                "format",
+                "format.plain_text",
+                doc(),
+            ));
+            runs.push(default_binding(
+                runners,
+                row,
+                "include_evidence",
+                "TRUE",
+                doc(),
+            ));
             runs.push(fixture_success(
                 runners,
                 row,
-                lcl_stdlib::schema::value(text("facts: content; inference: none; missing: none; unknown: none")),
-                &[("value", "\"facts: content; inference: none; missing: none; unknown: none\"")],
+                lcl_stdlib::schema::value(text(
+                    "facts: content; inference: none; missing: none; unknown: none",
+                )),
+                &[(
+                    "value",
+                    "\"facts: content; inference: none; missing: none; unknown: none\"",
+                )],
             ));
         }
         "core.convert" => {
@@ -1361,11 +1644,17 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                 runners,
                 row,
                 lcl_stdlib::schema::operation_with_value(
-                    Value::Constructed { constructor: "PATH".into(), text: "/srv/data/report.txt".into() },
+                    Value::Constructed {
+                        constructor: "PATH".into(),
+                        text: "/srv/data/report.txt".into(),
+                    },
                     Value::Boolean(true),
                     text("{\"content\":\"content\"}"),
                 ),
-                &[("changed", "TRUE"), ("value", "\"{\\\"content\\\":\\\"content\\\"}\"")],
+                &[
+                    ("changed", "TRUE"),
+                    ("value", "\"{\\\"content\\\":\\\"content\\\"}\""),
+                ],
             ));
         }
         "core.install" => runs.push(fixture_success(
@@ -1389,7 +1678,14 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                 &runners.fixture,
                 "binding/format",
                 "bind the exact declared artifact format",
-                &with_action(row, &action_with(row, None, &named("format", "STRING", "FALSE", "\"format.json\""))),
+                &with_action(
+                    row,
+                    &action_with(
+                        row,
+                        None,
+                        &named("format", "STRING", "FALSE", "\"format.json\""),
+                    ),
+                ),
                 op,
                 &[("format", "\"format.json\"")],
             ));
@@ -1404,23 +1700,54 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                 op,
                 &[("variation", "{tone: \"neutral\"}")],
             ));
-            runs.push(profile_role(runners, row, "binding/generation-profile-role", "generation", AddressClass::Path, doc()));
-            runs.push(store_target_rejected(runners, row, "binding/memory-target-rejected", "REF(memory.notes)"));
-            runs.push(store_target_rejected(runners, row, "binding/state-target-rejected", "REF(state.revision)"));
+            runs.push(profile_role(
+                runners,
+                row,
+                "binding/generation-profile-role",
+                "generation",
+                AddressClass::Path,
+                doc(),
+            ));
+            runs.push(store_target_rejected(
+                runners,
+                row,
+                "binding/memory-target-rejected",
+                "REF(memory.notes)",
+            ));
+            runs.push(store_target_rejected(
+                runners,
+                row,
+                "binding/state-target-rejected",
+                "REF(state.revision)",
+            ));
             runs.push(fixture_success(
                 runners,
                 row,
                 lcl_stdlib::schema::operation_with_value(
-                    Value::Constructed { constructor: "PATH".into(), text: "/srv/data/other.txt".into() },
+                    Value::Constructed {
+                        constructor: "PATH".into(),
+                        text: "/srv/data/other.txt".into(),
+                    },
                     Value::Boolean(true),
                     text("a short summary"),
                 ),
                 &[("changed", "TRUE"), ("value", "\"a short summary\"")],
             ));
         }
-        "core.append" | "core.write" | "core.modify" | "core.rename" | "core.create" | "core.delete" => {
-            runs.push(store_target_rejected(runners, row, "binding/memory-target-rejected", "REF(memory.notes)"));
-            runs.push(store_target_rejected(runners, row, "binding/state-target-rejected", "REF(state.revision)"));
+        "core.append" | "core.write" | "core.modify" | "core.rename" | "core.create"
+        | "core.delete" => {
+            runs.push(store_target_rejected(
+                runners,
+                row,
+                "binding/memory-target-rejected",
+                "REF(memory.notes)",
+            ));
+            runs.push(store_target_rejected(
+                runners,
+                row,
+                "binding/state-target-rejected",
+                "REF(state.revision)",
+            ));
         }
         _ => {}
     }
@@ -1450,10 +1777,15 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
         }
         "core.calculate" => {
             let calculate = |expression: &str, target: Option<&str>| {
-                let target = target.map(|t| format!("\n    TARGET: {t}")).unwrap_or_default();
+                let target = target
+                    .map(|t| format!("\n    TARGET: {t}"))
+                    .unwrap_or_default();
                 with_action(
                     row,
-                    &format!("OPERATION: core.calculate{target}{}", named("expression", "STRING", "TRUE", expression)),
+                    &format!(
+                        "OPERATION: core.calculate{target}{}",
+                        named("expression", "STRING", "TRUE", expression)
+                    ),
                 )
             };
             runs.push(on_files(
@@ -1480,18 +1812,19 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                 &calculate("\"target\"", None),
                 Expectation::Diagnostic("error.required.missing".into()),
             ));
-            runs.push(with_declarations(row, "", "").is_empty().then(|| unreachable!()).unwrap_or_else(|| {
-                shipped.execute(
-                    "binding/final-unknown-rejected",
-                    "a required final UNKNOWN result uses error.value.unknown",
-                    &with_declarations(
-                        row,
-                        &format!("OPERATION: core.calculate\n    TARGET: REF(data.undetermined){}", named("expression", "STRING", "TRUE", "\"target\"")),
-                        "\nDATA:\n    ID: data.undetermined\n    TYPE: INTEGER\n    VALUE: UNKNOWN\n",
+            runs.push(shipped.execute(
+                "binding/final-unknown-rejected",
+                "a required final UNKNOWN result uses error.value.unknown",
+                &with_declarations(
+                    row,
+                    &format!(
+                        "OPERATION: core.calculate\n    TARGET: REF(data.undetermined){}",
+                        named("expression", "STRING", "TRUE", "\"target\"")
                     ),
-                    Expectation::Diagnostic("error.value.unknown".into()),
-                )
-            }));
+                    "\nDATA:\n    ID: data.undetermined\n    TYPE: INTEGER\n    VALUE: UNKNOWN\n",
+                ),
+                Expectation::Diagnostic("error.value.unknown".into()),
+            ));
             runs.push(on_files(
                 shipped,
                 "binding/skipped-operand-exception",
@@ -1504,10 +1837,15 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
         }
         "core.compare" => {
             let compare = |target: &str, against: (&str, &str), criteria: Option<&str>| {
-                let criteria = criteria.map(|c| named("criteria", "STRING", "FALSE", c)).unwrap_or_default();
+                let criteria = criteria
+                    .map(|c| named("criteria", "STRING", "FALSE", c))
+                    .unwrap_or_default();
                 with_action(
                     row,
-                    &format!("OPERATION: core.compare\n    TARGET: {target}{}{criteria}", named("against", against.0, "TRUE", against.1)),
+                    &format!(
+                        "OPERATION: core.compare\n    TARGET: {target}{}{criteria}",
+                        named("against", against.0, "TRUE", against.1)
+                    ),
                 )
             };
             runs.push(on_files(
@@ -1544,11 +1882,18 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                 Expectation::All(vec![
                     Expectation::Accepts,
                     Expectation::Recovered("action.read".into()),
-                    Expectation::Attempts { declaration: "action.next".into(), statuses: vec!["status.succeeded".into()] },
+                    Expectation::Attempts {
+                        declaration: "action.next".into(),
+                        statuses: vec!["status.succeeded".into()],
+                    },
                 ]),
             )
             .with_read_failures(1)
-            .execute(shipped, "binding/success-path", "core.continue binds its handler-context target and advances"),
+            .execute(
+                shipped,
+                "binding/success-path",
+                "core.continue binds its handler-context target and advances",
+            ),
         ),
         "core.retry" => runs.push(
             crate::witness_cases::Probe::new(
@@ -1563,12 +1908,23 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                 ]),
             )
             .with_read_failures(1)
-            .execute(shipped, "binding/success-path", "core.retry binds its handler-context target and limit"),
+            .execute(
+                shipped,
+                "binding/success-path",
+                "core.retry binds its handler-context target and limit",
+            ),
         ),
         "core.copy" | "core.move" => {
             let role = if op == "core.copy" { "copy" } else { "move" };
             runs.push(default_binding(runners, row, "overwrite", "FALSE", doc()));
-            runs.push(profile_role(runners, row, &format!("binding/{role}-profile-role"), role, AddressClass::Path, doc()));
+            runs.push(profile_role(
+                runners,
+                row,
+                &format!("binding/{role}-profile-role"),
+                role,
+                AddressClass::Path,
+                doc(),
+            ));
             runs.push(on_files(
                 shipped,
                 "binding/destination-absent-unless-overwrite",
@@ -1583,7 +1939,10 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                     shipped,
                     "binding/overwrite-true-replaces",
                     "overwrite TRUE permits replacing the destination with the exact source",
-                    &with_action(row, &action_with(row, None, &named("overwrite", "BOOLEAN", "FALSE", "TRUE"))),
+                    &with_action(
+                        row,
+                        &action_with(row, None, &named("overwrite", "BOOLEAN", "FALSE", "TRUE")),
+                    ),
                     &[REPORT, OTHER],
                     vec![succeeded()],
                     &[("/srv/data/other.txt", "content"), REPORT],
@@ -1614,13 +1973,36 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                     refused_before_effects(spec, "error.operation.precondition"),
                     &[REPORT],
                 ));
-                runs.push(store_target_rejected(runners, row, "binding/memory-source-rejected", "REF(memory.notes)"));
-                runs.push(store_target_rejected(runners, row, "binding/state-source-rejected", "REF(state.revision)"));
+                runs.push(store_target_rejected(
+                    runners,
+                    row,
+                    "binding/memory-source-rejected",
+                    "REF(memory.notes)",
+                ));
+                runs.push(store_target_rejected(
+                    runners,
+                    row,
+                    "binding/state-source-rejected",
+                    "REF(state.revision)",
+                ));
             }
         }
         "core.create" => {
-            runs.push(default_binding(runners, row, "fail_if_exists", "TRUE", doc()));
-            runs.push(profile_role(runners, row, "binding/target-profile-role", "target", AddressClass::Path, doc()));
+            runs.push(default_binding(
+                runners,
+                row,
+                "fail_if_exists",
+                "TRUE",
+                doc(),
+            ));
+            runs.push(profile_role(
+                runners,
+                row,
+                "binding/target-profile-role",
+                "target",
+                AddressClass::Path,
+                doc(),
+            ));
             runs.push(on_files(
                 shipped,
                 "binding/fail-if-exists-false-reconciles",
@@ -1656,15 +2038,31 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
         }
         "core.delete" => {
             runs.push(default_binding(runners, row, "recursive", "FALSE", doc()));
-            runs.push(default_binding(runners, row, "require_exists", "TRUE", doc()));
-            runs.push(profile_role(runners, row, "binding/delete-profile-role", "delete", AddressClass::Path, doc()));
+            runs.push(default_binding(
+                runners,
+                row,
+                "require_exists",
+                "TRUE",
+                doc(),
+            ));
+            runs.push(profile_role(
+                runners,
+                row,
+                "binding/delete-profile-role",
+                "delete",
+                AddressClass::Path,
+                doc(),
+            ));
             runs.push(on_files(
                 shipped,
                 "binding/recursive-policy",
                 "recursive TRUE authorizes deleting a directory and its children",
                 &with_action(
                     row,
-                    &format!("OPERATION: core.delete\n    TARGET: PATH(\"/srv/data/tree\"){}", named("recursive", "BOOLEAN", "FALSE", "TRUE")),
+                    &format!(
+                        "OPERATION: core.delete\n    TARGET: PATH(\"/srv/data/tree\"){}",
+                        named("recursive", "BOOLEAN", "FALSE", "TRUE")
+                    ),
                 ),
                 &[REPORT, ("/srv/data/tree/leaf.txt", "leaf")],
                 vec![succeeded()],
@@ -1676,7 +2074,10 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                 "require_exists FALSE permits an already-absent target",
                 &with_action(
                     row,
-                    &format!("OPERATION: core.delete\n    TARGET: {absent}{}", named("require_exists", "BOOLEAN", "FALSE", "FALSE")),
+                    &format!(
+                        "OPERATION: core.delete\n    TARGET: {absent}{}",
+                        named("require_exists", "BOOLEAN", "FALSE", "FALSE")
+                    ),
                 ),
                 &[REPORT],
                 vec![succeeded(), attempt("changed", "FALSE".into())],
@@ -1688,7 +2089,10 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                 "require_exists TRUE rejects an absent target",
                 &with_action(
                     row,
-                    &format!("OPERATION: core.delete\n    TARGET: {absent}{}", named("require_exists", "BOOLEAN", "FALSE", "TRUE")),
+                    &format!(
+                        "OPERATION: core.delete\n    TARGET: {absent}{}",
+                        named("require_exists", "BOOLEAN", "FALSE", "TRUE")
+                    ),
                 ),
                 &[REPORT],
                 refused_before_effects(spec, "error.operation.precondition"),
@@ -1697,18 +2101,47 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
         }
         "core.download" | "core.upload" => {
             runs.push(default_binding(runners, row, "overwrite", "FALSE", doc()));
-            let sum = lcl_spec::sha256::hex_digest(if op == "core.download" { b"remote" } else { b"content" });
+            let sum = lcl_spec::sha256::hex_digest(if op == "core.download" {
+                b"remote"
+            } else {
+                b"content"
+            });
             runs.push(bound_parameters(
                 shipped,
                 "binding/checksum",
                 "bind the exact expected checksum",
-                &with_action(row, &action_with(row, None, &named("checksum", "STRING", "FALSE", &format!("\"sha256:{sum}\"")))),
+                &with_action(
+                    row,
+                    &action_with(
+                        row,
+                        None,
+                        &named("checksum", "STRING", "FALSE", &format!("\"sha256:{sum}\"")),
+                    ),
+                ),
                 op,
                 &[("checksum", &format!("\"sha256:{sum}\""))],
             ));
-            runs.push(profile_role(runners, row, "binding/transfer-profile-role", "transfer", if op == "core.download" { AddressClass::Uri } else { AddressClass::Path }, doc()));
+            runs.push(profile_role(
+                runners,
+                row,
+                "binding/transfer-profile-role",
+                "transfer",
+                if op == "core.download" {
+                    AddressClass::Uri
+                } else {
+                    AddressClass::Path
+                },
+                doc(),
+            ));
             if op == "core.download" {
-                runs.push(profile_role(runners, row, "binding/source-profile-role", "source", AddressClass::Uri, doc()));
+                runs.push(profile_role(
+                    runners,
+                    row,
+                    "binding/source-profile-role",
+                    "source",
+                    AddressClass::Uri,
+                    doc(),
+                ));
                 runs.push(on_files(
                     shipped,
                     "binding/destination-absent-unless-overwrite",
@@ -1725,7 +2158,10 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                     "the destination must be absent unless overwrite is TRUE",
                     &with_action(
                         row,
-                        &format!("OPERATION: core.upload\n    TARGET: REF(data.path){}", named("destination", "PATH", "TRUE", "REF(data.other)")),
+                        &format!(
+                            "OPERATION: core.upload\n    TARGET: REF(data.path){}",
+                            named("destination", "PATH", "TRUE", "REF(data.other)")
+                        ),
                     ),
                     &[REPORT, OTHER],
                     refused_before_effects(spec, "error.operation.precondition"),
@@ -1746,20 +2182,43 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                     MockHost::new(),
                     "default completion",
                 ));
-                runs.push(profile_role(runners, row, "binding/execution-profile-selection", "execution", AddressClass::Material, doc()));
+                runs.push(profile_role(
+                    runners,
+                    row,
+                    "binding/execution-profile-selection",
+                    "execution",
+                    AddressClass::Material,
+                    doc(),
+                ));
                 runs.push(shipped.execute(
                     "binding/only-registered-parameters",
                     "only arguments, working_directory, environment and timeout bind",
-                    &with_action(row, &action_with(row, None, &named("shell", "STRING", "FALSE", "\"bash\""))),
+                    &with_action(
+                        row,
+                        &action_with(row, None, &named("shell", "STRING", "FALSE", "\"bash\"")),
+                    ),
                     Expectation::Rejects("error.operation.parameter".into()),
                 ));
             }
         }
-        "core.stop" => runs.push(default_binding(runners, row, "force", "FALSE", reaching_source(row))),
+        "core.stop" => runs.push(default_binding(
+            runners,
+            row,
+            "force",
+            "FALSE",
+            reaching_source(row),
+        )),
         "core.filter" | "core.select" => {
             let runner = with_pure(
                 runners,
-                vec![("member.positive", Box::new(|member| Ok(lcl_runtime::Value::Boolean(integer_of(member).is_some_and(|n| n > 1)))))],
+                vec![(
+                    "member.positive",
+                    Box::new(|member| {
+                        Ok(lcl_runtime::Value::Boolean(
+                            integer_of(member).is_some_and(|n| n > 1),
+                        ))
+                    }),
+                )],
             );
             let source = with_declarations(
                 row,
@@ -1790,7 +2249,10 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                     "SET input is error.type.mismatch before effects",
                     &with_declarations(
                         row,
-                        &format!("OPERATION: core.filter\n    TARGET: REF(data.set){}", named("predicate", "STRING", "TRUE", "\"item > 1\"")),
+                        &format!(
+                            "OPERATION: core.filter\n    TARGET: REF(data.set){}",
+                            named("predicate", "STRING", "TRUE", "\"item > 1\"")
+                        ),
                         "\nDATA:\n    ID: data.set\n    TYPE: SET[INTEGER]\n    VALUE: [3, 1, 2]\n",
                     ),
                     Expectation::Diagnostic("error.type.mismatch".into()),
@@ -1798,7 +2260,10 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
             }
         }
         "core.group" => {
-            let runner = with_pure(runners, vec![("group.identity", Box::new(|member| Ok(member.clone())))]);
+            let runner = with_pure(
+                runners,
+                vec![("group.identity", Box::new(|member| Ok(member.clone())))],
+            );
             runs.push(on_mock(
                 &runner,
                 "binding/key-reference-contract",
@@ -1819,7 +2284,10 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                 "SET input is error.type.mismatch before effects",
                 &with_declarations(
                     row,
-                    &format!("OPERATION: core.group\n    TARGET: REF(data.set){}", named("key", "STRING", "TRUE", "\"tag\"")),
+                    &format!(
+                        "OPERATION: core.group\n    TARGET: REF(data.set){}",
+                        named("key", "STRING", "TRUE", "\"tag\"")
+                    ),
                     "\nDATA:\n    ID: data.set\n    TYPE: SET[INTEGER]\n    VALUE: [3, 1, 2]\n",
                 ),
                 Expectation::Diagnostic("error.type.mismatch".into()),
@@ -1852,7 +2320,13 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
             runs.push(shipped.execute(
                 "binding/merge-false-type-match",
                 "merge FALSE requires value to match the declared MEMORY type",
-                &with_action(row, &format!("OPERATION: core.memory_write\n    TARGET: REF(memory.notes){}", named("value", "INTEGER", "TRUE", "3"))),
+                &with_action(
+                    row,
+                    &format!(
+                        "OPERATION: core.memory_write\n    TARGET: REF(memory.notes){}",
+                        named("value", "INTEGER", "TRUE", "3")
+                    ),
+                ),
                 refused_before_effects_expectation(spec),
             ));
             runs.push(shipped.execute(
@@ -1868,15 +2342,36 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                 ),
                 Expectation::All(vec![succeeded(), attempt("changed", "TRUE".into())]),
             ));
-            runs.push(profile_role(runners, row, "binding/storage-profile-role", "storage", AddressClass::Memory, doc()));
+            runs.push(profile_role(
+                runners,
+                row,
+                "binding/storage-profile-role",
+                "storage",
+                AddressClass::Memory,
+                doc(),
+            ));
         }
         "core.modify" => {
-            runs.push(profile_role(runners, row, "binding/change-profile-role", "change", AddressClass::Path, doc()));
+            runs.push(profile_role(
+                runners,
+                row,
+                "binding/change-profile-role",
+                "change",
+                AddressClass::Path,
+                doc(),
+            ));
             runs.push(on_files(
                 shipped,
                 "binding/expected-before-guard",
                 "a matching expected_before guard binds and the change applies",
-                &with_action(row, &action_with(row, None, &named("expected_before", "STRING", "FALSE", "\"content\""))),
+                &with_action(
+                    row,
+                    &action_with(
+                        row,
+                        None,
+                        &named("expected_before", "STRING", "FALSE", "\"content\""),
+                    ),
+                ),
                 &[REPORT],
                 vec![succeeded()],
                 &[("/srv/data/report.txt", "changed")],
@@ -1885,14 +2380,28 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                 shipped,
                 "binding/selection",
                 "bind the exact bounded selection",
-                &with_action(row, &action_with(row, None, &named("selection", "STRING", "FALSE", "\"line 1\""))),
+                &with_action(
+                    row,
+                    &action_with(
+                        row,
+                        None,
+                        &named("selection", "STRING", "FALSE", "\"line 1\""),
+                    ),
+                ),
                 op,
                 &[("selection", "\"line 1\"")],
             ));
         }
         "core.publish" => {
             runs.push(default_binding(runners, row, "replace", "FALSE", doc()));
-            runs.push(profile_role(runners, row, "binding/publication-profile-role", "publication", AddressClass::Path, doc()));
+            runs.push(profile_role(
+                runners,
+                row,
+                "binding/publication-profile-role",
+                "publication",
+                AddressClass::Path,
+                doc(),
+            ));
             runs.push(bound_parameters(
                 shipped,
                 "binding/visibility",
@@ -1920,12 +2429,25 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
         }
         "core.rename" => {
             runs.push(default_binding(runners, row, "overwrite", "FALSE", doc()));
-            runs.push(profile_role(runners, row, "binding/rename-profile-role", "rename", AddressClass::Path, doc()));
+            runs.push(profile_role(
+                runners,
+                row,
+                "binding/rename-profile-role",
+                "rename",
+                AddressClass::Path,
+                doc(),
+            ));
             runs.push(on_files(
                 shipped,
                 "binding/destination-absent-unless-overwrite",
                 "the renamed destination must be absent unless overwrite is TRUE",
-                &with_action(row, &format!("OPERATION: core.rename\n    TARGET: REF(data.path){}", named("new_name", "STRING", "TRUE", "\"other.txt\""))),
+                &with_action(
+                    row,
+                    &format!(
+                        "OPERATION: core.rename\n    TARGET: REF(data.path){}",
+                        named("new_name", "STRING", "TRUE", "\"other.txt\"")
+                    ),
+                ),
                 &[REPORT, OTHER],
                 refused_before_effects(spec, "error.operation.precondition"),
                 &[REPORT, OTHER],
@@ -1934,24 +2456,41 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                 shipped,
                 "binding/new-name-differs",
                 "new_name must differ from the current name",
-                &with_action(row, &format!("OPERATION: core.rename\n    TARGET: REF(data.path){}", named("new_name", "STRING", "TRUE", "\"report.txt\""))),
+                &with_action(
+                    row,
+                    &format!(
+                        "OPERATION: core.rename\n    TARGET: REF(data.path){}",
+                        named("new_name", "STRING", "TRUE", "\"report.txt\"")
+                    ),
+                ),
                 &[REPORT],
                 refused_before_effects(spec, "error.operation.precondition"),
                 &[REPORT],
             ));
         }
         "core.sort" => {
-            let sort = |target: &str, extra: &str| with_action(row, &format!("OPERATION: core.sort\n    TARGET: {target}{extra}"));
+            let sort = |target: &str, extra: &str| {
+                with_action(
+                    row,
+                    &format!("OPERATION: core.sort\n    TARGET: {target}{extra}"),
+                )
+            };
             runs.push(shipped.execute(
                 "binding/comparator-rejected",
                 "comparator is unregistered: error.operation.parameter",
-                &sort("REF(data.list)", &named("comparator", "STRING", "FALSE", "\"numeric\"")),
+                &sort(
+                    "REF(data.list)",
+                    &named("comparator", "STRING", "FALSE", "\"numeric\""),
+                ),
                 Expectation::Rejects("error.operation.parameter".into()),
             ));
             runs.push(shipped.execute(
                 "binding/stable-rejected",
                 "stable is unregistered: error.operation.parameter",
-                &sort("REF(data.list)", &named("stable", "BOOLEAN", "FALSE", "TRUE")),
+                &sort(
+                    "REF(data.list)",
+                    &named("stable", "BOOLEAN", "FALSE", "TRUE"),
+                ),
                 Expectation::Rejects("error.operation.parameter".into()),
             ));
             runs.push(on_files(
@@ -1967,7 +2506,10 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                 shipped,
                 "binding/list-target",
                 "a LIST[T] target is accepted directly",
-                &sort("REF(data.list)", &named("direction", "ENUM", "FALSE", "descending")),
+                &sort(
+                    "REF(data.list)",
+                    &named("direction", "ENUM", "FALSE", "descending"),
+                ),
                 &[REPORT],
                 vec![succeeded(), attempt("items", "[3, 2, 1]".into())],
                 &[REPORT],
@@ -1975,16 +2517,31 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
             runs.push(shipped.execute(
                 "binding/set-target",
                 "a SET[T] target is accepted directly and returns LIST[T]",
-                &with_declarations(row, "OPERATION: core.sort\n    TARGET: REF(data.set)", "\nDATA:\n    ID: data.set\n    TYPE: SET[INTEGER]\n    VALUE: [3, 1, 2]\n"),
+                &with_declarations(
+                    row,
+                    "OPERATION: core.sort\n    TARGET: REF(data.set)",
+                    "\nDATA:\n    ID: data.set\n    TYPE: SET[INTEGER]\n    VALUE: [3, 1, 2]\n",
+                ),
                 Expectation::All(vec![succeeded(), attempt("items", "[1, 2, 3]".into())]),
             ));
             let runner = with_pure(
                 runners,
-                vec![("key.negated", Box::new(|member| {
-                    integer_of(member)
-                        .map(|n| lcl_runtime::Value::Integer(lcl_checker::numeric::Decimal::parse_integer(&(-n).to_string().trim_start_matches('-')).map(|d| if n > 0 { d.negated() } else { d }).unwrap()))
-                        .ok_or_else(|| "expected an INTEGER member".to_string())
-                }))],
+                vec![(
+                    "key.negated",
+                    Box::new(|member| {
+                        integer_of(member)
+                            .map(|n| {
+                                lcl_runtime::Value::Integer(
+                                    lcl_checker::numeric::Decimal::parse_integer(
+                                        (-n).to_string().trim_start_matches('-'),
+                                    )
+                                    .map(|d| if n > 0 { d.negated() } else { d })
+                                    .unwrap(),
+                                )
+                            })
+                            .ok_or_else(|| "expected an INTEGER member".to_string())
+                    }),
+                )],
             );
             runs.push(on_mock(
                 &runner,
@@ -2002,36 +2559,90 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
         }
         "core.test" => {
             let test = |extra: &str, target: Option<&str>| {
-                let target = target.map(|t| format!("\n    TARGET: {t}")).unwrap_or_default();
+                let target = target
+                    .map(|t| format!("\n    TARGET: {t}"))
+                    .unwrap_or_default();
                 with_action(row, &format!("OPERATION: core.test{target}{extra}"))
             };
             let passed = |label: &str, clause: &str, source: String| {
-                shipped.execute(label, clause, &source, Expectation::All(vec![succeeded(), attempt("passed", "TRUE".into())]))
+                shipped.execute(
+                    label,
+                    clause,
+                    &source,
+                    Expectation::All(vec![succeeded(), attempt("passed", "TRUE".into())]),
+                )
             };
             let rejected = |label: &str, clause: &str, source: String| {
-                shipped.execute(label, clause, &source, Expectation::Rejects("error.block.conditional_requirement".into()))
+                shipped.execute(
+                    label,
+                    clause,
+                    &source,
+                    Expectation::Rejects("error.block.conditional_requirement".into()),
+                )
             };
-            runs.push(passed("binding/assertion-form", "the assertion comparison form", test(&named("assertion", "BOOLEAN", "FALSE", "REF(data.number) == 3"), None)));
+            // Which comparison form a site supplies is structure; whether its
+            // TARGET is a material value is a type question, so the two halves
+            // of the form rule are refused under their own identifiers.
+            let mistyped = |label: &str, clause: &str, source: String| {
+                shipped.execute(
+                    label,
+                    clause,
+                    &source,
+                    Expectation::Rejects("error.operation.parameter".into()),
+                )
+            };
+            runs.push(passed(
+                "binding/assertion-form",
+                "the assertion comparison form",
+                test(
+                    &named("assertion", "BOOLEAN", "FALSE", "REF(data.number) == 3"),
+                    None,
+                ),
+            ));
             runs.push(passed(
                 "binding/expected-actual-form",
                 "expected with the actual parameter under registered ==",
-                test(&format!("{}{}", named("expected", "INTEGER", "FALSE", "3"), named("actual", "INTEGER", "FALSE", "REF(data.number)")), None),
+                test(
+                    &format!(
+                        "{}{}",
+                        named("expected", "INTEGER", "FALSE", "3"),
+                        named("actual", "INTEGER", "FALSE", "REF(data.number)")
+                    ),
+                    None,
+                ),
             ));
             runs.push(passed(
                 "binding/expected-target-form",
                 "expected with a material-value TARGET as the actual source",
-                test(&named("expected", "INTEGER", "FALSE", "3"), Some("REF(data.number)")),
+                test(
+                    &named("expected", "INTEGER", "FALSE", "3"),
+                    Some("REF(data.number)"),
+                ),
             ));
-            runs.push(rejected("binding/target-alone-rejected", "TARGET alone is not a complete test", test("", Some("REF(data.number)"))));
             runs.push(rejected(
+                "binding/target-alone-rejected",
+                "TARGET alone is not a complete test",
+                test("", Some("REF(data.number)")),
+            ));
+            runs.push(mistyped(
                 "binding/target-with-actual-rejected",
                 "a material-value TARGET cannot accompany actual",
-                test(&format!("{}{}", named("expected", "INTEGER", "FALSE", "3"), named("actual", "INTEGER", "FALSE", "3")), Some("REF(data.number)")),
+                test(
+                    &format!(
+                        "{}{}",
+                        named("expected", "INTEGER", "FALSE", "3"),
+                        named("actual", "INTEGER", "FALSE", "3")
+                    ),
+                    Some("REF(data.number)"),
+                ),
             ));
-            runs.push(rejected(
+            runs.push(mistyped(
                 "binding/target-with-assertion-rejected",
                 "a material-value TARGET cannot accompany assertion",
-                test(&named("assertion", "BOOLEAN", "FALSE", "TRUE"), Some("REF(data.number)")),
+                test(
+                    &named("assertion", "BOOLEAN", "FALSE", "TRUE"),
+                    Some("REF(data.number)"),
+                ),
             ));
         }
         "core.validate" => {
@@ -2039,7 +2650,11 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                 "binding/default/rules",
                 "rules defaults to the empty LIST: no rule finding",
                 &doc(),
-                Expectation::All(vec![succeeded(), attempt("valid", "TRUE".into()), attempt("errors", "[]".into())]),
+                Expectation::All(vec![
+                    succeeded(),
+                    attempt("valid", "TRUE".into()),
+                    attempt("errors", "[]".into()),
+                ]),
             ));
             runs.push(shipped.execute(
                 "binding/rules-reference-validate-declaration",
@@ -2067,9 +2682,13 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
         }
         "core.verify" => {
             let verify_action = |assertion: &str, extra: &str| {
-                format!("OPERATION: core.verify\n    TARGET: REF(data.number){}{extra}", named("assertion", "BOOLEAN", "TRUE", assertion))
+                format!(
+                    "OPERATION: core.verify\n    TARGET: REF(data.number){}{extra}",
+                    named("assertion", "BOOLEAN", "TRUE", assertion)
+                )
             };
-            let verify = |assertion: &str, extra: &str| with_action(row, &verify_action(assertion, extra));
+            let verify =
+                |assertion: &str, extra: &str| with_action(row, &verify_action(assertion, extra));
             let flag = "\nDATA:\n    ID: data.flag\n    TYPE: BOOLEAN\n    VALUE: FALSE\n";
             runs.push(on_mock(
                 shipped,
@@ -2089,7 +2708,14 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
             runs.push(shipped.execute(
                 "binding/reference-boolean-assertion",
                 "a REFERENCE[BOOLEAN] assertion resolves one declared BOOLEAN value",
-                &with_declarations(row, &format!("OPERATION: core.verify\n    TARGET: REF(data.number){}", named("assertion", "BOOLEAN", "TRUE", "REF(data.flag)")), flag),
+                &with_declarations(
+                    row,
+                    &format!(
+                        "OPERATION: core.verify\n    TARGET: REF(data.number){}",
+                        named("assertion", "BOOLEAN", "TRUE", "REF(data.flag)")
+                    ),
+                    flag,
+                ),
                 Expectation::All(vec![succeeded(), attempt("verified", "FALSE".into())]),
             ));
             runs.push(shipped.execute(
@@ -2108,11 +2734,31 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                 ),
                 Expectation::All(vec![succeeded(), attempt("evidence", "[REF(evidence.note)]".into())]),
             ));
-            runs.push(profile_role(runners, row, "binding/verification-profile-role", "verification", AddressClass::Material, doc()));
+            runs.push(profile_role(
+                runners,
+                row,
+                "binding/verification-profile-role",
+                "verification",
+                AddressClass::Material,
+                doc(),
+            ));
         }
         "core.write" => {
-            runs.push(default_binding(runners, row, "create_if_missing", "FALSE", doc()));
-            runs.push(profile_role(runners, row, "binding/write-profile-role", "write", AddressClass::Path, doc()));
+            runs.push(default_binding(
+                runners,
+                row,
+                "create_if_missing",
+                "FALSE",
+                doc(),
+            ));
+            runs.push(profile_role(
+                runners,
+                row,
+                "binding/write-profile-role",
+                "write",
+                AddressClass::Path,
+                doc(),
+            ));
             runs.push(on_files(
                 shipped,
                 "binding/create-if-missing-policy",
@@ -2148,13 +2794,23 @@ fn refused_before_effects_expectation(spec: &SpecPackage) -> Expectation {
 /// The subject invocation completed and recorded these schema-local fields.
 fn completed_with(fields: &[(&str, &str)]) -> Expectation {
     let mut parts = vec![succeeded()];
-    parts.extend(fields.iter().map(|(name, value)| attempt(name, value.to_string())));
+    parts.extend(
+        fields
+            .iter()
+            .map(|(name, value)| attempt(name, value.to_string())),
+    );
     Expectation::All(parts)
 }
 
 /// The subject invocation failed with `error` and changed nothing: no effect
 /// and no request crossed the boundary.
-fn failed_without_effects(runner: &Runner, label: &str, clause: &str, source: &str, error: &str) -> ExecutedCase {
+fn failed_without_effects(
+    runner: &Runner,
+    label: &str,
+    clause: &str,
+    source: &str,
+    error: &str,
+) -> ExecutedCase {
     let mut host = MockHost::new();
     let mut case = runner.execute_on(label, clause, source, Expectation::Accepts, &mut host);
     // A failure raised before the subject is invoked has no attempt record;
@@ -2177,9 +2833,15 @@ fn failed_without_effects(runner: &Runner, label: &str, clause: &str, source: &s
     ]);
     case.observed.component = vec![
         ("requests".into(), host.requests().len().to_string()),
-        ("subject_effect_states_other_than_none".into(), format!("{effects:?}")),
+        (
+            "subject_effect_states_other_than_none".into(),
+            format!("{effects:?}"),
+        ),
     ];
-    case.observed.input_evidence.push(format!("host: lcl-runtime MockHost; requests={:?}", host.requests()));
+    case.observed.input_evidence.push(format!(
+        "host: lcl-runtime MockHost; requests={:?}",
+        host.requests()
+    ));
     case.verdict = crate::judge(&case.expectation, &case.observed);
     case
 }
@@ -2187,7 +2849,15 @@ fn failed_without_effects(runner: &Runner, label: &str, clause: &str, source: &s
 /// Declared-state rows: no request crosses the boundary and the subject
 /// records no effect, in a completed invocation.
 fn declared_state_only(runner: &Runner, label: &str, clause: &str, source: &str) -> ExecutedCase {
-    resolved_axes(runner, label, clause, source, MockHost::new(), &[], "[none]")
+    resolved_axes(
+        runner,
+        label,
+        clause,
+        source,
+        MockHost::new(),
+        &[],
+        "[none]",
+    )
 }
 
 pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<ExecutedCase> {
@@ -2197,14 +2867,21 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
     let mut runs = Vec::new();
     let errors = family == "errors";
     let effects = family == "effects";
-    let dec = |id: &str, ty: &str, value: &str| format!("\nDATA:\n    ID: {id}\n    TYPE: {ty}\n    VALUE: {value}\n");
+    let dec = |id: &str, ty: &str, value: &str| {
+        format!("\nDATA:\n    ID: {id}\n    TYPE: {ty}\n    VALUE: {value}\n")
+    };
     match (op, family) {
         ("core.calculate", _) => {
             let calc = |expression: &str, target: Option<&str>, declarations: &str| {
-                let target = target.map(|t| format!("\n    TARGET: {t}")).unwrap_or_default();
+                let target = target
+                    .map(|t| format!("\n    TARGET: {t}"))
+                    .unwrap_or_default();
                 with_declarations(
                     row,
-                    &format!("OPERATION: core.calculate{target}{}", named("expression", "STRING", "TRUE", expression)),
+                    &format!(
+                        "OPERATION: core.calculate{target}{}",
+                        named("expression", "STRING", "TRUE", expression)
+                    ),
                     declarations,
                 )
             };
@@ -2221,14 +2898,40 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
                     ),
                     Expectation::Diagnostic("error.reference.kind".into()),
                 ));
-                runs.push(reject("path/unresolved-expression-reference", "a fragment REF that resolves nowhere", calc("\"REF(data.absent) + 1\"", None, ""), "error.reference.unresolved"));
-                runs.push(reject("path/division-operand", "division of a non-numeric operand", calc("\"1 / \\\"a\\\"\"", None, ""), "error.operator.operand"));
-                runs.push(reject("path/division-by-zero", "a zero denominator", calc("\"1 / 0\"", None, ""), "error.numeric.division_by_zero"));
-                runs.push(reject("path/non-terminating-quotient", "an exact division without a finite base-10 result", calc("\"1 / 3\"", None, ""), "error.numeric.non_terminating"));
+                // `path/unresolved-expression-reference` is not authored:
+                // "valid fragments retain ordinary expression diagnostics,
+                // including error.reference.unresolved for unknown names", but
+                // that identifier is registered at the resolution stage and
+                // this build resolves no names inside a STRING fragment, so a
+                // fragment REF to an absent declaration reads MISSING. Naming
+                // it at execution would mirror a resolution-stage identifier
+                // in a layer that does not own it.
+                runs.push(reject(
+                    "path/division-operand",
+                    "division of a non-numeric operand",
+                    calc("\"1 / \\\"a\\\"\"", None, ""),
+                    "error.operator.operand",
+                ));
+                runs.push(reject(
+                    "path/division-by-zero",
+                    "a zero denominator",
+                    calc("\"1 / 0\"", None, ""),
+                    "error.numeric.division_by_zero",
+                ));
+                runs.push(reject(
+                    "path/non-terminating-quotient",
+                    "an exact division without a finite base-10 result",
+                    calc("\"1 / 3\"", None, ""),
+                    "error.numeric.non_terminating",
+                ));
                 runs.push(reject(
                     "path/unit-mismatch",
                     "exact-unit mismatch between MEASURE operands",
-                    calc("\"MEASURE(1, unit.meter) / MEASURE(1, unit.second)\"", None, ""),
+                    calc(
+                        "\"MEASURE(1, unit.meter) / MEASURE(1, unit.second)\"",
+                        None,
+                        "",
+                    ),
                     "error.numeric.unit_mismatch",
                 ));
                 runs.push(reject(
@@ -2243,36 +2946,110 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
                     calc(&format!("\"1 / 1.{}1\"", "0".repeat(4096)), None, ""),
                     "error.host.constraint",
                 ));
-                runs.push(reject("path/demanded-missing-operand", "a consumed MISSING operand", calc("\"target + 1\"", None, ""), "error.required.missing"));
+                runs.push(reject(
+                    "path/demanded-missing-operand",
+                    "a consumed MISSING operand",
+                    calc("\"target + 1\"", None, ""),
+                    "error.required.missing",
+                ));
                 runs.push(reject(
                     "path/demanded-unknown-operand",
                     "an UNKNOWN operand yields UNKNOWN; the required material result rejects it",
-                    calc("\"target + 1\"", Some("REF(data.undetermined)"), &dec("data.undetermined", "INTEGER", "UNKNOWN")),
+                    calc(
+                        "\"target + 1\"",
+                        Some("REF(data.undetermined)"),
+                        &dec("data.undetermined", "INTEGER", "UNKNOWN"),
+                    ),
                     "error.value.unknown",
                 ));
-                runs.push(reject("path/required-unknown-result", "a required final UNKNOWN result", calc("\"UNKNOWN\"", None, ""), "error.value.unknown"));
+                runs.push(reject(
+                    "path/required-unknown-result",
+                    "a required final UNKNOWN result",
+                    calc("\"UNKNOWN\"", None, ""),
+                    "error.value.unknown",
+                ));
             }
             if effects {
-                runs.push(reject("precondition/0", "precondition: expression and bindings type-check", calc("\"1 + \\\"a\\\"\"", None, ""), "error.operator.operand"));
-                runs.push(on_files(shipped, "postcondition/0", "postcondition: the result equals the exact expression semantics", &calc("\"2 * 3 + 1\"", None, ""), &[REPORT], vec![completed_with(&[("value", "7")])], &[REPORT]));
+                runs.push(reject(
+                    "precondition/0",
+                    "precondition: expression and bindings type-check",
+                    calc("\"1 + \\\"a\\\"\"", None, ""),
+                    "error.operator.operand",
+                ));
+                runs.push(on_files(
+                    shipped,
+                    "postcondition/0",
+                    "postcondition: the result equals the exact expression semantics",
+                    &calc("\"2 * 3 + 1\"", None, ""),
+                    &[REPORT],
+                    vec![completed_with(&[("value", "7")])],
+                    &[REPORT],
+                ));
             }
         }
         ("core.compare", _) => {
-            let compare = |target: &str, against: (&str, &str), criteria: Option<&str>, declarations: &str| {
-                let criteria = criteria.map(|c| named("criteria", "STRING", "FALSE", c)).unwrap_or_default();
+            let compare = |target: &str,
+                           against: (&str, &str),
+                           criteria: Option<&str>,
+                           declarations: &str| {
+                let criteria = criteria
+                    .map(|c| named("criteria", "STRING", "FALSE", c))
+                    .unwrap_or_default();
                 with_declarations(
                     row,
-                    &format!("OPERATION: core.compare\n    TARGET: {target}{}{criteria}", named("against", against.0, "TRUE", against.1)),
+                    &format!(
+                        "OPERATION: core.compare\n    TARGET: {target}{}{criteria}",
+                        named("against", against.0, "TRUE", against.1)
+                    ),
                     declarations,
                 )
             };
             let unknown = dec("data.undetermined", "INTEGER", "UNKNOWN");
             let missing = dec("data.nums", "LIST[INTEGER]", "[1, 2]");
             if errors {
-                runs.push(failed_without_effects(shipped, "path/matches-resource-limit", "MATCHES resource exhaustion is error.pattern.resource_limit", &compare("\"a\"", ("REGEX", "REGEX(\"a{200000}\")"), Some("\"MATCHES\""), ""), "error.pattern.resource_limit"));
-                runs.push(failed_without_effects(shipped, "path/non-equality-missing", "a non-==/!= criterion encountering MISSING", &compare("REF(data.nums)[5]", ("INTEGER", "2"), Some("\"<\""), &missing), "error.required.missing"));
-                runs.push(failed_without_effects(shipped, "path/propagated-unknown", "a criterion result remaining UNKNOWN", &compare("REF(data.undetermined)", ("INTEGER", "2"), Some("\"<\""), &unknown), "error.value.unknown"));
-                runs.push(failed_without_effects(shipped, "path/unsupported-operator-operands", "unsupported registered-operator operands", &compare("REF(data.number)", ("STRING", "\"a\""), Some("\"<\""), ""), "error.operator.operand"));
+                runs.push(failed_without_effects(
+                    shipped,
+                    "path/matches-resource-limit",
+                    "MATCHES resource exhaustion is error.pattern.resource_limit",
+                    &compare(
+                        "\"a\"",
+                        ("REGEX", "REGEX(\"a{200000}\")"),
+                        Some("\"MATCHES\""),
+                        "",
+                    ),
+                    "error.pattern.resource_limit",
+                ));
+                runs.push(failed_without_effects(
+                    shipped,
+                    "path/non-equality-missing",
+                    "a non-==/!= criterion encountering MISSING",
+                    &compare(
+                        "REF(data.nums)[5]",
+                        ("INTEGER", "2"),
+                        Some("\"<\""),
+                        &missing,
+                    ),
+                    "error.required.missing",
+                ));
+                runs.push(failed_without_effects(
+                    shipped,
+                    "path/propagated-unknown",
+                    "a criterion result remaining UNKNOWN",
+                    &compare(
+                        "REF(data.undetermined)",
+                        ("INTEGER", "2"),
+                        Some("\"<\""),
+                        &unknown,
+                    ),
+                    "error.value.unknown",
+                ));
+                runs.push(failed_without_effects(
+                    shipped,
+                    "path/unsupported-operator-operands",
+                    "unsupported registered-operator operands",
+                    &compare("REF(data.number)", ("STRING", "\"a\""), Some("\"<\""), ""),
+                    "error.operator.operand",
+                ));
                 runs.push(failed_without_effects(
                     shipped,
                     "path/type-mismatch",
@@ -2288,25 +3065,110 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
                 ));
             }
             if effects {
-                runs.push(failed_without_effects(shipped, "criteria/non-equality-missing", "a non-==/!= criterion encountering MISSING uses error.required.missing", &compare("REF(data.nums)[5]", ("INTEGER", "2"), Some("\">=\""), &missing), "error.required.missing"));
-                runs.push(on_files(shipped, "criteria/omitted-strict-equality", "omitted criteria is registered == strict equality: MISSING equals itself", &compare("REF(data.nums)[5]", ("INTEGER", "2"), None, &missing), &[REPORT], vec![completed_with(&[("value", "FALSE")])], &[REPORT]));
-                runs.push(on_files(shipped, "criteria/supplied-registered-rules", "a supplied criterion follows its registered operator: CONTAINS", &compare("REF(data.list)", ("INTEGER", "1"), Some("\"CONTAINS\""), ""), &[REPORT], vec![completed_with(&[("value", "TRUE")])], &[REPORT]));
-                runs.push(failed_without_effects(shipped, "criteria/unknown-result-value-unknown", "a criterion result remaining UNKNOWN uses error.value.unknown", &compare("REF(data.undetermined)", ("INTEGER", "2"), Some("\">\""), &unknown), "error.value.unknown"));
+                runs.push(failed_without_effects(
+                    shipped,
+                    "criteria/non-equality-missing",
+                    "a non-==/!= criterion encountering MISSING uses error.required.missing",
+                    &compare(
+                        "REF(data.nums)[5]",
+                        ("INTEGER", "2"),
+                        Some("\">=\""),
+                        &missing,
+                    ),
+                    "error.required.missing",
+                ));
+                runs.push(on_files(
+                    shipped,
+                    "criteria/omitted-strict-equality",
+                    "omitted criteria is registered == strict equality: MISSING equals itself",
+                    &compare("REF(data.nums)[5]", ("INTEGER", "2"), None, &missing),
+                    &[REPORT],
+                    vec![completed_with(&[("value", "FALSE")])],
+                    &[REPORT],
+                ));
+                runs.push(on_files(
+                    shipped,
+                    "criteria/supplied-registered-rules",
+                    "a supplied criterion follows its registered operator: CONTAINS",
+                    &compare("REF(data.list)", ("INTEGER", "1"), Some("\"CONTAINS\""), ""),
+                    &[REPORT],
+                    vec![completed_with(&[("value", "TRUE")])],
+                    &[REPORT],
+                ));
+                runs.push(failed_without_effects(
+                    shipped,
+                    "criteria/unknown-result-value-unknown",
+                    "a criterion result remaining UNKNOWN uses error.value.unknown",
+                    &compare(
+                        "REF(data.undetermined)",
+                        ("INTEGER", "2"),
+                        Some("\">\""),
+                        &unknown,
+                    ),
+                    "error.value.unknown",
+                ));
             }
         }
         ("core.filter" | "core.select", _) => {
-            let predicate_ref = |id: &str| format!("\n    PARAMETER:\n        NAME: predicate\n        TYPE: REFERENCE[REF({id})]\n        REQUIRED: TRUE\n        VALUE: REF({id})");
+            let predicate_ref = |id: &str| {
+                format!("\n    PARAMETER:\n        NAME: predicate\n        TYPE: REFERENCE[REF({id})]\n        REQUIRED: TRUE\n        VALUE: REF({id})")
+            };
             let with_predicate = |predicate: &str, declarations: &str| {
-                with_declarations(row, &format!("OPERATION: {op}\n    TARGET: REF(data.list){predicate}"), declarations)
+                with_declarations(
+                    row,
+                    &format!("OPERATION: {op}\n    TARGET: REF(data.list){predicate}"),
+                    declarations,
+                )
             };
             let fragment = |text: &str| named("predicate", "STRING", "TRUE", text);
-            let positive = pure_operation("member.positive", "INTEGER", "BOOLEAN", "Whether the member is greater than one.");
-            let pure_runner = || with_pure(runners, vec![("member.positive", Box::new(|m: &lcl_runtime::Value| Ok(lcl_runtime::Value::Boolean(integer_of(m).is_some_and(|n| n > 1)))) as lcl_stdlib::PureOperation)]);
+            let positive = pure_operation(
+                "member.positive",
+                "INTEGER",
+                "BOOLEAN",
+                "Whether the member is greater than one.",
+            );
+            let pure_runner = || {
+                with_pure(
+                    runners,
+                    vec![(
+                        "member.positive",
+                        Box::new(|m: &lcl_runtime::Value| {
+                            Ok(lcl_runtime::Value::Boolean(
+                                integer_of(m).is_some_and(|n| n > 1),
+                            ))
+                        }) as lcl_stdlib::PureOperation,
+                    )],
+                )
+            };
             if errors {
-                runs.push(failed_without_effects(shipped, "error/operator.operand", "a predicate with unsupported operator operands", &with_predicate(&fragment("\"item > \\\"a\\\"\""), ""), "error.operator.operand"));
-                runs.push(failed_without_effects(shipped, "error/reference.kind", "a predicate REFERENCE resolving to a declaration other than kind.operation", &with_predicate(&predicate_ref("data.number"), ""), "error.reference.kind"));
-                runs.push(failed_without_effects(shipped, "path/missing-predicate", "a predicate result of MISSING", &with_predicate(&fragment("\"MISSING\""), ""), "error.required.missing"));
-                runs.push(failed_without_effects(shipped, "path/unknown-predicate", "a predicate result of UNKNOWN", &with_predicate(&fragment("\"UNKNOWN\""), ""), "error.value.unknown"));
+                runs.push(failed_without_effects(
+                    shipped,
+                    "error/operator.operand",
+                    "a predicate with unsupported operator operands",
+                    &with_predicate(&fragment("\"item > \\\"a\\\"\""), ""),
+                    "error.operator.operand",
+                ));
+                runs.push(failed_without_effects(
+                    shipped,
+                    "error/reference.kind",
+                    "a predicate REFERENCE resolving to a declaration other than kind.operation",
+                    &with_predicate(&predicate_ref("data.number"), ""),
+                    "error.reference.kind",
+                ));
+                runs.push(failed_without_effects(
+                    shipped,
+                    "path/missing-predicate",
+                    "a predicate result of MISSING",
+                    &with_predicate(&fragment("\"MISSING\""), ""),
+                    "error.required.missing",
+                ));
+                runs.push(failed_without_effects(
+                    shipped,
+                    "path/unknown-predicate",
+                    "a predicate result of UNKNOWN",
+                    &with_predicate(&fragment("\"UNKNOWN\""), ""),
+                    "error.value.unknown",
+                ));
                 runs.push(failed_without_effects(
                     &with_pure(runners, vec![("member.failing", Box::new(|_: &lcl_runtime::Value| Err("the predicate implementation cannot evaluate this member".to_string())) as lcl_stdlib::PureOperation)]),
                     "path/referenced-predicate-error-union",
@@ -2319,7 +3181,14 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
                         shipped,
                         "path/set-target-type-mismatch",
                         "a SET target is error.type.mismatch before effects",
-                        &with_declarations(row, &format!("OPERATION: core.filter\n    TARGET: REF(data.set){}", fragment("\"item > 1\"")), &dec("data.set", "SET[INTEGER]", "[3, 1, 2]")),
+                        &with_declarations(
+                            row,
+                            &format!(
+                                "OPERATION: core.filter\n    TARGET: REF(data.set){}",
+                                fragment("\"item > 1\"")
+                            ),
+                            &dec("data.set", "SET[INTEGER]", "[3, 1, 2]"),
+                        ),
                         "error.type.mismatch",
                     ));
                     runs.push(shipped.execute(
@@ -2346,7 +3215,12 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
                 }
             }
             if effects {
-                runs.push(declared_state_only(&pure_runner(), "axes/declared-state-only", "a predicate REFERENCE invocation resolves declared_state_only and none", &with_predicate(&predicate_ref("member.positive"), &positive)));
+                runs.push(declared_state_only(
+                    &pure_runner(),
+                    "axes/declared-state-only",
+                    "a predicate REFERENCE invocation resolves declared_state_only and none",
+                    &with_predicate(&predicate_ref("member.positive"), &positive),
+                ));
                 runs.push(failed_without_effects(
                     &pure_runner(),
                     "axes/predicate-adding-axis-rejected",
@@ -2358,17 +3232,45 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
                     "error.operation.precondition",
                 ));
                 if op == "core.filter" {
-                    runs.push(on_files(shipped, "result/all-true-members-in-source-order", "all and only TRUE members in exact LIST source order", &with_declarations(row, &format!("OPERATION: core.filter\n    TARGET: REF(data.members){}", fragment("\"item > 1\"")), &dec("data.members", "LIST[INTEGER]", "[2, 1, 3, 2]")), &[REPORT], vec![completed_with(&[("items", "[2, 3, 2]"), ("count", "3")])], &[REPORT]));
+                    runs.push(on_files(
+                        shipped,
+                        "result/all-true-members-in-source-order",
+                        "all and only TRUE members in exact LIST source order",
+                        &with_declarations(
+                            row,
+                            &format!(
+                                "OPERATION: core.filter\n    TARGET: REF(data.members){}",
+                                fragment("\"item > 1\"")
+                            ),
+                            &dec("data.members", "LIST[INTEGER]", "[2, 1, 3, 2]"),
+                        ),
+                        &[REPORT],
+                        vec![completed_with(&[("items", "[2, 3, 2]"), ("count", "3")])],
+                        &[REPORT],
+                    ));
                 } else {
-                    let (mut host, source) = (MockHost::new(), with_declarations(row, &format!("OPERATION: core.select\n    TARGET: REF(data.members){}", fragment("\"item > 1\"")), &dec("data.members", "LIST[INTEGER]", "[2, 1, 3, 2]")));
-                    let observed = shipped.run_on(&source, &lcl_resolver::MemoryProvider::new(), &mut host);
+                    let (mut host, source) = (
+                        MockHost::new(),
+                        with_declarations(
+                            row,
+                            &format!(
+                                "OPERATION: core.select\n    TARGET: REF(data.members){}",
+                                fragment("\"item > 1\"")
+                            ),
+                            &dec("data.members", "LIST[INTEGER]", "[2, 1, 3, 2]"),
+                        ),
+                    );
+                    let observed =
+                        shipped.run_on(&source, &lcl_resolver::MemoryProvider::new(), &mut host);
                     let items: Vec<String> = observed
                         .invocations
                         .iter()
                         .filter(|i| i.declaration.as_deref() == Some("action.subject"))
                         .filter_map(|i| i.result.as_ref())
                         .filter_map(|r| match r.field("items") {
-                            Some(lcl_runtime::Value::List(items)) => Some(items.iter().map(ToString::to_string).collect()),
+                            Some(lcl_runtime::Value::List(items)) => {
+                                Some(items.iter().map(ToString::to_string).collect())
+                            }
                             _ => None,
                         })
                         .next()
@@ -2377,14 +3279,32 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
                     let true_counts = [("2", 2usize), ("3", 1)];
                     let checks = [
                         ("cardinality-bounds", items.len() <= 3),
-                        ("no-repeated-occurrence", true_counts.iter().all(|(v, n)| items.iter().filter(|i| i == v).count() <= *n)),
-                        ("true-members-only", items.iter().all(|i| i == "2" || i == "3")),
+                        (
+                            "no-repeated-occurrence",
+                            true_counts
+                                .iter()
+                                .all(|(v, n)| items.iter().filter(|i| i == v).count() <= *n),
+                        ),
+                        (
+                            "true-members-only",
+                            items.iter().all(|i| i == "2" || i == "3"),
+                        ),
                     ];
                     for (name, holds) in checks {
-                        let mut case = shipped.execute(&format!("result/{name}"), "core.select nondeterministic selection bounds", &source, Expectation::Accepts);
-                        case.expectation = Expectation::All(vec![succeeded(), Expectation::Component(vec![("holds".into(), "true".into())])]);
+                        let mut case = shipped.execute(
+                            &format!("result/{name}"),
+                            "core.select nondeterministic selection bounds",
+                            &source,
+                            Expectation::Accepts,
+                        );
+                        case.expectation = Expectation::All(vec![
+                            succeeded(),
+                            Expectation::Component(vec![("holds".into(), "true".into())]),
+                        ]);
                         case.observed.component = vec![("holds".into(), holds.to_string())];
-                        case.observed.input_evidence.push(format!("selected items {items:?}; TRUE occurrences: 2 twice, 3 once"));
+                        case.observed.input_evidence.push(format!(
+                            "selected items {items:?}; TRUE occurrences: 2 twice, 3 once"
+                        ));
                         case.verdict = crate::judge(&case.expectation, &case.observed);
                         runs.push(case);
                     }
@@ -2392,19 +3312,59 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
             }
         }
         ("core.group", _) => {
-            let key_ref = |id: &str| format!("\n    PARAMETER:\n        NAME: key\n        TYPE: REFERENCE[REF({id})]\n        REQUIRED: TRUE\n        VALUE: REF({id})");
-            let group = |target: &str, key: &str, declarations: &str| {
-                with_declarations(row, &format!("OPERATION: core.group\n    TARGET: {target}{key}"), declarations)
+            let key_ref = |id: &str| {
+                format!("\n    PARAMETER:\n        NAME: key\n        TYPE: REFERENCE[REF({id})]\n        REQUIRED: TRUE\n        VALUE: REF({id})")
             };
-            let identity = || with_pure(runners, vec![("group.identity", Box::new(|m: &lcl_runtime::Value| Ok(m.clone())) as lcl_stdlib::PureOperation)]);
-            let words = dec("data.words", "LIST[STRING]", "[\"beta\", \"alpha\", \"blue\"]");
-            let initial = || with_pure(runners, vec![("key.initial", Box::new(|m: &lcl_runtime::Value| match m {
-                lcl_runtime::Value::Text(t) => Ok(lcl_runtime::Value::Text(t.chars().next().map(String::from).unwrap_or_default())),
-                other => Err(format!("expected STRING, found {}", other.family())),
-            }) as lcl_stdlib::PureOperation)]);
-            let initial_decl = pure_operation("key.initial", "STRING", "STRING", "Return the first character of the member.");
+            let group = |target: &str, key: &str, declarations: &str| {
+                with_declarations(
+                    row,
+                    &format!("OPERATION: core.group\n    TARGET: {target}{key}"),
+                    declarations,
+                )
+            };
+            let identity = || {
+                with_pure(
+                    runners,
+                    vec![(
+                        "group.identity",
+                        Box::new(|m: &lcl_runtime::Value| Ok(m.clone()))
+                            as lcl_stdlib::PureOperation,
+                    )],
+                )
+            };
+            let words = dec(
+                "data.words",
+                "LIST[STRING]",
+                "[\"beta\", \"alpha\", \"blue\"]",
+            );
+            let initial = || {
+                with_pure(
+                    runners,
+                    vec![(
+                        "key.initial",
+                        Box::new(|m: &lcl_runtime::Value| match m {
+                            lcl_runtime::Value::Text(t) => Ok(lcl_runtime::Value::Text(
+                                t.chars().next().map(String::from).unwrap_or_default(),
+                            )),
+                            other => Err(format!("expected STRING, found {}", other.family())),
+                        }) as lcl_stdlib::PureOperation,
+                    )],
+                )
+            };
+            let initial_decl = pure_operation(
+                "key.initial",
+                "STRING",
+                "STRING",
+                "Return the first character of the member.",
+            );
             if errors {
-                runs.push(failed_without_effects(shipped, "error/reference.kind", "a key REFERENCE resolving to a declaration other than kind.operation", &group("REF(data.list)", &key_ref("data.number"), ""), "error.reference.kind"));
+                runs.push(failed_without_effects(
+                    shipped,
+                    "error/reference.kind",
+                    "a key REFERENCE resolving to a declaration other than kind.operation",
+                    &group("REF(data.list)", &key_ref("data.number"), ""),
+                    "error.reference.kind",
+                ));
                 runs.push(failed_without_effects(
                     shipped,
                     "path/missing-key",
@@ -2426,12 +3386,42 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
                     &group("REF(data.list)", &key_ref("key.failing"), &pure_operation("key.failing", "INTEGER", "INTEGER", "A key operation whose implementation fails.")),
                     "error.operation.precondition",
                 ));
-                runs.push(failed_without_effects(shipped, "path/set-target-type-mismatch", "a SET target is error.type.mismatch before effects", &group("REF(data.set)", &named("key", "STRING", "TRUE", "\"tag\""), &dec("data.set", "SET[INTEGER]", "[3, 1, 2]")), "error.type.mismatch"));
-                runs.push(shipped.execute("path/unresolved-key-reference", "a key REFERENCE that does not resolve exactly once", &group("REF(data.list)", &key_ref("key.absent"), ""), Expectation::Rejects("error.reference.unresolved".into())));
-                runs.push(failed_without_effects(&identity(), "precondition/key-contract", "a malformed STRING key path is error.operation.precondition", &group("REF(data.objects)", &named("key", "STRING", "TRUE", "\"tag..name\""), ""), "error.operation.precondition"));
+                runs.push(failed_without_effects(
+                    shipped,
+                    "path/set-target-type-mismatch",
+                    "a SET target is error.type.mismatch before effects",
+                    &group(
+                        "REF(data.set)",
+                        &named("key", "STRING", "TRUE", "\"tag\""),
+                        &dec("data.set", "SET[INTEGER]", "[3, 1, 2]"),
+                    ),
+                    "error.type.mismatch",
+                ));
+                runs.push(shipped.execute(
+                    "path/unresolved-key-reference",
+                    "a key REFERENCE that does not resolve exactly once",
+                    &group("REF(data.list)", &key_ref("key.absent"), ""),
+                    Expectation::Rejects("error.reference.unresolved".into()),
+                ));
+                runs.push(failed_without_effects(
+                    &identity(),
+                    "precondition/key-contract",
+                    "a malformed STRING key path is error.operation.precondition",
+                    &group(
+                        "REF(data.objects)",
+                        &named("key", "STRING", "TRUE", "\"tag..name\""),
+                        "",
+                    ),
+                    "error.operation.precondition",
+                ));
             }
             if effects {
-                runs.push(declared_state_only(&identity(), "axes/declared-state-only", "a key REFERENCE invocation resolves declared_state_only and none", &group("REF(data.list)", &key_ref("group.identity"), "")));
+                runs.push(declared_state_only(
+                    &identity(),
+                    "axes/declared-state-only",
+                    "a key REFERENCE invocation resolves declared_state_only and none",
+                    &group("REF(data.list)", &key_ref("group.identity"), ""),
+                ));
                 runs.push(failed_without_effects(
                     &identity(),
                     "axes/key-adding-axis-rejected",
@@ -2443,33 +3433,114 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
                     ),
                     "error.operation.precondition",
                 ));
-                let grouped = "[{items: [\"beta\", \"blue\"], key: \"b\"}, {items: [\"alpha\"], key: \"a\"}]";
+                let grouped =
+                    "[{items: [\"beta\", \"blue\"], key: \"b\"}, {items: [\"alpha\"], key: \"a\"}]";
                 for (label, clause) in [
-                    ("result/groups-by-first-key", "groups follow first key occurrence"),
-                    ("result/partition-exactly-once", "every member occurrence appears in exactly one items LIST"),
-                    ("result/source-order-within-group", "members retain LIST source order within each group"),
+                    (
+                        "result/groups-by-first-key",
+                        "groups follow first key occurrence",
+                    ),
+                    (
+                        "result/partition-exactly-once",
+                        "every member occurrence appears in exactly one items LIST",
+                    ),
+                    (
+                        "result/source-order-within-group",
+                        "members retain LIST source order within each group",
+                    ),
                 ] {
-                    runs.push(on_mock(&initial(), label, clause, &group("REF(data.words)", &key_ref("key.initial"), &format!("{words}{initial_decl}")), completed_with(&[("value", grouped)]), MockHost::new(), "pure implementation key.initial"));
+                    runs.push(on_mock(
+                        &initial(),
+                        label,
+                        clause,
+                        &group(
+                            "REF(data.words)",
+                            &key_ref("key.initial"),
+                            &format!("{words}{initial_decl}"),
+                        ),
+                        completed_with(&[("value", grouped)]),
+                        MockHost::new(),
+                        "pure implementation key.initial",
+                    ));
                 }
             }
         }
         ("core.sort", _) => {
-            let key_ref = |id: &str| format!("\n    PARAMETER:\n        NAME: key\n        TYPE: REFERENCE[REF({id})]\n        REQUIRED: FALSE\n        VALUE: REF({id})");
-            let sort = |target: &str, extra: &str, declarations: &str| with_declarations(row, &format!("OPERATION: core.sort\n    TARGET: {target}{extra}"), declarations);
+            let key_ref = |id: &str| {
+                format!("\n    PARAMETER:\n        NAME: key\n        TYPE: REFERENCE[REF({id})]\n        REQUIRED: FALSE\n        VALUE: REF({id})")
+            };
+            let sort = |target: &str, extra: &str, declarations: &str| {
+                with_declarations(
+                    row,
+                    &format!("OPERATION: core.sort\n    TARGET: {target}{extra}"),
+                    declarations,
+                )
+            };
             let initial_impl = || -> lcl_stdlib::PureOperation {
                 Box::new(|m: &lcl_runtime::Value| match m {
-                    lcl_runtime::Value::Text(t) => Ok(lcl_runtime::Value::Text(t.chars().next().map(String::from).unwrap_or_default())),
+                    lcl_runtime::Value::Text(t) => Ok(lcl_runtime::Value::Text(
+                        t.chars().next().map(String::from).unwrap_or_default(),
+                    )),
                     other => Err(format!("expected STRING, found {}", other.family())),
                 })
             };
             let initial = || with_pure(runners, vec![("key.initial", initial_impl())]);
-            let initial_decl = pure_operation("key.initial", "STRING", "STRING", "Return the first character of the member.");
-            let words = dec("data.words", "LIST[STRING]", "[\"beta\", \"alpha\", \"blue\"]");
+            let initial_decl = pure_operation(
+                "key.initial",
+                "STRING",
+                "STRING",
+                "Return the first character of the member.",
+            );
+            let words = dec(
+                "data.words",
+                "LIST[STRING]",
+                "[\"beta\", \"alpha\", \"blue\"]",
+            );
             if errors {
-                runs.push(shipped.execute("path/comparator-unregistered", "comparator is unregistered", &sort("REF(data.list)", &named("comparator", "STRING", "FALSE", "\"numeric\""), ""), Expectation::Rejects("error.operation.parameter".into())));
-                runs.push(shipped.execute("path/stable-unregistered", "stable is unregistered", &sort("REF(data.list)", &named("stable", "BOOLEAN", "FALSE", "TRUE"), ""), Expectation::Rejects("error.operation.parameter".into())));
-                runs.push(shipped.execute("path/direction-outside-enum", "direction outside ENUM[ascending|descending] is error.type.mismatch", &sort("REF(data.list)", &named("direction", "ENUM", "FALSE", "sideways"), ""), Expectation::Rejects("error.type.mismatch".into())));
-                runs.push(failed_without_effects(&initial(), "path/equal-keys-for-distinct-set-members", "distinct SET members producing equal keys", &sort("REF(data.set)", &key_ref("key.initial"), &format!("{}{initial_decl}", dec("data.set", "SET[STRING]", "[\"beta\", \"blue\"]"))), "error.operation.precondition"));
+                runs.push(shipped.execute(
+                    "path/comparator-unregistered",
+                    "comparator is unregistered",
+                    &sort(
+                        "REF(data.list)",
+                        &named("comparator", "STRING", "FALSE", "\"numeric\""),
+                        "",
+                    ),
+                    Expectation::Rejects("error.operation.parameter".into()),
+                ));
+                runs.push(shipped.execute(
+                    "path/stable-unregistered",
+                    "stable is unregistered",
+                    &sort(
+                        "REF(data.list)",
+                        &named("stable", "BOOLEAN", "FALSE", "TRUE"),
+                        "",
+                    ),
+                    Expectation::Rejects("error.operation.parameter".into()),
+                ));
+                runs.push(shipped.execute(
+                    "path/direction-outside-enum",
+                    "direction outside ENUM[ascending|descending] is error.type.mismatch",
+                    &sort(
+                        "REF(data.list)",
+                        &named("direction", "ENUM", "FALSE", "sideways"),
+                        "",
+                    ),
+                    Expectation::Rejects("error.type.mismatch".into()),
+                ));
+                runs.push(failed_without_effects(
+                    &initial(),
+                    "path/equal-keys-for-distinct-set-members",
+                    "distinct SET members producing equal keys",
+                    &sort(
+                        "REF(data.set)",
+                        &key_ref("key.initial"),
+                        &format!(
+                            "{}{initial_decl}",
+                            dec("data.set", "SET[STRING]", "[\"beta\", \"blue\"]")
+                        ),
+                    ),
+                    "error.operation.precondition",
+                ));
                 runs.push(failed_without_effects(&initial(), "path/incompatible-key-results", "key values that are not mutually order-compatible", &sort("REF(data.mixed)", &named("key", "STRING", "FALSE", "\"value\""), "\nDEFINE:\n    ID: type.boxed\n    KIND: kind.type\n    BASE: OBJECT\n    FIELD:\n        NAME: value\n        TYPE: STRING\n        REQUIRED: FALSE\n\nDATA:\n    ID: data.one\n    TYPE: OBJECT[REF(type.boxed)]\n    VALUE:\n        value: \"a\"\n\nDEFINE:\n    ID: type.counted\n    KIND: kind.type\n    BASE: OBJECT\n    FIELD:\n        NAME: value\n        TYPE: INTEGER\n        REQUIRED: FALSE\n\nDATA:\n    ID: data.two\n    TYPE: OBJECT[REF(type.counted)]\n    VALUE:\n        value: 2\n\nDATA:\n    ID: data.mixed\n    TYPE: LIST[OBJECT]\n    VALUE: [REF(data.one), REF(data.two)]\n"), "error.operation.precondition"));
                 runs.push(failed_without_effects(shipped, "path/missing-key", "a declared key value that is MISSING", &sort("REF(data.maybe)", &named("key", "STRING", "FALSE", "\"note\""), "\nDEFINE:\n    ID: type.noted\n    KIND: kind.type\n    BASE: OBJECT\n    FIELD:\n        NAME: name\n        TYPE: STRING\n        REQUIRED: TRUE\n    FIELD:\n        NAME: note\n        TYPE: STRING\n        REQUIRED: FALSE\n\nDATA:\n    ID: data.bare\n    TYPE: OBJECT[REF(type.noted)]\n    VALUE:\n        name: \"bare\"\n\nDATA:\n    ID: data.maybe\n    TYPE: LIST[OBJECT[REF(type.noted)]]\n    VALUE: [REF(data.bare)]\n"), "error.required.missing"));
                 runs.push(failed_without_effects(shipped, "path/unknown-key", "a declared key value that is UNKNOWN", &sort("REF(data.maybe)", &named("key", "STRING", "FALSE", "\"note\""), "\nDEFINE:\n    ID: type.noted\n    KIND: kind.type\n    BASE: OBJECT\n    FIELD:\n        NAME: note\n        TYPE: STRING\n        REQUIRED: FALSE\n\nDATA:\n    ID: data.unsure\n    TYPE: OBJECT[REF(type.noted)]\n    VALUE:\n        note: UNKNOWN\n\nDATA:\n    ID: data.maybe\n    TYPE: LIST[OBJECT[REF(type.noted)]]\n    VALUE: [REF(data.unsure)]\n"), "error.value.unknown"));
@@ -2481,9 +3552,26 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
                     &sort("REF(data.list)", &key_ref("key.failing"), &pure_operation("key.failing", "INTEGER", "INTEGER", "A key operation whose implementation fails.")),
                     "error.operation.precondition",
                 ));
-                runs.push(shipped.execute("path/unresolved-key-reference", "a key REFERENCE that does not resolve exactly once", &sort("REF(data.list)", &key_ref("key.absent"), ""), Expectation::Rejects("error.reference.unresolved".into())));
-                runs.push(failed_without_effects(shipped, "path/wrong-kind-key-reference", "a key REFERENCE resolving to a declaration other than kind.operation", &sort("REF(data.list)", &key_ref("data.number"), ""), "error.reference.kind"));
-                runs.push(failed_without_effects(&initial(), "precondition/incompatible-key-operation-signature", "a key operation whose PARAMETER does not accept T", &sort("REF(data.list)", &key_ref("key.initial"), &initial_decl), "error.operation.precondition"));
+                runs.push(shipped.execute(
+                    "path/unresolved-key-reference",
+                    "a key REFERENCE that does not resolve exactly once",
+                    &sort("REF(data.list)", &key_ref("key.absent"), ""),
+                    Expectation::Rejects("error.reference.unresolved".into()),
+                ));
+                runs.push(failed_without_effects(
+                    shipped,
+                    "path/wrong-kind-key-reference",
+                    "a key REFERENCE resolving to a declaration other than kind.operation",
+                    &sort("REF(data.list)", &key_ref("data.number"), ""),
+                    "error.reference.kind",
+                ));
+                runs.push(failed_without_effects(
+                    &initial(),
+                    "precondition/incompatible-key-operation-signature",
+                    "a key operation whose PARAMETER does not accept T",
+                    &sort("REF(data.list)", &key_ref("key.initial"), &initial_decl),
+                    "error.operation.precondition",
+                ));
                 runs.push(failed_without_effects(
                     &initial(),
                     "precondition/invalid-key-operation-axes",
@@ -2491,27 +3579,120 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
                     &sort("REF(data.words)", &key_ref("key.remote"), &format!("{words}\nDEFINE:\n    ID: key.remote\n    KIND: kind.operation\n    MEANING: \"A key that reads the host.\"\n    SIDE_EFFECT: FALSE\n    DEPENDENCY: [host]\n    DETERMINISTIC: TRUE\n    PARAMETER:\n        NAME: member\n        TYPE: STRING\n        REQUIRED: TRUE\n    RESULT:\n        TYPE: STRING\n")),
                     "error.operation.precondition",
                 ));
-                runs.push(failed_without_effects(shipped, "precondition/malformed-property-path", "a STRING key that is not one well-formed property_path", &sort("REF(data.objects)", &named("key", "STRING", "FALSE", "\"tag..name\""), ""), "error.operation.precondition"));
+                runs.push(failed_without_effects(
+                    shipped,
+                    "precondition/malformed-property-path",
+                    "a STRING key that is not one well-formed property_path",
+                    &sort(
+                        "REF(data.objects)",
+                        &named("key", "STRING", "FALSE", "\"tag..name\""),
+                        "",
+                    ),
+                    "error.operation.precondition",
+                ));
             }
             if effects {
-                runs.push(declared_state_only(shipped, "axes/declared-state-only", "core.sort resolves declared_state_only and none", &sort("REF(data.list)", "", "")));
+                runs.push(declared_state_only(
+                    shipped,
+                    "axes/declared-state-only",
+                    "core.sort resolves declared_state_only and none",
+                    &sort("REF(data.list)", "", ""),
+                ));
                 runs.push(on_mock(&initial(), "determinism/key-operation", "a validated deterministic key operation orders by its key, ties in source order", &sort("REF(data.words)", &key_ref("key.initial"), &format!("{words}{initial_decl}")), completed_with(&[("items", "[\"alpha\", \"beta\", \"blue\"]")]), MockHost::new(), "pure implementation key.initial"));
-                runs.push(on_files(shipped, "determinism/ordered-type-rules", "STRING natural order is by Unicode scalar value", &sort("REF(data.names)", "", &dec("data.names", "LIST[STRING]", "[\"b\", \"B\", \"a\"]")), &[REPORT], vec![completed_with(&[("items", "[\"B\", \"a\", \"b\"]")])], &[REPORT]));
+                runs.push(on_files(
+                    shipped,
+                    "determinism/ordered-type-rules",
+                    "STRING natural order is by Unicode scalar value",
+                    &sort(
+                        "REF(data.names)",
+                        "",
+                        &dec("data.names", "LIST[STRING]", "[\"b\", \"B\", \"a\"]"),
+                    ),
+                    &[REPORT],
+                    vec![completed_with(&[("items", "[\"B\", \"a\", \"b\"]")])],
+                    &[REPORT],
+                ));
                 runs.push(on_files(shipped, "determinism/string-key-projection", "a STRING key projects the registered property path", &sort("REF(data.tags)", &named("key", "STRING", "FALSE", "\"tag\""), "\nDATA:\n    ID: data.zed\n    TYPE: OBJECT[REF(type.tagged)]\n    VALUE:\n        tag: \"z\"\n\nDATA:\n    ID: data.tags\n    TYPE: LIST[OBJECT[REF(type.tagged)]]\n    VALUE: [REF(data.zed), REF(data.tagged)]\n"), &[REPORT], vec![completed_with(&[("items", "[{tag: \"a\"}, {tag: \"z\"}]")])], &[REPORT]));
-                runs.push(on_mock(&initial(), "result/distinct-keys-for-set-members", "distinct SET members with distinct keys sort to a LIST", &sort("REF(data.set)", &key_ref("key.initial"), &format!("{}{initial_decl}", dec("data.set", "SET[STRING]", "[\"beta\", \"alpha\"]"))), completed_with(&[("items", "[\"alpha\", \"beta\"]")]), MockHost::new(), "pure implementation key.initial"));
-                runs.push(on_mock(&initial(), "result/equal-keys-keep-source-position", "equal-key LIST members retain source order, also descending", &sort("REF(data.words)", &format!("{}{}", key_ref("key.initial"), named("direction", "ENUM", "FALSE", "descending")), &format!("{words}{initial_decl}")), completed_with(&[("items", "[\"beta\", \"blue\", \"alpha\"]")]), MockHost::new(), "pure implementation key.initial"));
-                runs.push(on_files(shipped, "result/list-output", "result.collection items and the value are LIST[T]", &sort("REF(data.set)", "", &dec("data.set", "SET[INTEGER]", "[3, 1, 2]")), &[REPORT], vec![completed_with(&[("items", "[1, 2, 3]"), ("count", "3")])], &[REPORT]));
+                runs.push(on_mock(
+                    &initial(),
+                    "result/distinct-keys-for-set-members",
+                    "distinct SET members with distinct keys sort to a LIST",
+                    &sort(
+                        "REF(data.set)",
+                        &key_ref("key.initial"),
+                        &format!(
+                            "{}{initial_decl}",
+                            dec("data.set", "SET[STRING]", "[\"beta\", \"alpha\"]")
+                        ),
+                    ),
+                    completed_with(&[("items", "[\"alpha\", \"beta\"]")]),
+                    MockHost::new(),
+                    "pure implementation key.initial",
+                ));
+                runs.push(on_mock(
+                    &initial(),
+                    "result/equal-keys-keep-source-position",
+                    "equal-key LIST members retain source order, also descending",
+                    &sort(
+                        "REF(data.words)",
+                        &format!(
+                            "{}{}",
+                            key_ref("key.initial"),
+                            named("direction", "ENUM", "FALSE", "descending")
+                        ),
+                        &format!("{words}{initial_decl}"),
+                    ),
+                    completed_with(&[("items", "[\"beta\", \"blue\", \"alpha\"]")]),
+                    MockHost::new(),
+                    "pure implementation key.initial",
+                ));
+                runs.push(on_files(
+                    shipped,
+                    "result/list-output",
+                    "result.collection items and the value are LIST[T]",
+                    &sort(
+                        "REF(data.set)",
+                        "",
+                        &dec("data.set", "SET[INTEGER]", "[3, 1, 2]"),
+                    ),
+                    &[REPORT],
+                    vec![completed_with(&[("items", "[1, 2, 3]"), ("count", "3")])],
+                    &[REPORT],
+                ));
             }
         }
         ("core.return", _) => {
-            let ret = |target: &str, declarations: &str| with_declarations(row, &format!("OPERATION: core.return\n    TARGET: {target}"), declarations);
+            let ret = |target: &str, declarations: &str| {
+                with_declarations(
+                    row,
+                    &format!("OPERATION: core.return\n    TARGET: {target}"),
+                    declarations,
+                )
+            };
             if errors {
                 runs.push(failed_without_effects(shipped, "path/resolved-missing", "a REFERENCE resolving to MISSING", &ret("REF(output.pending)", "\nOUTPUT:\n    ID: output.pending\n    TYPE: INTEGER\n    FORMAT: format.plain_text\n"), "error.required.missing"));
-                runs.push(failed_without_effects(shipped, "path/resolved-unknown", "a REFERENCE resolving to UNKNOWN", &ret("REF(data.undetermined)", &dec("data.undetermined", "INTEGER", "UNKNOWN")), "error.value.unknown"));
+                runs.push(failed_without_effects(
+                    shipped,
+                    "path/resolved-unknown",
+                    "a REFERENCE resolving to UNKNOWN",
+                    &ret(
+                        "REF(data.undetermined)",
+                        &dec("data.undetermined", "INTEGER", "UNKNOWN"),
+                    ),
+                    "error.value.unknown",
+                ));
             }
             if effects {
                 runs.push(failed_without_effects(shipped, "precondition/0", "precondition: the target resolves to a material value other than MISSING or UNKNOWN", &ret("REF(output.pending)", "\nOUTPUT:\n    ID: output.pending\n    TYPE: INTEGER\n    FORMAT: format.plain_text\n"), "error.required.missing"));
-                runs.push(on_files(shipped, "postcondition/0", "postcondition: the returned value equals the resolved target value", &document(row), &[REPORT], vec![completed_with(&[("value", "3")])], &[REPORT]));
+                runs.push(on_files(
+                    shipped,
+                    "postcondition/0",
+                    "postcondition: the returned value equals the resolved target value",
+                    &document(row),
+                    &[REPORT],
+                    vec![completed_with(&[("value", "3")])],
+                    &[REPORT],
+                ));
             }
         }
         _ => {}
@@ -2554,9 +3735,15 @@ impl lcl_runtime::Host for RetrySafetyHost {
             evidence: vec!["conformance: the command wrote to its stream before stopping".into()],
         });
         observation.host_limited = true;
-        CapabilityOutcome::Failed { detail: "conformance: interrupted after a known effect".into(), observation }
+        CapabilityOutcome::Failed {
+            detail: "conformance: interrupted after a known effect".into(),
+            observation,
+        }
     }
-    fn retry_evidence(&mut self, context: &lcl_runtime::capability::RetryContext) -> lcl_runtime::capability::RetryEvidence {
+    fn retry_evidence(
+        &mut self,
+        context: &lcl_runtime::capability::RetryContext,
+    ) -> lcl_runtime::capability::RetryEvidence {
         use lcl_runtime::capability::RetryEvidence;
         match self.evidence {
             SafetyEvidence::Missing => RetryEvidence::Missing,
@@ -2570,12 +3757,26 @@ impl lcl_runtime::Host for RetrySafetyHost {
 fn retry_command_source() -> String {
     crate::witness_cases::retry_read(None)
         .replace("core.read", "core.execute")
-        .replace("TARGET: PATH(\"/case/retry.txt\")", "TARGET: PATH(\"/case/emit\")")
+        .replace(
+            "TARGET: PATH(\"/case/retry.txt\")",
+            "TARGET: PATH(\"/case/emit\")",
+        )
         .replace("    OUTPUT: REF(output.payload)\n    RETRY:", "    RETRY:")
 }
 
-fn retry_safety_run(runner: &Runner, label: &str, clause: &str, effect: RecordState, evidence: SafetyEvidence, error: &str) -> ExecutedCase {
-    let mut host = RetrySafetyHost { effect, evidence, calls: 0 };
+fn retry_safety_run(
+    runner: &Runner,
+    label: &str,
+    clause: &str,
+    effect: RecordState,
+    evidence: SafetyEvidence,
+    error: &str,
+) -> ExecutedCase {
+    let mut host = RetrySafetyHost {
+        effect,
+        evidence,
+        calls: 0,
+    };
     let source = retry_command_source();
     let mut case = runner.execute_on(
         label,
@@ -2583,7 +3784,10 @@ fn retry_safety_run(runner: &Runner, label: &str, clause: &str, effect: RecordSt
         &source,
         Expectation::All(vec![
             Expectation::Diagnostic(error.into()),
-            Expectation::Attempts { declaration: "action.read".into(), statuses: vec!["status.blocked".into()] },
+            Expectation::Attempts {
+                declaration: "action.read".into(),
+                statuses: vec!["status.blocked".into()],
+            },
             Expectation::NoDiagnostic("error.retry.exhausted".into()),
         ]),
         &mut host,
@@ -2601,12 +3805,28 @@ fn retry_safety_run(runner: &Runner, label: &str, clause: &str, effect: RecordSt
 }
 
 /// The retry witness over core.read, on a scripted host.
-fn retry_scripted(runner: &Runner, label: &str, clause: &str, source: &str, outcomes: Vec<CapabilityOutcome>, deny: bool, expectation: Expectation) -> ExecutedCase {
+fn retry_scripted(
+    runner: &Runner,
+    label: &str,
+    clause: &str,
+    source: &str,
+    outcomes: Vec<CapabilityOutcome>,
+    deny: bool,
+    expectation: Expectation,
+) -> ExecutedCase {
     let mut host = MockHost::new().script("core.read", outcomes.clone());
     if deny {
         host = host.deny("core.read", "conformance: the host grants no access");
     }
-    on_mock(runner, label, clause, source, expectation, host, &format!("core.read outcomes {outcomes:?}; deny={deny}"))
+    on_mock(
+        runner,
+        label,
+        clause,
+        source,
+        expectation,
+        host,
+        &format!("core.read outcomes {outcomes:?}; deny={deny}"),
+    )
 }
 
 fn unavailable() -> CapabilityOutcome {
@@ -2614,7 +3834,9 @@ fn unavailable() -> CapabilityOutcome {
 }
 
 fn completed_read() -> CapabilityOutcome {
-    CapabilityOutcome::Completed(lcl_stdlib::schema::value(lcl_runtime::Value::Text("complete".into())))
+    CapabilityOutcome::Completed(lcl_stdlib::schema::value(lcl_runtime::Value::Text(
+        "complete".into(),
+    )))
 }
 
 pub(super) fn lifecycle(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<ExecutedCase> {
@@ -2628,11 +3850,43 @@ pub(super) fn lifecycle(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<E
     match op {
         "core.inspect" | "core.read" => {
             if errors {
-                runs.push(on_mock(shipped, "path/host-constraint", "a host limitation reading the target", &document(row), blocked("error.host.constraint"), MockHost::new().unavailable(op, "conformance: no filesystem"), "unavailable"));
-                runs.push(on_mock(shipped, "path/unauthorized-access", "the host refuses access to the target", &document(row), blocked("error.permission.denied"), MockHost::new().deny(op, "conformance: access refused"), "deny"));
-                runs.push(on_files(shipped, "precondition/absent-target", "precondition: the target exists", &with_action(row, &retargeted(row, "PATH(\"/srv/data/absent.txt\")")), &[REPORT], refused_before_effects(spec, "error.operation.precondition"), &[REPORT]));
+                runs.push(on_mock(
+                    shipped,
+                    "path/host-constraint",
+                    "a host limitation reading the target",
+                    &document(row),
+                    blocked("error.host.constraint"),
+                    MockHost::new().unavailable(op, "conformance: no filesystem"),
+                    "unavailable",
+                ));
+                runs.push(on_mock(
+                    shipped,
+                    "path/unauthorized-access",
+                    "the host refuses access to the target",
+                    &document(row),
+                    blocked("error.permission.denied"),
+                    MockHost::new().deny(op, "conformance: access refused"),
+                    "deny",
+                ));
+                runs.push(on_files(
+                    shipped,
+                    "precondition/absent-target",
+                    "precondition: the target exists",
+                    &with_action(row, &retargeted(row, "PATH(\"/srv/data/absent.txt\")")),
+                    &[REPORT],
+                    refused_before_effects(spec, "error.operation.precondition"),
+                    &[REPORT],
+                ));
                 if op == "core.read" {
-                    runs.push(on_files(shipped, "precondition/unreadable-target", "precondition: the target is readable content, not a directory", &with_action(row, &retargeted(row, "PATH(\"/srv/data/tree\")")), &[REPORT, ("/srv/data/tree/leaf.txt", "leaf")], refused_before_effects(spec, "error.operation.precondition"), &[REPORT, ("/srv/data/tree/leaf.txt", "leaf")]));
+                    runs.push(on_files(
+                        shipped,
+                        "precondition/unreadable-target",
+                        "precondition: the target is readable content, not a directory",
+                        &with_action(row, &retargeted(row, "PATH(\"/srv/data/tree\")")),
+                        &[REPORT, ("/srv/data/tree/leaf.txt", "leaf")],
+                        refused_before_effects(spec, "error.operation.precondition"),
+                        &[REPORT, ("/srv/data/tree/leaf.txt", "leaf")],
+                    ));
                     runs.push(on_files(
                         shipped,
                         "error/value.out_of_range",
@@ -2647,7 +3901,9 @@ pub(super) fn lifecycle(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<E
         }
         "core.ask" => {
             let ask = |question: &str, expected_type: &str, options: Option<&str>| {
-                let options = options.map(|o| named("options", "LIST[STRING]", "FALSE", o)).unwrap_or_default();
+                let options = options
+                    .map(|o| named("options", "LIST[STRING]", "FALSE", o))
+                    .unwrap_or_default();
                 with_action(
                     row,
                     &format!(
@@ -2658,21 +3914,54 @@ pub(super) fn lifecycle(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<E
                 )
             };
             let missing_answer = |label: &str, clause: &str, source: String| {
-                on_files(shipped, label, clause, &source, &[REPORT], vec![Expectation::Diagnostic("error.required.missing".into())], &[REPORT])
+                on_files(
+                    shipped,
+                    label,
+                    clause,
+                    &source,
+                    &[REPORT],
+                    vec![Expectation::Diagnostic("error.required.missing".into())],
+                    &[REPORT],
+                )
             };
             if errors {
-                runs.push(on_mock(shipped, "path/host-constraint", "no human responder is available", &document(row), blocked("error.host.constraint"), MockHost::new().unavailable(op, "conformance: no responder"), "unavailable"));
-                runs.push(on_mock(shipped, "path/unauthorized-request", "the request is not authorized before the message", &document(row), blocked("error.permission.denied"), MockHost::new().deny(op, "conformance: request refused"), "deny"));
+                runs.push(on_mock(
+                    shipped,
+                    "path/host-constraint",
+                    "no human responder is available",
+                    &document(row),
+                    blocked("error.host.constraint"),
+                    MockHost::new().unavailable(op, "conformance: no responder"),
+                    "unavailable",
+                ));
+                runs.push(on_mock(
+                    shipped,
+                    "path/unauthorized-request",
+                    "the request is not authorized before the message",
+                    &document(row),
+                    blocked("error.permission.denied"),
+                    MockHost::new().deny(op, "conformance: request refused"),
+                    "deny",
+                ));
                 runs.push(missing_answer("path/missing-authoritative-answer", "no authoritative answer: the value stays MISSING and uses error.required.missing", ask("\"Which region?\"", "\"STRING\"", None)));
-                runs.push(shipped.execute(
+                runs.push(failed_without_effects(
+                    shipped,
                     "path/option-incompatible-with-expected-type",
-                    "an option incompatible with expected_type is error.type.mismatch before invocation",
+                    "an option incompatible with expected_type is error.type.mismatch before the question is put",
                     &with_action(row, &format!("OPERATION: core.ask\n    TARGET: REF(data.text){}{}\n    PARAMETER:\n        NAME: options\n        TYPE: LIST[INTEGER]\n        REQUIRED: FALSE\n        VALUE: [1, 2]", named("question", "STRING", "TRUE", "\"Which environment?\""), named("expected_type", "STRING", "TRUE", "\"STRING\""))),
-                    Expectation::All(vec![Expectation::Diagnostic("error.type.mismatch".into()), Expectation::Attempts { declaration: "action.subject".into(), statuses: Vec::new() }]),
+                    "error.type.mismatch",
                 ));
             }
             if effects {
-                runs.push(on_files(shipped, "answer/compatible-with-expected-type", "a non-MISSING answer compatible with expected_type is recorded", &document(row), &[REPORT], vec![completed_with(&[("value", "\"staging\"")])], &[REPORT]));
+                runs.push(on_files(
+                    shipped,
+                    "answer/compatible-with-expected-type",
+                    "a non-MISSING answer compatible with expected_type is recorded",
+                    &document(row),
+                    &[REPORT],
+                    vec![completed_with(&[("value", "\"staging\"")])],
+                    &[REPORT],
+                ));
                 runs.push(missing_answer("answer/equals-listed-option", "an answer equal to no listed option is not a valid answer: MISSING and error.required.missing", ask("\"Which environment?\"", "\"STRING\"", Some("[\"production\"]"))));
                 runs.push(missing_answer("answer/no-valid-answer-missing", "an answer incompatible with expected_type is not a valid answer: MISSING and error.required.missing", ask("\"Which environment?\"", "\"INTEGER\"", None)));
             }
@@ -2680,11 +3969,29 @@ pub(super) fn lifecycle(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<E
         "core.cancel" => {
             let cancel_other = with_action(
                 row,
-                &format!("OPERATION: core.cancel\n    TARGET: REF(action.other){}", named("reason", "STRING", "TRUE", "\"the owner cancelled it\"")),
+                &format!(
+                    "OPERATION: core.cancel\n    TARGET: REF(action.other){}",
+                    named("reason", "STRING", "TRUE", "\"the owner cancelled it\"")
+                ),
             )
-            .replacen("ACTION: [REF(action.subject), REF(action.other)]", "ACTION: [REF(action.other), REF(action.subject)]", 1);
+            .replacen(
+                "ACTION: [REF(action.subject), REF(action.other)]",
+                "ACTION: [REF(action.other), REF(action.subject)]",
+                1,
+            );
             let order = |label: &str, clause: &str| {
-                shipped.execute(label, clause, &cancel_other, Expectation::All(vec![Expectation::Diagnostic("error.execution.order".into()), Expectation::Attempts { declaration: "action.other".into(), statuses: vec!["status.succeeded".into()] }]))
+                shipped.execute(
+                    label,
+                    clause,
+                    &cancel_other,
+                    Expectation::All(vec![
+                        Expectation::Diagnostic("error.execution.order".into()),
+                        Expectation::Attempts {
+                            declaration: "action.other".into(),
+                            statuses: vec!["status.succeeded".into()],
+                        },
+                    ]),
+                )
             };
             if errors {
                 runs.push(shipped.execute(
@@ -2703,7 +4010,10 @@ pub(super) fn lifecycle(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<E
             }
             if effects {
                 runs.push(shipped.execute("transition/allowed-cancel", "an active target whose allowed_next contains status.cancelled reaches status.cancelled", &document(row), Expectation::All(vec![succeeded(), Expectation::Terminal("status.cancelled".into())])));
-                runs.push(order("transition/disallowed-cancel", "a completed target does not permit status.cancelled"));
+                runs.push(order(
+                    "transition/disallowed-cancel",
+                    "a completed target does not permit status.cancelled",
+                ));
                 let observed = shipped.run(&document(row));
                 let evidenced = observed
                     .invocations
@@ -2712,56 +4022,177 @@ pub(super) fn lifecycle(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<E
                     .filter_map(|i| i.result.as_ref())
                     .flat_map(|r| r.observed_effects.iter().flat_map(|e| e.evidence.iter()))
                     .any(|evidence| evidence.contains("the owner cancelled it"));
-                let mut case = shipped.execute("transition/reason-recorded", "postcondition: the exact cancellation reason is evidenced", &document(row), Expectation::Accepts);
-                case.expectation = Expectation::All(vec![succeeded(), Expectation::Component(vec![("reason_evidenced".into(), "true".into())])]);
+                let mut case = shipped.execute(
+                    "transition/reason-recorded",
+                    "postcondition: the exact cancellation reason is evidenced",
+                    &document(row),
+                    Expectation::Accepts,
+                );
+                case.expectation = Expectation::All(vec![
+                    succeeded(),
+                    Expectation::Component(vec![("reason_evidenced".into(), "true".into())]),
+                ]);
                 case.observed.component = vec![("reason_evidenced".into(), evidenced.to_string())];
                 case.verdict = crate::judge(&case.expectation, &case.observed);
                 runs.push(case);
             }
         }
         "core.continue" => {
-            let advance = || crate::witness_cases::Probe::new(
-                crate::witness_cases::continue_read(true),
-                Expectation::All(vec![
-                    Expectation::Accepts,
-                    Expectation::Recovered("action.read".into()),
-                    Expectation::Attempts { declaration: "action.next".into(), statuses: vec!["status.succeeded".into()] },
-                    Expectation::Output { id: "output.payload".into(), value: "9".into() },
-                ]),
-            )
-            .with_read_failures(1);
+            let advance = || {
+                crate::witness_cases::Probe::new(
+                    crate::witness_cases::continue_read(true),
+                    Expectation::All(vec![
+                        Expectation::Accepts,
+                        Expectation::Recovered("action.read".into()),
+                        Expectation::Attempts {
+                            declaration: "action.next".into(),
+                            statuses: vec!["status.succeeded".into()],
+                        },
+                        Expectation::Output {
+                            id: "output.payload".into(),
+                            value: "9".into(),
+                        },
+                    ]),
+                )
+                .with_read_failures(1)
+            };
             if errors {
-                runs.push(on_mock(shipped, "error/operation.precondition", "core.continue outside its selected handler context", &document(row), blocked("error.operation.precondition"), MockHost::new(), "default"));
+                runs.push(on_mock(
+                    shipped,
+                    "error/operation.precondition",
+                    "core.continue outside its selected handler context",
+                    &document(row),
+                    blocked("error.operation.precondition"),
+                    MockHost::new(),
+                    "default",
+                ));
                 runs.push(
                     crate::witness_cases::Probe::new(
                         crate::witness_cases::continue_read(false),
-                        Expectation::All(vec![Expectation::Rejects("error.execution.order".into()), Expectation::Attempts { declaration: "action.next".into(), statuses: vec![] }]),
+                        Expectation::All(vec![
+                            Expectation::Rejects("error.execution.order".into()),
+                            Expectation::Attempts {
+                                declaration: "action.next".into(),
+                                statuses: vec![],
+                            },
+                        ]),
                     )
                     .with_read_failures(1)
-                    .execute(shipped, "path/unhandled-event-or-absent-continuation", "an absent continuation path uses error.execution.order"),
+                    .execute(
+                        shipped,
+                        "path/unhandled-event-or-absent-continuation",
+                        "an absent continuation path uses error.execution.order",
+                    ),
                 );
             }
             if effects {
-                runs.push(on_mock(shipped, "precondition/0", "precondition: a selected handler is handling the current event", &document(row), blocked("error.operation.precondition"), MockHost::new(), "default"));
+                runs.push(on_mock(
+                    shipped,
+                    "precondition/0",
+                    "precondition: a selected handler is handling the current event",
+                    &document(row),
+                    blocked("error.operation.precondition"),
+                    MockHost::new(),
+                    "default",
+                ));
                 runs.push(advance().execute(shipped, "postcondition/0", "on handler success the diagnostic is handled and execution resumes at the declared successor"));
                 runs.push(advance().execute(shipped, "resolution/exact-invocation-axes", "core.continue resolves declared_state_only and state: only the read crosses the boundary"));
             }
         }
         "core.retry" => {
             let base = crate::witness_cases::retry_read(None);
-            let attempts = |statuses: &[&str]| Expectation::Attempts { declaration: "action.read".into(), statuses: statuses.iter().map(|s| s.to_string()).collect() };
-            let limit_one_handler = base.replacen("OPERATION: core.retry\n    LIMIT: 2", "OPERATION: core.retry\n    LIMIT: 1", 1);
-            let no_block = base.replacen("    RETRY:\n        LIMIT: 2\n        HANDLER: REF(handler.retry)\n", "", 1);
-            let exhausted = |label: &str, clause: &str| retry_scripted(shipped, label, clause, &base, vec![unavailable(), unavailable(), unavailable()], false, Expectation::All(vec![attempts(&["status.blocked", "status.blocked", "status.blocked"]), Expectation::Diagnostic("error.retry.exhausted".into())]));
-            let in_order = |label: &str, clause: &str| retry_scripted(shipped, label, clause, &base, vec![unavailable(), unavailable(), completed_read()], false, Expectation::All(vec![attempts(&["status.blocked", "status.blocked", "status.succeeded"]), Expectation::NoDiagnostic("error.retry.exhausted".into())]));
-            let unequal = |label: &str| retry_scripted(shipped, label, "a resolved limit unequal to RETRY.LIMIT is error.operation.precondition", &limit_one_handler, vec![unavailable()], false, Expectation::All(vec![Expectation::Diagnostic("error.operation.precondition".into()), attempts(&["status.blocked"])]));
-            let unresolved = |label: &str| shipped.execute(label, "the wrapped ACTION resolves exactly once before any retry decision", &base.replacen("OPERATION: core.retry\n    LIMIT: 2", "OPERATION: core.retry\n    TARGET: REF(action.absent)\n    LIMIT: 2", 1), Expectation::Rejects("error.reference.unresolved".into()));
+            let attempts = |statuses: &[&str]| Expectation::Attempts {
+                declaration: "action.read".into(),
+                statuses: statuses.iter().map(|s| s.to_string()).collect(),
+            };
+            let limit_one_handler = base.replacen(
+                "OPERATION: core.retry\n    LIMIT: 2",
+                "OPERATION: core.retry\n    LIMIT: 1",
+                1,
+            );
+            let no_block = base.replacen(
+                "    RETRY:\n        LIMIT: 2\n        HANDLER: REF(handler.retry)\n",
+                "",
+                1,
+            );
+            let exhausted = |label: &str, clause: &str| {
+                retry_scripted(
+                    shipped,
+                    label,
+                    clause,
+                    &base,
+                    vec![unavailable(), unavailable(), unavailable()],
+                    false,
+                    Expectation::All(vec![
+                        attempts(&["status.blocked", "status.blocked", "status.blocked"]),
+                        Expectation::Diagnostic("error.retry.exhausted".into()),
+                    ]),
+                )
+            };
+            let in_order = |label: &str, clause: &str| {
+                retry_scripted(
+                    shipped,
+                    label,
+                    clause,
+                    &base,
+                    vec![unavailable(), unavailable(), completed_read()],
+                    false,
+                    Expectation::All(vec![
+                        attempts(&["status.blocked", "status.blocked", "status.succeeded"]),
+                        Expectation::NoDiagnostic("error.retry.exhausted".into()),
+                    ]),
+                )
+            };
+            let unequal = |label: &str| {
+                retry_scripted(
+                    shipped,
+                    label,
+                    "a resolved limit unequal to RETRY.LIMIT is error.operation.precondition",
+                    &limit_one_handler,
+                    vec![unavailable()],
+                    false,
+                    Expectation::All(vec![
+                        Expectation::Diagnostic("error.operation.precondition".into()),
+                        attempts(&["status.blocked"]),
+                    ]),
+                )
+            };
+            let unresolved = |label: &str| {
+                shipped.execute(
+                    label,
+                    "the wrapped ACTION resolves exactly once before any retry decision",
+                    &base.replacen(
+                        "OPERATION: core.retry\n    LIMIT: 2",
+                        "OPERATION: core.retry\n    TARGET: REF(action.absent)\n    LIMIT: 2",
+                        1,
+                    ),
+                    Expectation::Rejects("error.reference.unresolved".into()),
+                )
+            };
             if errors {
                 runs.push(retry_scripted(shipped, "error/execution.action", "a wrapped ACTION failing with error.execution.order-free action failure unions error.execution.action", &base, vec![MockHost::failed_before_effect("conformance: the read did not start")], false, Expectation::All(vec![Expectation::Diagnostic("error.execution.action".into()), attempts(&["status.failed"])])));
                 runs.push(unresolved("path/action-resolution-before-inheritance"));
-                runs.push(in_order("path/attempt-evidence-in-order", "every attempt result is retained in attempt-index order"));
-                runs.push(exhausted("path/exhausted-after-all-attempts", "error.retry.exhausted only after exactly 1 + LIMIT failed attempts"));
-                runs.push(retry_scripted(shipped, "path/false-when-preserves-failure", "a FALSE WHEN preserves the prior failure without exhaustion", &crate::witness_cases::retry_read(Some("FALSE")), vec![unavailable()], false, Expectation::All(vec![Expectation::Diagnostic("error.host.constraint".into()), attempts(&["status.blocked"]), Expectation::NoDiagnostic("error.retry.exhausted".into())])));
+                runs.push(in_order(
+                    "path/attempt-evidence-in-order",
+                    "every attempt result is retained in attempt-index order",
+                ));
+                runs.push(exhausted(
+                    "path/exhausted-after-all-attempts",
+                    "error.retry.exhausted only after exactly 1 + LIMIT failed attempts",
+                ));
+                runs.push(retry_scripted(
+                    shipped,
+                    "path/false-when-preserves-failure",
+                    "a FALSE WHEN preserves the prior failure without exhaustion",
+                    &crate::witness_cases::retry_read(Some("FALSE")),
+                    vec![unavailable()],
+                    false,
+                    Expectation::All(vec![
+                        Expectation::Diagnostic("error.host.constraint".into()),
+                        attempts(&["status.blocked"]),
+                        Expectation::NoDiagnostic("error.retry.exhausted".into()),
+                    ]),
+                ));
                 runs.push(retry_scripted(
                     shipped,
                     "path/missing-when-condition",
@@ -2771,39 +4202,147 @@ pub(super) fn lifecycle(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<E
                     false,
                     Expectation::All(vec![Expectation::Diagnostic("error.required.missing".into()), attempts(&["status.blocked"])]),
                 ));
-                runs.push(retry_scripted(shipped, "path/unknown-when-condition", "an UNKNOWN RETRY.WHEN uses error.value.unknown without another attempt", &crate::witness_cases::retry_read(Some("UNKNOWN")), vec![unavailable()], false, Expectation::All(vec![Expectation::Diagnostic("error.value.unknown".into()), attempts(&["status.blocked"])])));
-                runs.push(retry_safety_run(shipped, "path/missing-safety-proof", "after known effects, missing safety proof uses error.required.missing", RecordState::Partial, SafetyEvidence::Missing, "error.required.missing"));
-                runs.push(retry_safety_run(shipped, "path/unknown-safety-proof", "after known effects, UNKNOWN safety proof uses error.value.unknown", RecordState::Partial, SafetyEvidence::Unknown, "error.value.unknown"));
-                runs.push(retry_safety_run(shipped, "precondition/proved-unsafe-repetition", "proved-unsafe repetition uses error.operation.precondition", RecordState::Partial, SafetyEvidence::Unsafe, "error.operation.precondition"));
-                runs.push(retry_safety_run(shipped, "path/safety-blocked-attempt-is-not-exhaustion", "a safety-blocked unmade attempt is not exhaustion", RecordState::Partial, SafetyEvidence::Missing, "error.required.missing"));
+                runs.push(retry_scripted(
+                    shipped,
+                    "path/unknown-when-condition",
+                    "an UNKNOWN RETRY.WHEN uses error.value.unknown without another attempt",
+                    &crate::witness_cases::retry_read(Some("UNKNOWN")),
+                    vec![unavailable()],
+                    false,
+                    Expectation::All(vec![
+                        Expectation::Diagnostic("error.value.unknown".into()),
+                        attempts(&["status.blocked"]),
+                    ]),
+                ));
+                runs.push(retry_safety_run(
+                    shipped,
+                    "path/missing-safety-proof",
+                    "after known effects, missing safety proof uses error.required.missing",
+                    RecordState::Partial,
+                    SafetyEvidence::Missing,
+                    "error.required.missing",
+                ));
+                runs.push(retry_safety_run(
+                    shipped,
+                    "path/unknown-safety-proof",
+                    "after known effects, UNKNOWN safety proof uses error.value.unknown",
+                    RecordState::Partial,
+                    SafetyEvidence::Unknown,
+                    "error.value.unknown",
+                ));
+                runs.push(retry_safety_run(
+                    shipped,
+                    "precondition/proved-unsafe-repetition",
+                    "proved-unsafe repetition uses error.operation.precondition",
+                    RecordState::Partial,
+                    SafetyEvidence::Unsafe,
+                    "error.operation.precondition",
+                ));
+                runs.push(retry_safety_run(
+                    shipped,
+                    "path/safety-blocked-attempt-is-not-exhaustion",
+                    "a safety-blocked unmade attempt is not exhaustion",
+                    RecordState::Partial,
+                    SafetyEvidence::Missing,
+                    "error.required.missing",
+                ));
                 runs.push(retry_scripted(shipped, "path/wrapped-action-error-union", "every applicable error of the wrapped ACTION is unioned: its permission refusal", &base, vec![], true, Expectation::All(vec![Expectation::Diagnostic("error.permission.denied".into()), attempts(&["status.failed"])])));
                 runs.push(unequal("precondition/limit-unequal-retry-limit"));
-                runs.push(retry_scripted(shipped, "precondition/no-retry-block", "a wrapped ACTION with no RETRY block uses error.operation.precondition", &no_block, vec![unavailable()], false, Expectation::All(vec![Expectation::Diagnostic("error.operation.precondition".into()), attempts(&["status.blocked"])])));
+                runs.push(retry_scripted(
+                    shipped,
+                    "precondition/no-retry-block",
+                    "a wrapped ACTION with no RETRY block uses error.operation.precondition",
+                    &no_block,
+                    vec![unavailable()],
+                    false,
+                    Expectation::All(vec![
+                        Expectation::Diagnostic("error.operation.precondition".into()),
+                        attempts(&["status.blocked"]),
+                    ]),
+                ));
             }
             if effects {
                 runs.push(on_mock(shipped, "precondition/0", "precondition: core.retry is valid only in the selected handler of the same ACTION invocation", &document(row), blocked("error.operation.precondition"), MockHost::new(), "default"));
                 runs.push(unresolved("precondition/1"));
                 runs.push(unequal("precondition/2"));
-                runs.push(retry_safety_run(shipped, "precondition/3", "precondition: after known effects exact evidence proves safe repetition", RecordState::Partial, SafetyEvidence::Missing, "error.required.missing"));
+                runs.push(retry_safety_run(
+                    shipped,
+                    "precondition/3",
+                    "precondition: after known effects exact evidence proves safe repetition",
+                    RecordState::Partial,
+                    SafetyEvidence::Missing,
+                    "error.required.missing",
+                ));
                 runs.push(retry_safety_run(shipped, "precondition/4", "precondition: an indeterminate prior attempt is reconciled before another attempt", RecordState::Indeterminate, SafetyEvidence::Missing, "error.required.missing"));
-                runs.push(exhausted("postcondition/0", "postcondition: the attempt count never exceeds 1 + limit"));
-                runs.push(in_order("postcondition/1", "postcondition: every attempt is evidenced in attempt-index order"));
-                runs.push(retry_scripted(shipped, "postcondition/3", "postcondition: a successful attempt ends retrying", &base, vec![unavailable(), completed_read()], false, Expectation::All(vec![attempts(&["status.blocked", "status.succeeded"]), Expectation::NoDiagnostic("error.retry.exhausted".into()), Expectation::Terminal("status.succeeded".into())])));
-                let mut host = MockHost::new().script("core.read", vec![unavailable(), completed_read()]);
-                let observed = shipped.run_on(&base, &lcl_resolver::MemoryProvider::new(), &mut host);
-                let axes: Vec<String> = host.requests().iter().map(|r| format!("{} deps={} effects={}", r.operation, axis_set(&r.possible_dependencies, "declared_state_only"), axis_set(&r.possible_effects, "none"))).collect();
-                let mut case = shipped.execute("resolution/exact-invocation-axes", "core.retry inherits exactly the wrapped ACTION's resolved axes and adds none", &base, Expectation::Accepts);
+                runs.push(exhausted(
+                    "postcondition/0",
+                    "postcondition: the attempt count never exceeds 1 + limit",
+                ));
+                runs.push(in_order(
+                    "postcondition/1",
+                    "postcondition: every attempt is evidenced in attempt-index order",
+                ));
+                runs.push(retry_scripted(
+                    shipped,
+                    "postcondition/3",
+                    "postcondition: a successful attempt ends retrying",
+                    &base,
+                    vec![unavailable(), completed_read()],
+                    false,
+                    Expectation::All(vec![
+                        attempts(&["status.blocked", "status.succeeded"]),
+                        Expectation::NoDiagnostic("error.retry.exhausted".into()),
+                        Expectation::Terminal("status.succeeded".into()),
+                    ]),
+                ));
+                let mut host =
+                    MockHost::new().script("core.read", vec![unavailable(), completed_read()]);
+                let observed =
+                    shipped.run_on(&base, &lcl_resolver::MemoryProvider::new(), &mut host);
+                let axes: Vec<String> = host
+                    .requests()
+                    .iter()
+                    .map(|r| {
+                        format!(
+                            "{} deps={} effects={}",
+                            r.operation,
+                            axis_set(&r.possible_dependencies, "declared_state_only"),
+                            axis_set(&r.possible_effects, "none")
+                        )
+                    })
+                    .collect();
+                let mut case = shipped.execute(
+                    "resolution/exact-invocation-axes",
+                    "core.retry inherits exactly the wrapped ACTION's resolved axes and adds none",
+                    &base,
+                    Expectation::Accepts,
+                );
                 case.observed = observed;
-                case.observed.input_evidence.push(format!("host: MockHost; requests {:?}", host.requests()));
+                case.observed
+                    .input_evidence
+                    .push(format!("host: MockHost; requests {:?}", host.requests()));
                 case.expectation = Expectation::All(vec![succeeded_read(), Expectation::Component(vec![("requests".into(), "[\"core.read deps=[host] effects=[none]\", \"core.read deps=[host] effects=[none]\"]".into())])]);
                 case.observed.component = vec![("requests".into(), format!("{axes:?}"))];
                 case.verdict = crate::judge(&case.expectation, &case.observed);
                 runs.push(case);
                 let mut case = retry_safety_run(shipped, "postcondition/2", "postcondition: aggregate failure phase and effects account for every attempt made", RecordState::Partial, SafetyEvidence::Missing, "error.required.missing");
                 case.expectation = Expectation::All(vec![
-                    Expectation::Attempts { declaration: "action.read".into(), statuses: vec!["status.blocked".into()] },
-                    Expectation::AttemptField { declaration: "action.read".into(), attempt: 0, field: "failure_phase".into(), value: "post_effect".into() },
-                    Expectation::AttemptField { declaration: "action.read".into(), attempt: 0, field: "effect_state".into(), value: "partial".into() },
+                    Expectation::Attempts {
+                        declaration: "action.read".into(),
+                        statuses: vec!["status.blocked".into()],
+                    },
+                    Expectation::AttemptField {
+                        declaration: "action.read".into(),
+                        attempt: 0,
+                        field: "failure_phase".into(),
+                        value: "post_effect".into(),
+                    },
+                    Expectation::AttemptField {
+                        declaration: "action.read".into(),
+                        attempt: 0,
+                        field: "effect_state".into(),
+                        value: "partial".into(),
+                    },
                 ]);
                 case.verdict = crate::judge(&case.expectation, &case.observed);
                 runs.push(case);
@@ -2811,9 +4350,26 @@ pub(super) fn lifecycle(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<E
         }
         "core.stop" => {
             let process = || reaching_source(row);
-            let stop_other = with_action(row, "OPERATION: core.stop\n    TARGET: REF(action.other)")
-                .replacen("ACTION: [REF(action.subject), REF(action.other)]", "ACTION: [REF(action.other), REF(action.subject)]", 1);
-            let order = |label: &str, clause: &str| shipped.execute(label, clause, &stop_other, Expectation::All(vec![Expectation::Diagnostic("error.execution.order".into()), Expectation::Attempts { declaration: "action.other".into(), statuses: vec!["status.succeeded".into()] }]));
+            let stop_other =
+                with_action(row, "OPERATION: core.stop\n    TARGET: REF(action.other)").replacen(
+                    "ACTION: [REF(action.subject), REF(action.other)]",
+                    "ACTION: [REF(action.other), REF(action.subject)]",
+                    1,
+                );
+            let order = |label: &str, clause: &str| {
+                shipped.execute(
+                    label,
+                    clause,
+                    &stop_other,
+                    Expectation::All(vec![
+                        Expectation::Diagnostic("error.execution.order".into()),
+                        Expectation::Attempts {
+                            declaration: "action.other".into(),
+                            statuses: vec!["status.succeeded".into()],
+                        },
+                    ]),
+                )
+            };
             if errors {
                 runs.push(order("error/execution.order", "an internal target whose allowed_next lacks status.stopped uses error.execution.order"));
             }
@@ -2824,32 +4380,115 @@ pub(super) fn lifecycle(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<E
                     "precondition: the target is running or active; the host observes it is not",
                     &process(),
                     blocked("error.operation.precondition"),
-                    MockHost::new().script(op, vec![CapabilityOutcome::Refused { error: lcl_runtime::RuntimeError::OperationPrecondition, cause: "target".into(), detail: "conformance: the process is not running".into() }]),
+                    MockHost::new().script(
+                        op,
+                        vec![CapabilityOutcome::Refused {
+                            observation: lcl_runtime::capability::Observation::none(),
+                            error: lcl_runtime::RuntimeError::OperationPrecondition,
+                            cause: "target".into(),
+                            detail: "conformance: the process is not running".into(),
+                        }],
+                    ),
                     "the host reports the target is not running",
                 ));
                 runs.push(order("precondition/1", "precondition: an internal target allows status.stopped in its current allowed_next"));
-                runs.push(shipped.execute("postcondition/0", "postcondition: an active internal target is stopped", &document(row), Expectation::All(vec![succeeded(), Expectation::Terminal("status.stopped".into())])));
-                runs.push(bound_parameters(shipped, "postcondition/1", "postcondition: force is used only when TRUE", &with_action(row, &format!("OPERATION: core.stop\n    TARGET: REF(data.command){}", named("force", "BOOLEAN", "FALSE", "TRUE"))), op, &[("force", "TRUE")]));
+                runs.push(shipped.execute(
+                    "postcondition/0",
+                    "postcondition: an active internal target is stopped",
+                    &document(row),
+                    Expectation::All(vec![
+                        succeeded(),
+                        Expectation::Terminal("status.stopped".into()),
+                    ]),
+                ));
+                runs.push(bound_parameters(
+                    shipped,
+                    "postcondition/1",
+                    "postcondition: force is used only when TRUE",
+                    &with_action(
+                        row,
+                        &format!(
+                            "OPERATION: core.stop\n    TARGET: REF(data.command){}",
+                            named("force", "BOOLEAN", "FALSE", "TRUE")
+                        ),
+                    ),
+                    op,
+                    &[("force", "TRUE")],
+                ));
             }
         }
         "core.start" => {
             if effects {
-                runs.push(on_mock(shipped, "precondition/0", "precondition: the target is startable; the host observes it is not", &document(row), blocked("error.operation.precondition"), MockHost::new().script(op, vec![CapabilityOutcome::Refused { error: lcl_runtime::RuntimeError::OperationPrecondition, cause: "target".into(), detail: "conformance: not startable".into() }]), "the host reports the target is not startable"));
-                runs.push(on_mock(shipped, "postcondition/0", "postcondition: the target reaches running or ready state", &document(row), completed_with(&[("changed", "TRUE")]), MockHost::new(), "default completion"));
+                runs.push(on_mock(
+                    shipped,
+                    "precondition/0",
+                    "precondition: the target is startable; the host observes it is not",
+                    &document(row),
+                    blocked("error.operation.precondition"),
+                    MockHost::new().script(
+                        op,
+                        vec![CapabilityOutcome::Refused {
+                            observation: lcl_runtime::capability::Observation::none(),
+                            error: lcl_runtime::RuntimeError::OperationPrecondition,
+                            cause: "target".into(),
+                            detail: "conformance: not startable".into(),
+                        }],
+                    ),
+                    "the host reports the target is not startable",
+                ));
+                runs.push(on_mock(
+                    shipped,
+                    "postcondition/0",
+                    "postcondition: the target reaches running or ready state",
+                    &document(row),
+                    completed_with(&[("changed", "TRUE")]),
+                    MockHost::new(),
+                    "default completion",
+                ));
             }
         }
         "core.send" => {
             if effects {
                 runs.push(on_mock(shipped, "precondition/0", "precondition: recipient and content are authorized; a refusal precedes the message effect", &document(row), blocked("error.permission.denied"), MockHost::new().deny(op, "conformance: recipient not authorized"), "deny"));
-                runs.push(on_files(shipped, "postcondition/0", "postcondition: the delivery result and recipient are recorded", &document(row), &[REPORT], vec![completed_with(&[("delivered", "TRUE"), ("recipient", "URI(\"http://example.invalid/x\")")])], &[REPORT]));
+                runs.push(on_files(
+                    shipped,
+                    "postcondition/0",
+                    "postcondition: the delivery result and recipient are recorded",
+                    &document(row),
+                    &[REPORT],
+                    vec![completed_with(&[
+                        ("delivered", "TRUE"),
+                        ("recipient", "URI(\"http://example.invalid/x\")"),
+                    ])],
+                    &[REPORT],
+                ));
             }
         }
         "core.state_update" => {
             let update = |value: (&str, &str), extra: &str, declarations: &str| {
-                with_declarations(row, &format!("OPERATION: core.state_update\n    TARGET: REF(state.revision){}{extra}", named("value", value.0, "TRUE", value.1)), declarations)
+                with_declarations(
+                    row,
+                    &format!(
+                        "OPERATION: core.state_update\n    TARGET: REF(state.revision){}{extra}",
+                        named("value", value.0, "TRUE", value.1)
+                    ),
+                    declarations,
+                )
             };
             if errors {
-                runs.push(on_mock(shipped, "error/operation.precondition", "expected_before that does not match is error.operation.precondition", &update(("INTEGER", "3"), &named("expected_before", "INTEGER", "FALSE", "9"), ""), blocked("error.operation.precondition"), MockHost::new(), "default"));
+                runs.push(on_mock(
+                    shipped,
+                    "error/operation.precondition",
+                    "expected_before that does not match is error.operation.precondition",
+                    &update(
+                        ("INTEGER", "3"),
+                        &named("expected_before", "INTEGER", "FALSE", "9"),
+                        "",
+                    ),
+                    blocked("error.operation.precondition"),
+                    MockHost::new(),
+                    "default",
+                ));
             }
             if effects {
                 runs.push(on_mock(
@@ -2861,8 +4500,28 @@ pub(super) fn lifecycle(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<E
                     MockHost::new(),
                     "default",
                 ));
-                runs.push(on_mock(shipped, "precondition/1", "precondition: the value type matches the declared STATE type", &update(("STRING", "\"three\""), "", ""), blocked("error.operation.precondition"), MockHost::new(), "default"));
-                runs.push(on_mock(shipped, "precondition/2", "precondition: expected_before matches when supplied", &update(("INTEGER", "3"), &named("expected_before", "INTEGER", "FALSE", "9"), ""), blocked("error.operation.precondition"), MockHost::new(), "default"));
+                runs.push(on_mock(
+                    shipped,
+                    "precondition/1",
+                    "precondition: the value type matches the declared STATE type",
+                    &update(("STRING", "\"three\""), "", ""),
+                    blocked("error.operation.precondition"),
+                    MockHost::new(),
+                    "default",
+                ));
+                runs.push(on_mock(
+                    shipped,
+                    "precondition/2",
+                    "precondition: expected_before matches when supplied",
+                    &update(
+                        ("INTEGER", "3"),
+                        &named("expected_before", "INTEGER", "FALSE", "9"),
+                        "",
+                    ),
+                    blocked("error.operation.precondition"),
+                    MockHost::new(),
+                    "default",
+                ));
                 runs.push(store_read_back(shipped, row, "postcondition/0", "postcondition: the state equals the requested value", "OPERATION: core.state_update\n    TARGET: REF(state.revision)\n    PARAMETER:\n        NAME: value\n        TYPE: INTEGER\n        REQUIRED: TRUE\n        VALUE: 3", "", "REF(state.revision)", "3"));
             }
         }
@@ -2875,31 +4534,142 @@ pub(super) fn lifecycle(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<E
                 )
             };
             if errors {
-                runs.push(on_mock(shipped, "precondition/merge-current-not-object", "merge TRUE requires the current MEMORY value to be OBJECT", &with_declarations(row, &write("REF(memory.notes)", "            first: 5", true), ""), blocked("error.operation.precondition"), MockHost::new(), "default"));
-                runs.push(on_mock(shipped, "precondition/merge-new-not-object", "merge TRUE requires the new value to be OBJECT", &with_declarations(row, &format!("OPERATION: core.memory_write\n    TARGET: REF(memory.pair){}{}", named("value", "STRING", "TRUE", "\"flat\""), named("merge", "BOOLEAN", "FALSE", "TRUE")), pair), blocked("error.operation.precondition"), MockHost::new(), "default"));
-                runs.push(on_mock(shipped, "precondition/merged-object-type-mismatch", "merge TRUE requires the computed merged OBJECT to match the declared type", &with_declarations(row, &write("REF(memory.pair)", "            second: \"two\"", true), pair), blocked("error.operation.precondition"), MockHost::new(), "default"));
+                runs.push(on_mock(
+                    shipped,
+                    "precondition/merge-current-not-object",
+                    "merge TRUE requires the current MEMORY value to be OBJECT",
+                    &with_declarations(
+                        row,
+                        &write("REF(memory.notes)", "            first: 5", true),
+                        "",
+                    ),
+                    blocked("error.operation.precondition"),
+                    MockHost::new(),
+                    "default",
+                ));
+                runs.push(on_mock(
+                    shipped,
+                    "precondition/merge-new-not-object",
+                    "merge TRUE requires the new value to be OBJECT",
+                    &with_declarations(
+                        row,
+                        &format!(
+                            "OPERATION: core.memory_write\n    TARGET: REF(memory.pair){}{}",
+                            named("value", "STRING", "TRUE", "\"flat\""),
+                            named("merge", "BOOLEAN", "FALSE", "TRUE")
+                        ),
+                        pair,
+                    ),
+                    blocked("error.operation.precondition"),
+                    MockHost::new(),
+                    "default",
+                ));
+                runs.push(on_mock(
+                    shipped,
+                    "precondition/merged-object-type-mismatch",
+                    "merge TRUE requires the computed merged OBJECT to match the declared type",
+                    &with_declarations(
+                        row,
+                        &write("REF(memory.pair)", "            second: \"two\"", true),
+                        pair,
+                    ),
+                    blocked("error.operation.precondition"),
+                    MockHost::new(),
+                    "default",
+                ));
             }
             if effects {
-                let merged = |label: &str, clause: &str, value: &str, merge: bool, expected: &str| store_read_back(shipped, row, label, clause, &write("REF(memory.pair)", value, merge), pair, "REF(memory.pair)", expected);
-                runs.push(merged("merge/current-only-fields-preserved", "merge TRUE preserves current-only top-level fields", "            second: 3", true, "{first: 1, inner: {left: 1, right: 2}, second: 3}"));
-                runs.push(merged("merge/true-shallow-right-biased", "merge TRUE lets new same-name fields win", "            first: 7", true, "{first: 7, inner: {left: 1, right: 2}, second: 2}"));
-                runs.push(merged("merge/nested-objects-not-merged", "merge TRUE never merges nested OBJECT values recursively", "            inner:\n                left: 9", true, "{first: 1, inner: {left: 9}, second: 2}"));
-                runs.push(merged("merge/false-replaces", "merge FALSE replaces the stored value exactly", "            first: 5\n            second: 6", false, "{first: 5, second: 6}"));
+                let merged =
+                    |label: &str, clause: &str, value: &str, merge: bool, expected: &str| {
+                        store_read_back(
+                            shipped,
+                            row,
+                            label,
+                            clause,
+                            &write("REF(memory.pair)", value, merge),
+                            pair,
+                            "REF(memory.pair)",
+                            expected,
+                        )
+                    };
+                runs.push(merged(
+                    "merge/current-only-fields-preserved",
+                    "merge TRUE preserves current-only top-level fields",
+                    "            second: 3",
+                    true,
+                    "{first: 1, inner: {left: 1, right: 2}, second: 3}",
+                ));
+                runs.push(merged(
+                    "merge/true-shallow-right-biased",
+                    "merge TRUE lets new same-name fields win",
+                    "            first: 7",
+                    true,
+                    "{first: 7, inner: {left: 1, right: 2}, second: 2}",
+                ));
+                runs.push(merged(
+                    "merge/nested-objects-not-merged",
+                    "merge TRUE never merges nested OBJECT values recursively",
+                    "            inner:\n                left: 9",
+                    true,
+                    "{first: 1, inner: {left: 9}, second: 2}",
+                ));
+                runs.push(merged(
+                    "merge/false-replaces",
+                    "merge FALSE replaces the stored value exactly",
+                    "            first: 5\n            second: 6",
+                    false,
+                    "{first: 5, second: 6}",
+                ));
             }
         }
-        "core.move" | "core.rename" => {
-            if errors {
-                let precondition = |label: &str, clause: &str, action: String, seed: &[(&str, &str)]| {
-                    on_files(shipped, label, clause, &with_action(row, &action), seed, refused_before_effects(spec, "error.operation.precondition"), seed)
+        "core.move" | "core.rename" if errors => {
+            let precondition =
+                |label: &str, clause: &str, action: String, seed: &[(&str, &str)]| {
+                    on_files(
+                        shipped,
+                        label,
+                        clause,
+                        &with_action(row, &action),
+                        seed,
+                        refused_before_effects(spec, "error.operation.precondition"),
+                        seed,
+                    )
                 };
-                if op == "core.move" {
-                    runs.push(precondition("precondition/same-address", "equal resolved source and destination addresses", format!("OPERATION: core.move\n    TARGET: REF(data.path){}", named("destination", "PATH", "TRUE", "REF(data.path)")), &[REPORT]));
-                } else {
-                    let rename = |name: &str| format!("OPERATION: core.rename\n    TARGET: REF(data.path){}", named("new_name", "STRING", "TRUE", name));
-                    runs.push(precondition("precondition/disallowed-existing-destination", "an existing renamed destination without overwrite", rename("\"other.txt\""), &[REPORT, OTHER]));
-                    runs.push(precondition("precondition/illegal-new-name", "a new_name carrying a path separator", rename("\"a/b.txt\""), &[REPORT]));
-                    runs.push(precondition("precondition/same-name", "a new_name equal to the current name", rename("\"report.txt\""), &[REPORT]));
-                }
+            if op == "core.move" {
+                runs.push(precondition(
+                    "precondition/same-address",
+                    "equal resolved source and destination addresses",
+                    format!(
+                        "OPERATION: core.move\n    TARGET: REF(data.path){}",
+                        named("destination", "PATH", "TRUE", "REF(data.path)")
+                    ),
+                    &[REPORT],
+                ));
+            } else {
+                let rename = |name: &str| {
+                    format!(
+                        "OPERATION: core.rename\n    TARGET: REF(data.path){}",
+                        named("new_name", "STRING", "TRUE", name)
+                    )
+                };
+                runs.push(precondition(
+                    "precondition/disallowed-existing-destination",
+                    "an existing renamed destination without overwrite",
+                    rename("\"other.txt\""),
+                    &[REPORT, OTHER],
+                ));
+                runs.push(precondition(
+                    "precondition/illegal-new-name",
+                    "a new_name carrying a path separator",
+                    rename("\"a/b.txt\""),
+                    &[REPORT],
+                ));
+                runs.push(precondition(
+                    "precondition/same-name",
+                    "a new_name equal to the current name",
+                    rename("\"report.txt\""),
+                    &[REPORT],
+                ));
             }
         }
         _ => {}
@@ -2908,12 +4678,24 @@ pub(super) fn lifecycle(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<E
 }
 
 fn succeeded_read() -> Expectation {
-    Expectation::Attempts { declaration: "action.read".into(), statuses: vec!["status.blocked".into(), "status.succeeded".into()] }
+    Expectation::Attempts {
+        declaration: "action.read".into(),
+        statuses: vec!["status.blocked".into(), "status.succeeded".into()],
+    }
 }
 
 /// Write an engine-owned store, then read it back in a later sibling action.
 #[allow(clippy::too_many_arguments)]
-fn store_read_back(runner: &Runner, row: &Row, label: &str, clause: &str, action: &str, declarations: &str, read: &str, expected: &str) -> ExecutedCase {
+fn store_read_back(
+    runner: &Runner,
+    row: &Row,
+    label: &str,
+    clause: &str,
+    action: &str,
+    declarations: &str,
+    read: &str,
+    expected: &str,
+) -> ExecutedCase {
     let source = with_declarations(row, action, declarations)
         .replacen("\nACTION:\n    ID: action.other\n    OPERATION: core.return\n    TARGET: REF(data.number)\n", &format!("\nACTION:\n    ID: action.other\n    OPERATION: core.return\n    TARGET: {read}\n"), 1);
     runner.execute(
@@ -2922,7 +4704,1130 @@ fn store_read_back(runner: &Runner, row: &Row, label: &str, clause: &str, action
         &source,
         Expectation::All(vec![
             succeeded(),
-            Expectation::AttemptField { declaration: "action.other".into(), attempt: 0, field: "value".into(), value: expected.into() },
+            Expectation::AttemptField {
+                declaration: "action.other".into(),
+                attempt: 0,
+                field: "value".into(),
+                value: expected.into(),
+            },
         ]),
     )
+}
+
+// ---------------------------------------------------------------------------
+// Capability rows: fixture completions, address classes and derived category
+// ---------------------------------------------------------------------------
+
+/// One determinism resolution over an explicit profile set: the production
+/// `ProfileCatalog::resolve_determinism`, with the exact profiles a case
+/// installs.
+fn determinism_run(
+    runners: &Runners<'_>,
+    label: &str,
+    clause: &str,
+    operation: &str,
+    cases: Vec<(&str, Vec<Profile>, Option<Determinism>, &str)>,
+) -> ExecutedCase {
+    let catalog = lcl_capabilities::ProfileCatalog::load(runners.spec).expect("the catalog loads");
+    let expected: Vec<(String, String)> = cases
+        .iter()
+        .map(|(name, _, _, expected)| (name.to_string(), expected.to_string()))
+        .collect();
+    let actual: Vec<(String, String)> = cases
+        .iter()
+        .map(|(name, profiles, graph, _)| {
+            let selected: Vec<&Profile> = profiles.iter().collect();
+            (
+                name.to_string(),
+                if catalog
+                    .resolve_determinism(operation, &selected, *graph)
+                    .is_deterministic()
+                {
+                    "deterministic".to_string()
+                } else {
+                    "nondeterministic".to_string()
+                },
+            )
+        })
+        .collect();
+    let input = format!(
+        "ProfileCatalog::resolve_determinism({operation}, ...) over {:?}",
+        cases
+            .iter()
+            .map(|(name, profiles, graph, _)| format!(
+                "{name}: profiles={profiles:?} graph={graph:?}"
+            ))
+            .collect::<Vec<_>>()
+    );
+    let expectation = Expectation::Component(expected);
+    let observed = crate::Observed {
+        component: actual,
+        input_evidence: vec![input.clone()],
+        ..crate::Observed::default()
+    };
+    let verdict = crate::judge(&expectation, &observed);
+    ExecutedCase {
+        id: label.into(),
+        contract: clause.into(),
+        source: input,
+        expectation,
+        observed,
+        verdict,
+    }
+}
+
+/// One fixture profile for a row and role, with an explicit final category.
+fn category_profile(
+    operation: &str,
+    role: &str,
+    category: Determinism,
+    deps: &[Dependency],
+    effects: &[Effect],
+) -> Profile {
+    Profile::builder(operation, Role::new(role), "conformance.fixture.category", "1")
+        .serving(TargetClass::Any)
+        .determinism(
+            category,
+            "conformance fixture: the exact declared inputs and one immutable implementation version fix the result",
+        )
+        .axes(lcl_capabilities::profile::axes(deps, effects))
+        .resolving("the row's own invocation rule")
+}
+
+/// The shipped profiles with every profile of one row and role replaced by
+/// `profile`, so exactly one candidate serves the invocation.
+fn replacing(operation: &str, role: &str, profile: Profile) -> Vec<Profile> {
+    Runner::shipped_profiles()
+        .into_iter()
+        .filter(|p| !(p.operation_id == operation && p.profile_role.as_str() == role))
+        .chain([profile])
+        .collect()
+}
+
+/// A scripted host refusal naming the row's own registered identifier.
+fn host_refuses(
+    operation: &str,
+    error: lcl_runtime::RuntimeError,
+    cause: &str,
+    detail: &str,
+) -> MockHost {
+    MockHost::new().script(
+        operation,
+        vec![CapabilityOutcome::Refused {
+            observation: lcl_runtime::capability::Observation::none(),
+            error,
+            cause: cause.into(),
+            detail: detail.into(),
+        }],
+    )
+}
+
+pub(super) fn capability(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<ExecutedCase> {
+    use lcl_runtime::Value;
+    let op = row.operation;
+    let spec = runners.spec;
+    let shipped = runners.shipped;
+    let fixture = &runners.fixture;
+    let errors = family == "errors";
+    let effects = family == "effects";
+    let mut runs = Vec::new();
+    let text = |s: &str| Value::Text(s.to_string());
+    let path_value = |p: &str| Value::Constructed {
+        constructor: "PATH".into(),
+        text: p.into(),
+    };
+    let blocked = |error: &str| failed_with(spec, error, "pre_effect", "none");
+    if !effects && !errors {
+        return runs;
+    }
+    match op {
+        "core.analyze" | "core.report" if effects => {
+            let role = if op == "core.analyze" {
+                "analysis"
+            } else {
+                "reporting"
+            };
+            let deps: &[Dependency] = if op == "core.analyze" {
+                &[Dependency::Host, Dependency::Model]
+            } else {
+                &[Dependency::Model]
+            };
+            runs.push(resolved_axes(
+                fixture,
+                "axes/no-effects",
+                "read_only requires possible effects exactly {none}: the invocation resolves none",
+                &document(row),
+                MockHost::new(),
+                &[("[model]", "[none]")],
+                "[none]",
+            ));
+            runs.push(determinism_run(
+                runners,
+                "determinism/base-nondeterministic",
+                "the nondeterministic base row stays nondeterministic without an immutable profile that removes every variation",
+                op,
+                vec![("no profile selected", Vec::new(), None, "nondeterministic")],
+            ));
+            runs.push(determinism_run(
+                runners,
+                "determinism/verified-deterministic-profile",
+                "a deterministic profile with an exact source narrows the nondeterministic base",
+                op,
+                vec![
+                    (
+                        "deterministic profile",
+                        vec![category_profile(
+                            op,
+                            role,
+                            Determinism::Deterministic,
+                            deps,
+                            &[],
+                        )],
+                        None,
+                        "deterministic",
+                    ),
+                    (
+                        "nondeterministic profile",
+                        vec![category_profile(
+                            op,
+                            role,
+                            Determinism::Nondeterministic,
+                            deps,
+                            &[],
+                        )],
+                        None,
+                        "nondeterministic",
+                    ),
+                ],
+            ));
+        }
+        "core.convert" if effects => {
+            runs.push(on_mock(
+                fixture,
+                "precondition/0",
+                "precondition: the source format or type is known",
+                &document(row),
+                blocked("error.operation.precondition"),
+                host_refuses(
+                    op,
+                    lcl_runtime::RuntimeError::OperationPrecondition,
+                    "target",
+                    "conformance: the source format is not known",
+                ),
+                "the fixture capability reports an unknown source format",
+            ));
+            let converted = lcl_stdlib::schema::operation_with_value(
+                path_value("/srv/data/report.txt"),
+                Value::Boolean(true),
+                text("{\"content\":\"content\"}"),
+            );
+            runs.push(on_mock(
+                fixture,
+                "postcondition/0",
+                "postcondition: the output has the declared target_format and preserved properties",
+                &with_action(
+                    row,
+                    &action_with(
+                        row,
+                        None,
+                        &named("preserve", "LIST[STRING]", "FALSE", "[\"content\"]"),
+                    ),
+                ),
+                Expectation::All(vec![succeeded(), attempt("changed", "TRUE".into())]),
+                MockHost::new().script(op, vec![CapabilityOutcome::Completed(converted.clone())]),
+                "D3 fixture conversion to format.json preserving content",
+            ));
+            runs.push(on_mock(
+                fixture,
+                "postcondition/1",
+                "postcondition: result.operation.value equals the converted material value",
+                &document(row),
+                Expectation::All(vec![
+                    succeeded(),
+                    attempt("value", "\"{\\\"content\\\":\\\"content\\\"}\"".into()),
+                ]),
+                MockHost::new().script(op, vec![CapabilityOutcome::Completed(converted)]),
+                "D3 fixture conversion",
+            ));
+            runs.push(resolved_axes(
+                fixture,
+                "resolution/exact-invocation-axes",
+                "an omitted destination binds only the declared result or OUTPUT state",
+                &document(row),
+                MockHost::new(),
+                &[("[host]", "[none]")],
+                "[none]",
+            ));
+        }
+        "core.generate" if effects => {
+            runs.push(on_files(
+                shipped,
+                "precondition/0",
+                "precondition: the target is not MEMORY or STATE",
+                &with_action(row, &retargeted(row, "REF(memory.notes)")),
+                &[REPORT],
+                refused_before_effects(spec, "error.operation.precondition"),
+                &[REPORT],
+            ));
+            runs.push(on_mock(
+                shipped,
+                "precondition/1",
+                "precondition: the required generation capability exists",
+                &document(row),
+                blocked("error.operation.precondition"),
+                MockHost::new(),
+                "the shipped engine installs no generation profile",
+            ));
+            let generated = lcl_stdlib::schema::operation_with_value(
+                path_value("/srv/data/other.txt"),
+                Value::Boolean(true),
+                text("a short summary"),
+            );
+            for (label, clause) in [
+                (
+                    "postcondition/0",
+                    "postcondition: the artifact satisfies the declared specification",
+                ),
+                (
+                    "postcondition/1",
+                    "postcondition: result.operation.value equals the produced material artifact",
+                ),
+            ] {
+                runs.push(on_mock(
+                    fixture,
+                    label,
+                    clause,
+                    &document(row),
+                    Expectation::All(vec![
+                        succeeded(),
+                        attempt("changed", "TRUE".into()),
+                        attempt("value", "\"a short summary\"".into()),
+                    ]),
+                    MockHost::new()
+                        .script(op, vec![CapabilityOutcome::Completed(generated.clone())]),
+                    "D3 fixture generation of the declared specification",
+                ));
+            }
+        }
+        "core.install" if effects => {
+            runs.push(on_mock(
+                fixture,
+                "precondition/0",
+                "precondition: the package identity and source are unambiguous",
+                &document(row),
+                blocked("error.operation.precondition"),
+                host_refuses(
+                    op,
+                    lcl_runtime::RuntimeError::OperationPrecondition,
+                    "target",
+                    "conformance: the package identity is ambiguous",
+                ),
+                "the fixture capability reports an ambiguous package identity",
+            ));
+            runs.push(on_mock(
+                fixture,
+                "postcondition/0",
+                "postcondition: the declared package is installed at the requested version",
+                &with_action(
+                    row,
+                    &action_with(row, None, &named("version", "STRING", "FALSE", "\"1.2.3\"")),
+                ),
+                Expectation::All(vec![succeeded(), attempt("changed", "TRUE".into())]),
+                MockHost::new().script(
+                    op,
+                    vec![CapabilityOutcome::Completed(lcl_stdlib::schema::operation(
+                        text("content"),
+                        Value::Boolean(true),
+                    ))],
+                ),
+                "D3 fixture installation at version 1.2.3",
+            ));
+        }
+        "core.uninstall" if effects => {
+            let removal = |purged: bool| {
+                lcl_stdlib::schema::operation_with_value(
+                    text("content"),
+                    Value::Boolean(true),
+                    text(if purged {
+                        "installation absent; declared associated data absent"
+                    } else {
+                        "installation absent; declared associated data preserved"
+                    }),
+                )
+            };
+            runs.push(on_mock(
+                fixture,
+                "purge/false-preserves-data",
+                "purge_data FALSE preserves declared associated data",
+                &document(row),
+                Expectation::All(vec![
+                    succeeded(),
+                    attempt(
+                        "value",
+                        "\"installation absent; declared associated data preserved\"".into(),
+                    ),
+                ]),
+                MockHost::new().script(op, vec![CapabilityOutcome::Completed(removal(false))]),
+                "D3 fixture removal with purge_data FALSE",
+            ));
+            runs.push(on_mock(
+                fixture,
+                "purge/true-removes-data",
+                "purge_data TRUE makes every declared associated data item in authorized scope absent",
+                &with_action(row, &action_with(row, None, &named("purge_data", "BOOLEAN", "FALSE", "TRUE"))),
+                Expectation::All(vec![succeeded(), attempt("value", "\"installation absent; declared associated data absent\"".into())]),
+                MockHost::new().script(op, vec![CapabilityOutcome::Completed(removal(true))]),
+                "D3 fixture removal with purge_data TRUE",
+            ));
+            runs.push(on_mock(
+                fixture,
+                "purge/installation-absent",
+                "postcondition: on success the target installation is absent",
+                &document(row),
+                Expectation::All(vec![succeeded(), attempt("changed", "TRUE".into())]),
+                MockHost::new().script(op, vec![CapabilityOutcome::Completed(removal(false))]),
+                "D3 fixture removal",
+            ));
+        }
+        "core.copy" if effects => {
+            let copy = |target: &str, destination: &str| {
+                with_action(
+                    row,
+                    &format!(
+                        "OPERATION: core.copy\n    TARGET: {target}{}",
+                        named(
+                            "destination",
+                            if destination.contains("uri") {
+                                "URI"
+                            } else {
+                                "PATH"
+                            },
+                            "TRUE",
+                            destination
+                        )
+                    ),
+                )
+            };
+            runs.push(resolved_axes(
+                shipped,
+                "address/path-destination-filesystem",
+                "a PATH destination adds the filesystem effect",
+                &copy("REF(data.path)", "REF(data.other)"),
+                MockHost::new(),
+                &[("[host]", "[filesystem]")],
+                "[filesystem]",
+            ));
+            runs.push(resolved_axes(
+                shipped,
+                "address/path-side-host",
+                "any PATH side adds the host dependency",
+                &copy("REF(data.path)", "REF(data.other)"),
+                MockHost::new(),
+                &[("[host]", "[filesystem]")],
+                "[filesystem]",
+            ));
+            let any_copy = Runner::with_profiles(
+                spec,
+                replacing(
+                    "core.copy",
+                    "copy",
+                    category_profile(
+                        "core.copy",
+                        "copy",
+                        Determinism::Deterministic,
+                        &[Dependency::Host, Dependency::Network],
+                        &[Effect::Network, Effect::Filesystem],
+                    ),
+                ),
+            )
+            .expect("the engine assembles");
+            runs.push(resolved_axes(
+                &any_copy,
+                "address/source-observation-dependency-only",
+                "observing a MEMORY source adds its dependency but no source-side effect",
+                &copy("REF(memory.notes)", "REF(data.other)"),
+                MockHost::new(),
+                &[("[host]", "[filesystem]")],
+                "[filesystem]",
+            ));
+            runs.push(resolved_axes(
+                &any_copy,
+                "address/uri-side-network",
+                "any URI side adds the network dependency and the network effect for the primary copy",
+                &copy("REF(data.path)", "REF(data.uri)"),
+                MockHost::new(),
+                &[("[host, network]", "[network]")],
+                "[network]",
+            ));
+        }
+        "core.download" if effects => {
+            let download = |target: &str| {
+                with_action(
+                    row,
+                    &format!(
+                        "OPERATION: core.download\n    TARGET: {target}{}",
+                        named("destination", "PATH", "TRUE", "PATH(\"/srv/data/new.txt\")")
+                    ),
+                )
+            };
+            runs.push(resolved_axes(
+                shipped,
+                "address/destination-path-host-filesystem",
+                "the destination PATH adds host dependency and filesystem effect",
+                &download("REF(data.uri)"),
+                MockHost::new(),
+                &[("[host, network]", "[filesystem, network]")],
+                "[filesystem]",
+            ));
+            runs.push(resolved_axes(shipped, "address/remote-source-network", "a remote source adds network dependency and the network effect for the primary download", &download("REF(data.uri)"), MockHost::new(), &[("[host, network]", "[filesystem, network]")], "[filesystem]"));
+            runs.push(resolved_axes(
+                shipped,
+                "address/local-source-host",
+                "a local source adds host dependency but no network effect",
+                &download("REF(data.path)"),
+                MockHost::new(),
+                &[("[host]", "[filesystem]")],
+                "[filesystem]",
+            ));
+            let det = |role: &str, category: Determinism| {
+                category_profile(
+                    "core.download",
+                    role,
+                    category,
+                    &[Dependency::Host, Dependency::Network],
+                    &[Effect::Network, Effect::Filesystem],
+                )
+            };
+            runs.push(determinism_run(
+                runners,
+                "determinism/source-identity-and-profiles",
+                "deterministic exactly when the source profile fixes one immutable identity and both profiles are deterministic",
+                op,
+                vec![
+                    ("both deterministic", vec![det("source", Determinism::Deterministic), det("transfer", Determinism::Deterministic)], None, "deterministic"),
+                    ("mutable source", vec![det("source", Determinism::Nondeterministic), det("transfer", Determinism::Deterministic)], None, "nondeterministic"),
+                ],
+            ));
+        }
+        "core.move" if effects => {
+            let mv = |target: &str, destination: (&str, &str)| {
+                with_action(
+                    row,
+                    &format!(
+                        "OPERATION: core.move\n    TARGET: {target}{}",
+                        named("destination", destination.0, "TRUE", destination.1)
+                    ),
+                )
+            };
+            let path_dest = ("PATH", "REF(data.other)");
+            runs.push(resolved_axes(
+                shipped,
+                "address/path-host-filesystem",
+                "PATH maps to host dependency and filesystem effect",
+                &mv("REF(data.path)", path_dest),
+                MockHost::new(),
+                &[("[host]", "[filesystem]")],
+                "[filesystem]",
+            ));
+            runs.push(resolved_axes(
+                shipped,
+                "address/independent-source-and-destination",
+                "source and destination address classes resolve independently",
+                &mv("REF(data.path)", path_dest),
+                MockHost::new(),
+                &[("[host]", "[filesystem]")],
+                "[filesystem]",
+            ));
+            runs.push(on_files(
+                shipped,
+                "address/memory-source-prohibited",
+                "a MEMORY source is prohibited before effects",
+                &mv("REF(memory.notes)", path_dest),
+                &[REPORT],
+                refused_before_effects(spec, "error.operation.precondition"),
+                &[REPORT],
+            ));
+            runs.push(on_files(
+                shipped,
+                "address/state-source-prohibited",
+                "a STATE source is prohibited before effects",
+                &mv("REF(state.revision)", path_dest),
+                &[REPORT],
+                refused_before_effects(spec, "error.operation.precondition"),
+                &[REPORT],
+            ));
+            let output = "\nOUTPUT:\n    ID: output.moved\n    TYPE: STRING\n    FORMAT: format.plain_text\n";
+            let any_move = Runner::with_profiles(
+                spec,
+                replacing(
+                    "core.move",
+                    "move",
+                    category_profile(
+                        "core.move",
+                        "move",
+                        Determinism::Deterministic,
+                        &[Dependency::Host, Dependency::Network],
+                        &[Effect::Network, Effect::Filesystem, Effect::State],
+                    ),
+                ),
+            )
+            .expect("the engine assembles");
+            runs.push(resolved_axes(
+                &any_move,
+                "address/output-source-state",
+                "removing an OUTPUT source adds the state effect and its required dependency",
+                &with_declarations(
+                    row,
+                    &format!(
+                        "OPERATION: core.move\n    TARGET: REF(output.moved){}",
+                        named("destination", "PATH", "TRUE", "REF(data.other)")
+                    ),
+                    output,
+                ),
+                MockHost::new(),
+                &[("[host]", "[filesystem, state]")],
+                "[filesystem]",
+            ));
+            runs.push(resolved_axes(
+                &any_move,
+                "address/uri-network-network",
+                "URI content relocation adds network dependency and network effect",
+                &mv(
+                    "REF(data.uri)",
+                    ("URI", "URI(\"http://example.invalid/y\")"),
+                ),
+                MockHost::new(),
+                &[("[network]", "[network]")],
+                "[network]",
+            ));
+            runs.push(profile_role(
+                runners,
+                row,
+                "address/profile-strategy",
+                "move",
+                AddressClass::Path,
+                mv("REF(data.path)", path_dest),
+            ));
+        }
+        "core.publish" if effects => {
+            let publish = |target: &str, destination: (&str, &str)| {
+                with_action(
+                    row,
+                    &format!(
+                        "OPERATION: core.publish\n    TARGET: {target}{}{}",
+                        named("destination", destination.0, "TRUE", destination.1),
+                        named("visibility", "STRING", "TRUE", "\"public\"")
+                    ),
+                )
+            };
+            runs.push(resolved_axes(
+                shipped,
+                "address/path-destination",
+                "a PATH destination adds host dependency and filesystem effect",
+                &publish("REF(data.path)", ("PATH", "REF(data.other)")),
+                MockHost::new(),
+                &[("[host]", "[filesystem]")],
+                "[filesystem]",
+            ));
+            runs.push(resolved_axes(
+                shipped,
+                "address/uri-destination",
+                "a URI destination adds network dependency and network effect",
+                &publish("REF(data.path)", ("URI", "REF(data.uri)")),
+                MockHost::new(),
+                &[("[host, network]", "[network]")],
+                "[network]",
+            ));
+            let any_publish = Runner::with_profiles(
+                spec,
+                replacing(
+                    "core.publish",
+                    "publication",
+                    category_profile(
+                        "core.publish",
+                        "publication",
+                        Determinism::Deterministic,
+                        &[Dependency::Host, Dependency::Network],
+                        &[Effect::Network, Effect::Filesystem],
+                    ),
+                ),
+            )
+            .expect("the engine assembles");
+            runs.push(resolved_axes(
+                &any_publish,
+                "address/source-dependencies-only",
+                "source observation contributes dependencies only",
+                &publish("REF(data.text)", ("URI", "REF(data.uri)")),
+                MockHost::new(),
+                &[("[network]", "[network]")],
+                "[network]",
+            ));
+            runs.push(determinism_run(
+                runners,
+                "determinism/profile-final-category",
+                "the invocation copies the publication profile's final category once destination, visibility and replacement are fixed",
+                op,
+                vec![
+                    ("deterministic publication", vec![category_profile(op, "publication", Determinism::Deterministic, &[Dependency::Host], &[Effect::Filesystem])], None, "deterministic"),
+                    ("nondeterministic publication", vec![category_profile(op, "publication", Determinism::Nondeterministic, &[Dependency::Host], &[Effect::Filesystem])], None, "nondeterministic"),
+                ],
+            ));
+        }
+        "core.upload" if effects => {
+            let upload = |destination: (&str, &str)| {
+                with_action(
+                    row,
+                    &format!(
+                        "OPERATION: core.upload\n    TARGET: REF(data.path){}",
+                        named("destination", destination.0, "TRUE", destination.1)
+                    ),
+                )
+            };
+            let path_runner = Runner::with_profiles(
+                spec,
+                replacing(
+                    "core.upload",
+                    "transfer",
+                    category_profile(
+                        "core.upload",
+                        "transfer",
+                        Determinism::Deterministic,
+                        &[Dependency::Host, Dependency::Network],
+                        &[Effect::Network, Effect::Filesystem],
+                    ),
+                ),
+            )
+            .expect("the engine assembles");
+            runs.push(resolved_axes(
+                &path_runner,
+                "address/path-destination-host-filesystem",
+                "a PATH destination adds host dependency and filesystem effect",
+                &upload(("PATH", "REF(data.other)")),
+                MockHost::new(),
+                &[("[host]", "[filesystem]")],
+                "[filesystem]",
+            ));
+            runs.push(resolved_axes(shipped, "address/uri-destination-network", "a URI destination adds network dependency and the network effect for the primary upload", &upload(("URI", "REF(data.uri)")), MockHost::new(), &[("[host, network]", "[network]")], "[network]"));
+            runs.push(resolved_axes(
+                shipped,
+                "address/path-source-host-without-filesystem-effect",
+                "a PATH source adds host dependency but no filesystem effect",
+                &upload(("URI", "REF(data.uri)")),
+                MockHost::new(),
+                &[("[host, network]", "[network]")],
+                "[network]",
+            ));
+        }
+        "core.execute" if effects => {
+            runs.push(resolved_axes(
+                shipped,
+                "mode/non-graph-process-effect",
+                "every non-graph invocation has the process effect because it runs the executable",
+                &document(row),
+                MockHost::new(),
+                &[("[host]", "[process]")],
+                "[process]",
+            ));
+            let wide = Runner::with_profiles(
+                spec,
+                Runner::shipped_profiles()
+                    .into_iter()
+                    .filter(|p| {
+                        !(p.operation_id == "core.execute"
+                            && p.profile_role.as_str() == "execution")
+                    })
+                    .chain([category_profile(
+                        "core.execute",
+                        "execution",
+                        Determinism::Nondeterministic,
+                        &[Dependency::Host, Dependency::Network],
+                        &[Effect::Process, Effect::Filesystem],
+                    )])
+                    .collect(),
+            )
+            .expect("the engine assembles");
+            runs.push(resolved_axes(
+                &wide,
+                "mode/non-graph-axis-union",
+                "the rule unions process with any other dependencies and effects the profile selects, within the row maxima",
+                &document(row),
+                MockHost::new(),
+                &[("[host, network]", "[filesystem, process]")],
+                "[filesystem]",
+            ));
+            runs.push(determinism_run(
+                runners,
+                "mode/non-graph-profile-category",
+                "non-graph mode copies the execution profile's final category",
+                op,
+                vec![
+                    (
+                        "deterministic execution profile",
+                        vec![category_profile(
+                            op,
+                            "execution",
+                            Determinism::Deterministic,
+                            &[Dependency::Host],
+                            &[Effect::Process],
+                        )],
+                        None,
+                        "deterministic",
+                    ),
+                    (
+                        "nondeterministic execution profile",
+                        vec![category_profile(
+                            op,
+                            "execution",
+                            Determinism::Nondeterministic,
+                            &[Dependency::Host],
+                            &[Effect::Process],
+                        )],
+                        None,
+                        "nondeterministic",
+                    ),
+                ],
+            ));
+            let command = |started: bool, completed: bool, exit: Option<i64>, stdout: &str| {
+                let mut observation = Observation::none()
+                    .with("mode", Value::Identifier("non_graph".into()))
+                    .with("started", Value::Boolean(started))
+                    .with("completed", Value::Boolean(completed));
+                if started {
+                    observation = observation
+                        .with("stdout", text(stdout))
+                        .with("stderr", text(""));
+                }
+                if let Some(code) = exit {
+                    observation = observation.with(
+                        "exit_code",
+                        Value::Integer(
+                            lcl_checker::numeric::Decimal::parse_integer(&code.to_string())
+                                .unwrap(),
+                        ),
+                    );
+                }
+                if started {
+                    observation = observation.with_effect(ObservedEffect {
+                        class: EffectClass::Process,
+                        state: RecordState::Applied,
+                        target: Some("report".into()),
+                        evidence: Vec::new(),
+                    });
+                }
+                CapabilityOutcome::Completed(observation)
+            };
+            runs.push(on_mock(
+                shipped,
+                "result/completed-exit-code",
+                "a completed non_graph command records exit_code",
+                &document(row),
+                Expectation::All(vec![
+                    succeeded(),
+                    attempt("completed", "TRUE".into()),
+                    attempt("exit_code", "0".into()),
+                ]),
+                MockHost::new().script(op, vec![command(true, true, Some(0), "all clear")]),
+                "scripted completed command",
+            ));
+            runs.push(on_mock(
+                shipped,
+                "result/nonzero-exit-completed",
+                "a completed command with a nonzero exit_code has producer status.succeeded",
+                &document(row),
+                Expectation::All(vec![succeeded(), attempt("exit_code", "7".into())]),
+                MockHost::new().script(op, vec![command(true, true, Some(7), "")]),
+                "scripted nonzero exit",
+            ));
+            runs.push(on_mock(
+                shipped,
+                "result/started-streams",
+                "after start, stdout and stderr are present",
+                &document(row),
+                Expectation::All(vec![
+                    succeeded(),
+                    attempt("started", "TRUE".into()),
+                    attempt("stdout", "\"all clear\"".into()),
+                    attempt("stderr", "\"\"".into()),
+                ]),
+                MockHost::new().script(op, vec![command(true, true, Some(0), "all clear")]),
+                "scripted started command",
+            ));
+            runs.push(on_mock(
+                shipped,
+                "result/failure-to-start",
+                "a non_graph failure to start records started FALSE and completed FALSE without exit_code, stdout or stderr",
+                &document(row),
+                Expectation::All(vec![
+                    Expectation::Diagnostic("error.execution.action".into()),
+                    attempt("started", "FALSE".into()),
+                    attempt("completed", "FALSE".into()),
+                    attempt("failure_phase", "pre_effect".into()),
+                ]),
+                MockHost::new().script(op, vec![CapabilityOutcome::Failed {
+                    detail: "conformance: the program never started".into(),
+                    observation: Observation::none()
+                        .with("mode", Value::Identifier("non_graph".into()))
+                        .with("started", Value::Boolean(false))
+                        .with("completed", Value::Boolean(false)),
+                }]),
+                "scripted failure to start",
+            ));
+            runs.push(on_mock(
+                shipped,
+                "result/independent-phase-effect-output",
+                "completion, failure phase, effects and OUTPUT binding are recorded independently",
+                &document(row),
+                Expectation::All(vec![
+                    succeeded(),
+                    attempt("failure_phase", "none".into()),
+                    attempt("effect_state", "applied".into()),
+                    attempt("exit_code", "7".into()),
+                ]),
+                MockHost::new().script(op, vec![command(true, true, Some(7), "")]),
+                "scripted nonzero exit with an applied process effect",
+            ));
+        }
+        "core.test" => {
+            let test = |extra: &str, target: Option<&str>, declarations: &str| {
+                let target = target
+                    .map(|t| format!("\n    TARGET: {t}"))
+                    .unwrap_or_default();
+                with_declarations(
+                    row,
+                    &format!("OPERATION: core.test{target}{extra}"),
+                    declarations,
+                )
+            };
+            let comparison = |expected: (&str, &str), actual: (&str, &str)| {
+                format!(
+                    "{}{}",
+                    named("expected", expected.0, "FALSE", expected.1),
+                    named("actual", actual.0, "FALSE", actual.1)
+                )
+            };
+            if errors {
+                runs.push(shipped.execute(
+                    "error/block.conditional_requirement",
+                    "an invalid comparison shape is the row's registered conditional-requirement error",
+                    &test("", Some("REF(data.number)"), ""),
+                    Expectation::Rejects("error.block.conditional_requirement".into()),
+                ));
+                runs.push(shipped.execute(
+                    "path/invalid-comparison-shape",
+                    "assertion together with expected is not exactly one comparison form",
+                    &test(
+                        &format!(
+                            "{}{}",
+                            named("assertion", "BOOLEAN", "FALSE", "TRUE"),
+                            named("expected", "INTEGER", "FALSE", "3")
+                        ),
+                        None,
+                        "",
+                    ),
+                    Expectation::Rejects("error.block.conditional_requirement".into()),
+                ));
+                runs.push(on_files(
+                    shipped,
+                    "path/false-comparison-is-not-an-error",
+                    "a completed FALSE comparison is a passed-domain outcome, not error.verification.failed",
+                    &test(&comparison(("INTEGER", "3"), ("INTEGER", "4")), None, ""),
+                    &[REPORT],
+                    vec![succeeded(), attempt("passed", "FALSE".into()), Expectation::NoDiagnostic("error.verification.failed".into())],
+                    &[REPORT],
+                ));
+                runs.push(shipped.execute(
+                    "path/unresolved-typed-value-reference",
+                    "an actual REFERENCE that does not resolve exactly once",
+                    &test(
+                        &comparison(("INTEGER", "3"), ("INTEGER", "REF(data.absent)")),
+                        None,
+                        "",
+                    ),
+                    Expectation::Rejects("error.reference.unresolved".into()),
+                ));
+            }
+            if effects {
+                runs.push(determinism_run(
+                    runners,
+                    "mode/comparison-only-deterministic",
+                    "comparison-only mode is deterministic",
+                    op,
+                    vec![("no graph", Vec::new(), None, "deterministic")],
+                ));
+                runs.push(on_files(
+                    shipped,
+                    "mode/strict-equality-comparison",
+                    "expected-and-actual form always uses the registered == strict equality: different material types are unequal",
+                    &test(&comparison(("INTEGER", "3"), ("STRING", "\"3\"")), None, ""),
+                    &[REPORT],
+                    vec![succeeded(), attempt("passed", "FALSE".into())],
+                    &[REPORT],
+                ));
+            }
+        }
+        "core.validate" => {
+            let validate = |extra: &str, declarations: &str| {
+                with_declarations(
+                    row,
+                    &format!("OPERATION: core.validate\n    TARGET: REF(data.number){extra}"),
+                    declarations,
+                )
+            };
+            let rules = |value: &str, id: &str| {
+                format!("\n    PARAMETER:\n        NAME: rules\n        TYPE: LIST[REFERENCE[REF({id})]]\n        REQUIRED: FALSE\n        VALUE: {value}")
+            };
+            let schema = |id: &str| {
+                format!("\n    PARAMETER:\n        NAME: schema\n        TYPE: REFERENCE[REF({id})]\n        REQUIRED: FALSE\n        VALUE: REF({id})")
+            };
+            let failing_rule = "\nVALIDATE:\n    ID: validate.small\n    ASSERT: REF(data.number) < 2\n    REQUIRED: FALSE\n";
+            if errors {
+                runs.push(shipped.execute(
+                    "path/unresolved-rule-reference",
+                    "a rules REFERENCE that does not resolve exactly once",
+                    &validate(
+                        &rules("[REF(validate.absent)]", "validate.small"),
+                        failing_rule,
+                    ),
+                    Expectation::Rejects("error.reference.unresolved".into()),
+                ));
+                runs.push(shipped.execute(
+                    "path/unresolved-schema-reference",
+                    "a schema REFERENCE that does not resolve exactly once",
+                    &validate(&schema("type.absent"), ""),
+                    Expectation::Rejects("error.reference.unresolved".into()),
+                ));
+                runs.push(failed_without_effects(
+                    shipped,
+                    "path/wrong-kind-rule-reference",
+                    "a rules REFERENCE resolving to a declaration other than VALIDATE",
+                    &validate(&rules("[REF(data.number)]", "data.number"), ""),
+                    "error.reference.kind",
+                ));
+                runs.push(failed_without_effects(
+                    shipped,
+                    "path/wrong-kind-schema-reference",
+                    "a schema REFERENCE resolving to a declaration other than a kind.type OBJECT",
+                    &validate(&schema("data.number"), ""),
+                    "error.reference.kind",
+                ));
+                runs.push(shipped.execute(
+                    "error/validation.failed",
+                    "a required VALIDATE assertion that is FALSE is error.validation.failed before effects",
+                    &validate("", "\nVALIDATE:\n    ID: validate.required\n    ASSERT: REF(data.number) < 2\n    REQUIRED: TRUE\n"),
+                    Expectation::Rejects("error.validation.failed".into()),
+                ));
+            }
+            if effects {
+                runs.push(declared_state_only(
+                    shipped,
+                    "precondition/0",
+                    "precondition: validation has no external side effect",
+                    &document(row),
+                ));
+                runs.push(shipped.execute(
+                    "postcondition/0",
+                    "postcondition: every detected failure uses a registered error identifier",
+                    &validate(
+                        &rules("[REF(validate.small)]", "validate.small"),
+                        failing_rule,
+                    ),
+                    Expectation::All(vec![
+                        succeeded(),
+                        attempt("valid", "FALSE".into()),
+                        attempt("errors", "[error.validation.failed]".into()),
+                    ]),
+                ));
+            }
+        }
+        "core.verify" => {
+            let verify = |assertion: &str, extra: &str, declarations: &str| {
+                with_declarations(
+                    row,
+                    &format!(
+                        "OPERATION: core.verify\n    TARGET: REF(data.number){}{extra}",
+                        named("assertion", "BOOLEAN", "TRUE", assertion)
+                    ),
+                    declarations,
+                )
+            };
+            if errors {
+                runs.push(shipped.execute(
+                    "error/verification.failed",
+                    "a FALSE assertion records the registered domain finding error.verification.failed",
+                    &verify("REF(data.number) == 9", "", ""),
+                    Expectation::All(vec![succeeded(), attempt("verified", "FALSE".into()), attempt("errors", "[error.verification.failed]".into())]),
+                ));
+                runs.push(shipped.execute(
+                    "path/unresolved-assertion-reference",
+                    "an assertion REFERENCE that does not resolve exactly once",
+                    &with_action(row, "OPERATION: core.verify\n    TARGET: REF(data.number)\n    PARAMETER:\n        NAME: assertion\n        TYPE: REFERENCE[REF(data.absent)]\n        REQUIRED: TRUE\n        VALUE: REF(data.absent)"),
+                    Expectation::Rejects("error.reference.unresolved".into()),
+                ));
+                runs.push(shipped.execute(
+                    "error/evidence.missing",
+                    "required EVIDENCE that is absent, unresolved or lacks provenance is error.evidence.missing",
+                    &verify(
+                        "REF(data.number) == 3",
+                        "\n    PARAMETER:\n        NAME: evidence\n        TYPE: LIST[REFERENCE[REF(evidence.required)]]\n        REQUIRED: FALSE\n        VALUE: [REF(evidence.required)]",
+                        "\nEVIDENCE:\n    ID: evidence.required\n    TYPE: INTEGER\n    VALUE: REF(data.list)[5]\n    REQUIRED: TRUE\n",
+                    ),
+                    Expectation::Diagnostic("error.evidence.missing".into()),
+                ));
+            }
+            if effects {
+                runs.push(shipped.execute(
+                    "assertion/evaluated-against-snapshot",
+                    "the assertion is evaluated deterministically against the observed target snapshot",
+                    &verify("REF(data.number) == 3", "", ""),
+                    Expectation::All(vec![succeeded(), attempt("verified", "TRUE".into()), attempt("observed", "{target: 3}".into())]),
+                ));
+                runs.push(declared_state_only(
+                    shipped,
+                    "axes/no-effects",
+                    "verification itself has no effects",
+                    &document(row),
+                ));
+                runs.push(declared_state_only(
+                    shipped,
+                    "axes/bounded-observation-dependencies",
+                    "the dependency set resolves only to declared_state_only, host or network",
+                    &document(row),
+                ));
+                runs.push(determinism_run(
+                    runners,
+                    "determinism/profile-final-category",
+                    "the invocation copies the immutable verification profile's final category",
+                    op,
+                    vec![
+                        (
+                            "deterministic verification",
+                            vec![category_profile(
+                                op,
+                                "verification",
+                                Determinism::Deterministic,
+                                &[],
+                                &[],
+                            )],
+                            None,
+                            "deterministic",
+                        ),
+                        (
+                            "nondeterministic verification",
+                            vec![category_profile(
+                                op,
+                                "verification",
+                                Determinism::Nondeterministic,
+                                &[],
+                                &[],
+                            )],
+                            None,
+                            "nondeterministic",
+                        ),
+                    ],
+                ));
+            }
+        }
+        _ => {}
+    }
+    runs
 }

@@ -211,6 +211,16 @@ pub enum CapabilityOutcome {
         cause: String,
         /// Non-normative human detail.
         detail: String,
+        /// What the implementation observed before it refused.
+        ///
+        /// A row may discover its refusal only after a concrete effect began —
+        /// `core.ask` learns that no valid answer exists only by asking, and
+        /// the question is its `message` effect. "Absence of evidence never
+        /// proves absence of effects", so the refusal carries the observation
+        /// and the runtime resolves the phase from it exactly as it does for a
+        /// `Failed` outcome. `Observation::none()` is the ordinary case: the
+        /// contract refused before anything began.
+        observation: Observation,
     },
     /// The host refused. `error.permission.denied`.
     Denied(String),

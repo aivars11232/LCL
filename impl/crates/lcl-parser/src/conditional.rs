@@ -201,6 +201,53 @@ impl SchemaChecker<'_, '_> {
             }
             self.apply(anchor, statements, schema, counts, text, *rule);
         }
+        self.comparison_form(anchor, counts);
+    }
+
+    /// `06_STANDARD_LIBRARY/10`, the `core.test` invocation site:
+    ///
+    /// > core.test always requires exactly one comparison form: assertion; or
+    /// > expected together with exactly one actual source, either the actual
+    /// > parameter or a material-value TARGET. … TARGET alone is not a
+    /// > complete test.
+    ///
+    /// Which parameters a site supplies is pure structure, so an unsatisfied
+    /// comparison form is this block's own conditional requirement — the one
+    /// identifier `operations_v0.1.0.json#/contracts/core.test/errors` admits
+    /// for it. Whether a *resolved* TARGET is a material value or a TASK/ACTION
+    /// graph is a type question, and the rules that need it stay with M4.
+    fn comparison_form(&mut self, anchor: Anchor, counts: &BTreeMap<&str, Vec<&Field>>) {
+        if !has_inline_identifier(counts, "OPERATION", "core.test") {
+            return;
+        }
+        // "NAME is required": until every PARAMETER names itself, which
+        // parameters the site supplies is not yet determinable, and the
+        // earlier requirement owns the defect.
+        let unnamed = counts
+            .get("PARAMETER")
+            .into_iter()
+            .flatten()
+            .any(|field| !parameter_named(field));
+        if unnamed {
+            return;
+        }
+        let supplied = |name: &str| parameter_supplied(counts, name);
+        let assertion = supplied("assertion");
+        let expected = supplied("expected");
+        let actual_source = supplied("actual") || counts.contains_key("TARGET");
+        let complete = if assertion {
+            !expected
+        } else {
+            expected && actual_source
+        };
+        if !complete {
+            self.emit_requirement(
+                anchor.key_span,
+                "`core.test`: exactly one comparison form is supplied: assertion; or expected \
+                 together with exactly one actual source"
+                    .to_string(),
+            );
+        }
     }
 
     fn apply(
@@ -336,6 +383,36 @@ fn is_call_to(field: &Field, callable: &str) -> bool {
         field.body.as_inline().and_then(Value::as_expression),
         Some(Expr::Call(c)) if c.callable.text == callable
     )
+}
+
+/// The written `NAME` of one `PARAMETER` block, when it writes one.
+fn parameter_name(field: &Field) -> Option<String> {
+    field
+        .body
+        .as_nested()?
+        .statements
+        .iter()
+        .find_map(|statement| match statement {
+            Statement::Field(field) if field.key.text == "NAME" => field
+                .body
+                .as_inline()
+                .and_then(Value::as_expression)
+                .map(crate::syntax::render),
+            _ => None,
+        })
+}
+
+fn parameter_named(field: &Field) -> bool {
+    parameter_name(field).is_some()
+}
+
+/// Whether one invocation site supplies a named operation parameter.
+fn parameter_supplied(counts: &BTreeMap<&str, Vec<&Field>>, name: &str) -> bool {
+    counts
+        .get("PARAMETER")
+        .into_iter()
+        .flatten()
+        .any(|field| parameter_name(field).as_deref() == Some(name))
 }
 
 fn has_inline_identifier(

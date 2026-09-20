@@ -340,6 +340,146 @@ VERIFY:
     );
 }
 
+/// One control operation over the root task itself.
+fn controlled_root(operation: &str, parameter: &str) -> Completion {
+    complete(&task_document(&format!(
+        "
+GOAL:
+    ID: goal.control
+    ASSERT: TRUE
+
+ACTION:
+    ID: action.control
+    OPERATION: {operation}
+    TARGET: REF(task.control){parameter}
+
+SUCCESS:
+    ID: success.root
+    ALL: TRUE
+
+TASK:
+    ID: task.control
+    GOAL: REF(goal.control)
+    ACTION: REF(action.control)
+    SUCCESS: REF(success.root)
+
+EXECUTE:
+    REFERENCE: REF(task.control)
+"
+    )))
+}
+
+#[test]
+fn a_committed_cancel_ends_the_root_cancelled_and_evidences_its_reason() {
+    // "Cancellation yields status.cancelled", `error.cancelled` is "Invoking
+    // authority cancelled execution", and the row's postconditions are "target
+    // reaches status.cancelled" and "reason is evidenced".
+    let completion = controlled_root(
+        "core.cancel",
+        "\n    PARAMETER:\n        NAME: reason\n        TYPE: STRING\n        \
+         REQUIRED: TRUE\n        VALUE: \"the owner cancelled it\"",
+    );
+    assert_eq!(completion.terminal().status, "status.cancelled");
+    assert!(
+        matches!(
+            &completion.terminal().reason,
+            Reason::PrimaryDiagnostic(primary) if primary.id == "error.cancelled"
+        ),
+        "{}",
+        completion.serialize()
+    );
+}
+
+#[test]
+fn a_committed_stop_ends_the_root_stopped() {
+    // "core.stop yields status.stopped unless another declared failure status
+    // applies."
+    let completion = controlled_root("core.stop", "");
+    assert_eq!(completion.terminal().status, "status.stopped");
+    assert_eq!(completion.terminal().reason, Reason::DeclaredStop);
+}
+
+/// One `core.verify` that names `evidence.item` through its evidence parameter.
+fn verified_with_evidence(value: &str, required: &str) -> Completion {
+    complete(&task_document(&format!(
+        "
+DATA:
+    ID: data.number
+    TYPE: INTEGER
+    VALUE: 3
+
+DATA:
+    ID: data.members
+    TYPE: LIST[INTEGER]
+    VALUE: [1, 2]
+
+EVIDENCE:
+    ID: evidence.item
+    TYPE: INTEGER
+    VALUE: {value}
+    REQUIRED: {required}
+
+GOAL:
+    ID: goal.verify
+    ASSERT: TRUE
+
+ACTION:
+    ID: action.verify
+    OPERATION: core.verify
+    TARGET: REF(data.number)
+    PARAMETER:
+        NAME: assertion
+        TYPE: BOOLEAN
+        REQUIRED: TRUE
+        VALUE: REF(data.number) == 3
+    PARAMETER:
+        NAME: evidence
+        TYPE: LIST[REFERENCE[REF(evidence.item)]]
+        REQUIRED: FALSE
+        VALUE: [REF(evidence.item)]
+
+SUCCESS:
+    ID: success.root
+    ALL: TRUE
+
+TASK:
+    ID: task.verify
+    GOAL: REF(goal.verify)
+    ACTION: REF(action.verify)
+    SUCCESS: REF(success.root)
+
+EXECUTE:
+    REFERENCE: REF(task.verify)
+"
+    )))
+}
+
+#[test]
+fn evidence_an_operation_parameter_named_is_required_too() {
+    // "It is collected because something that ran named it." An activated
+    // ACTION names the evidence it requires in its own EVIDENCE field and in
+    // an `evidence` parameter, which `core.verify` calls "Required evidence
+    // declarations".
+    let completion = verified_with_evidence("REF(data.members)[5]", "TRUE");
+    assert!(
+        completion
+            .diagnostics()
+            .iter()
+            .any(|d| d.id.as_registry_str() == "error.evidence.missing"),
+        "{}",
+        completion.serialize()
+    );
+    assert!(!completion.succeeded());
+
+    // The same parameter, resolved, imposes nothing.
+    let resolved = verified_with_evidence("REF(data.members)[1]", "TRUE");
+    assert!(
+        resolved.diagnostics().is_empty(),
+        "{}",
+        resolved.serialize()
+    );
+}
+
 #[test]
 fn resolved_evidence_satisfies_its_obligation() {
     let completion = complete(&task_with(

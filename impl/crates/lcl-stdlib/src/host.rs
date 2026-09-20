@@ -36,7 +36,7 @@ use lcl_runtime::capability::{
     CapabilityOutcome, CapabilityRequest, Host, Observation, Permission,
 };
 use lcl_runtime::result::{EffectClass, ObservedEffect, RecordState};
-use lcl_runtime::Value;
+use lcl_runtime::{strict_equal, Value};
 use std::path::PathBuf;
 
 /// A host built from explicit grants and explicitly installed capabilities.
@@ -501,10 +501,9 @@ impl HostAdapter {
         };
         match filesystem.metadata(path.location()) {
             // "target exists".
-            Ok(metadata) if !metadata.exists => unmet_precondition(
-                "target",
-                format!("{} does not exist", path.path.display()),
-            ),
+            Ok(metadata) if !metadata.exists => {
+                unmet_precondition("target", format!("{} does not exist", path.path.display()))
+            }
             Ok(metadata) => {
                 let mut fields = std::collections::BTreeMap::new();
                 fields.insert("exists".to_string(), Value::Boolean(metadata.exists));
@@ -1106,25 +1105,81 @@ impl HostAdapter {
             Some(Value::Text(question)) => question.clone(),
             _ => return failed("core.ask needs a STRING question".to_string(), None),
         };
-        let options: Vec<String> = match request.parameters.get("options") {
-            Some(Value::List(options)) => options.iter().map(text_of).collect(),
+        let expected_type = match request.parameters.get("expected_type") {
+            Some(Value::Text(name)) => name.clone(),
+            Some(Value::Identifier(name)) => name.clone(),
+            _ => return failed("core.ask needs an expected_type".to_string(), None),
+        };
+        // "every option is compatible with expected_type" is the row's own
+        // precondition, and its implementation decided it before crossing.
+        let listed: Vec<Value> = match request.parameters.get("options") {
+            Some(Value::List(options)) => options.clone(),
             _ => Vec::new(),
         };
+        let options: Vec<String> = listed.iter().map(text_of).collect();
         let Some(responder) = self.responder.as_mut() else {
             return CapabilityOutcome::Unavailable("no human responder is installed".to_string());
         };
-        match responder.ask(&question, &options) {
-            // "when no authorized valid answer is provided, the answer remains
-            // MISSING": the host reports the absence, and the runtime decides
-            // what an absent required answer means.
-            Ok(None) => CapabilityOutcome::Completed(
-                schema::value(Value::Missing).with_effect(applied(EffectClass::Message, None)),
+        let answered = match responder.ask(&question, &options) {
+            Ok(answered) => answered,
+            Err(error) => return process_failure(error),
+        };
+        // The question was put, so the message effect began whatever came back.
+        let asked = || Observation::none().with_effect(applied(EffectClass::Message, None));
+        // "a non-MISSING answer is recorded and compatible with expected_type",
+        // and "when options is supplied, every non-MISSING answer equals one
+        // listed option". An answer that satisfies neither is not an authorized
+        // valid answer.
+        let answer = answered
+            .map(Value::Text)
+            .filter(|answer| compatible_answer(answer, &expected_type))
+            .filter(|answer| {
+                listed.is_empty() || listed.iter().any(|option| strict_equal(option, answer))
+            });
+        match answer {
+            Some(answer) => CapabilityOutcome::Completed(
+                schema::value(answer).with_effect(applied(EffectClass::Message, None)),
             ),
-            Ok(Some(answer)) => CapabilityOutcome::Completed(
-                schema::value(Value::Text(answer)).with_effect(applied(EffectClass::Message, None)),
-            ),
-            Err(error) => process_failure(error),
+            // "when no authorized valid answer is provided, the value remains
+            // MISSING and error.required.missing applies."
+            None => CapabilityOutcome::Refused {
+                observation: asked(),
+                error: lcl_runtime::RuntimeError::RequiredMissing,
+                cause: "answer".to_string(),
+                detail: format!("no authorized valid answer to {question:?} was provided"),
+            },
         }
+    }
+}
+
+/// Whether one value is compatible with a written `expected_type`.
+///
+/// `core.ask`'s `expected_type` is a `type_expression`, and a human answer
+/// arrives as text. A STRING answer is compatible with STRING; for any other
+/// named scalar the text must denote a value of that type, which is what
+/// "compatible with expected_type" means for something a person typed.
+pub(crate) fn compatible_answer(value: &Value, expected_type: &str) -> bool {
+    match expected_type {
+        "STRING" => matches!(value, Value::Text(_)),
+        "BOOLEAN" => match value {
+            Value::Boolean(_) => true,
+            Value::Text(text) => text == "TRUE" || text == "FALSE",
+            _ => false,
+        },
+        "INTEGER" => match value {
+            Value::Integer(_) => true,
+            Value::Text(text) => text.parse::<i64>().is_ok(),
+            _ => false,
+        },
+        "DECIMAL" => match value {
+            Value::Integer(_) | Value::Decimal(_) => true,
+            Value::Text(text) => text.parse::<f64>().is_ok(),
+            _ => false,
+        },
+        // A type expression this adapter does not decide imposes nothing: the
+        // declared parameter type already judged the written form, and
+        // inventing a refusal here would be inventing language.
+        _ => true,
     }
 }
 
@@ -1285,6 +1340,7 @@ fn fs_failure(error: FsError, effect: Option<ObservedEffect>) -> CapabilityOutco
         // Not the host's refusal: the language's own boundary. "Escape produces
         // error.value.out_of_range."
         escape @ FsError::Escape { .. } => CapabilityOutcome::Refused {
+            observation: Observation::none(),
             error: lcl_runtime::RuntimeError::ValueOutOfRange,
             cause: "workspace".to_string(),
             detail: escape.to_string(),
@@ -1408,6 +1464,7 @@ impl Unit {
 /// literal.
 fn wrong_parameter(detail: impl Into<String>) -> CapabilityOutcome {
     CapabilityOutcome::Refused {
+        observation: Observation::none(),
         error: lcl_runtime::RuntimeError::OperationParameter,
         cause: "range".to_string(),
         detail: detail.into(),
@@ -1449,6 +1506,7 @@ fn transfer_precondition(error: FsError) -> CapabilityOutcome {
 /// `error.operation.precondition`, with the row's own cause identity.
 fn unmet_precondition(cause: &str, detail: impl Into<String>) -> CapabilityOutcome {
     CapabilityOutcome::Refused {
+        observation: Observation::none(),
         error: lcl_runtime::RuntimeError::OperationPrecondition,
         cause: cause.to_string(),
         detail: detail.into(),
@@ -1458,6 +1516,7 @@ fn unmet_precondition(cause: &str, detail: impl Into<String>) -> CapabilityOutco
 /// `error.value.out_of_range`: bounds outside `0 <= start <= end <= length`.
 fn out_of_range(detail: impl Into<String>) -> CapabilityOutcome {
     CapabilityOutcome::Refused {
+        observation: Observation::none(),
         error: lcl_runtime::RuntimeError::ValueOutOfRange,
         cause: "range".to_string(),
         detail: detail.into(),

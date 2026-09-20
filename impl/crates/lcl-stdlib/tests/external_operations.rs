@@ -302,6 +302,91 @@ fn an_absent_human_responder_is_a_limitation() {
     );
 }
 
+/// One `core.ask` of the installed responder, with its own expected type and
+/// optional closed options.
+fn ask(expected_type: &str, options: Option<&str>, answer: Option<&str>) -> Execution {
+    let options = options
+        .map(|options| {
+            format!(
+                "\nPARAMETER:\n    NAME: options\n    TYPE: LIST[STRING]\n    \
+                 REQUIRED: FALSE\n    VALUE: {options}"
+            )
+        })
+        .unwrap_or_default();
+    let action = format!(
+        "ID: action.ask\nOPERATION: core.ask\nTARGET: REF(data.responder)\n\
+         PARAMETER:\n    NAME: question\n    TYPE: STRING\n    REQUIRED: TRUE\n    \
+         VALUE: \"Which environment?\"\n\
+         PARAMETER:\n    NAME: expected_type\n    TYPE: STRING\n    REQUIRED: TRUE\n    \
+         VALUE: {expected_type:?}{options}"
+    );
+    let source = common::task(
+        &common::data("data.responder", "STRING", "\"the release owner\""),
+        &[&action],
+    );
+    let responder = match answer {
+        Some(answer) => MemoryResponder::new().with_answer("Which environment?", answer),
+        None => MemoryResponder::new(),
+    };
+    let mut host = HostAdapter::new(Grants::none().permit_human()).with_responder(responder);
+    run_with_host(&source, &mut host)
+}
+
+#[test]
+fn no_authorized_valid_answer_leaves_the_value_missing() {
+    // "when no authorized valid answer is provided, the value remains MISSING
+    // and error.required.missing applies": no answer at all, an answer that is
+    // not compatible with expected_type, and an answer equal to no listed
+    // option are the same absence.
+    for (expected_type, options, answer) in [
+        ("STRING", None, None),
+        ("INTEGER", None, Some("staging")),
+        ("STRING", Some("[\"production\"]"), Some("staging")),
+    ] {
+        let execution = ask(expected_type, options, answer);
+        assert_eq!(
+            common::errors_of(&execution, "action.ask"),
+            vec!["error.required.missing".to_string()],
+            "{expected_type} {options:?} {answer:?}"
+        );
+    }
+}
+
+#[test]
+fn a_question_that_was_put_records_its_message_effect() {
+    // The refusal follows the question, and "Absence of evidence never proves
+    // absence of effects": the message effect began before the answer came
+    // back absent.
+    let execution = ask("STRING", None, None);
+    let result = common::result_of(&execution, "action.ask");
+    assert_eq!(result.failure_phase.as_registry_str(), "post_effect");
+    assert_eq!(result.effect_state.as_registry_str(), "applied");
+}
+
+#[test]
+fn an_option_incompatible_with_the_expected_type_refuses_before_the_question() {
+    // "every option is compatible with expected_type" is a precondition.
+    let action = "ID: action.ask\nOPERATION: core.ask\nTARGET: REF(data.responder)\n\
+                  PARAMETER:\n    NAME: question\n    TYPE: STRING\n    REQUIRED: TRUE\n    \
+                  VALUE: \"Which environment?\"\n\
+                  PARAMETER:\n    NAME: expected_type\n    TYPE: STRING\n    REQUIRED: TRUE\n    \
+                  VALUE: \"STRING\"\nPARAMETER:\n    NAME: options\n    TYPE: LIST[INTEGER]\n    \
+                  REQUIRED: FALSE\n    VALUE: [1, 2]";
+    let source = common::task(
+        &common::data("data.responder", "STRING", "\"the release owner\""),
+        &[action],
+    );
+    let mut host = HostAdapter::new(Grants::none().permit_human())
+        .with_responder(MemoryResponder::new().with_answer("Which environment?", "staging"));
+    let execution = run_with_host(&source, &mut host);
+    assert_eq!(
+        common::errors_of(&execution, "action.ask"),
+        vec!["error.type.mismatch".to_string()]
+    );
+    let result = common::result_of(&execution, "action.ask");
+    assert_eq!(result.failure_phase.as_registry_str(), "pre_effect");
+}
+
 // ---------------------------------------------------------------------------
 // core.read's range contract
 // ---------------------------------------------------------------------------
@@ -1337,13 +1422,25 @@ fn a_uri_recipient_adds_the_network_dependency_to_a_send() {
     let mut host = lcl_runtime::MockHost::new();
     let fixture = common::fixture(&source);
     let execution = lcl_runtime::Runtime::new(common::contracts())
-        .execute_with(&fixture.planned, &fixture.checked, &fixture.resolved, &mut stdlib, &mut host)
+        .execute_with(
+            &fixture.planned,
+            &fixture.checked,
+            &fixture.resolved,
+            &mut stdlib,
+            &mut host,
+        )
         .expect("the document planned");
     assert!(common::errors_of(&execution, "action.send").is_empty());
-    let request = host.requests().first().expect("the send crossed the boundary");
+    let request = host
+        .requests()
+        .first()
+        .expect("the send crossed the boundary");
     assert_eq!(
         request.possible_dependencies.iter().collect::<Vec<_>>(),
         vec!["host", "network"]
     );
-    assert_eq!(request.possible_effects.iter().collect::<Vec<_>>(), vec!["message"]);
+    assert_eq!(
+        request.possible_effects.iter().collect::<Vec<_>>(),
+        vec!["message"]
+    );
 }

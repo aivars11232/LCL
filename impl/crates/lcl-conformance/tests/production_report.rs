@@ -15,7 +15,8 @@ use std::collections::BTreeSet;
 /// Semantic families this build has no executed population for. Every other
 /// required probe must be carried by exactly one real record. Connecting a
 /// population, or losing one, fails these tests until this list is reviewed.
-const UNPOPULATED: [&str; 2] = ["semantic/diagnostic_policy/", "semantic/failure_lifecycle/"];
+/// FINAL-02 populated the last two, `diagnostic_policy` and `failure_lifecycle`.
+const UNPOPULATED: [&str; 0] = [];
 
 /// Engine defects that faithful sub-runs expose while full semantic conformance
 /// stays BLOCKED (LCL-CLOSE-02; residual report, "P4c, operators and functions").

@@ -3,6 +3,8 @@ use crate::{judge, ExecutedCase, Expectation, Observed, Runner};
 use lcl_runtime::{CapabilityOutcome, Contracts, MockHost, Observation, ResultRecord, Value};
 use lcl_spec::SpecPackage;
 
+mod engine;
+
 fn source() -> String {
     crate::fixtures::task_document("\nGOAL:\n    ID: goal.case\n    ASSERT: TRUE\n\nACTION:\n    ID: action.read\n    OPERATION: core.read\n    TARGET: PATH(\"/case/data.txt\")\n\nSUCCESS:\n    ID: success.case\n    ALL: TRUE\n\nTASK:\n    ID: task.case\n    GOAL: REF(goal.case)\n    ACTION: REF(action.read)\n    SUCCESS: REF(success.case)\n\nEXECUTE:\n    REFERENCE: REF(task.case)\n")
 }
@@ -538,6 +540,26 @@ pub fn execute(spec: &SpecPackage, runner: &Runner) -> Vec<ExecutedCase> {
                 ));
             }
             _ => unreachable!(),
+        }
+        runs.extend(engine::runs(spec, runner, &base.schema));
+        if base.schema == "result.verification" {
+            // The verification profile is what a failing-before-effects
+            // producer needs to be missing, so that one run assembles its own
+            // engine with the checking profile uninstalled.
+            let bare = Runner::with_profiles(
+                spec,
+                Runner::shipped_profiles()
+                    .into_iter()
+                    .filter(|p| p.operation_id != "core.verify")
+                    .collect(),
+            )
+            .expect("the engine assembles without the verification profile");
+            for run in engine::runs(spec, &bare, "result.verification") {
+                if run.id == "engine/partial-output-unsupported" {
+                    runs.retain(|existing| existing.id != run.id);
+                    runs.push(run);
+                }
+            }
         }
         out.push(group(&base.schema, runs));
     }

@@ -57,6 +57,14 @@ pub(crate) fn invoke(
         // core.cancel, core.stop and core.ask reach the runtime's lifecycle or
         // the host, neither of which this module decides.
         _ => {
+            // "every option is compatible with expected_type" is a core.ask
+            // precondition, so an incompatible option refuses before the
+            // question is ever put to a person.
+            if contract.operation == "core.ask" {
+                if let Some(failure) = incompatible_option(parameters) {
+                    return failure;
+                }
+            }
             // "Each listed role applies to every invocation except
             // core.execute": core.stop selects its stop role before crossing.
             let target_class = request
@@ -74,6 +82,29 @@ pub(crate) fn invoke(
             Resolution::Host(Box::new(resolved))
         }
     }
+}
+
+/// The first `core.ask` option its `expected_type` does not admit.
+fn incompatible_option(parameters: &BTreeMap<String, Value>) -> Option<Resolution> {
+    let expected_type = match parameters.get("expected_type")? {
+        Value::Text(name) | Value::Identifier(name) => name.clone(),
+        _ => return None,
+    };
+    let Some(Value::List(options)) = parameters.get("options") else {
+        return None;
+    };
+    let option = options
+        .iter()
+        .find(|option| !crate::host::compatible_answer(option, &expected_type))?;
+    Some(Resolution::failed(
+        RuntimeError::TypeMismatch,
+        "options",
+        format!(
+            "a core.ask option of family {} is not compatible with expected_type \
+             {expected_type}",
+            option.family()
+        ),
+    ))
 }
 
 /// `core.compare`: one declared criterion over two operands.
@@ -105,7 +136,10 @@ pub(crate) fn compare(
         );
     };
 
-    let (operator, left_path, right_path) = match criterion(parameters.get("criteria")) {
+    let criteria = parameters
+        .get("criteria")
+        .map(|declared| pure::read_through(cx, declared));
+    let (operator, left_path, right_path) = match criterion(criteria.as_ref()) {
         Ok(criterion) => criterion,
         Err(resolution) => return resolution,
     };
@@ -154,9 +188,10 @@ fn criterion(
     const OPERATORS: [&str; 9] = [
         "==", "!=", "<", "<=", ">", ">=", "IN", "CONTAINS", "MATCHES",
     ];
-    let malformed = |detail: String| {
-        Resolution::failed(RuntimeError::OperationPrecondition, "criteria", detail)
-    };
+    // "Unknown keys, malformed paths, absent operator, and an unregistered
+    // token produce error.operation.parameter."
+    let malformed =
+        |detail: String| Resolution::failed(RuntimeError::OperationParameter, "criteria", detail);
 
     match declared {
         // The registry default is "==", so an omitted criterion arrives here
@@ -186,16 +221,35 @@ fn criterion(
                     return Err(malformed(format!("{key:?} is not a criteria key")));
                 }
             }
-            let path = |name: &str| match fields.get(name) {
-                Some(Value::Text(path)) => Some(path.clone()),
-                _ => None,
-            };
-            Ok((operator.clone(), path("left"), path("right")))
+            // A supplied path is a property_path STRING; any other form is
+            // one of that sentence's malformed paths.
+            let mut paths = [None, None];
+            for (slot, name) in paths.iter_mut().zip(["left", "right"]) {
+                *slot = match fields.get(name) {
+                    Some(Value::Text(path)) => Some(path.clone()),
+                    None => None,
+                    Some(other) => {
+                        return Err(malformed(format!(
+                            "criteria {name} must be a property path STRING, found {}",
+                            other.family()
+                        )))
+                    }
+                };
+            }
+            let [left, right] = paths;
+            Ok((operator.clone(), left, right))
         }
-        Some(other) => Err(malformed(format!(
-            "criteria must be a STRING, an OBJECT or a REFERENCE, found {}",
-            other.family()
-        ))),
+        // "One REFERENCE resolves once to a declared STRING or OBJECT value
+        // satisfying the same contract", so a value of neither form leaves the
+        // row's "criteria are type-valid" precondition unmet by its type.
+        Some(other) => Err(Resolution::failed(
+            RuntimeError::TypeMismatch,
+            "criteria",
+            format!(
+                "criteria must be a STRING or an OBJECT, found {}",
+                other.family()
+            ),
+        )),
     }
 }
 
@@ -294,11 +348,52 @@ fn matches(subject: &Value, pattern: &Value) -> Result<Value, CompareFault> {
 /// outcomes the plan carries.
 pub(crate) fn validate(
     cx: &mut Invocation<'_>,
-    _request: &CapabilityRequest,
+    request: &CapabilityRequest,
     _contract: &OperationContract,
     parameters: &BTreeMap<String, Value>,
 ) -> Resolution {
     let mut errors = Vec::new();
+    // "The REFERENCE resolves exactly once, following transparent aliases, to a
+    // kind.type whose resolved type is OBJECT and whose schema applies to the
+    // target."
+    if let Some(schema) = parameters.get("schema") {
+        let Some(id) = params::reference_id(schema) else {
+            return Resolution::failed(
+                RuntimeError::ReferenceKind,
+                "schema",
+                "core.validate schema is a reference to a kind.type OBJECT",
+            );
+        };
+        let index = params::declaration_index(cx, id);
+        let kind = index
+            .and_then(|index| lcl_runtime::syntax::declaration_block(cx.resolved, index))
+            .and_then(|block| lcl_runtime::syntax::field_text(&block, "KIND"));
+        let object = index
+            .and_then(|index| cx.checked.declared_object_type(index))
+            .cloned();
+        match (kind.as_deref(), object) {
+            (Some("kind.type"), Some(object)) => {
+                let declared = lcl_checker::ty::Type::Object(object);
+                // "whose schema applies to the target": a target the declared
+                // OBJECT schema does not admit is a detected failure, recorded
+                // under its registered identifier.
+                let target = request.target.as_ref().map(|t| pure::read_through(cx, t));
+                if !target
+                    .as_ref()
+                    .is_some_and(|value| params::value_matches(&declared, value))
+                {
+                    errors.push(Value::Identifier("error.validation.failed".to_string()));
+                }
+            }
+            _ => {
+                return Resolution::failed(
+                    RuntimeError::ReferenceKind,
+                    "schema",
+                    format!("{id} is not a kind.type whose resolved type is OBJECT"),
+                )
+            }
+        }
+    }
     if let Some(Value::List(rules)) = parameters.get("rules") {
         for rule in rules {
             let Some(id) = params::reference_id(rule) else {
@@ -377,6 +472,14 @@ pub(crate) fn verify(
             "core.verify requires an assertion",
         );
     };
+    // "result records TRUE, FALSE, or UNKNOWN and evidence." Whether each
+    // declaration resolves is decided where the identifier is registered —
+    // `verification_or_completion` — so this records what the invocation
+    // required and step 12a judges it.
+    let evidence = match parameters.get("evidence") {
+        Some(Value::List(items)) => items.clone(),
+        _ => Vec::new(),
+    };
     let observed = request
         .target
         .as_ref()
@@ -395,11 +498,15 @@ pub(crate) fn verify(
             } else {
                 vec![Value::Identifier("error.verification.failed".to_string())]
             },
+            evidence,
         )),
         // "verified ... UNKNOWN when [it] cannot be established."
-        Ok(Value::Unknown) => {
-            Resolution::Completed(schema::verification(Value::Unknown, observed, Vec::new()))
-        }
+        Ok(Value::Unknown) => Resolution::Completed(schema::verification(
+            Value::Unknown,
+            observed,
+            Vec::new(),
+            evidence,
+        )),
         Ok(Value::Missing) => Resolution::failed(
             RuntimeError::RequiredMissing,
             "assertion",

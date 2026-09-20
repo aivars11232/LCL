@@ -69,6 +69,7 @@ pub(crate) fn invocation(
     let locus = block.key.span;
     parameters(check, source, block, &contract, locus);
     target(check, source, block, &contract, name, locus);
+    comparison_target(check, source, block, &contract, locus);
     enum_contexts(block, &contract)
 }
 
@@ -267,6 +268,69 @@ fn target(
         "missing_target",
         format!("`{}` marks TARGET required", contract.id),
     );
+}
+
+/// `06_STANDARD_LIBRARY/10`, the half of `core.test`'s comparison form that
+/// needs a resolved target:
+///
+/// > A material-value TARGET is legal only as that actual source and cannot
+/// > accompany actual or assertion.
+///
+/// Which form a site supplies is grammar-stage structure; whether its TARGET is
+/// a material value or a TASK/ACTION graph is a type question, so this half is
+/// "an invocation site [getting] the operation's target/named-parameter
+/// contract wrong".
+fn comparison_target(
+    check: &mut Check<'_>,
+    source: &SourceId,
+    block: &Block,
+    contract: &OperationContract,
+    locus: lcl_lexer::Span,
+) {
+    if contract.id != "core.test" {
+        return;
+    }
+    let Some(field) = block.field("TARGET") else {
+        return;
+    };
+    let graph = crate::types::inline_expression(&field.body)
+        .and_then(|expr| match expr {
+            Expr::Call(call) if call.is_reference() => call.reference_target(),
+            _ => None,
+        })
+        .and_then(|identifier| check.catalog.binding(source, identifier.span))
+        .and_then(|declaration| check.resolved.declarations().all().get(declaration))
+        .is_some_and(|declaration| matches!(declaration.block.as_str(), "TASK" | "ACTION"));
+    if graph {
+        return;
+    }
+    for name in ["actual", "assertion"] {
+        if !supplies(block, name) {
+            continue;
+        }
+        check.emit(
+            StaticError::OperationParameter,
+            source,
+            locus,
+            "comparison_form",
+            format!(
+                "`core.test` admits a material-value TARGET only as the actual source for \
+                 expected, so it cannot accompany `{name}`"
+            ),
+        );
+    }
+}
+
+/// Whether one invocation site supplies a named parameter.
+fn supplies(block: &Block, name: &str) -> bool {
+    block.fields("PARAMETER").into_iter().any(|field| {
+        field
+            .body
+            .as_nested()
+            .and_then(|nested| parameter_name(&nested.statements))
+            .as_deref()
+            == Some(name)
+    })
 }
 
 /// A HANDLER's operation-identifier `FALLBACK`, the third invocation site.

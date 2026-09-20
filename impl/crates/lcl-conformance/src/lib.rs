@@ -38,6 +38,7 @@
 //! exists to supply it.
 
 pub mod fixtures;
+pub mod lifecycle_cases;
 pub mod obligations;
 pub mod operation_cases;
 pub mod production;
@@ -50,7 +51,8 @@ pub mod witness_cases;
 
 pub use report::{ConformanceReport, Coverage};
 pub use runner::{
-    judge, ExecutedCase, Expectation, Observed, Reached, Runner, RunnerError, Verdict,
+    attempt_field, judge, ExecutedCase, Expectation, Observed, Reached, Runner, RunnerError,
+    Verdict,
 };
 
 use lcl_spec::json::Json;

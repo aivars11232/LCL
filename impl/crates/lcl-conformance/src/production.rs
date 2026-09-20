@@ -8,8 +8,8 @@
 use crate::report::{ConformanceReport, Coverage};
 use crate::witness_cases::Plan;
 use crate::{
-    operation_cases, result_cases, semantic_cases, source_cases, witness_cases, ConformanceIndex,
-    Runner,
+    lifecycle_cases, operation_cases, result_cases, semantic_cases, source_cases, witness_cases,
+    ConformanceIndex, Runner,
 };
 use lcl_spec::SpecPackage;
 
@@ -65,6 +65,9 @@ pub fn report(spec: &SpecPackage) -> Result<ConformanceReport, String> {
     for case in result_cases::execute(spec, &runner) {
         report.record(case, Coverage::Runtime);
     }
+    for case in lifecycle_cases::execute(spec, &runner) {
+        report.record(case, Coverage::EndToEnd);
+    }
     Ok(report)
 }
 
@@ -76,7 +79,9 @@ fn semantic_coverage(id: &str) -> Result<Coverage, String> {
             Ok(Coverage::StaticOrType)
         }
         Some("operator_valid" | "function_valid" | "status_transition") => Ok(Coverage::Runtime),
-        Some("error_contract") => Ok(Coverage::EndToEnd),
+        Some("error_contract" | "diagnostic_policy" | "failure_lifecycle") => {
+            Ok(Coverage::EndToEnd)
+        }
         _ => Err(format!("semantic group {id} has no reviewed coverage")),
     }
 }

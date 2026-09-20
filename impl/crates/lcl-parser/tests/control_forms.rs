@@ -297,3 +297,46 @@ fn the_deferred_boundary_is_published() {
         assert!(!area.is_empty() && !owner.is_empty());
     }
 }
+
+#[test]
+fn core_test_requires_exactly_one_comparison_form() {
+    // "core.test always requires exactly one comparison form: assertion; or
+    // expected together with exactly one actual source ... TARGET alone is not
+    // a complete test."
+    let action = |parameters: &str| {
+        format!(
+            concat!(
+                "LCL:\n    VERSION: \"0.1.0\"\n\n",
+                "SPECIFICATION:\n    ID: test.task\n    NAME: \"T\"\n    VERSION: \"1.0.0\"\n    KIND: kind.task\n\n",
+                "DATA:\n    ID: data.subject\n    TYPE: INTEGER\n    VALUE: 3\n\n",
+                "GOAL:\n    ID: goal.one\n    ASSERT: TRUE\n\n",
+                "ACTION:\n    ID: action.one\n    OPERATION: core.test\n    TARGET: REF(data.subject)\n{}",
+                "SUCCESS:\n    ID: success.one\n    ALL: TRUE\n\n",
+                "TASK:\n    ID: task.one\n    GOAL: REF(goal.one)\n    ACTION: REF(action.one)\n    SUCCESS: REF(success.one)\n\n",
+                "EXECUTE:\n    REFERENCE: REF(task.one)\n"
+            ),
+            parameters
+        )
+    };
+    let expected = "    PARAMETER:\n        NAME: expected\n        TYPE: INTEGER\n        \
+                    REQUIRED: FALSE\n        VALUE: 3\n";
+    let assertion = "    PARAMETER:\n        NAME: assertion\n        TYPE: BOOLEAN\n        \
+                     REQUIRED: FALSE\n        VALUE: TRUE\n";
+
+    // No comparison form at all, and two of them, are both unsatisfied.
+    for parameters in ["\n".to_string(), format!("{expected}{assertion}\n")] {
+        assert!(
+            id_list(&parse_bytes(action(&parameters).as_bytes()))
+                .contains(&"error.block.conditional_requirement".to_string()),
+            "{parameters}"
+        );
+    }
+    // Exactly one form, each way, is complete.
+    for parameters in [format!("{expected}\n"), format!("{assertion}\n")] {
+        assert_eq!(
+            id_list(&parse_bytes(action(&parameters).as_bytes())),
+            Vec::<String>::new(),
+            "{parameters}"
+        );
+    }
+}

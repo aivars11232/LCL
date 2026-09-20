@@ -616,3 +616,42 @@ fn an_undefined_property_path_is_a_precondition_failure() {
         vec!["error.operation.precondition".to_string()]
     );
 }
+
+const OPTIONAL_FIELD_TYPE: &str = "\nDEFINE:\n    ID: type.noted\n    KIND: kind.type\n    \
+     BASE: OBJECT\n    FIELD:\n        NAME: name\n        TYPE: STRING\n        \
+     REQUIRED: TRUE\n    FIELD:\n        NAME: note\n        TYPE: STRING\n        \
+     REQUIRED: FALSE\n";
+
+/// One record that omits the optional `note`, keyed by that declared path.
+fn keyed_by_absent_optional(operation: &str) -> lcl_runtime::Execution {
+    let bare = "\nDATA:\n    ID: data.bare\n    TYPE: OBJECT[REF(type.noted)]\n    \
+                VALUE:\n        name: \"bare\"\n";
+    let declarations = format!(
+        "{OPTIONAL_FIELD_TYPE}{bare}{}",
+        common::data(
+            "data.records",
+            "LIST[OBJECT[REF(type.noted)]]",
+            "[REF(data.bare)]"
+        )
+    );
+    let action = format!(
+        "ID: action.keyed\nOPERATION: {operation}\nTARGET: REF(data.records)\n\
+         PARAMETER:\n    NAME: key\n    TYPE: STRING\n    REQUIRED: TRUE\n    VALUE: \"note\""
+    );
+    common::run(&common::task(&declarations, &[&action]))
+}
+
+#[test]
+fn a_declared_key_path_with_no_value_is_a_missing_key_not_an_unregistered_path() {
+    // "A key result of MISSING produces error.required.missing"; only "a
+    // malformed or unregistered path uses error.operation.precondition". A
+    // declared optional field the record omits is the first, not the second.
+    for operation in ["core.group", "core.sort"] {
+        let execution = keyed_by_absent_optional(operation);
+        assert_eq!(
+            common::errors_of(&execution, "action.keyed"),
+            vec!["error.required.missing".to_string()],
+            "{operation} with an absent declared key value"
+        );
+    }
+}

@@ -207,6 +207,11 @@ impl Operations for Stdlib {
         // Not a core row. A custom kind.operation has no body of its own, so
         // its implementation is the host's.
         let Some(owner) = family(&request.operation) else {
+            // A custom kind.operation declares its own axis contract, and
+            // checks it itself: it selects no implementation profile.
+            if let Some(failure) = data::custom_axes(cx, request) {
+                return failure;
+            }
             return Resolution::host(request.clone());
         };
         let Some(contract) = self.contracts.operation(&request.operation).cloned() else {

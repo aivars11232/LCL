@@ -75,6 +75,8 @@ pub enum Reason {
     PrimaryDiagnostic(Primary),
     /// A declared `FAILURE` clause mapped it.
     DeclaredFailure(String),
+    /// A committed `core.stop` halted the root on a declared stop path.
+    DeclaredStop,
     /// An illegal `FAILURE` request produced `error.execution.order`.
     IllegalRequest {
         failure: String,
@@ -208,6 +210,18 @@ pub(crate) fn resolve(
     }
 
     // 2. A declared FAILURE clause may map one, if its request is legal.
+    //
+    // A committed `core.stop` is considered after it, because "core.stop yields
+    // status.stopped unless another declared failure status applies".
+    if verdict.failure.is_none() && root_state(engine) == "status.stopped" {
+        // `status.stopped` means exactly "Execution halted on a declared stop
+        // path without satisfying SUCCESS", so a root the stop already moved
+        // does not then evaluate success as if it had run to the end.
+        return Terminal {
+            status: "status.stopped".to_string(),
+            reason: Reason::DeclaredStop,
+        };
+    }
     if let Some(failure) = &verdict.failure {
         let requested = failure.requested_status.clone();
         // The root is still in `status.running` when completion runs:

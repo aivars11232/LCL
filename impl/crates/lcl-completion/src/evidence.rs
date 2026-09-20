@@ -262,6 +262,37 @@ pub(crate) fn run(engine: &mut Engine, checks: &Checks, verdict: &Verdict) -> Ev
     Evidence { records }
 }
 
+/// The field bodies one ACTION block names evidence declarations in: its own
+/// `EVIDENCE` field, and an `evidence` operation parameter's `VALUE`.
+fn evidence_fields<'a>(
+    block: &lcl_runtime::syntax::DeclBlock<'a>,
+) -> Vec<&'a lcl_parser::syntax::Field> {
+    use lcl_parser::syntax::Statement;
+    let mut fields: Vec<&lcl_parser::syntax::Field> = block.field("EVIDENCE").into_iter().collect();
+    for parameter in block.fields("PARAMETER") {
+        let Some(nested) = parameter.body.as_nested() else {
+            continue;
+        };
+        let named = |name: &str| {
+            nested
+                .statements
+                .iter()
+                .find_map(|statement| match statement {
+                    Statement::Field(field) if field.key.text == name => Some(field),
+                    _ => None,
+                })
+        };
+        let is_evidence = named("NAME")
+            .and_then(|field| syntax::inline_expr(&field.body))
+            .and_then(syntax::literal_text)
+            .is_some_and(|name| name == "evidence");
+        if is_evidence {
+            fields.extend(named("VALUE"));
+        }
+    }
+    fields
+}
+
 /// Every evidence id something that actually ran referenced, with its referrers.
 fn referenced_evidence(
     engine: &Engine,
@@ -299,11 +330,16 @@ fn referenced_evidence(
         let Some(block) = lcl_runtime::syntax::declaration_block(engine.resolved, index) else {
             continue;
         };
-        let Some(field) = block.field("EVIDENCE") else {
-            continue;
-        };
-        for (evidence, _) in syntax::reference_list(&field.body) {
-            out.entry(evidence).or_default().insert(id.clone());
+        // An ACTION names the evidence it requires in its own EVIDENCE field,
+        // and a row whose contract takes evidence declarations names them in
+        // that parameter. `operations_v0.1.0.json#/contracts/core.verify`
+        // calls its `evidence` parameter "Required evidence declarations", so
+        // an activated invocation that supplied one named it exactly as the
+        // field does.
+        for field in evidence_fields(&block) {
+            for (evidence, _) in syntax::reference_list(&field.body) {
+                out.entry(evidence).or_default().insert(id.clone());
+            }
         }
     }
 

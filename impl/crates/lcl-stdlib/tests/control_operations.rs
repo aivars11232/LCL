@@ -210,11 +210,64 @@ fn matches_keeps_the_missing_projection_rule() {
 
 #[test]
 fn an_unregistered_criterion_is_refused() {
+    // "Unknown keys, malformed paths, absent operator, and an unregistered
+    // token produce error.operation.parameter."
     let source = compare_document("INTEGER", "3", "INTEGER", "4", Some("~="));
     let execution = run_checked(&source);
     assert_eq!(
         common::errors_of(&execution, "action.compare"),
-        vec!["error.operation.precondition".to_string()]
+        vec!["error.operation.parameter".to_string()]
+    );
+}
+
+#[test]
+fn a_malformed_criteria_object_is_a_parameter_defect() {
+    // The same sentence covers an absent operator and an unknown key; both are
+    // the criteria OBJECT failing its own closed form.
+    let malformed = |fields: &str| {
+        let declarations = format!(
+            "{}{}\nDATA:\n    ID: data.criteria\n    TYPE: OBJECT\n    VALUE:\n{fields}",
+            common::data("data.left", "INTEGER", "3"),
+            common::data("data.right", "INTEGER", "4")
+        );
+        let action = "ID: action.compare\nOPERATION: core.compare\nTARGET: REF(data.left)\n\
+                      PARAMETER:\n    NAME: against\n    TYPE: INTEGER\n    REQUIRED: TRUE\n    \
+                      VALUE: REF(data.right)\nPARAMETER:\n    NAME: criteria\n    TYPE: OBJECT\n    \
+                      REQUIRED: FALSE\n    VALUE: REF(data.criteria)";
+        common::task(&declarations, &[action])
+    };
+    for fields in [
+        "        left: \"name\"\n",
+        "        operator: \"==\"\n        middle: \"name\"\n",
+    ] {
+        let execution = run_checked(&malformed(fields));
+        assert_eq!(
+            common::errors_of(&execution, "action.compare"),
+            vec!["error.operation.parameter".to_string()],
+            "criteria fields {fields:?}"
+        );
+    }
+}
+
+#[test]
+fn a_criteria_reference_to_neither_admitted_form_is_a_type_defect() {
+    // "One REFERENCE resolves once to a declared STRING or OBJECT value
+    // satisfying the same contract." A declared LIST is neither form, and the
+    // row's precondition is that "criteria are type-valid".
+    let declarations = format!(
+        "{}{}",
+        common::data("data.left", "INTEGER", "3"),
+        common::data("data.numbers", "LIST[INTEGER]", "[1, 2]")
+    );
+    let action = "ID: action.compare\nOPERATION: core.compare\nTARGET: REF(data.left)\n\
+                  PARAMETER:\n    NAME: against\n    TYPE: INTEGER\n    REQUIRED: TRUE\n    \
+                  VALUE: 3\nPARAMETER:\n    NAME: criteria\n    \
+                  TYPE: REFERENCE[REF(data.numbers)]\n    REQUIRED: FALSE\n    \
+                  VALUE: REF(data.numbers)";
+    let execution = run_checked(&common::task(&declarations, &[action]));
+    assert_eq!(
+        common::errors_of(&execution, "action.compare"),
+        vec!["error.type.mismatch".to_string()]
     );
 }
 
@@ -311,6 +364,58 @@ fn core_verify_without_an_installed_verifier_fails_its_precondition() {
     );
 }
 
+/// One `core.verify` whose evidence parameter names `evidence.item`.
+fn verify_with_evidence(evidence: &str) -> lcl_runtime::Execution {
+    let declarations = format!("{}{evidence}", common::data("data.number", "INTEGER", "3"));
+    let action = "ID: action.verify\nOPERATION: core.verify\nTARGET: REF(data.number)\n\
+                  PARAMETER:\n    NAME: assertion\n    TYPE: BOOLEAN\n    REQUIRED: TRUE\n    \
+                  VALUE: REF(data.number) == 3\nPARAMETER:\n    NAME: evidence\n    \
+                  TYPE: LIST[REFERENCE[REF(evidence.item)]]\n    REQUIRED: FALSE\n    \
+                  VALUE: [REF(evidence.item)]";
+    run_checked(&common::task(&declarations, &[action]))
+}
+
+#[test]
+fn core_verify_records_the_evidence_it_required() {
+    // "result records TRUE, FALSE, or UNKNOWN and evidence."
+    let execution = verify_with_evidence(
+        "\nEVIDENCE:\n    ID: evidence.item\n    TYPE: STRING\n    VALUE: \"observed\"\n",
+    );
+    let result = common::result_of(&execution, "action.verify");
+    assert_eq!(
+        result.status, "status.succeeded",
+        "{:?}",
+        result.execution_errors
+    );
+    assert_eq!(
+        result.fields.get("evidence"),
+        Some(&Value::List(vec![Value::Reference(
+            "evidence.item".to_string()
+        )]))
+    );
+}
+
+// ---------------------------------------------------------------------------
+// core.cancel
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_cancellation_reason_travels_with_the_state_effect_it_justified() {
+    // "reason is evidenced": the recorded reason is evidence of the transition,
+    // and "Every known begun effect is retained in observed_effects".
+    let action = "ID: action.cancel\nOPERATION: core.cancel\nTARGET: REF(task.subject)\n\
+                  PARAMETER:\n    NAME: reason\n    TYPE: STRING\n    REQUIRED: TRUE\n    \
+                  VALUE: \"the owner cancelled it\"";
+    let execution = common::run(&common::task("", &[action]));
+    let result = common::result_of(&execution, "action.cancel");
+    let evidence: Vec<&String> = result
+        .observed_effects
+        .iter()
+        .flat_map(|effect| effect.evidence.iter())
+        .collect();
+    assert_eq!(evidence, vec!["the owner cancelled it"]);
+}
+
 // ---------------------------------------------------------------------------
 // core.validate
 // ---------------------------------------------------------------------------
@@ -329,6 +434,61 @@ fn core_validate_with_no_declared_rules_is_valid() {
     );
     assert_eq!(result.fields.get("valid"), Some(&Value::Boolean(true)));
     assert_eq!(result.fields.get("errors"), Some(&Value::List(Vec::new())));
+}
+
+/// One `core.validate` over `data.subject` with a schema REFERENCE.
+fn validate_against_schema(declarations: &str, schema: &str, subject: &str) -> Vec<String> {
+    let action = format!(
+        "ID: action.validate\nOPERATION: core.validate\nTARGET: REF(data.subject)\n\
+         PARAMETER:\n    NAME: schema\n    TYPE: REFERENCE[REF({schema})]\n    \
+         REQUIRED: FALSE\n    VALUE: REF({schema})"
+    );
+    let source = common::task(&format!("{declarations}{subject}"), &[&action]);
+    let execution = run_checked(&source);
+    let result = common::result_of(&execution, "action.validate");
+    if !result.execution_errors.is_empty() {
+        return common::errors_of(&execution, "action.validate");
+    }
+    match result.fields.get("errors") {
+        Some(Value::List(errors)) => errors.iter().map(|error| error.to_string()).collect(),
+        other => panic!("result.validation records an errors list, found {other:?}"),
+    }
+}
+
+const PERSON_SCHEMA: &str = "\nDEFINE:\n    ID: type.person\n    KIND: kind.type\n    \
+     BASE: OBJECT\n    FIELD:\n        NAME: name\n        TYPE: STRING\n        \
+     REQUIRED: TRUE\n";
+
+#[test]
+fn a_schema_reference_of_the_wrong_kind_is_a_reference_defect() {
+    // "The REFERENCE resolves exactly once, following transparent aliases, to a
+    // kind.type whose resolved type is OBJECT." A DATA declaration is not one.
+    assert_eq!(
+        validate_against_schema(
+            &common::data("data.number", "INTEGER", "3"),
+            "data.number",
+            &common::data("data.subject", "INTEGER", "3")
+        ),
+        vec!["error.reference.kind".to_string()]
+    );
+}
+
+#[test]
+fn a_declared_schema_is_applied_to_the_target() {
+    // The same sentence requires a schema "whose schema applies to the target",
+    // and "all detected failures use registered error identifiers".
+    let conforming = "\nDATA:\n    ID: data.subject\n    TYPE: OBJECT[REF(type.person)]\n    \
+                      VALUE:\n        name: \"ada\"\n";
+    assert_eq!(
+        validate_against_schema(PERSON_SCHEMA, "type.person", conforming),
+        Vec::<String>::new()
+    );
+
+    let other = common::data("data.subject", "INTEGER", "3");
+    assert_eq!(
+        validate_against_schema(PERSON_SCHEMA, "type.person", &other),
+        vec!["error.validation.failed".to_string()]
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -373,27 +533,52 @@ fn core_test_evaluates_a_declared_assertion() {
 
 #[test]
 fn core_test_requires_exactly_one_comparison_form() {
-    // "TARGET alone is not a complete test."
+    // "TARGET alone is not a complete test." `error.operation.precondition` is
+    // not one of the identifiers this row's closed `errors` list admits: an
+    // unsatisfied comparison form is its registered
+    // `error.block.conditional_requirement`, at the stage that identifier is
+    // registered to.
     let action = "ID: action.test\nOPERATION: core.test\nTARGET: REF(data.subject)";
     let source = common::task(&common::data("data.subject", "INTEGER", "3"), &[action]);
-    let execution = run_checked(&source);
     assert_eq!(
-        common::errors_of(&execution, "action.test"),
-        vec!["error.operation.precondition".to_string()]
+        refused_before_execution(&source),
+        "error.block.conditional_requirement"
     );
 }
 
 #[test]
 fn an_assertion_may_not_accompany_an_actual_source() {
+    // "A material-value TARGET is legal only as that actual source and cannot
+    // accompany actual or assertion." Whether the TARGET is material is a type
+    // question, so this half is the row's `error.operation.parameter`.
     let action = "ID: action.test\nOPERATION: core.test\nTARGET: REF(data.subject)\n\
                   PARAMETER:\n    NAME: assertion\n    TYPE: BOOLEAN\n    REQUIRED: FALSE\n    \
                   VALUE: TRUE";
     let source = common::task(&common::data("data.subject", "INTEGER", "3"), &[action]);
-    let execution = run_checked(&source);
     assert_eq!(
-        common::errors_of(&execution, "action.test"),
-        vec!["error.operation.precondition".to_string()]
+        refused_before_execution(&source),
+        "error.operation.parameter"
     );
+}
+
+/// The identifier of the first stage that refuses one source before execution.
+fn refused_before_execution(source: &str) -> String {
+    let unit =
+        lcl_resolver::SourceUnit::new(lcl_resolver::SourceId::new("root.lcl"), source.as_bytes());
+    match lcl_resolver::Resolver::new(common::rules(), common::grammar(), common::lexicon())
+        .resolve(&unit, &lcl_resolver::MemoryProvider::new())
+    {
+        Err(skipped) => skipped.primary,
+        Ok(resolved) => match resolved.primary() {
+            Some(primary) => primary.id.to_string(),
+            None => lcl_checker::Checker::new(common::static_contracts())
+                .check(&resolved)
+                .expect("resolution succeeded")
+                .primary()
+                .map(|primary| primary.id.to_string())
+                .unwrap_or_default(),
+        },
+    }
 }
 
 // ---------------------------------------------------------------------------

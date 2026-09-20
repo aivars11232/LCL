@@ -522,6 +522,11 @@ fn key_of(
         // error.operation.precondition."
         Some(Value::Text(path)) => match property_path(member, path) {
             Some(value) => Ok(Some(value)),
+            // "A key result of MISSING produces error.required.missing": a
+            // path the declared member type defines is registered, so a member
+            // that carries no value there resolves to MISSING and the caller's
+            // own sentinel rule decides it.
+            None if params::declared_member_path(cx, "TARGET", path) => Ok(Some(Value::Missing)),
             None => Err(Resolution::failed(
                 RuntimeError::OperationPrecondition,
                 name,

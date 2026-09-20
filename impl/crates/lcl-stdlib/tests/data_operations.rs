@@ -468,7 +468,9 @@ fn precondition_document(action: &str) -> String {
 }
 
 fn parameter(name: &str, ty: &str, value: &str) -> String {
-    format!("\nPARAMETER:\n    NAME: {name}\n    TYPE: {ty}\n    REQUIRED: FALSE\n    VALUE: {value}")
+    format!(
+        "\nPARAMETER:\n    NAME: {name}\n    TYPE: {ty}\n    REQUIRED: FALSE\n    VALUE: {value}"
+    )
 }
 
 /// Every registered filesystem precondition the shipped adapter can observe
@@ -479,12 +481,24 @@ fn parameter(name: &str, ty: &str, value: &str) -> String {
 #[test]
 fn registered_filesystem_preconditions_fail_before_effects() {
     let absent = "TARGET: PATH(\"/srv/data/absent.txt\")";
-    let cases: Vec<(&str, String, Vec<(&str, &str)>)> = vec![
-        ("read: target exists and is readable", format!("OPERATION: core.read\n{absent}"), vec![]),
-        ("inspect: target exists", format!("OPERATION: core.inspect\n{absent}"), vec![]),
+    type Case<'a> = (&'a str, String, Vec<(&'a str, &'a str)>);
+    let cases: Vec<Case<'_>> = vec![
+        (
+            "read: target exists and is readable",
+            format!("OPERATION: core.read\n{absent}"),
+            vec![],
+        ),
+        (
+            "inspect: target exists",
+            format!("OPERATION: core.inspect\n{absent}"),
+            vec![],
+        ),
         (
             "create: target does not exist when fail_if_exists is TRUE",
-            format!("OPERATION: core.create\nTARGET: REF(data.target){}", parameter("content", "STRING", "\"new\"")),
+            format!(
+                "OPERATION: core.create\nTARGET: REF(data.target){}",
+                parameter("content", "STRING", "\"new\"")
+            ),
             vec![],
         ),
         (
@@ -494,17 +508,28 @@ fn registered_filesystem_preconditions_fail_before_effects() {
         ),
         (
             "write: target exists unless create_if_missing is TRUE",
-            format!("OPERATION: core.write\n{absent}{}", parameter("content", "STRING", "\"x\"").replace("REQUIRED: FALSE", "REQUIRED: TRUE")),
+            format!(
+                "OPERATION: core.write\n{absent}{}",
+                parameter("content", "STRING", "\"x\"")
+                    .replace("REQUIRED: FALSE", "REQUIRED: TRUE")
+            ),
             vec![],
         ),
         (
             "append: target exists and supports append",
-            format!("OPERATION: core.append\n{absent}{}", parameter("content", "STRING", "\"x\"").replace("REQUIRED: FALSE", "REQUIRED: TRUE")),
+            format!(
+                "OPERATION: core.append\n{absent}{}",
+                parameter("content", "STRING", "\"x\"")
+                    .replace("REQUIRED: FALSE", "REQUIRED: TRUE")
+            ),
             vec![],
         ),
         (
             "modify: target exists",
-            format!("OPERATION: core.modify\n{absent}{}", parameter("change", "STRING", "\"x\"").replace("REQUIRED: FALSE", "REQUIRED: TRUE")),
+            format!(
+                "OPERATION: core.modify\n{absent}{}",
+                parameter("change", "STRING", "\"x\"").replace("REQUIRED: FALSE", "REQUIRED: TRUE")
+            ),
             vec![],
         ),
         (
@@ -516,7 +541,11 @@ fn registered_filesystem_preconditions_fail_before_effects() {
             ),
             vec![],
         ),
-        ("delete: target exists unless require_exists is FALSE", format!("OPERATION: core.delete\n{absent}"), vec![]),
+        (
+            "delete: target exists unless require_exists is FALSE",
+            format!("OPERATION: core.delete\n{absent}"),
+            vec![],
+        ),
         (
             "delete: recursive deletion is explicitly authorized when needed",
             "OPERATION: core.delete\nTARGET: PATH(\"/srv/data/tree\")".to_string(),
@@ -524,27 +553,47 @@ fn registered_filesystem_preconditions_fail_before_effects() {
         ),
         (
             "rename: target exists",
-            format!("OPERATION: core.rename\n{absent}{}", parameter("new_name", "STRING", "\"renamed.txt\"").replace("REQUIRED: FALSE", "REQUIRED: TRUE")),
+            format!(
+                "OPERATION: core.rename\n{absent}{}",
+                parameter("new_name", "STRING", "\"renamed.txt\"")
+                    .replace("REQUIRED: FALSE", "REQUIRED: TRUE")
+            ),
             vec![],
         ),
         (
             "rename: renamed destination is absent unless overwrite is TRUE",
-            format!("OPERATION: core.rename\nTARGET: REF(data.target){}", parameter("new_name", "STRING", "\"other.txt\"").replace("REQUIRED: FALSE", "REQUIRED: TRUE")),
+            format!(
+                "OPERATION: core.rename\nTARGET: REF(data.target){}",
+                parameter("new_name", "STRING", "\"other.txt\"")
+                    .replace("REQUIRED: FALSE", "REQUIRED: TRUE")
+            ),
             vec![("/srv/data/other.txt", "old")],
         ),
         (
             "copy: source exists",
-            format!("OPERATION: core.copy\n{absent}{}", parameter("destination", "PATH", "REF(data.other)").replace("REQUIRED: FALSE", "REQUIRED: TRUE")),
+            format!(
+                "OPERATION: core.copy\n{absent}{}",
+                parameter("destination", "PATH", "REF(data.other)")
+                    .replace("REQUIRED: FALSE", "REQUIRED: TRUE")
+            ),
             vec![],
         ),
         (
             "copy: destination absent unless overwrite is TRUE",
-            format!("OPERATION: core.copy\nTARGET: REF(data.target){}", parameter("destination", "PATH", "REF(data.other)").replace("REQUIRED: FALSE", "REQUIRED: TRUE")),
+            format!(
+                "OPERATION: core.copy\nTARGET: REF(data.target){}",
+                parameter("destination", "PATH", "REF(data.other)")
+                    .replace("REQUIRED: FALSE", "REQUIRED: TRUE")
+            ),
             vec![("/srv/data/other.txt", "old")],
         ),
         (
             "move: destination absent unless overwrite is TRUE",
-            format!("OPERATION: core.move\nTARGET: REF(data.target){}", parameter("destination", "PATH", "REF(data.other)").replace("REQUIRED: FALSE", "REQUIRED: TRUE")),
+            format!(
+                "OPERATION: core.move\nTARGET: REF(data.target){}",
+                parameter("destination", "PATH", "REF(data.other)")
+                    .replace("REQUIRED: FALSE", "REQUIRED: TRUE")
+            ),
             vec![("/srv/data/other.txt", "old")],
         ),
     ];
@@ -587,24 +636,128 @@ fn registered_filesystem_preconditions_fail_before_effects() {
 fn a_reference_address_is_classified_by_its_declaration_not_its_current_value() {
     let source = common::task(
         "\nOUTPUT:\n    ID: output.log\n    TYPE: STRING\n    FORMAT: format.plain_text\n",
-        &["ID: action.subject\nOPERATION: core.append\nTARGET: REF(output.log)\n\
-           PARAMETER:\n    NAME: content\n    TYPE: STRING\n    REQUIRED: TRUE\n    VALUE: \"x\""],
+        &[
+            "ID: action.subject\nOPERATION: core.append\nTARGET: REF(output.log)\n\
+           PARAMETER:\n    NAME: content\n    TYPE: STRING\n    REQUIRED: TRUE\n    VALUE: \"x\"",
+        ],
     );
     let mut stdlib = common::stdlib();
     let mut host = lcl_runtime::MockHost::new();
     let fixture = common::fixture(&source);
     let execution = Runtime::new(common::contracts())
-        .execute_with(&fixture.planned, &fixture.checked, &fixture.resolved, &mut stdlib, &mut host)
+        .execute_with(
+            &fixture.planned,
+            &fixture.checked,
+            &fixture.resolved,
+            &mut stdlib,
+            &mut host,
+        )
         .expect("the document planned");
     assert!(
         common::errors_of(&execution, "action.subject").is_empty(),
         "{:?}",
         common::errors_of(&execution, "action.subject")
     );
-    let request = host.requests().first().expect("the append crossed the boundary");
+    let request = host
+        .requests()
+        .first()
+        .expect("the append crossed the boundary");
     assert_eq!(
         request.possible_effects.iter().collect::<Vec<_>>(),
         vec!["state"],
         "{request:?}"
     );
 }
+
+/// The store rows' registered preconditions: "MEMORY mode permits write";
+/// "when merge is FALSE, value matches the declared MEMORY type"; "when merge
+/// is TRUE, the current MEMORY value and value parameter are OBJECT and the
+/// computed merged OBJECT matches the declared MEMORY type"; and, for
+/// `core.state_update`, "STATE mode permits write" and "value type matches".
+#[test]
+fn store_rows_check_mode_and_declared_type_before_effects() {
+    const PAIR: &str = "\nDEFINE:\n    ID: type.pair\n    KIND: kind.type\n    BASE: OBJECT\n    \
+        FIELD:\n        NAME: first\n        TYPE: INTEGER\n        REQUIRED: TRUE\n    \
+        FIELD:\n        NAME: second\n        TYPE: INTEGER\n        REQUIRED: TRUE\n\
+        \nMEMORY:\n    ID: memory.pair\n    TYPE: OBJECT[REF(type.pair)]\n    SCOPE: REF(scope.task)\n    \
+        MODE: mode.read_write\n    VALUE:\n        first: 1\n        second: 2\n";
+    const READ_ONLY: &str =
+        "\nMEMORY:\n    ID: memory.frozen\n    TYPE: STRING\n    SCOPE: REF(scope.task)\n    \
+        MODE: mode.read_only\n    VALUE: \"kept\"\n";
+    let scope = "\nSCOPE:\n    ID: scope.task\n    INCLUDE: REF(task.subject)\n";
+    let write = |target: &str, ty: &str, value: &str, merge: bool| {
+        format!(
+            "ID: action.write\nOPERATION: core.memory_write\nTARGET: REF({target})\n\
+             PARAMETER:\n    NAME: value\n    TYPE: {ty}\n    REQUIRED: TRUE\n    VALUE: {value}{}",
+            if merge {
+                "\nPARAMETER:\n    NAME: merge\n    TYPE: BOOLEAN\n    REQUIRED: FALSE\n    VALUE: TRUE"
+            } else {
+                ""
+            }
+        )
+    };
+    let cases: Vec<(&str, String, String)> = vec![
+        (
+            "merge FALSE requires the declared MEMORY type",
+            format!("{scope}{MEMORY_DECLARATIONS_BODY}"),
+            write("memory.notes", "INTEGER", "3", false),
+        ),
+        (
+            "merge TRUE requires an OBJECT current value",
+            format!("{scope}{MEMORY_DECLARATIONS_BODY}"),
+            write("memory.notes", "OBJECT", "\n        first: 1", true),
+        ),
+        (
+            "merge TRUE requires an OBJECT value parameter",
+            format!("{scope}{PAIR}"),
+            write("memory.pair", "STRING", "\"flat\"", true),
+        ),
+        (
+            "merge TRUE requires the merged OBJECT to match the declared type",
+            format!("{scope}{PAIR}"),
+            write("memory.pair", "OBJECT", "\n        second: \"two\"", true),
+        ),
+        (
+            "MEMORY mode must permit the write",
+            format!("{scope}{READ_ONLY}"),
+            write("memory.frozen", "STRING", "\"replaced\"", false),
+        ),
+    ];
+    let mut wrong = Vec::new();
+    for (name, declarations, action) in cases {
+        let source = common::task(&declarations, &[&action]);
+        let mut stdlib = common::stdlib().with_profiles(store_profiles());
+        let mut host = lcl_runtime::MockHost::new();
+        let fixture = common::fixture(&source);
+        let execution = Runtime::new(common::contracts())
+            .execute_with(
+                &fixture.planned,
+                &fixture.checked,
+                &fixture.resolved,
+                &mut stdlib,
+                &mut host,
+            )
+            .expect("the document planned");
+        let result = common::result_of(&execution, "action.write");
+        let observed = (
+            result.execution_errors.clone(),
+            result.failure_phase.to_string(),
+            result.effect_state.to_string(),
+        );
+        if observed
+            != (
+                vec!["error.operation.precondition".to_string()],
+                "pre_effect".to_string(),
+                "none".to_string(),
+            )
+        {
+            wrong.push(format!("{name}: {observed:?}"));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// The MEMORY declarations the store tests share, without their SCOPE.
+const MEMORY_DECLARATIONS_BODY: &str =
+    "\nMEMORY:\n    ID: memory.notes\n    TYPE: STRING\n    SCOPE: REF(scope.task)\n    \
+     MODE: mode.read_write\n    VALUE: \"kept\"\n";

@@ -630,3 +630,43 @@ fn a_fallback_operation_identifier_is_an_invocation_site() {
         );
     }
 }
+
+#[test]
+fn a_material_test_target_cannot_accompany_actual_or_assertion() {
+    // "A material-value TARGET is legal only as that actual source and cannot
+    // accompany actual or assertion."
+    let invocation = |parameter: &str| {
+        format!(
+            concat!(
+                "LCL:\n    VERSION: \"0.1.0\"\n\n",
+                "SPECIFICATION:\n    ID: test.task\n    NAME: \"T\"\n    VERSION: \"1.0.0\"\n    KIND: kind.task\n\n",
+                "DATA:\n    ID: data.subject\n    TYPE: INTEGER\n    VALUE: 3\n\n",
+                "GOAL:\n    ID: goal.one\n    ASSERT: TRUE\n\n",
+                "ACTION:\n    ID: action.one\n    OPERATION: core.test\n    TARGET: REF(data.subject)\n{}",
+                "VERIFY:\n    ID: verify.one\n    ASSERT: TRUE\n\n",
+                "SUCCESS:\n    ID: success.one\n    ALL: [REF(verify.one)]\n\n",
+                "TASK:\n    ID: task.one\n    GOAL: REF(goal.one)\n    ACTION: REF(action.one)\n    SUCCESS: REF(success.one)\n\n",
+                "EXECUTE:\n    REFERENCE: REF(task.one)\n"
+            ),
+            parameter
+        )
+    };
+    let expected = "    PARAMETER:\n        NAME: expected\n        TYPE: INTEGER\n        \
+                    REQUIRED: FALSE\n        VALUE: 3\n";
+    for parameter in [
+        format!("{expected}    PARAMETER:\n        NAME: actual\n        TYPE: INTEGER\n        REQUIRED: FALSE\n        VALUE: 3\n\n"),
+        "    PARAMETER:\n        NAME: assertion\n        TYPE: BOOLEAN\n        REQUIRED: FALSE\n        VALUE: TRUE\n\n".to_string(),
+    ] {
+        assert_eq!(
+            ids(&check(&invocation(&parameter))),
+            vec!["error.operation.parameter"],
+            "{parameter}"
+        );
+    }
+    // The same TARGET is the actual source for expected, which is the one form
+    // it is legal in.
+    assert_eq!(
+        check(&invocation(&format!("{expected}\n"))).outcome(),
+        Outcome::Checked
+    );
+}

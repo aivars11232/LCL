@@ -805,6 +805,16 @@ impl Runner {
     }
 }
 
+/// One exact field of the subject action's first attempt.
+pub fn attempt_field(field: &str, value: &str) -> Expectation {
+    Expectation::AttemptField {
+        declaration: "action.subject".into(),
+        attempt: 0,
+        field: field.into(),
+        value: value.into(),
+    }
+}
+
 /// Compare one expectation against one observation.
 ///
 /// Free function, and deliberately the only place a verdict is decided.

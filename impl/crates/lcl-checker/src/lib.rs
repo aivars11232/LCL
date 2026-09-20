@@ -444,6 +444,11 @@ impl<'a> Checker<'a> {
             deferred: check.deferred,
             diagnostics: diagnostic::select(check.raw, self.contracts.supersedes()),
             earlier: check.earlier,
+            object_types: check
+                .schemas
+                .iter()
+                .map(|(declaration, schema)| (*declaration, schema.object_type()))
+                .collect(),
             object_schemas: check
                 .schemas
                 .into_iter()
@@ -549,6 +554,9 @@ pub struct Checked {
     /// value uses it: a direct `BASE OBJECT` definition, and every declaration
     /// that selects one through `TYPE` or a `SCHEMA`.
     pub(crate) object_schemas: BTreeMap<usize, ObjectSchema>,
+    /// The same schemas as their exact field/type/requiredness map, which is
+    /// what a receiving contract compares a value against.
+    pub(crate) object_types: BTreeMap<usize, ObjectType>,
 }
 
 impl Checked {
@@ -584,6 +592,13 @@ impl Checked {
     /// value uses, when it uses one.
     pub fn object_schema(&self, declaration: usize) -> Option<&ObjectSchema> {
         self.object_schemas.get(&declaration)
+    }
+
+    /// The object type one declaration's value uses, when it uses one. A
+    /// `DEFINE kind.type` whose `BASE` is `OBJECT` is exactly the declaration
+    /// "whose resolved type is OBJECT" that a receiving contract may name.
+    pub fn declared_object_type(&self, declaration: usize) -> Option<&ObjectType> {
+        self.object_types.get(&declaration)
     }
 
     /// Every value obligation handed to the demanding layer, in source order.

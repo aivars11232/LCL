@@ -578,6 +578,7 @@ pub fn execute(spec: &SpecPackage, runner: &Runner) -> Vec<ExecutedCase> {
         errors.extend(clauses::transfer_source_preconditions(&runners, &row));
         errors.extend(clauses::specific(&runners, &row, "errors"));
         errors.extend(clauses::lifecycle(&runners, &row, "errors"));
+        errors.extend(clauses::capability(&runners, &row, "errors"));
         out.push(group(
             format!("semantic/operation_errors/{}", row.operation),
             "all named binding failures and concrete operation-specific error paths",
@@ -587,6 +588,7 @@ pub fn execute(spec: &SpecPackage, runner: &Runner) -> Vec<ExecutedCase> {
         effects.extend(clauses::effects(&runners, &row));
         effects.extend(clauses::specific(&runners, &row, "effects"));
         effects.extend(clauses::lifecycle(&runners, &row, "effects"));
+        effects.extend(clauses::capability(&runners, &row, "effects"));
         out.push(group(format!("semantic/operation_effects/{}", row.operation), "observable post-state, resolved effects and complete registered determinism/profile constraints", effects));
     }
     out

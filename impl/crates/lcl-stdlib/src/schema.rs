@@ -92,12 +92,17 @@ pub fn validation(errors: Vec<Value>) -> Observation {
 }
 
 /// `result.verification`: whether a declared assertion held.
-pub fn verification(verified: Value, observed: Value, errors: Vec<Value>) -> Observation {
+pub fn verification(
+    verified: Value,
+    observed: Value,
+    errors: Vec<Value>,
+    evidence: Vec<Value>,
+) -> Observation {
     Observation::none()
         .with("verified", verified)
         .with("observed", observed)
         .with("errors", Value::List(errors))
-        .with("evidence", Value::List(Vec::new()))
+        .with("evidence", Value::List(evidence))
 }
 
 /// `result.test`: whether one declared comparison passed.

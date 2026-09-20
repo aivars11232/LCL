@@ -7,6 +7,8 @@ use lcl_runtime::MockHost;
 use lcl_semantics::{Invocation, Value};
 use lcl_spec::SpecPackage;
 
+mod behaviors;
+
 fn group(id: &str, contract: &str, runs: Vec<ExecutedCase>) -> ExecutedCase {
     let source = runs
         .iter()
@@ -733,7 +735,7 @@ pub fn execute(spec: &SpecPackage, runner: &Runner) -> Vec<ExecutedCase> {
     let mut out = execute_types(runner);
     out.extend(execute_functions(runner));
     out.extend(execute_operators(runner));
-    out.extend(execute_statuses_and_errors(spec));
+    out.extend(execute_statuses_and_errors(spec, runner));
     out
 }
 
@@ -1831,7 +1833,7 @@ fn component(
     }
 }
 
-pub fn execute_statuses_and_errors(spec: &SpecPackage) -> Vec<ExecutedCase> {
+pub fn execute_statuses_and_errors(spec: &SpecPackage, runner: &Runner) -> Vec<ExecutedCase> {
     use lcl_diagnostics::DiagnosticRegistry;
     use lcl_spec::json::Json;
     use std::collections::{BTreeMap, VecDeque};
@@ -2017,6 +2019,7 @@ pub fn execute_statuses_and_errors(spec: &SpecPackage) -> Vec<ExecutedCase> {
                 vec![("default_status".into(), status)],
             ));
         }
+        runs.extend(behaviors::behaviors(spec, runner, id));
         out.push(group(&format!("semantic/error_contract/{id}"), "registered stage, recoverability, event and default status; implementing stage mirrors", runs));
     }
     out

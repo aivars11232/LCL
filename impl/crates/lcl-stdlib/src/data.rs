@@ -57,7 +57,12 @@ pub(crate) fn invoke(
     // reference names decides its class, not the value it currently holds.
     let target_class = params::referenced_declaration(cx, "TARGET")
         .map(|id| params::classify(cx, &Value::Reference(id)))
-        .or_else(|| request.target.as_ref().map(|value| params::classify(cx, value)))
+        .or_else(|| {
+            request
+                .target
+                .as_ref()
+                .map(|value| params::classify(cx, value))
+        })
         .unwrap_or(AddressClass::Material);
     let destination_class = parameters
         .get("destination")
@@ -119,9 +124,17 @@ pub(crate) fn invoke(
     } else {
         None
     };
-    if let Some(failure) = select_profiles(stdlib, contract, target_class, mode) {
-        return failure;
-    }
+    let selected = match selected_axes(stdlib, contract, target_class, mode) {
+        Ok(axes) => axes,
+        Err(failure) => return failure,
+    };
+    // "Every such non-graph invocation has the process effect because it runs
+    // the executable; union process with any other dependencies and effects
+    // selected by the profile within this row's maxima."
+    let resolved = match (&selected, contract.operation.as_str(), mode) {
+        (Some(profile), "core.execute", Some("non_graph")) => resolved.union(profile),
+        _ => resolved,
+    };
 
     let mut host_request = request.clone();
     host_request.target = target;
@@ -148,13 +161,29 @@ fn resolve_axes(
     target_class: AddressClass,
     destination_class: Option<AddressClass>,
 ) -> Result<Axes, Resolution> {
+    // "Resolve source and destination address classes independently … removing
+    // OUTPUT or another authorized non-filesystem, non-network, non-memory,
+    // non-STATE addressable source adds state effect and its required
+    // dependency": a row that *removes* its source changes it, so the source
+    // side is a mutation rather than an observation.
+    let removes_source = contract.operation == "core.move";
+    // "an omitted destination binds only the declared result or OUTPUT state",
+    // so such an invocation changes nothing outside the document.
+    let result_only = destination_class.is_none() && contract.operation == "core.convert";
     let from_addresses = match destination_class {
-        // With a declared destination, the target is observed and the
-        // destination is mutated.
-        Some(destination) => target_class.observation().union(&destination.mutation()),
+        // With a declared destination, the target is read — or removed — and
+        // the destination is mutated.
+        Some(destination) => {
+            let source = if removes_source {
+                target_class.mutation()
+            } else {
+                target_class.observation()
+            };
+            source.union(&destination.mutation())
+        }
         // Without one, the target itself is what changes — unless the row only
         // reads, which its maximum states by admitting no effect.
-        None if contract.maximum.is_effect_free() => target_class.observation(),
+        None if result_only || contract.maximum.is_effect_free() => target_class.observation(),
         None => target_class.mutation(),
     };
     let mut resolved = from_addresses.union(&mandatory_axes(&contract.operation));
@@ -197,7 +226,7 @@ fn resolve_axes(
     }
     // "an effect-class declaration whose invocation resolves no concrete effect
     // class" is a precondition failure for a row that must change something.
-    if !contract.maximum.is_effect_free() && resolved.is_effect_free() {
+    if !result_only && !contract.maximum.is_effect_free() && resolved.is_effect_free() {
         return Err(Resolution::failed(
             RuntimeError::OperationPrecondition,
             "axes",
@@ -208,6 +237,76 @@ fn resolve_axes(
         ));
     }
     Ok(resolved)
+}
+
+/// The axis check a custom `kind.operation` invocation carries itself.
+///
+/// `operations_v0.1.0.json#/axis_contract/custom_operation_resolution`:
+///
+/// > Resolve the invocation effect set from the address classes of the
+/// > resolved target and declared destination arguments under the same
+/// > address-class rules that bind core rows, bounded by the declared maximum;
+/// > an invocation that resolves an effect class outside that maximum, and an
+/// > effect-class declaration whose invocation resolves no concrete effect
+/// > class, each emit error.operation.precondition before effects.
+///
+/// A declaration this cannot read imposes nothing: `SIDE_EFFECT FALSE`
+/// "declares possible_effects exactly none", which no invocation can exceed.
+pub(crate) fn custom_axes(cx: &Invocation<'_>, request: &CapabilityRequest) -> Option<Resolution> {
+    let index = params::declaration_index(cx, &request.operation)?;
+    let block = lcl_runtime::syntax::declaration_block(cx.resolved, index)?;
+    let declared = effect_classes(&lcl_runtime::syntax::field_text(&block, "SIDE_EFFECT")?);
+    if declared.is_empty() {
+        return None;
+    }
+    let maximum = lcl_capabilities::Axes::from_registry(&[], &declared);
+    let target_class = request
+        .target
+        .as_ref()
+        .map(|value| params::classify(cx, &crate::pure::read_through(cx, value)))
+        .unwrap_or(AddressClass::Material);
+    let resolved = target_class.mutation();
+    let outside = resolved.effects_outside(&maximum);
+    if !outside.is_empty() {
+        return Some(Resolution::failed(
+            RuntimeError::OperationPrecondition,
+            "axes",
+            format!(
+                "{} resolved {} on a {target_class} target, outside its declared SIDE_EFFECT",
+                request.operation,
+                outside
+                    .iter()
+                    .map(|effect| effect.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        ));
+    }
+    if resolved.is_effect_free() {
+        return Some(Resolution::failed(
+            RuntimeError::OperationPrecondition,
+            "axes",
+            format!(
+                "{} declares effect classes but resolved none on a {target_class} target",
+                request.operation
+            ),
+        ));
+    }
+    None
+}
+
+/// The concrete effect classes one written `SIDE_EFFECT` declares.
+///
+/// "SIDE_EFFECT FALSE declares possible_effects exactly none. A SIDE_EFFECT
+/// effect-class LIST declares one or more distinct concrete effect classes,
+/// excludes none".
+fn effect_classes(written: &str) -> Vec<String> {
+    written
+        .trim_matches(|c| c == '[' || c == ']')
+        .split(',')
+        .map(|name| name.trim().to_string())
+        .filter(|name| lcl_capabilities::Effect::from_registry_str(name).is_some())
+        .collect()
 }
 
 /// The rows whose contact with a network *is* the transfer.
@@ -270,6 +369,24 @@ pub(crate) fn select_profiles(
     target_class: AddressClass,
     mode: Option<&str>,
 ) -> Option<Resolution> {
+    selected_axes(stdlib, contract, target_class, mode).err()
+}
+
+/// Select every required role, and return what those profiles themselves
+/// declare.
+///
+/// > A missing, ambiguous, incomplete, or out-of-bounds required profile role
+/// > emits error.operation.precondition before effects.
+///
+/// A profile's own axes "may narrow the row's but never widen it", so a
+/// selected profile outside the row's maxima is the out-of-bounds case.
+pub(crate) fn selected_axes(
+    stdlib: &Stdlib,
+    contract: &OperationContract,
+    target_class: AddressClass,
+    mode: Option<&str>,
+) -> Result<Option<lcl_capabilities::Axes>, Resolution> {
+    let mut selected: Option<lcl_capabilities::Axes> = None;
     for role in stdlib.catalog().required_roles(&contract.operation, mode) {
         let selection = Selection {
             operation: &contract.operation,
@@ -277,11 +394,26 @@ pub(crate) fn select_profiles(
             target_class,
             implementation: None,
         };
-        if let Err(fault) = stdlib.catalog().select(&selection) {
-            return Some(profile_failure(&fault));
+        let profile = match stdlib.catalog().select(&selection) {
+            Ok(profile) => profile,
+            Err(fault) => return Err(profile_failure(&fault)),
+        };
+        if !profile.axes.within(&contract.maximum) {
+            return Err(Resolution::failed(
+                RuntimeError::OperationPrecondition,
+                "implementation_profile",
+                format!(
+                    "the selected {role} profile {} declares axes outside {}'s maxima",
+                    profile.implementation_id, contract.operation
+                ),
+            ));
         }
+        selected = Some(match selected {
+            Some(axes) => axes.union(&profile.axes),
+            None => profile.axes.clone(),
+        });
     }
-    None
+    Ok(selected)
 }
 
 /// One profile fault as the registered pre-effect failure it is.
@@ -421,6 +553,20 @@ pub(crate) fn store(
         );
     };
     let id = id.as_str();
+    // "MEMORY mode permits write" and "STATE mode permits write": a store
+    // declared read-only refuses before any effect.
+    if let Some(mode) = params::declaration_index(cx, id)
+        .and_then(|index| lcl_runtime::syntax::declaration_block(cx.resolved, index))
+        .and_then(|block| lcl_runtime::syntax::field_text(&block, "MODE"))
+    {
+        if mode == "mode.read_only" {
+            return Resolution::failed(
+                RuntimeError::OperationPrecondition,
+                "mode",
+                format!("{id} declares {mode}, which does not permit a write"),
+            );
+        }
+    }
     match params::declaring_block(cx, id).as_deref() {
         Some(block) if block == expected_block => {}
         other => {
@@ -484,26 +630,55 @@ pub(crate) fn store(
     }
 
     // "merge TRUE requires the current MEMORY value and value parameter both to
-    // be OBJECT."
-    let written =
-        if matches!(parameters.get("merge"), Some(Value::Boolean(true))) {
-            match (&current, &value) {
-                (Value::Object(existing), Value::Object(incoming)) => {
-                    let mut merged = existing.clone();
-                    for (field, field_value) in incoming {
-                        merged.insert(field.clone(), field_value.clone());
-                    }
-                    Value::Object(merged)
+    // be OBJECT", and the row states both as preconditions: "when merge is
+    // TRUE, the current MEMORY value and value parameter are OBJECT and the
+    // computed merged OBJECT matches the declared MEMORY type".
+    let merging = matches!(parameters.get("merge"), Some(Value::Boolean(true)));
+    let written = if merging {
+        match (&current, &value) {
+            (Value::Object(existing), Value::Object(incoming)) => {
+                let mut merged = existing.clone();
+                for (field, field_value) in incoming {
+                    merged.insert(field.clone(), field_value.clone());
                 }
-                _ => return Resolution::failed(
-                    RuntimeError::TypeMismatch,
-                    "merge",
-                    "merge TRUE requires the current value and the value parameter to be OBJECT",
-                ),
+                Value::Object(merged)
             }
-        } else {
-            value
-        };
+            (Value::Object(_), _) => {
+                return Resolution::failed(
+                    RuntimeError::OperationPrecondition,
+                    "merge",
+                    "merge TRUE requires the value parameter to be OBJECT",
+                )
+            }
+            _ => {
+                return Resolution::failed(
+                    RuntimeError::OperationPrecondition,
+                    "merge",
+                    "merge TRUE requires the current value to be OBJECT",
+                )
+            }
+        }
+    } else {
+        value
+    };
+
+    // "when merge is FALSE, value matches the declared MEMORY type"; "when
+    // merge is TRUE, ... the computed merged OBJECT matches the declared
+    // MEMORY type"; and for STATE, "value type matches".
+    if let Some(declared) =
+        params::declaration_index(cx, id).and_then(|index| cx.checked.declaration_type(index))
+    {
+        if !params::value_matches(declared, &written) {
+            return Resolution::failed(
+                RuntimeError::OperationPrecondition,
+                if merging { "merge" } else { "value" },
+                format!(
+                    "{} requires the written value to match the declared {expected_block} type",
+                    contract.operation
+                ),
+            );
+        }
+    }
 
     let changed = !lcl_runtime::strict_equal(&current, &written);
     cx.write_store(id, written);

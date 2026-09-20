@@ -1134,7 +1134,11 @@ impl<'a> Engine<'a> {
         // an internal unit and continues to the boundary below.
         if let Some(status) = internal_terminal_status(&operation) {
             if let Some(unit) = self.internal_unit_target(&block) {
-                let record = self.request_terminal_status(planned, id, &unit, status);
+                let reason = match parameters.get("reason") {
+                    Some(Value::Text(reason)) => Some(reason.clone()),
+                    _ => None,
+                };
+                let record = self.request_terminal_status(planned, id, &unit, status, reason);
                 return Some((record, None));
             }
         }
@@ -1321,6 +1325,7 @@ impl<'a> Engine<'a> {
         id: &InvocationId,
         unit: &str,
         status: &str,
+        reason: Option<String>,
     ) -> ResultRecord {
         // The invocation record of the named unit, when it has one. A unit that
         // has not run yet has no lifecycle to transition.
@@ -1369,6 +1374,25 @@ impl<'a> Engine<'a> {
             );
         }
         self.set_status(&target_id, status);
+        // "Cancellation yields status.cancelled", and `error.cancelled` is the
+        // registered identifier for exactly that: "Invoking authority cancelled
+        // execution", whose `default_status` is `status.cancelled`. The
+        // diagnostic is what carries the cancellation into the terminal-status
+        // rule; the producer still completed its own contract, because
+        // "Producer status.succeeded means that invocation completed its
+        // contract; its domain outcome remains independent."
+        if status == "status.cancelled" {
+            let fault = Fault::new(
+                self.contracts,
+                RuntimeError::Cancelled,
+                planned.span,
+                "cancellation",
+                reason
+                    .clone()
+                    .unwrap_or_else(|| format!("{unit} was cancelled")),
+            );
+            self.fault(&fault, planned, id, FailurePhase::None);
+        }
         let mut record = ResultRecord::new("result.operation", "status.succeeded")
             .with_field("changed", Value::Boolean(true));
         // `result.operation` requires its target exactly once.
@@ -1376,12 +1400,13 @@ impl<'a> Engine<'a> {
             .fields
             .insert("target".to_string(), Value::Reference(unit.to_string()));
         // The transition is a change to internal execution-unit state, which is
-        // exactly the `state` effect class.
+        // exactly the `state` effect class. "reason is evidenced", so the
+        // recorded reason travels with the effect it justified.
         record.observed_effects.push(ObservedEffect {
             class: crate::result::EffectClass::State,
             state: crate::result::RecordState::Applied,
             target: Some(unit.to_string()),
-            evidence: Vec::new(),
+            evidence: reason.into_iter().collect(),
         });
         record.effect_state = EffectState::Applied;
         record
@@ -1603,13 +1628,27 @@ impl<'a> Engine<'a> {
                 error,
                 cause,
                 detail,
+                observation,
             }) => {
+                let phase = phase_of(&observation.effects, observation.proven_effect_free);
                 let fault = Fault::new(self.contracts, error, planned.span, cause, detail);
-                let occurrence = self.fault(&fault, planned, id, FailurePhase::PreEffect);
-                (
-                    self.pre_effect_failure(schema, error, planned, id),
-                    occurrence,
-                )
+                let occurrence = self.fault(&fault, planned, id, phase);
+                let record = if phase == FailurePhase::PreEffect {
+                    self.pre_effect_failure(schema, error, planned, id)
+                } else {
+                    // The row named the identifier; the observation fixes the
+                    // phase, the effects and the schema-local fields.
+                    let mut record =
+                        ResultRecord::new(schema, &self.contracts.error(error).default_status);
+                    record.execution_errors = vec![error.as_registry_str().to_string()];
+                    record.failure_phase = phase;
+                    record.effect_state = effect_state_of(&observation.effects, phase);
+                    record.observed_effects = observation.effects;
+                    record.fields = observation.fields;
+                    record.output_binding = OutputBinding::Unbound;
+                    record
+                };
+                (record, occurrence)
             }
             Ok(CapabilityOutcome::Failed {
                 detail,

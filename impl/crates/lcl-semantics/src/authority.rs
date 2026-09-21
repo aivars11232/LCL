@@ -171,6 +171,19 @@ pub enum Selector {
     Regex(String),
     /// A reference to another declaration, retained as identity.
     Reference(String),
+    /// The WORKSPACE path form `PATH(REF(workspace.one), "src/main.py")`.
+    ///
+    /// `types_v0.1.0.json` material identity: "WORKSPACE form uses the resolved
+    /// workspace declaration identity and exact decoded relative STRING", so
+    /// both parts are kept exactly as written and compared as one identity. The
+    /// relative half is also the only subject a `GLOB` selector can consume —
+    /// `pattern_profiles/GLOB` is `workspace_relative` — after normalization.
+    Relative { workspace: String, relative: String },
+    /// Any other constructor form no single literal identifies, kept as the
+    /// exact rendering of what was written. It identifies one entity like
+    /// [`Selector::Exact`] does, and an `ACTION` naming the same entity writes
+    /// the same form, so the two compare by rendering.
+    Expression(String),
 }
 
 impl Selector {
@@ -179,7 +192,9 @@ impl Selector {
             Selector::Exact(s)
             | Selector::Glob(s)
             | Selector::Regex(s)
-            | Selector::Reference(s) => s,
+            | Selector::Reference(s)
+            | Selector::Expression(s) => s,
+            Selector::Relative { relative, .. } => relative,
         }
     }
 }
@@ -191,6 +206,11 @@ impl fmt::Display for Selector {
             Selector::Glob(s) => write!(f, "GLOB({s:?})"),
             Selector::Regex(s) => write!(f, "REGEX({s:?})"),
             Selector::Reference(s) => write!(f, "REF({s})"),
+            Selector::Relative {
+                workspace,
+                relative,
+            } => write!(f, "PATH(REF({workspace}), {relative:?})"),
+            Selector::Expression(s) => write!(f, "{s}"),
         }
     }
 }

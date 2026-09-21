@@ -514,3 +514,49 @@ fn an_overridden_forbid_leaves_the_action_authorized() {
         .permitted_by
         .contains(&"permission.inspect".to_string()));
 }
+
+/// A prohibited graph-target reference cycle is refused before axis resolution.
+///
+/// `05_SEMANTICS/11`: "For a referenced TASK, PHASE, SEQUENCE, ACTION, or TEST,
+/// a prohibited reference cycle emits error.reference.cycle and fails before
+/// axis resolution", and `06_STANDARD_LIBRARY/10` says the same of
+/// `core.retry`'s wrapped ACTION.
+#[test]
+fn a_delegating_target_that_leads_back_to_itself_is_a_reference_cycle() {
+    let delegating = |operation: &str, extra: &str, target: &str| {
+        format!(
+            "{HEADER}\nDATA:\n    ID: data.subject\n    TYPE: INTEGER\n    VALUE: 3\n\
+             \nGOAL:\n    ID: goal.one\n    ASSERT: TRUE\n\
+             \nACTION:\n    ID: action.one\n    OPERATION: {operation}\n    TARGET: REF({target}){extra}\n\
+             \nACTION:\n    ID: action.two\n    OPERATION: {operation}\n    TARGET: REF(action.one){extra}\n\
+             \nACTION:\n    ID: action.three\n    OPERATION: core.return\n    TARGET: REF(data.subject)\n\
+             \nSUCCESS:\n    ID: success.one\n    ALL: [REF(goal.one)]\n\
+             \nTASK:\n    ID: task.one\n    GOAL: REF(goal.one)\n    ACTION: [REF(action.one), REF(action.two)]\n    SUCCESS: REF(success.one)\n\
+             \nEXECUTE:\n    REFERENCE: REF(task.one)\n"
+        )
+    };
+    const COMPARISON: &str = "\n    PARAMETER:\n        NAME: expected\n        TYPE: INTEGER\n        REQUIRED: TRUE\n        VALUE: 3\n    PARAMETER:\n        NAME: actual\n        TYPE: INTEGER\n        REQUIRED: TRUE\n        VALUE: REF(data.subject)";
+    const LIMIT: &str = "\n    PARAMETER:\n        NAME: limit\n        TYPE: INTEGER\n        REQUIRED: TRUE\n        VALUE: 1";
+
+    for (operation, extra) in [
+        ("core.execute", ""),
+        ("core.test", COMPARISON),
+        ("core.retry", LIMIT),
+    ] {
+        // action.one -> action.two -> action.one
+        let planned = plan(&delegating(operation, extra, "action.two"));
+        assert!(
+            ids(&planned).contains(&"error.reference.cycle".to_string()),
+            "{operation} cycle: {:?}",
+            ids(&planned)
+        );
+        // The control: the same shape, delegating to a unit that leads
+        // nowhere back.
+        let planned = plan(&delegating(operation, extra, "action.three"));
+        assert!(
+            !ids(&planned).contains(&"error.reference.cycle".to_string()),
+            "{operation} without a cycle must not be refused: {:?}",
+            ids(&planned)
+        );
+    }
+}

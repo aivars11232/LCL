@@ -330,6 +330,95 @@ pub(super) fn runs(_spec: &SpecPackage, runner: &Runner, schema: &str) -> Vec<Ex
             ));
         }
         "result.command" => {
+            // Graph mode: "started, completed, exit_code, stdout, and stderr
+            // are absent; graph completion is represented by status and no
+            // command observation is synthesized", and "The default stdout
+            // projection is unavailable in graph mode; a graph OUTPUT requires
+            // an explicit value or mode property".
+            let graph_document = |output: &str, property: &str| {
+                let task_output = if output.is_empty() {
+                    ""
+                } else {
+                    "\n    OUTPUT: REF(output.result)"
+                };
+                crate::fixtures::task_document(&format!(
+                    "\nDATA:\n    ID: data.number\n    TYPE: INTEGER\n    VALUE: 3\n{output}\nGOAL:\n    ID: goal.case\n    ASSERT: TRUE\n\nACTION:\n    ID: action.inner\n    OPERATION: core.return\n    TARGET: REF(data.number)\n\nACTION:\n    ID: action.subject\n    OPERATION: core.execute\n    TARGET: REF(action.inner){property}\n\nSUCCESS:\n    ID: success.case\n    ALL: TRUE\n\nTASK:\n    ID: task.case\n    GOAL: REF(goal.case)\n    ACTION: [REF(action.subject), REF(action.inner)]{task_output}\n    SUCCESS: REF(success.case)\n\nEXECUTE:\n    REFERENCE: REF(task.case)\n"
+                ))
+            };
+            out.push(closed_record(
+                runner,
+                "engine/graph-no-native-fields",
+                &graph_document("", ""),
+                MockHost::new(),
+                &["mode", "value"],
+            ));
+            const OUTPUT_BLOCK: &str =
+                "\nOUTPUT:\n    ID: output.result\n    TYPE: INTEGER\n    FORMAT: format.plain_text\n";
+            {
+                // One run, two documents: the default projection binds nothing,
+                // and the explicit `value` property binds the graph's one
+                // material primary result.
+                let mut host = MockHost::new();
+                let default_binding = runner
+                    .run_on(
+                        &graph_document(OUTPUT_BLOCK, "\n    OUTPUT: REF(output.result)"),
+                        &lcl_resolver::MemoryProvider::new(),
+                        &mut host,
+                    )
+                    .invocations
+                    .iter()
+                    .find(|record| record.declaration.as_deref() == Some("action.subject"))
+                    .and_then(|record| record.result.as_ref())
+                    .map(|result| result.output_binding.to_string())
+                    .unwrap_or_else(|| "none".to_string());
+                let mut host = MockHost::new();
+                // "Every selected name must occur in the schema's
+                // projectable_fields list": the selection is declared on the
+                // OUTPUT, as canonical example 04 writes it.
+                const SELECTING_VALUE: &str = "\nOUTPUT:\n    ID: output.result\n    TYPE: INTEGER\n    FORMAT: format.plain_text\n    PROPERTY: value\n";
+                let explicit = runner.run_on(
+                    &graph_document(SELECTING_VALUE, "\n    OUTPUT: REF(output.result)"),
+                    &lcl_resolver::MemoryProvider::new(),
+                    &mut host,
+                );
+                let explicit_binding = explicit
+                    .invocations
+                    .iter()
+                    .find(|record| record.declaration.as_deref() == Some("action.subject"))
+                    .and_then(|record| record.result.as_ref())
+                    .map(|result| result.output_binding.to_string())
+                    .unwrap_or_else(|| "none".to_string());
+                let published = explicit
+                    .outputs
+                    .iter()
+                    .find(|(id, _)| id == "output.result")
+                    .map(|(_, value)| value.clone())
+                    .unwrap_or_else(|| "unpublished".to_string());
+                let expectation = Expectation::Component(vec![
+                    ("default projection".to_string(), "unbound".to_string()),
+                    ("explicit value property".to_string(), "bound".to_string()),
+                    ("published".to_string(), "3".to_string()),
+                ]);
+                let mut observed = explicit;
+                observed.component = vec![
+                    ("default projection".to_string(), default_binding),
+                    ("explicit value property".to_string(), explicit_binding),
+                    ("published".to_string(), published),
+                ];
+                observed.input_evidence.push(
+                    "two graph-mode documents: one OUTPUT with no PROPERTY, one selecting value"
+                        .to_string(),
+                );
+                let verdict = crate::judge(&expectation, &observed);
+                out.push(ExecutedCase {
+                    id: "engine/graph-output-requires-explicit-selection".into(),
+                    contract: "the default stdout projection is unavailable in graph mode; a graph OUTPUT requires an explicit value or mode property".into(),
+                    source: graph_document(OUTPUT_BLOCK, "\n    OUTPUT: REF(output.result)"),
+                    expectation,
+                    observed,
+                    verdict,
+                });
+            }
             let execute = "OPERATION: core.execute\n    TARGET: \"run --now\"";
             let source = |output: Option<(&str, &str)>| document("", execute, output);
             let command =
@@ -552,6 +641,45 @@ pub(super) fn runs(_spec: &SpecPackage, runner: &Runner, schema: &str) -> Vec<Ex
                     succeeded(),
                     attempt_field("verified", "TRUE"),
                     attempt_field("observed", "{target: 3}"),
+                ]),
+            ));
+            // "UNKNOWN verified never binds OUTPUT." `core.verify` "resolve[s]
+            // observation dependencies ... from the target", so an addressable
+            // target is observed by the host that owns it, and a host that
+            // cannot establish the assertion answers UNKNOWN through the
+            // production boundary rather than inventing a verdict.
+            out.push(run(
+                runner,
+                "engine/unknown-never-binds",
+                "an UNKNOWN verified result never binds the selected OUTPUT",
+                &document(
+                    &data("data.path", "PATH", "PATH(\"/srv/data/report.txt\")"),
+                    &format!(
+                        "OPERATION: core.verify\n    TARGET: REF(data.path){}",
+                        parameter("assertion", "BOOLEAN", "TRUE", "TRUE")
+                    ),
+                    Some(("output.verified", "BOOLEAN")),
+                ),
+                MockHost::new().script(
+                    "core.verify",
+                    vec![CapabilityOutcome::Completed(
+                        Observation::none()
+                            .with("verified", Value::Unknown)
+                            .with(
+                                "observed",
+                                Value::Object(
+                                    [("target".to_string(), Value::Unknown)]
+                                        .into_iter()
+                                        .collect(),
+                                ),
+                            )
+                            .with("errors", Value::List(Vec::new()))
+                            .with("evidence", Value::List(Vec::new())),
+                    )],
+                ),
+                Expectation::All(vec![
+                    attempt_field("verified", "UNKNOWN"),
+                    attempt_field("output_binding", "unbound"),
                 ]),
             ));
             out.push(run(

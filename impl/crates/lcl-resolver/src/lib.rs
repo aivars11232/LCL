@@ -289,6 +289,10 @@ impl<'a> Resolver<'a> {
     pub(crate) fn grammar(&self) -> &'a Grammar {
         self.grammar
     }
+
+    pub(crate) fn lexicon(&self) -> &'a Lexicon {
+        self.lexicon
+    }
 }
 
 /// Builds registered diagnostics against the units they belong to.

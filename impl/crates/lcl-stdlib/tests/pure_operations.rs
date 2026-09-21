@@ -655,3 +655,74 @@ fn a_declared_key_path_with_no_value_is_a_missing_key_not_an_unregistered_path()
         );
     }
 }
+
+/// A referenced key or predicate operation must declare a usable contract.
+///
+/// `core.sort`'s key: "A REFERENCE resolves to a kind.operation with
+/// SIDE_EFFECT FALSE, DETERMINISTIC TRUE, a fully resolved dependency set of
+/// exactly declared_state_only, exactly one PARAMETER accepting T, and exactly
+/// one RESULT of a concrete registered ordered type." Its
+/// `error.operation.precondition` trigger names "a missing, ambiguous,
+/// incomplete, or out-of-bounds immutable profile" for that operation.
+#[test]
+fn a_key_operation_contract_must_be_complete_unambiguous_and_ordered() {
+    let declaration = |body: &str| {
+        format!(
+            "\nDATA:\n    ID: data.words\n    TYPE: LIST[STRING]\n    VALUE: [\"beta\", \"alpha\"]\n\
+             \nDEFINE:\n    ID: key.subject\n    KIND: kind.operation\n    MEANING: \"A declared key.\"\n    \
+             SIDE_EFFECT: FALSE\n    DETERMINISTIC: TRUE\n{body}"
+        )
+    };
+    let sorted = |body: &str, installed: bool| -> Vec<String> {
+        let source = common::task(
+            &declaration(body),
+            &["ID: action.sort\nOPERATION: core.sort\nTARGET: REF(data.words)\n\
+               PARAMETER:\n    NAME: key\n    TYPE: REFERENCE[REF(key.subject)]\n    REQUIRED: FALSE\n    VALUE: REF(key.subject)"],
+        );
+        let mut stdlib = common::stdlib();
+        if installed {
+            stdlib = stdlib.with_pure_operation(
+                "key.subject",
+                Box::new(|m: &Value| Ok(m.clone())) as lcl_stdlib::PureOperation,
+            );
+        }
+        let mut host = MockHost::new();
+        let fixture = common::fixture(&source);
+        let execution = lcl_runtime::Runtime::new(common::contracts())
+            .execute_with(
+                &fixture.planned,
+                &fixture.checked,
+                &fixture.resolved,
+                &mut stdlib,
+                &mut host,
+            )
+            .expect("the document planned");
+        common::errors_of(&execution, "action.sort")
+    };
+    const ONE: &str =
+        "    PARAMETER:\n        NAME: member\n        TYPE: STRING\n        REQUIRED: TRUE\n";
+    let precondition = vec!["error.operation.precondition".to_string()];
+
+    // missing: nothing implements the declared contract.
+    assert_eq!(
+        sorted(&format!("{ONE}    RESULT:\n        TYPE: STRING\n"), false),
+        precondition
+    );
+    // ambiguous: two PARAMETER blocks, so which accepts T is not determined.
+    assert_eq!(
+        sorted(
+            &format!("{ONE}    PARAMETER:\n        NAME: fallback\n        TYPE: STRING\n        REQUIRED: FALSE\n    RESULT:\n        TYPE: STRING\n"),
+            true
+        ),
+        precondition
+    );
+    // incomplete: no RESULT, so no ordered key type is stated.
+    assert_eq!(sorted(ONE, true), precondition);
+    // out of bounds: a RESULT outside the registered ordered types.
+    assert_eq!(
+        sorted(&format!("{ONE}    RESULT:\n        TYPE: BOOLEAN\n"), true),
+        precondition
+    );
+    // The control: a complete, ordered, installed contract sorts.
+    assert!(sorted(&format!("{ONE}    RESULT:\n        TYPE: STRING\n"), true).is_empty());
+}

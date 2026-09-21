@@ -37,7 +37,7 @@ use crate::contracts::Contracts;
 use crate::diagnostic::{Cause, Diagnostic, RuntimeError};
 use crate::eval::{Evaluator, Fault};
 use crate::event::EventLog;
-use crate::operations::{Invocation, Operations, Resolution};
+use crate::operations::{GraphOutcome, Invocation, Operations, Resolution};
 use crate::result::{EffectState, FailurePhase, ObservedEffect, OutputBinding, ResultRecord};
 use crate::schedule::{Queue, Step};
 use crate::state::{Bindings, InvocationId, IterationPath, Lifecycle};
@@ -324,6 +324,9 @@ pub(crate) struct Engine<'a> {
     pub(crate) action_requests: BTreeMap<InvocationId, CapabilityRequest>,
     pub(crate) host_requests: BTreeMap<InvocationId, CapabilityRequest>,
     pub(crate) retry_guards: BTreeMap<InvocationId, (CapabilityRequest, CapabilityRequest)>,
+    /// How many graphs are executing inside one another right now, which gives
+    /// each one an iteration path of its own.
+    pub(crate) graph_depth: usize,
     pub(crate) retry_proofs: Vec<capability::RetryProof>,
     initial_outputs: BTreeMap<InvocationId, Value>,
     pub(crate) raw: Vec<Diagnostic>,
@@ -385,6 +388,7 @@ impl<'a> Engine<'a> {
             action_requests: BTreeMap::new(),
             host_requests: BTreeMap::new(),
             retry_guards: BTreeMap::new(),
+            graph_depth: 0,
             retry_proofs: Vec::new(),
             initial_outputs: BTreeMap::new(),
             raw: Vec::new(),
@@ -1211,6 +1215,59 @@ impl<'a> Engine<'a> {
                         occurrence,
                     )
                 }
+                // The row delegates to a referenced execution unit: run it
+                // here, then ask the row again with what it did.
+                Resolution::Graph(target) => {
+                    let outcome = self.execute_graph(&target, iteration);
+                    match self.dispatch_with(&request, planned, iteration, Some(outcome)) {
+                        Resolution::Completed(observation) => self.record_of(
+                            &schema,
+                            Ok(CapabilityOutcome::Completed(observation)),
+                            planned,
+                            id,
+                        ),
+                        Resolution::Failed {
+                            error,
+                            cause,
+                            detail,
+                        } => {
+                            let fault =
+                                Fault::new(self.contracts, error, planned.span, cause, detail);
+                            let occurrence =
+                                self.fault(&fault, planned, id, FailurePhase::PreEffect);
+                            (
+                                self.pre_effect_failure(&schema, error, planned, id),
+                                occurrence,
+                            )
+                        }
+                        // A graph row resolves a graph exactly once: asking for
+                        // a second one, or crossing to a host after it, is not
+                        // a resolution this contract admits.
+                        other => {
+                            let fault = Fault::new(
+                                self.contracts,
+                                RuntimeError::OperationPostcondition,
+                                planned.span,
+                                "graph",
+                                format!(
+                                    "{} resolved a graph and then answered {other:?}",
+                                    request.operation
+                                ),
+                            );
+                            let occurrence =
+                                self.fault(&fault, planned, id, FailurePhase::Indeterminate);
+                            (
+                                self.pre_effect_failure(
+                                    &schema,
+                                    RuntimeError::OperationPostcondition,
+                                    planned,
+                                    id,
+                                ),
+                                occurrence,
+                            )
+                        }
+                    }
+                }
                 Resolution::Host(resolved_request) => {
                     if self.retry_guards.get(id).is_some_and(|(_, previous)| {
                         !same_retry_request(previous, &resolved_request)
@@ -1282,12 +1339,51 @@ impl<'a> Engine<'a> {
             self.record_of(&schema, outcome, planned, id)
         };
 
+        // An externally backed store that the profile reported written is the
+        // engine's own view of that store, too.
+        self.apply_store_write(id, &record);
+
         // Bind the selected OUTPUT from the producer result.
         if let Some(output) = syntax::field_expr(&block, "OUTPUT") {
             let output = output.clone();
             self.bind_output(&output, &mut record, planned, id, iteration);
         }
         Some((record, occurrence))
+    }
+
+    /// Update the engine's view of a MEMORY or STATE store whose write crossed
+    /// the boundary.
+    ///
+    /// `operations_v0.1.0.json` lets a storage profile declare the row's `host`
+    /// dependency, in which case the profile — not the engine — performs the
+    /// write, and the row's postcondition speaks of "the persistent value".
+    /// The engine's own copy therefore follows the profile: it is updated from
+    /// the value the request carried once the profile reports the row's effect
+    /// applied, and a refused, failed or effect-free answer leaves the previous
+    /// value in place.
+    fn apply_store_write(&mut self, id: &InvocationId, record: &ResultRecord) {
+        let Some(request) = self.host_requests.get(id) else {
+            return;
+        };
+        if request.category != "memory_state" || !record.execution_errors.is_empty() {
+            return;
+        }
+        let applied = record.observed_effects.iter().any(|effect| {
+            matches!(
+                effect.class,
+                crate::result::EffectClass::Memory | crate::result::EffectClass::State
+            ) && effect.state == crate::result::RecordState::Applied
+        });
+        if !applied {
+            return;
+        }
+        let (Some(Value::Reference(target)), Some(value)) = (
+            request.target.clone(),
+            request.parameters.get("value").cloned(),
+        ) else {
+            return;
+        };
+        self.bindings.write_store(&target, value);
     }
 
     /// The declaration one `TARGET` names, when it names an execution unit.
@@ -1423,6 +1519,16 @@ impl<'a> Engine<'a> {
         planned: &PlanNode,
         iteration: &IterationPath,
     ) -> Resolution {
+        self.dispatch_with(request, planned, iteration, None)
+    }
+
+    fn dispatch_with(
+        &mut self,
+        request: &CapabilityRequest,
+        planned: &PlanNode,
+        iteration: &IterationPath,
+        graph: Option<GraphOutcome>,
+    ) -> Resolution {
         let mut cx = Invocation {
             contracts: self.contracts,
             resolved: self.resolved,
@@ -1433,8 +1539,112 @@ impl<'a> Engine<'a> {
             iteration: iteration.clone(),
             span: planned.span,
             declaration: planned.declaration,
+            graph,
         };
         self.operations.invoke(&mut cx, request)
+    }
+
+    /// Execute one referenced execution unit inside the invocation that asked
+    /// for it, and report what it did.
+    ///
+    /// The same executor runs it: the unit's node is entered on this engine's
+    /// own queue, which is set aside for the duration so the graph completes
+    /// before the invocation that delegated to it continues. Nothing here
+    /// re-implements execution, ordering, handlers or effects.
+    fn execute_graph(&mut self, target: &str, iteration: &IterationPath) -> GraphOutcome {
+        let mut outcome = GraphOutcome {
+            target: target.to_string(),
+            succeeded: true,
+            ..GraphOutcome::default()
+        };
+        let Some(node) = self
+            .plan
+            .nodes()
+            .iter()
+            .position(|n| n.id.as_deref() == Some(target))
+        else {
+            return outcome;
+        };
+        let before: BTreeSet<InvocationId> = self.records.keys().cloned().collect();
+        // The graph runs under an iteration path of its own, so its records are
+        // separate evidence from any invocation of the same node the enclosing
+        // execution performed: one declaration executed twice is two
+        // invocations, and each keeps its own attempt history.
+        let inside = iteration.child(self.graph_depth);
+        self.graph_depth += 1;
+        let outer = std::mem::take(&mut self.queue);
+        self.queue.push(Step::Enter {
+            node,
+            iteration: inside.clone(),
+        });
+        while let Some(step) = self.queue.take() {
+            self.steps += 1;
+            if self.steps > MAX_STEPS {
+                break;
+            }
+            match step {
+                Step::Enter { node, iteration } => self.enter(node, iteration),
+                Step::Leave { node, iteration } => self.leave(node, iteration),
+                Step::Iterate {
+                    node,
+                    iteration,
+                    snapshot,
+                    index,
+                } => self.iterate(node, iteration, snapshot, index),
+            }
+        }
+        self.queue = outer;
+        self.graph_depth -= 1;
+
+        for (id, record) in &self.records {
+            if before.contains(id) {
+                continue;
+            }
+            let Some(result) = record.result.as_ref() else {
+                continue;
+            };
+            let Some(node) = self.plan.node(id.node) else {
+                continue;
+            };
+            let Some(operation) = node
+                .authorization
+                .as_ref()
+                .map(|authorization| authorization.operation.clone())
+            else {
+                continue;
+            };
+            let request = self.host_requests.get(id);
+            outcome
+                .invocations
+                .push(crate::operations::GraphInvocation {
+                    operation,
+                    dependencies: request
+                        .map(|r| r.possible_dependencies.clone())
+                        .unwrap_or_default(),
+                    effects: request
+                        .map(|r| r.possible_effects.clone())
+                        .unwrap_or_default(),
+                    observed: result.observed_effects.clone(),
+                    errors: result.execution_errors.clone(),
+                });
+            if !result.succeeded() {
+                outcome.succeeded = false;
+            }
+            // "value is present exactly when the completed graph exposes one
+            // material primary result": each producer's own primary, in order.
+            if let Some(primary) = self
+                .contracts
+                .schema(&result.schema)
+                .and_then(|schema| schema.default_property.clone())
+            {
+                if let Some(value) = result.field(&primary) {
+                    if value.is_material() {
+                        outcome.primaries.push(value.clone());
+                    }
+                }
+            }
+        }
+        outcome
     }
 
     /// Abandon everything reachable only *after* one failed invocation.

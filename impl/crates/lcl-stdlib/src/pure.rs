@@ -618,6 +618,16 @@ fn apply_referenced(
             ),
         ));
     }
+    if let Some(detail) = incomplete_contract(cx, id, parameter) {
+        return Err(Resolution::failed(
+            RuntimeError::OperationPrecondition,
+            parameter,
+            format!(
+                "{id} may not be a {parameter} of {}: {detail}",
+                contract.operation
+            ),
+        ));
+    }
     let Some(implementation) = stdlib.pure_operation(id) else {
         return Err(Resolution::failed(
             RuntimeError::OperationPrecondition,
@@ -634,6 +644,87 @@ fn apply_referenced(
     })
 }
 
+/// Why a referenced operation's declared contract is not usable for this
+/// parameter.
+///
+/// `operations_v0.1.0.json#/contracts/core.sort/parameters/key`: "A REFERENCE
+/// resolves to a kind.operation with SIDE_EFFECT FALSE, DETERMINISTIC TRUE, a
+/// fully resolved dependency set of exactly declared_state_only, **exactly one
+/// PARAMETER accepting T, and exactly one RESULT** of a concrete registered
+/// ordered type."
+///
+/// The row's `error.operation.precondition` trigger names "a missing,
+/// ambiguous, incomplete, or out-of-bounds immutable profile" for the key
+/// operation, while `axis_contract.custom_operation_resolution` says a custom
+/// `kind.operation` "selects no implementation profile". The two are consistent
+/// once the four words are read as what they are — the registry's closed
+/// vocabulary for a profile-role selection fault — applied to the thing that
+/// stands in for a profile here: the operation's own declared contract, whose
+/// required properties this sentence lists. So an absent implementation is
+/// *missing*, more than one PARAMETER leaves which one accepts T *ambiguous*,
+/// no RESULT leaves the key type *incomplete*, and a declared dependency beyond
+/// declared_state_only is *out of bounds* — each one error.operation.precondition
+/// before effects, which is the only identifier the row's closed list admits.
+fn incomplete_contract(cx: &Invocation<'_>, id: &str, parameter: &str) -> Option<String> {
+    let index = cx
+        .resolved
+        .declarations()
+        .all()
+        .iter()
+        .position(|d| d.id.qualified() == id)?;
+    let block = lcl_runtime::syntax::declaration_block(cx.resolved, index)?;
+    let parameters = block.fields("PARAMETER").len();
+    if parameters != 1 {
+        return Some(format!(
+            "it declares {parameters} PARAMETER blocks, and exactly one must accept the member type"
+        ));
+    }
+    let Some(result) = block.nested("RESULT") else {
+        return Some(
+            "it declares no RESULT, so it states no ordered key type to sort by".to_string(),
+        );
+    };
+    // `core.sort`'s key wants "exactly one RESULT of a concrete registered
+    // ordered type"; `core.filter` and `core.select` want "exactly one BOOLEAN
+    // RESULT" from their predicate.
+    let declared = lcl_runtime::syntax::field_text(&result, "TYPE")?;
+    let base = declared
+        .split(['[', '('])
+        .next()
+        .unwrap_or(&declared)
+        .trim()
+        .to_string();
+    let admitted = if parameter == "key" {
+        ORDERED_TYPES.contains(&base.as_str())
+    } else {
+        base == "BOOLEAN"
+    };
+    if !admitted {
+        return Some(format!(
+            "its RESULT declares {declared}, which is outside the {} this {parameter} admits",
+            if parameter == "key" {
+                "registered ordered types"
+            } else {
+                "BOOLEAN result"
+            }
+        ));
+    }
+    None
+}
+
+/// `operators_and_functions_v0.1.0.json#/ordered_types`.
+const ORDERED_TYPES: [&str; 10] = [
+    "INTEGER",
+    "DECIMAL",
+    "STRING",
+    "DATE",
+    "TIME",
+    "DATETIME",
+    "DURATION",
+    "PERCENTAGE",
+    "BYTES",
+    "MEASURE",
+];
 /// Why a referenced operation may not serve as a pure key or predicate.
 ///
 /// `None` means its declared axes satisfy the row: `SIDE_EFFECT FALSE`,

@@ -34,12 +34,64 @@ pub(super) const FIXTURE_ROWS: [&str; 6] = [
     "core.uninstall",
 ];
 
+/// The two rows whose storage profile decides how the write is performed.
+pub(super) const STORE_ROWS: [&str; 2] = ["core.memory_write", "core.state_update"];
+
+/// A conformance-only *externally backed* storage profile for each store row.
+///
+/// `operations_v0.1.0.json` gives `core.memory_write` and `core.state_update`
+/// `possible_dependencies: ["host"]`, and `axis_contract.implementation_profile`
+/// lets a profile's axes "narrow the row's but never widen" them. The shipped
+/// profile narrows the dependency away and says so — "Write the declared
+/// engine-owned store in place within one invocation; the invocation selects no
+/// external dependency" — so its store cannot be limited, cannot fail and
+/// cannot leave its postcondition unsatisfied. The profile here is the other
+/// store the row's own maxima describe: one whose persistence is a host's, with
+/// exactly the row's single effect class and its registered `host` dependency.
+///
+/// It is conformance-only in the same sense as the D3 fixture profiles: nothing
+/// ships it, and it fabricates no observation. What it changes is which of the
+/// row's two registered kinds of storage the engine is asked to perform.
+pub(super) fn external_store_profiles() -> Vec<Profile> {
+    [
+        ("core.memory_write", AddressClass::Memory, Effect::Memory),
+        ("core.state_update", AddressClass::State, Effect::State),
+    ]
+    .into_iter()
+    .map(|(operation, class, effect)| {
+        Profile::builder(
+            operation,
+            Role::new("storage"),
+            "conformance.external_store",
+            "1",
+        )
+        .serving(TargetClass::Only(vec![class]))
+        .determinism(
+            Determinism::Deterministic,
+            "conformance fixture: the request, the store snapshot and one immutable \
+             implementation version fix the post-state the profile persists",
+        )
+        .axes(lcl_capabilities::profile::axes(
+            &[Dependency::Host],
+            &[effect],
+        ))
+        .resolving(
+            "Persist the declared store through the host that backs it; the invocation \
+             selects the row's host dependency and exactly the row's one effect class.",
+        )
+    })
+    .collect()
+}
+
 /// The engines one row's clauses run on.
 pub(super) struct Runners<'a> {
     /// Every profile the shipped adapters declare.
     pub shipped: &'a Runner,
     /// The shipped profiles plus the D3 fixture profiles.
     pub fixture: Runner,
+    /// The shipped profiles with the two storage roles served by an externally
+    /// backed profile instead of the in-place one. See [`external_store_profiles`].
+    pub store: Runner,
     pub spec: &'a SpecPackage,
 }
 
@@ -283,9 +335,9 @@ fn reaching_source(row: &Row) -> String {
 
 /// `error/host.constraint`: "A host/provider limitation outside portable LCL
 /// prevents execution."
-fn host_constraint(runners: &Runners<'_>, row: &Row) -> ExecutedCase {
+fn host_constraint(runners: &Runners<'_>, runner: &Runner, row: &Row) -> ExecutedCase {
     on_mock(
-        runners.reaching(row.operation),
+        runner,
         "error/host.constraint",
         "09: host limitations produce error.host.constraint and never change LCL meaning",
         &reaching_source(row),
@@ -296,9 +348,9 @@ fn host_constraint(runners: &Runners<'_>, row: &Row) -> ExecutedCase {
 }
 
 /// `error/execution.action`: "failure to start is pre_effect".
-fn execution_action(runners: &Runners<'_>, row: &Row) -> ExecutedCase {
+fn execution_action(runners: &Runners<'_>, runner: &Runner, row: &Row) -> ExecutedCase {
     on_mock(
-        runners.reaching(row.operation),
+        runner,
         "error/execution.action",
         "failure_lifecycle: a host failure proven before any effect is error.execution.action, pre_effect",
         &reaching_source(row),
@@ -314,10 +366,10 @@ fn execution_action(runners: &Runners<'_>, row: &Row) -> ExecutedCase {
 /// `error/operation.postcondition`: the host claims an effect the invocation
 /// never resolved, so the completed operation cannot satisfy its contract and
 /// the effect extent is not established.
-fn postcondition(runners: &Runners<'_>, row: &Row) -> ExecutedCase {
+fn postcondition(runners: &Runners<'_>, runner: &Runner, row: &Row) -> ExecutedCase {
     let class = unresolved_class(row.operation);
     on_mock(
-        runners.reaching(row.operation),
+        runner,
         "error/operation.postcondition",
         "failure_lifecycle: a postcondition fails when the effect extent cannot be established",
         &reaching_source(row),
@@ -502,9 +554,723 @@ fn missing_role(runners: &Runners<'_>, row: &Row, role: &str, source: String) ->
 
 /// Every clause run of one row's `operation_errors` group that the parent
 /// module does not derive.
-pub(super) fn errors(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
+/// A refusal that must precede the boundary: the exact diagnostic, no attempt,
+/// and no request of any kind recorded by the host.
+///
+/// The request list is part of the compared evidence, not only of the input
+/// record, so a run that refused *after* asking would fail here.
+fn refused_before_request(
+    runner: &Runner,
+    label: &str,
+    clause: &str,
+    source: &str,
+    diagnostic: &str,
+) -> ExecutedCase {
+    let mut host = MockHost::new();
+    let mut observed = runner.run_on(source, &lcl_resolver::MemoryProvider::new(), &mut host);
+    let requests: Vec<String> = host
+        .requests()
+        .iter()
+        .map(|r| r.operation.clone())
+        .collect();
+    observed.component = vec![("requests".to_string(), format!("{requests:?}"))];
+    observed.input_evidence.push(
+        "host: lcl-runtime MockHost; it answers nothing, and records whatever it is asked"
+            .to_string(),
+    );
+    let expectation = Expectation::All(vec![
+        Expectation::Rejects(diagnostic.into()),
+        Expectation::Attempts {
+            declaration: "action.subject".into(),
+            statuses: Vec::new(),
+        },
+        Expectation::Component(vec![("requests".to_string(), "[]".to_string())]),
+    ]);
+    let verdict = crate::judge(&expectation, &observed);
+    ExecutedCase {
+        id: label.into(),
+        contract: clause.into(),
+        source: source.to_string(),
+        expectation,
+        observed,
+        verdict,
+    }
+}
+
+/// The three analytical rows observe an addressable operand through the host
+/// that owns it, and their registered access failures are that host's answers.
+///
+/// `operations_v0.1.0.json`: `core.compare` "Resolve[s] host or network
+/// independently for the target and against operands"; `core.validate`
+/// "Resolve[s] host or network only for addressable targets"; `core.verify`
+/// "Resolve[s] observation dependencies ... from the target and evidence
+/// sources". Each run keeps the row's own fixture and only moves its target to
+/// the declared PATH, so what changes is the operand's address class and
+/// nothing else.
+fn observed_operand(row: &Row) -> String {
+    with_action(row, &retargeted(row, "REF(data.path)"))
+}
+
+fn observation_failures(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
+    let spec = runners.spec;
+    let shipped = runners.shipped;
+    let source = observed_operand(row);
+    let (unauthorized, limited) = match row.operation {
+        "core.compare" => ("path/unauthorized-access", "path/host-constraint"),
+        _ => ("error/permission.denied", "error/host.constraint"),
+    };
+    let mut runs = vec![on_mock(
+        shipped,
+        limited,
+        "a host limitation prevents the observation of an addressable operand: error.host.constraint",
+        &source,
+        failed_with(spec, "error.host.constraint", "pre_effect", "none"),
+        MockHost::new().unavailable(row.operation, "conformance: the capability is absent"),
+        &format!("unavailable {}", row.operation),
+    )];
+    if row.operation == "core.compare" {
+        runs.push(on_mock(
+            shipped,
+            unauthorized,
+            "the host refuses access to an addressable operand: error.permission.denied before any comparison",
+            &source,
+            failed_with(spec, "error.permission.denied", "pre_effect", "none"),
+            MockHost::new().deny(row.operation, "conformance: the host grants no access"),
+            &format!("deny {}", row.operation),
+        ));
+        // "both operands are accessible": the implementation that observes the
+        // operand is the one that discovers it cannot, and refuses with the
+        // identifier the row's own `errors` list admits.
+        runs.push(on_mock(
+            shipped,
+            "precondition/inaccessible-operand",
+            "an operand the observing implementation cannot access fails the row's accessibility precondition before any comparison",
+            &source,
+            failed_with(spec, "error.operation.precondition", "pre_effect", "none"),
+            MockHost::new().script(
+                row.operation,
+                vec![CapabilityOutcome::Refused {
+                    error: lcl_runtime::RuntimeError::OperationPrecondition,
+                    cause: "operand".to_string(),
+                    detail: "conformance: the operand at that address cannot be accessed"
+                        .to_string(),
+                    observation: Observation::none(),
+                }],
+            ),
+            "the observing implementation refuses: the operand is not accessible",
+        ));
+    }
+    runs
+}
+
+/// A custom operation whose declared dependency admits permitted variation
+/// while it asserts `DETERMINISTIC TRUE`.
+pub(super) const VARYING_OPERATION: &str = concat!(
+    "\nDEFINE:\n    ID: op.inferred\n    KIND: kind.operation\n    ",
+    "MEANING: \"Infer a summary of the subject.\"\n    SIDE_EFFECT: FALSE\n    ",
+    "DETERMINISTIC: TRUE\n    DEPENDENCY: [model]\n    PARAMETER:\n        NAME: subject\n        ",
+    "TYPE: STRING\n        REQUIRED: TRUE\n    RESULT:\n        TYPE: STRING\n",
+);
+
+/// Run one source and report exactly what the subject attempt produced: its
+/// status, its result's field names, and the effect classes it recorded.
+///
+/// The three are compared as one component, because "graph mode never
+/// synthesizes started, completed, exit_code, stdout, or stderr" is an
+/// assertion about which fields are *absent*, which a field-by-field
+/// expectation cannot make.
+fn subject_observation(
+    runner: &Runner,
+    label: &str,
+    clause: &str,
+    source: &str,
+    mut host: MockHost,
+    expected: &[(&str, &str)],
+) -> ExecutedCase {
+    let observed_run = runner.run_on(source, &lcl_resolver::MemoryProvider::new(), &mut host);
+    let subject = observed_run
+        .invocations
+        .iter()
+        .find(|record| record.declaration.as_deref() == Some("action.subject"));
+    let result = subject.and_then(|record| record.result.as_ref());
+    let fields = result
+        .map(|r| {
+            let mut names: Vec<&str> = r.fields.keys().map(String::as_str).collect();
+            names.sort_unstable();
+            format!("[{}]", names.join(", "))
+        })
+        .unwrap_or_else(|| "[]".to_string());
+    let effects = result
+        .map(|r| {
+            let mut classes: Vec<&str> = r
+                .observed_effects
+                .iter()
+                .map(|effect| effect.class.as_registry_str())
+                .collect();
+            classes.sort_unstable();
+            classes.dedup();
+            format!("[{}]", classes.join(", "))
+        })
+        .unwrap_or_else(|| "[]".to_string());
+    let status = subject
+        .map(|record| record.status().to_string())
+        .unwrap_or_else(|| "none".to_string());
+    // Which declarations the graph itself invoked, as its own evidence.
+    let graphed = {
+        let mut ran: Vec<String> = observed_run
+            .invocations
+            .iter()
+            .filter(|record| !record.id.iteration.is_root())
+            .filter_map(|record| record.declaration.clone())
+            .collect();
+        ran.sort();
+        ran.dedup();
+        format!("[{}]", ran.join(", "))
+    };
+    let actual: Vec<(String, String)> = vec![
+        ("status".to_string(), status),
+        ("fields".to_string(), fields),
+        ("effects".to_string(), effects),
+        ("graph invoked".to_string(), graphed),
+    ];
+    let expectation = Expectation::Component(
+        expected
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect(),
+    );
+    let mut observed = observed_run;
+    observed.component = actual;
+    observed.input_evidence.push(format!(
+        "host: lcl-runtime MockHost; requests={:?}",
+        host.requests()
+    ));
+    let verdict = crate::judge(&expectation, &observed);
+    ExecutedCase {
+        id: label.into(),
+        contract: clause.into(),
+        source: source.to_string(),
+        expectation,
+        observed,
+        verdict,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Graph mode: core.execute and core.test over a referenced execution unit
+// ---------------------------------------------------------------------------
+
+/// The subject action, retargeted at another declaration the document carries.
+///
+/// `operations_v0.1.0.json`: "non_graph applies exactly to PATH, URI, or STRING
+/// targets and graph applies exactly to REFERENCE[TASK|PHASE|SEQUENCE|ACTION|
+/// TEST] targets."
+fn graph_subject(row: &Row, target: &str, extra: &str) -> String {
+    with_action(
+        row,
+        &format!(
+            "OPERATION: {}\n    TARGET: REF({target}){extra}",
+            row.operation
+        ),
+    )
+}
+
+/// The subject action executing itself, which is the prohibited cycle.
+fn graph_cycle(row: &Row) -> String {
+    graph_subject(row, "action.subject", graph_comparison(row))
+}
+
+/// The comparison form `core.test` must still supply beside a graph TARGET.
+///
+/// "A TASK or ACTION TARGET is executed before the supplied comparison and
+/// TARGET alone is not a complete test."
+fn graph_comparison(row: &Row) -> &'static str {
+    if row.operation == "core.test" {
+        concat!(
+            "\n    PARAMETER:\n        NAME: expected\n        TYPE: INTEGER\n        REQUIRED: TRUE\n        VALUE: 3",
+            "\n    PARAMETER:\n        NAME: actual\n        TYPE: INTEGER\n        REQUIRED: TRUE\n        VALUE: REF(data.number)"
+        )
+    } else {
+        ""
+    }
+}
+
+/// A SEQUENCE of two returning actions, as a graph target that exposes two
+/// material primary results.
+const TWO_PRIMARIES: &str = concat!(
+    "\nACTION:\n    ID: action.first\n    OPERATION: core.return\n    TARGET: REF(data.number)\n",
+    "\nACTION:\n    ID: action.second\n    OPERATION: core.return\n    TARGET: REF(data.text)\n",
+    "\nSEQUENCE:\n    ID: sequence.pair\n    MODE: mode.sequential\n    STEP:\n        ID: step.first\n        ACTION: REF(action.first)\n    STEP:\n        ID: step.second\n        ACTION: REF(action.second)\n",
+);
+
+/// One action that writes the engine's own MEMORY store, as a graph target
+/// with exactly one concrete effect and no host of its own.
+const WRITING_GRAPH: &str = concat!(
+    "\nACTION:\n    ID: action.writer\n    OPERATION: core.memory_write\n    TARGET: REF(memory.notes)\n    ",
+    "PARAMETER:\n        NAME: value\n        TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: \"graph\"\n",
+);
+
+/// One action whose write crosses to a host, as a graph target whose failure
+/// is the host's.
+const CROSSING_GRAPH: &str = concat!(
+    "\nACTION:\n    ID: action.writer\n    OPERATION: core.write\n    TARGET: REF(data.path)\n    ",
+    "PARAMETER:\n        NAME: content\n        TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: \"graph\"\n",
+);
+
+/// `with_declarations`, plus membership: a graph target is a declaration the
+/// executing document already carries, so the fixture names it in the task.
+///
+/// "Reachability does not expand SCOPE or graph membership": a reference from
+/// `core.execute` or `core.test` does not make the unit a member, so the
+/// fixture that means to execute one declares it as one.
+fn with_member(row: &Row, action: &str, declarations: &str, member: &str) -> String {
+    with_declarations(row, action, declarations).replacen(
+        "ACTION: [REF(action.subject), REF(action.other)]",
+        &format!("ACTION: [REF(action.subject), REF(action.other), REF({member})]"),
+        1,
+    )
+}
+
+/// The same, for a `SEQUENCE` the task runs beside its actions.
+fn with_sequence_member(row: &Row, action: &str, declarations: &str, member: &str) -> String {
+    with_declarations(row, action, declarations).replacen(
+        "ACTION: [REF(action.subject), REF(action.other)]",
+        &format!("ACTION: [REF(action.subject), REF(action.other)]\n    SEQUENCE: REF({member})"),
+        1,
+    )
+}
+
+/// The graph sub-runs of `core.execute` and `core.test`.
+fn graph(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<ExecutedCase> {
+    let shipped = runners.shipped;
+    let execute = row.operation == "core.execute";
+    let comparison = graph_comparison(row);
+    let mut runs = Vec::new();
+
+    // The graph target every positive run uses: `action.other` returns
+    // `data.number`, so the completed graph exposes exactly one material
+    // primary result.
+    let one_primary = graph_subject(row, "action.other", comparison);
+    let writing = with_member(
+        row,
+        &format!(
+            "OPERATION: {}\n    TARGET: REF(action.writer){comparison}",
+            row.operation
+        ),
+        WRITING_GRAPH,
+        "action.writer",
+    );
+
+    if family == "binding" {
+        let label = if execute {
+            "binding/graph-target"
+        } else {
+            "binding/graph-target-executes-before-comparison"
+        };
+        runs.push(subject_observation(
+            shipped,
+            label,
+            "a REFERENCE[TASK|ACTION] TARGET is executed as a graph before the row's own result",
+            &one_primary,
+            MockHost::new(),
+            &[
+                ("status", "status.succeeded"),
+                (
+                    "fields",
+                    if execute {
+                        "[mode, value]"
+                    } else {
+                        "[actual, evidence, expected, passed]"
+                    },
+                ),
+                ("effects", "[]"),
+                ("graph invoked", "[action.other]"),
+            ],
+        ));
+    }
+
+    if family == "effects" {
+        runs.push(shipped.execute(
+            "mode/graph-cycle-rejected-before-axes",
+            "a prohibited reference cycle emits error.reference.cycle and fails before axis resolution",
+            &graph_cycle(row),
+            Expectation::All(vec![
+                Expectation::Rejects("error.reference.cycle".into()),
+                Expectation::Attempts {
+                    declaration: "action.subject".into(),
+                    statuses: Vec::new(),
+                },
+            ]),
+        ));
+        runs.push(subject_observation(
+            shipped,
+            if execute {
+                "mode/graph-transitive-axes"
+            } else {
+                "mode/transitive-axes-normalized"
+            },
+            "the invocation's effects are the graph's normalized transitive union, and nothing else",
+            &writing,
+            MockHost::new(),
+            &[
+                ("status", "status.succeeded"),
+                (
+                    "fields",
+                    if execute {
+                        "[mode, value]"
+                    } else {
+                        "[actual, evidence, expected, passed]"
+                    },
+                ),
+                ("effects", "[memory]"),
+                ("graph invoked", "[action.writer]"),
+            ],
+        ));
+        if execute {
+            runs.push(subject_observation(
+                shipped,
+                "mode/graph-no-local-process-effect",
+                "a referenced execution unit has no mandatory local process effect",
+                &one_primary,
+                MockHost::new(),
+                &[
+                    ("status", "status.succeeded"),
+                    ("fields", "[mode, value]"),
+                    ("effects", "[]"),
+                    ("graph invoked", "[action.other]"),
+                ],
+            ));
+            runs.push(subject_observation(
+                shipped,
+                "result/graph-no-native-observations",
+                "graph mode never synthesizes started, completed, exit_code, stdout or stderr",
+                &one_primary,
+                MockHost::new(),
+                &[
+                    ("status", "status.succeeded"),
+                    ("fields", "[mode, value]"),
+                    ("effects", "[]"),
+                    ("graph invoked", "[action.other]"),
+                ],
+            ));
+            runs.push(subject_observation(
+                shipped,
+                "result/graph-value-single-primary",
+                "value is present exactly when the completed graph exposes one material primary result",
+                &with_sequence_member(
+                    row,
+                    "OPERATION: core.execute\n    TARGET: REF(sequence.pair)",
+                    TWO_PRIMARIES,
+                    "sequence.pair",
+                ),
+                MockHost::new(),
+                &[
+                    ("status", "status.succeeded"),
+                    ("fields", "[mode]"),
+                    ("effects", "[]"),
+                    (
+                        "graph invoked",
+                        "[action.first, action.second, sequence.pair, step.first, step.second]",
+                    ),
+                ],
+            ));
+        } else {
+            runs.push(subject_observation(
+                shipped,
+                "mode/graph-executes-before-comparison",
+                "the graph runs first, and the comparison reads the store it left",
+                &with_member(
+                    row,
+                    concat!(
+                        "OPERATION: core.test\n    TARGET: REF(action.writer)",
+                        "\n    PARAMETER:\n        NAME: expected\n        TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: \"graph\"",
+                        "\n    PARAMETER:\n        NAME: actual\n        TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: REF(memory.notes)"
+                    ),
+                    WRITING_GRAPH,
+                    "action.writer",
+                ),
+                MockHost::new(),
+                &[
+                    ("status", "status.succeeded"),
+                    ("fields", "[actual, evidence, expected, passed]"),
+                    ("effects", "[memory]"),
+                    ("graph invoked", "[action.writer]"),
+                ],
+            ));
+        }
+        runs.push(graph_category(runners, row));
+    }
+
+    if family == "errors" {
+        runs.push(shipped.execute(
+            if execute {
+                "path/reference-cycle"
+            } else {
+                "path/prohibited-graph-cycle"
+            },
+            "a prohibited graph reference cycle is error.reference.cycle",
+            &graph_cycle(row),
+            Expectation::Rejects("error.reference.cycle".into()),
+        ));
+        // A graph member that cannot reach its host: the graph's own
+        // identifier stays in the retained evidence, which is the union.
+        let crossing = with_member(
+            row,
+            &format!(
+                "OPERATION: {}\n    TARGET: REF(action.writer){comparison}",
+                row.operation
+            ),
+            CROSSING_GRAPH,
+            "action.writer",
+        );
+        runs.push(on_mock(
+            shipped,
+            if execute {
+                "path/graph-error-union"
+            } else {
+                "path/host-constraint"
+            },
+            "an applicable error of the referenced graph is unioned with the row's own retained evidence",
+            &crossing,
+            Expectation::Diagnostic("error.host.constraint".into()),
+            MockHost::new().unavailable("core.write", "conformance: no filesystem is installed"),
+            "the graph's write cannot reach a filesystem",
+        ));
+        if execute {
+            // The graph's own action declares the retry contract, so the
+            // exhaustion is the graph's: `core.execute`'s closed errors list
+            // does not admit error.retry.exhausted, and it reaches this row
+            // only as the union's retained evidence.
+            const RETRYING_GRAPH: &str = concat!(
+                "LCL:\n    VERSION: \"0.1.0\"\n\nSPECIFICATION:\n    ID: example.coverage\n    NAME: \"Coverage\"\n    VERSION: \"1.0.0\"\n    KIND: kind.task\n",
+                "\nDATA:\n    ID: data.path\n    TYPE: PATH\n    VALUE: PATH(\"/srv/data/report.txt\")\n",
+                "\nGOAL:\n    ID: goal.subject\n    ASSERT: TRUE\n",
+                "\nHANDLER:\n    ID: handler.retry\n    EVENT: event.host_constraint\n    OPERATION: core.retry\n    LIMIT: 1\n",
+                "\nACTION:\n    ID: action.retried\n    OPERATION: core.write\n    TARGET: REF(data.path)\n    ",
+                "PARAMETER:\n        NAME: content\n        TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: \"graph\"\n    ",
+                "RETRY:\n        LIMIT: 1\n        HANDLER: REF(handler.retry)\n",
+                "\nACTION:\n    ID: action.subject\n    OPERATION: core.execute\n    TARGET: REF(action.retried)\n",
+                "\nSUCCESS:\n    ID: success.subject\n    ALL: TRUE\n",
+                "\nTASK:\n    ID: task.subject\n    GOAL: REF(goal.subject)\n    ACTION: [REF(action.subject), REF(action.retried)]\n    HANDLER: REF(handler.retry)\n    SUCCESS: REF(success.subject)\n",
+                "\nEXECUTE:\n    REFERENCE: REF(task.subject)\n",
+            );
+            runs.push(on_mock(
+                shipped,
+                "path/graph-retry-exhausted-only-through-union",
+                "error.retry.exhausted belongs to the graph's own attempts, and reaches this row only through the union",
+                RETRYING_GRAPH,
+                Expectation::All(vec![
+                    // The graph's own attempts exhausted its declared RETRY...
+                    Expectation::Diagnostic("error.retry.exhausted".into()),
+                    // ...and this row names only what its own closed errors
+                    // list admits for a graph that did not complete.
+                    Expectation::Diagnostic("error.execution.action".into()),
+                    Expectation::Attempts {
+                        declaration: "action.subject".into(),
+                        statuses: vec!["status.failed".into()],
+                    },
+                ]),
+                MockHost::new().script(
+                    "core.write",
+                    vec![
+                        CapabilityOutcome::Unavailable("conformance: scripted limitation 1".into()),
+                        CapabilityOutcome::Unavailable("conformance: scripted limitation 2".into()),
+                    ],
+                ),
+                "every attempt of the graph's write is refused by the host",
+            ));
+        } else {
+            runs.push(on_mock(
+                shipped,
+                "path/graph-error-union",
+                "an applicable error of the referenced graph is unioned with the row's own retained evidence",
+                &crossing,
+                Expectation::Diagnostic("error.permission.denied".into()),
+                MockHost::new().deny("core.write", "conformance: the host grants no access"),
+                "the graph's write is refused",
+            ));
+        }
+    }
+    runs
+}
+
+/// `mode/graph-category-copied`: the row copies the executed graph's final
+/// category.
+///
+/// `05_SEMANTICS/11`: "core.test is deterministic in comparison-only mode and
+/// otherwise copies the referenced graph category. core.execute copies its
+/// execution-profile category in non-graph mode and its graph category in graph
+/// mode", and `graph_resolution`: "The graph is deterministic exactly when every
+/// reachable resolved operation is deterministic".
+///
+/// The two inputs are real: the engine executes each document and records which
+/// declarations the graph invoked, and the production `ProfileCatalog` resolves
+/// both the graph's category and the row's from it.
+fn graph_category(runners: &Runners<'_>, row: &Row) -> ExecutedCase {
+    use lcl_capabilities::Determinism;
+    let comparison = graph_comparison(row);
+    let asking = concat!(
+        "\nACTION:\n    ID: action.asker\n    OPERATION: core.ask\n    TARGET: REF(data.text)\n    ",
+        "PARAMETER:\n        NAME: question\n        TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: \"Which environment?\"\n    ",
+        "PARAMETER:\n        NAME: expected_type\n        TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: \"STRING\"\n",
+    );
+    let catalog = lcl_stdlib::Stdlib::load(runners.spec)
+        .expect("the operation surface assembles")
+        .with_profiles(Runner::shipped_profiles());
+    let mut expected = Vec::new();
+    let mut actual = Vec::new();
+    let mut sources = Vec::new();
+    for (label, target, declarations, members, deterministic_graph) in [
+        (
+            "deterministic",
+            "action.other",
+            String::new(),
+            vec!["core.return"],
+            true,
+        ),
+        (
+            "nondeterministic",
+            "action.asker",
+            asking.to_string(),
+            vec!["core.ask"],
+            false,
+        ),
+    ] {
+        let source = with_declarations(
+            row,
+            &format!(
+                "OPERATION: {}\n    TARGET: REF({target}){comparison}",
+                row.operation
+            ),
+            &declarations,
+        );
+        // The engine runs it, and says which operations the graph reached.
+        let observed = runners.shipped.run_on(
+            &source,
+            &lcl_resolver::MemoryProvider::new(),
+            &mut MockHost::new(),
+        );
+        let reached: Vec<String> = observed
+            .invocations
+            .iter()
+            .filter(|record| record.declaration.as_deref() == Some(target))
+            .map(|record| record.id.to_string())
+            .collect();
+        // "The graph is deterministic exactly when every reachable resolved
+        // operation is deterministic."
+        let graph = members.iter().all(|member| {
+            catalog
+                .catalog()
+                .resolve_determinism(member, &[], None)
+                .is_deterministic()
+        });
+        let resolved = catalog
+            .catalog()
+            .resolve_determinism(
+                row.operation,
+                &[],
+                Some(if graph {
+                    Determinism::Deterministic
+                } else {
+                    Determinism::Nondeterministic
+                }),
+            )
+            .is_deterministic();
+        expected.push((label.to_string(), deterministic_graph.to_string()));
+        actual.push((label.to_string(), resolved.to_string()));
+        sources.push(format!(
+            "{label}: the graph invoked {reached:?} running {members:?}; graph category deterministic={graph}"
+        ));
+    }
+    let expectation = Expectation::Component(expected);
+    let mut observed = crate::Observed {
+        component: actual,
+        ..crate::Observed::default()
+    };
+    observed.input_evidence = sources;
+    let verdict = crate::judge(&expectation, &observed);
+    ExecutedCase {
+        id: "mode/graph-category-copied".into(),
+        contract: "graph mode copies the executed graph's final determinism category".into(),
+        source: String::new(),
+        expectation,
+        observed,
+        verdict,
+    }
+}
+
+/// The sub-run label each probe's reviewed mapping pins for the scope run.
+///
+/// The three rows whose catalog requirement names a diagnostic *path* use that
+/// wording; `core.ask` states its own authorization contract over the responder
+/// and the request; every other row exercises the registered failure.
+fn scope_label(op: &str) -> &'static str {
+    match op {
+        "core.compare" | "core.read" | "core.inspect" => "path/scope-violation",
+        "core.ask" => "path/out-of-scope-responder-or-request",
+        _ => "error/scope.violation",
+    }
+}
+
+/// The subject document with a `SCOPE` the action's own TARGET is outside of.
+///
+/// `scope.narrow` includes exactly one entity — the subject goal, which no row
+/// targets — so whatever the row does target is outside it. The task itself is
+/// not that entity: `core.stop` targets `REF(task.subject)`, and a scope that
+/// admitted it would let that row pass unrefused. `02_LEXICAL/06`: SCOPE
+/// declares "the exact set of entities to which a clause may apply".
+fn out_of_scope(row: &Row) -> String {
+    let scoped = with_action(
+        row,
+        &format!("{}\n    SCOPE: REF(scope.narrow)", row.action),
+    );
+    scoped.replacen(
+        "\nACTION:\n    ID: action.subject",
+        "\nSCOPE:\n    ID: scope.narrow\n    INCLUDE: [REF(goal.subject)]\n\nACTION:\n    ID: action.subject",
+        1,
+    )
+}
+
+/// `error.scope.violation`: "An action targets an entity outside applicable
+/// SCOPE".
+///
+/// `05_SEMANTICS/09`: it "is pre_effect only: ... effective scope resolves at
+/// processing step 6 before the first authorized effect". So the refusal is the
+/// whole of the run's evidence: the action is never authorized, no attempt is
+/// recorded, and no request crosses the boundary. A host that answered would
+/// prove the opposite, so the run installs one that would refuse to notice —
+/// `MockHost::new()` records every request it is given.
+fn scope_violation(runners: &Runners<'_>, row: &Row, label: &str) -> ExecutedCase {
+    on_mock(
+        runners.reaching(row.operation),
+        label,
+        "05_SEMANTICS/02 and statuses_and_errors: an action targeting an entity outside its applicable SCOPE is refused with error.scope.violation before the first authorized effect",
+        &out_of_scope(row),
+        Expectation::All(vec![
+            Expectation::Rejects("error.scope.violation".into()),
+            Expectation::Attempts {
+                declaration: "action.subject".into(),
+                statuses: Vec::new(),
+            },
+        ]),
+        MockHost::new(),
+        "no host answer is reached: the refusal precedes authorization to act",
+    )
+}
+
+pub(super) fn errors(
+    runners: &Runners<'_>,
+    row: &Row,
+    contract: &lcl_stdlib::OperationContract,
+) -> Vec<ExecutedCase> {
     let op = row.operation;
     let mut runs = Vec::new();
+    // Every row whose closed `errors` list admits error.scope.violation is
+    // exercised on it. The run exists because the registry lists it, not
+    // because a hand-kept list of operations names it.
+    if contract.admits_error("error.scope.violation") {
+        runs.push(scope_violation(runners, row, scope_label(op)));
+    }
     let generic = |name: &str| -> bool {
         match name {
             "permission" => matches!(
@@ -539,6 +1305,8 @@ pub(super) fn errors(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                 op,
                 "core.analyze"
                     | "core.append"
+                    | "core.memory_write"
+                    | "core.state_update"
                     | "core.convert"
                     | "core.copy"
                     | "core.create"
@@ -562,6 +1330,8 @@ pub(super) fn errors(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
             "action" | "postcondition" => matches!(
                 op,
                 "core.append"
+                    | "core.memory_write"
+                    | "core.state_update"
                     | "core.convert"
                     | "core.copy"
                     | "core.create"
@@ -615,14 +1385,21 @@ pub(super) fn errors(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
     if generic("permission") {
         runs.push(permission_denied(runners, row));
     }
+    // A store row's three host-side failures are the externally backed
+    // storage profile's; every other row reaches its own host as before.
+    let reaching = if STORE_ROWS.contains(&op) {
+        &runners.store
+    } else {
+        runners.reaching(op)
+    };
     if generic("host") {
-        runs.push(host_constraint(runners, row));
+        runs.push(host_constraint(runners, reaching, row));
     }
     if generic("action") {
-        runs.push(execution_action(runners, row));
+        runs.push(execution_action(runners, reaching, row));
     }
     if generic("postcondition") {
-        runs.push(postcondition(runners, row));
+        runs.push(postcondition(runners, reaching, row));
     }
     if generic("positional") {
         runs.push(positional(runners, row));
@@ -632,6 +1409,38 @@ pub(super) fn errors(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
     }
     if generic("unresolved") {
         runs.push(unresolved_optional_target(runners, row));
+    }
+    if matches!(op, "core.compare" | "core.validate" | "core.verify") {
+        runs.extend(observation_failures(runners, row));
+    }
+    if matches!(op, "core.execute" | "core.test") {
+        runs.extend(graph(runners, row, "errors"));
+    }
+    if op == "core.validate" {
+        // 05_SEMANTICS/11: "Validation emits error.determinism.mismatch exactly
+        // when DETERMINISTIC TRUE is declared and that resolved contract is
+        // nondeterministic." core.validate "check[s] syntax, type, reference,
+        // dependency, and constraints", and its postcondition is that "all
+        // detected failures use registered error identifiers", so the finding
+        // is recorded in the result rather than raised as a diagnostic.
+        runs.push(runners.shipped.execute(
+            "error/determinism.mismatch",
+            "a kind.operation asserting DETERMINISTIC TRUE over a dependency that admits permitted variation is a detected determinism mismatch",
+            &with_declarations(
+                row,
+                "OPERATION: core.validate\n    TARGET: REF(op.inferred)",
+                VARYING_OPERATION,
+            ),
+            Expectation::All(vec![
+                Expectation::Attempts {
+                    declaration: "action.subject".into(),
+                    statuses: vec!["status.succeeded".into()],
+                },
+                attempt("valid", "FALSE".into()),
+                attempt("errors", "[error.determinism.mismatch]".into()),
+                Expectation::NoDiagnostic("error.determinism.mismatch".into()),
+            ]),
+        ));
     }
     match op {
         "core.analyze" => runs.extend(profile_preconditions(
@@ -1051,6 +1860,15 @@ fn target_address_classes(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase>
 /// Every clause run of one row's `operation_effects` group that the parent
 /// module does not derive.
 pub(super) fn effects(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
+    if matches!(row.operation, "core.execute" | "core.test") {
+        let mut graph_runs = graph(runners, row, "effects");
+        graph_runs.extend(effects_inner(runners, row));
+        return graph_runs;
+    }
+    effects_inner(runners, row)
+}
+
+fn effects_inner(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
     let op = row.operation;
     let spec = runners.spec;
     let shipped = runners.shipped;
@@ -1589,6 +2407,9 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
     let shipped = runners.shipped;
     let doc = || document(row);
     let mut runs = Vec::new();
+    if matches!(op, "core.execute" | "core.test") {
+        runs.extend(graph(runners, row, "binding"));
+    }
     let absent = "PATH(\"/srv/data/absent.txt\")";
     let text = |s: &str| Value::Text(s.to_string());
     match op {
@@ -1753,6 +2574,13 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
     }
     match op {
         "core.ask" => {
+            runs.push(refused_before_request(
+                runners.reaching("core.ask"),
+                "binding/authorized-in-scope-before-message",
+                "06_STANDARD_LIBRARY/03: \"The request and responder must be authorized and in scope; violations use error.permission.denied or error.scope.violation.\" The scope refusal precedes the message effect, so no question is ever put",
+                &out_of_scope(row),
+                "error.scope.violation",
+            ));
             runs.push(on_files(
                 shipped,
                 "binding/authoritative-responder",
@@ -2898,14 +3726,39 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
                     ),
                     Expectation::Diagnostic("error.reference.kind".into()),
                 ));
-                // `path/unresolved-expression-reference` is not authored:
-                // "valid fragments retain ordinary expression diagnostics,
-                // including error.reference.unresolved for unknown names", but
-                // that identifier is registered at the resolution stage and
-                // this build resolves no names inside a STRING fragment, so a
-                // fragment REF to an absent declaration reads MISSING. Naming
-                // it at execution would mirror a resolution-stage identifier
-                // in a layer that does not own it.
+                // `expression_fragment_contract/environment`: "REF references
+                // resolve in the enclosing document ... Bindings are immutable
+                // snapshots; an unknown binding name produces
+                // error.reference.unresolved." The identifier is registered at
+                // the resolution stage and mirrored by the resolver alone, so
+                // the reference this row's fragment reads is resolved where
+                // that layer owns it: the `bindings` OBJECT the fragment's
+                // environment is built from.
+                //
+                // A bare name *inside* the fragment string is a separate case
+                // this build does not resolve statically; it is recorded as a
+                // residual rather than answered at execution, because naming a
+                // resolution-stage identifier in the runtime would mirror it in
+                // a layer that does not own it.
+                runs.push(shipped.execute(
+                    "path/unresolved-expression-reference",
+                    "a fragment environment whose binding reference resolves to no declaration is error.reference.unresolved",
+                    &with_action(
+                        row,
+                        concat!(
+                            "OPERATION: core.calculate",
+                            "\n    PARAMETER:\n        NAME: expression\n        TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: \"amount + 1\"",
+                            "\n    PARAMETER:\n        NAME: bindings\n        TYPE: OBJECT\n        REQUIRED: FALSE\n        VALUE:\n            amount: REF(data.absent)",
+                        ),
+                    ),
+                    Expectation::All(vec![
+                        Expectation::Rejects("error.reference.unresolved".into()),
+                        Expectation::Attempts {
+                            declaration: "action.subject".into(),
+                            statuses: Vec::new(),
+                        },
+                    ]),
+                ));
                 runs.push(reject(
                     "path/division-operand",
                     "division of a non-numeric operand",
@@ -3579,6 +4432,74 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
                     &sort("REF(data.words)", &key_ref("key.remote"), &format!("{words}\nDEFINE:\n    ID: key.remote\n    KIND: kind.operation\n    MEANING: \"A key that reads the host.\"\n    SIDE_EFFECT: FALSE\n    DEPENDENCY: [host]\n    DETERMINISTIC: TRUE\n    PARAMETER:\n        NAME: member\n        TYPE: STRING\n        REQUIRED: TRUE\n    RESULT:\n        TYPE: STRING\n")),
                     "error.operation.precondition",
                 ));
+                // The row's own error.operation.precondition trigger names "a
+                // missing, ambiguous, incomplete, or out-of-bounds immutable
+                // profile" for the key operation. A custom kind.operation
+                // "selects no implementation profile", so those four words
+                // apply to what stands in for one: the declared key contract
+                // whose required properties the key constraint lists — "exactly
+                // one PARAMETER accepting T, and exactly one RESULT of a
+                // concrete registered ordered type" — and the installed
+                // implementation that performs it.
+                let key_declaration = |id: &str, body: &str| {
+                    format!("{words}\nDEFINE:\n    ID: {id}\n    KIND: kind.operation\n    MEANING: \"A declared key.\"\n    SIDE_EFFECT: FALSE\n    DETERMINISTIC: TRUE\n{body}")
+                };
+                runs.push(failed_without_effects(
+                    shipped,
+                    "precondition/key-operation-profile-missing",
+                    "a declared key operation with no installed implementation",
+                    &sort(
+                        "REF(data.words)",
+                        &key_ref("key.uninstalled"),
+                        &key_declaration(
+                            "key.uninstalled",
+                            "    PARAMETER:\n        NAME: member\n        TYPE: STRING\n        REQUIRED: TRUE\n    RESULT:\n        TYPE: STRING\n",
+                        ),
+                    ),
+                    "error.operation.precondition",
+                ));
+                runs.push(failed_without_effects(
+                    &with_pure(runners, vec![("key.two", initial_impl())]),
+                    "precondition/key-operation-profile-ambiguous",
+                    "a key operation declaring more than one PARAMETER, so which one accepts T is not determined",
+                    &sort(
+                        "REF(data.words)",
+                        &key_ref("key.two"),
+                        &key_declaration(
+                            "key.two",
+                            "    PARAMETER:\n        NAME: member\n        TYPE: STRING\n        REQUIRED: TRUE\n    PARAMETER:\n        NAME: fallback\n        TYPE: STRING\n        REQUIRED: FALSE\n    RESULT:\n        TYPE: STRING\n",
+                        ),
+                    ),
+                    "error.operation.precondition",
+                ));
+                runs.push(failed_without_effects(
+                    &with_pure(runners, vec![("key.resultless", initial_impl())]),
+                    "precondition/key-operation-profile-incomplete",
+                    "a key operation declaring no RESULT, so it states no ordered key type",
+                    &sort(
+                        "REF(data.words)",
+                        &key_ref("key.resultless"),
+                        &key_declaration(
+                            "key.resultless",
+                            "    PARAMETER:\n        NAME: member\n        TYPE: STRING\n        REQUIRED: TRUE\n",
+                        ),
+                    ),
+                    "error.operation.precondition",
+                ));
+                runs.push(failed_without_effects(
+                    &with_pure(runners, vec![("key.unordered", Box::new(|_: &lcl_runtime::Value| Ok(lcl_runtime::Value::Boolean(true))) as lcl_stdlib::PureOperation)]),
+                    "precondition/key-operation-profile-out-of-bounds",
+                    "a key operation whose RESULT is outside the registered ordered types",
+                    &sort(
+                        "REF(data.words)",
+                        &key_ref("key.unordered"),
+                        &key_declaration(
+                            "key.unordered",
+                            "    PARAMETER:\n        NAME: member\n        TYPE: STRING\n        REQUIRED: TRUE\n    RESULT:\n        TYPE: BOOLEAN\n",
+                        ),
+                    ),
+                    "error.operation.precondition",
+                ));
                 runs.push(failed_without_effects(
                     shipped,
                     "precondition/malformed-property-path",
@@ -4170,6 +5091,30 @@ pub(super) fn lifecycle(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<E
                 )
             };
             if errors {
+                // "core.retry resolves the wrapped ACTION before retrying ... a
+                // prohibited wrapped-ACTION reference cycle uses
+                // error.reference.cycle." The wrapped ACTION here is the retrying
+                // action itself.
+                runs.push(shipped.execute(
+                    "error/reference.cycle",
+                    "a core.retry whose wrapped ACTION reference leads back to itself is a prohibited cycle",
+                    &crate::fixtures::task_document(concat!(
+                        "\nDATA:\n    ID: data.subject\n    TYPE: STRING\n    VALUE: \"x\"\n",
+                        "\nGOAL:\n    ID: goal.case\n    ASSERT: TRUE\n",
+                        "\nACTION:\n    ID: action.looping\n    OPERATION: core.retry\n    TARGET: REF(action.looping)\n    ",
+                        "PARAMETER:\n        NAME: limit\n        TYPE: INTEGER\n        REQUIRED: TRUE\n        VALUE: 1\n",
+                        "\nSUCCESS:\n    ID: success.case\n    ALL: TRUE\n",
+                        "\nTASK:\n    ID: task.case\n    GOAL: REF(goal.case)\n    ACTION: REF(action.looping)\n    SUCCESS: REF(success.case)\n",
+                        "\nEXECUTE:\n    REFERENCE: REF(task.case)\n",
+                    )),
+                    Expectation::All(vec![
+                        Expectation::Rejects("error.reference.cycle".into()),
+                        Expectation::Attempts {
+                            declaration: "action.looping".into(),
+                            statuses: Vec::new(),
+                        },
+                    ]),
+                ));
                 runs.push(retry_scripted(shipped, "error/execution.action", "a wrapped ACTION failing with error.execution.order-free action failure unions error.execution.action", &base, vec![MockHost::failed_before_effect("conformance: the read did not start")], false, Expectation::All(vec![Expectation::Diagnostic("error.execution.action".into()), attempts(&["status.failed"])])));
                 runs.push(unresolved("path/action-resolution-before-inheritance"));
                 runs.push(in_order(

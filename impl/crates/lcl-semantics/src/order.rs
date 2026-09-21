@@ -53,8 +53,105 @@ pub(crate) fn finalize(engine: &mut Engine) {
     add_sequential_edges(engine);
     add_declared_edges(engine);
     check_parallel_independence(engine);
+    graph_reference_cycles(engine);
     authorize_actions(engine);
     order_topologically(engine);
+}
+
+// ---------------------------------------------------------------------------
+// Prohibited graph-target reference cycles
+// ---------------------------------------------------------------------------
+
+/// The rows whose TARGET names an execution unit they delegate to.
+///
+/// `core.execute` and `core.test` execute it as a graph;
+/// `operations_v0.1.0.json#/contracts/core.retry` "resolves the wrapped ACTION
+/// first" and `06_STANDARD_LIBRARY/10` states that "a prohibited wrapped-ACTION
+/// reference cycle uses error.reference.cycle".
+const GRAPH_ROWS: [&str; 3] = ["core.execute", "core.test", "core.retry"];
+
+/// Refuse a reachable `core.execute`, `core.test` or `core.retry` whose target
+/// leads back to itself.
+///
+/// `05_SEMANTICS/11`: "For a referenced TASK, PHASE, SEQUENCE, ACTION, or TEST,
+/// a prohibited reference cycle emits error.reference.cycle and fails **before
+/// axis resolution**", which `operations_v0.1.0.json#/axis_contract/
+/// implementation_profile/graph_resolution` repeats for the graph mode of both
+/// rows. Deciding it here, in step 9, is what "before axis resolution" means:
+/// the invocation never reaches the point where a graph's transitive
+/// dependency and effect unions would be formed.
+///
+/// The resolver already refuses a *structural* cycle while it expands the
+/// candidate graph. A graph target is not a structural child — "no check
+/// reference or value read adds graph membership or edges" — so the reference
+/// edge is followed here instead, over the declarations the two rows name.
+fn graph_reference_cycles(engine: &mut Engine) {
+    let mut targets: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut sites: Vec<(usize, SourceId, Span, String)> = Vec::new();
+    for node in &engine.plan.nodes {
+        let (Some(declaration), Some(block)) = (
+            node.declaration,
+            node.declaration
+                .and_then(|d| syntax::declaration_block(engine.resolved, d)),
+        ) else {
+            continue;
+        };
+        let Some(operation) = syntax::field_text(block, "OPERATION") else {
+            continue;
+        };
+        if !GRAPH_ROWS.contains(&operation.as_str()) {
+            continue;
+        }
+        let Some(target) = block
+            .field("TARGET")
+            .and_then(|f| syntax::inline_expr(&f.body))
+            .and_then(syntax::reference_target)
+        else {
+            continue;
+        };
+        let Some(referenced) = engine
+            .resolved
+            .declarations()
+            .all()
+            .iter()
+            .position(|d| d.id.qualified() == target)
+        else {
+            continue;
+        };
+        targets.insert(declaration, referenced);
+        sites.push((
+            declaration,
+            node.source.clone(),
+            node.span,
+            node.id.clone().unwrap_or_default(),
+        ));
+    }
+
+    let mut cycles = Vec::new();
+    for (declaration, source, span, id) in sites {
+        let mut seen = BTreeSet::new();
+        let mut at = declaration;
+        while let Some(next) = targets.get(&at).copied() {
+            if !seen.insert(at) {
+                break;
+            }
+            if next == declaration {
+                cycles.push((
+                    source.clone(),
+                    span,
+                    format!("graph-cycle:{id}"),
+                    format!(
+                        "`{id}` delegates to a unit that leads back to `{id}`, which is a prohibited reference cycle"
+                    ),
+                ));
+                break;
+            }
+            at = next;
+        }
+    }
+    for (source, span, cause, detail) in cycles {
+        engine.emit(PreflightError::ReferenceCycle, &source, span, cause, detail);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -588,6 +685,7 @@ fn written_destinations(engine: &Engine, node: usize) -> BTreeSet<String> {
 fn authorize_actions(engine: &mut Engine) {
     let mut decisions: Vec<(usize, Authorization)> = Vec::new();
     let mut denials = Vec::new();
+    let mut violations = Vec::new();
 
     for (index, node) in engine.plan.nodes.iter().enumerate() {
         if node.block != "ACTION" {
@@ -602,14 +700,89 @@ fn authorize_actions(engine: &mut Engine) {
         let Some(operation) = syntax::field_text(block, "OPERATION") else {
             continue;
         };
-        let target = block
+        let target_expr = block
             .field("TARGET")
+            .and_then(|f| syntax::inline_expr(&f.body));
+        let target = target_expr.map(|expr| match syntax::reference_target(expr) {
+            Some(id) => id.to_string(),
+            None => crate::eval::render_static(expr),
+        });
+        // `SCOPE` on an ACTION is written as a reference, so the id comes from
+        // the reference target; `field_text` reads only identifiers and
+        // literals and would leave every referenced scope unrecorded.
+        let scope = block
+            .field("SCOPE")
             .and_then(|f| syntax::inline_expr(&f.body))
-            .map(|expr| match syntax::reference_target(expr) {
-                Some(id) => id.to_string(),
-                None => crate::eval::render_static(expr),
+            .and_then(|expr| match syntax::reference_target(expr) {
+                Some(id) => Some(id.to_string()),
+                None => syntax::literal_text(expr),
             });
-        let scope = syntax::field_text(block, "SCOPE");
+
+        // Step 6 resolved every SCOPE; this is where the action's own target is
+        // compared with the one it names. `statuses_and_errors_v0.1.0.json`
+        // registers error.scope.violation as "An action targets an entity
+        // outside applicable SCOPE", and 05_SEMANTICS/09 makes it "pre_effect
+        // only: ... effective scope resolves at processing step 6 before the
+        // first authorized effect". An unauthorized action performs no effect,
+        // so refusing here is that phase.
+        //
+        // The applicable scope is the one this ACTION names. An enclosing TASK
+        // SCOPE is not applied to every action under it: the canonical valid
+        // example 04_AUTOMATED_CODING_TASK declares TASK SCOPE scope.source,
+        // which selects one source file, while `action.test` under it targets
+        // PATH("/usr/bin/python3"). Widening the rule that way would reject a
+        // canonical valid example.
+        if let Some(named) = scope.as_deref() {
+            if let Some(record) = crate::scope::applicable(&engine.scopes, named, &operation) {
+                // A restriction this layer cannot decide is never treated as
+                // absent: an action does not gain permission because its scope
+                // is written as a pattern, or because its TARGET names no one
+                // entity before effects.
+                let verdict = match target_expr.and_then(crate::scope::selector_of) {
+                    Some(selector) => match crate::scope::admits(record, &selector) {
+                        crate::scope::Admission::Admitted => None,
+                        crate::scope::Admission::Refused => Some(format!(
+                            "`{}` targets {selector}, which `{named}` does not admit",
+                            node.id.clone().unwrap_or_default()
+                        )),
+                        crate::scope::Admission::Undecided(reason) => Some(format!(
+                            "`{}` targets {selector}, and `{named}` could not be resolved against \
+                             it before effects: {reason}",
+                            node.id.clone().unwrap_or_default()
+                        )),
+                    },
+                    None => Some(format!(
+                        "`{}` names `{named}` but its TARGET does not identify one entity that \
+                         can be resolved against that scope before effects",
+                        node.id.clone().unwrap_or_default()
+                    )),
+                };
+                if let Some(detail) = verdict {
+                    violations.push((
+                        node.source.clone(),
+                        node.span,
+                        format!("scope|{}", node.id.clone().unwrap_or_default()),
+                        index,
+                        format!(
+                            "{detail}: INCLUDE [{}] minus EXCLUDE [{}]",
+                            record
+                                .include
+                                .iter()
+                                .map(ToString::to_string)
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                            record
+                                .exclude
+                                .iter()
+                                .map(ToString::to_string)
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                        ),
+                    ));
+                    continue;
+                }
+            }
+        }
 
         let matching = |kind: RuleKind| -> Vec<&crate::authority::AuthorityRecord> {
             engine
@@ -679,6 +852,16 @@ fn authorize_actions(engine: &mut Engine) {
 
     for (index, authorization) in decisions {
         engine.plan.nodes[index].authorization = Some(authorization);
+    }
+    for (source, span, cause, node, detail) in violations {
+        engine.emit_at_node(
+            PreflightError::ScopeViolation,
+            node,
+            &source,
+            span,
+            cause,
+            detail,
+        );
     }
     for (source, span, cause, node, detail) in denials {
         engine.emit_at_node(

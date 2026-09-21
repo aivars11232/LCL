@@ -338,3 +338,19 @@ pub fn value_matches(declared: &lcl_checker::ty::Type, value: &Value) -> bool {
         _ => false,
     }
 }
+
+/// The dependency classes one `DEFINE` declares.
+///
+/// `03_TYPES_AND_VALUES/05`: "DEPENDENCY takes one LIST of one or more distinct
+/// classes from the closed dependency vocabulary; an omitted DEPENDENCY declares
+/// exactly {declared_state_only}." The field is read as written and split into
+/// its identifiers, so `[model, host]` yields both.
+pub(crate) fn declared_dependencies(block: &lcl_runtime::syntax::DeclBlock<'_>) -> Vec<String> {
+    let Some(text) = lcl_runtime::syntax::field_text(block, "DEPENDENCY") else {
+        return Vec::new();
+    };
+    text.split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+        .filter(|part| !part.is_empty())
+        .map(str::to_string)
+        .collect()
+}

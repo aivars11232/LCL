@@ -657,3 +657,240 @@ fn scalar_arithmetic_is_unchanged() {
         "a DECIMAL operand still gives a DECIMAL"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Effective scope against the target
+// ---------------------------------------------------------------------------
+
+/// A task whose subject action names `scope.one` and targets `data.subject`.
+///
+/// `05_SEMANTICS/02`: "SCOPE is computed as INCLUDE minus EXCLUDE. Exact
+/// references/paths identify one entity ... EXCLUDE wins within the same
+/// SCOPE." `statuses_and_errors_v0.1.0.json` registers
+/// `error.scope.violation` as "An action targets an entity outside applicable
+/// SCOPE", pre_effect only, "effective scope resolves at processing step 6
+/// before the first authorized effect".
+fn scoped_action(include: &str, exclude: Option<&str>, operation: Option<&str>) -> String {
+    let mut scope = format!("\nSCOPE:\n    ID: scope.one\n    INCLUDE: [{include}]\n");
+    if let Some(exclude) = exclude {
+        scope.push_str(&format!("    EXCLUDE: [{exclude}]\n"));
+    }
+    if let Some(operation) = operation {
+        scope.push_str(&format!("    OPERATION: {operation}\n"));
+    }
+    format!(
+        "{HEADER}{SUBJECT}\nDATA:\n    ID: data.other\n    TYPE: STRING\n    VALUE: \"y\"\n{scope}\
+         \nGOAL:\n    ID: goal.one\n    ASSERT: TRUE\n\
+         \nACTION:\n    ID: action.one\n    OPERATION: core.inspect\n    TARGET: REF(data.subject)\n    SCOPE: REF(scope.one)\n\
+         \nSUCCESS:\n    ID: success.one\n    ALL: [REF(goal.one)]\n\
+         \nTASK:\n    ID: task.one\n    GOAL: REF(goal.one)\n    ACTION: REF(action.one)\n    SUCCESS: REF(success.one)\n\
+         \nEXECUTE:\n    REFERENCE: REF(task.one)\n"
+    )
+}
+
+#[test]
+fn an_action_targeting_an_entity_its_scope_excludes_is_a_scope_violation() {
+    // INCLUDE names only the other datum, so the subject is outside it.
+    let planned = plan(&scoped_action("REF(data.other)", None, None));
+    assert_eq!(
+        ids(&planned),
+        vec!["error.scope.violation".to_string()],
+        "{:?}",
+        planned
+            .diagnostics()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn exclude_wins_over_include_within_the_same_scope() {
+    let planned = plan(&scoped_action(
+        "REF(data.subject), REF(data.other)",
+        Some("REF(data.subject)"),
+        None,
+    ));
+    assert_eq!(ids(&planned), vec!["error.scope.violation".to_string()]);
+}
+
+#[test]
+fn an_action_targeting_an_included_entity_is_in_scope() {
+    // The positive control: the same shape, with the subject included.
+    let planned = plan(&scoped_action("REF(data.subject)", None, None));
+    assert_eq!(planned.outcome(), Outcome::Planned, "{:?}", ids(&planned));
+}
+
+#[test]
+fn a_scope_restricted_to_another_operation_does_not_apply() {
+    // `SCOPE.OPERATION` restricts which invocations the scope governs, so a
+    // scope for `core.read` is not the applicable scope of a `core.inspect`
+    // action, and must not refuse it.
+    let planned = plan(&scoped_action("REF(data.other)", None, Some("core.read")));
+    assert_eq!(planned.outcome(), Outcome::Planned, "{:?}", ids(&planned));
+}
+
+/// A workspace, a scope over it, and one action targeting a relative path.
+///
+/// `05_SEMANTICS/02`: "GLOB/REGEX select a finite set resolved before affected
+/// execution. A GLOB is evaluated only against workspace-relative paths under
+/// its closed profile", and `types_v0.1.0.json#/pattern_profiles/GLOB` states
+/// `workspace_relative: true` with `match_semantics: full_workspace_relative_path`.
+fn workspace_scoped(include: &str, exclude: Option<&str>, target: &str) -> String {
+    let mut scope = format!("\nSCOPE:\n    ID: scope.one\n    INCLUDE: [{include}]\n");
+    if let Some(exclude) = exclude {
+        scope.push_str(&format!("    EXCLUDE: [{exclude}]\n"));
+    }
+    format!(
+        "{HEADER}{SUBJECT}\nWORKSPACE:\n    ID: workspace.one\n    PATH: PATH(\"/ws\")\n    MODE: mode.read_write\n{scope}\
+         \nGOAL:\n    ID: goal.one\n    ASSERT: TRUE\n\
+         \nACTION:\n    ID: action.one\n    OPERATION: core.inspect\n    TARGET: {target}\n    SCOPE: REF(scope.one)\n\
+         \nSUCCESS:\n    ID: success.one\n    ALL: [REF(goal.one)]\n\
+         \nTASK:\n    ID: task.one\n    GOAL: REF(goal.one)\n    WORKSPACE: REF(workspace.one)\n    ACTION: REF(action.one)\n    SUCCESS: REF(success.one)\n\
+         \nEXECUTE:\n    REFERENCE: REF(task.one)\n"
+    )
+}
+
+/// The path form a workspace-relative target is written in.
+fn relative(path: &str) -> String {
+    format!("PATH(REF(workspace.one), \"{path}\")")
+}
+
+#[test]
+fn an_excluding_glob_that_matches_the_target_is_a_scope_violation() {
+    // "EXCLUDE wins within the same SCOPE": an action may not gain permission
+    // because its restriction is written as a pattern.
+    let planned = plan(&workspace_scoped(
+        "GLOB(\"src/**\")",
+        Some("GLOB(\"src/secret/*\")"),
+        &relative("src/secret/key.txt"),
+    ));
+    assert_eq!(
+        ids(&planned),
+        vec!["error.scope.violation".to_string()],
+        "{:?}",
+        planned
+            .diagnostics()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn an_including_glob_that_matches_the_target_admits_it() {
+    let planned = plan(&workspace_scoped(
+        "GLOB(\"src/**\")",
+        Some("GLOB(\"src/secret/*\")"),
+        &relative("src/main.py"),
+    ));
+    assert_eq!(planned.outcome(), Outcome::Planned, "{:?}", ids(&planned));
+}
+
+#[test]
+fn a_target_no_including_selector_matches_is_a_scope_violation() {
+    let planned = plan(&workspace_scoped(
+        "GLOB(\"src/*.py\")",
+        None,
+        &relative("docs/readme.md"),
+    ));
+    assert_eq!(ids(&planned), vec!["error.scope.violation".to_string()]);
+}
+
+#[test]
+fn an_exact_include_does_not_survive_a_matching_exclude_pattern() {
+    let planned = plan(&workspace_scoped(
+        &relative("src/main.py"),
+        Some("GLOB(\"src/*\")"),
+        &relative("src/main.py"),
+    ));
+    assert_eq!(ids(&planned), vec!["error.scope.violation".to_string()]);
+}
+
+#[test]
+fn a_glob_consumes_the_targets_normalized_relative_segments() {
+    // `types_v0.1.0.json#/pattern_profiles/GLOB/input`: a PATH operand "is
+    // compared using its normalized relative segment sequence".
+    let planned = plan(&workspace_scoped(
+        "GLOB(\"src/main.py\")",
+        None,
+        &relative("./src/main.py"),
+    ));
+    assert_eq!(planned.outcome(), Outcome::Planned, "{:?}", ids(&planned));
+}
+
+#[test]
+fn a_glob_selects_no_absolute_path_because_no_root_is_inferred() {
+    // "it cannot select an absolute path"; `pattern_profiles/GLOB/input`: "An
+    // input that cannot supply this form ... no root is inferred." The target
+    // is therefore outside a scope whose only selector is a GLOB.
+    let planned = plan(&workspace_scoped(
+        "GLOB(\"**\")",
+        None,
+        "PATH(\"/ws/src/main.py\")",
+    ));
+    assert_eq!(ids(&planned), vec!["error.scope.violation".to_string()]);
+}
+
+#[test]
+fn a_regex_selector_matches_the_entity_it_names() {
+    // `pattern_profiles/REGEX`: `match_semantics: full_string` over the text
+    // that identifies the entity.
+    let admitted = plan(&workspace_scoped("REGEX(\"src/.*[.]py\")", None, &relative("src/main.py")));
+    assert_eq!(admitted.outcome(), Outcome::Planned, "{:?}", ids(&admitted));
+    let refused = plan(&workspace_scoped(
+        "REGEX(\"src/.*[.]py\")",
+        Some("REGEX(\"src/secret/.*\")"),
+        &relative("src/secret/key.py"),
+    ));
+    assert_eq!(ids(&refused), vec!["error.scope.violation".to_string()]);
+}
+
+/// Which scopes are *applicable* to an action, and why this build reads it the
+/// way it does.
+///
+/// `statuses_and_errors_v0.1.0.json` gives `error.scope.violation` the meaning
+/// "An action targets an entity outside **applicable** SCOPE" without defining
+/// which scopes are applicable. `field_signatures_v0.1.0.json` — the highest
+/// authority — declares `SCOPE` as an optional `reference(SCOPE)` on TASK,
+/// ACTION, ALLOW and FORBID with `"default": null`, and states no propagation
+/// from an enclosing block to its members. `05_SEMANTICS/02` says "Nested
+/// scopes intersect unless a higher-authority rule explicitly replaces a
+/// referenced scope", which says how two scopes combine *when both are in
+/// force*, not which ones are.
+///
+/// This build therefore applies the scope an ACTION itself names. The open
+/// question — whether an enclosing TASK, PHASE or SEQUENCE scope intersects
+/// into its members — is recorded for the owner rather than decided here. The
+/// test below is the discriminator: under the wider reading, canonical valid
+/// example 04 would be refused, and `canonical/LCL_Core_0.1.0` is immutable.
+#[test]
+fn an_enclosing_task_scope_is_not_applied_to_a_member_action_that_declares_none() {
+    let source = format!(
+        "{HEADER}{SUBJECT}\nDATA:\n    ID: data.other\n    TYPE: STRING\n    VALUE: \"y\"\n\
+         \nSCOPE:\n    ID: scope.narrow\n    INCLUDE: [REF(data.other)]\n\
+         \nGOAL:\n    ID: goal.one\n    ASSERT: TRUE\n\
+         \nACTION:\n    ID: action.one\n    OPERATION: core.inspect\n    TARGET: REF(data.subject)\n\
+         \nSUCCESS:\n    ID: success.one\n    ALL: [REF(goal.one)]\n\
+         \nTASK:\n    ID: task.one\n    GOAL: REF(goal.one)\n    SCOPE: REF(scope.narrow)\n    ACTION: REF(action.one)\n    SUCCESS: REF(success.one)\n\
+         \nEXECUTE:\n    REFERENCE: REF(task.one)\n"
+    );
+    let planned = plan(&source);
+    assert_eq!(
+        planned.outcome(),
+        Outcome::Planned,
+        "the action declares no SCOPE of its own: {:?}",
+        ids(&planned)
+    );
+
+    // The discriminator, from the canonical package itself: example 04 declares
+    // TASK SCOPE scope.source (one source file) and reaches action.test, whose
+    // TARGET is PATH("/usr/bin/python3"). It must still plan.
+    let example = plan_example("04_AUTOMATED_CODING_TASK.lcl");
+    assert_eq!(
+        example.outcome(),
+        Outcome::Planned,
+        "canonical valid example 04 must plan: {:?}",
+        ids(&example)
+    );
+}

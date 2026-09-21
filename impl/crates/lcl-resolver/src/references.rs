@@ -117,9 +117,206 @@ struct Binder<'a, 'b> {
     raw: &'b mut Vec<Diagnostic>,
 }
 
+/// The rows whose STRING parameter is an expression fragment, and the
+/// parameter that carries it.
+///
+/// `operations_v0.1.0.json#/expression_fragment_contract`: `core.calculate`'s
+/// `expression`, and — under `#/predicate` — "core.select and core.filter
+/// STRING predicates use the same fragment syntax with exactly one additional
+/// reserved binding item". A `core.group` or `core.sort` STRING `key` is "one
+/// exact property_path", not a fragment, and is not read here.
+const FRAGMENT_ROWS: [(&str, &str); 3] = [
+    ("core.calculate", "expression"),
+    ("core.select", "predicate"),
+    ("core.filter", "predicate"),
+];
+
 impl Binder<'_, '_> {
     fn block(&mut self, block: &Block) {
+        self.fragment(block);
         self.statements(&block.key.text, &block.body);
+    }
+
+    /// Resolve the names one expression fragment reads.
+    ///
+    /// `#/environment`: "REF references resolve in the enclosing document and
+    /// read values under types_v0.1.0.json#/reference_context_contract. Bare
+    /// names in fragments denote only declared local bindings, reserved target
+    /// or item where provided, or contextual enum/qualified-identifier data.
+    /// They never implicitly read a document declaration; use REF for that
+    /// value read. Bindings are immutable snapshots; an unknown binding name
+    /// produces error.reference.unresolved."
+    ///
+    /// `#/evaluation`: "Static checks cover the complete fragment; dynamic
+    /// errors arise only from evaluated subexpressions." So the whole fragment
+    /// is resolved here, at the stage `error.reference.unresolved` is
+    /// registered to — `resolution` — and not in a later layer that would be
+    /// mirroring an identifier it does not own.
+    ///
+    /// The diagnostic is attributed to the written STRING: that literal is
+    /// where the unresolved name is, and a span inside the fragment would name
+    /// bytes of a text the document does not contain.
+    fn fragment(&mut self, block: &Block) {
+        let Some(operation) = field_text(block, "OPERATION") else {
+            return;
+        };
+        let Some((_, parameter)) = FRAGMENT_ROWS
+            .iter()
+            .find(|(row, _)| *row == operation.as_str())
+        else {
+            return;
+        };
+        let Some((fragment, span)) = self.fragment_text(block, parameter) else {
+            return;
+        };
+        let Ok(expression) = lcl_parser::Parser::new(self.resolver.grammar())
+            .expression_fragment(self.resolver.lexicon(), &fragment)
+        else {
+            // "Malformed fragment syntax ... produce error.operation.parameter",
+            // which is a later stage's identifier and its decision.
+            return;
+        };
+        let mut bound = self.fragment_bindings(block, *parameter);
+        let mut names = Vec::new();
+        fragment_names(&expression, &mut names);
+        for name in names {
+            match name {
+                FragmentName::Reference(text) => {
+                    // The same index every other reference resolves against.
+                    let qualified = self.path.qualify(&text).qualified();
+                    if self.resolved.declarations.by_qualified(&qualified).is_empty()
+                        && !bound.contains(&text)
+                        && !self.namespace_failed(&text)
+                    {
+                        self.unresolved_in_fragment(
+                            span,
+                            &fragment,
+                            format!("`REF({text})` in this fragment resolves to no declaration"),
+                        );
+                    }
+                }
+                FragmentName::Bare(text) => {
+                    // "contextual enum/qualified-identifier data": a qualified
+                    // name is registered or declared data, never a binding.
+                    if text.contains('.') || bound.contains(&text) {
+                        continue;
+                    }
+                    // A bare name a `DEFINE kind.enum` declares as an ITEM is
+                    // contextual enum data, resolved against the domain its
+                    // context requires rather than against a binding.
+                    if self.declares_enum_item(&text) {
+                        bound.insert(text.clone());
+                        continue;
+                    }
+                    self.unresolved_in_fragment(
+                        span,
+                        &fragment,
+                        format!(
+                            "`{text}` in this fragment is not a declared local binding, a reserved \
+                             binding, or contextual identifier data; a bare name never reads a \
+                             document declaration"
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
+    fn unresolved_in_fragment(&mut self, span: Span, fragment: &str, detail: String) {
+        self.emitter.emit(
+            self.raw,
+            ResolutionError::ReferenceUnresolved,
+            &self.path.unit,
+            span,
+            &format!("fragment-unresolved:{fragment}:{detail}"),
+            detail,
+        );
+    }
+
+    /// The fragment text one parameter carries, as a STRING literal or through
+    /// a `kind.constant` reference, with the span to attribute a defect to.
+    ///
+    /// `core.calculate` "also accepts REF to a kind.constant STRING containing
+    /// that same fragment".
+    fn fragment_text(&self, block: &Block, parameter: &str) -> Option<(String, Span)> {
+        let value = parameter_value(block, parameter)?;
+        match value {
+            Expr::Literal(literal) => Some((literal.text.clone(), literal.span)),
+            Expr::Call(call) if call.callable.text == "REF" => {
+                let id = call.reference_target()?.text.clone();
+                let qualified = self.path.qualify(&id).qualified();
+                let index = *self.resolved.declarations.by_qualified(&qualified).first()?;
+                let declaration = self.resolved.declarations.get(index)?;
+                let constant = self
+                    .resolved
+                    .units
+                    .get(&declaration.source)?
+                    .document()?
+                    .blocks()
+                    .find(|b| {
+                        b.key.text == "DEFINE"
+                            && field_text(b, "ID").as_deref() == Some(id.as_str())
+                            && field_text(b, "KIND").as_deref() == Some("kind.constant")
+                    })?;
+                match field_expr(constant, "VALUE")? {
+                    Expr::Literal(literal) => Some((literal.text.clone(), call.span)),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Every name this fragment may read bare.
+    ///
+    /// The declared `bindings` keys, plus the reserved `target` — "the resolved
+    /// TARGET value, or MISSING when TARGET is omitted" — and, for a predicate,
+    /// `item`.
+    fn fragment_bindings(&self, block: &Block, parameter: &str) -> BTreeSet<String> {
+        let mut bound = BTreeSet::new();
+        bound.insert("target".to_string());
+        if parameter == "predicate" {
+            bound.insert("item".to_string());
+        }
+        if let Some(bindings) = parameter_body(block, "bindings") {
+            for statement in &bindings.statements {
+                match statement {
+                    Statement::Field(field) => {
+                        bound.insert(field.key.text.clone());
+                    }
+                    Statement::Property(property) => {
+                        bound.insert(property.key.text.clone());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        bound
+    }
+
+    /// Whether any `DEFINE kind.enum` in this document declares `name` as an
+    /// `ITEM`.
+    fn declares_enum_item(&self, name: &str) -> bool {
+        let Some(document) = self
+            .resolved
+            .units
+            .get(&self.path.unit)
+            .and_then(|unit| unit.document())
+        else {
+            return false;
+        };
+        document.blocks().any(|block| {
+            block.key.text == "DEFINE"
+                && field_text(block, "KIND").as_deref() == Some("kind.enum")
+                && block.fields("ITEM").any(|item| {
+                    item.body
+                        .as_inline()
+                        .and_then(|value| value.as_expression())
+                        .and_then(literal_or_identifier_text)
+                        .as_deref()
+                        == Some(name)
+                })
+        })
     }
 
     fn statements(&mut self, block_name: &str, body: &[Statement]) {
@@ -449,6 +646,124 @@ impl Binder<'_, '_> {
             .get(&(self.path.unit.clone(), first.to_string()))
             .is_some_and(|owner| owner.unit.is_none())
     }
+}
+
+
+/// One name a fragment reads.
+enum FragmentName {
+    /// Written as `REF(x)`.
+    Reference(String),
+    /// Written bare.
+    Bare(String),
+}
+
+/// Every name one parsed fragment reads, in source order.
+fn fragment_names(expr: &Expr, out: &mut Vec<FragmentName>) {
+    match expr {
+        Expr::Identifier(identifier) => out.push(FragmentName::Bare(identifier.text.clone())),
+        Expr::Call(call) => {
+            if call.callable.text == "REF" {
+                if let Some(target) = call.reference_target() {
+                    out.push(FragmentName::Reference(target.text.clone()));
+                }
+                return;
+            }
+            for argument in &call.arguments {
+                fragment_names(argument, out);
+            }
+        }
+        Expr::Group(group) => fragment_names(&group.inner, out),
+        Expr::Unary(unary) => fragment_names(&unary.operand, out),
+        Expr::Binary(binary) => {
+            fragment_names(&binary.left, out);
+            fragment_names(&binary.right, out);
+        }
+        Expr::Collection(collection) => {
+            for member in &collection.members {
+                fragment_names(member, out);
+            }
+        }
+        // `a.b` reads the property `b` of `a`; only the base is a name.
+        Expr::Property(property) => fragment_names(&property.base, out),
+        Expr::Index(index) => {
+            fragment_names(&index.base, out);
+            fragment_names(&index.index, out);
+        }
+        _ => {}
+    }
+}
+
+/// The inline expression of one field of a block.
+fn field_expr<'a>(block: &'a Block, name: &str) -> Option<&'a Expr> {
+    block.field(name)?.body.as_inline()?.as_expression()
+}
+
+/// The literal or identifier text of one inline field.
+fn field_text(block: &Block, name: &str) -> Option<String> {
+    literal_or_identifier_text(field_expr(block, name)?)
+}
+
+fn literal_or_identifier_text(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Identifier(identifier) => Some(identifier.text.clone()),
+        Expr::Literal(literal) => Some(literal.text.clone()),
+        Expr::Group(group) => literal_or_identifier_text(&group.inner),
+        _ => None,
+    }
+}
+
+/// The `VALUE` expression of the `PARAMETER` block named `parameter`.
+fn parameter_value<'a>(block: &'a Block, parameter: &str) -> Option<&'a Expr> {
+    parameter_block(block, parameter).and_then(|p| field_expr_in(p, "VALUE"))
+}
+
+/// The nested `VALUE` body of the `PARAMETER` block named `parameter`.
+fn parameter_body<'a>(
+    block: &'a Block,
+    parameter: &str,
+) -> Option<&'a lcl_parser::syntax::Nested> {
+    let parameter = parameter_block(block, parameter)?;
+    parameter.iter().find_map(|statement| match statement {
+        Statement::Field(field) if field.key.text == "VALUE" => match &field.body {
+            lcl_parser::syntax::Body::Nested(nested) => Some(nested),
+            _ => None,
+        },
+        _ => None,
+    })
+}
+
+/// The statements of the `PARAMETER` block declaring `NAME: parameter`.
+fn parameter_block<'a>(block: &'a Block, parameter: &str) -> Option<&'a [Statement]> {
+    block.body.iter().find_map(|statement| match statement {
+        Statement::Field(field) if field.key.text == "PARAMETER" => match &field.body {
+            lcl_parser::syntax::Body::Nested(nested) => {
+                let named = nested.statements.iter().any(|s| match s {
+                    Statement::Field(f) => {
+                        f.key.text == "NAME"
+                            && f.body
+                                .as_inline()
+                                .and_then(|v| v.as_expression())
+                                .and_then(literal_or_identifier_text)
+                                .as_deref()
+                                == Some(parameter)
+                    }
+                    _ => false,
+                });
+                named.then_some(nested.statements.as_slice())
+            }
+            _ => None,
+        },
+        _ => None,
+    })
+}
+
+fn field_expr_in<'a>(statements: &'a [Statement], name: &str) -> Option<&'a Expr> {
+    statements.iter().find_map(|statement| match statement {
+        Statement::Field(field) if field.key.text == name => {
+            field.body.as_inline()?.as_expression()
+        }
+        _ => None,
+    })
 }
 
 /// `03_TYPES_AND_VALUES/05`: an alias `BASE` must "resolve transitively and

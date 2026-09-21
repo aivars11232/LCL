@@ -347,3 +347,94 @@ fn a_defined_type_reference_must_name_a_kind_type() {
     assert_stages_clean(&bad);
     assert_eq!(ids(&resolve(&bad)), ["error.reference.kind"]);
 }
+
+/// One `core.calculate` document whose fragment is `expression`.
+fn calculating(expression: &str, extra_parameters: &str) -> String {
+    task(&format!(
+        concat!(
+            "DATA:\n    ID: data.number\n    TYPE: INTEGER\n    VALUE: 3\n\n",
+            "GOAL:\n    ID: goal.g\n    ASSERT: TRUE\n\n",
+            "ACTION:\n    ID: action.a\n    OPERATION: core.calculate\n",
+            "    PARAMETER:\n        NAME: expression\n        TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: {}\n{}",
+            "\nSUCCESS:\n    ID: success.s\n    ALL: TRUE\n\n",
+            "TASK:\n    ID: task.t\n    GOAL: REF(goal.g)\n    ACTION: REF(action.a)\n    SUCCESS: REF(success.s)\n\n",
+            "EXECUTE:\n    REFERENCE: REF(task.t)\n",
+        ),
+        expression, extra_parameters
+    ))
+}
+
+/// Names inside an expression fragment resolve where every other reference
+/// does.
+///
+/// `operations_v0.1.0.json#/expression_fragment_contract/environment`: "REF
+/// references resolve in the enclosing document … Bare names in fragments
+/// denote only declared local bindings, reserved target or item where provided,
+/// or contextual enum/qualified-identifier data. They never implicitly read a
+/// document declaration; use REF for that value read. Bindings are immutable
+/// snapshots; an unknown binding name produces error.reference.unresolved."
+///
+/// `#/evaluation`: "Static checks cover the complete fragment", and the
+/// identifier's registered stage is `resolution`.
+#[test]
+fn an_unknown_bare_name_inside_a_fragment_is_unresolved() {
+    let source = calculating("\"ghost + 1\"", "");
+    assert_stages_clean(&source);
+    assert_eq!(ids(&resolve(&source)), ["error.reference.unresolved"]);
+}
+
+#[test]
+fn an_unresolved_ref_written_inside_a_fragment_is_unresolved() {
+    let source = calculating("\"REF(data.absent) + 1\"", "");
+    assert_stages_clean(&source);
+    assert_eq!(ids(&resolve(&source)), ["error.reference.unresolved"]);
+}
+
+#[test]
+fn a_fragment_reading_declared_and_bound_names_resolves() {
+    // The controls: a REF to a declaration that exists, a declared local
+    // binding, the reserved `target`, and contextual qualified-identifier data.
+    let bindings = concat!(
+        "    PARAMETER:\n        NAME: bindings\n        TYPE: OBJECT\n        REQUIRED: FALSE\n",
+        "        VALUE:\n            amount: 2\n",
+    );
+    for expression in [
+        "\"REF(data.number) + 1\"",
+        "\"amount + 1\"",
+        "\"target\"",
+        "\"format.plain_text\"",
+    ] {
+        let source = calculating(expression, bindings);
+        assert_stages_clean(&source);
+        assert_eq!(
+            ids(&resolve(&source)),
+            Vec::<String>::new(),
+            "{expression} must resolve"
+        );
+    }
+}
+
+#[test]
+fn a_predicate_fragment_binds_item_and_refuses_an_unknown_name() {
+    let filtering = |predicate: &str| {
+        task(&format!(
+            concat!(
+                "DATA:\n    ID: data.members\n    TYPE: LIST[INTEGER]\n    VALUE: [1, 2]\n\n",
+                "GOAL:\n    ID: goal.g\n    ASSERT: TRUE\n\n",
+                "ACTION:\n    ID: action.a\n    OPERATION: core.filter\n    TARGET: REF(data.members)\n",
+                "    PARAMETER:\n        NAME: predicate\n        TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: {predicate}\n\n",
+                "SUCCESS:\n    ID: success.s\n    ALL: TRUE\n\n",
+                "TASK:\n    ID: task.t\n    GOAL: REF(goal.g)\n    ACTION: REF(action.a)\n    SUCCESS: REF(success.s)\n\n",
+                "EXECUTE:\n    REFERENCE: REF(task.t)\n",
+            ),
+            predicate = predicate
+        ))
+    };
+    let good = filtering("\"item > 1\"");
+    assert_stages_clean(&good);
+    assert_eq!(ids(&resolve(&good)), Vec::<String>::new());
+
+    let bad = filtering("\"other > 1\"");
+    assert_stages_clean(&bad);
+    assert_eq!(ids(&resolve(&bad)), ["error.reference.unresolved"]);
+}

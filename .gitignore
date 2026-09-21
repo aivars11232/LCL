@@ -1,0 +1,7 @@
+# Desktop-environment metadata. These carry machine-local settings — a
+# `.directory` names an icon path on one person's computer — and the release
+# process records every tracked file as source, so one that is tracked is
+# hashed into the candidate's source id and shipped in its source archive.
+.directory
+.DS_Store
+Thumbs.db

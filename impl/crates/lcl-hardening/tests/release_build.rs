@@ -678,6 +678,58 @@ fn a_0_2_0_candidate_records_both_languages() {
     }
 }
 
+/// A tracked file that is not source is refused before it can be recorded.
+///
+/// FINAL-05 found two in the tree: a desktop-environment `.directory` carrying
+/// a machine-local path, and a third-party binary archive. Both were tracked,
+/// so `git ls-files` recorded them, the source id hashed them, and the
+/// candidate's source archive shipped them. The refusal is exact: desktop
+/// metadata, and a binary archive outside `releases/`, whose published archives
+/// stay untouched.
+#[test]
+fn desktop_metadata_and_stray_archives_are_refused_before_the_source_is_recorded() {
+    for (label, extra) in [
+        ("directory", ".directory"),
+        ("nested-directory", "docs/.directory"),
+        ("archive", "archive-EWXwoU/tool.zip"),
+        ("tarball", "vendor/tool.tar.gz"),
+    ] {
+        let case = Case::new(&format!("non-source-{label}"));
+        let root = origin(&case);
+        let candidate = case.join("out/candidate");
+        build(
+            &case,
+            &root,
+            &candidate,
+            &[("STUB_GIT_EXTRA", extra)],
+            label,
+        )
+        .refused(extra, &candidate);
+    }
+}
+
+/// The control: a published archive under `releases/` is not refused.
+#[test]
+fn a_published_release_archive_is_not_treated_as_stray() {
+    let case = Case::new("non-source-published");
+    let root = origin(&case);
+    let candidate = case.join("out/candidate");
+    // `releases/` is never source, so the entry is filtered before the check
+    // and the build proceeds to its ordinary end.
+    let run = build(
+        &case,
+        &root,
+        &candidate,
+        &[("STUB_GIT_EXTRA", "releases/lcl-0.1.0-linux-x86_64.tar.gz")],
+        "published",
+    );
+    assert!(
+        !run.stderr().contains("binary archive outside releases/"),
+        "a published archive must not be refused: {}",
+        run.stderr()
+    );
+}
+
 #[test]
 fn a_failed_empty_incomplete_or_unreadable_source_set_is_refused_before_building() {
     for (label, env, unreadable, subject) in [

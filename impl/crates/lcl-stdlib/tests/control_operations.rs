@@ -676,3 +676,159 @@ fn a_process_stop_without_its_stop_profile_fails_its_precondition_before_effects
     assert!(common::errors_of(&execution, "action.stop").is_empty());
     assert_eq!(crossed, 1);
 }
+
+/// An addressable operand is observed by the host that owns it.
+///
+/// `operations_v0.1.0.json`: `core.compare` "Resolve[s] host or network
+/// independently for the target and against operands; material-value-only
+/// comparison resolves declared_state_only", and its precondition is "both
+/// operands are accessible". MATCHES is the stated exception: its own profile
+/// rule consumes a workspace-relative path as text, which PRETEST-02 F07 pins.
+#[test]
+fn an_addressable_compare_operand_is_observed_through_the_host() {
+    let compare_path = |criteria: Option<&str>| {
+        let mut action = String::from(
+            "ID: action.compare\nOPERATION: core.compare\nTARGET: REF(data.path)\n\
+             PARAMETER:\n    NAME: against\n    TYPE: PATH\n    REQUIRED: TRUE\n    \
+             VALUE: PATH(\"/srv/other.txt\")",
+        );
+        if let Some(criteria) = criteria {
+            action.push_str(&format!(
+                "\nPARAMETER:\n    NAME: criteria\n    TYPE: STRING\n    REQUIRED: FALSE\n    VALUE: \"{criteria}\""
+            ));
+        }
+        common::task(
+            "\nDATA:\n    ID: data.path\n    TYPE: PATH\n    VALUE: PATH(\"/srv/report.txt\")\n",
+            &[&action],
+        )
+    };
+    let run = |source: &str, host: &mut lcl_runtime::MockHost| {
+        let mut stdlib = common::stdlib();
+        let fixture = common::fixture(source);
+        Runtime::new(common::contracts())
+            .execute_with(
+                &fixture.planned,
+                &fixture.checked,
+                &fixture.resolved,
+                &mut stdlib,
+                host,
+            )
+            .expect("the document planned")
+    };
+
+    // The operand crosses, carrying the host dependency its address resolves.
+    let mut host = lcl_runtime::MockHost::new();
+    let execution = run(&compare_path(None), &mut host);
+    let request = host
+        .requests()
+        .first()
+        .expect("the addressable comparison crossed the boundary")
+        .clone();
+    assert_eq!(request.operation, "core.compare");
+    assert_eq!(
+        request.possible_dependencies.iter().collect::<Vec<_>>(),
+        vec!["host"]
+    );
+    assert!(request.possible_effects.is_empty(), "{request:?}");
+    assert!(common::errors_of(&execution, "action.compare").is_empty());
+
+    // A host limitation is the row's registered error.host.constraint.
+    let mut host = lcl_runtime::MockHost::new()
+        .unavailable("core.compare", "test: nothing can observe that path");
+    let execution = run(&compare_path(None), &mut host);
+    assert_eq!(
+        common::errors_of(&execution, "action.compare"),
+        vec!["error.host.constraint".to_string()]
+    );
+
+    // MATCHES stays in the engine: the pattern rule consumes the path itself.
+    let mut host = lcl_runtime::MockHost::new();
+    let matches = common::task(
+        "\nDATA:\n    ID: data.path\n    TYPE: PATH\n    VALUE: PATH(\"/srv/report.txt\")\n",
+        &["ID: action.compare\nOPERATION: core.compare\nTARGET: REF(data.path)\n\
+           PARAMETER:\n    NAME: against\n    TYPE: GLOB\n    REQUIRED: TRUE\n    VALUE: GLOB(\"*.txt\")\n\
+           PARAMETER:\n    NAME: criteria\n    TYPE: STRING\n    REQUIRED: FALSE\n    VALUE: \"MATCHES\""],
+    );
+    let _ = run(&matches, &mut host);
+    assert!(
+        host.requests().is_empty(),
+        "MATCHES must not cross: {:?}",
+        host.requests()
+    );
+
+    // A material-value comparison still resolves declared_state_only.
+    let mut host = lcl_runtime::MockHost::new();
+    let material = common::task(
+        "\nDATA:\n    ID: data.number\n    TYPE: INTEGER\n    VALUE: 3\n",
+        &[
+            "ID: action.compare\nOPERATION: core.compare\nTARGET: REF(data.number)\n\
+           PARAMETER:\n    NAME: against\n    TYPE: INTEGER\n    REQUIRED: TRUE\n    VALUE: 3",
+        ],
+    );
+    let execution = run(&material, &mut host);
+    assert!(host.requests().is_empty(), "{:?}", host.requests());
+    assert!(common::errors_of(&execution, "action.compare").is_empty());
+}
+
+/// `core.validate` verifies a referenced `kind.operation`'s DETERMINISTIC
+/// assertion.
+///
+/// `05_SEMANTICS/11`: "Validation emits error.determinism.mismatch exactly when
+/// DETERMINISTIC TRUE is declared and that resolved contract is
+/// nondeterministic", and "DETERMINISTIC FALSE ... never triggers this error".
+/// `03_TYPES_AND_VALUES/05`: TRUE is valid "only when its declared axes and
+/// parameters admit no permitted variation".
+#[test]
+fn validate_reports_a_determinism_mismatch_as_a_detected_finding() {
+    let definition = |asserted: &str, dependency: &str| {
+        format!(
+            "\nDEFINE:\n    ID: op.inferred\n    KIND: kind.operation\n    \
+             MEANING: \"Infer a summary.\"\n    SIDE_EFFECT: FALSE\n    \
+             DETERMINISTIC: {asserted}\n    DEPENDENCY: [{dependency}]\n    \
+             PARAMETER:\n        NAME: subject\n        TYPE: STRING\n        REQUIRED: TRUE\n    \
+             RESULT:\n        TYPE: STRING\n"
+        )
+    };
+    let findings = |asserted: &str, dependency: &str| -> Vec<String> {
+        let source = common::task(
+            &definition(asserted, dependency),
+            &["ID: action.validate\nOPERATION: core.validate\nTARGET: REF(op.inferred)"],
+        );
+        let mut stdlib = common::stdlib();
+        let mut host = lcl_runtime::MockHost::new();
+        let fixture = common::fixture(&source);
+        let execution = Runtime::new(common::contracts())
+            .execute_with(
+                &fixture.planned,
+                &fixture.checked,
+                &fixture.resolved,
+                &mut stdlib,
+                &mut host,
+            )
+            .expect("the document planned");
+        let result = common::result_of(&execution, "action.validate");
+        match result.fields.get("errors") {
+            Some(Value::List(items)) => items.iter().map(ToString::to_string).collect(),
+            other => panic!("result.validation records an errors list, found {other:?}"),
+        }
+    };
+
+    assert_eq!(
+        findings("TRUE", "model"),
+        vec!["error.determinism.mismatch".to_string()],
+        "a model dependency admits permitted variation"
+    );
+    assert_eq!(
+        findings("TRUE", "human"),
+        vec!["error.determinism.mismatch".to_string()],
+        "so does a human one"
+    );
+    assert!(
+        findings("FALSE", "model").is_empty(),
+        "DETERMINISTIC FALSE never triggers it"
+    );
+    assert!(
+        findings("TRUE", "host, network").is_empty(),
+        "host and network are snapshot-determined: core.read declares both and is deterministic"
+    );
+}

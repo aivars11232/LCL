@@ -136,6 +136,21 @@ pub fn transfer(source: Value, destination: Value, bytes: Value) -> Observation 
 }
 
 /// `result.command`: what a command did.
+/// `result.command` in graph mode.
+///
+/// `built_in_groups_and_results_v0.1.0.json#/result.command`: "In graph mode,
+/// started, completed, exit_code, stdout, and stderr are absent; graph
+/// completion is represented by status and no command observation is
+/// synthesized", and "value is present exactly when the completed graph exposes
+/// one material primary result; otherwise value is absent."
+pub fn graph_command(primary: Option<Value>) -> Observation {
+    let observation = Observation::none().with("mode", Value::Identifier("graph".to_string()));
+    match primary {
+        Some(value) => observation.with("value", value),
+        None => observation,
+    }
+}
+
 pub fn command(
     mode: &str,
     started: bool,

@@ -180,6 +180,32 @@ enum Assertion {
     End,
 }
 
+/// Whether one closed-profile `GLOB` selects one workspace-relative subject.
+///
+/// `types_v0.1.0.json#/pattern_profiles/GLOB`: `workspace_relative: true`,
+/// `match_semantics: full_workspace_relative_path`. The subject is the
+/// normalized relative segment sequence its caller derived; this function
+/// neither infers a root nor reads a filesystem.
+///
+/// `None` means the pattern could not be decided — malformed text, which an
+/// earlier stage owns as `error.literal.invalid`, or the declared finite
+/// resource limit. A caller that cannot decide a restriction must not treat it
+/// as absent.
+pub fn glob_selects(pattern: &str, relative: &str) -> Option<bool> {
+    compile(PatternKind::Glob, pattern, "")
+        .and_then(|compiled| compiled.matches(relative))
+        .ok()
+}
+
+/// Whether one closed-profile `REGEX` selects one subject.
+///
+/// `types_v0.1.0.json#/pattern_profiles/REGEX`: `match_semantics: full_string`.
+pub fn regex_selects(pattern: &str, flags: &str, subject: &str) -> Option<bool> {
+    compile(PatternKind::Regex, pattern, flags)
+        .and_then(|compiled| compiled.matches(subject))
+        .ok()
+}
+
 /// Compile one pattern of the named profile.
 pub(crate) fn compile(
     kind: PatternKind,

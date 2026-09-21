@@ -253,6 +253,7 @@ fn every_registered_row_resolves_without_panicking() {
             iteration: lcl_runtime::IterationPath::root(),
             span: lcl_lexer::Span::empty(0),
             declaration: None,
+            graph: None,
         };
         // The assertion is that this returns at all: a panic here would fail
         // the test by unwinding, and a resolution of any shape is an answer.
@@ -282,6 +283,7 @@ fn an_unregistered_operation_is_deferred_rather_than_guessed() {
         iteration: lcl_runtime::IterationPath::root(),
         span: lcl_lexer::Span::empty(0),
         declaration: None,
+        graph: None,
     };
     // A custom kind.operation declares a contract and no body, so its
     // implementation is the host's and this crate invents nothing for it.

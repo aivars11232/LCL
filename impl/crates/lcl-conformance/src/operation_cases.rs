@@ -564,6 +564,15 @@ pub fn execute(spec: &SpecPackage, runner: &Runner) -> Vec<ExecutedCase> {
                 .collect(),
         )
         .expect("the engine assembles with the D3 fixture profiles"),
+        store: Runner::with_profiles(
+            spec,
+            Runner::shipped_profiles()
+                .into_iter()
+                .filter(|profile| !clauses::STORE_ROWS.contains(&profile.operation_id.as_str()))
+                .chain(clauses::external_store_profiles())
+                .collect(),
+        )
+        .expect("the engine assembles with an externally backed store"),
         spec,
     };
     let mut out = Vec::new();
@@ -574,7 +583,7 @@ pub fn execute(spec: &SpecPackage, runner: &Runner) -> Vec<ExecutedCase> {
         runs.extend(clauses::binding(&runners, &row));
         out.push(group(format!("semantic/operation_binding/{}", row.operation), "exact target/parameter binding, per-invocation defaults and completed or explicitly refused registered operation", runs));
         let mut errors = error_cases(runner, &row, contract);
-        errors.extend(clauses::errors(&runners, &row));
+        errors.extend(clauses::errors(&runners, &row, contract));
         errors.extend(clauses::transfer_source_preconditions(&runners, &row));
         errors.extend(clauses::specific(&runners, &row, "errors"));
         errors.extend(clauses::lifecycle(&runners, &row, "errors"));

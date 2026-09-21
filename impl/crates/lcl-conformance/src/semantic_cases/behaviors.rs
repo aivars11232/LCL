@@ -198,6 +198,44 @@ pub(super) fn behaviors(spec: &SpecPackage, runner: &Runner, error: &str) -> Vec
                 MockHost::new().deny("core.read", "conformance: the host grants no access"),
             ));
         }
+        "error.determinism.mismatch" => {
+            // 05_SEMANTICS/11: "Validation emits error.determinism.mismatch
+            // exactly when DETERMINISTIC TRUE is declared and that resolved
+            // contract is nondeterministic", and "DETERMINISTIC FALSE ... never
+            // triggers this error". core.validate is the row that checks a
+            // referenced contract, and records detected failures under their
+            // registered identifiers rather than raising them.
+            let definition = |asserted: &str| {
+                format!(
+                    "\nDEFINE:\n    ID: op.inferred\n    KIND: kind.operation\n    MEANING: \"Infer a summary.\"\n    SIDE_EFFECT: FALSE\n    DETERMINISTIC: {asserted}\n    DEPENDENCY: [model]\n    PARAMETER:\n        NAME: subject\n        TYPE: STRING\n        REQUIRED: TRUE\n    RESULT:\n        TYPE: STRING\n"
+                )
+            };
+            let validating = |asserted: &str| {
+                document(
+                    &definition(asserted),
+                    "OPERATION: core.validate\n    TARGET: REF(op.inferred)",
+                )
+            };
+            out.push(runner.execute(
+                "behavior/deterministic-true-resolves-nondeterministic",
+                "a kind.operation asserting DETERMINISTIC TRUE whose declared dependency admits permitted variation is a determinism mismatch",
+                &validating("TRUE"),
+                Expectation::All(vec![
+                    attempt_field("valid", "FALSE"),
+                    attempt_field("errors", "[error.determinism.mismatch]"),
+                ]),
+            ));
+            out.push(runner.execute(
+                "behavior/deterministic-false-never-mismatches",
+                "the same declared contract under DETERMINISTIC FALSE never triggers the error",
+                &validating("FALSE"),
+                Expectation::All(vec![
+                    attempt_field("valid", "TRUE"),
+                    attempt_field("errors", "[]"),
+                    Expectation::NoDiagnostic(error.into()),
+                ]),
+            ));
+        }
         "error.reference.cycle" => {
             let unit = |body: &str, root: &str| {
                 crate::fixtures::task_document(&format!(
@@ -227,6 +265,52 @@ pub(super) fn behaviors(spec: &SpecPackage, runner: &Runner, error: &str) -> Vec
                 "a TASK reachable from a STEP of its own SEQUENCE",
                 &unit("\nSEQUENCE:\n    ID: sequence.a\n    STEP:\n        ID: step.one\n        TASK: REF(task.case)\n", "SEQUENCE: REF(sequence.a)"),
                 error,
+            ));
+            // The graph-target half of the identifier.
+            // `05_SEMANTICS/11`: "For a referenced TASK, PHASE, SEQUENCE,
+            // ACTION, or TEST, a prohibited reference cycle emits
+            // error.reference.cycle and fails before axis resolution."
+            let delegating = |operation: &str, extra: &str| {
+                unit(
+                    &format!(
+                        "\nDATA:\n    ID: data.subject\n    TYPE: INTEGER\n    VALUE: 3\n\nACTION:\n    ID: action.one\n    OPERATION: {operation}\n    TARGET: REF(action.two){extra}\n\nACTION:\n    ID: action.two\n    OPERATION: {operation}\n    TARGET: REF(action.one){extra}\n"
+                    ),
+                    "ACTION: [REF(action.one), REF(action.two)]",
+                )
+            };
+            out.push(raises(
+                runner,
+                "behavior/action-cycle",
+                "two actions whose core.execute graph targets name each other",
+                &delegating("core.execute", ""),
+                error,
+            ));
+            let comparison = concat!(
+                "\n    PARAMETER:\n        NAME: expected\n        TYPE: INTEGER\n        REQUIRED: TRUE\n        VALUE: 3",
+                "\n    PARAMETER:\n        NAME: actual\n        TYPE: INTEGER\n        REQUIRED: TRUE\n        VALUE: REF(data.subject)",
+            );
+            out.push(raises(
+                runner,
+                "behavior/test-cycle",
+                "two core.test actions whose graph targets name each other",
+                &delegating("core.test", comparison),
+                error,
+            ));
+            out.push(runner.execute(
+                "behavior/before-graph-axis-resolution",
+                "the cycle fails before axis resolution: no attempt is made and no request crosses",
+                &delegating("core.execute", ""),
+                Expectation::All(vec![
+                    Expectation::Rejects(error.into()),
+                    Expectation::Attempts {
+                        declaration: "action.one".into(),
+                        statuses: Vec::new(),
+                    },
+                    Expectation::Attempts {
+                        declaration: "action.two".into(),
+                        statuses: Vec::new(),
+                    },
+                ]),
             ));
         }
         "error.type.mismatch" => {

@@ -137,23 +137,207 @@ fn selectors(block: syntax::DeclBlock, field: &str) -> Vec<Selector> {
 /// `GLOB` and `REGEX` are the two registered pattern constructors; anything
 /// else is exact. Classifying by the written constructor keeps a `PATH` from
 /// being treated as a pattern, which would silently widen a scope.
-fn selector_of(expr: &Expr) -> Option<Selector> {
+pub(crate) fn selector_of(expr: &Expr) -> Option<Selector> {
     if let Some(id) = syntax::reference_target(expr) {
         return Some(Selector::Reference(id.to_string()));
     }
     match expr {
         Expr::Call(call) => {
-            let text = call.arguments.first().and_then(literal_string)?;
-            Some(match call.callable.text.as_str() {
-                "GLOB" => Selector::Glob(text),
-                "REGEX" => Selector::Regex(text),
-                _ => Selector::Exact(text),
+            let literal = call.arguments.first().and_then(literal_string);
+            Some(match (call.callable.text.as_str(), literal) {
+                ("GLOB", Some(text)) => Selector::Glob(text),
+                ("REGEX", Some(text)) => Selector::Regex(text),
+                // A constructor of exactly one string literal identifies the
+                // entity that literal names: `PATH("/ws/src")` selects
+                // `/ws/src`, which is what containment compares with the root.
+                (_, Some(text)) if call.arguments.len() == 1 => Selector::Exact(text),
+                // `PATH(REF(workspace), "relative")`: the one form whose parts
+                // both matter — the workspace it is rooted in, and the exact
+                // decoded relative STRING a GLOB consumes.
+                ("PATH", None) if call.arguments.len() == 2 => {
+                    match (
+                        call.arguments.first().and_then(syntax::reference_target),
+                        call.arguments.get(1).and_then(literal_string),
+                    ) {
+                        (Some(workspace), Some(relative)) => Selector::Relative {
+                            workspace: workspace.to_string(),
+                            relative,
+                        },
+                        _ => Selector::Expression(crate::eval::render_static(expr)),
+                    }
+                }
+                // Anything else identifies one entity by the form it is
+                // written in, kept exactly as written.
+                _ => Selector::Expression(crate::eval::render_static(expr)),
             })
         }
         Expr::Literal(literal) => Some(Selector::Exact(literal.text.clone())),
         Expr::Group(group) => selector_of(&group.inner),
         _ => None,
     }
+}
+
+/// Whether `scope` admits the entity `target` names.
+///
+/// `05_SEMANTICS/02`: "SCOPE is computed as INCLUDE minus EXCLUDE. Exact
+/// references/paths identify one entity. GLOB/REGEX select a finite set
+/// resolved before affected execution. A GLOB is evaluated only against
+/// workspace-relative paths under its closed profile; it cannot select an
+/// absolute path or escape the WORKSPACE. EXCLUDE wins within the same SCOPE."
+///
+/// Both sides are normalized by [`selector_of`], so an `ACTION` naming an
+/// entity and a `SCOPE` selecting it are compared as the same written form.
+///
+/// ## A pattern decides, and it decides about *this* target
+///
+/// Deciding whether one known entity is in a pattern's set is not enumerating
+/// that set: `pattern_profiles/GLOB` matches a `full_workspace_relative_path`
+/// and `pattern_profiles/REGEX` matches a `full_string`, both over a subject
+/// this layer already has in hand. Nothing here reads a filesystem, and no root
+/// is inferred — a target that cannot supply a workspace-relative subject is
+/// simply not selected by a `GLOB`, which is what "it cannot select an absolute
+/// path" says.
+///
+/// The compiled matchers are `lcl-checker`'s, the ones the checker uses for a
+/// declared `PATTERN` and the runtime uses for `MATCHES`. There is no second
+/// pattern implementation.
+pub(crate) fn admits(scope: &ScopeRecord, target: &Selector) -> Admission {
+    // "EXCLUDE wins within the same SCOPE", so it is asked first and its
+    // undecided answer is a refusal rather than a silent permission.
+    match selected_by(&scope.exclude, target) {
+        Selected::Yes => return Admission::Refused,
+        Selected::Undecided(reason) => return Admission::Undecided(reason),
+        Selected::No => {}
+    }
+    match selected_by(&scope.include, target) {
+        Selected::Yes => Admission::Admitted,
+        Selected::No => Admission::Refused,
+        Selected::Undecided(reason) => Admission::Undecided(reason),
+    }
+}
+
+/// What [`admits`] concluded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Admission {
+    Admitted,
+    Refused,
+    /// The restriction could not be decided before effects. It is never treated
+    /// as absent: the caller refuses, carrying this reason.
+    Undecided(String),
+}
+
+enum Selected {
+    Yes,
+    No,
+    Undecided(String),
+}
+
+/// Whether any selector of one side selects `target`.
+fn selected_by(selectors: &[Selector], target: &Selector) -> Selected {
+    let mut undecided = None;
+    for selector in selectors {
+        match selects(selector, target) {
+            Selected::Yes => return Selected::Yes,
+            Selected::No => {}
+            Selected::Undecided(reason) => undecided = Some(reason),
+        }
+    }
+    match undecided {
+        Some(reason) => Selected::Undecided(reason),
+        None => Selected::No,
+    }
+}
+
+fn selects(selector: &Selector, target: &Selector) -> Selected {
+    match selector {
+        Selector::Glob(pattern) => match glob_subject(target) {
+            // "it cannot select an absolute path or escape the WORKSPACE", and
+            // `pattern_profiles/GLOB/input`: "An input that cannot supply this
+            // form ... no root is inferred."
+            None => Selected::No,
+            Some(subject) => match lcl_checker::glob_selects(pattern, &subject) {
+                Some(true) => Selected::Yes,
+                Some(false) => Selected::No,
+                None => Selected::Undecided(format!(
+                    "GLOB({pattern:?}) could not be decided against {subject:?} within the \
+                     declared finite pattern-resource limit"
+                )),
+            },
+        },
+        Selector::Regex(text) => {
+            let (pattern, flags) = text
+                .split_once(crate::value::REGEX_FLAG_SEPARATOR)
+                .unwrap_or((text.as_str(), ""));
+            let subject = regex_subject(target);
+            match lcl_checker::regex_selects(pattern, flags, &subject) {
+                Some(true) => Selected::Yes,
+                Some(false) => Selected::No,
+                None => Selected::Undecided(format!(
+                    "REGEX({pattern:?}) could not be decided against {subject:?} within the \
+                     declared finite pattern-resource limit"
+                )),
+            }
+        }
+        exact if exact == target => Selected::Yes,
+        _ => Selected::No,
+    }
+}
+
+/// The normalized relative segment sequence a `GLOB` consumes, when the target
+/// can supply one.
+///
+/// `types_v0.1.0.json#/pattern_profiles/GLOB/input`: "A PATH operand requires an
+/// explicit WORKSPACE root retained by that value ... and is compared using its
+/// normalized relative segment sequence."
+fn glob_subject(target: &Selector) -> Option<String> {
+    let Selector::Relative { relative, .. } = target else {
+        return None;
+    };
+    let mut segments: Vec<&str> = Vec::new();
+    for segment in relative.split('/') {
+        match segment {
+            "" | "." => {}
+            // A relative path that leaves its root is already
+            // `error.value.out_of_range` where the path is written.
+            ".." => {
+                segments.pop()?;
+            }
+            other => segments.push(other),
+        }
+    }
+    Some(segments.join("/"))
+}
+
+/// The full string a `REGEX` selector matches: the text that identifies the
+/// entity — a relative path under its workspace, a written path, or the
+/// declaration id a reference names.
+fn regex_subject(target: &Selector) -> String {
+    match target {
+        Selector::Relative { relative, .. } => {
+            glob_subject(target).unwrap_or_else(|| relative.clone())
+        }
+        other => other.as_str().to_string(),
+    }
+}
+
+/// The scope an action names, when that scope governs this invocation.
+///
+/// `02_LEXICAL/06`: SCOPE declares "the exact set of entities to which a clause
+/// may apply". A `SCOPE` that names an `OPERATION` states the invocation it
+/// governs, so it is not the applicable scope of an action invoking another
+/// operation.
+pub(crate) fn applicable<'a>(
+    scopes: &'a [ScopeRecord],
+    named: &str,
+    operation: &str,
+) -> Option<&'a ScopeRecord> {
+    scopes
+        .iter()
+        .find(|scope| scope.id == named)
+        .filter(|scope| match &scope.operation {
+            Some(restricted) => restricted == operation,
+            None => true,
+        })
 }
 
 /// The single string argument of a constructor such as `PATH("/a")`.

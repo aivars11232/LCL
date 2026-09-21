@@ -761,3 +761,201 @@ fn store_rows_check_mode_and_declared_type_before_effects() {
 const MEMORY_DECLARATIONS_BODY: &str =
     "\nMEMORY:\n    ID: memory.notes\n    TYPE: STRING\n    SCOPE: REF(scope.task)\n    \
      MODE: mode.read_write\n    VALUE: \"kept\"\n";
+
+/// The storage profile decides how a store row is performed.
+///
+/// `operations_v0.1.0.json` gives both store rows `possible_dependencies:
+/// ["host"]` and resolves "the authorized MEMORY storage profile". The shipped
+/// profile declares no dependency and writes the engine-owned store in place;
+/// a profile that declares the row's host dependency is an externally backed
+/// store, and its write crosses the boundary, where the row's registered
+/// host.constraint, execution.action and postcondition failures live.
+#[test]
+fn an_externally_backed_storage_profile_writes_through_the_host() {
+    use lcl_capabilities::{
+        profile::axes, Dependency, Determinism, Effect, Profile, Role, TargetClass,
+    };
+    let external = || {
+        vec![Profile::builder(
+            "core.memory_write",
+            Role::new("storage"),
+            "test.external_store",
+            "1",
+        )
+        .serving(TargetClass::Only(vec![
+            lcl_capabilities::AddressClass::Memory,
+        ]))
+        .determinism(Determinism::Deterministic, "test fixture")
+        .axes(axes(&[Dependency::Host], &[Effect::Memory]))
+        .resolving("Persist the declared store through the host that backs it.")]
+    };
+    let source = common::task(
+        &format!(
+            "\nSCOPE:\n    ID: scope.task\n    INCLUDE: REF(task.subject)\n{MEMORY_DECLARATIONS_BODY}"
+        ),
+        &["ID: action.write\nOPERATION: core.memory_write\nTARGET: REF(memory.notes)\n\
+           PARAMETER:\n    NAME: value\n    TYPE: STRING\n    REQUIRED: TRUE\n    VALUE: \"written\""],
+    );
+    let run = |profiles: Vec<Profile>, host: &mut lcl_runtime::MockHost| -> Execution {
+        let mut stdlib = common::stdlib().with_profiles(profiles);
+        let fixture = common::fixture(&source);
+        Runtime::new(common::contracts())
+            .execute_with(
+                &fixture.planned,
+                &fixture.checked,
+                &fixture.resolved,
+                &mut stdlib,
+                host,
+            )
+            .expect("the document planned")
+    };
+
+    // The control: the shipped profile asks no host and writes in place.
+    let mut host = lcl_runtime::MockHost::new();
+    let execution = run(store_profiles(), &mut host);
+    assert!(host.requests().is_empty(), "{:?}", host.requests());
+    assert_eq!(
+        execution.bindings().store("memory.notes"),
+        Some(&Value::Text("written".to_string()))
+    );
+
+    // An externally backed profile crosses, and the engine's view follows the
+    // profile: it holds the written value only because the host applied it.
+    let mut host = lcl_runtime::MockHost::new();
+    let execution = run(external(), &mut host);
+    let request = host
+        .requests()
+        .first()
+        .expect("the store crossed the boundary")
+        .clone();
+    assert_eq!(request.operation, "core.memory_write");
+    assert_eq!(
+        request.target,
+        Some(Value::Reference("memory.notes".into()))
+    );
+    assert_eq!(
+        request.possible_dependencies.iter().collect::<Vec<_>>(),
+        vec!["host"]
+    );
+    assert!(common::errors_of(&execution, "action.write").is_empty());
+    assert_eq!(
+        execution.bindings().store("memory.notes"),
+        Some(&Value::Text("written".to_string()))
+    );
+
+    // A host that cannot persist it leaves the previous value in place.
+    let mut host = lcl_runtime::MockHost::new()
+        .unavailable("core.memory_write", "test: the backing store is absent");
+    let execution = run(external(), &mut host);
+    assert_eq!(
+        common::errors_of(&execution, "action.write"),
+        vec!["error.host.constraint".to_string()]
+    );
+    assert_eq!(
+        execution.bindings().store("memory.notes"),
+        None,
+        "a refused write must not update the engine's view"
+    );
+}
+
+/// `core.execute` over a referenced execution unit runs that graph.
+///
+/// `operations_v0.1.0.json`: "A referenced TASK, PHASE, SEQUENCE, ACTION, or
+/// TEST has no mandatory local process effect and resolves the final
+/// determinism category and normalized transitive dependency and effect unions
+/// of its reachable graph", and `result.command`: "In graph mode, started,
+/// completed, exit_code, stdout, and stderr are absent ... value is present
+/// exactly when the completed graph exposes one material primary result".
+#[test]
+fn core_execute_in_graph_mode_runs_the_referenced_unit() {
+    // Both actions are members of the task, and the subject runs first: a
+    // graph target is a declaration this document already carries, and
+    // "no check reference or value read adds graph membership or edges".
+    let document = |inner: &str| {
+        format!(
+            "LCL:\n    VERSION: \"0.1.0\"\n\nSPECIFICATION:\n    ID: example.stdlib\n    \
+             NAME: \"Standard library fixture\"\n    VERSION: \"1.0.0\"\n    KIND: kind.task\n\
+             \nDATA:\n    ID: data.subject\n    TYPE: STRING\n    VALUE: \"x\"\n\
+             \nACTION:\n    ID: action.inner\n    {inner}\n\
+             \nACTION:\n    ID: action.graph\n    OPERATION: core.execute\n    TARGET: REF(action.inner)\n\
+             \nGOAL:\n    ID: goal.subject\n    ASSERT: TRUE\n\
+             \nSUCCESS:\n    ID: success.subject\n    ALL: [TRUE]\n\
+             \nTASK:\n    ID: task.subject\n    GOAL: REF(goal.subject)\n    ACTION: [REF(action.graph), REF(action.inner)]\n    SUCCESS: REF(success.subject)\n\
+             \nEXECUTE:\n    REFERENCE: REF(task.subject)\n"
+        )
+    };
+    let run = |source: &str, host: &mut lcl_runtime::MockHost| {
+        let mut stdlib = common::stdlib().with_profiles(filesystem_profiles());
+        let fixture = common::fixture(source);
+        Runtime::new(common::contracts())
+            .execute_with(
+                &fixture.planned,
+                &fixture.checked,
+                &fixture.resolved,
+                &mut stdlib,
+                host,
+            )
+            .expect("the document planned")
+    };
+
+    // One returning action: the graph exposes exactly one material primary.
+    let mut host = lcl_runtime::MockHost::new();
+    let execution = run(
+        &document("OPERATION: core.return\n    TARGET: REF(data.subject)"),
+        &mut host,
+    );
+    assert!(
+        host.requests().is_empty(),
+        "graph mode asks no host: {:?}",
+        host.requests()
+    );
+    let result = common::result_of(&execution, "action.graph");
+    assert_eq!(result.schema, "result.command");
+    assert_eq!(
+        result.fields.get("mode"),
+        Some(&Value::Identifier("graph".to_string()))
+    );
+    for absent in ["started", "completed", "exit_code", "stdout", "stderr"] {
+        assert!(
+            !result.fields.contains_key(absent),
+            "graph mode synthesizes no {absent}: {:?}",
+            result.fields
+        );
+    }
+    assert_eq!(
+        result.fields.get("value"),
+        Some(&Value::Text("x".to_string())),
+        "one material primary result is bound"
+    );
+    assert!(
+        result.observed_effects.is_empty(),
+        "an effect-free graph has no local process effect: {:?}",
+        result.observed_effects
+    );
+    assert!(common::errors_of(&execution, "action.graph").is_empty());
+
+    // A failing graph member: the row reports error.execution.action, and the
+    // member's own identifier stays in the retained evidence.
+    let mut host =
+        lcl_runtime::MockHost::new().unavailable("core.write", "test: no filesystem is installed");
+    let execution = run(
+        &document(
+            "OPERATION: core.write\n    TARGET: PATH(\"/srv/report.txt\")\n    \
+             PARAMETER:\n        NAME: content\n        TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: \"x\"",
+        ),
+        &mut host,
+    );
+    assert_eq!(
+        common::errors_of(&execution, "action.graph"),
+        vec!["error.execution.action".to_string()]
+    );
+    let retained: Vec<String> = execution
+        .diagnostics()
+        .iter()
+        .map(|d| d.id.as_registry_str().to_string())
+        .collect();
+    assert!(
+        retained.contains(&"error.host.constraint".to_string()),
+        "the graph's own error is retained through the union: {retained:?}"
+    );
+}

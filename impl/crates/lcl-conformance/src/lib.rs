@@ -37,6 +37,7 @@
 //! What changed at M8 is not the standard of evidence. It is that an engine now
 //! exists to supply it.
 
+pub mod acceptance;
 pub mod fixtures;
 pub mod lifecycle_cases;
 pub mod obligations;

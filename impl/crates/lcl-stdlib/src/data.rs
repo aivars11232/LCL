@@ -136,6 +136,14 @@ pub(crate) fn invoke(
         _ => resolved,
     };
 
+    // A referenced execution unit "has no mandatory local process effect and
+    // resolves the final determinism category and normalized transitive
+    // dependency and effect unions of its reachable graph". The engine runs it;
+    // no host is asked, and nothing about a process is synthesized.
+    if mode == Some("graph") {
+        return graph_mode(cx, contract);
+    }
+
     let mut host_request = request.clone();
     host_request.target = target;
     host_request.parameters = parameters;
@@ -146,6 +154,75 @@ pub(crate) fn invoke(
         .collect();
     host_request.possible_effects = resolved.effects.iter().map(|e| e.to_string()).collect();
     Resolution::Host(Box::new(host_request))
+}
+
+/// `core.execute` over a `REFERENCE[TASK|PHASE|SEQUENCE|ACTION|TEST]`.
+///
+/// The first invocation names the unit; the runtime executes it on the one
+/// executor and invokes the row again with what it did.
+pub(crate) fn graph_mode(cx: &mut Invocation<'_>, contract: &OperationContract) -> Resolution {
+    let Some(target) = params::referenced_declaration(cx, "TARGET") else {
+        return Resolution::failed(
+            RuntimeError::ReferenceKind,
+            "target",
+            format!(
+                "{} in graph mode requires a REFERENCE to an execution unit",
+                contract.operation
+            ),
+        );
+    };
+    let Some(outcome) = cx.graph.clone() else {
+        return Resolution::Graph(target);
+    };
+    graph_result(contract, &outcome)
+}
+
+/// Turn one executed graph into this row's result.
+pub(crate) fn graph_result(
+    contract: &OperationContract,
+    outcome: &lcl_runtime::operations::GraphOutcome,
+) -> Resolution {
+    // "error.reference.cycle ... fails before axis resolution" is decided in
+    // preflight; what remains here is the union of what the graph actually
+    // raised. A required action of the graph that failed to produce its result
+    // is this row's error.execution.action — the identifier its own closed list
+    // admits — and the graph's own identifiers stay in the retained evidence
+    // where its invocations raised them.
+    if !outcome.succeeded {
+        let union: Vec<String> = outcome
+            .invocations
+            .iter()
+            .flat_map(|invocation| invocation.errors.clone())
+            .collect();
+        return Resolution::failed(
+            RuntimeError::ExecutionAction,
+            "graph",
+            format!(
+                "the graph `{}` did not complete: [{}]",
+                outcome.target,
+                union.join(", ")
+            ),
+        );
+    }
+    let primary = match outcome.primaries.as_slice() {
+        [only] => Some(only.clone()),
+        _ => None,
+    };
+    let mut observation = schema::graph_command(primary);
+    // The invocation's effects are the graph's: "resolves ... normalized
+    // transitive dependency and effect unions of its reachable graph".
+    let mut seen = std::collections::BTreeSet::new();
+    for effect in outcome
+        .invocations
+        .iter()
+        .flat_map(|invocation| invocation.observed.iter())
+    {
+        if seen.insert((effect.class, effect.state)) {
+            observation = observation.with_effect(effect.clone());
+        }
+    }
+    let _ = contract;
+    Resolution::Completed(observation)
 }
 
 /// Resolve this invocation's actual dependency and effect sets.
@@ -592,9 +669,10 @@ pub(crate) fn store(
     } else {
         AddressClass::State
     };
-    if let Some(failure) = select_profiles(stdlib, contract, target_class, None) {
-        return failure;
-    }
+    let storage = match selected_axes(stdlib, contract, target_class, None) {
+        Ok(axes) => axes,
+        Err(failure) => return failure,
+    };
 
     // The host gate, decided independently of what the plan authorized.
     if let Err(refusal) = stdlib.grants().decide(&Grant::InternalStore) {
@@ -678,6 +756,39 @@ pub(crate) fn store(
                 ),
             );
         }
+    }
+
+    // How the store is performed is the selected profile's own declaration.
+    //
+    // Both rows resolve "the authorized MEMORY storage profile" / "STATE
+    // storage profile", and their maxima admit the `host` dependency. The
+    // shipped profile narrows that to nothing and states its own resolution:
+    // "Write the declared engine-owned store in place within one invocation;
+    // the invocation selects no external dependency". A profile that instead
+    // declares the row's `host` dependency is an externally backed store, and
+    // the write it describes is performed by crossing the boundary — where a
+    // limitation, a failure and an unestablished effect extent are exactly the
+    // registered error.host.constraint, error.execution.action and
+    // error.operation.postcondition the row lists.
+    let host_backed = storage
+        .as_ref()
+        .is_some_and(|axes| !axes.dependencies.is_empty());
+    if host_backed {
+        let mut host_request = request.clone();
+        // The store is named, not read through: the identity is what is
+        // written, and its current value is not it.
+        host_request.target = Some(Value::Reference(id.to_string()));
+        let mut asked = parameters.clone();
+        // The profile is asked to persist exactly the value this invocation
+        // resolved, merge and type checks included.
+        asked.insert("value".to_string(), written);
+        host_request.parameters = asked;
+        if let Some(axes) = storage {
+            host_request.possible_dependencies =
+                axes.dependencies.iter().map(|d| d.to_string()).collect();
+            host_request.possible_effects = axes.effects.iter().map(|e| e.to_string()).collect();
+        }
+        return Resolution::Host(Box::new(host_request));
     }
 
     let changed = !lcl_runtime::strict_equal(&current, &written);

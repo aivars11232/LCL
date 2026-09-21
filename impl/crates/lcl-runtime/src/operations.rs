@@ -75,6 +75,51 @@ pub enum Resolution {
     /// Boxed because a resolved request is by far the largest of the three
     /// answers, and the other two are the common ones on any pure row.
     Host(Box<CapabilityRequest>),
+    /// The operation delegates to a referenced execution unit.
+    ///
+    /// `core.execute` in graph mode and `core.test` with a TASK or ACTION
+    /// TARGET both "execute [the] reachable graph" of a declaration this
+    /// document already carries. Only the engine can run one, and it runs it in
+    /// the same executor as everything else — there is no second execution
+    /// engine — so the dispatcher names the unit and the runtime performs it,
+    /// then invokes the row again with the [`GraphOutcome`] in hand.
+    Graph(String),
+}
+
+/// What executing one referenced graph produced.
+///
+/// The runtime reports the facts; the dispatcher that asked for the graph
+/// applies the registry contract to them, because
+/// `operations_v0.1.0.json#/axis_contract/implementation_profile/graph_resolution`
+/// is stated over "every reachable core row profile or custom kind.operation
+/// declaration", which is the operation surface's own knowledge and not the
+/// executor's.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GraphOutcome {
+    /// The unit that was executed.
+    pub target: String,
+    /// One record per invocation the graph performed, in execution order.
+    pub invocations: Vec<GraphInvocation>,
+    /// Whether every invocation of the graph succeeded.
+    pub succeeded: bool,
+    /// Each material primary result the completed graph exposed, in order.
+    pub primaries: Vec<Value>,
+}
+
+/// One invocation the executed graph performed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GraphInvocation {
+    /// The operation identifier the invocation named.
+    pub operation: String,
+    /// The dependency classes that invocation actually resolved, when it
+    /// crossed the boundary.
+    pub dependencies: std::collections::BTreeSet<String>,
+    /// The effect classes it actually resolved.
+    pub effects: std::collections::BTreeSet<String>,
+    /// The effects it recorded.
+    pub observed: Vec<crate::result::ObservedEffect>,
+    /// The execution errors it raised, in order.
+    pub errors: Vec<String>,
 }
 
 impl Resolution {
@@ -128,6 +173,12 @@ pub struct Invocation<'a> {
     /// store rows take `REFERENCE[MEMORY]` and `REFERENCE[STATE]`, and which
     /// declaration is being written is not recoverable from the value.
     pub declaration: Option<usize>,
+    /// The graph this invocation asked for, once the runtime has executed it.
+    ///
+    /// `None` on the first invocation of a row: a row that needs a graph
+    /// answers [`Resolution::Graph`], and the runtime invokes it again with
+    /// this set. A row that never asks for one never sees it.
+    pub graph: Option<GraphOutcome>,
 }
 
 impl Invocation<'_> {

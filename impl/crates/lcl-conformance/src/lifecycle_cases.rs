@@ -670,6 +670,17 @@ fn failure_lifecycle(spec: &SpecPackage, runner: &Runner) -> Vec<ExecutedCase> {
     ));
     runs.push(selected(
         runner,
+        "phase/scope-violation-pre-effect",
+        "error.scope.violation is pre_effect only: effective scope resolves at step 6, before the first authorized effect",
+        &document(
+            "\nDATA:\n    ID: data.subject\n    TYPE: STRING\n    VALUE: \"x\"\n\nGOAL:\n    ID: goal.case\n    ASSERT: TRUE\n\nSCOPE:\n    ID: scope.narrow\n    INCLUDE: [REF(goal.case)]\n",
+            "\nACTION:\n    ID: action.subject\n    OPERATION: core.return\n    TARGET: REF(data.subject)\n    SCOPE: REF(scope.narrow)\n\nSUCCESS:\n    ID: success.case\n    ALL: TRUE\n\nTASK:\n    ID: task.case\n    GOAL: REF(goal.case)\n    ACTION: REF(action.subject)\n    SUCCESS: REF(success.case)\n\nEXECUTE:\n    REFERENCE: REF(task.case)\n",
+        ),
+        MockHost::new(),
+        vec![("diagnostics", "[\"error.scope.violation\"]".into()), ("producers", "[]".into())],
+    ));
+    runs.push(selected(
+        runner,
         "phase/execution-order-from-timing",
         "error.execution.order is pre_effect when graph construction detects it",
         &document(

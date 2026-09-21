@@ -107,6 +107,67 @@ fn incompatible_option(parameters: &BTreeMap<String, Value>) -> Option<Resolutio
     ))
 }
 
+/// The observation an addressable operand needs, when one of them is not a
+/// material value.
+///
+/// `operations_v0.1.0.json` states it per row: `core.compare` "Resolve[s] host
+/// or network independently for the target and against operands; material-value-only
+/// comparison resolves declared_state_only"; `core.validate` "Resolve[s] host or
+/// network only for addressable targets or referenced schemas and rules"; and
+/// `core.verify` "Resolve[s] observation dependencies ... from the target and
+/// evidence sources". An operand this engine cannot read is observed by the host
+/// that owns it, exactly as every other host-dependent row is, and the row's
+/// registered `error.permission.denied`, `error.host.constraint` and
+/// `error.operation.precondition` are then the host's own three answers.
+///
+/// A comparison over material values alone still resolves `declared_state_only`
+/// and never leaves the engine.
+fn observed_by_host(
+    cx: &mut Invocation<'_>,
+    request: &CapabilityRequest,
+    contract: &OperationContract,
+    parameters: &BTreeMap<String, Value>,
+    operands: &[Value],
+) -> Option<Resolution> {
+    use lcl_capabilities::AddressClass;
+    let mut axes = lcl_capabilities::Axes::inert();
+    let mut addressable = false;
+    for operand in operands {
+        // MEMORY, STATE and OUTPUT are the engine's own declared state, which
+        // it already holds; PATH, URI and host-bound addresses are the world's.
+        let class = params::classify(cx, operand);
+        if !matches!(
+            class,
+            AddressClass::Path | AddressClass::Uri | AddressClass::HostBound
+        ) {
+            continue;
+        }
+        addressable = true;
+        axes = axes.union(&class.observation());
+    }
+    if !addressable {
+        return None;
+    }
+    // "A profile's axes may narrow the row's but never widen it": an operand
+    // whose observation resolves outside this row's maxima is not accessible to
+    // it, which is the row's own precondition rather than a host answer.
+    if !axes.within(&contract.maximum) {
+        return Some(Resolution::failed(
+            RuntimeError::OperationPrecondition,
+            "operand",
+            format!(
+                "{} cannot observe an operand whose access resolves outside its maxima",
+                contract.operation
+            ),
+        ));
+    }
+    let mut host_request = request.clone();
+    host_request.parameters = parameters.clone();
+    host_request.possible_dependencies = axes.dependencies.iter().map(|d| d.to_string()).collect();
+    host_request.possible_effects = axes.effects.iter().map(|e| e.to_string()).collect();
+    Some(Resolution::Host(Box::new(host_request)))
+}
+
 /// `core.compare`: one declared criterion over two operands.
 ///
 /// > core.compare evaluates one criterion under the registered operator and
@@ -143,6 +204,22 @@ pub(crate) fn compare(
         Ok(criterion) => criterion,
         Err(resolution) => return resolution,
     };
+
+    // An addressable operand is the host's to observe — except under MATCHES,
+    // whose own registered rule consumes the address itself: "A GLOB is
+    // evaluated only against workspace-relative paths under its closed
+    // profile", which is a question about the path, not about what it holds.
+    if operator != "MATCHES" {
+        if let Some(crossing) = observed_by_host(
+            cx,
+            request,
+            _contract,
+            parameters,
+            &[left.clone(), right.clone()],
+        ) {
+            return crossing;
+        }
+    }
 
     // "Omitted paths select the complete corresponding operand; supplied paths
     // project through exact registered OBJECT fields."
@@ -352,6 +429,14 @@ pub(crate) fn validate(
     _contract: &OperationContract,
     parameters: &BTreeMap<String, Value>,
 ) -> Resolution {
+    // "Resolve host or network only for addressable targets": an addressable
+    // target is observed by the host that owns it.
+    if let Some(target) = request.target.clone() {
+        let observed = pure::read_through(cx, &target);
+        if let Some(crossing) = observed_by_host(cx, request, _contract, parameters, &[observed]) {
+            return crossing;
+        }
+    }
     let mut errors = Vec::new();
     // "The REFERENCE resolves exactly once, following transparent aliases, to a
     // kind.type whose resolved type is OBJECT and whose schema applies to the
@@ -391,6 +476,52 @@ pub(crate) fn validate(
                     "schema",
                     format!("{id} is not a kind.type whose resolved type is OBJECT"),
                 )
+            }
+        }
+    }
+    // "Check syntax, type, reference, dependency, and constraints before
+    // effects", over the declaration a REFERENCE target names.
+    //
+    // `05_SEMANTICS/11`: "For a kind.operation definition, DETERMINISTIC TRUE
+    // is a contract assertion verified after the referenced core operation or
+    // selected profile is fully resolved ... Validation emits
+    // error.determinism.mismatch exactly when DETERMINISTIC TRUE is declared
+    // and that resolved contract is nondeterministic", and
+    // `03_TYPES_AND_VALUES/05`: "A custom operation may assert TRUE only when
+    // its declared axes and parameters admit no permitted variation."
+    //
+    // The declared axis that admits variation is the dependency set. The
+    // registry defines `model` as "Obtains inference or generation from the
+    // selected LC or model capability" and `human` as "Obtains an authoritative
+    // response or decision from a human": the two capabilities whose answer is
+    // not fixed by the snapshot it was taken from. Every core row declaring
+    // either is registered nondeterministic — core.analyze, core.generate,
+    // core.report, core.ask — and no row registered deterministic declares one.
+    // `host` and `network` are not such axes: core.read declares both and is
+    // deterministic over "the exact requested content ... from the resolved
+    // target snapshot". "DETERMINISTIC FALSE ... never triggers this error."
+    //
+    // The finding is recorded, not raised: this row's postcondition is that
+    // "all detected failures use registered error identifiers".
+    let named_target = request
+        .target
+        .as_ref()
+        .and_then(params::reference_id)
+        .map(str::to_string)
+        .or_else(|| params::referenced_declaration(cx, "TARGET"));
+    if let Some(id) = named_target {
+        if let Some(index) = params::declaration_index(cx, &id) {
+            if let Some(block) = lcl_runtime::syntax::declaration_block(cx.resolved, index) {
+                let kind = lcl_runtime::syntax::field_text(&block, "KIND");
+                let asserts = lcl_runtime::syntax::field_text(&block, "DETERMINISTIC");
+                if kind.as_deref() == Some("kind.operation") && asserts.as_deref() == Some("TRUE") {
+                    let varying = params::declared_dependencies(&block)
+                        .into_iter()
+                        .any(|class| class == "model" || class == "human");
+                    if varying {
+                        errors.push(Value::Identifier("error.determinism.mismatch".to_string()));
+                    }
+                }
             }
         }
     }
@@ -465,6 +596,15 @@ pub(crate) fn verify(
             return crate::data::profile_failure(&fault);
         }
     }
+    // "Resolve observation dependencies ... from the target and evidence
+    // sources; URI observation adds network." An addressable target is the
+    // host's to observe, and its limitations are the row's registered ones.
+    if let Some(target) = request.target.clone() {
+        let observed = pure::read_through(cx, &target);
+        if let Some(crossing) = observed_by_host(cx, request, contract, parameters, &[observed]) {
+            return crossing;
+        }
+    }
     let Some(assertion) = parameters.get("assertion") else {
         return Resolution::failed(
             RuntimeError::RequiredMissing,
@@ -532,32 +672,60 @@ fn test(
     contract: &OperationContract,
     parameters: &BTreeMap<String, Value>,
 ) -> Resolution {
-    // "A TASK or ACTION TARGET executes before the comparison." Executing a
-    // referenced graph is delegation, not comparison, so it crosses the
-    // boundary; a host with no graph executor reports a limitation rather than
-    // a comparison it did not make.
+    // "A TASK or ACTION TARGET is executed before the supplied comparison and
+    // TARGET alone is not a complete test." Executing a referenced graph is
+    // delegation to this engine's own executor, not a host request: the graph
+    // runs first, and the comparison then reads the snapshots it left.
+    //
+    // Such a TARGET is never the actual source — "a material-value TARGET is
+    // the actual source" — so the comparison form must come from the
+    // parameters, exactly as the row's mode contract requires.
+    let mut graph_target = false;
     if let Some(id) = params::referenced_declaration(cx, "TARGET") {
         if let Some(block) = params::declaring_block(cx, &id) {
             if matches!(
                 block.as_str(),
                 "TASK" | "ACTION" | "PHASE" | "SEQUENCE" | "TEST"
             ) {
-                let mut resolved = request.clone();
-                resolved.parameters = parameters.clone();
-                return Resolution::Host(Box::new(resolved));
+                if cx.graph.is_none() {
+                    return Resolution::Graph(id);
+                }
+                graph_target = true;
             }
         }
     }
 
+    // "core.test is control because its TASK/ACTION mode delegates the
+    // reachable graph and may therefore carry effects": what the graph did is
+    // this invocation's effect set, normalized to the classes it recorded.
+    let graph_effects: Vec<lcl_runtime::ObservedEffect> = cx
+        .graph
+        .as_ref()
+        .map(|outcome| {
+            let mut seen = std::collections::BTreeSet::new();
+            outcome
+                .invocations
+                .iter()
+                .flat_map(|invocation| invocation.observed.iter())
+                .filter(|effect| seen.insert((effect.class, effect.state)))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+
     let assertion = parameters.get("assertion");
     let expected = parameters.get("expected");
     let actual = parameters.get("actual");
-    let target = request.target.as_ref().map(|t| pure::read_through(cx, t));
+    let target = if graph_target {
+        None
+    } else {
+        request.target.as_ref().map(|t| pure::read_through(cx, t))
+    };
 
     // "Exactly one comparison form is required: assertion; or expected with
     // exactly one actual source, either the actual parameter or a
     // material-value TARGET."
-    match (assertion, expected) {
+    let resolution = match (assertion, expected) {
         (Some(assertion), None) => {
             if actual.is_some() || target.is_some() {
                 return Resolution::failed(
@@ -618,6 +786,16 @@ fn test(
             "core.test requires exactly one comparison form; TARGET alone is not a \
              complete test",
         ),
+    };
+    match resolution {
+        Resolution::Completed(observation) if !graph_effects.is_empty() => Resolution::Completed(
+            graph_effects
+                .into_iter()
+                .fold(observation, |observation, effect| {
+                    observation.with_effect(effect)
+                }),
+        ),
+        other => other,
     }
 }
 

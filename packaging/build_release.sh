@@ -308,6 +308,24 @@ if [ -e "$root/.git" ]; then
     LC_ALL=C sort "$staging/source-unsorted" > "$staging/source-files"
     [ -s "$staging/source-files" ] || refuse "no source files were enumerated"
     check_paths < "$staging/source-files"
+    # Two kinds of tracked file are not source, and an accidental one would
+    # otherwise be recorded in SOURCE_INVENTORY.tsv, hashed into the source id
+    # and shipped inside the candidate's source archive: desktop-environment
+    # metadata, which carries machine-local settings, and a binary archive
+    # outside releases/, which is a copy of something rather than a source of
+    # it. Both lists are exact, so no legitimate source file is affected and the
+    # published archives under releases/ are untouched.
+    while IFS= read -r path; do
+        case "$path" in
+        .directory | */.directory | .DS_Store | */.DS_Store | Thumbs.db | */Thumbs.db)
+            refuse "$path is desktop metadata rather than source; remove it from the tree before building"
+            ;;
+        releases/*) ;;
+        *.zip | *.tar.gz | *.tgz | *.7z | *.rar)
+            refuse "$path is a binary archive outside releases/ rather than source; remove it from the tree before building"
+            ;;
+        esac
+    done < "$staging/source-files"
     # `--cached` still lists a tracked file that has been deleted from the tree.
     while IFS= read -r path; do
         if [ ! -f "$root/$path" ] || [ -L "$root/$path" ]; then

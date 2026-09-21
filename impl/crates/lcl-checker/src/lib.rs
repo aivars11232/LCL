@@ -75,6 +75,7 @@ mod expr;
 pub mod numeric;
 mod operation;
 mod pattern;
+pub use pattern::{glob_selects, regex_selects};
 mod schema;
 pub mod ty;
 mod types;

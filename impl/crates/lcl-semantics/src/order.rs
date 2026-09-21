@@ -223,14 +223,21 @@ fn build_nodes(engine: &mut Engine) {
 /// the same ACTION source declaration → error.execution.order before effects;
 /// bounded loop/retry template replication remains allowed."
 ///
+/// What identifies one structural activation: the declaration it activates, the
+/// enclosing loop templates, and the enclosing delegating invocations. Two
+/// activations are duplicates only when all three agree.
+type ActivationKey = (usize, Vec<usize>, Vec<usize>);
+
+/// Where an activation was first seen: its source, its span and its plan node.
+type ActivationSite = (SourceId, Span, usize);
+
 /// Loop templates are the explicit exception: "Explicit bounded FOR EACH
 /// instances and RETRY attempts replicate their source template with distinct
 /// invocation identities and are not duplicate activation." A node inside a
 /// loop template is one source template, not two activations, so only nodes
 /// whose enclosing loop context is identical are compared.
 fn check_activation_identity(engine: &mut Engine) {
-    let mut seen: BTreeMap<(usize, Vec<usize>, Vec<usize>), (SourceId, Span, usize)> =
-        BTreeMap::new();
+    let mut seen: BTreeMap<ActivationKey, ActivationSite> = BTreeMap::new();
     let mut duplicates = Vec::new();
 
     for (index, node) in engine.plan.nodes.iter().enumerate() {

@@ -567,17 +567,15 @@ fn a_delegating_target_that_leads_back_to_itself_is_a_reference_cycle() {
 /// to `target` through `operation`.
 fn mixed_cycle_document(container: &str, operation: &str, extra: &str, target: &str) -> String {
     let inner = match container {
-        "TASK" => format!(
-            "\nTASK:\n    ID: task.one\n    GOAL: REF(goal.one)\n    \
+        "TASK" => "\nTASK:\n    ID: task.one\n    GOAL: REF(goal.one)\n    \
              ACTION: [REF(action.one), REF(action.two)]\n    SUCCESS: REF(success.one)\n"
-        ),
-        "SEQUENCE" => format!(
-            "\nSEQUENCE:\n    ID: sequence.one\n    MODE: mode.sequential\n    \
+            .to_string(),
+        "SEQUENCE" => "\nSEQUENCE:\n    ID: sequence.one\n    MODE: mode.sequential\n    \
              STEP:\n        ID: step.one\n        ACTION: REF(action.one)\n    \
              STEP:\n        ID: step.two\n        ACTION: REF(action.two)\n\
              \nTASK:\n    ID: task.one\n    GOAL: REF(goal.one)\n    \
              SEQUENCE: REF(sequence.one)\n    SUCCESS: REF(success.one)\n"
-        ),
+            .to_string(),
         other => panic!("unsupported container {other}"),
     };
     format!(

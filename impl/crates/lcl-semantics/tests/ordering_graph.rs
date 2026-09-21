@@ -544,19 +544,105 @@ fn a_delegating_target_that_leads_back_to_itself_is_a_reference_cycle() {
         ("core.retry", LIMIT),
     ] {
         // action.one -> action.two -> action.one
-        let planned = plan(&delegating(operation, extra, "action.two"));
+        let raised = common::refusal_ids(&delegating(operation, extra, "action.two"));
         assert!(
-            ids(&planned).contains(&"error.reference.cycle".to_string()),
-            "{operation} cycle: {:?}",
-            ids(&planned)
+            raised.contains(&"error.reference.cycle".to_string()),
+            "{operation} cycle: {raised:?}"
         );
         // The control: the same shape, delegating to a unit that leads
         // nowhere back.
-        let planned = plan(&delegating(operation, extra, "action.three"));
+        let raised = common::refusal_ids(&delegating(operation, extra, "action.three"));
         assert!(
-            !ids(&planned).contains(&"error.reference.cycle".to_string()),
-            "{operation} without a cycle must not be refused: {:?}",
-            ids(&planned)
+            !raised.contains(&"error.reference.cycle".to_string()),
+            "{operation} without a cycle must not be refused: {raised:?}"
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RO-02: the delegation edge is part of the execution relation
+// ---------------------------------------------------------------------------
+
+/// A document whose ACTIONs are members of `container`, one of which delegates
+/// to `target` through `operation`.
+fn mixed_cycle_document(container: &str, operation: &str, extra: &str, target: &str) -> String {
+    let inner = match container {
+        "TASK" => format!(
+            "\nTASK:\n    ID: task.one\n    GOAL: REF(goal.one)\n    \
+             ACTION: [REF(action.one), REF(action.two)]\n    SUCCESS: REF(success.one)\n"
+        ),
+        "SEQUENCE" => format!(
+            "\nSEQUENCE:\n    ID: sequence.one\n    MODE: mode.sequential\n    \
+             STEP:\n        ID: step.one\n        ACTION: REF(action.one)\n    \
+             STEP:\n        ID: step.two\n        ACTION: REF(action.two)\n\
+             \nTASK:\n    ID: task.one\n    GOAL: REF(goal.one)\n    \
+             SEQUENCE: REF(sequence.one)\n    SUCCESS: REF(success.one)\n"
+        ),
+        other => panic!("unsupported container {other}"),
+    };
+    format!(
+        "{HEADER}\nDATA:\n    ID: data.subject\n    TYPE: INTEGER\n    VALUE: 3\n\
+         \nGOAL:\n    ID: goal.one\n    ASSERT: TRUE\n\
+         \nACTION:\n    ID: action.one\n    OPERATION: {operation}\n    \
+         TARGET: REF({target}){extra}\n\
+         \nACTION:\n    ID: action.two\n    OPERATION: core.return\n    \
+         TARGET: REF(data.subject)\n\
+         \nSUCCESS:\n    ID: success.one\n    ALL: [REF(goal.one)]\n{inner}\
+         \nEXECUTE:\n    REFERENCE: REF(task.one)\n"
+    )
+}
+
+const TEST_COMPARISON: &str = "\n    PARAMETER:\n        NAME: expected\n        \
+     TYPE: INTEGER\n        REQUIRED: TRUE\n        VALUE: 3\n    \
+     PARAMETER:\n        NAME: actual\n        TYPE: INTEGER\n        \
+     REQUIRED: TRUE\n        VALUE: REF(data.subject)";
+
+/// An ACTION that delegates to the container it is itself a member of closes a
+/// cycle through one structural edge and one delegation edge.
+///
+/// `05_SEMANTICS/01`: the candidate graph is built from every activation,
+/// including that "Explicit graph-valued operation invocations create their own
+/// child invocation under the same rules", and "Structural cycles use
+/// error.reference.cycle". A relation that omitted the delegation edge would
+/// see no cycle here and the engine would recur until it exhausted a bound.
+#[test]
+fn an_action_that_delegates_to_its_own_container_is_a_reference_cycle() {
+    for container in ["TASK", "SEQUENCE"] {
+        for (operation, extra) in [("core.execute", ""), ("core.test", TEST_COMPARISON)] {
+            let target = if container == "TASK" {
+                "task.one"
+            } else {
+                "sequence.one"
+            };
+            let raised = common::refusal_ids(&mixed_cycle_document(
+                container, operation, extra, target,
+            ));
+            assert!(
+                raised.contains(&"error.reference.cycle".to_string()),
+                "{operation} delegating to its enclosing {container}: {raised:?}"
+            );
+        }
+    }
+}
+
+/// The control: the same shape, delegating to a sibling that leads nowhere
+/// back. The delegation edge must not make an ordinary graph invocation a
+/// cycle.
+#[test]
+fn delegating_to_a_sibling_that_leads_nowhere_back_is_not_a_cycle() {
+    for container in ["TASK", "SEQUENCE"] {
+        for (operation, extra) in [("core.execute", ""), ("core.test", TEST_COMPARISON)] {
+            let raised = common::refusal_ids(&mixed_cycle_document(
+                container,
+                operation,
+                extra,
+                "action.two",
+            ));
+            assert!(
+                !raised.contains(&"error.reference.cycle".to_string()),
+                "{operation} delegating to a sibling inside a {container} \
+                 must not be refused: {raised:?}"
+            );
+        }
     }
 }

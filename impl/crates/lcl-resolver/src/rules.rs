@@ -187,6 +187,14 @@ pub struct Rules {
     lcl_version: String,
     reserved_namespaces: BTreeSet<String>,
     core_operation_ids: BTreeSet<String>,
+    /// Core rows whose TARGET may reference an execution unit and whose
+    /// invocation resolution executes that unit's *reachable graph*.
+    ///
+    /// `05_SEMANTICS/01`: "Explicit graph-valued operation invocations
+    /// create their own child invocation under the same rules." Derived
+    /// from the operations registry rather than named here, so a row that
+    /// gains or loses a graph target changes this set with the package.
+    graph_delegating_operations: BTreeSet<String>,
     definition_kinds: BTreeSet<String>,
     document_kinds: BTreeSet<String>,
     reference_domains: BTreeMap<String, BTreeSet<String>>,
@@ -283,6 +291,7 @@ impl Rules {
 
         let reserved_namespaces = string_set(groups, "reserved_namespaces")?;
         let core_operation_ids = string_set(groups, "core_operation_ids")?;
+        let graph_delegating_operations = graph_delegating(spec)?;
         let enum_groups = groups.get("enum_groups").ok_or_else(|| {
             RulesLoadError::Malformed("built_in_groups_and_results.enum_groups missing".into())
         })?;
@@ -452,6 +461,7 @@ impl Rules {
             lcl_version,
             reserved_namespaces,
             core_operation_ids,
+            graph_delegating_operations,
             definition_kinds,
             document_kinds,
             reference_domains,
@@ -481,6 +491,22 @@ impl Rules {
 
     pub fn is_core_operation(&self, id: &str) -> bool {
         self.core_operation_ids.contains(id)
+    }
+
+    /// Whether this operation identifier names a row that executes a
+    /// referenced execution unit's reachable graph.
+    ///
+    /// `05_SEMANTICS/01` separates the two ways a reference can reach an
+    /// execution unit: "Ordinary REF, TARGET, check references, OUTPUT reads,
+    /// BEFORE and AFTER never activate a producer. Explicit graph-valued
+    /// operation invocations create their own child invocation under the same
+    /// rules." Only the rows in this set are the second kind.
+    pub fn is_graph_delegating_operation(&self, id: &str) -> bool {
+        self.graph_delegating_operations.contains(id)
+    }
+
+    pub fn graph_delegating_operation_count(&self) -> usize {
+        self.graph_delegating_operations.len()
     }
 
     pub fn core_operation_count(&self) -> usize {
@@ -548,6 +574,90 @@ impl Rules {
 fn registry<'a>(spec: &'a SpecPackage, name: &'static str) -> Result<&'a Json, RulesLoadError> {
     spec.registry(name)
         .ok_or(RulesLoadError::MissingRegistry(name))
+}
+
+/// The execution-unit blocks a graph-valued TARGET may reference.
+///
+/// `10_REGISTRIES/operations_v0.1.0.json#/axis_contract/implementation_profile/
+/// graph_resolution` states the rule over exactly these: "For TASK, PHASE,
+/// SEQUENCE, ACTION, or TEST references ... resolve every reachable core row
+/// profile or custom kind.operation declaration".
+const EXECUTION_UNIT_BLOCKS: &[&str] = &["TASK", "PHASE", "SEQUENCE", "ACTION", "TEST"];
+
+/// The phrase by which a row's own invocation resolution says it executes the
+/// referenced unit's graph rather than merely naming it.
+///
+/// `core.execute` — "resolves ... of its **reachable graph**"; `core.test` —
+/// "execute its **reachable graph**". `core.retry` also takes a
+/// `REFERENCE[ACTION]` TARGET and does not carry this phrase: it "Resolve[s]
+/// the wrapped ACTION first, then cop[ies] its exact determinism", repeating an
+/// existing invocation under that action's own RETRY bound rather than creating
+/// a child invocation. Matching the registry's own sentence keeps that
+/// distinction with the package instead of in a hand-written list.
+const GRAPH_DELEGATION_PHRASE: &str = "reachable graph";
+
+/// Every core row that executes a referenced execution unit's reachable graph.
+///
+/// A row qualifies when its declared TARGET type admits a `REFERENCE[...]` over
+/// at least one execution-unit block **and** its `invocation_resolution` says
+/// it executes that unit's reachable graph. Both come from the operations
+/// registry, so this set is a property of the approved package.
+fn graph_delegating(spec: &SpecPackage) -> Result<BTreeSet<String>, RulesLoadError> {
+    let operations = registry(spec, "operations")?;
+    let contracts = operations
+        .get("contracts")
+        .and_then(Json::as_object)
+        .ok_or_else(|| RulesLoadError::Malformed("operations.contracts missing".into()))?;
+    let mut out = BTreeSet::new();
+    for (id, contract) in contracts {
+        let target_type = contract
+            .get("target")
+            .and_then(|t| t.get("type"))
+            .and_then(Json::as_str)
+            .unwrap_or_default();
+        if !references_execution_unit(target_type) {
+            continue;
+        }
+        let resolution = contract
+            .get("invocation_resolution")
+            .and_then(Json::as_str)
+            .unwrap_or_default();
+        if resolution.contains(GRAPH_DELEGATION_PHRASE) {
+            out.insert(id.clone());
+        }
+    }
+    if out.is_empty() {
+        return Err(RulesLoadError::Malformed(
+            "no operation row declares a reachable-graph TARGET; the registry wording \
+             the candidate graph depends on has changed"
+                .into(),
+        ));
+    }
+    Ok(out)
+}
+
+/// Whether a registry TARGET type admits a reference to an execution unit.
+///
+/// The notation is alternation, e.g.
+/// `PATH|URI|REFERENCE[TASK|PHASE|SEQUENCE|ACTION|TEST]|STRING`, so only the
+/// bracketed domain of a `REFERENCE[...]` alternative is inspected.
+fn references_execution_unit(target_type: &str) -> bool {
+    let mut rest = target_type;
+    while let Some(at) = rest.find("REFERENCE[") {
+        rest = &rest[at + "REFERENCE[".len()..];
+        let Some(end) = rest.find(']') else {
+            return false;
+        };
+        let domain = &rest[..end];
+        if domain
+            .split('|')
+            .any(|block| EXECUTION_UNIT_BLOCKS.contains(&block.trim()))
+        {
+            return true;
+        }
+        rest = &rest[end..];
+    }
+    false
 }
 
 fn string_set(parent: &Json, key: &str) -> Result<BTreeSet<String>, RulesLoadError> {

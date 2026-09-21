@@ -229,7 +229,8 @@ fn build_nodes(engine: &mut Engine) {
 /// loop template is one source template, not two activations, so only nodes
 /// whose enclosing loop context is identical are compared.
 fn check_activation_identity(engine: &mut Engine) {
-    let mut seen: BTreeMap<(usize, Vec<usize>), (SourceId, Span, usize)> = BTreeMap::new();
+    let mut seen: BTreeMap<(usize, Vec<usize>, Vec<usize>), (SourceId, Span, usize)> =
+        BTreeMap::new();
     let mut duplicates = Vec::new();
 
     for (index, node) in engine.plan.nodes.iter().enumerate() {
@@ -239,8 +240,16 @@ fn check_activation_identity(engine: &mut Engine) {
         if node.kind != NodeKind::ExecutionUnit {
             continue;
         }
-        let context = loop_context(engine, index);
-        let key = (declaration, context);
+        // "one structural activation path **per candidate invocation**": an
+        // explicit graph-valued invocation "create[s] [its] own child
+        // invocation", so a unit reached through one is in a different
+        // candidate invocation from the same unit activated structurally, and
+        // the two are not duplicate activation of one path.
+        let key = (
+            declaration,
+            loop_context(engine, index),
+            delegation_context(engine, index),
+        );
         match seen.get(&key) {
             Some((source, span, first)) => duplicates.push((
                 source.clone(),
@@ -267,6 +276,29 @@ fn check_activation_identity(engine: &mut Engine) {
             ),
         );
     }
+}
+
+/// The chain of enclosing delegating invocations, outermost first.
+///
+/// An `ACTION` acquires a child only by being an explicit graph-valued
+/// operation invocation — `05_SEMANTICS/01`: "Explicit graph-valued operation
+/// invocations create their own child invocation under the same rules" — so its
+/// ancestors of that block are exactly the delegations this node was reached
+/// through, and they name the candidate invocation it belongs to.
+fn delegation_context(engine: &Engine, node: usize) -> Vec<usize> {
+    let mut out = Vec::new();
+    let mut current = engine.plan.nodes.get(node).and_then(|n| n.parent);
+    while let Some(index) = current {
+        let Some(parent) = engine.plan.nodes.get(index) else {
+            break;
+        };
+        if parent.block == "ACTION" {
+            out.push(index);
+        }
+        current = parent.parent;
+    }
+    out.reverse();
+    out
 }
 
 /// The chain of enclosing loop-template nodes, outermost first.

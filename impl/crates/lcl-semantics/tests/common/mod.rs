@@ -184,6 +184,27 @@ pub fn plan_with(source: &str, invocation: &Invocation) -> Planned {
 }
 
 /// Every emitted preflight diagnostic identifier, in stable order.
+/// Every registered identifier one document raises before axis resolution,
+/// from whichever stage owns it.
+///
+/// A structural cycle belongs to the candidate graph, which `05_SEMANTICS/01`
+/// builds at resolution ("Structural cycles use error.reference.cycle"), while a
+/// cycle only the resolved plan can see is preflight's. Both are "before axis
+/// resolution", so a test about that refusal must not require one stage: it
+/// takes the resolution diagnostics when there are any, and otherwise carries
+/// the document on to preflight exactly as `plan` does.
+pub fn refusal_ids(source: &str) -> Vec<String> {
+    let resolved = resolve(source);
+    if !resolved.diagnostics().is_empty() {
+        return resolved
+            .diagnostics()
+            .iter()
+            .map(|d| d.id.to_string())
+            .collect();
+    }
+    ids(&plan(source))
+}
+
 pub fn ids(planned: &Planned) -> Vec<String> {
     planned
         .diagnostics()

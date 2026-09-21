@@ -125,6 +125,11 @@ const ACTIVATING_FIELDS: &[(&str, &[&str])] = &[
     ("TEST", &["TASK", "ACTION"]),
 ];
 
+/// The blocks a graph-valued TARGET may reference, from
+/// `operations_v0.1.0.json#/axis_contract/implementation_profile/graph_resolution`:
+/// "For TASK, PHASE, SEQUENCE, ACTION, or TEST references".
+const EXECUTION_UNIT_BLOCKS: &[&str] = &["TASK", "PHASE", "SEQUENCE", "ACTION", "TEST"];
+
 fn activating_fields(block: &str) -> &'static [&'static str] {
     ACTIVATING_FIELDS
         .iter()
@@ -184,6 +189,7 @@ pub(crate) fn build(resolver: &Resolver<'_>, resolved: &mut Resolved, raw: &mut 
         let mut builder = Builder {
             resolved,
             emitter: &emitter,
+            rules: resolver.rules(),
             raw,
             bodies,
             binding_at,
@@ -300,6 +306,7 @@ type ScopedRead<'a> = (&'a lcl_parser::syntax::Expr, bool, LoopPath);
 struct Builder<'a, 'b> {
     resolved: &'a Resolved,
     emitter: &'a Emitter<'a>,
+    rules: &'a crate::Rules,
     raw: &'b mut Vec<Diagnostic>,
     bodies: BTreeMap<(crate::SourceId, usize), &'a [Statement]>,
     binding_at: BTreeMap<(crate::SourceId, usize), usize>,
@@ -484,6 +491,15 @@ impl Builder<'_, '_> {
         let Some(body) = self.bodies.get(&key).copied() else {
             return;
         };
+        // "Explicit graph-valued operation invocations create their own child
+        // invocation under the same rules." An ACTION has no activating field,
+        // so this is the one way it acquires a child, and the child is subject
+        // to the same cycle rule as any structural activation.
+        if decl.block == "ACTION" {
+            self.delegated_child(&decl, body, node, path);
+            return;
+        }
+
         let fields = activating_fields(&decl.block);
         if fields.is_empty() {
             return;
@@ -556,6 +572,53 @@ impl Builder<'_, '_> {
                 }
             }
         }
+    }
+
+    /// The child invocation an explicit graph-valued operation creates.
+    ///
+    /// `05_SEMANTICS/01` draws the line this reads: "Ordinary REF, TARGET,
+    /// check references, OUTPUT reads, BEFORE and AFTER never activate a
+    /// producer. Explicit graph-valued operation invocations create their own
+    /// child invocation under the same rules." So the TARGET of an ordinary row
+    /// activates nothing, and the TARGET of a row whose registry contract
+    /// executes the referenced unit's reachable graph activates exactly it —
+    /// which is also what makes a delegation edge visible to the structural
+    /// cycle rule.
+    ///
+    /// A TARGET that names no execution unit — a PATH, a URI, a STRING command,
+    /// a material value — activates nothing, because there is no unit to run.
+    fn delegated_child(
+        &mut self,
+        decl: &Declaration,
+        body: &[Statement],
+        node: usize,
+        path: &mut Vec<usize>,
+    ) {
+        let Some((operation, _)) = crate::field::statement_identifier(body, "OPERATION") else {
+            return;
+        };
+        if !self.rules.is_graph_delegating_operation(&operation) {
+            return;
+        }
+        let Some(target) = crate::field::statement_expression(body, "TARGET") else {
+            return;
+        };
+        let mut spans = reference_spans(&lcl_parser::syntax::Value::Expression(target.clone()));
+        // A TARGET holds exactly one value; a row that took several would need
+        // its own child order, which no core row declares.
+        let Some(span) = spans.drain(..).next() else {
+            return;
+        };
+        let Some(&referenced) = self.binding_at.get(&(decl.source.clone(), span.start)) else {
+            return;
+        };
+        let Some(block) = self.declaration(referenced).map(|d| d.block.clone()) else {
+            return;
+        };
+        if !EXECUTION_UNIT_BLOCKS.contains(&block.as_str()) {
+            return;
+        }
+        self.activate(referenced, span, &decl.source, node, path);
     }
 
     /// Add one activated execution unit, unless doing so would close a cycle.

@@ -1444,3 +1444,117 @@ fn a_uri_recipient_adds_the_network_dependency_to_a_send() {
         vec!["message"]
     );
 }
+
+// ---------------------------------------------------------------------------
+// RO-01: a delegated graph target is executed, never defaulted to success
+// ---------------------------------------------------------------------------
+
+/// A `kind.task` document whose TASK schedules exactly the actions named in
+/// `scheduled`, with both actions declared.
+///
+/// `action.wrapper` is a `core.execute` in graph mode over `action.inner`;
+/// `action.inner` computes `1 + 2`, so its material primary result is
+/// distinguishable from any default.
+fn delegating_document(scheduled: &str) -> String {
+    format!(
+        "LCL:\n    VERSION: \"0.1.0\"\n\nSPECIFICATION:\n    ID: example.stdlib\n    \
+         NAME: \"Standard library fixture\"\n    VERSION: \"1.0.0\"\n    KIND: kind.task\n\
+         \nACTION:\n    ID: action.inner\n    OPERATION: core.calculate\n    \
+         PARAMETER:\n        NAME: expression\n        TYPE: STRING\n        \
+         REQUIRED: TRUE\n        VALUE: \"1 + 2\"\n\
+         \nACTION:\n    ID: action.wrapper\n    OPERATION: core.execute\n    \
+         TARGET: REF(action.inner)\n\
+         \nGOAL:\n    ID: goal.subject\n    ASSERT: TRUE\n\
+         \nSUCCESS:\n    ID: success.subject\n    ALL: [TRUE]\n\
+         \nTASK:\n    ID: task.subject\n    GOAL: REF(goal.subject)\n    \
+         ACTION: {scheduled}\n    SUCCESS: REF(success.subject)\n\
+         \nEXECUTE:\n    REFERENCE: REF(task.subject)\n"
+    )
+}
+
+/// Every result record one declaration produced, in execution order.
+fn results_for<'a>(
+    execution: &'a Execution,
+    declaration: &str,
+) -> Vec<&'a lcl_runtime::ResultRecord> {
+    execution
+        .invocations()
+        .iter()
+        .filter(|r| r.declaration.as_deref() == Some(declaration))
+        .filter_map(|r| r.result.as_ref())
+        .collect()
+}
+
+/// The delegated unit actually runs, and the row reports what it did.
+///
+/// `05_SEMANTICS/01`: "Explicit graph-valued operation invocations create their
+/// own child invocation under the same rules", and `core.execute`'s completion
+/// contract: graph mode "records value exactly when the completed graph exposes
+/// one material primary result". A target the engine never entered exposes no
+/// result, so reporting `status.succeeded` for it would claim an execution that
+/// did not happen.
+#[test]
+fn core_execute_runs_a_delegated_target_that_nothing_else_schedules() {
+    let execution = common::run(&delegating_document("REF(action.wrapper)"));
+
+    // The inner action executed exactly once, on the delegation, and left its
+    // own evidence.
+    let inner = results_for(&execution, "action.inner");
+    assert_eq!(inner.len(), 1, "the delegated unit ran exactly once");
+    assert_eq!(inner[0].status, "status.succeeded");
+    assert_eq!(
+        inner[0].fields.get("value").map(ToString::to_string).as_deref(),
+        Some("3"),
+        "the delegated unit computed its own result"
+    );
+
+    // The wrapper reports graph mode and the graph's one material primary.
+    let wrapper = common::result_of(&execution, "action.wrapper");
+    assert_eq!(wrapper.status, "status.succeeded");
+    assert_eq!(
+        wrapper.fields.get("mode"),
+        Some(&Value::Identifier("graph".to_string()))
+    );
+    assert_eq!(
+        wrapper.fields.get("value").map(ToString::to_string).as_deref(),
+        Some("3"),
+        "the row reports the completed graph's material primary result"
+    );
+}
+
+/// The already-planned control: the same delegation while the inner action is
+/// also scheduled in its own right.
+///
+/// The structural activation and the delegated child invocation are different
+/// candidate invocations — "Explicit graph-valued operation invocations create
+/// their own child invocation" — so both run and each keeps its own record,
+/// rather than one being refused as a duplicate activation path or silently
+/// replacing the other.
+#[test]
+fn a_delegated_target_that_is_also_scheduled_runs_as_both() {
+    let execution = common::run(&delegating_document(
+        "[REF(action.inner), REF(action.wrapper)]",
+    ));
+
+    let inner = results_for(&execution, "action.inner");
+    assert_eq!(
+        inner.len(),
+        2,
+        "the scheduled activation and the delegated child invocation are distinct"
+    );
+    for record in &inner {
+        assert_eq!(record.status, "status.succeeded");
+        assert_eq!(
+            record.fields.get("value").map(ToString::to_string).as_deref(),
+            Some("3")
+        );
+    }
+
+    let wrapper = common::result_of(&execution, "action.wrapper");
+    assert_eq!(wrapper.status, "status.succeeded");
+    assert_eq!(
+        wrapper.fields.get("value").map(ToString::to_string).as_deref(),
+        Some("3"),
+        "delegation reports its own child invocation, not the scheduled one"
+    );
+}

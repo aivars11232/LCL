@@ -721,6 +721,29 @@ pub(super) fn runs(_spec: &SpecPackage, runner: &Runner, schema: &str) -> Vec<Ex
                     parameter("actual", "INTEGER", "FALSE", actual)
                 ))
             };
+            // "UNKNOWN passed never binds OUTPUT."
+            //
+            // The UNKNOWN is a canonically permitted invocation input, not an
+            // invalid literal: `03_TYPES_AND_VALUES/09` registers "TRUE AND
+            // UNKNOWN = UNKNOWN", so the assertion resolves UNKNOWN at
+            // evaluation and the producer still succeeds — "passed ... may be
+            // TRUE, FALSE, or UNKNOWN independently of producer status".
+            out.push(run(
+                runner,
+                "engine/unknown-never-binds",
+                "an UNKNOWN passed result never binds the selected OUTPUT, and the producer still succeeds",
+                &document(
+                    &subject,
+                    &assertion("TRUE AND UNKNOWN"),
+                    Some(("output.passed", "BOOLEAN")),
+                ),
+                MockHost::new(),
+                Expectation::All(vec![
+                    succeeded(),
+                    attempt_field("passed", "UNKNOWN"),
+                    attempt_field("output_binding", "unbound"),
+                ]),
+            ));
             out.push(closed_record(
                 runner,
                 "engine/closed-record",

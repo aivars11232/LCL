@@ -664,6 +664,26 @@ pub(crate) fn verify(
     }
 }
 
+/// Why one comparison operand is no value at all.
+///
+/// A `REFERENCE` operand must name "a declared material-value snapshot"; one
+/// that names an execution unit names something that never holds a value, and
+/// no reading of it produces a material value or a permitted sentinel.
+fn non_value_operand(cx: &Invocation<'_>, name: &str, operand: &Value) -> Option<String> {
+    let id = params::reference_id(operand)?;
+    let block = params::declaring_block(cx, id)?;
+    matches!(
+        block.as_str(),
+        "TASK" | "PHASE" | "SEQUENCE" | "STEP" | "ACTION" | "TEST" | "HANDLER"
+    )
+    .then(|| {
+        format!(
+            "core.test {name} names `{id}`, which declares a {block} rather than a \
+             material-value snapshot, so it is outside the == operand domain"
+        )
+    })
+}
+
 /// `core.test`: one declared comparison, after any referenced graph.
 fn test(
     _stdlib: &Stdlib,
@@ -761,6 +781,23 @@ fn test(
                     "expected requires exactly one actual source: the actual parameter or a \
                      material-value TARGET",
                 );
+            }
+            // "an actual REFERENCE resolves only a declared material-value
+            // snapshot after any graph execution; neither invokes an operation
+            // or profile." A reference naming an execution unit is no value at
+            // all, so it is outside the registered `==` operand domain — "Any
+            // two material values or permitted singleton sentinels" — and
+            // `06_STANDARD_LIBRARY/03` gives that case error.operator.operand.
+            // Letting it through would surface as a result-schema violation
+            // reported as error.host.constraint, converting a language-level
+            // operand defect into a host limitation no host took part in.
+            for (name, operand) in [
+                ("expected", expected),
+                ("actual", actual.unwrap_or(&Value::Missing)),
+            ] {
+                if let Some(detail) = non_value_operand(cx, name, operand) {
+                    return Resolution::failed(RuntimeError::OperatorOperand, name, detail);
+                }
             }
             let actual = actual
                 .map(|value| pure::read_through(cx, value))

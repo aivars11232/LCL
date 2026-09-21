@@ -176,7 +176,7 @@ impl Binder<'_, '_> {
             // which is a later stage's identifier and its decision.
             return;
         };
-        let mut bound = self.fragment_bindings(block, *parameter);
+        let mut bound = self.fragment_bindings(block, parameter);
         let mut names = Vec::new();
         fragment_names(&expression, &mut names);
         for name in names {
@@ -184,7 +184,11 @@ impl Binder<'_, '_> {
                 FragmentName::Reference(text) => {
                     // The same index every other reference resolves against.
                     let qualified = self.path.qualify(&text).qualified();
-                    if self.resolved.declarations.by_qualified(&qualified).is_empty()
+                    if self
+                        .resolved
+                        .declarations
+                        .by_qualified(&qualified)
+                        .is_empty()
                         && !bound.contains(&text)
                         && !self.namespace_failed(&text)
                     {
@@ -245,7 +249,11 @@ impl Binder<'_, '_> {
             Expr::Call(call) if call.callable.text == "REF" => {
                 let id = call.reference_target()?.text.clone();
                 let qualified = self.path.qualify(&id).qualified();
-                let index = *self.resolved.declarations.by_qualified(&qualified).first()?;
+                let index = *self
+                    .resolved
+                    .declarations
+                    .by_qualified(&qualified)
+                    .first()?;
                 let declaration = self.resolved.declarations.get(index)?;
                 let constant = self
                     .resolved
@@ -648,7 +656,6 @@ impl Binder<'_, '_> {
     }
 }
 
-
 /// One name a fragment reads.
 enum FragmentName {
     /// Written as `REF(x)`.
@@ -718,10 +725,7 @@ fn parameter_value<'a>(block: &'a Block, parameter: &str) -> Option<&'a Expr> {
 }
 
 /// The nested `VALUE` body of the `PARAMETER` block named `parameter`.
-fn parameter_body<'a>(
-    block: &'a Block,
-    parameter: &str,
-) -> Option<&'a lcl_parser::syntax::Nested> {
+fn parameter_body<'a>(block: &'a Block, parameter: &str) -> Option<&'a lcl_parser::syntax::Nested> {
     let parameter = parameter_block(block, parameter)?;
     parameter.iter().find_map(|statement| match statement {
         Statement::Field(field) if field.key.text == "VALUE" => match &field.body {

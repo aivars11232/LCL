@@ -836,7 +836,11 @@ fn a_glob_selects_no_absolute_path_because_no_root_is_inferred() {
 fn a_regex_selector_matches_the_entity_it_names() {
     // `pattern_profiles/REGEX`: `match_semantics: full_string` over the text
     // that identifies the entity.
-    let admitted = plan(&workspace_scoped("REGEX(\"src/.*[.]py\")", None, &relative("src/main.py")));
+    let admitted = plan(&workspace_scoped(
+        "REGEX(\"src/.*[.]py\")",
+        None,
+        &relative("src/main.py"),
+    ));
     assert_eq!(admitted.outcome(), Outcome::Planned, "{:?}", ids(&admitted));
     let refused = plan(&workspace_scoped(
         "REGEX(\"src/.*[.]py\")",

@@ -5,3 +5,10 @@
 .directory
 .DS_Store
 Thumbs.db
+
+# The scratch directory an archived copy of an unrelated tool was dropped into.
+# FINAL-05 found `archive-EWXwoU/gk_3.1.75_linux_amd64.zip` tracked here and
+# shipped inside the candidate's source archive. Anchored to the repository
+# root, so a directory named `archive-*` anywhere else is unaffected, and
+# nothing is judged by its extension.
+/archive-*/

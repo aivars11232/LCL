@@ -678,21 +678,20 @@ fn a_0_2_0_candidate_records_both_languages() {
     }
 }
 
-/// A tracked file that is not source is refused before it can be recorded.
+/// Desktop-environment metadata is refused before it can be recorded.
 ///
-/// FINAL-05 found two in the tree: a desktop-environment `.directory` carrying
-/// a machine-local path, and a third-party binary archive. Both were tracked,
-/// so `git ls-files` recorded them, the source id hashed them, and the
-/// candidate's source archive shipped them. The refusal is exact: desktop
-/// metadata, and a binary archive outside `releases/`, whose published archives
-/// stay untouched.
+/// FINAL-05 found a tracked `.directory` whose `Icon=` line names a path on one
+/// person's computer. It was recorded by `git ls-files`, hashed into the source
+/// id, and shipped inside the candidate's source archive. The refusal names the
+/// three exact file names desktop environments write, and judges nothing by its
+/// extension.
 #[test]
-fn desktop_metadata_and_stray_archives_are_refused_before_the_source_is_recorded() {
+fn desktop_metadata_is_refused_before_the_source_is_recorded() {
     for (label, extra) in [
         ("directory", ".directory"),
         ("nested-directory", "docs/.directory"),
-        ("archive", "archive-EWXwoU/tool.zip"),
-        ("tarball", "vendor/tool.tar.gz"),
+        ("ds-store", ".DS_Store"),
+        ("thumbs", "assets/Thumbs.db"),
     ] {
         let case = Case::new(&format!("non-source-{label}"));
         let root = origin(&case);
@@ -708,25 +707,41 @@ fn desktop_metadata_and_stray_archives_are_refused_before_the_source_is_recorded
     }
 }
 
-/// The control: a published archive under `releases/` is not refused.
+/// A compressed file outside `releases/` is source like any other file.
+///
+/// The first corrective pass refused every `.zip`, `.tar.gz`, `.tgz`, `.7z` and
+/// `.rar` outside `releases/`. That is the blanket exclusion the task forbade:
+/// it would have classified a legitimate compressed fixture as invalid for its
+/// extension alone. The positive control is the intended outcome — the build
+/// succeeds and the fixture is inventoried with its own digest — not the
+/// absence of one message.
 #[test]
-fn a_published_release_archive_is_not_treated_as_stray() {
-    let case = Case::new("non-source-published");
+fn a_compressed_source_fixture_outside_releases_is_inventoried_like_any_source() {
+    let case = Case::new("non-source-compressed");
     let root = origin(&case);
+    // A real file, so the source set can record its size and digest.
+    write(&root.join("impl/fixture.tar.gz"), "fixture bytes\n", 0o644);
     let candidate = case.join("out/candidate");
-    // `releases/` is never source, so the entry is filtered before the check
-    // and the build proceeds to its ordinary end.
-    let run = build(
-        &case,
-        &root,
-        &candidate,
-        &[("STUB_GIT_EXTRA", "releases/lcl-0.1.0-linux-x86_64.tar.gz")],
-        "published",
+    let run = build(&case, &root, &candidate, &[], "compressed");
+    run.succeeded();
+    let inventory = std::fs::read_to_string(candidate.join(format!("{NAME}/SOURCE_INVENTORY.tsv")))
+        .or_else(|_| std::fs::read_to_string(candidate.join("SOURCE_INVENTORY.tsv")))
+        .expect("the candidate has an inventory");
+    let row = inventory
+        .lines()
+        .find(|line| line.ends_with("impl/fixture.tar.gz"))
+        .unwrap_or_else(|| panic!("the fixture is not inventoried:\n{inventory}"));
+    let fields: Vec<&str> = row.split('\t').collect();
+    assert_eq!(fields.first().copied(), Some("file"), "{row}");
+    assert_eq!(
+        fields.get(2).copied(),
+        Some("14"),
+        "the recorded size: {row}"
     );
-    assert!(
-        !run.stderr().contains("binary archive outside releases/"),
-        "a published archive must not be refused: {}",
-        run.stderr()
+    assert_eq!(
+        fields.get(3).map(|digest| digest.len()),
+        Some(64),
+        "the recorded digest: {row}"
     );
 }
 

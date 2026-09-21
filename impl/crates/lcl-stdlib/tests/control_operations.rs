@@ -832,3 +832,71 @@ fn validate_reports_a_determinism_mismatch_as_a_detected_finding() {
         "host and network are snapshot-determined: core.read declares both and is deterministic"
     );
 }
+
+/// `core.test`'s expected-and-actual form refuses an operand the comparison
+/// cannot take, under its own identifier.
+///
+/// `06_STANDARD_LIBRARY/03`: "Expected-and-actual form uses the registered ==
+/// strict-equality operator; operands outside its equality_compatible domain
+/// use error.operator.operand", and "an actual REFERENCE resolves only a
+/// declared material-value snapshot after any graph execution; neither invokes
+/// an operation or profile."
+///
+/// `equality_compatible` is "Any two material values or permitted singleton
+/// sentinels", so a reference naming an execution unit — a thing that is no
+/// value at all — is outside it. Reporting that as `error.host.constraint`
+/// would convert a language-level operand defect into a host limitation, which
+/// `05_SEMANTICS/09` and the row's own closed errors list both forbid: nothing
+/// about a host is involved.
+#[test]
+fn a_test_operand_that_is_not_a_value_is_an_operand_defect_not_a_host_limitation() {
+    let source = common::task(
+        "\nDATA:\n    ID: data.number\n    TYPE: INTEGER\n    VALUE: 3\n",
+        &["ID: action.compare\nOPERATION: core.test\n\
+           PARAMETER:\n    NAME: expected\n    TYPE: INTEGER\n    REQUIRED: TRUE\n    VALUE: 3\n\
+           PARAMETER:\n    NAME: actual\n    TYPE: REFERENCE[REF(task.subject)]\n    REQUIRED: TRUE\n    VALUE: REF(task.subject)"],
+    );
+    let mut stdlib = common::stdlib();
+    let mut host = lcl_runtime::MockHost::new();
+    let fixture = common::fixture(&source);
+    let execution = Runtime::new(common::contracts())
+        .execute_with(
+            &fixture.planned,
+            &fixture.checked,
+            &fixture.resolved,
+            &mut stdlib,
+            &mut host,
+        )
+        .expect("the document planned");
+    assert_eq!(
+        common::errors_of(&execution, "action.compare"),
+        vec!["error.operator.operand".to_string()]
+    );
+    assert!(
+        host.requests().is_empty(),
+        "no host was involved: {:?}",
+        host.requests()
+    );
+
+    // The control: two material operands compare without an operand defect,
+    // whatever the comparison decides.
+    let good = common::task(
+        "\nDATA:\n    ID: data.number\n    TYPE: INTEGER\n    VALUE: 3\n",
+        &["ID: action.compare\nOPERATION: core.test\n\
+           PARAMETER:\n    NAME: expected\n    TYPE: INTEGER\n    REQUIRED: TRUE\n    VALUE: 3\n\
+           PARAMETER:\n    NAME: actual\n    TYPE: INTEGER\n    REQUIRED: TRUE\n    VALUE: REF(data.number)"],
+    );
+    let mut stdlib = common::stdlib();
+    let mut host = lcl_runtime::MockHost::new();
+    let fixture = common::fixture(&good);
+    let execution = Runtime::new(common::contracts())
+        .execute_with(
+            &fixture.planned,
+            &fixture.checked,
+            &fixture.resolved,
+            &mut stdlib,
+            &mut host,
+        )
+        .expect("the document planned");
+    assert!(common::errors_of(&execution, "action.compare").is_empty());
+}

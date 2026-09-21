@@ -726,3 +726,56 @@ fn a_key_operation_contract_must_be_complete_unambiguous_and_ordered() {
     // The control: a complete, ordered, installed contract sorts.
     assert!(sorted(&format!("{ONE}    RESULT:\n        TYPE: STRING\n"), true).is_empty());
 }
+
+/// Each row states its own key-contract RESULT rule, and they differ.
+///
+/// `core.sort`'s key needs "exactly one RESULT of a concrete registered ordered
+/// type" because it orders by it; `core.group`'s key needs "exactly one
+/// material RESULT usable as a grouping key", which it only compares for
+/// equality. A BOOLEAN key is therefore refused by one row and accepted by the
+/// other, and applying the ordered rule to both would refuse a valid grouping.
+#[test]
+fn a_group_key_admits_a_material_result_a_sort_key_would_not() {
+    let document = |operation: &str| {
+        common::task(
+            "\nDATA:\n    ID: data.words\n    TYPE: LIST[STRING]\n    VALUE: [\"beta\", \"alpha\"]\n\
+             \nDEFINE:\n    ID: key.flag\n    KIND: kind.operation\n    MEANING: \"Whether the member is short.\"\n    \
+             SIDE_EFFECT: FALSE\n    DETERMINISTIC: TRUE\n    \
+             PARAMETER:\n        NAME: member\n        TYPE: STRING\n        REQUIRED: TRUE\n    \
+             RESULT:\n        TYPE: BOOLEAN\n",
+            &[&format!(
+                "ID: action.keyed\nOPERATION: {operation}\nTARGET: REF(data.words)\n\
+                 PARAMETER:\n    NAME: key\n    TYPE: REFERENCE[REF(key.flag)]\n    REQUIRED: TRUE\n    VALUE: REF(key.flag)"
+            )],
+        )
+    };
+    let errors = |operation: &str| -> Vec<String> {
+        let mut stdlib = common::stdlib().with_pure_operation(
+            "key.flag",
+            Box::new(|m: &Value| Ok(Value::Boolean(matches!(m, Value::Text(t) if t.len() < 5))))
+                as lcl_stdlib::PureOperation,
+        );
+        let mut host = MockHost::new();
+        let source = document(operation);
+        let fixture = common::fixture(&source);
+        let execution = lcl_runtime::Runtime::new(common::contracts())
+            .execute_with(
+                &fixture.planned,
+                &fixture.checked,
+                &fixture.resolved,
+                &mut stdlib,
+                &mut host,
+            )
+            .expect("the document planned");
+        common::errors_of(&execution, "action.keyed")
+    };
+    assert!(
+        errors("core.group").is_empty(),
+        "a BOOLEAN grouping key is material and usable"
+    );
+    assert_eq!(
+        errors("core.sort"),
+        vec!["error.operation.precondition".to_string()],
+        "a BOOLEAN sort key is outside the registered ordered types"
+    );
+}

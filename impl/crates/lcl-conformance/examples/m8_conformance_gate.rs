@@ -17,7 +17,7 @@
 //! Exit codes: 0 accepted, 1 refused with every reason printed, 2 the report
 //! itself could not be assembled.
 
-use lcl_conformance::obligations::MAPPING_DIGEST;
+use lcl_conformance::obligations::Obligations;
 use lcl_conformance::{acceptance, fixtures, production};
 use std::process::ExitCode;
 
@@ -29,16 +29,25 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    // Loaded independently of the verdict being checked: the reviewed mapping
+    // under its pinned digest, refused unless the approved package verifies.
+    let inventory = match Obligations::load(fixtures::spec()) {
+        Ok(inventory) => inventory,
+        Err(error) => {
+            eprintln!("the reviewed obligation inventory could not be loaded: {error}");
+            return ExitCode::from(2);
+        }
+    };
     let verdict = report.render_verdict_json();
     match acceptance::accept(
         &verdict,
-        MAPPING_DIGEST,
+        &inventory,
         lcl_spec::APPROVED_PACKAGE.identity_digest,
     ) {
         Ok(accepted) => {
             println!("ACCEPTED: claim {}", accepted.claim);
             for (level, required) in &accepted.levels {
-                println!("  {level}: {required} required, all satisfied");
+                println!("  {level}: {required} required by the reviewed inventory, all satisfied");
             }
             println!("  mapping digest {}", accepted.mapping_digest);
             println!("  package identity {}", accepted.package_identity);

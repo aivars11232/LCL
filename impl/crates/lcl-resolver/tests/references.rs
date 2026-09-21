@@ -438,3 +438,66 @@ fn a_predicate_fragment_binds_item_and_refuses_an_unknown_name() {
     assert_stages_clean(&bad);
     assert_eq!(ids(&resolve(&bad)), ["error.reference.unresolved"]);
 }
+
+/// The whole fragment is resolved statically, not only the branch that would be
+/// evaluated.
+///
+/// `#/evaluation`: "Static checks cover the complete fragment; dynamic errors
+/// arise only from evaluated subexpressions."
+#[test]
+fn a_name_in_an_unevaluated_branch_is_still_resolved() {
+    // `FALSE AND ghost` never evaluates its right operand at runtime.
+    let source = calculating("\"FALSE AND (ghost > 1)\"", "");
+    assert_stages_clean(&source);
+    assert_eq!(ids(&resolve(&source)), ["error.reference.unresolved"]);
+}
+
+/// A fragment supplied through a `kind.constant` STRING is resolved the same
+/// way, and the defect is attributed to the reference that named it.
+#[test]
+fn a_constant_borne_fragment_resolves_its_names() {
+    let constant = |fragment: &str| {
+        format!(
+            "DEFINE:\n    ID: constant.formula\n    KIND: kind.constant\n    TYPE: STRING\n    VALUE: \"{fragment}\"\n\n"
+        )
+    };
+    let good = task(&format!(
+        "{}{}",
+        constant("REF(data.number) + 1"),
+        concat!(
+            "DATA:\n    ID: data.number\n    TYPE: INTEGER\n    VALUE: 3\n\n",
+            "GOAL:\n    ID: goal.g\n    ASSERT: TRUE\n\n",
+            "ACTION:\n    ID: action.a\n    OPERATION: core.calculate\n",
+            "    PARAMETER:\n        NAME: expression\n        TYPE: REFERENCE[REF(constant.formula)]\n        REQUIRED: TRUE\n        VALUE: REF(constant.formula)\n\n",
+            "SUCCESS:\n    ID: success.s\n    ALL: TRUE\n\n",
+            "TASK:\n    ID: task.t\n    GOAL: REF(goal.g)\n    ACTION: REF(action.a)\n    SUCCESS: REF(success.s)\n\n",
+            "EXECUTE:\n    REFERENCE: REF(task.t)\n",
+        )
+    ));
+    assert_stages_clean(&good);
+    assert_eq!(ids(&resolve(&good)), Vec::<String>::new());
+
+    let bad = good.replace("REF(data.number) + 1", "REF(data.absent) + 1");
+    assert_stages_clean(&bad);
+    assert_eq!(ids(&resolve(&bad)), ["error.reference.unresolved"]);
+}
+
+/// The defect is attributed to the document and the written STRING, at the
+/// resolution stage, and nothing is executed to find it.
+#[test]
+fn a_fragment_defect_is_attributed_to_the_written_string() {
+    let source = calculating("\"ghost + 1\"", "");
+    let resolved = resolve(&source);
+    let diagnostic = resolved
+        .diagnostics()
+        .iter()
+        .find(|d| d.id.as_registry_str() == "error.reference.unresolved")
+        .expect("the fragment defect is reported");
+    assert_eq!(diagnostic.stage().as_registry_str(), "resolution");
+    assert_eq!(diagnostic.source.to_string(), "root.lcl");
+    let quoted = &source[diagnostic.span.start..diagnostic.span.end];
+    assert!(
+        quoted.contains("ghost + 1"),
+        "the span names the written fragment, found {quoted:?}"
+    );
+}

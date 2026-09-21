@@ -618,7 +618,7 @@ fn apply_referenced(
             ),
         ));
     }
-    if let Some(detail) = incomplete_contract(cx, id, parameter) {
+    if let Some(detail) = incomplete_contract(cx, id, parameter, &contract.operation) {
         return Err(Resolution::failed(
             RuntimeError::OperationPrecondition,
             parameter,
@@ -665,7 +665,12 @@ fn apply_referenced(
 /// no RESULT leaves the key type *incomplete*, and a declared dependency beyond
 /// declared_state_only is *out of bounds* — each one error.operation.precondition
 /// before effects, which is the only identifier the row's closed list admits.
-fn incomplete_contract(cx: &Invocation<'_>, id: &str, parameter: &str) -> Option<String> {
+fn incomplete_contract(
+    cx: &Invocation<'_>,
+    id: &str,
+    parameter: &str,
+    operation: &str,
+) -> Option<String> {
     let index = cx
         .resolved
         .declarations()
@@ -684,8 +689,11 @@ fn incomplete_contract(cx: &Invocation<'_>, id: &str, parameter: &str) -> Option
             "it declares no RESULT, so it states no ordered key type to sort by".to_string(),
         );
     };
+    // Each row states what its own RESULT must be, and they differ:
     // `core.sort`'s key wants "exactly one RESULT of a concrete registered
-    // ordered type"; `core.filter` and `core.select` want "exactly one BOOLEAN
+    // ordered type" because it orders by it; `core.group`'s key wants "exactly
+    // one material RESULT usable as a grouping key", which it only compares for
+    // equality; `core.filter` and `core.select` want "exactly one BOOLEAN
     // RESULT" from their predicate.
     let declared = lcl_runtime::syntax::field_text(&result, "TYPE")?;
     let base = declared
@@ -694,19 +702,17 @@ fn incomplete_contract(cx: &Invocation<'_>, id: &str, parameter: &str) -> Option
         .unwrap_or(&declared)
         .trim()
         .to_string();
-    let admitted = if parameter == "key" {
-        ORDERED_TYPES.contains(&base.as_str())
-    } else {
-        base == "BOOLEAN"
+    let (admitted, wanted) = match (operation, parameter) {
+        ("core.sort", "key") => (
+            ORDERED_TYPES.contains(&base.as_str()),
+            "registered ordered types",
+        ),
+        (_, "key") => (!base.is_empty(), "declared material types"),
+        _ => (base == "BOOLEAN", "BOOLEAN result"),
     };
     if !admitted {
         return Some(format!(
-            "its RESULT declares {declared}, which is outside the {} this {parameter} admits",
-            if parameter == "key" {
-                "registered ordered types"
-            } else {
-                "BOOLEAN result"
-            }
+            "its RESULT declares {declared}, which is outside the {wanted} this {parameter} admits"
         ));
     }
     None

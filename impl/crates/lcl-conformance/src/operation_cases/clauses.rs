@@ -1002,6 +1002,28 @@ fn graph(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<ExecutedCase> {
     }
 
     if family == "errors" {
+        if !execute {
+            // "Expected-and-actual form uses the registered == strict-equality
+            // operator; operands outside its equality_compatible domain use
+            // error.operator.operand." `equality_compatible` is "Any two
+            // material values or permitted singleton sentinels", and "an actual
+            // REFERENCE resolves only a declared material-value snapshot", so a
+            // reference naming an execution unit is outside it.
+            runs.push(failed_without_effects(
+                shipped,
+                "path/incompatible-equality-operands",
+                "an actual operand that names an execution unit is outside the == operand domain",
+                &with_action(
+                    row,
+                    concat!(
+                        "OPERATION: core.test",
+                        "\n    PARAMETER:\n        NAME: expected\n        TYPE: INTEGER\n        REQUIRED: TRUE\n        VALUE: 3",
+                        "\n    PARAMETER:\n        NAME: actual\n        TYPE: REFERENCE[REF(task.subject)]\n        REQUIRED: TRUE\n        VALUE: REF(task.subject)",
+                    ),
+                ),
+                "error.operator.operand",
+            ));
+        }
         runs.push(shipped.execute(
             if execute {
                 "path/reference-cycle"
@@ -3727,30 +3749,18 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
                     Expectation::Diagnostic("error.reference.kind".into()),
                 ));
                 // `expression_fragment_contract/environment`: "REF references
-                // resolve in the enclosing document ... Bindings are immutable
-                // snapshots; an unknown binding name produces
-                // error.reference.unresolved." The identifier is registered at
-                // the resolution stage and mirrored by the resolver alone, so
-                // the reference this row's fragment reads is resolved where
-                // that layer owns it: the `bindings` OBJECT the fragment's
-                // environment is built from.
-                //
-                // A bare name *inside* the fragment string is a separate case
-                // this build does not resolve statically; it is recorded as a
-                // residual rather than answered at execution, because naming a
-                // resolution-stage identifier in the runtime would mirror it in
-                // a layer that does not own it.
+                // resolve in the enclosing document ... Bare names in fragments
+                // denote only declared local bindings, reserved target or item
+                // where provided, or contextual enum/qualified-identifier data
+                // ... an unknown binding name produces
+                // error.reference.unresolved", and `#/evaluation`: "Static
+                // checks cover the complete fragment". The resolver — the layer
+                // the identifier's registered `resolution` stage belongs to —
+                // now resolves the names the fragment itself reads.
                 runs.push(shipped.execute(
                     "path/unresolved-expression-reference",
-                    "a fragment environment whose binding reference resolves to no declaration is error.reference.unresolved",
-                    &with_action(
-                        row,
-                        concat!(
-                            "OPERATION: core.calculate",
-                            "\n    PARAMETER:\n        NAME: expression\n        TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: \"amount + 1\"",
-                            "\n    PARAMETER:\n        NAME: bindings\n        TYPE: OBJECT\n        REQUIRED: FALSE\n        VALUE:\n            amount: REF(data.absent)",
-                        ),
-                    ),
+                    "a reference inside the fragment that resolves to no declaration is error.reference.unresolved",
+                    &calc("\"REF(data.absent) + 1\"", None, ""),
                     Expectation::All(vec![
                         Expectation::Rejects("error.reference.unresolved".into()),
                         Expectation::Attempts {
@@ -4432,74 +4442,35 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
                     &sort("REF(data.words)", &key_ref("key.remote"), &format!("{words}\nDEFINE:\n    ID: key.remote\n    KIND: kind.operation\n    MEANING: \"A key that reads the host.\"\n    SIDE_EFFECT: FALSE\n    DEPENDENCY: [host]\n    DETERMINISTIC: TRUE\n    PARAMETER:\n        NAME: member\n        TYPE: STRING\n        REQUIRED: TRUE\n    RESULT:\n        TYPE: STRING\n")),
                     "error.operation.precondition",
                 ));
-                // The row's own error.operation.precondition trigger names "a
+                // `precondition/key-operation-profile-{missing,ambiguous,
+                // incomplete,out-of-bounds}` are NOT authored here.
+                //
+                // The row's error.operation.precondition trigger names "a
                 // missing, ambiguous, incomplete, or out-of-bounds immutable
-                // profile" for the key operation. A custom kind.operation
-                // "selects no implementation profile", so those four words
-                // apply to what stands in for one: the declared key contract
-                // whose required properties the key constraint lists — "exactly
-                // one PARAMETER accepting T, and exactly one RESULT of a
-                // concrete registered ordered type" — and the installed
-                // implementation that performs it.
-                let key_declaration = |id: &str, body: &str| {
-                    format!("{words}\nDEFINE:\n    ID: {id}\n    KIND: kind.operation\n    MEANING: \"A declared key.\"\n    SIDE_EFFECT: FALSE\n    DETERMINISTIC: TRUE\n{body}")
-                };
-                runs.push(failed_without_effects(
-                    shipped,
-                    "precondition/key-operation-profile-missing",
-                    "a declared key operation with no installed implementation",
-                    &sort(
-                        "REF(data.words)",
-                        &key_ref("key.uninstalled"),
-                        &key_declaration(
-                            "key.uninstalled",
-                            "    PARAMETER:\n        NAME: member\n        TYPE: STRING\n        REQUIRED: TRUE\n    RESULT:\n        TYPE: STRING\n",
-                        ),
-                    ),
-                    "error.operation.precondition",
-                ));
-                runs.push(failed_without_effects(
-                    &with_pure(runners, vec![("key.two", initial_impl())]),
-                    "precondition/key-operation-profile-ambiguous",
-                    "a key operation declaring more than one PARAMETER, so which one accepts T is not determined",
-                    &sort(
-                        "REF(data.words)",
-                        &key_ref("key.two"),
-                        &key_declaration(
-                            "key.two",
-                            "    PARAMETER:\n        NAME: member\n        TYPE: STRING\n        REQUIRED: TRUE\n    PARAMETER:\n        NAME: fallback\n        TYPE: STRING\n        REQUIRED: FALSE\n    RESULT:\n        TYPE: STRING\n",
-                        ),
-                    ),
-                    "error.operation.precondition",
-                ));
-                runs.push(failed_without_effects(
-                    &with_pure(runners, vec![("key.resultless", initial_impl())]),
-                    "precondition/key-operation-profile-incomplete",
-                    "a key operation declaring no RESULT, so it states no ordered key type",
-                    &sort(
-                        "REF(data.words)",
-                        &key_ref("key.resultless"),
-                        &key_declaration(
-                            "key.resultless",
-                            "    PARAMETER:\n        NAME: member\n        TYPE: STRING\n        REQUIRED: TRUE\n",
-                        ),
-                    ),
-                    "error.operation.precondition",
-                ));
-                runs.push(failed_without_effects(
-                    &with_pure(runners, vec![("key.unordered", Box::new(|_: &lcl_runtime::Value| Ok(lcl_runtime::Value::Boolean(true))) as lcl_stdlib::PureOperation)]),
-                    "precondition/key-operation-profile-out-of-bounds",
-                    "a key operation whose RESULT is outside the registered ordered types",
-                    &sort(
-                        "REF(data.words)",
-                        &key_ref("key.unordered"),
-                        &key_declaration(
-                            "key.unordered",
-                            "    PARAMETER:\n        NAME: member\n        TYPE: STRING\n        REQUIRED: TRUE\n    RESULT:\n        TYPE: BOOLEAN\n",
-                        ),
-                    ),
-                    "error.operation.precondition",
-                ));
+                // profile" for the key operation. Those four words are the
+                // registry's vocabulary for *profile-role selection*:
+                // `axis_contract.implementation_profile.selection` defines it
+                // over "the exact operation identifier, profile role, target or
+                // address class, arguments, implementation identifier, and
+                // implementation version", and its `required_properties` are
+                // the ten a profile states — none of them a PARAMETER count or
+                // a RESULT type.
+                //
+                // `required_roles_by_operation` gives core.sort `null`, and "A
+                // core operation absent from the map requires no local core
+                // profile"; `custom_operation_resolution` says "A custom
+                // kind.operation declares its complete axis contract in its own
+                // DEFINE block and **selects no implementation profile**". So a
+                // key operation has no profile that could be missing,
+                // ambiguous, incomplete or out of bounds, and the key
+                // contract's own properties are a different requirement that
+                // merely shares this row's one admitted identifier.
+                //
+                // An earlier pass equated the two. Receiving the same
+                // diagnostic is not evidence that the required condition was
+                // exercised, so the four sub-runs stay open for the owner while
+                // the key-contract checks they were mistaken for remain in
+                // `pure.rs` with their own tests.
                 runs.push(failed_without_effects(
                     shipped,
                     "precondition/malformed-property-path",

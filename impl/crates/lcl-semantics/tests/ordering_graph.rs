@@ -595,6 +595,21 @@ const TEST_COMPARISON: &str = "\n    PARAMETER:\n        NAME: expected\n       
      PARAMETER:\n        NAME: actual\n        TYPE: INTEGER\n        \
      REQUIRED: TRUE\n        VALUE: REF(data.subject)";
 
+/// The delegation cases whose TARGET is inside the operation's own accepted
+/// domain.
+///
+/// `operations_v0.1.0.json#/contracts`: `core.execute` takes
+/// `PATH|URI|REFERENCE[TASK|PHASE|SEQUENCE|ACTION|TEST]|STRING`, while
+/// `core.test` takes only `REFERENCE[TASK|ACTION]|meta.material_value`. A
+/// `core.test` over a SEQUENCE is outside its domain, so it could never show
+/// that a *legal* delegation closes a cycle; it is excluded rather than relied
+/// on.
+const DELEGATION_CASES: &[(&str, &str, &str, &str)] = &[
+    ("core.execute", "", "TASK", "task.one"),
+    ("core.execute", "", "SEQUENCE", "sequence.one"),
+    ("core.test", TEST_COMPARISON, "TASK", "task.one"),
+];
+
 /// An ACTION that delegates to the container it is itself a member of closes a
 /// cycle through one structural edge and one delegation edge.
 ///
@@ -603,44 +618,128 @@ const TEST_COMPARISON: &str = "\n    PARAMETER:\n        NAME: expected\n       
 /// child invocation under the same rules", and "Structural cycles use
 /// error.reference.cycle". A relation that omitted the delegation edge would
 /// see no cycle here and the engine would recur until it exhausted a bound.
+///
+/// The identifier is asserted at the stage that owns it: the candidate graph is
+/// built during resolution, so the refusal is the resolver's primary diagnostic
+/// and no plan is produced — the program is refused before any effect could be
+/// authorized, rather than detected by exhausting a runtime bound.
 #[test]
 fn an_action_that_delegates_to_its_own_container_is_a_reference_cycle() {
-    for container in ["TASK", "SEQUENCE"] {
-        for (operation, extra) in [("core.execute", ""), ("core.test", TEST_COMPARISON)] {
-            let target = if container == "TASK" {
-                "task.one"
-            } else {
-                "sequence.one"
-            };
-            let raised = common::refusal_ids(&mixed_cycle_document(
-                container, operation, extra, target,
-            ));
-            assert!(
-                raised.contains(&"error.reference.cycle".to_string()),
-                "{operation} delegating to its enclosing {container}: {raised:?}"
-            );
-        }
+    for (operation, extra, container, target) in DELEGATION_CASES {
+        let source = mixed_cycle_document(container, operation, extra, target);
+        let resolved = common::resolve(&source);
+        assert_eq!(
+            resolved.primary().map(|d| d.id.to_string()),
+            Some("error.reference.cycle".to_string()),
+            "{operation} delegating to its enclosing {container}: {:?}",
+            resolved
+                .diagnostics()
+                .iter()
+                .map(|d| d.id.to_string())
+                .collect::<Vec<_>>()
+        );
+        // A refused resolution yields no plan by construction: the static
+        // stage cannot run at all, so no node is ever authorized and no
+        // effect can occur.
+        assert!(
+            common::checker().check(&resolved).is_err(),
+            "{operation} in a {container} cycle must stop before static checking"
+        );
     }
 }
 
+/// An indirect mixed cycle: the delegated unit's own member delegates back.
+///
+/// `task.one` structurally activates `action.one`, which delegates to
+/// `task.two`, which structurally activates `action.two`, which delegates back
+/// to `task.one`. Every edge is legal on its own and the cycle exists only in
+/// the combined relation.
+#[test]
+fn an_indirect_cycle_through_two_delegations_is_a_reference_cycle() {
+    let source = format!(
+        "{HEADER}\nDATA:\n    ID: data.subject\n    TYPE: INTEGER\n    VALUE: 3\n\
+         \nGOAL:\n    ID: goal.one\n    ASSERT: TRUE\n\
+         \nACTION:\n    ID: action.one\n    OPERATION: core.execute\n    \
+         TARGET: REF(task.two)\n\
+         \nACTION:\n    ID: action.two\n    OPERATION: core.execute\n    \
+         TARGET: REF(task.one)\n\
+         \nSUCCESS:\n    ID: success.one\n    ALL: [REF(goal.one)]\n\
+         \nTASK:\n    ID: task.two\n    GOAL: REF(goal.one)\n    \
+         ACTION: REF(action.two)\n    SUCCESS: REF(success.one)\n\
+         \nTASK:\n    ID: task.one\n    GOAL: REF(goal.one)\n    \
+         ACTION: REF(action.one)\n    SUCCESS: REF(success.one)\n\
+         \nEXECUTE:\n    REFERENCE: REF(task.one)\n"
+    );
+    let resolved = common::resolve(&source);
+    assert_eq!(
+        resolved.primary().map(|d| d.id.to_string()),
+        Some("error.reference.cycle".to_string()),
+        "indirect delegation cycle: {:?}",
+        resolved
+            .diagnostics()
+            .iter()
+            .map(|d| d.id.to_string())
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        common::checker().check(&resolved).is_err(),
+        "an indirect delegation cycle must stop before static checking"
+    );
+}
+
 /// The control: the same shape, delegating to a sibling that leads nowhere
-/// back. The delegation edge must not make an ordinary graph invocation a
-/// cycle.
+/// back.
+///
+/// A control that only observed the absence of a cycle diagnostic would also
+/// pass on a document refused for some unrelated reason, so this asserts that
+/// every earlier stage is clean and that preflight produces a real plan whose
+/// nodes include the delegated child. Execution of the same shape is covered by
+/// the standard library's `core_execute_runs_a_delegated_target_*` regressions,
+/// which this layer cannot run.
 #[test]
 fn delegating_to_a_sibling_that_leads_nowhere_back_is_not_a_cycle() {
-    for container in ["TASK", "SEQUENCE"] {
-        for (operation, extra) in [("core.execute", ""), ("core.test", TEST_COMPARISON)] {
-            let raised = common::refusal_ids(&mixed_cycle_document(
-                container,
-                operation,
-                extra,
-                "action.two",
-            ));
-            assert!(
-                !raised.contains(&"error.reference.cycle".to_string()),
-                "{operation} delegating to a sibling inside a {container} \
-                 must not be refused: {raised:?}"
-            );
-        }
+    for (operation, extra, container, _) in DELEGATION_CASES {
+        let source = mixed_cycle_document(container, operation, extra, "action.two");
+        let resolved = common::resolve(&source);
+        assert!(
+            resolved.diagnostics().is_empty(),
+            "{operation} in a {container} must resolve cleanly: {:?}",
+            resolved
+                .diagnostics()
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        );
+        let checked = common::checker().check(&resolved).expect("resolution succeeded");
+        assert!(
+            checked.diagnostics().is_empty() && checked.earlier_stage_defects().is_empty(),
+            "{operation} in a {container} must statically check cleanly: {:?}",
+            checked
+                .diagnostics()
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        );
+        let planned = common::plan(&source);
+        assert_eq!(
+            planned.outcome(),
+            Outcome::Planned,
+            "{operation} in a {container}: {:?}",
+            ids(&planned)
+        );
+        let plan = planned.plan().expect("an accepted preflight yields a plan");
+        // The delegated child is a planned node, parented to the delegating
+        // ACTION rather than to the container.
+        let delegating = plan
+            .nodes()
+            .iter()
+            .position(|n| n.id.as_deref() == Some("action.one"))
+            .expect("the delegating action is planned");
+        assert!(
+            plan.nodes()
+                .iter()
+                .any(|n| n.id.as_deref() == Some("action.two") && n.parent == Some(delegating)),
+            "{operation} in a {container} must plan its delegated child"
+        );
     }
 }

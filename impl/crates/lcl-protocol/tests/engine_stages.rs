@@ -501,3 +501,275 @@ fn diagnostic_json_carries_byte_spans() {
         "the registered stage name, not a product invention"
     );
 }
+
+// ---------------------------------------------------------------------------
+// A verdict has two channels, and the facade must read both
+// ---------------------------------------------------------------------------
+//
+// `Checked::outcome` rejects a program for either an ordinary static
+// diagnostic or a defect whose *registered* stage is earlier than the stage
+// that detected it — `03_TYPES_AND_VALUES/01` assigns `error.reference.cycle`
+// to a self-resolving `kind.type` chain, and the registry stages that
+// identifier at resolution. The two are kept in separate lists so that no
+// static-stage list ever carries a foreign identifier.
+//
+// Two lists mean two ways to lose one. A facade that asks only for the static
+// list sees an empty list for such a program and reports `Accepted`, and a
+// facade that reports the rejection without the earlier list says a document
+// is bad without saying why. Both are tested here, at the public boundary,
+// because that is where a consumer reads the verdict.
+
+/// A `kind.data` document whose two type aliases resolve to each other.
+///
+/// The same shape as the checker's own
+/// `a_type_alias_cycle_is_reported_with_its_own_registered_identifier`
+/// fixture, so the layer and its facade are asked about one program.
+fn alias_cycle_document() -> String {
+    "LCL:\n    VERSION: \"0.1.0\"\n\n\
+     SPECIFICATION:\n    ID: test.doc\n    NAME: \"Test\"\n    VERSION: \"1.0.0\"\n    \
+     KIND: kind.data\n\n\
+     DEFINE:\n    ID: type.a\n    KIND: kind.type\n    BASE: REF(type.b)\n\n\
+     DEFINE:\n    ID: type.b\n    KIND: kind.type\n    BASE: REF(type.a)\n\n\
+     DATA:\n    ID: data.x\n    TYPE: REF(type.a)\n    VALUE: 1\n"
+        .to_string()
+}
+
+/// The control: an alias chain that ends rather than returning is accepted.
+#[test]
+fn a_transparent_type_alias_is_accepted() {
+    let source = "LCL:\n    VERSION: \"0.1.0\"\n\n\
+         SPECIFICATION:\n    ID: test.doc\n    NAME: \"Test\"\n    VERSION: \"1.0.0\"\n    \
+         KIND: kind.data\n\n\
+         DEFINE:\n    ID: type.a\n    KIND: kind.type\n    BASE: REF(type.b)\n\n\
+         DEFINE:\n    ID: type.b\n    KIND: kind.type\n    BASE: INTEGER\n\n\
+         DATA:\n    ID: data.x\n    TYPE: REF(type.a)\n    VALUE: 1\n";
+    let report = engine().check(&unit("alias_ok.lcl", source), &MemoryProvider::new());
+
+    assert_eq!(
+        report.outcome,
+        Outcome::Accepted,
+        "{:?}",
+        report.diagnostics
+    );
+    assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+}
+
+/// `check` must reject the cycle, and say which one it is.
+#[test]
+fn a_type_alias_cycle_rejects_a_check_and_keeps_its_diagnostic() {
+    let source = alias_cycle_document();
+    let report = engine().check(&unit("alias_cycle.lcl", &source), &MemoryProvider::new());
+
+    assert_eq!(
+        report.outcome,
+        Outcome::Rejected,
+        "an accepted cycle is the defect: {:?}",
+        report.diagnostics
+    );
+    let cycle = report
+        .diagnostics
+        .iter()
+        .find(|d| d.id == "error.reference.cycle")
+        .unwrap_or_else(|| panic!("the explaining diagnostic: {:?}", report.diagnostics));
+    assert_eq!(
+        cycle.stage,
+        Stage::Resolution,
+        "the registered owning stage, not the stage that noticed it"
+    );
+    assert_eq!(cycle.source, "alias_cycle.lcl");
+    assert!(
+        cycle.span.end > cycle.span.start,
+        "the original span survives: {:?}",
+        cycle.span
+    );
+    assert_eq!(cycle.default_status, "status.invalid");
+    assert!(
+        report.diagnostics.iter().any(|d| d.primary),
+        "a rejection has a primary diagnostic"
+    );
+}
+
+/// The three later commands refuse the same source, before anything they do.
+#[test]
+fn a_type_alias_cycle_refuses_validate_inspect_and_run() {
+    let source = alias_cycle_document();
+
+    for (name, report) in [
+        (
+            "validate",
+            engine().validate(
+                &unit("alias_cycle.lcl", &source),
+                &MemoryProvider::new(),
+                &Inputs::new(),
+            ),
+        ),
+        (
+            "inspect",
+            engine().inspect(
+                &unit("alias_cycle.lcl", &source),
+                &MemoryProvider::new(),
+                &Inputs::new(),
+            ),
+        ),
+    ] {
+        assert_eq!(report.outcome, Outcome::Rejected, "{name}");
+        let cycle = report
+            .diagnostics
+            .iter()
+            .find(|d| d.id == "error.reference.cycle")
+            .unwrap_or_else(|| panic!("{name}: {:?}", report.diagnostics));
+        // Preflight was skipped *because* of this defect, and it said which
+        // stage, in which unit, where. A generic fallback that reported the
+        // skipping stage and the root's identity would lose all three.
+        assert_eq!(cycle.stage, Stage::Resolution, "{name}");
+        assert_eq!(cycle.source, "alias_cycle.lcl", "{name}");
+        assert!(
+            cycle.span.end > cycle.span.start,
+            "{name}: {:?}",
+            cycle.span
+        );
+        assert!(cycle.position.line >= 1, "{name}");
+        assert_eq!(cycle.default_status, "status.invalid", "{name}");
+        assert!(report.execution.is_none(), "{name} never reaches execution");
+    }
+
+    let mut host = MockHost::new();
+    let mut stdlib = engine().stdlib().expect("the operation surface assembles");
+    let report = engine().run(
+        &unit("alias_cycle.lcl", &source),
+        &MemoryProvider::new(),
+        &Inputs::new(),
+        &mut stdlib,
+        &mut host,
+    );
+    assert_eq!(report.outcome, Outcome::Rejected);
+    let cycle = report
+        .diagnostics
+        .iter()
+        .find(|d| d.id == "error.reference.cycle")
+        .unwrap_or_else(|| panic!("{:?}", report.diagnostics));
+    assert_eq!(cycle.stage, Stage::Resolution);
+    assert_eq!(cycle.source, "alias_cycle.lcl");
+    assert!(cycle.span.end > cycle.span.start, "{:?}", cycle.span);
+    assert!(
+        report.execution.is_none(),
+        "a source-invalid document never executes"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// An admission check judges the snapshot that runs
+// ---------------------------------------------------------------------------
+
+/// A provider that answers every request with different bytes.
+///
+/// Not a mock of the language — it controls one real environmental interface,
+/// the one that hands the resolver an imported file, and it makes the
+/// difference between "one load" and "two loads" observable. A caller that
+/// checked the source by loading it once and then executed a second load would
+/// admit one set of digests and execute another; a caller that checks inside
+/// the walk cannot.
+struct ChangingProvider {
+    loads: std::cell::Cell<usize>,
+}
+
+impl lcl_resolver::SourceProvider for ChangingProvider {
+    fn load(
+        &self,
+        _request: &lcl_resolver::SourceRequest,
+    ) -> Result<lcl_resolver::SourceUnit, lcl_resolver::LoadError> {
+        let n = self.loads.get() + 1;
+        self.loads.set(n);
+        // Valid every time, and different every time: the trailing blank lines
+        // change the bytes without changing what the unit means.
+        let source = format!("{}{}", example("02_IMPORT_LIBRARY.lcl"), "\n".repeat(n));
+        Ok(lcl_resolver::SourceUnit::new(
+            lcl_resolver::SourceId::new("02_IMPORT_LIBRARY.lcl"),
+            source.as_bytes(),
+        ))
+    }
+}
+
+/// The identities the check is shown are the identities that then execute.
+#[test]
+fn an_admission_check_sees_the_snapshot_that_is_executed() {
+    let source = example("03_IMPORTING_TASK.lcl");
+    let provider = ChangingProvider {
+        loads: std::cell::Cell::new(0),
+    };
+    let seen: std::cell::RefCell<Vec<(String, String)>> = std::cell::RefCell::new(Vec::new());
+
+    let mut host = MockHost::new();
+    let mut stdlib = engine().stdlib().expect("the operation surface assembles");
+    let report = engine()
+        .run_admitted(
+            &unit("03_IMPORTING_TASK.lcl", &source),
+            &provider,
+            &Inputs::new(),
+            &mut stdlib,
+            &mut host,
+            &|report| {
+                *seen.borrow_mut() = report
+                    .units
+                    .iter()
+                    .map(|u| (u.id.clone(), u.digest.clone()))
+                    .collect();
+                Ok(())
+            },
+        )
+        .expect("the check admitted this run");
+
+    let executed: Vec<(String, String)> = report
+        .units
+        .iter()
+        .map(|u| (u.id.clone(), u.digest.clone()))
+        .collect();
+    assert_eq!(
+        *seen.borrow(),
+        executed,
+        "the admitted source and the executed source are one snapshot"
+    );
+    assert!(seen.borrow().len() >= 2, "{:?}", seen.borrow());
+    assert_eq!(
+        provider.loads.get(),
+        1,
+        "the import was read once, so there is only one snapshot to disagree about"
+    );
+}
+
+/// Refusing stops the walk, and the refusal is the caller's own message.
+#[test]
+fn a_refused_admission_returns_the_callers_message() {
+    let source = example("01_MINIMAL_TASK.lcl");
+    let mut host = MockHost::new();
+    let mut stdlib = engine().stdlib().expect("the operation surface assembles");
+
+    let refused = engine().run_admitted(
+        &unit("01_MINIMAL_TASK.lcl", &source),
+        &MemoryProvider::new(),
+        &Inputs::new(),
+        &mut stdlib,
+        &mut host,
+        &|_| Err("the lock does not describe what was loaded".to_string()),
+    );
+    assert_eq!(
+        refused,
+        Err("the lock does not describe what was loaded".to_string())
+    );
+
+    // The control: the same document, admitted, really runs.
+    let admitted = engine()
+        .run_admitted(
+            &unit("01_MINIMAL_TASK.lcl", &source),
+            &MemoryProvider::new(),
+            &Inputs::new(),
+            &mut stdlib,
+            &mut host,
+            &|_| Ok(()),
+        )
+        .expect("admitted");
+    assert!(
+        admitted.execution.is_some(),
+        "an admitted run reaches execution"
+    );
+}

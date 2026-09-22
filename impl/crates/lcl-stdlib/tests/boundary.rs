@@ -194,3 +194,131 @@ fn the_real_filesystem_adapter_refuses_a_symlink_out_of_its_scope() {
         "not yours"
     );
 }
+
+// ---------------------------------------------------------------------------
+// "A host may not report an effect outside it" — on every outcome that carries
+// observations
+// ---------------------------------------------------------------------------
+//
+// `FabricatingHost` above proves the rule for `Completed`. The rule is not
+// about `Completed`: it is about the observations, and three of the outcome's
+// arms carry them. A check that inspected only two would let a host state the
+// same untrue thing by choosing a different arm to say it in.
+
+/// A host that fabricates the same effect through whichever arm it is given.
+struct FabricatingArm(&'static str);
+
+impl FabricatingArm {
+    fn observation() -> Observation {
+        Observation::none()
+            .with("value", Value::Text("read".to_string()))
+            .with_effect(ObservedEffect {
+                class: EffectClass::Filesystem,
+                state: RecordState::Applied,
+                target: None,
+                evidence: Vec::new(),
+            })
+    }
+}
+
+impl Host for FabricatingArm {
+    fn permits(&mut self, _request: &CapabilityRequest) -> Permission {
+        Permission::Granted
+    }
+
+    fn invoke(&mut self, _request: &CapabilityRequest) -> CapabilityOutcome {
+        match self.0 {
+            "completed" => CapabilityOutcome::Completed(FabricatingArm::observation()),
+            "failed" => CapabilityOutcome::Failed {
+                detail: "the host gave up".to_string(),
+                observation: FabricatingArm::observation(),
+            },
+            "refused" => CapabilityOutcome::Refused {
+                error: lcl_runtime::RuntimeError::ValueOutOfRange,
+                cause: "range".to_string(),
+                detail: "the host refused".to_string(),
+                observation: FabricatingArm::observation(),
+            },
+            other => panic!("unknown arm {other}"),
+        }
+    }
+}
+
+/// A host that observes nothing at all, through the same three arms.
+struct HonestArm(&'static str);
+
+impl Host for HonestArm {
+    fn permits(&mut self, _request: &CapabilityRequest) -> Permission {
+        Permission::Granted
+    }
+
+    fn invoke(&mut self, _request: &CapabilityRequest) -> CapabilityOutcome {
+        let observation = Observation::none().with("value", Value::Text("read".to_string()));
+        match self.0 {
+            "completed" => CapabilityOutcome::Completed(observation),
+            "failed" => CapabilityOutcome::Failed {
+                detail: "the host gave up".to_string(),
+                observation,
+            },
+            "refused" => CapabilityOutcome::Refused {
+                error: lcl_runtime::RuntimeError::ValueOutOfRange,
+                cause: "range".to_string(),
+                detail: "the host refused".to_string(),
+                observation,
+            },
+            other => panic!("unknown arm {other}"),
+        }
+    }
+}
+
+fn reading_document() -> String {
+    common::task(
+        &common::data("data.target", "PATH", "PATH(\"/srv/data/report.txt\")"),
+        &["ID: action.read\nOPERATION: core.read\nTARGET: REF(data.target)"],
+    )
+}
+
+#[test]
+fn an_out_of_set_effect_is_refused_through_every_observation_bearing_arm() {
+    // `core.read` is read_only, and "read_only requires possible effects
+    // exactly {none}", so a filesystem effect is outside its resolved set
+    // whichever arm reports it.
+    for arm in ["completed", "failed", "refused"] {
+        let execution = run_against(&reading_document(), &mut FabricatingArm(arm));
+        assert_eq!(
+            common::errors_of(&execution, "action.read"),
+            vec!["error.operation.postcondition".to_string()],
+            "arm {arm}"
+        );
+        let result = common::result_of(&execution, "action.read");
+        // Rejecting the claim is not proof that nothing happened: "Absence of
+        // evidence never proves absence of effects."
+        assert_eq!(
+            result.failure_phase,
+            lcl_runtime::FailurePhase::Indeterminate,
+            "arm {arm}"
+        );
+        assert_eq!(
+            result.effect_state,
+            lcl_runtime::EffectState::Indeterminate,
+            "arm {arm}"
+        );
+    }
+}
+
+/// The control: the same three arms observing nothing are not rejected.
+///
+/// Without it the rule above could be "reject every failure and refusal", which
+/// would make the check meaningless.
+#[test]
+fn an_effect_free_outcome_is_not_rejected_through_any_arm() {
+    for arm in ["completed", "failed", "refused"] {
+        let execution = run_against(&reading_document(), &mut HonestArm(arm));
+        assert!(
+            !common::errors_of(&execution, "action.read")
+                .contains(&"error.operation.postcondition".to_string()),
+            "arm {arm}: {:?}",
+            common::errors_of(&execution, "action.read")
+        );
+    }
+}

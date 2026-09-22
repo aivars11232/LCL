@@ -97,8 +97,11 @@ impl Request {
     }
 
     /// Read one request from a stream.
-    pub fn read(stream: &mut BufReader<TcpStream>) -> Result<Request, RequestError> {
-        let line = read_line(stream, MAX_REQUEST_LINE)?;
+    pub fn read(
+        stream: &mut BufReader<TcpStream>,
+        deadline: Deadline,
+    ) -> Result<Request, RequestError> {
+        let line = read_line(stream, MAX_REQUEST_LINE, deadline)?;
         if line.is_empty() {
             return Err(RequestError::Closed);
         }
@@ -143,7 +146,7 @@ impl Request {
         let mut headers = BTreeMap::new();
         let mut header_bytes = 0usize;
         loop {
-            let line = read_line(stream, MAX_REQUEST_LINE)?;
+            let line = read_line(stream, MAX_REQUEST_LINE, deadline)?;
             if line.is_empty() {
                 break;
             }
@@ -191,8 +194,19 @@ impl Request {
                 "body of {length} bytes exceeds the {MAX_BODY}-byte limit"
             )));
         }
+        // `read_exact` would retry until the whole body arrives, one socket
+        // timeout at a time, which is the same dribble the bound exists to
+        // stop. Each read is armed with what is left of the budget instead.
         let mut body = vec![0u8; length];
-        stream.read_exact(&mut body).map_err(RequestError::Io)?;
+        let mut filled = 0usize;
+        while filled < length {
+            deadline.arm(stream.get_ref())?;
+            match stream.read(&mut body[filled..]) {
+                Ok(0) => return Err(RequestError::Malformed("truncated body".into())),
+                Ok(n) => filled += n,
+                Err(e) => return Err(RequestError::Io(e)),
+            }
+        }
 
         Ok(Request {
             method,
@@ -204,11 +218,63 @@ impl Request {
     }
 }
 
+/// One total budget for reading one request, before it is authenticated.
+///
+/// A socket read timeout bounds a single idle wait, which is what stops a peer
+/// that connects and says nothing. It does not bound the request: a peer that
+/// sends one byte just inside the timeout resets it and can hold a
+/// pre-authentication slot for as long as it keeps dribbling. This is the
+/// bound on the whole of it — request line, headers and body together —
+/// measured on a monotonic clock so that a change to the system time cannot
+/// extend or collapse it.
+#[derive(Debug, Clone, Copy)]
+pub struct Deadline {
+    at: std::time::Instant,
+}
+
+impl Deadline {
+    /// A budget of `budget` from now.
+    pub fn starting_now(budget: std::time::Duration) -> Deadline {
+        Deadline {
+            at: std::time::Instant::now() + budget,
+        }
+    }
+
+    /// Give the socket what is left of the budget, or say the budget is spent.
+    ///
+    /// Called before every read, so no single read may outlast the budget and
+    /// no number of reads may add up to more than it. A platform that will not
+    /// install the timeout is refused rather than served unbounded: the bound
+    /// is the reason this request is allowed to occupy a slot at all, and
+    /// continuing without one would be keeping the slot and dropping the
+    /// protection.
+    fn arm(&self, stream: &TcpStream) -> Result<(), RequestError> {
+        let remaining = self.at.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            return Err(RequestError::Malformed(
+                "the request was not complete within the ingress budget".into(),
+            ));
+        }
+        // A zero duration means "no timeout" to the platform, so a budget with
+        // less than a millisecond left is rounded up to one rather than turned
+        // into no bound at all.
+        let slice = remaining.max(std::time::Duration::from_millis(1));
+        stream.set_read_timeout(Some(slice)).map_err(|e| {
+            RequestError::Malformed(format!("the ingress bound could not be installed: {e}"))
+        })
+    }
+}
+
 /// Read one CRLF-terminated line, without its terminator.
-fn read_line(stream: &mut BufReader<TcpStream>, limit: usize) -> Result<String, RequestError> {
+fn read_line(
+    stream: &mut BufReader<TcpStream>,
+    limit: usize,
+    deadline: Deadline,
+) -> Result<String, RequestError> {
     let mut raw = Vec::new();
     let mut byte = [0u8; 1];
     loop {
+        deadline.arm(stream.get_ref())?;
         match stream.read(&mut byte) {
             Ok(0) => {
                 if raw.is_empty() {

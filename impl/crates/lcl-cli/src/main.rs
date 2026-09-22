@@ -309,7 +309,40 @@ fn stage_command(document: Document, command: lcl_protocol::Command) -> Result<i
         lcl_protocol::Command::Run => {
             let (mut stdlib, mut host) = lcl_protocol::surface(engine, &common.grants)
                 .map_err(|e| Failure::environment(e.to_string()))?;
-            engine.run(&unit, &provider, &inputs, &mut stdlib, &mut host)
+            // `run` is the one command that can change something, so it is the
+            // one command where *when* `--locked` decides matters. The other
+            // three reach step 9 at the furthest and are judged below, against
+            // the same report they produced.
+            //
+            // A lock that is absent or unreadable disagrees with every
+            // possible source, and that is known without loading any: it is
+            // settled here, before a byte is read. A lock that disagrees about
+            // what was loaded can only be found once the units are known, so
+            // that comparison is handed to the engine, which asks it inside
+            // the walk it is about to execute — after step 4 and before step
+            // 10. Checking afterwards would report a violation already
+            // committed, and checking by loading the source a second time
+            // would admit one snapshot and execute another.
+            match common.locked {
+                false => engine.run(&unit, &provider, &inputs, &mut stdlib, &mut host),
+                true => {
+                    let locked = required_lock(&project)?;
+                    let path = project.lock_path();
+                    engine
+                        .run_admitted(
+                            &unit,
+                            &provider,
+                            &inputs,
+                            &mut stdlib,
+                            &mut host,
+                            &|report| match drift_of(&locked, report, &path) {
+                                Some(drift) => Err(drift),
+                                None => Ok(()),
+                            },
+                        )
+                        .map_err(Failure::environment)?
+                }
+            }
         }
     };
 
@@ -354,28 +387,46 @@ fn lock_of(report: &Report) -> Option<Lock> {
     )
 }
 
-/// Under `--locked`, the drift that must stop the command.
-fn locked_drift(project: &Project, report: &Report) -> Result<Option<String>, Failure> {
+/// The lock `--locked` requires, or the reason there is none to compare with.
+///
+/// Absence and unreadability are the two disagreements that need no source at
+/// all: a lock that is not there, or cannot be read, does not describe what
+/// was loaded whatever was loaded. Settling them separately is what lets a
+/// caller refuse before reading a document, rather than after running one.
+fn required_lock(project: &Project) -> Result<Lock, Failure> {
     let path = project.lock_path();
     if !path.is_file() {
-        return Ok(Some(format!(
+        return Err(Failure::environment(format!(
             "--locked was given but {} does not exist; run `lcl package lock` first",
             path.display()
         )));
     }
-    let locked = Lock::read(&path).map_err(|e| Failure::environment(e.to_string()))?;
-    let Some(actual) = lock_of(report) else {
-        return Ok(None);
-    };
+    Lock::read(&path).map_err(|e| Failure::environment(e.to_string()))
+}
+
+/// How a lock disagrees with what a report says was loaded, if it does.
+fn drift_of(locked: &Lock, report: &Report, path: &Path) -> Option<String> {
+    let actual = lock_of(report)?;
     let drift = locked.drift(&actual);
     if drift.is_empty() {
-        return Ok(None);
+        return None;
     }
     let mut detail = format!("{} does not describe what was loaded:", path.display());
     for entry in drift {
         detail.push_str(&format!("\n  {entry}"));
     }
-    Ok(Some(detail))
+    Some(detail)
+}
+
+/// Under `--locked`, the drift that must stop the command.
+///
+/// `run` settles this inside the staged walk, before its first effect. The
+/// staged commands reach step 9 at the furthest, so for them the report they
+/// produced is both the only source that was loaded and proof that nothing
+/// happened; judging it here judges that same snapshot.
+fn locked_drift(project: &Project, report: &Report) -> Result<Option<String>, Failure> {
+    let locked = required_lock(project)?;
+    Ok(drift_of(&locked, report, &project.lock_path()))
 }
 
 /// `package lock` writes; `package verify` compares.

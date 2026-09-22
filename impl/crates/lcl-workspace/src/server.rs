@@ -37,13 +37,20 @@ use std::sync::Arc;
 /// The most connections served at once. A workspace is one browser tab.
 const MAX_CONNECTIONS: usize = 64;
 
-/// How long an unfinished request may take to arrive.
+/// How long an unfinished request may take to arrive, in total.
 ///
 /// The ceiling above is right, and on its own it is also the attack: a peer
 /// that opens a connection and says nothing holds a thread and one of those
 /// slots for as long as it likes, needs no token to do it, and sixty-four of
 /// them take the workspace away from the person it belongs to. A bound makes
 /// the ceiling recoverable instead of permanent.
+///
+/// This is a bound on the whole request — line, headers and body — and not on
+/// each idle wait within it. As a per-read timeout it stopped a peer that said
+/// nothing and did nothing about a peer that said one byte just inside it and
+/// then another, which resets a per-read timeout for as long as the peer cares
+/// to keep going. Token validation happens after reading, so all of that is
+/// pre-authentication.
 ///
 /// It applies only while the request is still being read. Once a complete
 /// request has passed all three gates the bound is lifted, because a debugging
@@ -73,6 +80,7 @@ pub struct Server {
     address: SocketAddr,
     token: String,
     log: bool,
+    ingress: std::time::Duration,
 }
 
 impl Server {
@@ -90,6 +98,7 @@ impl Server {
             address,
             token: mint_token(),
             log: false,
+            ingress: INGRESS_TIMEOUT,
         })
     }
 
@@ -101,6 +110,19 @@ impl Server {
     /// never printed.
     pub fn logging(mut self, log: bool) -> Server {
         self.log = log;
+        self
+    }
+
+    /// Use a different total ingress budget than [`INGRESS_TIMEOUT`].
+    ///
+    /// For a test that has to prove the bound *ends* a slow request: waiting
+    /// the production budget would make the suite sleep for ten seconds per
+    /// case, and shortening the production constant to avoid that would be
+    /// changing the policy to suit the test. This changes only what this one
+    /// server was told to allow. The product does not call it, so the shipped
+    /// budget is the one above.
+    pub fn ingress_budget(mut self, budget: std::time::Duration) -> Server {
+        self.ingress = budget;
         self
     }
 
@@ -120,6 +142,7 @@ impl Server {
     /// Serve until the listener fails.
     pub fn serve(self, route: Arc<dyn Route>) -> std::io::Result<()> {
         let live = Arc::new(AtomicUsize::new(0));
+        let budget = self.ingress;
         let expected = Arc::new(Expected {
             token: self.token.clone(),
             address: self.address,
@@ -142,7 +165,7 @@ impl Server {
             let expected = Arc::clone(&expected);
             let live = Arc::clone(&live);
             std::thread::spawn(move || {
-                serve_one(stream, route.as_ref(), expected.as_ref());
+                serve_one(stream, route.as_ref(), expected.as_ref(), budget);
                 live.fetch_sub(1, Ordering::SeqCst);
             });
         }
@@ -197,7 +220,12 @@ impl Expected {
     }
 }
 
-fn serve_one(stream: TcpStream, route: &dyn Route, expected: &Expected) {
+fn serve_one(
+    stream: TcpStream,
+    route: &dyn Route,
+    expected: &Expected,
+    budget: std::time::Duration,
+) {
     let Ok(peer) = stream.peer_addr() else {
         return;
     };
@@ -207,8 +235,10 @@ fn serve_one(stream: TcpStream, route: &dyn Route, expected: &Expected) {
         return;
     }
 
-    // Bounded until the request is complete and admitted.
-    let _ = stream.set_read_timeout(Some(INGRESS_TIMEOUT));
+    // Bounded until the request is complete and admitted. The budget starts
+    // here, before a byte is read, and every read inside `Request::read` is
+    // given what is left of it.
+    let deadline = crate::http::Deadline::starting_now(budget);
 
     let Ok(read_half) = stream.try_clone() else {
         return;
@@ -216,7 +246,7 @@ fn serve_one(stream: TcpStream, route: &dyn Route, expected: &Expected) {
     let mut reader = BufReader::new(read_half);
     let mut write_half = stream;
 
-    let request = match Request::read(&mut reader) {
+    let request = match Request::read(&mut reader, deadline) {
         Ok(request) => request,
         Err(RequestError::Closed) => return,
         Err(e) => {

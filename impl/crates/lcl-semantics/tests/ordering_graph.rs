@@ -710,7 +710,9 @@ fn delegating_to_a_sibling_that_leads_nowhere_back_is_not_a_cycle() {
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
         );
-        let checked = common::checker().check(&resolved).expect("resolution succeeded");
+        let checked = common::checker()
+            .check(&resolved)
+            .expect("resolution succeeded");
         assert!(
             checked.diagnostics().is_empty() && checked.earlier_stage_defects().is_empty(),
             "{operation} in a {container} must statically check cleanly: {:?}",

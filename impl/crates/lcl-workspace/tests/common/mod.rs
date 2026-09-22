@@ -187,7 +187,19 @@ pub struct Running {
 
 /// Start a server on an ephemeral port with the given route.
 pub fn start(route: Arc<dyn Route>) -> Running {
-    let server = Server::bind().expect("loopback binds");
+    start_with(route, lcl_workspace::server::INGRESS_TIMEOUT)
+}
+
+/// The same, with a stated ingress budget.
+///
+/// A case that has to watch the bound *end* a request cannot wait the shipped
+/// ten seconds per case, and shortening the shipped constant to suit the suite
+/// would be changing the policy rather than testing it. Only this server is
+/// told to allow less.
+pub fn start_with(route: Arc<dyn Route>, budget: std::time::Duration) -> Running {
+    let server = Server::bind()
+        .expect("loopback binds")
+        .ingress_budget(budget);
     let address = server.address();
     let token = server.token().to_string();
     std::thread::spawn(move || {

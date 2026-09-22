@@ -71,14 +71,77 @@ use lcl_spec::SpecPackage;
 use std::collections::BTreeMap;
 use std::fmt;
 
+/// Why a pure custom operation could not produce its result.
+///
+/// A failure used to be a bare string, which meant it carried no registered
+/// identifier — so every way a key or predicate operation could fail arrived at
+/// the invoking row as `error.operation.precondition`. The rows that reference
+/// one are required to "union every applicable error of the referenced key
+/// operation", and `core.group` lists `error.operator.operand` among its own;
+/// with no channel to carry an identifier, that union could not include
+/// anything the implementation actually decided.
+///
+/// `error` is what the implementation classifies its own failure as, when it
+/// can classify it. It is a request, not a decision: the invoking row checks
+/// the identifier against its own closed `errors` list and falls back to its
+/// precondition identifier if the row does not admit it, so an implementation
+/// cannot move a diagnostic into a row that never listed it. `None` is the
+/// ordinary case — an implementation with nothing registered to say.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PureFailure {
+    /// A registered error identifier, verbatim, e.g. `error.operator.operand`.
+    pub error: Option<String>,
+    /// Non-normative human detail.
+    pub detail: String,
+}
+
+impl PureFailure {
+    /// A failure with no registered classification.
+    pub fn detail(detail: impl Into<String>) -> PureFailure {
+        PureFailure {
+            error: None,
+            detail: detail.into(),
+        }
+    }
+
+    /// A failure the implementation classifies with a registered identifier.
+    pub fn registered(error: impl Into<String>, detail: impl Into<String>) -> PureFailure {
+        PureFailure {
+            error: Some(error.into()),
+            detail: detail.into(),
+        }
+    }
+}
+
+impl From<String> for PureFailure {
+    fn from(detail: String) -> PureFailure {
+        PureFailure::detail(detail)
+    }
+}
+
+impl From<&str> for PureFailure {
+    fn from(detail: &str) -> PureFailure {
+        PureFailure::detail(detail)
+    }
+}
+
+impl fmt::Display for PureFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.error {
+            Some(error) => write!(f, "{error}: {}", self.detail),
+            None => f.write_str(&self.detail),
+        }
+    }
+}
+
 /// One installed implementation of a pure custom operation.
 ///
 /// It receives the single declared argument and returns the declared result, or
-/// a non-normative reason it could not. It is given no host, no bindings and no
-/// document, because the contract it implements is
+/// a [`PureFailure`] saying why it could not. It is given no host, no bindings
+/// and no document, because the contract it implements is
 /// `SIDE_EFFECT FALSE, DETERMINISTIC TRUE, declared_state_only` — everything it
 /// may read is in front of it.
-pub type PureOperation = Box<dyn Fn(&Value) -> Result<Value, String> + Send + Sync>;
+pub type PureOperation = Box<dyn Fn(&Value) -> Result<Value, PureFailure> + Send + Sync>;
 
 /// Why the standard library could not be assembled.
 #[derive(Debug)]

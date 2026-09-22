@@ -70,6 +70,23 @@ pub enum Resolution {
         /// Non-normative human detail.
         detail: String,
     },
+    /// The operation's own contract selected a registered error *after*
+    /// something already happened.
+    ///
+    /// The same shape as [`crate::CapabilityOutcome::Refused`], and for the
+    /// same reason: an implementation on this side of the boundary can
+    /// discover a refusal only once part of its work is done. The observation
+    /// is what had begun by then, and the runtime derives the phase and effect
+    /// state from it rather than assuming either.
+    Refused {
+        error: RuntimeError,
+        /// The `cause_identity` component, as `crate::diagnostic` uses it.
+        cause: String,
+        /// Non-normative human detail.
+        detail: String,
+        /// What had been observed when the row refused.
+        observation: Observation,
+    },
     /// The operation needs the world. This request crosses the boundary.
     ///
     /// Boxed because a resolved request is by far the largest of the three
@@ -118,6 +135,13 @@ pub struct GraphInvocation {
     pub effects: std::collections::BTreeSet<String>,
     /// The effects it recorded.
     pub observed: Vec<crate::result::ObservedEffect>,
+    /// The effect state the runtime resolved for it.
+    ///
+    /// Carried because "Absence of evidence never proves absence of effects":
+    /// an empty `observed` list does not say whether nothing began or whether
+    /// nobody could tell. A row aggregating a graph needs the difference to
+    /// report its own phase truthfully.
+    pub effect_state: crate::result::EffectState,
     /// The execution errors it raised, in order.
     pub errors: Vec<String>,
 }
@@ -144,6 +168,29 @@ impl Resolution {
     /// Cross the boundary with this resolved request.
     pub fn host(request: CapabilityRequest) -> Resolution {
         Resolution::Host(Box::new(request))
+    }
+
+    /// A registered failure that carries what had already happened.
+    ///
+    /// [`Resolution::failed`] is the *pre-effect* answer, and a row that has
+    /// changed something may not give it: `05_SEMANTICS/09` requires a
+    /// pre-effect failure to have "effect_state none, an empty
+    /// observed_effects list, and no bound or partial OUTPUT". A row that
+    /// discovers its refusal only after a concrete effect began says so with
+    /// this instead, and the runtime resolves the phase from the observation
+    /// exactly as it does for a host's.
+    pub fn refused(
+        error: RuntimeError,
+        cause: impl Into<String>,
+        detail: impl Into<String>,
+        observation: Observation,
+    ) -> Resolution {
+        Resolution::Refused {
+            error,
+            cause: cause.into(),
+            detail: detail.into(),
+            observation,
+        }
     }
 }
 

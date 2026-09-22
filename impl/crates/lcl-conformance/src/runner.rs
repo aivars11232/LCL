@@ -28,7 +28,7 @@
 //! which is data supplied by a case. A runner that could decide a case had
 //! passed would be a runner that could decide it in the absence of evidence.
 
-use lcl_checker::{Checked, Checker, Contracts as StaticContracts};
+use lcl_checker::{Checked, Checker, Contracts as StaticContracts, Outcome as CheckOutcome};
 use lcl_completion::{Completion, Contracts as CompletionContracts};
 use lcl_lexer::{Lexer, Lexicon};
 use lcl_parser::{Grammar, Parser};
@@ -578,7 +578,7 @@ impl Runner {
                 return Observed {
                     reached: Reached::Resolution,
                     primary: Some(skipped.primary.clone()),
-                    primary_stage: Some("resolution".to_string()),
+                    primary_stage: Some(skipped.stage.as_registry_str().to_string()),
                     diagnostics: vec![skipped.primary],
                     terminal_status: None,
                     checks: Vec::new(),
@@ -587,16 +587,32 @@ impl Runner {
                 }
             }
         };
-        if let Some(primary) = checked.primary() {
+        // M4 rejects for either of two channels: ordinary static diagnostics,
+        // and defects it is the first stage able to decide whose *registered*
+        // stage is earlier. Observing only the static list would record a
+        // program M4 rejected as one that reached preflight, under whatever
+        // identifier the next layer happened to report — so the probe would be
+        // scored against the wrong stage. `earliest_stage_rule` puts the
+        // earlier-stage defects first, which is the precedence
+        // `Checked::terminal_status` applies.
+        if checked.outcome() != CheckOutcome::Checked {
+            let earlier = checked.earlier_stage_defects();
+            let (primary, primary_stage) = match (earlier.first(), checked.primary()) {
+                (Some(d), _) => (d.identifier.clone(), d.stage.as_registry_str().to_string()),
+                (None, Some(d)) => (d.id.to_string(), d.stage().as_registry_str().to_string()),
+                // `outcome` is Rejected only when one of the two is non-empty.
+                (None, None) => unreachable!("a rejection names a diagnostic"),
+            };
+            let diagnostics = earlier
+                .iter()
+                .map(|d| d.identifier.clone())
+                .chain(checked.diagnostics().iter().map(|d| d.id.to_string()))
+                .collect();
             return Observed {
                 reached: Reached::StaticChecking,
-                primary: Some(primary.id.to_string()),
-                primary_stage: Some(primary.stage().as_registry_str().to_string()),
-                diagnostics: checked
-                    .diagnostics()
-                    .iter()
-                    .map(|d| d.id.to_string())
-                    .collect(),
+                primary: Some(primary),
+                primary_stage: Some(primary_stage),
+                diagnostics,
                 terminal_status: None,
                 checks: Vec::new(),
                 outputs: Vec::new(),
@@ -610,7 +626,7 @@ impl Runner {
                 return Observed {
                     reached: Reached::StaticChecking,
                     primary: Some(skipped.primary.clone()),
-                    primary_stage: Some("static_or_expression".to_string()),
+                    primary_stage: Some(skipped.stage.as_registry_str().to_string()),
                     diagnostics: vec![skipped.primary],
                     terminal_status: None,
                     checks: Vec::new(),

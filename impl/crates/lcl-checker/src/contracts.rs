@@ -399,6 +399,11 @@ pub struct Contracts {
     /// The registered diagnostic model, kept so an identifier outside this
     /// stage can still be reported with its own registered stage and status.
     diagnostics: DiagnosticRegistry,
+    /// `diagnostic_selection.specificity_rank.default_for_every_error`, the
+    /// rank the registry assigns to any identifier it does not override. An
+    /// identifier outside this stage has no override table here, so this is
+    /// the registry's own answer for one rather than an invented number.
+    default_specificity_rank: u64,
     errors: BTreeMap<StaticError, RegisteredStaticError>,
     supersedes: BTreeMap<StaticError, BTreeSet<StaticError>>,
     type_rows: BTreeSet<String>,
@@ -485,7 +490,7 @@ impl Contracts {
 
         let diagnostics =
             DiagnosticRegistry::load(spec).map_err(ContractsLoadError::Diagnostics)?;
-        let (errors, supersedes) = static_errors(&diagnostics, statuses)?;
+        let (errors, supersedes, default_specificity_rank) = static_errors(&diagnostics, statuses)?;
 
         let type_rows: BTreeSet<String> = types
             .get("types")
@@ -586,6 +591,7 @@ impl Contracts {
 
         Ok(Contracts {
             diagnostics,
+            default_specificity_rank,
             errors,
             supersedes,
             type_rows,
@@ -627,6 +633,15 @@ impl Contracts {
     /// The registered diagnostic model, for identifiers outside this stage.
     pub fn diagnostics(&self) -> &DiagnosticRegistry {
         &self.diagnostics
+    }
+
+    /// The rank the registry gives an identifier it does not override.
+    ///
+    /// [`Contracts::error`] carries the resolved rank of a static identifier.
+    /// A caller reporting an identifier from another stage has no such row,
+    /// and this is what `diagnostic_selection` says to use for it.
+    pub fn default_specificity_rank(&self) -> u64 {
+        self.default_specificity_rank
     }
 
     pub(crate) fn supersedes(&self) -> &BTreeMap<StaticError, BTreeSet<StaticError>> {
@@ -781,6 +796,8 @@ fn object_map(node: &Json, key: &str) -> Result<BTreeMap<String, String>, Contra
 type StaticErrorTables = (
     BTreeMap<StaticError, RegisteredStaticError>,
     BTreeMap<StaticError, BTreeSet<StaticError>>,
+    // `diagnostic_selection.specificity_rank.default_for_every_error`.
+    u64,
 );
 
 fn static_errors(
@@ -857,7 +874,7 @@ fn static_errors(
             },
         );
     }
-    Ok((errors, supersedes))
+    Ok((errors, supersedes, default_rank))
 }
 
 fn operator_row(name: &str, row: &Json) -> Result<OperatorRow, ContractsLoadError> {

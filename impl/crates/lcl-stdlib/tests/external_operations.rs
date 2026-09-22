@@ -1503,7 +1503,11 @@ fn core_execute_runs_a_delegated_target_that_nothing_else_schedules() {
     assert_eq!(inner.len(), 1, "the delegated unit ran exactly once");
     assert_eq!(inner[0].status, "status.succeeded");
     assert_eq!(
-        inner[0].fields.get("value").map(ToString::to_string).as_deref(),
+        inner[0]
+            .fields
+            .get("value")
+            .map(ToString::to_string)
+            .as_deref(),
         Some("3"),
         "the delegated unit computed its own result"
     );
@@ -1516,7 +1520,11 @@ fn core_execute_runs_a_delegated_target_that_nothing_else_schedules() {
         Some(&Value::Identifier("graph".to_string()))
     );
     assert_eq!(
-        wrapper.fields.get("value").map(ToString::to_string).as_deref(),
+        wrapper
+            .fields
+            .get("value")
+            .map(ToString::to_string)
+            .as_deref(),
         Some("3"),
         "the row reports the completed graph's material primary result"
     );
@@ -1545,7 +1553,11 @@ fn a_delegated_target_that_is_also_scheduled_runs_as_both() {
     for record in &inner {
         assert_eq!(record.status, "status.succeeded");
         assert_eq!(
-            record.fields.get("value").map(ToString::to_string).as_deref(),
+            record
+                .fields
+                .get("value")
+                .map(ToString::to_string)
+                .as_deref(),
             Some("3")
         );
     }
@@ -1553,8 +1565,898 @@ fn a_delegated_target_that_is_also_scheduled_runs_as_both() {
     let wrapper = common::result_of(&execution, "action.wrapper");
     assert_eq!(wrapper.status, "status.succeeded");
     assert_eq!(
-        wrapper.fields.get("value").map(ToString::to_string).as_deref(),
+        wrapper
+            .fields
+            .get("value")
+            .map(ToString::to_string)
+            .as_deref(),
         Some("3"),
         "delegation reports its own child invocation, not the scheduled one"
     );
+}
+
+/// Two wrappers, each delegating to the same inner action.
+///
+/// `05_SEMANTICS/01`: "Explicit graph-valued operation invocations create their
+/// own child invocation under the same rules". Two invocations are two
+/// invocations whoever made them, so each wrapper has a child of its own, each
+/// child keeps its own record, and each wrapper reports what *its* child did.
+/// A caller that shared one child between them would be reporting another
+/// invocation's work as its own.
+fn two_wrappers_document() -> String {
+    "LCL:\n    VERSION: \"0.1.0\"\n\nSPECIFICATION:\n    ID: example.stdlib\n    \
+     NAME: \"Standard library fixture\"\n    VERSION: \"1.0.0\"\n    KIND: kind.task\n\
+     \nACTION:\n    ID: action.inner\n    OPERATION: core.calculate\n    \
+     PARAMETER:\n        NAME: expression\n        TYPE: STRING\n        \
+     REQUIRED: TRUE\n        VALUE: \"1 + 2\"\n\
+     \nACTION:\n    ID: action.first\n    OPERATION: core.execute\n    \
+     TARGET: REF(action.inner)\n\
+     \nACTION:\n    ID: action.second\n    OPERATION: core.execute\n    \
+     TARGET: REF(action.inner)\n\
+     \nGOAL:\n    ID: goal.subject\n    ASSERT: TRUE\n\
+     \nSUCCESS:\n    ID: success.subject\n    ALL: [TRUE]\n\
+     \nTASK:\n    ID: task.subject\n    GOAL: REF(goal.subject)\n    \
+     ACTION: [REF(action.first), REF(action.second)]\n    SUCCESS: REF(success.subject)\n\
+     \nEXECUTE:\n    REFERENCE: REF(task.subject)\n"
+        .to_string()
+}
+
+#[test]
+fn two_wrappers_over_one_action_each_keep_their_own_invocation() {
+    let execution = common::run(&two_wrappers_document());
+
+    let inner = results_for(&execution, "action.inner");
+    assert_eq!(
+        inner.len(),
+        2,
+        "each delegation is its own child invocation, so each leaves its own record"
+    );
+    for record in &inner {
+        assert_eq!(record.status, "status.succeeded");
+        assert_eq!(
+            record
+                .fields
+                .get("value")
+                .map(ToString::to_string)
+                .as_deref(),
+            Some("3")
+        );
+    }
+
+    for wrapper in ["action.first", "action.second"] {
+        let result = common::result_of(&execution, wrapper);
+        assert_eq!(result.status, "status.succeeded", "{wrapper}");
+        assert_eq!(
+            result.fields.get("mode"),
+            Some(&Value::Identifier("graph".to_string())),
+            "{wrapper}"
+        );
+        assert_eq!(
+            result
+                .fields
+                .get("value")
+                .map(ToString::to_string)
+                .as_deref(),
+            Some("3"),
+            "{wrapper} reports its own child's material primary result"
+        );
+    }
+}
+
+/// A delegation reached from inside a loop, once per iteration.
+///
+/// "Explicit bounded FOR EACH instances ... replicate their source template
+/// with distinct invocation identities", so the wrapper runs once per item and
+/// each run has a child of its own. An identity derived from how many graphs
+/// are open rather than from the caller would give every iteration the same
+/// one.
+fn looping_delegation_document(collection: &str) -> String {
+    format!(
+        "LCL:\n    VERSION: \"0.1.0\"\n\nSPECIFICATION:\n    ID: example.stdlib\n    \
+         NAME: \"Standard library fixture\"\n    VERSION: \"1.0.0\"\n    KIND: kind.task\n\
+         \nINPUT:\n    ID: input.items\n    TYPE: LIST[INTEGER]\n    VALUE: {collection}\n\
+         \nACTION:\n    ID: action.inner\n    OPERATION: core.calculate\n    \
+         PARAMETER:\n        NAME: expression\n        TYPE: STRING\n        \
+         REQUIRED: TRUE\n        VALUE: \"1 + 2\"\n\
+         \nGOAL:\n    ID: goal.subject\n    ASSERT: TRUE\n\
+         \nSEQUENCE:\n    ID: sequence.loop\n    FOR EACH item IN REF(input.items):\n        \
+         STEP:\n            ID: step.item\n            ACTION:\n                \
+         ID: action.wrapper\n                OPERATION: core.execute\n                \
+         TARGET: REF(action.inner)\n\
+         \nSUCCESS:\n    ID: success.subject\n    ALL: [TRUE]\n\
+         \nTASK:\n    ID: task.subject\n    GOAL: REF(goal.subject)\n    \
+         INPUT: REF(input.items)\n    SEQUENCE: REF(sequence.loop)\n    \
+         SUCCESS: REF(success.subject)\n\
+         \nEXECUTE:\n    REFERENCE: REF(task.subject)\n"
+    )
+}
+
+#[test]
+fn a_delegation_inside_a_loop_keeps_one_child_invocation_per_iteration() {
+    let execution = common::run(&looping_delegation_document("[1, 2, 3]"));
+
+    assert_eq!(
+        results_for(&execution, "action.wrapper").len(),
+        3,
+        "the wrapper ran once per iteration"
+    );
+    let inner = results_for(&execution, "action.inner");
+    assert_eq!(
+        inner.len(),
+        3,
+        "each iteration's delegation is its own child invocation"
+    );
+    for record in &inner {
+        assert_eq!(record.status, "status.succeeded");
+        assert_eq!(
+            record
+                .fields
+                .get("value")
+                .map(ToString::to_string)
+                .as_deref(),
+            Some("3")
+        );
+    }
+    for record in results_for(&execution, "action.wrapper") {
+        assert_eq!(
+            record
+                .fields
+                .get("value")
+                .map(ToString::to_string)
+                .as_deref(),
+            Some("3"),
+            "every iteration's wrapper reports its own child's result"
+        );
+    }
+}
+
+/// Nested delegation: a wrapper whose target is itself a wrapper.
+#[test]
+fn nested_delegations_each_keep_their_own_invocation() {
+    let source = "LCL:\n    VERSION: \"0.1.0\"\n\nSPECIFICATION:\n    ID: example.stdlib\n    \
+         NAME: \"Standard library fixture\"\n    VERSION: \"1.0.0\"\n    KIND: kind.task\n\
+         \nACTION:\n    ID: action.inner\n    OPERATION: core.calculate\n    \
+         PARAMETER:\n        NAME: expression\n        TYPE: STRING\n        \
+         REQUIRED: TRUE\n        VALUE: \"1 + 2\"\n\
+         \nACTION:\n    ID: action.middle\n    OPERATION: core.execute\n    \
+         TARGET: REF(action.inner)\n\
+         \nACTION:\n    ID: action.outer\n    OPERATION: core.execute\n    \
+         TARGET: REF(action.middle)\n\
+         \nGOAL:\n    ID: goal.subject\n    ASSERT: TRUE\n\
+         \nSUCCESS:\n    ID: success.subject\n    ALL: [TRUE]\n\
+         \nTASK:\n    ID: task.subject\n    GOAL: REF(goal.subject)\n    \
+         ACTION: REF(action.outer)\n    SUCCESS: REF(success.subject)\n\
+         \nEXECUTE:\n    REFERENCE: REF(task.subject)\n";
+    let execution = common::run(source);
+
+    assert_eq!(results_for(&execution, "action.inner").len(), 1);
+    assert_eq!(results_for(&execution, "action.middle").len(), 1);
+    for id in ["action.inner", "action.middle", "action.outer"] {
+        let record = common::result_of(&execution, id);
+        assert_eq!(record.status, "status.succeeded", "{id}");
+        assert_eq!(
+            record
+                .fields
+                .get("value")
+                .map(ToString::to_string)
+                .as_deref(),
+            Some("3"),
+            "{id} carries the value through the nesting"
+        );
+    }
+}
+
+/// The same document, run twice, produces the same evidence.
+///
+/// Identities derived from a counter that outlives a call are stable only
+/// until something else runs first; identities derived from the caller are not
+/// order-dependent at all.
+#[test]
+fn delegated_invocation_identities_are_stable_across_runs() {
+    let shape = |execution: &Execution| -> Vec<(String, String, String)> {
+        execution
+            .invocations()
+            .iter()
+            .filter_map(|r| {
+                let result = r.result.as_ref()?;
+                Some((
+                    r.declaration.clone().unwrap_or_default(),
+                    result.status.clone(),
+                    result
+                        .fields
+                        .get("value")
+                        .map(ToString::to_string)
+                        .unwrap_or_default(),
+                ))
+            })
+            .collect()
+    };
+    let first = common::run(&two_wrappers_document());
+    let second = common::run(&two_wrappers_document());
+    assert_eq!(shape(&first), shape(&second));
+    assert_eq!(shape(&first).len(), 4, "{:?}", shape(&first));
+}
+
+/// Execute one document against an installed filesystem and profile set.
+fn run_graph_fs(
+    source: &str,
+    filesystem: lcl_stdlib::MemoryFileSystem,
+    grants: lcl_capabilities::Grants,
+) -> Execution {
+    let mut stdlib = common::stdlib().with_profiles(lcl_stdlib::filesystem_profiles());
+    let mut host = lcl_stdlib::HostAdapter::new(grants).with_filesystem(filesystem);
+    let fixture = common::fixture(source);
+    lcl_runtime::Runtime::new(common::contracts())
+        .execute_with(
+            &fixture.planned,
+            &fixture.checked,
+            &fixture.resolved,
+            &mut stdlib,
+            &mut host,
+        )
+        .expect("the document planned")
+}
+
+// ---------------------------------------------------------------------------
+// RO-04: a graph row reports what its graph actually did
+// ---------------------------------------------------------------------------
+
+/// A wrapper delegating to a SEQUENCE of two writes.
+fn graph_writes_document(first: &str, second: &str) -> String {
+    format!(
+        "LCL:\n    VERSION: \"0.1.0\"\n\nSPECIFICATION:\n    ID: example.stdlib\n    \
+         NAME: \"Standard library fixture\"\n    VERSION: \"1.0.0\"\n    KIND: kind.task\n\
+         \nDATA:\n    ID: data.first\n    TYPE: PATH\n    VALUE: PATH({first:?})\n\
+         \nDATA:\n    ID: data.second\n    TYPE: PATH\n    VALUE: PATH({second:?})\n\
+         \nACTION:\n    ID: action.first\n    OPERATION: core.write\n    \
+         TARGET: REF(data.first)\n    PARAMETER:\n        NAME: content\n        \
+         TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: \"one\"\n    \
+         PARAMETER:\n        NAME: create_if_missing\n        TYPE: BOOLEAN\n        \
+         REQUIRED: FALSE\n        VALUE: TRUE\n\
+         \nACTION:\n    ID: action.second\n    OPERATION: core.write\n    \
+         TARGET: REF(data.second)\n    PARAMETER:\n        NAME: content\n        \
+         TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: \"two\"\n    \
+         PARAMETER:\n        NAME: create_if_missing\n        TYPE: BOOLEAN\n        \
+         REQUIRED: FALSE\n        VALUE: TRUE\n\
+         \nSEQUENCE:\n    ID: sequence.both\n    STEP:\n        ID: step.first\n        \
+         ACTION: REF(action.first)\n    STEP:\n        ID: step.second\n        \
+         ACTION: REF(action.second)\n\
+         \nACTION:\n    ID: action.wrapper\n    OPERATION: core.execute\n    \
+         TARGET: REF(sequence.both)\n\
+         \nGOAL:\n    ID: goal.subject\n    ASSERT: TRUE\n\
+         \nSUCCESS:\n    ID: success.subject\n    ALL: [TRUE]\n\
+         \nTASK:\n    ID: task.subject\n    GOAL: REF(goal.subject)\n    \
+         ACTION: REF(action.wrapper)\n    SUCCESS: REF(success.subject)\n\
+         \nEXECUTE:\n    REFERENCE: REF(task.subject)\n"
+    )
+}
+
+/// Two writes to two different files are two effects, not one.
+#[test]
+fn a_graph_of_two_writes_reports_both_targets() {
+    let source = graph_writes_document("/srv/data/one.txt", "/srv/data/two.txt");
+    let filesystem = lcl_stdlib::MemoryFileSystem::new().with_scope("/srv/data");
+    let execution = run_graph_fs(
+        &source,
+        filesystem,
+        lcl_capabilities::Grants::none().permit_write("/srv/data"),
+    );
+
+    for child in ["action.first", "action.second"] {
+        let record = common::result_of(&execution, child);
+        assert_eq!(record.status, "status.succeeded", "{child}");
+        assert_eq!(record.observed_effects.len(), 1, "{child}");
+    }
+
+    let wrapper = common::result_of(&execution, "action.wrapper");
+    assert_eq!(
+        wrapper.status, "status.succeeded",
+        "{:?}",
+        wrapper.execution_errors
+    );
+    assert_eq!(
+        wrapper.observed_effects.len(),
+        2,
+        "two writes to different targets are two effects: {:?}",
+        wrapper.observed_effects
+    );
+    assert_eq!(
+        wrapper.effect_state,
+        lcl_runtime::EffectState::Applied,
+        "the graph changed something"
+    );
+}
+
+/// A write that happened, then a child that failed.
+///
+/// `05_SEMANTICS/09`: a pre-effect failure "requires effect_state none, an
+/// empty observed_effects list, and no bound or partial OUTPUT", and "Absence
+/// of evidence never proves absence of effects". A graph whose first child
+/// wrote a file has evidence of an effect, so its row may not report one.
+#[test]
+fn a_graph_that_fails_after_writing_keeps_the_effect_it_had() {
+    // The second target is outside the granted scope, so its write fails while
+    // the first has already happened.
+    let source = graph_writes_document("/srv/data/one.txt", "/srv/other/two.txt");
+    let filesystem = lcl_stdlib::MemoryFileSystem::new()
+        .with_scope("/srv/data")
+        .with_scope("/srv/other");
+    let execution = run_graph_fs(
+        &source,
+        filesystem,
+        lcl_capabilities::Grants::none().permit_write("/srv/data"),
+    );
+
+    let first = common::result_of(&execution, "action.first");
+    assert_eq!(first.status, "status.succeeded", "the first write happened");
+    assert_eq!(first.observed_effects.len(), 1);
+
+    let wrapper = common::result_of(&execution, "action.wrapper");
+    assert_ne!(
+        wrapper.status, "status.succeeded",
+        "a graph with a failed child did not complete"
+    );
+    assert_ne!(
+        wrapper.effect_state,
+        lcl_runtime::EffectState::None,
+        "the graph's first child wrote a file: {:?}",
+        wrapper.observed_effects
+    );
+    assert!(
+        !wrapper.observed_effects.is_empty(),
+        "the effect that happened is retained rather than dropped"
+    );
+}
+
+/// The control: a graph that genuinely failed before any effect still says so.
+///
+/// Without it, the repair above could be "always claim an effect", which is the
+/// opposite error and equally untrue. Here no filesystem is installed, so
+/// `core.write`'s implementation-profile role selects nothing and the row fails
+/// its precondition before effects — and the wrapper is entitled to report
+/// exactly that.
+#[test]
+fn a_graph_that_failed_before_any_effect_reports_no_effect() {
+    let source = graph_writes_document("/srv/data/one.txt", "/srv/data/two.txt");
+    let execution = common::run(&source);
+
+    let first = common::result_of(&execution, "action.first");
+    assert_ne!(first.status, "status.succeeded");
+    assert_eq!(first.effect_state, lcl_runtime::EffectState::None);
+    assert!(first.observed_effects.is_empty());
+
+    let wrapper = common::result_of(&execution, "action.wrapper");
+    assert_ne!(wrapper.status, "status.succeeded");
+    assert_eq!(
+        wrapper.effect_state,
+        lcl_runtime::EffectState::None,
+        "nothing began, and every invocation established that"
+    );
+    assert!(
+        wrapper.observed_effects.is_empty(),
+        "{:?}",
+        wrapper.observed_effects
+    );
+}
+
+// ---------------------------------------------------------------------------
+// RO-05: a recovered attempt is evidence, not the verdict
+// ---------------------------------------------------------------------------
+
+/// A completion carrying the fields `core.inspect` publishes.
+///
+/// `MockHost::completed()` observes nothing at all, which the row reports as a
+/// host limitation — correct, but not the successful attempt a recovery case
+/// needs.
+fn inspected() -> lcl_runtime::CapabilityOutcome {
+    lcl_runtime::CapabilityOutcome::Completed(
+        lcl_runtime::Observation::none()
+            .with("value", Value::Text("inspection completed".into()))
+            .with("evidence", Value::List(Vec::new())),
+    )
+}
+
+/// A wrapper over an action that fails once and succeeds on its retry.
+fn recovering_graph_document(limit: u32) -> String {
+    format!(
+        "LCL:\n    VERSION: \"0.1.0\"\n\nSPECIFICATION:\n    ID: example.stdlib\n    \
+         NAME: \"Standard library fixture\"\n    VERSION: \"1.0.0\"\n    KIND: kind.task\n\
+         \nDATA:\n    ID: data.target\n    TYPE: PATH\n    VALUE: PATH(\"/srv/data/report.txt\")\n\
+         \nHANDLER:\n    ID: handler.retry\n    EVENT: event.host_constraint\n    \
+         OPERATION: core.retry\n    LIMIT: {limit}\n\
+         \nACTION:\n    ID: action.inner\n    OPERATION: core.inspect\n    \
+         TARGET: REF(data.target)\n    RETRY:\n        LIMIT: {limit}\n        \
+         HANDLER: REF(handler.retry)\n\
+         \nACTION:\n    ID: action.wrapper\n    OPERATION: core.execute\n    \
+         TARGET: REF(action.inner)\n\
+         \nGOAL:\n    ID: goal.subject\n    ASSERT: TRUE\n\
+         \nSUCCESS:\n    ID: success.subject\n    ALL: [TRUE]\n\
+         \nTASK:\n    ID: task.subject\n    GOAL: REF(goal.subject)\n    \
+         ACTION: REF(action.wrapper)\n    HANDLER: REF(handler.retry)\n    \
+         SUCCESS: REF(success.subject)\n\
+         \nEXECUTE:\n    REFERENCE: REF(task.subject)\n"
+    )
+}
+
+/// The graph's outcome is its final state, and every attempt survives.
+///
+/// "A successful retry recovers the originating failure under the handler
+/// contract." The failed first attempt stays in the record as evidence of what
+/// happened; what it is not is the graph's verdict.
+#[test]
+fn a_child_recovered_by_its_retry_does_not_fail_the_graph() {
+    let host = lcl_runtime::MockHost::new().script(
+        "core.inspect",
+        vec![
+            lcl_runtime::CapabilityOutcome::Unavailable("transient".to_string()),
+            inspected(),
+        ],
+    );
+    let execution = common::run_with(&recovering_graph_document(2), common::stdlib(), host);
+
+    let attempts = results_for(&execution, "action.inner");
+    assert_eq!(attempts.len(), 2, "both attempts are retained evidence");
+    assert_ne!(attempts[0].status, "status.succeeded", "the first failed");
+    assert_eq!(
+        attempts[1].status, "status.succeeded",
+        "the retry succeeded"
+    );
+
+    let wrapper = common::result_of(&execution, "action.wrapper");
+    assert_eq!(
+        wrapper.status, "status.succeeded",
+        "the graph's governing final state is the recovered one: {:?}",
+        wrapper.execution_errors
+    );
+}
+
+/// The control: a failure its retry does not recover still fails the graph.
+#[test]
+fn a_child_its_retry_never_recovers_fails_the_graph() {
+    let host = lcl_runtime::MockHost::new().script(
+        "core.inspect",
+        vec![
+            lcl_runtime::CapabilityOutcome::Unavailable("first".to_string()),
+            lcl_runtime::CapabilityOutcome::Unavailable("second".to_string()),
+            lcl_runtime::CapabilityOutcome::Unavailable("third".to_string()),
+        ],
+    );
+    let execution = common::run_with(&recovering_graph_document(2), common::stdlib(), host);
+
+    let attempts = results_for(&execution, "action.inner");
+    assert!(attempts.len() >= 2, "the attempts it was allowed are kept");
+    assert!(attempts.iter().all(|r| r.status != "status.succeeded"));
+
+    let wrapper = common::result_of(&execution, "action.wrapper");
+    assert_ne!(
+        wrapper.status, "status.succeeded",
+        "nothing recovered, so the graph did not complete"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// V-01: what a delegated TASK's own SUCCESS decides
+// ---------------------------------------------------------------------------
+//
+// The question is whether `core.execute` over a TASK enforces that TASK's own
+// SUCCESS, required outputs and evidence, or only aggregates its actions.
+//
+// `05_SEMANTICS/10` answers it, and the answer is scoped every time it is
+// stated: "At a TASK **execution root**, status.succeeded is legal only when
+// its SUCCESS is TRUE"; "**ROOT SUCCESS** — A TASK root evaluates its
+// referenced SUCCESS"; "The **execution root** still fails whenever its own
+// required SUCCESS, OUTPUT, rule, or evidence condition is unsatisfied." And
+// for anything that is not the root: "A result record's status is instead
+// scoped to the producer invocation. Producer status.succeeded means that
+// invocation completed its contract; its domain outcome remains independent."
+//
+// A delegated TASK is a child invocation in the caller's graph, not a root —
+// "Explicit graph-valued operation invocations create their own child
+// invocation under the same rules" appears under CANDIDATE GRAPH, where "the
+// same rules" are the activation rules that sentence is about. So the expected
+// behaviour is that the inner SUCCESS does not run, and the row reports what
+// the graph's producers did.
+//
+// These cases record that behaviour so that a later change cannot alter it
+// silently, and so the reading is attached to evidence rather than assumed.
+
+/// An outer TASK delegating to an inner TASK whose own SUCCESS is FALSE.
+fn delegated_task_document(inner_success: &str) -> String {
+    format!(
+        "LCL:\n    VERSION: \"0.1.0\"\n\nSPECIFICATION:\n    ID: example.stdlib\n    \
+         NAME: \"Standard library fixture\"\n    VERSION: \"1.0.0\"\n    KIND: kind.task\n\
+         \nACTION:\n    ID: action.inner\n    OPERATION: core.calculate\n    \
+         PARAMETER:\n        NAME: expression\n        TYPE: STRING\n        \
+         REQUIRED: TRUE\n        VALUE: \"1 + 2\"\n\
+         \nGOAL:\n    ID: goal.inner\n    ASSERT: TRUE\n\
+         \nSUCCESS:\n    ID: success.inner\n    ALL: [{inner_success}]\n\
+         \nTASK:\n    ID: task.inner\n    GOAL: REF(goal.inner)\n    \
+         ACTION: REF(action.inner)\n    SUCCESS: REF(success.inner)\n\
+         \nACTION:\n    ID: action.wrapper\n    OPERATION: core.execute\n    \
+         TARGET: REF(task.inner)\n\
+         \nGOAL:\n    ID: goal.outer\n    ASSERT: TRUE\n\
+         \nSUCCESS:\n    ID: success.outer\n    ALL: [TRUE]\n\
+         \nTASK:\n    ID: task.outer\n    GOAL: REF(goal.outer)\n    \
+         ACTION: REF(action.wrapper)\n    SUCCESS: REF(success.outer)\n\
+         \nEXECUTE:\n    REFERENCE: REF(task.outer)\n"
+    )
+}
+
+/// The fully satisfied control: the intended path really is reached.
+///
+/// Without it, a rejection for some unrelated reason would look like the
+/// answer to the question being asked.
+#[test]
+fn a_delegated_task_whose_success_is_true_runs_and_succeeds() {
+    let execution = common::run(&delegated_task_document("TRUE"));
+
+    let inner = common::result_of(&execution, "action.inner");
+    assert_eq!(inner.status, "status.succeeded");
+    let wrapper = common::result_of(&execution, "action.wrapper");
+    assert_eq!(
+        wrapper.status, "status.succeeded",
+        "{:?}",
+        wrapper.execution_errors
+    );
+    assert_eq!(
+        wrapper.fields.get("mode"),
+        Some(&Value::Identifier("graph".to_string()))
+    );
+}
+
+/// A delegated TASK's own SUCCESS is not a root obligation, and is not run.
+#[test]
+fn a_delegated_tasks_own_success_does_not_govern_the_delegating_row() {
+    let execution = common::run(&delegated_task_document("FALSE"));
+
+    // The inner producer completed its contract. "Producer status.succeeded
+    // means that invocation completed its contract; its domain outcome remains
+    // independent."
+    let inner = common::result_of(&execution, "action.inner");
+    assert_eq!(inner.status, "status.succeeded");
+    assert_eq!(
+        inner
+            .fields
+            .get("value")
+            .map(ToString::to_string)
+            .as_deref(),
+        Some("3")
+    );
+
+    // The row reports what the graph's producers did. It does not evaluate the
+    // inner SUCCESS, because that obligation belongs to a root and this TASK
+    // is not one.
+    let wrapper = common::result_of(&execution, "action.wrapper");
+    assert_eq!(
+        wrapper.status, "status.succeeded",
+        "the delegated TASK's own SUCCESS is not this row's contract: {:?}",
+        wrapper.execution_errors
+    );
+
+    // And the obligation that *is* a root's is unaffected: the outer SUCCESS
+    // is what decides the run.
+    assert!(
+        !execution
+            .diagnostics()
+            .iter()
+            .any(|d| d.id.to_string() == "error.success.unsatisfied"),
+        "the outer root's own SUCCESS is TRUE: {:?}",
+        execution
+            .diagnostics()
+            .iter()
+            .map(|d| d.id.to_string())
+            .collect::<Vec<_>>()
+    );
+}
+
+/// The same question for a required OUTPUT the inner TASK never binds.
+///
+/// "all required outputs are fully bound and valid" is stated in the same
+/// sentence as the root SUCCESS rule and is scoped the same way, so it is
+/// asked here too rather than assumed to follow.
+#[test]
+fn a_delegated_tasks_unbound_required_output_does_not_govern_the_row() {
+    let source = "LCL:\n    VERSION: \"0.1.0\"\n\nSPECIFICATION:\n    ID: example.stdlib\n    \
+         NAME: \"Standard library fixture\"\n    VERSION: \"1.0.0\"\n    KIND: kind.task\n\
+         \nOUTPUT:\n    ID: output.needed\n    TYPE: INTEGER\n    \
+         FORMAT: format.json\n    REQUIRED: TRUE\n\
+         \nACTION:\n    ID: action.inner\n    OPERATION: core.calculate\n    \
+         PARAMETER:\n        NAME: expression\n        TYPE: STRING\n        \
+         REQUIRED: TRUE\n        VALUE: \"1 + 2\"\n\
+         \nGOAL:\n    ID: goal.inner\n    ASSERT: TRUE\n\
+         \nSUCCESS:\n    ID: success.inner\n    ALL: [REF(output.needed)]\n\
+         \nTASK:\n    ID: task.inner\n    GOAL: REF(goal.inner)\n    \
+         ACTION: REF(action.inner)\n    OUTPUT: REF(output.needed)\n    \
+         SUCCESS: REF(success.inner)\n\
+         \nACTION:\n    ID: action.wrapper\n    OPERATION: core.execute\n    \
+         TARGET: REF(task.inner)\n\
+         \nGOAL:\n    ID: goal.outer\n    ASSERT: TRUE\n\
+         \nSUCCESS:\n    ID: success.outer\n    ALL: [TRUE]\n\
+         \nTASK:\n    ID: task.outer\n    GOAL: REF(goal.outer)\n    \
+         ACTION: REF(action.wrapper)\n    SUCCESS: REF(success.outer)\n\
+         \nEXECUTE:\n    REFERENCE: REF(task.outer)\n";
+    let execution = common::run(source);
+
+    // The intended path was reached: the inner producer really ran.
+    let inner = common::result_of(&execution, "action.inner");
+    assert_eq!(
+        inner.status, "status.succeeded",
+        "{:?}",
+        inner.execution_errors
+    );
+
+    let wrapper = common::result_of(&execution, "action.wrapper");
+    assert_eq!(
+        wrapper.status, "status.succeeded",
+        "the inner TASK's OUTPUT obligation is a root's, not this row's: {:?}",
+        wrapper.execution_errors
+    );
+}
+
+// ---------------------------------------------------------------------------
+// RO-06: core.modify honours its selection, or refuses it
+// ---------------------------------------------------------------------------
+//
+// `operations_v0.1.0.json#/contracts/core.modify` means "Change **selected**
+// content or properties of an existing target", takes an optional `selection`
+// — "Exact bounded selection" — and states the postcondition "only declared
+// selection/properties change".
+//
+// The shipped adapter read `change` and wrote it over the whole target with
+// `WriteMode::ReplaceExisting`, whatever `selection` said. That is the one
+// reading the postcondition forbids: with a selection supplied, everything
+// outside it changed too.
+//
+// The registry does not define a selection vocabulary for this row. `range` is
+// defined for `core.read` and is scoped to it, and no `change profile` fixes
+// what a bounded *replacement* means — what happens to a line terminator under
+// `unit: line`, for instance, is not something this contract decides. So a
+// supplied selection is refused before anything is written, rather than being
+// interpreted as a whole-target replacement or given a syntax this build made
+// up. Bounded modification therefore remains an unimplemented capability, not
+// a supported one; the refusal only removes the unsafe acceptance.
+
+/// The seeded content, in three distinguishable parts.
+const MODIFY_BEFORE: &str = "KEEP-BEFORE|SELECTED|KEEP-AFTER";
+
+/// A document that modifies a file and then reads it back.
+///
+/// The bytes are asserted through the product's own `core.read`, so what the
+/// test observes is what a document would observe.
+///
+/// The modification is `REQUIRED: FALSE` so that its failure does not halt the
+/// read: "failure of a required action ... nothing *after* an unrecovered
+/// required failure is reachable" is correct, and it would leave every refusal
+/// case with no way to look at the file. The question here is what the bytes
+/// are, so the read has to run.
+fn modify_then_read(parameters: &str) -> Execution {
+    let source = format!(
+        "LCL:\n    VERSION: \"0.1.0\"\n\nSPECIFICATION:\n    ID: example.stdlib\n    \
+         NAME: \"Standard library fixture\"\n    VERSION: \"1.0.0\"\n    KIND: kind.task\n\
+         \nDATA:\n    ID: data.target\n    TYPE: PATH\n    VALUE: PATH(\"/srv/data/doc.txt\")\n\
+         \nACTION:\n    ID: action.modify\n    OPERATION: core.modify\n    \
+         TARGET: REF(data.target)\n    PARAMETER:\n        NAME: change\n        \
+         TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: \"REPLACED\"{parameters}\n    \
+         REQUIRED: FALSE\n\
+         \nACTION:\n    ID: action.read\n    OPERATION: core.read\n    \
+         TARGET: REF(data.target)\n\
+         \nGOAL:\n    ID: goal.subject\n    ASSERT: TRUE\n\
+         \nSUCCESS:\n    ID: success.subject\n    ALL: [TRUE]\n\
+         \nTASK:\n    ID: task.subject\n    GOAL: REF(goal.subject)\n    \
+         ACTION: [REF(action.modify), REF(action.read)]\n    SUCCESS: REF(success.subject)\n\
+         \nEXECUTE:\n    REFERENCE: REF(task.subject)\n"
+    );
+    let filesystem = MemoryFileSystem::new()
+        .with_scope("/srv/data")
+        .with_file("/srv/data/doc.txt", MODIFY_BEFORE.as_bytes());
+    let mut host = HostAdapter::new(filesystem.grants().clone()).with_filesystem(filesystem);
+    run_with_host(&source, &mut host)
+}
+
+fn content_after(execution: &Execution) -> String {
+    match common::field(execution, "action.read", "value") {
+        lcl_runtime::Value::Text(text) => text.clone(),
+        other => panic!("core.read returns a value, got {other}"),
+    }
+}
+
+/// The legitimate whole-target control: no selection, so everything changes.
+#[test]
+fn core_modify_without_a_selection_changes_the_whole_target() {
+    let execution = modify_then_read("");
+
+    let modify = common::result_of(&execution, "action.modify");
+    assert_eq!(
+        modify.status, "status.succeeded",
+        "{:?}",
+        modify.execution_errors
+    );
+    assert_eq!(content_after(&execution), "REPLACED");
+}
+
+/// A supplied selection is refused, and nothing is written.
+#[test]
+fn core_modify_refuses_a_selection_before_changing_anything() {
+    let execution = modify_then_read(
+        "\n    PARAMETER:\n        NAME: selection\n        TYPE: OBJECT\n        \
+         REQUIRED: FALSE\n        VALUE:\n            unit: \"scalar\"\n            \
+         start: 12\n            end: 20",
+    );
+
+    assert_eq!(
+        common::errors_of(&execution, "action.modify"),
+        vec!["error.operation.precondition".to_string()],
+        "an unsupported selection is refused, not reinterpreted"
+    );
+    let modify = common::result_of(&execution, "action.modify");
+    assert_eq!(modify.effect_state, lcl_runtime::EffectState::None);
+    assert!(modify.observed_effects.is_empty());
+    assert_eq!(
+        content_after(&execution),
+        MODIFY_BEFORE,
+        "the unselected parts survived because nothing was written at all"
+    );
+}
+
+/// The same for a STRING selection: refused, not treated as whole-target.
+#[test]
+fn core_modify_refuses_a_string_selection_before_changing_anything() {
+    let execution = modify_then_read(
+        "\n    PARAMETER:\n        NAME: selection\n        TYPE: STRING\n        \
+         REQUIRED: FALSE\n        VALUE: \"SELECTED\"",
+    );
+
+    assert_eq!(
+        common::errors_of(&execution, "action.modify"),
+        vec!["error.operation.precondition".to_string()]
+    );
+    assert_eq!(content_after(&execution), MODIFY_BEFORE);
+}
+
+/// `expected_before` that matches permits the whole-target change.
+#[test]
+fn core_modify_with_a_matching_expected_before_changes_the_target() {
+    let execution = modify_then_read(&format!(
+        "\n    PARAMETER:\n        NAME: expected_before\n        TYPE: STRING\n        \
+         REQUIRED: FALSE\n        VALUE: {MODIFY_BEFORE:?}"
+    ));
+
+    let modify = common::result_of(&execution, "action.modify");
+    assert_eq!(
+        modify.status, "status.succeeded",
+        "{:?}",
+        modify.execution_errors
+    );
+    assert_eq!(content_after(&execution), "REPLACED");
+}
+
+/// `expected_before` that does not match writes nothing.
+#[test]
+fn core_modify_with_a_mismatched_expected_before_writes_nothing() {
+    let execution = modify_then_read(
+        "\n    PARAMETER:\n        NAME: expected_before\n        TYPE: STRING\n        \
+         REQUIRED: FALSE\n        VALUE: \"not the content\"",
+    );
+
+    assert_eq!(
+        common::errors_of(&execution, "action.modify"),
+        vec!["error.operation.precondition".to_string()]
+    );
+    assert_eq!(content_after(&execution), MODIFY_BEFORE);
+}
+
+// ---------------------------------------------------------------------------
+// A-06 — what `core.ask` may accept as an answer
+// ---------------------------------------------------------------------------
+//
+// Two postconditions decide it: "a non-MISSING answer is recorded and
+// compatible with expected_type", and "when options is supplied, every
+// non-MISSING answer equals one listed option". Both were reachable around.
+//
+// `expected_type` is a `type_expression`, so it can name a type this adapter
+// cannot construct from a line of text — OBJECT, a LIST, a declared type. Those
+// fell to a default that accepted whatever the person typed, which records an
+// answer whose compatibility was never established.
+//
+// And `options` has `"default": null`, so *supplied* means present. An
+// explicitly empty closed list is supplied and lists nothing, so no answer can
+// equal a listed option. Treating it as the absent case admitted every answer
+// through the one parameter whose purpose is to admit only some.
+
+/// An answer of a type this adapter cannot construct is not compatible.
+#[test]
+fn an_answer_is_not_compatible_with_a_type_this_adapter_cannot_construct() {
+    for expected_type in ["OBJECT", "LIST[STRING]", "PATH", "kind.type"] {
+        let execution = ask(expected_type, None, Some("staging"));
+        assert_eq!(
+            common::errors_of(&execution, "action.ask"),
+            vec!["error.required.missing".to_string()],
+            "expected_type {expected_type} accepted plain text"
+        );
+        // The question was still put, so its message effect stands.
+        let result = common::result_of(&execution, "action.ask");
+        assert_eq!(
+            result.effect_state.as_registry_str(),
+            "applied",
+            "expected_type {expected_type}"
+        );
+    }
+}
+
+/// An explicitly empty closed list admits nothing.
+#[test]
+fn an_empty_closed_option_list_admits_no_answer() {
+    let execution = ask("STRING", Some("[]"), Some("staging"));
+    assert_eq!(
+        common::errors_of(&execution, "action.ask"),
+        vec!["error.required.missing".to_string()],
+        "an empty list of choices is a list of no choices"
+    );
+}
+
+/// The control: omitted options admit any compatible answer.
+#[test]
+fn omitted_options_admit_any_compatible_answer() {
+    let execution = ask("STRING", None, Some("staging"));
+    let result = common::result_of(&execution, "action.ask");
+    assert_eq!(
+        result.status, "status.succeeded",
+        "{:?}",
+        result.execution_errors
+    );
+    assert_eq!(
+        result.fields.get("value"),
+        Some(&Value::Text("staging".to_string()))
+    );
+}
+
+/// A listed choice is admitted; an unlisted one is not.
+#[test]
+fn a_nonempty_option_list_admits_exactly_its_members() {
+    let listed = ask(
+        "STRING",
+        Some("[\"staging\", \"production\"]"),
+        Some("staging"),
+    );
+    assert_eq!(
+        common::result_of(&listed, "action.ask").status,
+        "status.succeeded"
+    );
+    let unlisted = ask("STRING", Some("[\"production\"]"), Some("staging"));
+    assert_eq!(
+        common::errors_of(&unlisted, "action.ask"),
+        vec!["error.required.missing".to_string()]
+    );
+}
+
+/// Boolean and exact numeric answers are decided by the language's own rules.
+#[test]
+fn boolean_and_numeric_answers_use_the_languages_own_parsing() {
+    for (expected_type, answer, ok) in [
+        ("BOOLEAN", "TRUE", true),
+        ("BOOLEAN", "FALSE", true),
+        ("BOOLEAN", "true", false),
+        ("BOOLEAN", "yes", false),
+        ("INTEGER", "42", true),
+        ("INTEGER", "-42", true),
+        ("INTEGER", "4.2", false),
+        ("INTEGER", "forty", false),
+        // Beyond 64 bits. The language's INTEGER is not an i64, and an answer
+        // is not invalid because this adapter once used one.
+        ("INTEGER", "170141183460469231731687303715884105728", true),
+        ("DECIMAL", "4.25", true),
+        ("DECIMAL", "42", true),
+        // `f64` accepts these; LCL's DECIMAL literal does not.
+        ("DECIMAL", "inf", false),
+        ("DECIMAL", "NaN", false),
+        ("DECIMAL", "1e5", false),
+    ] {
+        let execution = ask(expected_type, None, Some(answer));
+        let errors = common::errors_of(&execution, "action.ask");
+        assert_eq!(
+            errors.is_empty(),
+            ok,
+            "{expected_type} answered {answer:?}: {errors:?}"
+        );
+    }
 }

@@ -628,3 +628,253 @@ fn the_workspace_does_not_replace_the_host_grant() {
     assert!(matches!(write, Err(FsError::Refused(_))), "{write:?}");
     assert!(!target.exists());
 }
+
+// ---------------------------------------------------------------------------
+// A-03 — a transfer whose two ends are one file
+// ---------------------------------------------------------------------------
+//
+// `core.copy` promises "destination content equals source pre-state" *and*
+// "source remains unchanged". `core.move` requires as a precondition that
+// "resolved source and destination addresses are distinct", and promises
+// "source no longer exists at original address".
+//
+// Neither survives two names for one file. `std::fs::copy` opens its
+// destination truncating, so copying a file onto itself empties it — the
+// source is not merely changed, it is gone. And POSIX `rename` on two entries
+// for one file "shall return successfully and perform no other action", so a
+// move reports that it relocated something while both names are still there.
+//
+// A path comparison alone does not find these. Two spellings and a symbolic
+// link resolve to one canonical path and can be compared; a hard link is a
+// second directory entry for the same inode and has its own canonical path, so
+// the identity has to be the file's, not the name's.
+
+/// A file and a second *name* for the very same file.
+#[cfg(unix)]
+fn aliases(owned: &Owned) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
+    let (inside, _) = owned.split();
+    let original = inside.join("original.txt");
+    std::fs::write(&original, b"the original content").expect("seeded");
+    let symlinked = inside.join("symlinked.txt");
+    link(&original, &symlinked);
+    let hard = inside.join("hard.txt");
+    std::fs::hard_link(&original, &hard).expect("a hard link");
+    (inside, original, symlinked, hard)
+}
+
+/// Copying a file onto itself must not destroy it.
+#[cfg(unix)]
+#[test]
+fn a_copy_whose_ends_are_one_file_leaves_that_file_intact() {
+    let owned = Owned::new("copy-same-file");
+    let (inside, original, symlinked, hard) = aliases(&owned);
+    let spelled = inside.join(".").join("original.txt");
+
+    for (name, destination) in [
+        ("itself", original.clone()),
+        ("another spelling", spelled),
+        ("a symbolic link", symlinked),
+        ("a hard link", hard),
+    ] {
+        let mut fs = adapter(&inside);
+        let _ = fs.copy((&original).into(), (&destination).into(), true);
+        assert_eq!(
+            std::fs::read(&original).expect("the source survives"),
+            b"the original content",
+            "copying onto {name} destroyed the source"
+        );
+        assert_eq!(
+            std::fs::read(&destination).expect("the destination survives"),
+            b"the original content",
+            "copying onto {name} emptied the destination"
+        );
+    }
+}
+
+/// Moving a file onto itself must not claim a relocation that did not happen.
+#[cfg(unix)]
+#[test]
+fn a_move_whose_ends_are_one_file_is_refused_rather_than_claimed() {
+    let owned = Owned::new("move-same-file");
+    let (inside, original, symlinked, hard) = aliases(&owned);
+
+    for (name, destination) in [
+        ("itself", original.clone()),
+        ("a symbolic link", symlinked),
+        ("a hard link", hard),
+    ] {
+        let mut fs = adapter(&inside);
+        let result = fs.rename((&original).into(), (&destination).into(), true);
+        assert!(
+            result.is_err(),
+            "moving onto {name} reported success while {} is still there",
+            original.display()
+        );
+        assert!(
+            original.exists(),
+            "moving onto {name} was refused, so nothing moved"
+        );
+    }
+}
+
+/// The controls: genuinely distinct files still copy and move.
+#[cfg(unix)]
+#[test]
+fn transfers_between_distinct_files_still_work() {
+    let owned = Owned::new("distinct-transfer");
+    let (inside, _) = owned.split();
+    let source = inside.join("source.txt");
+    let copied = inside.join("copied.txt");
+    let moved = inside.join("moved.txt");
+    std::fs::write(&source, b"payload").expect("seeded");
+
+    let mut fs = adapter(&inside);
+    fs.copy((&source).into(), (&copied).into(), false)
+        .expect("a copy between two files");
+    assert_eq!(std::fs::read(&copied).unwrap(), b"payload");
+    assert!(source.exists(), "core.copy leaves its source in place");
+
+    fs.rename((&source).into(), (&moved).into(), false)
+        .expect("a move between two files");
+    assert_eq!(std::fs::read(&moved).unwrap(), b"payload");
+    assert!(!source.exists(), "core.move removes its source");
+}
+
+// ---------------------------------------------------------------------------
+// A-04 — a multi-step transfer that failed halfway still changed something
+// ---------------------------------------------------------------------------
+//
+// `FsError::Io` is documented as the failure reported "before the target was
+// opened for modification. Nothing began, and that is established rather than
+// assumed". `FsError::IoAfterChange` is the one for afterwards, where "what
+// began cannot be proven not to have".
+//
+// A move without overwrite is two syscalls: link the destination, then unlink
+// the source. If the unlink fails the link is already there — a new name for
+// the file exists on disk — and reporting that as the error whose meaning is
+// "nothing began" states the opposite of what happened. An overwrite copy has
+// the same shape: `std::fs::copy` truncates its destination before it writes,
+// and the non-overwrite path beside it already reports its failures as
+// after-change.
+//
+// The failures below are injected at the real adapter boundary, by taking away
+// the directory permission each syscall actually needs, so what is being
+// tested is the conversion of a genuine kernel error.
+
+#[cfg(unix)]
+fn set_mode(path: &Path, mode: u32) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).expect("mode");
+}
+
+/// An unlink that fails after the destination link was already created.
+#[cfg(unix)]
+#[test]
+fn a_move_that_linked_but_could_not_unlink_reports_a_change() {
+    let owned = Owned::new("move-half-done");
+    let (inside, _) = owned.split();
+    let locked = inside.join("locked");
+    std::fs::create_dir_all(&locked).expect("a directory to lock");
+    let source = locked.join("original.txt");
+    std::fs::write(&source, b"payload").expect("seeded");
+    let destination = inside.join("moved.txt");
+
+    // Removing a file needs write permission on its *parent*; creating the
+    // destination does not, because the destination is elsewhere.
+    set_mode(&locked, 0o555);
+    let mut fs = adapter(&inside);
+    let error = fs
+        .rename((&source).into(), (&destination).into(), false)
+        .expect_err("the unlink cannot succeed");
+    set_mode(&locked, 0o755);
+
+    assert!(
+        destination.exists(),
+        "the destination link was created before the failure"
+    );
+    assert!(
+        matches!(error, FsError::IoAfterChange { .. }),
+        "a change that happened may not be reported as one that did not: {error:?}"
+    );
+}
+
+/// An overwrite copy that fails after truncating says the destination changed.
+///
+/// The source is a directory: opening it for reading succeeds, so the
+/// destination is opened and truncated, and the read then fails. That is
+/// precisely the window in which the destination has already been emptied.
+#[cfg(unix)]
+#[test]
+fn an_overwrite_copy_that_fails_after_truncating_reports_the_change() {
+    let owned = Owned::new("copy-overwrite-half");
+    let (inside, _) = owned.split();
+    let source = inside.join("source-dir");
+    std::fs::create_dir_all(&source).expect("a directory as the source");
+    let destination = inside.join("destination.txt");
+    std::fs::write(&destination, b"the previous content").expect("seeded");
+
+    let mut fs = adapter(&inside);
+    let error = fs
+        .copy((&source).into(), (&destination).into(), true)
+        .expect_err("a directory has no bytes to copy");
+
+    assert_eq!(
+        std::fs::read(&destination).expect("the destination is still there"),
+        b"",
+        "the destination really was truncated"
+    );
+    assert!(
+        matches!(error, FsError::IoAfterChange { .. }),
+        "the destination was emptied, so the error may not say nothing began: {error:?}"
+    );
+}
+
+/// The other control: an overwrite copy that fails at the destination *open*
+/// changed nothing, and says so.
+#[cfg(unix)]
+#[test]
+fn an_overwrite_copy_that_could_not_open_its_destination_reports_no_change() {
+    let owned = Owned::new("copy-overwrite-preopen");
+    let (inside, _) = owned.split();
+    let source = inside.join("source.txt");
+    std::fs::write(&source, b"payload").expect("seeded");
+    // A directory cannot be opened for writing, and the open is what would
+    // have truncated anything.
+    let destination = inside.join("destination");
+    std::fs::create_dir_all(&destination).expect("a directory in the way");
+
+    let mut fs = adapter(&inside);
+    let error = fs
+        .copy((&source).into(), (&destination).into(), true)
+        .expect_err("copying onto a directory fails");
+
+    assert!(
+        matches!(error, FsError::Io(_)),
+        "nothing was opened for writing, so nothing began: {error:?}"
+    );
+}
+
+/// The control: a failure genuinely before anything opened stays "nothing
+/// began".
+///
+/// Without it the repair could be "call every failure a change", which is the
+/// opposite untruth.
+#[cfg(unix)]
+#[test]
+fn a_transfer_that_failed_before_opening_anything_reports_no_change() {
+    let owned = Owned::new("transfer-pre-open");
+    let (inside, _) = owned.split();
+    let missing = inside.join("not-here.txt");
+    let destination = inside.join("destination.txt");
+
+    let mut fs = adapter(&inside);
+    let error = fs
+        .copy((&missing).into(), (&destination).into(), true)
+        .expect_err("an absent source cannot be copied");
+
+    assert!(
+        matches!(error, FsError::NotFound(_)),
+        "nothing was opened, and the error says so: {error:?}"
+    );
+    assert!(!destination.exists(), "and nothing was created");
+}

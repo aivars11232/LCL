@@ -113,6 +113,7 @@ pub fn accept(
     // The required membership of each level, from the inventory rather than
     // from the document being checked.
     let mut levels = Vec::new();
+    let mut satisfied_total = 0usize;
     let required: Vec<(ClaimLevel, BTreeSet<&str>)> = [ClaimLevel::Source, ClaimLevel::Semantics]
         .into_iter()
         .map(|level| {
@@ -148,7 +149,7 @@ pub fn accept(
                     continue;
                 };
                 levels.push((name.to_string(), expected.len()));
-                check_level(entry, name, expected, &mut refusals);
+                satisfied_total += check_level(entry, name, expected, &mut refusals);
             }
             for (level, expected) in &required {
                 if !seen_levels.contains(&level.as_str()) {
@@ -162,7 +163,7 @@ pub fn accept(
         }
     }
 
-    check_records(&parsed, &mut refusals);
+    check_records(&parsed, satisfied_total, &mut refusals);
 
     if refusals.is_empty() {
         Ok(Accepted {
@@ -177,7 +178,13 @@ pub fn accept(
 }
 
 /// One level's states, against the obligations that level requires.
-fn check_level(entry: &Json, name: &str, expected: &BTreeSet<&str>, refusals: &mut Vec<String>) {
+/// Returns how many obligations this level reports satisfied.
+fn check_level(
+    entry: &Json,
+    name: &str,
+    expected: &BTreeSet<&str>,
+    refusals: &mut Vec<String>,
+) -> usize {
     match entry.get("required").and_then(Json::as_u64) {
         Some(required) if required as usize == expected.len() => {}
         Some(required) => refusals.push(format!(
@@ -244,19 +251,31 @@ fn check_level(entry: &Json, name: &str, expected: &BTreeSet<&str>, refusals: &m
             unknown.iter().take(8).collect::<Vec<_>>()
         ));
     }
-    if let Some(problems) = entry.get("problems").and_then(Json::as_array) {
-        if !problems.is_empty() {
-            refusals.push(format!(
+    // Present, a list, and empty — three different things. Reading it as
+    // `get(..).and_then(as_array)` and acting only on `Some` made an absent
+    // field and a field of the wrong type both mean "no problems retained",
+    // which is the one thing they do not establish.
+    match entry.get("problems") {
+        None => refusals.push(format!(
+            "level {name} carries no problems list, so it does not establish that it retained none"
+        )),
+        Some(value) => match value.as_array() {
+            None => refusals.push(format!(
+                "level {name} declares problems that are not a list"
+            )),
+            Some(problems) if !problems.is_empty() => refusals.push(format!(
                 "level {name} retains {} problem record(s)",
                 problems.len()
-            ));
-        }
+            )),
+            Some(_) => {}
+        },
     }
+    satisfied.len()
 }
 
-/// The executed-record accounting, which must agree with itself and with the
-/// failed-case list.
-fn check_records(parsed: &Json, refusals: &mut Vec<String>) {
+/// The executed-record accounting, which must agree with itself, with the
+/// failed-case list, and with the obligations the levels claim to establish.
+fn check_records(parsed: &Json, satisfied: usize, refusals: &mut Vec<String>) {
     let Some(records) = parsed.get("records") else {
         refusals.push("the verdict carries no record accounting".to_string());
         return;
@@ -264,13 +283,39 @@ fn check_records(parsed: &Json, refusals: &mut Vec<String>) {
     let count = |field: &str| records.get(field).and_then(Json::as_u64);
     match (count("executed"), count("passed"), count("failed")) {
         (Some(executed), Some(passed), Some(failed)) => {
-            if passed + failed != executed {
-                refusals.push(format!(
-                    "the verdict records {executed} executed cases but {passed} passed and {failed} failed"
-                ));
+            // Checked, because these are numbers from a document this gate does
+            // not trust. `passed + failed` on two u64 counters panics on
+            // overflow in a debug build — taking the gate down rather than
+            // refusing the verdict — and wraps in a release build, where a
+            // wrapped sum can be made to equal `executed` and the arithmetic
+            // then agrees with a verdict nobody could have produced.
+            match passed.checked_add(failed) {
+                Some(total) if total == executed => {}
+                Some(total) => refusals.push(format!(
+                    "the verdict records {executed} executed cases but {passed} passed and \
+                     {failed} failed, which is {total}"
+                )),
+                None => refusals.push(format!(
+                    "the verdict's {passed} passed and {failed} failed cases do not add up to a \
+                     whole number of executions"
+                )),
             }
             if failed != 0 {
                 refusals.push(format!("the verdict records {failed} failed case(s)"));
+            }
+            // An obligation is established by something having run. Nothing
+            // ran, so nothing was established, whatever the levels say.
+            //
+            // Nothing stronger is asserted here on purpose: records are
+            // grouped, so one execution can establish several obligations, and
+            // requiring a count per obligation would be inventing a
+            // relationship between two different populations. Zero is the case
+            // that needs no such relationship to be impossible.
+            if satisfied > 0 && executed == 0 {
+                refusals.push(format!(
+                    "the verdict records no executed cases at all while claiming {satisfied} \
+                     established obligation(s)"
+                ));
             }
         }
         _ => refusals.push(

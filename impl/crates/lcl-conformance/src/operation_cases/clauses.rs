@@ -3389,7 +3389,9 @@ pub(super) fn binding(runners: &Runners<'_>, row: &Row) -> Vec<ExecutedCase> {
                                     .unwrap(),
                                 )
                             })
-                            .ok_or_else(|| "expected an INTEGER member".to_string())
+                            .ok_or_else(|| {
+                                lcl_stdlib::PureFailure::detail("expected an INTEGER member")
+                            })
                     }),
                 )],
             );
@@ -4033,7 +4035,9 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
                     "error.value.unknown",
                 ));
                 runs.push(failed_without_effects(
-                    &with_pure(runners, vec![("member.failing", Box::new(|_: &lcl_runtime::Value| Err("the predicate implementation cannot evaluate this member".to_string())) as lcl_stdlib::PureOperation)]),
+                    &with_pure(runners, vec![("member.failing", Box::new(|_: &lcl_runtime::Value| Err(lcl_stdlib::PureFailure::detail(
+                        "the predicate implementation cannot evaluate this member",
+                    ))) as lcl_stdlib::PureOperation)]),
                     "path/referenced-predicate-error-union",
                     "an applicable error of the referenced predicate operation is unioned with the row's own",
                     &with_predicate(&predicate_ref("member.failing"), &pure_operation("member.failing", "INTEGER", "BOOLEAN", "A predicate whose implementation fails.")),
@@ -4209,7 +4213,10 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
                             lcl_runtime::Value::Text(t) => Ok(lcl_runtime::Value::Text(
                                 t.chars().next().map(String::from).unwrap_or_default(),
                             )),
-                            other => Err(format!("expected STRING, found {}", other.family())),
+                            other => Err(lcl_stdlib::PureFailure::detail(format!(
+                                "expected STRING, found {}",
+                                other.family()
+                            ))),
                         }) as lcl_stdlib::PureOperation,
                     )],
                 )
@@ -4243,11 +4250,30 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
                     "error.value.unknown",
                 ));
                 runs.push(failed_without_effects(
-                    &with_pure(runners, vec![("key.failing", Box::new(|_: &lcl_runtime::Value| Err("the key implementation cannot evaluate this member".to_string())) as lcl_stdlib::PureOperation)]),
+                    &with_pure(runners, vec![("key.failing", Box::new(|_: &lcl_runtime::Value| Err(lcl_stdlib::PureFailure::detail(
+                        "the key implementation cannot evaluate this member",
+                    ))) as lcl_stdlib::PureOperation)]),
                     "path/referenced-key-operation-error-union",
                     "an applicable error of the referenced key operation is unioned with the row's own",
                     &group("REF(data.list)", &key_ref("key.failing"), &pure_operation("key.failing", "INTEGER", "INTEGER", "A key operation whose implementation fails.")),
                     "error.operation.precondition",
+                ));
+                // The other half of that union. This row lists
+                // `error.operator.operand`, and the requirement is to "union
+                // every applicable error of a referenced key operation" — so a
+                // key operation that selects it must be reported under it and
+                // not under this row's precondition. It could not be until the
+                // pure-operation failure channel could carry a registered
+                // identifier at all.
+                runs.push(failed_without_effects(
+                    &with_pure(runners, vec![("key.operand", Box::new(|_: &lcl_runtime::Value| Err(lcl_stdlib::PureFailure::registered(
+                        "error.operator.operand",
+                        "the key operation cannot order this operand",
+                    ))) as lcl_stdlib::PureOperation)]),
+                    "error/operator.operand",
+                    "a referenced key operation selecting error.operator.operand is reported under it",
+                    &group("REF(data.list)", &key_ref("key.operand"), &pure_operation("key.operand", "INTEGER", "INTEGER", "A key operation whose implementation reports an operand fault.")),
+                    "error.operator.operand",
                 ));
                 runs.push(failed_without_effects(
                     shipped,
@@ -4344,7 +4370,10 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
                     lcl_runtime::Value::Text(t) => Ok(lcl_runtime::Value::Text(
                         t.chars().next().map(String::from).unwrap_or_default(),
                     )),
-                    other => Err(format!("expected STRING, found {}", other.family())),
+                    other => Err(lcl_stdlib::PureFailure::detail(format!(
+                        "expected STRING, found {}",
+                        other.family()
+                    ))),
                 })
             };
             let initial = || with_pure(runners, vec![("key.initial", initial_impl())]);
@@ -4409,7 +4438,9 @@ pub(super) fn specific(runners: &Runners<'_>, row: &Row, family: &str) -> Vec<Ex
                 runs.push(failed_without_effects(shipped, "path/unknown-key", "a declared key value that is UNKNOWN", &sort("REF(data.maybe)", &named("key", "STRING", "FALSE", "\"note\""), "\nDEFINE:\n    ID: type.noted\n    KIND: kind.type\n    BASE: OBJECT\n    FIELD:\n        NAME: note\n        TYPE: STRING\n        REQUIRED: FALSE\n\nDATA:\n    ID: data.unsure\n    TYPE: OBJECT[REF(type.noted)]\n    VALUE:\n        note: UNKNOWN\n\nDATA:\n    ID: data.maybe\n    TYPE: LIST[OBJECT[REF(type.noted)]]\n    VALUE: [REF(data.unsure)]\n"), "error.value.unknown"));
                 runs.push(failed_without_effects(shipped, "path/omitted-natural-order", "an omitted key over members without natural total order", &sort("REF(data.pair)", "", "\nDATA:\n    ID: data.zed\n    TYPE: OBJECT[REF(type.tagged)]\n    VALUE:\n        tag: \"z\"\n\nDATA:\n    ID: data.pair\n    TYPE: LIST[OBJECT[REF(type.tagged)]]\n    VALUE: [REF(data.zed), REF(data.tagged)]\n"), "error.operation.precondition"));
                 runs.push(failed_without_effects(
-                    &with_pure(runners, vec![("key.failing", Box::new(|_: &lcl_runtime::Value| Err("the key implementation cannot evaluate this member".to_string())) as lcl_stdlib::PureOperation)]),
+                    &with_pure(runners, vec![("key.failing", Box::new(|_: &lcl_runtime::Value| Err(lcl_stdlib::PureFailure::detail(
+                        "the key implementation cannot evaluate this member",
+                    ))) as lcl_stdlib::PureOperation)]),
                     "path/referenced-key-operation-error-union",
                     "an applicable error of the referenced key operation is unioned with the row's own",
                     &sort("REF(data.list)", &key_ref("key.failing"), &pure_operation("key.failing", "INTEGER", "INTEGER", "A key operation whose implementation fails.")),

@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::{send, send_raw, start, Echo};
+use common::{send, send_raw, start, start_with, Echo};
 use std::sync::Arc;
 
 #[test]
@@ -387,4 +387,133 @@ fn an_authenticated_event_stream_is_not_disconnected_by_the_ingress_bound() {
         b"",
     );
     assert_eq!(reply.status, 200, "the workspace is still serving");
+}
+
+// ---------------------------------------------------------------------------
+// N-03 — the ingress bound covers the whole request, not each pause in it
+// ---------------------------------------------------------------------------
+//
+// A socket read timeout bounds one idle wait. A peer that sends a byte just
+// inside it resets it and can hold a pre-authentication slot indefinitely,
+// because the token is not looked at until the request has been read. The
+// bound is therefore on the request: line, headers and body together, on a
+// monotonic clock.
+//
+// These cases give their own server a short budget so the end of it can be
+// observed without the suite sleeping; the shipped budget is untouched.
+
+/// A peer that dribbles header bytes for longer than the budget.
+#[test]
+fn a_slow_header_stream_does_not_hold_a_slot_past_the_budget() {
+    use std::io::Write;
+    use std::net::TcpStream;
+    use std::time::{Duration, Instant};
+
+    let budget = Duration::from_millis(400);
+    let s = start_with(Arc::new(Echo), budget);
+    let mut peer = TcpStream::connect(s.address).expect("connect");
+    peer.write_all(b"GET /hello HTTP/1.1\r\n")
+        .expect("request line");
+    peer.flush().ok();
+
+    let started = Instant::now();
+    // One header byte every 100ms: never idle long enough for a per-read
+    // timeout, and never finishing either.
+    let mut sent = 0;
+    let dribbled = loop {
+        if peer.write_all(b"X").is_err() || peer.flush().is_err() {
+            break true;
+        }
+        sent += 1;
+        if started.elapsed() > budget * 8 {
+            break false;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    assert!(
+        dribbled,
+        "the peer dribbled {sent} header bytes for {:?} without the budget ending it",
+        started.elapsed()
+    );
+    assert!(
+        started.elapsed() < budget * 8,
+        "the request outlived its budget by {:?}",
+        started.elapsed()
+    );
+}
+
+/// A peer that announces a body and then dribbles it.
+#[test]
+fn a_slow_body_does_not_hold_a_slot_past_the_budget() {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::time::{Duration, Instant};
+
+    let budget = Duration::from_millis(400);
+    let s = start_with(Arc::new(Echo), budget);
+    let mut peer = TcpStream::connect(s.address).expect("connect");
+    write!(
+        peer,
+        "POST /hello?t={} HTTP/1.1\r\nHost: {}\r\nContent-Length: 64\r\n\r\n",
+        s.token, s.address
+    )
+    .expect("head");
+    peer.flush().ok();
+
+    let started = Instant::now();
+    loop {
+        if peer.write_all(b"x").is_err() || peer.flush().is_err() {
+            break;
+        }
+        if started.elapsed() > budget * 8 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    // Whatever the peer managed to send, the server must be finished with it.
+    peer.set_read_timeout(Some(budget * 4)).ok();
+    let mut reply = Vec::new();
+    let _ = peer.read_to_end(&mut reply);
+    assert!(
+        started.elapsed() < budget * 8,
+        "a dribbled body held its slot for {:?}",
+        started.elapsed()
+    );
+}
+
+/// The controls: within the budget, ordinary requests are served as before.
+#[test]
+fn a_prompt_request_is_served_within_the_budget() {
+    use std::time::Duration;
+
+    let s = start_with(Arc::new(Echo), Duration::from_millis(400));
+    let reply = send(s.address, "GET", &format!("/hello?t={}", s.token), &[], b"");
+    assert_eq!(reply.status, 200);
+
+    // A body that arrives at once is not slow, whatever its size.
+    let reply = send(
+        s.address,
+        "POST",
+        &format!("/hello?t={}", s.token),
+        &[],
+        &vec![b'x'; 4096],
+    );
+    assert_eq!(reply.status, 200);
+}
+
+/// A refused request releases its slot rather than keeping it to the budget.
+#[test]
+fn a_refused_request_releases_its_slot_at_once() {
+    use std::time::{Duration, Instant};
+
+    let budget = Duration::from_secs(30);
+    let s = start_with(Arc::new(Echo), budget);
+    let started = Instant::now();
+    let reply = send(s.address, "GET", "/hello", &[], b"");
+    assert_eq!(reply.status, 403, "no token");
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "a refusal waited out the budget: {:?}",
+        started.elapsed()
+    );
 }

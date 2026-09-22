@@ -603,6 +603,31 @@ impl HostAdapter {
             Ok(filesystem) => filesystem,
             Err(outcome) => return outcome,
         };
+        // "Change **selected** content or properties of an existing target",
+        // with the postcondition "only declared selection/properties change".
+        //
+        // This adapter changes the whole target, so it can carry out that
+        // contract only when nothing was selected. With a selection supplied,
+        // writing `change` over the file would change everything outside the
+        // selection too — the one outcome the postcondition names. And no
+        // selection vocabulary exists to implement instead: `range` is defined
+        // for `core.read` and scoped to it, and no registered change profile
+        // fixes what a bounded *replacement* means, so any syntax accepted here
+        // would be this build's invention rather than the language's.
+        //
+        // So it is refused, before anything is read or written. The refusal
+        // removes an unsafe acceptance; it does not make bounded modification a
+        // supported capability.
+        if request.parameters.contains_key("selection") {
+            return unmet_precondition(
+                "selection",
+                format!(
+                    "{}: a bounded selection is not implemented, and changing the whole target \
+                     instead would change content the selection did not name",
+                    path.path.display()
+                ),
+            );
+        }
         // "expected_before matches when supplied": the pre-state guard is read
         // before anything changes.
         if let Some(expected) = request.parameters.get("expected_before") {
@@ -1112,11 +1137,17 @@ impl HostAdapter {
         };
         // "every option is compatible with expected_type" is the row's own
         // precondition, and its implementation decided it before crossing.
-        let listed: Vec<Value> = match request.parameters.get("options") {
-            Some(Value::List(options)) => options.clone(),
-            _ => Vec::new(),
+        // `options` has `"default": null`, so *supplied* means present. An
+        // explicitly empty list is supplied and lists nothing, and "every
+        // non-MISSING answer equals one listed option" then admits no answer
+        // at all. Folding it into the absent case turned the one parameter
+        // whose purpose is to admit only some answers into one that admitted
+        // every answer.
+        let listed: Option<Vec<Value>> = match request.parameters.get("options") {
+            Some(Value::List(options)) => Some(options.clone()),
+            _ => None,
         };
-        let options: Vec<String> = listed.iter().map(text_of).collect();
+        let options: Vec<String> = listed.iter().flatten().map(text_of).collect();
         let Some(responder) = self.responder.as_mut() else {
             return CapabilityOutcome::Unavailable("no human responder is installed".to_string());
         };
@@ -1130,11 +1161,15 @@ impl HostAdapter {
         // and "when options is supplied, every non-MISSING answer equals one
         // listed option". An answer that satisfies neither is not an authorized
         // valid answer.
+        // "a non-MISSING answer is recorded and compatible with expected_type":
+        // the answer is *constructed* as a value of the expected type, so what
+        // is recorded is compatible because it was built that way, rather than
+        // being text that was waved through.
         let answer = answered
-            .map(Value::Text)
-            .filter(|answer| compatible_answer(answer, &expected_type))
-            .filter(|answer| {
-                listed.is_empty() || listed.iter().any(|option| strict_equal(option, answer))
+            .and_then(|text| answer_value(&text, &expected_type))
+            .filter(|answer| match &listed {
+                Some(listed) => listed.iter().any(|option| strict_equal(option, answer)),
+                None => true,
             });
         match answer {
             Some(answer) => CapabilityOutcome::Completed(
@@ -1149,6 +1184,52 @@ impl HostAdapter {
                 detail: format!("no authorized valid answer to {question:?} was provided"),
             },
         }
+    }
+}
+
+/// The value a typed answer denotes, when the text denotes one.
+///
+/// `core.ask`'s `expected_type` is a `type_expression` and an answer arrives as
+/// a line of text, so recording that answer means reading the text as a value
+/// of the named type. The reading is the language's own: `BOOLEAN` is exactly
+/// `TRUE` or `FALSE`, and the numeric families are decoded by the same
+/// functions that decode an `INTEGER_LITERAL` and a `DECIMAL_LITERAL`, with a
+/// leading `-` applied as the language applies it. Nothing here has an `i64` or
+/// `f64` in it: LCL's INTEGER is arbitrary precision, and an answer is not
+/// invalid for exceeding a width the language does not have. It also means
+/// `inf`, `NaN` and `1e5` are not DECIMAL answers, because they are not
+/// DECIMAL literals.
+///
+/// `None` for a type this adapter cannot construct from text — `OBJECT`, a
+/// collection, a declared type. That is not a refusal invented here: the
+/// postcondition requires a recorded answer to *be* compatible with
+/// `expected_type`, and text this adapter cannot read as that type has not
+/// been shown to be. The row's own answer for that case is the one it already
+/// gives when no valid answer arrives — "the value remains MISSING and
+/// error.required.missing applies" — and the question that was asked keeps its
+/// message effect.
+fn answer_value(text: &str, expected_type: &str) -> Option<Value> {
+    use lcl_checker::numeric::Decimal;
+    let (negative, digits) = match text.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, text),
+    };
+    let signed = |decimal: Decimal| match negative {
+        true => decimal.negated(),
+        false => decimal,
+    };
+    match expected_type {
+        "STRING" => Some(Value::Text(text.to_string())),
+        "BOOLEAN" => match text {
+            "TRUE" => Some(Value::Boolean(true)),
+            "FALSE" => Some(Value::Boolean(false)),
+            _ => None,
+        },
+        "INTEGER" => Decimal::parse_integer(digits).map(|d| Value::Integer(signed(d))),
+        "DECIMAL" => Decimal::parse_decimal(digits)
+            .or_else(|| Decimal::parse_integer(digits))
+            .map(|d| Value::Decimal(signed(d))),
+        _ => None,
     }
 }
 
@@ -1487,7 +1568,11 @@ fn is_success(status: u16) -> bool {
 /// own mapping.
 fn registered_precondition(error: FsError, cause: &str) -> CapabilityOutcome {
     match error {
-        FsError::NotFound(_) | FsError::AlreadyExists(_) => {
+        // Each of these is a registered precondition of the row that raised
+        // it: "source exists", "destination absent unless overwrite is TRUE",
+        // and — for `core.move` — "resolved source and destination addresses
+        // are distinct".
+        FsError::NotFound(_) | FsError::AlreadyExists(_) | FsError::SameFile { .. } => {
             unmet_precondition(cause, error.to_string())
         }
         other => fs_failure(other, None),
@@ -1499,6 +1584,7 @@ fn registered_precondition(error: FsError, cause: &str) -> CapabilityOutcome {
 fn transfer_precondition(error: FsError) -> CapabilityOutcome {
     match error {
         FsError::AlreadyExists(_) => registered_precondition(error, "destination"),
+        FsError::SameFile { .. } => registered_precondition(error, "destination"),
         other => registered_precondition(other, "source"),
     }
 }

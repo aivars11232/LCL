@@ -42,7 +42,9 @@ use crate::record::{
     NavigationRecord, Outcome, OutputRecord, PlanRecord, Reached, ReferenceRecord, Report,
     SourceRecord, SpecRecord, StructureRecord, VerdictRecord,
 };
-use lcl_checker::{Checked, Checker, Contracts as StaticContracts};
+use lcl_checker::{
+    Checked, Checker, Contracts as StaticContracts, EarlierStageDefect, Outcome as CheckOutcome,
+};
 use lcl_completion::{Completion, Contracts as CompletionContracts, Publication, SkipReason};
 use lcl_diagnostics::Stage;
 use lcl_lexer::{Lexicon, Position, Span, TokenKind};
@@ -299,6 +301,75 @@ impl Engine {
         }
     }
 
+    /// The protocol record of a diagnostic another layer classified.
+    ///
+    /// Nothing here is invented. The identifier, stage, unit and span are the
+    /// ones that layer recorded; the meaning, registered status and mapped
+    /// event come from the registered row the static contracts keep "so an
+    /// identifier outside this stage can still be reported with its own
+    /// registered stage and status"; the rank is the one
+    /// `diagnostic_selection` gives an identifier it does not override; and
+    /// the position is derived from the reporting unit's own bytes exactly as
+    /// the lexer derives one. A unit that is not among the loaded ones — which
+    /// cannot happen for a defect a loaded unit produced — yields the start of
+    /// the span rather than a guessed line.
+    fn registered_record(
+        &self,
+        id: &str,
+        stage: Stage,
+        source: &SourceId,
+        span: Span,
+        detail: Option<String>,
+        resolved: &Resolved,
+    ) -> DiagnosticRecord {
+        let registered = self.statics.diagnostics().error(id);
+        let position = resolved
+            .units()
+            .find(|u| u.id() == source)
+            .map(|u| position(u.source(), span.start))
+            .unwrap_or(Position {
+                offset: span.start,
+                line: 1,
+                column: 1,
+            });
+        DiagnosticRecord {
+            id: id.to_string(),
+            stage,
+            source: source.to_string(),
+            span,
+            position,
+            meaning: registered.map(|e| e.meaning.clone()).unwrap_or_default(),
+            default_status: registered
+                .map(|e| e.default_status.clone())
+                .unwrap_or_default(),
+            specificity_rank: self.statics.default_specificity_rank(),
+            event: registered.and_then(|e| e.event.clone()),
+            cause: String::new(),
+            detail,
+            sequence: None,
+            primary: false,
+        }
+    }
+
+    /// The protocol record of a defect M4 detected but the registry stages
+    /// earlier.
+    ///
+    /// The defect carries `default_status` verbatim from the registry, so it
+    /// is preferred over a lookup that could come back empty for an
+    /// identifier this build does not mirror.
+    fn earlier_record(&self, defect: &EarlierStageDefect, resolved: &Resolved) -> DiagnosticRecord {
+        let mut record = self.registered_record(
+            &defect.identifier,
+            defect.stage,
+            &defect.source,
+            defect.span,
+            Some(defect.detail.clone()),
+            resolved,
+        );
+        record.default_status.clone_from(&defect.default_status);
+        record
+    }
+
     /// A fresh Core operation surface with no implementation profile installed.
     ///
     /// Deliberately bare. A row that requires a profile role then fails its
@@ -313,7 +384,7 @@ impl Engine {
     ///
     /// Takes no supplied data: nothing before step 7 reads any.
     pub fn check(&self, unit: &SourceUnit, provider: &dyn SourceProvider) -> Report {
-        self.request(Command::Check, unit, provider, &Inputs::new(), None)
+        self.request(Command::Check, unit, provider, &Inputs::new(), None, None)
     }
 
     /// Steps 1 to 9. No effect can occur.
@@ -323,7 +394,7 @@ impl Engine {
         provider: &dyn SourceProvider,
         inputs: &Inputs,
     ) -> Report {
-        self.request(Command::Validate, unit, provider, inputs, None)
+        self.request(Command::Validate, unit, provider, inputs, None, None)
     }
 
     /// Steps 1 to 9, reported structurally. No effect can occur.
@@ -333,7 +404,7 @@ impl Engine {
         provider: &dyn SourceProvider,
         inputs: &Inputs,
     ) -> Report {
-        self.request(Command::Inspect, unit, provider, inputs, None)
+        self.request(Command::Inspect, unit, provider, inputs, None, None)
     }
 
     /// Steps 1 to 13, against an explicit operation surface and host.
@@ -345,7 +416,14 @@ impl Engine {
         stdlib: &mut Stdlib,
         host: &mut dyn Host,
     ) -> Report {
-        self.request(Command::Run, unit, provider, inputs, Some((stdlib, host)))
+        self.request(
+            Command::Run,
+            unit,
+            provider,
+            inputs,
+            Some((stdlib, host)),
+            None,
+        )
     }
 
     /// Steps 1 to 13, against an explicit operation dispatcher and host.
@@ -375,7 +453,62 @@ impl Engine {
             provider,
             inputs,
             Some((operations, host)),
+            None,
         )
+    }
+
+    /// Steps 1 to 13, under a caller's admission check on the loaded source.
+    ///
+    /// Some callers carry a restriction the language itself does not express.
+    /// `--locked` is the example: proceed only if the source that was actually
+    /// loaded is the source a lock file names. Such a rule is not a grant and
+    /// not a diagnostic — it is an operator's precondition on *this* run.
+    ///
+    /// It cannot be applied around this call. The identities it judges do not
+    /// exist until step 4 has loaded every unit, and the effects it is meant
+    /// to prevent begin at step 10, so a caller checking afterwards would be
+    /// reporting a violation it had already committed. Loading the source a
+    /// second time to check it first is no better: the second load is a
+    /// different read of a mutable filesystem, and what it admits is not
+    /// necessarily what the first one executes.
+    ///
+    /// So the check is asked here, once, against the one snapshot this walk
+    /// resolved and will go on to execute — after the units are known and
+    /// before anything may reach outside the language. `admit` receives the
+    /// report as it stands, which is exactly the specification identity, the
+    /// root and every loaded unit's identity and digest. Refusing returns
+    /// `Err` with the caller's own message and no effect has occurred.
+    pub fn run_admitted(
+        &self,
+        unit: &SourceUnit,
+        provider: &dyn SourceProvider,
+        inputs: &Inputs,
+        stdlib: &mut Stdlib,
+        host: &mut dyn Host,
+        admit: &dyn Fn(&Report) -> Result<(), String>,
+    ) -> Result<Report, String> {
+        let mut refusal: Option<String> = None;
+        let report = {
+            let mut record = |report: &Report| match admit(report) {
+                Ok(()) => true,
+                Err(message) => {
+                    refusal = Some(message);
+                    false
+                }
+            };
+            self.request(
+                Command::Run,
+                unit,
+                provider,
+                inputs,
+                Some((stdlib, host)),
+                Some(&mut record),
+            )
+        };
+        match refusal {
+            Some(message) => Err(message),
+            None => Ok(report),
+        }
     }
 
     /// The one staged walk every command uses.
@@ -386,6 +519,7 @@ impl Engine {
         provider: &dyn SourceProvider,
         inputs: &Inputs,
         effects: Option<(&mut dyn Operations, &mut dyn Host)>,
+        admit: Option<&mut dyn FnMut(&Report) -> bool>,
     ) -> Report {
         let mut report = Report {
             command,
@@ -451,6 +585,16 @@ impl Engine {
             })
             .collect();
 
+        // The caller's admission check, if it installed one. This is the first
+        // moment the loaded source has an identity to judge, and it is before
+        // every later step, so a refusal here precedes any effect rather than
+        // describing one. See [`Engine::run_admitted`].
+        if let Some(admit) = admit {
+            if !admit(&report) {
+                return report;
+            }
+        }
+
         // Steps 1 to 3 for every loaded unit, including imported ones that
         // failed an earlier stage while the root did not.
         let early: Vec<DiagnosticRecord> = resolved
@@ -514,36 +658,62 @@ impl Engine {
                 // Structurally unreachable: the resolver's outcome was clean.
                 // Reported rather than unwrapped, because a panic in a product
                 // facade would destroy the report a caller needs.
-                report.diagnostics.push(placeholder(
+                //
+                // `StageSkipped` names the stage that failed, the unit it
+                // failed in and the locus, so those are reported. Replacing
+                // them with a fixed stage and the root's identity would put a
+                // wrong answer where a right one was already available.
+                report.diagnostics.push(self.registered_record(
                     &skipped.primary,
-                    Stage::Resolution,
-                    resolved.root(),
+                    skipped.stage,
+                    &skipped.source,
+                    skipped.span,
+                    None,
+                    &resolved,
                 ));
                 mark_primary(&mut report.diagnostics);
                 return report;
             }
         };
         report.reached = Reached::StaticChecking;
-        if checked.primary().is_some() {
-            report.diagnostics = checked
-                .diagnostics()
+        // M4 reports its verdict on two channels. Ordinary static diagnostics
+        // are one; the other holds defects it is the first stage able to
+        // decide, but whose registered stage is *earlier* — a `kind.type`
+        // BASE chain that resolves to itself carries `error.reference.cycle`,
+        // which the registry stages at resolution. They are kept apart so that
+        // no static-stage list ever contains a foreign identifier, and
+        // `Checked::outcome` rejects the program for either.
+        //
+        // So the verdict is `outcome`, not the static list alone: asking only
+        // the static list reports a program M4 rejected as accepted, with
+        // nothing said about why. `earliest_stage_rule` orders the two —
+        // a later stage does not pass a source that failed an earlier one —
+        // which is also the precedence `Checked::terminal_status` applies, so
+        // the earlier-stage defects lead and `primary_rule` selects from the
+        // front. Each layer has already applied supersession, duplicate
+        // suppression and `stable_order` within its own channel.
+        if checked.outcome() != CheckOutcome::Checked {
+            let mut records: Vec<DiagnosticRecord> = checked
+                .earlier_stage_defects()
                 .iter()
-                .map(|d| DiagnosticRecord {
-                    id: d.id.to_string(),
-                    stage: d.stage(),
-                    source: d.source.to_string(),
-                    span: d.span,
-                    position: d.position,
-                    meaning: d.meaning.clone(),
-                    default_status: d.default_status.clone(),
-                    specificity_rank: d.specificity_rank,
-                    event: None,
-                    cause: format!("{:?}", d.cause),
-                    detail: d.detail.clone(),
-                    sequence: None,
-                    primary: false,
-                })
+                .map(|d| self.earlier_record(d, &resolved))
                 .collect();
+            records.extend(checked.diagnostics().iter().map(|d| DiagnosticRecord {
+                id: d.id.to_string(),
+                stage: d.stage(),
+                source: d.source.to_string(),
+                span: d.span,
+                position: d.position,
+                meaning: d.meaning.clone(),
+                default_status: d.default_status.clone(),
+                specificity_rank: d.specificity_rank,
+                event: None,
+                cause: format!("{:?}", d.cause),
+                detail: d.detail.clone(),
+                sequence: None,
+                primary: false,
+            }));
+            report.diagnostics = records;
             mark_primary(&mut report.diagnostics);
             return report;
         }
@@ -570,10 +740,17 @@ impl Engine {
         let planned = match Preflight::new(&self.preflight).plan(&checked, &resolved, &invocation) {
             Ok(planned) => planned,
             Err(skipped) => {
-                report.diagnostics.push(placeholder(
+                // The same rule as above: preflight was skipped *because* an
+                // earlier stage failed, and it says which stage, in which unit,
+                // where. A defect the registry stages at resolution must not
+                // arrive labelled as a static one.
+                report.diagnostics.push(self.registered_record(
                     &skipped.primary,
-                    Stage::StaticOrExpression,
-                    resolved.root(),
+                    skipped.stage,
+                    &skipped.source,
+                    skipped.span,
+                    None,
+                    &resolved,
                 ));
                 mark_primary(&mut report.diagnostics);
                 return report;

@@ -626,13 +626,33 @@ function diagnosticLines(doc) {
 
 /* ------------------------------------------------- analysis (phase C) */
 
+/* Whether an answer about `doc` at `revision` still describes `doc`.
+ *
+ * These answers are functions of the bytes that were submitted, so the
+ * document's own revision is the whole of the question: an answer for any
+ * other revision describes text that is no longer there, and two answers for
+ * one revision describe the same text and are interchangeable. The document
+ * must also still be the one the map holds under its id — closing a tab and
+ * opening it again makes a new document, and an answer about the old one is
+ * not about the new one.
+ *
+ * `save` and `reload` have always tested this; it is the same test. */
+function describes(doc, revision) {
+  return state.docs.get(doc.id) === doc && doc.revision === revision;
+}
+
 async function refreshTokens() {
   const doc = current();
   if (!doc) return;
+  const revision = doc.revision;
   try {
     const reply = await api("POST", "/api/tokens", { id: doc.id }, doc.text);
+    if (!describes(doc, revision)) return;
     doc.tokens = reply.tokens;
-    render();
+    /* Painting is the active tab's business, and storing is the document's.
+     * An answer for a tab nobody is looking at belongs in that tab's cache
+     * and nowhere on screen. */
+    if (current() === doc) render();
   } catch (_) {
     /* A failed token request leaves the document painted as plain text,
      * which is honest: no engine answer, no highlighting. */
@@ -642,17 +662,25 @@ async function refreshTokens() {
 async function runAnalysis() {
   const doc = current();
   if (!doc) return;
+  const revision = doc.revision;
   await refreshTokens();
+  /* The tokens step awaited, so the document may have moved on. Asking the
+   * engine about text that is already gone would only produce another answer
+   * to throw away, and pairing a report with tokens from a different revision
+   * is the thing being prevented. */
+  if (!describes(doc, revision)) return;
   try {
     /* Inspect rather than check: it reaches the same diagnostics and also
      * carries the resolver's bindings, which is what navigation needs. A
      * document that fails before resolution still gets its diagnostics. */
     const report = await api("POST", "/api/inspect", { id: doc.id }, doc.text);
+    if (!describes(doc, revision)) return;
     doc.report = report;
     doc.navigation = report.navigation || null;
     /* Kept separately from the report: a run replaces `report`, and stepping
      * needs the plan to turn an invocation's node index into a span. */
     if (report.structure) doc.plan = report.structure.plan;
+    if (current() !== doc) return;
     renderDiagnostics(doc);
     renderStructure(doc);
     render();
@@ -1423,8 +1451,11 @@ document.addEventListener("keydown", (e) => {
   const meta = e.ctrlKey || e.metaKey;
   if (meta && e.key === "s") { e.preventDefault(); save(); }
   else if (meta && e.key === "r") { e.preventDefault(); reload(); }
-  else if (e.key === "F12") { e.preventDefault(); goToDefinition(); }
+  /* Shift+F12 first, and plain F12 says it is plain: `e.key === "F12"` is true
+     with Shift held too, so a bare test for it ahead of this one answered
+     Shift+F12 with goToDefinition and left findReferences unreachable. */
   else if (e.shiftKey && e.key === "F12") { e.preventDefault(); findReferences(); }
+  else if (!e.shiftKey && e.key === "F12") { e.preventDefault(); goToDefinition(); }
   else if (meta && e.shiftKey && e.key === "F") { e.preventDefault(); findReferences(); }
   else if (e.key === "Escape") closeModal();
 });
@@ -1437,8 +1468,12 @@ code.addEventListener("click", (e) => {
 $("#act-check").onclick = async () => {
   const doc = current();
   if (!doc) return;
-  doc.report = await api("POST", "/api/check", { id: doc.id }, doc.text);
+  const revision = doc.revision;
+  const report = await api("POST", "/api/check", { id: doc.id }, doc.text);
+  if (!describes(doc, revision)) return;
+  doc.report = report;
   doc.navigation = null;
+  if (current() !== doc) return;
   renderDiagnostics(doc); renderStructure(doc); render();
   showView("diagnostics");
 };

@@ -5,7 +5,7 @@
 ///
 /// A floor, not an expected total: adding a case must not break the gate, and
 /// losing one must.
-const EXPECTED_CASES: usize = 15;
+const EXPECTED_CASES: usize = 23;
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};

@@ -635,11 +635,28 @@ fn apply_referenced(
             format!("no implementation profile is installed for the {parameter} operation {id}"),
         ));
     };
-    implementation(member).map_err(|detail| {
+    implementation(member).map_err(|failure| {
+        // "union every applicable error of a referenced key operation": the
+        // implementation's own classification is carried through when this row
+        // admits that identifier, so a failure the registry already named does
+        // not arrive as this row's precondition instead.
+        //
+        // The row decides, not the implementation. An identifier the row's
+        // closed `errors` list does not admit is not adopted — an
+        // implementation may classify its own failure, and may not move a
+        // diagnostic into a row that never listed it.
+        let admitted = failure
+            .error
+            .as_deref()
+            .filter(|error| contract.admits_error(error))
+            .and_then(RuntimeError::from_registry_str);
         Resolution::failed(
-            RuntimeError::OperationPrecondition,
+            admitted.unwrap_or(RuntimeError::OperationPrecondition),
             parameter,
-            format!("the {parameter} operation {id} did not produce a key: {detail}"),
+            format!(
+                "the {parameter} operation {id} did not produce a key: {}",
+                failure.detail
+            ),
         )
     })
 }
@@ -653,18 +670,29 @@ fn apply_referenced(
 /// PARAMETER accepting T, and exactly one RESULT** of a concrete registered
 /// ordered type."
 ///
-/// The row's `error.operation.precondition` trigger names "a missing,
+/// Each condition this function reports is one of the properties that sentence
+/// requires, checked against the referenced operation's own declaration, and
+/// each is `error.operation.precondition` before effects — the only identifier
+/// the row's closed list admits for it.
+///
+/// What this function does **not** decide is the separate question of the row's
+/// `error.operation.precondition` trigger wording, which names "a missing,
 /// ambiguous, incomplete, or out-of-bounds immutable profile" for the key
-/// operation, while `axis_contract.custom_operation_resolution` says a custom
-/// `kind.operation` "selects no implementation profile". The two are consistent
-/// once the four words are read as what they are — the registry's closed
-/// vocabulary for a profile-role selection fault — applied to the thing that
-/// stands in for a profile here: the operation's own declared contract, whose
-/// required properties this sentence lists. So an absent implementation is
-/// *missing*, more than one PARAMETER leaves which one accepts T *ambiguous*,
-/// no RESULT leaves the key type *incomplete*, and a declared dependency beyond
-/// declared_state_only is *out of bounds* — each one error.operation.precondition
-/// before effects, which is the only identifier the row's closed list admits.
+/// operation while `axis_contract.custom_operation_resolution` says a custom
+/// `kind.operation` "selects no implementation profile".
+///
+/// An earlier revision of this comment claimed those four words apply to the
+/// declared key contract, so that a second PARAMETER was "ambiguous" and an
+/// absent RESULT was "incomplete". That equivalence was **withdrawn** in
+/// `reports/tasks/POST-FINAL-05_CORRECTIVE_02_RESULT.md` §7 as not
+/// canon-authorized, and the four `core.sort` profile sub-runs it was used to
+/// close were reopened. A parameter count and a missing RESULT are not
+/// automatically a profile-selection fault.
+///
+/// The conflict is a canonical question and is open. It is recorded here rather
+/// than settled here: a comment cannot decide what the authority order means,
+/// and the checks below stand on the `key` parameter's own stated
+/// requirements, which need no such reading.
 fn incomplete_contract(
     cx: &Invocation<'_>,
     id: &str,

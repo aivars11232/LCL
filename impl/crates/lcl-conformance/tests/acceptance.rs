@@ -455,3 +455,93 @@ fn the_gate_answers_the_real_production_verdict() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// A-02 — required fields, and accounting that could not have happened
+// ---------------------------------------------------------------------------
+//
+// Three ways a verdict got past the gate while saying something impossible or
+// nothing at all. Every fixture here is synthetic: it establishes what the
+// validator does, never that the executions it claims took place.
+
+/// A complete verdict with one level's `problems` field replaced.
+fn complete_with_problems(inventory: &Obligations, replacement: &str) -> String {
+    let complete = complete(inventory);
+    let from = "\"problems\":[]";
+    assert!(complete.contains(from));
+    complete.replacen(from, replacement, 1)
+}
+
+/// A complete verdict with its record accounting replaced.
+fn complete_with_records(inventory: &Obligations, records: &str) -> String {
+    let complete = complete(inventory);
+    let from = "\"records\":{\"executed\":10,\"passed\":10,\"failed\":0}";
+    assert!(complete.contains(from));
+    complete.replacen(from, records, 1)
+}
+
+#[test]
+fn a_level_without_a_problems_list_is_refused() {
+    // Absence is not emptiness. A verdict that never says whether it retained
+    // problem records has not established that it retained none, and reading
+    // the field with `and_then(as_array)` made those two the same answer.
+    let inventory = inventory();
+    let refusal = refusal(&inventory, &complete_with_problems(&inventory, "\"x\":0"));
+    assert!(refusal.contains("problems"), "{refusal}");
+}
+
+#[test]
+fn a_problems_field_of_the_wrong_type_is_refused() {
+    let inventory = inventory();
+    for replacement in [
+        "\"problems\":\"none\"",
+        "\"problems\":0",
+        "\"problems\":{}",
+        "\"problems\":null",
+    ] {
+        let refusal = refusal(&inventory, &complete_with_problems(&inventory, replacement));
+        assert!(refusal.contains("problems"), "{replacement}: {refusal}");
+    }
+}
+
+#[test]
+fn a_verdict_claiming_no_executions_at_all_is_refused() {
+    // Nothing ran, and yet every obligation is reported established. Whatever
+    // else is true of this verdict, both of those cannot be.
+    let inventory = inventory();
+    let refusal = refusal(
+        &inventory,
+        &complete_with_records(
+            &inventory,
+            "\"records\":{\"executed\":0,\"passed\":0,\"failed\":0}",
+        ),
+    );
+    assert!(refusal.contains("executed"), "{refusal}");
+}
+
+#[test]
+fn extreme_record_counters_are_refused_rather_than_overflowing() {
+    // `passed + failed` on two u64s. In a debug build the addition panics and
+    // takes the gate with it; in a release build it wraps and can be made to
+    // equal `executed`, which is the arithmetic saying yes to a verdict nobody
+    // could have produced.
+    let inventory = inventory();
+    for records in [
+        "\"records\":{\"executed\":1,\"passed\":18446744073709551615,\"failed\":2}",
+        "\"records\":{\"executed\":18446744073709551615,\"passed\":18446744073709551615,\"failed\":18446744073709551615}",
+    ] {
+        let refusal = refusal(&inventory, &complete_with_records(&inventory, records));
+        assert!(!refusal.is_empty(), "{records}");
+    }
+}
+
+/// The control: ordinary, internally consistent accounting is still accepted.
+#[test]
+fn ordinary_record_accounting_is_still_accepted() {
+    let inventory = inventory();
+    let verdict = complete_with_records(
+        &inventory,
+        "\"records\":{\"executed\":2011,\"passed\":2011,\"failed\":0}",
+    );
+    accept(&verdict, &inventory, IDENTITY).expect("consistent accounting is accepted");
+}

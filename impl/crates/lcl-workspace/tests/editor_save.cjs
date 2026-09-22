@@ -112,8 +112,11 @@ async function harness(options) {
     url = new URL(url, origin);
     const method = init.method || "GET";
     const id = url.searchParams.get("id");
-    const hold = nextHold && method === nextHold.method ? nextHold : null;
-    if (hold) nextHold = null;
+    let hold = null;
+    if (nextHold && method === nextHold.method && (!nextHold.path || url.pathname === nextHold.path)) {
+      if (nextHold.skip > 0) nextHold.skip--;
+      else { hold = nextHold; nextHold = null; }
+    }
     if (method === "PUT") puts.push({ id, body: init.body });
     let reply;
     if (url.pathname === "/api/documents" && failListing) {
@@ -132,7 +135,31 @@ async function harness(options) {
     } else if (url.pathname === "/api/documents") {
       reply = jsonReply({ entries: [] });
     } else if (url.pathname === "/api/tokens") {
-      reply = jsonReply({ tokens: [] });
+      // One token spanning exactly the bytes that were submitted. The real
+      // engine's tokens cover its input the same way, so an assertion about
+      // how far the applied tokens reach means the same thing in either mode.
+      reply = jsonReply({
+        tokens: [{ class: "ident", start: 0, end: Buffer.byteLength(init.body || "") }],
+      });
+    } else if (url.pathname === "/api/inspect") {
+      // Accepted or rejected according to the submitted bytes, which is the
+      // property these cases use to tell one document's answer from another's.
+      const accepted = (init.body || "").includes("SPECIFICATION:");
+      reply = jsonReply({
+        outcome: accepted ? "accepted" : "rejected",
+        reached: "static_checking",
+        diagnostics: [],
+        units: [],
+        navigation: null,
+      });
+    } else if (url.pathname === "/api/check") {
+      const accepted = (init.body || "").includes("SPECIFICATION:");
+      reply = jsonReply({
+        outcome: accepted ? "accepted" : "rejected",
+        reached: "static_checking",
+        diagnostics: [],
+        units: [],
+      });
     } else if (url.pathname === "/api/document" && method === "PUT") {
       if (init.body.includes("\r")) reply = jsonReply({ error: "carriage return refused" }, 422);
       else {
@@ -153,7 +180,8 @@ async function harness(options) {
   };
   const context = vm.createContext({
     document, location: { origin, search: `?t=${token}` }, fetch: request,
-    URL, URLSearchParams, Event, getComputedStyle: () => ({ getPropertyValue: () => "20" }),
+    URL, URLSearchParams, Event, TextEncoder,
+    getComputedStyle: () => ({ getPropertyValue: () => "20" }),
     // Analysis/toast timers are controlled; no production function is replaced.
     setTimeout: () => 1, clearTimeout: () => {}, console,
   });
@@ -165,9 +193,14 @@ async function harness(options) {
   const run = code => vm.runInContext(code, context, { timeout: 3000 });
   return {
     sourceHash: hash(source), puts, get, run,
-    hold(method = "PUT") {
+    /// Hold one matching request until the case releases it.
+    ///
+    /// `path` and `skip` exist because one production call can make several
+    /// requests — `runAnalysis` asks for tokens before it asks for the
+    /// analysis — and a case about the second one must not stop the first.
+    hold(method = "PUT", { path = null, skip = 0 } = {}) {
       assert.equal(nextHold, null);
-      const held = { method, reached: deferred(), release: deferred() };
+      const held = { method, path, skip, reached: deferred(), release: deferred() };
       nextHold = held;
       return { reached: held.reached.promise, release: () => held.release.resolve() };
     },
@@ -189,6 +222,61 @@ async function harness(options) {
     async persisted(id) {
       return options.project ? fs.readFile(path.join(options.project, id), "utf8") : stored.get(id);
     },
+    /// Dispatch one keydown at the production listener.
+    ///
+    /// The event goes to the same `document` the script registered on, so what
+    /// answers it is the shipped handler and its real branch order.
+    press(key, modifiers = {}) {
+      run(`(() => {
+        const e = new Event("keydown");
+        e.key = ${JSON.stringify(key)};
+        e.ctrlKey = ${Boolean(modifiers.ctrl)};
+        e.metaKey = ${Boolean(modifiers.meta)};
+        e.shiftKey = ${Boolean(modifiers.shift)};
+        e.preventDefault = () => {};
+        document.dispatchEvent(e);
+      })()`);
+    },
+    /// The text of every toast raised so far.
+    toasts() {
+      return get("#toasts").children.map(node => node.textContent);
+    },
+    /// How far the tokens currently applied to one document reach.
+    ///
+    /// Tokens describe the bytes they were produced from, so a set that
+    /// reaches past the document's current bytes was produced from other
+    /// bytes — which is exactly the claim "these tokens describe this text"
+    /// being false.
+    tokenReach(id) {
+      return JSON.parse(run(`JSON.stringify((() => {
+        const d = state.docs.get(${JSON.stringify(id)});
+        if (!d || !d.tokens) return null;
+        return d.tokens.reduce((max, t) => Math.max(max, t.end), 0);
+      })())`));
+    },
+    byteLength(id) {
+      return JSON.parse(run(`JSON.stringify((() => {
+        const d = state.docs.get(${JSON.stringify(id)});
+        return d ? new TextEncoder().encode(d.text).length : null;
+      })())`));
+    },
+    outcome(id) {
+      return JSON.parse(run(`JSON.stringify((() => {
+        const d = state.docs.get(${JSON.stringify(id)});
+        return d && d.report ? d.report.outcome : null;
+      })())`));
+    },
+    active() { return run("state.active"); },
+    /// Everything the diagnostics panel is currently showing.
+    ///
+    /// The panel is shared by every tab, so what it says is a claim about the
+    /// document the person is looking at — whichever document's answer put it
+    /// there.
+    diagnosticsText() {
+      const collect = node =>
+        [node.textContent || ""].concat(node.children.flatMap(collect)).join(" ");
+      return collect(get('.view[data-view="diagnostics"]')).trim();
+    },
     reset() {
       assert.equal(nextHold, null, "a test leaked a pending held response");
       run("state.docs.clear(); state.order=[]; state.active=null; code.value=''; closeModal();");
@@ -197,6 +285,24 @@ async function harness(options) {
     },
   };
 }
+
+/// A document the engine accepts, used to tell one answer from another.
+const VALID_DOCUMENT = [
+  "LCL:",
+  "    VERSION: \"0.1.0\"",
+  "",
+  "SPECIFICATION:",
+  "    ID: example.editor",
+  "    NAME: \"Editor fixture\"",
+  "    VERSION: \"1.0.0\"",
+  "    KIND: kind.data",
+  "",
+  "DATA:",
+  "    ID: data.subject",
+  "    TYPE: INTEGER",
+  "    VALUE: 1",
+  "",
+].join("\n");
 
 const cases = [
   ["failed close-save retains document, edits and dirty state", async h => {
@@ -353,6 +459,190 @@ const cases = [
     assert.equal(h.doc("refresh.lcl.txt").dirty,false);
     assert.equal(await h.persisted("refresh.lcl.txt"),"persisted\n");
     assert(!h.get("#toasts").children.some(node => node.textContent.startsWith("Not saved.")));
+  }],
+  // -------------------------------------------------------------------------
+  // N-02 — Shift+F12 reaches its own binding
+  // -------------------------------------------------------------------------
+  //
+  // The listener tested `e.key === "F12"` before the Shift branch, and that
+  // test is true whether or not Shift is held. Shift+F12 therefore ran
+  // `goToDefinition`, and the `findReferences` branch behind it could not be
+  // reached at all.
+  //
+  // The two are told apart by the message each raises when the cursor is on
+  // nothing: they differ, and only the one that actually ran says its own.
+  ["F12 and Shift+F12 reach their own bindings", async h => {
+    await h.add("keys.lcl.txt");
+    // Resolver data the navigation functions can consult, holding nothing, so
+    // each takes its "cursor is on nothing" branch and names itself.
+    h.run(`state.docs.get("keys.lcl.txt").navigation = { declarations: [], references: [] };`);
+
+    h.get("#toasts").replaceChildren();
+    h.press("F12");
+    assert.deepEqual(h.toasts(), ["The cursor is not on a reference."], "F12 goes to a definition");
+
+    h.get("#toasts").replaceChildren();
+    h.press("F12", { shift: true });
+    assert.deepEqual(
+      h.toasts(),
+      ["Put the cursor on a declaration or a reference."],
+      "Shift+F12 finds references",
+    );
+
+    h.get("#toasts").replaceChildren();
+    h.press("F", { ctrl: true, shift: true });
+    assert.deepEqual(
+      h.toasts(),
+      ["Put the cursor on a declaration or a reference."],
+      "Ctrl+Shift+F finds references, as it always did",
+    );
+  }],
+  // -------------------------------------------------------------------------
+  // A-05 — a reply describes the text it was asked about, or it is discarded
+  // -------------------------------------------------------------------------
+  //
+  // `refreshTokens`, `runAnalysis` and the explicit check each capture the
+  // current document, send its text, and assign the answer when it comes back.
+  // Nothing between those two moments is checked, so an answer about text that
+  // no longer exists was stored as a description of the text that does — and
+  // painted.
+  //
+  // The document already carries the fact that settles it. `revision` is bumped
+  // on every edit, and `save` and `reload` already refuse to apply an answer
+  // whose revision has moved on. These cases hold that same rule to the three
+  // paths that did not apply it.
+  //
+  // Revision is the whole of the question for these answers, because each is a
+  // function of the submitted bytes alone: two replies for one revision are
+  // interchangeable, and a reply for any other revision describes other bytes.
+
+  ["an edit during an outstanding token request discards the stale answer", async h => {
+    // Opened short, so the tokens already applied describe six bytes. The
+    // request that is held describes the long text, and by the time it comes
+    // back the document is short again — so applying it would replace a
+    // description that fits with one that does not.
+    await h.add("stale-tokens.lcl.txt", "short\n");
+    h.edit("a document long enough to tell apart\n");
+    const hold = h.hold("POST");
+    const pending = h.run("refreshTokens()");
+    await bounded(hold.reached, "token request reached the fixture");
+    h.edit("short\n");
+    hold.release();
+    await bounded(pending, "token request answered");
+    await settle();
+    assert(
+      h.tokenReach("stale-tokens.lcl.txt") <= h.byteLength("stale-tokens.lcl.txt"),
+      `tokens reach ${h.tokenReach("stale-tokens.lcl.txt")} bytes into a ` +
+        `${h.byteLength("stale-tokens.lcl.txt")}-byte document`,
+    );
+  }],
+
+  ["a token reply that arrives after a newer one does not replace it", async h => {
+    await h.add("inverted-tokens.lcl.txt", "a document long enough to tell apart\n");
+    const hold = h.hold("POST");
+    const first = h.run("refreshTokens()");
+    await bounded(hold.reached, "first token request reached the fixture");
+    h.edit("short\n");
+    await bounded(h.run("refreshTokens()"), "second token request answered");
+    const current = h.tokenReach("inverted-tokens.lcl.txt");
+    hold.release();
+    await bounded(first, "first token request answered");
+    await settle();
+    assert.equal(
+      h.tokenReach("inverted-tokens.lcl.txt"),
+      current,
+      "the older reply overwrote the newer one",
+    );
+  }],
+
+  ["an edit during an outstanding analysis discards the stale report", async h => {
+    await h.add("stale-analysis.lcl.txt", "not a document\n");
+    // The first analysis describes text with no SPECIFICATION, so it is
+    // rejected; the edit makes the document one the engine accepts.
+    const hold = h.hold("POST", { path: "/api/inspect" });
+    const pending = h.run("runAnalysis()");
+    await bounded(hold.reached, "analysis reached the fixture");
+    h.edit(VALID_DOCUMENT);
+    hold.release();
+    await bounded(pending, "analysis answered");
+    await settle();
+    assert.notEqual(
+      h.outcome("stale-analysis.lcl.txt"),
+      "rejected",
+      "a verdict on text that was replaced was kept as a verdict on the new text",
+    );
+  }],
+
+  ["an analysis that completes for another tab does not describe this one", async h => {
+    await h.add("tab-a.lcl.txt", "not a document\n");
+    const hold = h.hold("POST", { path: "/api/inspect" });
+    const pending = h.run("runAnalysis()");
+    await bounded(hold.reached, "tab A analysis reached the fixture");
+    await h.add("tab-b.lcl.txt", VALID_DOCUMENT);
+    assert.equal(h.active(), "tab-b.lcl.txt");
+    hold.release();
+    await bounded(pending, "tab A analysis answered");
+    await settle();
+    assert.equal(h.active(), "tab-b.lcl.txt", "the finished request switched tabs");
+    // Tab A keeping its own verdict is correct per-document caching. What may
+    // not happen is that verdict being painted into the panel while tab B is
+    // the document on screen.
+    assert(
+      !h.diagnosticsText().includes("rejected"),
+      `tab A's verdict is on screen while tab B is open: ${h.diagnosticsText()}`,
+    );
+  }],
+
+  ["a document closed while its analysis was outstanding is not resurrected", async h => {
+    await h.add("closed.lcl.txt", "not a document\n");
+    const hold = h.hold("POST", { path: "/api/inspect" });
+    const pending = h.run("runAnalysis()");
+    await bounded(hold.reached, "analysis reached the fixture");
+    h.close("closed.lcl.txt");
+    hold.release();
+    await bounded(pending, "analysis answered");
+    await settle();
+    assert.equal(
+      JSON.parse(h.run(`JSON.stringify(state.docs.has("closed.lcl.txt"))`)),
+      false,
+      "a reply for a closed document put it back",
+    );
+    assert(
+      !h.diagnosticsText().includes("rejected"),
+      `a closed document's verdict is still on screen: ${h.diagnosticsText()}`,
+    );
+  }],
+
+  ["an explicit check that an edit outran is discarded", async h => {
+    await h.add("checked.lcl.txt", "not a document\n");
+    const hold = h.hold("POST");
+    const pending = h.run(`$("#act-check").onclick()`);
+    await bounded(hold.reached, "check reached the fixture");
+    h.edit(VALID_DOCUMENT);
+    hold.release();
+    await bounded(pending, "check answered");
+    await settle();
+    assert.notEqual(
+      h.outcome("checked.lcl.txt"),
+      "rejected",
+      "a check of replaced text was kept as a verdict on the new text",
+    );
+  }],
+
+  ["the ordinary in-order case still applies its answers", async h => {
+    await h.add("in-order.lcl.txt", VALID_DOCUMENT);
+    await bounded(h.run("runAnalysis()"), "analysis answered");
+    await settle();
+    assert.equal(h.outcome("in-order.lcl.txt"), "accepted", "a current answer must be applied");
+    const reach = h.tokenReach("in-order.lcl.txt");
+    const bytes = h.byteLength("in-order.lcl.txt");
+    // Tokens describe this document and no more of it than there is. The
+    // engine does not necessarily emit a token for a final line feed, so the
+    // upper bound is the document's length rather than exactly it.
+    assert(reach > 0 && reach <= bytes, `tokens reach ${reach} of ${bytes} bytes`);
+    await bounded(h.run(`$("#act-check").onclick()`), "check answered");
+    await settle();
+    assert.equal(h.outcome("in-order.lcl.txt"), "accepted");
   }],
 ];
 

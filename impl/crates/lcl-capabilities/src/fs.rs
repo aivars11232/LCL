@@ -91,6 +91,15 @@ pub enum FsError {
     /// for modification. Nothing began, and that is established rather than
     /// assumed: the open itself is what would have begun it.
     Io(String),
+    /// The two ends of a transfer are one underlying file.
+    ///
+    /// `core.move` states it as a precondition — "resolved source and
+    /// destination addresses are distinct" — and `core.copy` reaches it
+    /// through "source remains unchanged", which no self-copy can honour.
+    SameFile {
+        source: PathBuf,
+        destination: PathBuf,
+    },
     /// The operating system reported a failure *after* the target was opened
     /// for modification, so what began cannot be proven not to have.
     ///
@@ -115,6 +124,15 @@ impl fmt::Display for FsError {
                 resolved.display()
             ),
             FsError::Bounded(cancelled) => write!(f, "{cancelled}"),
+            FsError::SameFile {
+                source,
+                destination,
+            } => write!(
+                f,
+                "{} and {} are the same file",
+                source.display(),
+                destination.display()
+            ),
             FsError::Io(detail) => f.write_str(detail),
             FsError::IoAfterChange { detail, target } => {
                 write!(
@@ -228,6 +246,36 @@ impl RealFileSystem {
         }
         Ok(resolved)
     }
+}
+
+/// Whether two already-resolved locations name one underlying file.
+///
+/// The resolved paths answer it for a second spelling and for a symbolic link,
+/// because [`resolve`] canonicalizes both before they get here. They cannot
+/// answer it for a hard link: a second directory entry for one inode has a
+/// canonical path of its own, and comparing path strings would call two names
+/// for one file two files. So the file's own identity is asked for.
+///
+/// On a platform that exposes no such identity the path comparison is all
+/// there is, and this says so rather than pretending otherwise: a hard link
+/// would not be detected there, and a transfer between two of them would
+/// behave as it did before this check existed.
+#[cfg(unix)]
+fn same_file(source: &Path, destination: &Path) -> bool {
+    if source == destination {
+        return true;
+    }
+    use std::os::unix::fs::MetadataExt;
+    match (std::fs::metadata(source), std::fs::metadata(destination)) {
+        (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
+        // A destination that does not exist yet is not the source.
+        _ => false,
+    }
+}
+
+#[cfg(not(unix))]
+fn same_file(source: &Path, destination: &Path) -> bool {
+    source == destination
 }
 
 /// The real location of a path, resolving symlinks as far as it exists.
@@ -532,6 +580,19 @@ impl FileSystem for RealFileSystem {
         if !source.exists() {
             return Err(FsError::NotFound(from.to_path_buf()));
         }
+        // "resolved source and destination addresses are distinct" is
+        // `core.move`'s own precondition, and it is checked before anything is
+        // created or removed. POSIX `rename` on two entries for one file
+        // "shall return successfully and perform no other action", so without
+        // this the operation reports that it relocated something while both
+        // names are still there — and `core.move` promises the opposite:
+        // "source no longer exists at original address".
+        if same_file(&source, &destination) {
+            return Err(FsError::SameFile {
+                source: from.to_path_buf(),
+                destination: to.to_path_buf(),
+            });
+        }
         if destination.exists() && !overwrite {
             return Err(FsError::AlreadyExists(to.to_path_buf()));
         }
@@ -542,7 +603,15 @@ impl FileSystem for RealFileSystem {
             return std::fs::rename(&source, &destination).map_err(io);
         }
         match std::fs::hard_link(&source, &destination) {
-            Ok(()) => std::fs::remove_file(&source).map_err(io),
+            // The link exists from here on. If the unlink then fails, a new
+            // name for this file is on disk and the old one is still there —
+            // so the failure is reported from after a change, not from before
+            // one. `FsError::Io` would say "Nothing began", which by now is
+            // simply untrue, and a caller reading it would believe a retry
+            // starts from the original state.
+            Ok(()) => {
+                std::fs::remove_file(&source).map_err(|error| io_after_change(error, &destination))
+            }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                 Err(FsError::AlreadyExists(to.to_path_buf()))
             }
@@ -572,11 +641,41 @@ impl FileSystem for RealFileSystem {
         if destination.exists() && !overwrite {
             return Err(FsError::AlreadyExists(to.to_path_buf()));
         }
+        // `core.copy` states no distinctness precondition — unlike
+        // `core.move`, which does — so two names for one file are not refused
+        // here. They are also not copied: `std::fs::copy` opens its
+        // destination truncating, so it would empty the very file it is
+        // reading and break "source remains unchanged". Nothing needs to
+        // happen instead. The destination already holds the source's
+        // pre-state, and the source is already unchanged, so both
+        // postconditions hold with no bytes moved.
+        if same_file(&source, &destination) {
+            return Ok(0);
+        }
         if let Some(parent) = destination.parent() {
             std::fs::create_dir_all(parent).map_err(io)?;
         }
         if overwrite {
-            return std::fs::copy(&source, &destination).map_err(io);
+            // Staged exactly like the reserving path below, so that each
+            // failure is reported from the phase it actually happened in.
+            // `std::fs::copy` does this internally and then returns one error
+            // for all of it, which made a failure after the destination had
+            // been truncated indistinguishable from one before it was opened.
+            let mut reader = no_follow(std::fs::OpenOptions::new().read(true))
+                .open(&source)
+                .map_err(io)?;
+            let mut writer = no_follow(
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .truncate(true),
+            )
+            .open(&destination)
+            .map_err(io)?;
+            // The destination is truncated by the open above, so anything that
+            // goes wrong from here has already changed it.
+            return std::io::copy(&mut reader, &mut writer)
+                .map_err(|error| io_after_change(error, &destination));
         }
         let mut reader = no_follow(std::fs::OpenOptions::new().read(true))
             .open(&source)

@@ -540,3 +540,215 @@ fn package_lock_never_writes_outside_the_project() {
     assert_eq!(run.code, ENVIRONMENT, "{}{}", run.stdout, run.stderr);
     assert!(!target.exists(), "the lock was written through a link");
 }
+
+// ---------------------------------------------------------------------------
+// `--locked` is an admission rule, so it decides before the effect
+// ---------------------------------------------------------------------------
+//
+// `--locked` is documented as "refuse to proceed when the lock file
+// disagrees". A refusal that arrives after the run has already written the
+// file has not refused to proceed; it has reported, afterwards, that it should
+// not have. These cases therefore assert the target's bytes, not only a
+// nonzero exit: an exit code cannot distinguish a run that was stopped from a
+// run that was regretted.
+//
+// The four ways a lock can disagree are covered separately because they are
+// found at different moments — two before a byte of source is read, two only
+// once the resolver has loaded every unit — and a repair that moved one of
+// them would leave the others behind.
+
+/// A writing project whose root document also imports a library.
+///
+/// One fixture carries both source identities `--locked` can disagree with —
+/// the root and the import — and an effect that must not happen first.
+fn locked_writing_project(name: &str, target: &Path) -> PathBuf {
+    let source = format!(
+        "LCL:\n    VERSION: \"0.1.0\"\n\
+         \n\
+         SPECIFICATION:\n    ID: example.write\n    NAME: \"Write one file\"\n    \
+         VERSION: \"1.0.0\"\n    KIND: kind.task\n\
+         \n\
+         IMPORT:\n    ID: import.rules\n    SOURCE: PATH(\"02_IMPORT_LIBRARY.lcl\")\n    \
+         NAMESPACE: file_rules\n    VERSION: \"1.0.0\"\n    AUTHORITY: 400\n    \
+         REQUIRED: TRUE\n\
+         \n\
+         DATA:\n    ID: data.content\n    TYPE: STRING\n    VALUE: \"written by lcl\"\n\
+         \n\
+         OUTPUT:\n    ID: output.written\n    TYPE: PATH\n    FORMAT: format.plain_text\n\
+         \n\
+         GOAL:\n    ID: goal.write\n    ASSERT: TRUE\n\
+         \n\
+         ALLOW:\n    ID: allow.write\n    OPERATION: core.write\n    \
+         TARGET: PATH({target:?})\n    AUTHORITY: 900\n\
+         \n\
+         ACTION:\n    ID: action.write\n    OPERATION: core.write\n    \
+         TARGET: PATH({target:?})\n    PARAMETER:\n        NAME: content\n        \
+         TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: REF(data.content)\n    \
+         PARAMETER:\n        NAME: create_if_missing\n        TYPE: BOOLEAN\n        \
+         REQUIRED: FALSE\n        VALUE: TRUE\n    \
+         OUTPUT: REF(output.written)\n\
+         \n\
+         SUCCESS:\n    ID: success.write\n    ALL: [REF(output.written)]\n\
+         \n\
+         TASK:\n    ID: task.write\n    GOAL: REF(goal.write)\n    \
+         ACTION: REF(action.write)\n    OUTPUT: REF(output.written)\n    \
+         SUCCESS: REF(success.write)\n\
+         \n\
+         EXECUTE:\n    REFERENCE: REF(task.write)\n",
+        target = target.display().to_string()
+    );
+    let root = scratch(name);
+    write(root.join("main.lcl"), source);
+    write(
+        root.join("02_IMPORT_LIBRARY.lcl"),
+        example("02_IMPORT_LIBRARY.lcl"),
+    );
+    write(
+        root.join("lcl.project.json"),
+        format!(
+            "{{\n  \"format\": \"lcl.project/1\",\n  \"spec\": {:?},\n  \
+             \"entry\": \"main.lcl\"\n}}\n",
+            canonical_root().display().to_string()
+        ),
+    );
+    root
+}
+
+/// The control: a lock that agrees does not stand in the way of the effect.
+///
+/// Without it every case below would pass against a `--locked` that refused
+/// everything, which is not the behavior being asked for.
+#[test]
+fn locked_run_with_a_matching_lock_performs_the_effect() {
+    let dir = scratch("locked_run_match_target");
+    let target = dir.join("written.txt");
+    let root = locked_writing_project("locked_run_match", &target);
+    assert_eq!(lcl_in(&root, &["package", "lock"], &[]).code, SUCCESS);
+
+    let run = lcl_in(
+        &root,
+        &[
+            "run",
+            "--locked",
+            "--allow-write",
+            &dir.display().to_string(),
+        ],
+        &[],
+    );
+    assert_eq!(run.code, SUCCESS, "{}{}", run.stdout, run.stderr);
+    assert_eq!(
+        std::fs::read_to_string(&target).expect("the file was written"),
+        "written by lcl"
+    );
+}
+
+/// An edited root document stops the run before it writes.
+#[test]
+fn locked_run_refuses_a_changed_root_before_the_effect() {
+    let dir = scratch("locked_run_root_target");
+    let target = dir.join("written.txt");
+    let root = locked_writing_project("locked_run_root", &target);
+    assert_eq!(lcl_in(&root, &["package", "lock"], &[]).code, SUCCESS);
+
+    let document = root.join("main.lcl");
+    let edited = format!("{}\n", std::fs::read_to_string(&document).unwrap());
+    write(&document, edited);
+
+    let run = lcl_in(
+        &root,
+        &[
+            "run",
+            "--locked",
+            "--allow-write",
+            &dir.display().to_string(),
+        ],
+        &[],
+    );
+    assert_eq!(run.code, ENVIRONMENT, "{}{}", run.stdout, run.stderr);
+    assert!(run.stderr.contains("does not describe what was loaded"));
+    assert!(
+        !target.exists(),
+        "the refusal must precede the effect, not follow it"
+    );
+}
+
+/// An edited import stops the run before it writes.
+#[test]
+fn locked_run_refuses_a_changed_import_before_the_effect() {
+    let dir = scratch("locked_run_import_target");
+    let target = dir.join("written.txt");
+    let root = locked_writing_project("locked_run_import", &target);
+    assert_eq!(lcl_in(&root, &["package", "lock"], &[]).code, SUCCESS);
+
+    let import = root.join("02_IMPORT_LIBRARY.lcl");
+    let edited = format!("{}\n", std::fs::read_to_string(&import).unwrap());
+    write(&import, edited);
+
+    let run = lcl_in(
+        &root,
+        &[
+            "run",
+            "--locked",
+            "--allow-write",
+            &dir.display().to_string(),
+        ],
+        &[],
+    );
+    assert_eq!(run.code, ENVIRONMENT, "{}{}", run.stdout, run.stderr);
+    assert!(run.stderr.contains("does not describe what was loaded"));
+    assert!(
+        !target.exists(),
+        "an import is source too: the refusal must precede the effect"
+    );
+}
+
+/// No lock at all stops the run before it writes.
+#[test]
+fn locked_run_without_a_lock_file_performs_no_effect() {
+    let dir = scratch("locked_run_missing_target");
+    let target = dir.join("written.txt");
+    let root = locked_writing_project("locked_run_missing", &target);
+
+    let run = lcl_in(
+        &root,
+        &[
+            "run",
+            "--locked",
+            "--allow-write",
+            &dir.display().to_string(),
+        ],
+        &[],
+    );
+    assert_eq!(run.code, ENVIRONMENT, "{}{}", run.stdout, run.stderr);
+    assert!(run.stderr.contains("package lock"));
+    assert!(
+        !target.exists(),
+        "an absent lock disagrees with everything, so nothing may happen"
+    );
+}
+
+/// A lock that cannot be read stops the run before it writes.
+#[test]
+fn locked_run_with_an_unreadable_lock_performs_no_effect() {
+    let dir = scratch("locked_run_malformed_target");
+    let target = dir.join("written.txt");
+    let root = locked_writing_project("locked_run_malformed", &target);
+    assert_eq!(lcl_in(&root, &["package", "lock"], &[]).code, SUCCESS);
+    write(root.join("lcl.lock"), "{ this is not a lock");
+
+    let run = lcl_in(
+        &root,
+        &[
+            "run",
+            "--locked",
+            "--allow-write",
+            &dir.display().to_string(),
+        ],
+        &[],
+    );
+    assert_eq!(run.code, ENVIRONMENT, "{}{}", run.stdout, run.stderr);
+    assert!(
+        !target.exists(),
+        "a lock that cannot be read cannot be said to agree"
+    );
+}

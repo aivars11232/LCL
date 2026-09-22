@@ -324,9 +324,6 @@ pub(crate) struct Engine<'a> {
     pub(crate) action_requests: BTreeMap<InvocationId, CapabilityRequest>,
     pub(crate) host_requests: BTreeMap<InvocationId, CapabilityRequest>,
     pub(crate) retry_guards: BTreeMap<InvocationId, (CapabilityRequest, CapabilityRequest)>,
-    /// How many graphs are executing inside one another right now, which gives
-    /// each one an iteration path of its own.
-    pub(crate) graph_depth: usize,
     pub(crate) retry_proofs: Vec<capability::RetryProof>,
     initial_outputs: BTreeMap<InvocationId, Value>,
     pub(crate) raw: Vec<Diagnostic>,
@@ -388,7 +385,6 @@ impl<'a> Engine<'a> {
             action_requests: BTreeMap::new(),
             host_requests: BTreeMap::new(),
             retry_guards: BTreeMap::new(),
-            graph_depth: 0,
             retry_proofs: Vec::new(),
             initial_outputs: BTreeMap::new(),
             raw: Vec::new(),
@@ -1215,10 +1211,41 @@ impl<'a> Engine<'a> {
                         occurrence,
                     )
                 }
+                // The same, except that something had already happened. A
+                // dispatcher reaches this only on a first resolution, which no
+                // core row does today; it is answered here so that the arm
+                // cannot be reached and silently dropped.
+                Resolution::Refused {
+                    error,
+                    cause,
+                    detail,
+                    observation,
+                } => {
+                    let fault = Fault::new(
+                        self.contracts,
+                        error,
+                        planned.span,
+                        cause.clone(),
+                        detail.clone(),
+                    );
+                    let occurrence = self.fault(&fault, planned, id, FailurePhase::PostEffect);
+                    let (record, _) = self.record_of(
+                        &schema,
+                        Ok(CapabilityOutcome::Refused {
+                            error,
+                            cause,
+                            detail,
+                            observation,
+                        }),
+                        planned,
+                        id,
+                    );
+                    (record, occurrence)
+                }
                 // The row delegates to a referenced execution unit: run it
                 // here, then ask the row again with what it did.
                 Resolution::Graph(target) => {
-                    let outcome = self.execute_graph(&target, iteration);
+                    let outcome = self.execute_graph(&target, id, iteration);
                     match self.dispatch_with(&request, planned, iteration, Some(outcome)) {
                         Resolution::Completed(observation) => self.record_of(
                             &schema,
@@ -1226,6 +1253,37 @@ impl<'a> Engine<'a> {
                             planned,
                             id,
                         ),
+                        // The row failed, but its graph had already changed
+                        // something. The observation carries what began, and
+                        // the phase is resolved from it rather than assumed.
+                        Resolution::Refused {
+                            error,
+                            cause,
+                            detail,
+                            observation,
+                        } => {
+                            let fault = Fault::new(
+                                self.contracts,
+                                error,
+                                planned.span,
+                                cause.clone(),
+                                detail.clone(),
+                            );
+                            let occurrence =
+                                self.fault(&fault, planned, id, FailurePhase::PostEffect);
+                            let (record, _) = self.record_of(
+                                &schema,
+                                Ok(CapabilityOutcome::Refused {
+                                    error,
+                                    cause,
+                                    detail,
+                                    observation,
+                                }),
+                                planned,
+                                id,
+                            );
+                            (record, occurrence)
+                        }
                         Resolution::Failed {
                             error,
                             cause,
@@ -1551,18 +1609,44 @@ impl<'a> Engine<'a> {
     /// own queue, which is set aside for the duration so the graph completes
     /// before the invocation that delegated to it continues. Nothing here
     /// re-implements execution, ordering, handlers or effects.
-    fn execute_graph(&mut self, target: &str, iteration: &IterationPath) -> GraphOutcome {
+    fn execute_graph(
+        &mut self,
+        target: &str,
+        caller: &InvocationId,
+        iteration: &IterationPath,
+    ) -> GraphOutcome {
         let mut outcome = GraphOutcome {
             target: target.to_string(),
             succeeded: true,
             ..GraphOutcome::default()
         };
-        let Some(node) = self
-            .plan
-            .nodes()
-            .iter()
-            .position(|n| n.id.as_deref() == Some(target))
-        else {
+        // The child this *caller* delegates to, not the first node in the plan
+        // that happens to carry the name.
+        //
+        // Step 6 already made the distinction: an activation is identified by
+        // its declaration, its enclosing loop templates *and* its enclosing
+        // delegating invocations, so two rows delegating to one unit are two
+        // planned children, each under the row that reached it. Searching the
+        // whole plan for a name discards that and hands every caller the first
+        // one, which is another invocation's child: its record, its effects
+        // and its result would be reported as this row's own.
+        let Some(node) = self.plan.node(caller.node).and_then(|row| {
+            row.children
+                .iter()
+                .copied()
+                .find(|child| self.plan.node(*child).and_then(|n| n.id.as_deref()) == Some(target))
+        }) else {
+            // Unreachable for a valid input: step 4 activates a child for
+            // every graph-delegating row whose TARGET names an execution unit,
+            // a TARGET that names anything else resolves to non-graph mode and
+            // never asks for a graph, and a delegation that would close a
+            // cycle is `error.reference.cycle` at resolution, before effects.
+            //
+            // It fails closed rather than succeeding, because a target the
+            // engine never entered exposes no result, and reporting success
+            // for one would claim an execution that did not happen — which is
+            // the defect this whole path was repaired for.
+            outcome.succeeded = false;
             return outcome;
         };
         let before: BTreeSet<InvocationId> = self.records.keys().cloned().collect();
@@ -1570,8 +1654,16 @@ impl<'a> Engine<'a> {
         // separate evidence from any invocation of the same node the enclosing
         // execution performed: one declaration executed twice is two
         // invocations, and each keeps its own attempt history.
-        let inside = iteration.child(self.graph_depth);
-        self.graph_depth += 1;
+        //
+        // That path is derived from the caller's own identity — which already
+        // carries its loop context in `iteration` and its retry context in
+        // `attempt` — rather than from how many graphs happen to be open. A
+        // running counter is reused as soon as a call returns, so two
+        // delegations at the same depth produced one identity between them,
+        // and the second execution's records collided with the first's.
+        // Nesting no longer needs a counter either: an inner delegation
+        // extends the path its caller was already running under.
+        let inside = iteration.child(caller.attempt);
         let outer = std::mem::take(&mut self.queue);
         self.queue.push(Step::Enter {
             node,
@@ -1594,7 +1686,33 @@ impl<'a> Engine<'a> {
             }
         }
         self.queue = outer;
-        self.graph_depth -= 1;
+
+        // Which record decides, and which record is evidence.
+        //
+        // "A successful retry recovers the originating failure under the
+        // handler contract", and "Prior attempt bindings remain ordered local
+        // evidence". So an aggregate's verdict is its *final* attempt, and the
+        // earlier ones are kept without being allowed to speak for it. Letting
+        // every retained attempt vote made a graph that recovered report
+        // failure — and it also offered a second primary result, which turned
+        // "exactly one material primary" into none.
+        let governing: BTreeSet<InvocationId> = self
+            .records
+            .keys()
+            .filter(|id| !before.contains(*id))
+            .map(|id| (id.node, id.iteration.clone()))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .filter_map(|(node, iteration)| {
+                self.records
+                    .keys()
+                    .filter(|id| {
+                        !before.contains(*id) && id.node == node && id.iteration == iteration
+                    })
+                    .max_by_key(|id| id.attempt)
+                    .cloned()
+            })
+            .collect();
 
         for (id, record) in &self.records {
             if before.contains(id) {
@@ -1603,6 +1721,7 @@ impl<'a> Engine<'a> {
             let Some(result) = record.result.as_ref() else {
                 continue;
             };
+            let decides = governing.contains(id);
             let Some(node) = self.plan.node(id.node) else {
                 continue;
             };
@@ -1625,8 +1744,12 @@ impl<'a> Engine<'a> {
                         .map(|r| r.possible_effects.clone())
                         .unwrap_or_default(),
                     observed: result.observed_effects.clone(),
+                    effect_state: result.effect_state,
                     errors: result.execution_errors.clone(),
                 });
+            if !decides {
+                continue;
+            }
             if !result.succeeded() {
                 outcome.succeeded = false;
             }
@@ -2399,9 +2522,15 @@ fn reported_outside(
     outcome: &Result<CapabilityOutcome, Refusal>,
     request: &CapabilityRequest,
 ) -> Option<String> {
+    // Every arm that carries observations is checked. The rule is about the
+    // observations, not about the arm they arrived in: a refusal that reports
+    // an effect the invocation never resolved has stated the same untrue thing
+    // a completion would have, and choosing a different arm to say it in
+    // cannot be what makes it acceptable.
     let observation = match outcome {
         Ok(CapabilityOutcome::Completed(observation)) => observation,
         Ok(CapabilityOutcome::Failed { observation, .. }) => observation,
+        Ok(CapabilityOutcome::Refused { observation, .. }) => observation,
         _ => return None,
     };
     observation

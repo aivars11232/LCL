@@ -558,10 +558,10 @@ fn initial_letter() -> lcl_stdlib::PureOperation {
         Value::Text(text) => Ok(Value::Text(
             text.chars().next().map(String::from).unwrap_or_default(),
         )),
-        other => Err(format!(
+        other => Err(lcl_stdlib::PureFailure::detail(format!(
             "expected a STRING member, found {}",
             other.family()
-        )),
+        ))),
     })
 }
 
@@ -777,5 +777,81 @@ fn a_group_key_admits_a_material_result_a_sort_key_would_not() {
         errors("core.sort"),
         vec!["error.operation.precondition".to_string()],
         "a BOOLEAN sort key is outside the registered ordered types"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// `core.group` unions the errors of the key operation it references
+// ---------------------------------------------------------------------------
+//
+// `core_conformance_cases_v0.1.0.json`: "union every applicable error of a
+// referenced key operation", and `core.group`'s own closed list includes
+// `error.operator.operand`. The key operation is an embedder-installed pure
+// implementation, and its failure channel carried no registered identifier at
+// all — so every way it could fail reached this row as
+// `error.operation.precondition` and the union could never contain anything
+// else. The channel now carries one, and the row decides whether to adopt it.
+
+/// A key implementation that classifies its own failure.
+fn operand_faulting_key(error: &'static str) -> lcl_stdlib::PureOperation {
+    Box::new(move |_| {
+        Err(lcl_stdlib::PureFailure::registered(
+            error,
+            "the key operation cannot order this operand",
+        ))
+    })
+}
+
+#[test]
+fn core_group_carries_a_registered_error_its_key_operation_selected() {
+    let source = group_document("[\"beta\", \"alpha\"]", "REFERENCE[REF(group.initial)]");
+    let stdlib = common::stdlib().with_pure_operation(
+        "group.initial",
+        operand_faulting_key("error.operator.operand"),
+    );
+    let execution = common::run_with(&source, stdlib, MockHost::new());
+
+    assert_eq!(
+        common::errors_of(&execution, "action.group"),
+        vec!["error.operator.operand".to_string()],
+        "core.group lists error.operator.operand, so a key operation that selected it is reported \
+         under it rather than under this row's precondition"
+    );
+}
+
+#[test]
+fn an_unclassified_key_failure_is_still_this_rows_precondition() {
+    // The ordinary case, unchanged: an implementation with nothing registered
+    // to say fails the row's precondition.
+    let source = group_document("[\"beta\", \"alpha\"]", "REFERENCE[REF(group.initial)]");
+    let stdlib = common::stdlib().with_pure_operation(
+        "group.initial",
+        Box::new(|_: &Value| Err(lcl_stdlib::PureFailure::detail("no key today")))
+            as lcl_stdlib::PureOperation,
+    );
+    let execution = common::run_with(&source, stdlib, MockHost::new());
+
+    assert_eq!(
+        common::errors_of(&execution, "action.group"),
+        vec!["error.operation.precondition".to_string()]
+    );
+}
+
+#[test]
+fn a_key_operation_may_not_select_an_error_this_row_does_not_admit() {
+    // `error.permission.denied` is a real registered identifier and is not in
+    // `core.group`'s closed list. An implementation may classify its own
+    // failure; it may not move a diagnostic into a row that never listed it.
+    let source = group_document("[\"beta\", \"alpha\"]", "REFERENCE[REF(group.initial)]");
+    let stdlib = common::stdlib().with_pure_operation(
+        "group.initial",
+        operand_faulting_key("error.permission.denied"),
+    );
+    let execution = common::run_with(&source, stdlib, MockHost::new());
+
+    assert_eq!(
+        common::errors_of(&execution, "action.group"),
+        vec!["error.operation.precondition".to_string()],
+        "an identifier outside the row's closed list is not adopted"
     );
 }

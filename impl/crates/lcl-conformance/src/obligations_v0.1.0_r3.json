@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "revision": "r2",
+  "revision": "r3",
   "package_identity": "00d648b162939d06c44838481a67c39bc12c64bdd6d105035c24150148fe67ed",
   "obligations": [
     {
@@ -11082,10 +11082,6 @@
         "path/incompatible-key-results",
         "path/equal-keys-for-distinct-set-members",
         "precondition/invalid-key-operation-axes",
-        "precondition/key-operation-profile-missing",
-        "precondition/key-operation-profile-ambiguous",
-        "precondition/key-operation-profile-incomplete",
-        "precondition/key-operation-profile-out-of-bounds",
         "path/referenced-key-operation-error-union"
       ]
     },

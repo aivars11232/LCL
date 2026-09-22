@@ -46,16 +46,53 @@ One concrete probe may cover several normative clauses. This does not create
 799 duplicate executions or turn catalog entries into executed tests. Tests of
 report arithmetic are instrument tests, never evidence about the LCL engine.
 
-## The implementation mapping, revision r2
+## The implementation mapping, revision r3
 
-The mapping is `impl/crates/lcl-conformance/src/obligations_v0.1.0_r2.json`,
-SHA-256 `27e3271fc2db2a86291c58e9fe55f54d24a130b71efa6b9e9f28d2b9acb6e385`,
-pinned in `obligations.rs` as `MAPPING_DIGEST`. It replaces revision r1, which
-pinned probe identifiers only.
+The mapping is `impl/crates/lcl-conformance/src/obligations_v0.1.0_r3.json`,
+SHA-256 `296fc2bef03cb4a4ec45f00d5b43601f5c234a9d55a22c188ce477630013c3f3`,
+pinned in `obligations.rs` as `MAPPING_DIGEST`. It replaces revision r2 under
+an explicit owner approval; r2 replaced r1, which pinned probe identifiers only.
+
+Two figures in this section were stale against r2 and are corrected here rather
+than carried forward: the digest read `27e3271f…`, and the sub-run total read
+3,724 where r2 pinned 3,725.
+
+### What r3 changes, and what it does not
+
+r3 removes **exactly four** sub-run pins from
+`semantic/operation_errors/core.sort`:
+
+    precondition/key-operation-profile-missing
+    precondition/key-operation-profile-ambiguous
+    precondition/key-operation-profile-incomplete
+    precondition/key-operation-profile-out-of-bounds
+
+Those four words are the registry's closed vocabulary for a **profile-role
+selection** fault, and `core.sort` selects no such role: it has no entry in
+`operations_v0.1.0.json#/axis_contract/implementation_profile/required_roles_by_operation`,
+and `role_resolution` states that "A core operation absent from
+required_roles_by_operation requires no local core profile." A custom
+`kind.operation` key likewise "selects no profile role and resolves under
+axis_contract.custom_operation_resolution". With no role to select, none can be
+missing, ambiguous, incomplete or out of bounds, so no input reaches the
+condition. An earlier revision closed these by reading the four words as
+properties of the declared key contract; that equivalence was withdrawn in
+`reports/tasks/POST-FINAL-05_CORRECTIVE_02_RESULT.md` §7 as not
+canon-authorized, and the pins were reopened rather than left closed on it.
+
+Nothing else changed. The row and its probe remain; all 2,413 probes remain;
+980 rows remain; no level was reclassified; and the key-contract checks that
+rest on their own stated requirements —
+`precondition/incompatible-key-operation-signature` and
+`precondition/invalid-key-operation-axes` — are still pinned. The correction
+does not alter Core 0.1 semantics and does not expand any operation's
+capabilities. `core.execute precondition/profile-out-of-bounds` is a separate
+obligation and is **not** covered by this approval: it remains pinned and
+unestablished.
 
 - **Probes.** All 2,413 probe IDs are kept: 2,011 source and 402 semantics.
 - **Sub-runs.** Each of the 319 semantic contract rows also pins its exact
-  required sub-run labels, 3,724 in total. They are derived from the row's
+  required sub-run labels, **3,721** in total. They are derived from the row's
   canonical requirement clauses and registry facts, and include clauses that no
   run exercises yet.
 - **Establishing a probe.** A grouped record establishes its probe only when

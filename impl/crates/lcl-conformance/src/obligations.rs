@@ -11,8 +11,35 @@ use lcl_spec::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-const MAPPING: &str = include_str!("obligations_v0.1.0_r2.json");
-pub const MAPPING_DIGEST: &str = "9b32a28b79d9c3872cb3f810365a3275583ce5731a74c98a8d2013d07633a8ad";
+/// Revision r3, replacing r2 under an explicit owner approval.
+///
+/// The correction removes exactly four sub-run pins from
+/// `semantic/operation_errors/core.sort`:
+/// `precondition/key-operation-profile-{missing,ambiguous,incomplete,out-of-bounds}`.
+///
+/// Why they could not be established, and why no implementation closes them:
+/// those four words are the registry's closed vocabulary for a **profile-role
+/// selection** fault, and `core.sort` selects no such role. It has no entry in
+/// `operations_v0.1.0.json#/axis_contract/implementation_profile/
+/// required_roles_by_operation`, and `role_resolution` states that "A core
+/// operation absent from required_roles_by_operation requires no local core
+/// profile." A custom `kind.operation` key likewise "selects no profile role
+/// and resolves under axis_contract.custom_operation_resolution". With no role
+/// to select, none can be missing, ambiguous, incomplete or out of bounds, so
+/// the condition has no input that reaches it.
+///
+/// An earlier revision closed them by reading the four words as properties of
+/// the declared key contract. That equivalence was withdrawn in
+/// `reports/tasks/POST-FINAL-05_CORRECTIVE_02_RESULT.md` §7 as not
+/// canon-authorized, and the pins were reopened rather than left closed on it.
+///
+/// What is **not** removed: the row itself, its probe, and the key-contract
+/// checks that stand on their own stated requirements —
+/// `precondition/incompatible-key-operation-signature` and
+/// `precondition/invalid-key-operation-axes` are still pinned. Only these four
+/// pins changed; no probe, row or level was added, removed or reclassified.
+const MAPPING: &str = include_str!("obligations_v0.1.0_r3.json");
+pub const MAPPING_DIGEST: &str = "296fc2bef03cb4a4ec45f00d5b43601f5c234a9d55a22c188ce477630013c3f3";
 
 #[derive(Debug, Clone)]
 pub struct Obligation {

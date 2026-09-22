@@ -242,6 +242,32 @@ the two costs separately:
 | Canonical checksums | exit 0, 175 files |
 | Known release-blocking defects | 0 |
 
+> **Supersession note, 2026-09-22.** The `0 ignored` threshold above predates
+> `lcl-project/tests/manifest_input_bounds.rs::child_parses_nested_manifest`,
+> and the current gate reports `1,825 passed, 0 failed, 1 ignored`. The two
+> statements are reconciled here rather than left standing against each other,
+> and the threshold above is **not** edited: it is this task's opening position
+> and stays as written.
+>
+> That test is not skipped. It is the child half of a pair: `parse_in_child`
+> re-executes this test binary with `--exact child_parses_nested_manifest
+> --ignored` and `LCL_Q_JSON_DEPTH`, so the manifest is parsed at depth in a
+> separate process and a stack overflow kills that child instead of the suite.
+> `#[ignore]` is how the Rust harness expresses a case that only its parent may
+> start; the case runs on every gate, through its parent.
+>
+> So the criterion's intent — no case silently skipped, no failure hidden behind
+> a skip — is met, while its literal text is not. A future gate should read this
+> as "0 failed, and no ignored case that is not driven by another case", and any
+> *new* ignored test still has to justify itself the same way. The current
+> criteria and their executed evidence are in
+> `reports/tasks/POST-AB0DA8B_CORRECTIVE_04_RESULT.md` §6 and
+> `reports/tasks/MAPPING_CORRECTION_R3_RESULT.md` §4.
+>
+> The `175 files` canonical-checksum threshold above is **not** stale, despite
+> the package identity reporting 176: `SHA256SUMS.txt` lists and verifies 175
+> files, and the 176th is that checksum file itself.
+
 ## 6. Known-defect register
 
 Seven conformance witnesses are failing or unexecutable because of five defects

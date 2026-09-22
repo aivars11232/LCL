@@ -11,9 +11,39 @@ use lcl_spec::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Revision r3, replacing r2 under an explicit owner approval.
+/// Revision r4, replacing r3 under a second explicit owner approval.
 ///
-/// The correction removes exactly four sub-run pins from
+/// r4 removes exactly one further sub-run pin,
+/// `precondition/profile-out-of-bounds`, from
+/// `semantic/operation_errors/core.execute`.
+///
+/// Why no implementation closes it. `check_bounds` in
+/// `lcl_capabilities::profile` raises `ProfileFault::OutOfBounds` in exactly
+/// two ways, and `core.execute` reaches neither:
+///
+/// * **Axis membership.** `effects_outside` and `dependencies_outside` are set
+///   differences against the row's maximum. `core.execute`'s maxima are every
+///   one of the four `Dependency` variants and all seven `Effect` variants, so
+///   both differences are necessarily empty. The registry's axis vocabularies
+///   do also list `declared_state_only` and `none`, which this row omits — but
+///   those are the sentinels for the *empty set*, not enum variants, and a
+///   profile cannot select one.
+/// * **Determinism.** That branch fires only under
+///   `RowDeterminism::Deterministic`. `core.execute` declares `derived`.
+///
+/// So the condition has no input that reaches it *on this row*. It is not
+/// abandoned: `core.analyze`, `core.verify`, `core.report` and `core.publish`
+/// still pin `precondition/profile-out-of-bounds` and still establish it,
+/// because each of them declares narrower maxima that a profile can exceed.
+/// `core.execute` is the one row of the five whose maxima are the whole enum.
+///
+/// The condition the obligation does *not* name — an invocation exceeding the
+/// narrower bounds of a profile it selected — is a different one, and FINAL-02
+/// recorded that enforcing it refuses 23 legitimate pinned runs.
+///
+/// ---
+///
+/// Revision r3, which this replaces, removed exactly four sub-run pins from
 /// `semantic/operation_errors/core.sort`:
 /// `precondition/key-operation-profile-{missing,ambiguous,incomplete,out-of-bounds}`.
 ///
@@ -38,8 +68,8 @@ use std::collections::{BTreeMap, BTreeSet};
 /// `precondition/incompatible-key-operation-signature` and
 /// `precondition/invalid-key-operation-axes` are still pinned. Only these four
 /// pins changed; no probe, row or level was added, removed or reclassified.
-const MAPPING: &str = include_str!("obligations_v0.1.0_r3.json");
-pub const MAPPING_DIGEST: &str = "296fc2bef03cb4a4ec45f00d5b43601f5c234a9d55a22c188ce477630013c3f3";
+const MAPPING: &str = include_str!("obligations_v0.1.0_r4.json");
+pub const MAPPING_DIGEST: &str = "c592f8d9e0b5feb69785256395c9b67cac08932cec96c492a3786ac6b6cd780e";
 
 #[derive(Debug, Clone)]
 pub struct Obligation {

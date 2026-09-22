@@ -53,9 +53,14 @@ use std::collections::{BTreeMap, BTreeSet};
 pub enum Provision {
     /// An inline `VALUE` that demanded to a material value.
     Value(Value),
-    /// A declared `SOURCE`, recorded as written. This layer performs no effect,
-    /// so the source is traceable but not fetched.
-    Source(String),
+    /// A declared `SOURCE`.
+    ///
+    /// This layer performs no effect, so it does not fetch one. What it does
+    /// establish is whether this run *observed* what the source names —
+    /// "EVIDENCE must be observable" — by asking the execution's own
+    /// observation rather than by reading the declaration and believing it.
+    /// The second field is the identifier the source names, when it names one.
+    Source(String, Option<String>),
     /// Neither `SOURCE` nor `VALUE` resolved.
     Unresolved(String),
 }
@@ -64,6 +69,32 @@ impl Provision {
     pub fn resolved(&self) -> bool {
         !matches!(self, Provision::Unresolved(_))
     }
+}
+
+/// Whether a written `CHECKSUM` has the form its value kind gives it.
+///
+/// `field_signatures_v0.1.0.json#/value_kind_registry/sha256_string`: "A STRING
+/// containing 'sha256:' followed by exactly 64 lowercase hexadecimal digits."
+/// Every part of that is checked — the prefix, the exact length, and lowercase
+/// hexadecimal — because a checksum that is merely present traces nothing.
+///
+/// This is the form, not the content. Whether the digest matches the bytes it
+/// names is something only whoever can read those bytes can say, and this
+/// layer performs no effect.
+fn is_sha256_string(written: &str) -> bool {
+    // The field is written as a STRING literal, so the rendered text carries
+    // its quotes.
+    let written = written
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+        .unwrap_or(written);
+    let Some(digits) = written.strip_prefix("sha256:") else {
+        return false;
+    };
+    digits.len() == 64
+        && digits
+            .chars()
+            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
 }
 
 /// One collected evidence declaration.
@@ -80,6 +111,12 @@ pub struct EvidenceRecord {
     pub checksum: Option<String>,
     /// `PROVENANCE`, as written.
     pub provenance: Option<String>,
+    /// Whether this run observed what the declaration's `SOURCE` names.
+    ///
+    /// True when there is nothing to observe — an inline `VALUE` is in the
+    /// document, and an unresolved provision already fails for its own reason
+    /// — so this adds a condition exactly where the canon puts one.
+    pub observed: bool,
     /// Why this declaration was collected.
     pub referenced_by: Vec<String>,
 }
@@ -90,15 +127,32 @@ impl EvidenceRecord {
         if !self.provision.resolved() {
             return false;
         }
+        // "EVIDENCE must be observable." A rendered source expression is
+        // syntax; whether this run observed what it names is settled when the
+        // record is collected, from the execution's own observation.
+        if !self.observed {
+            return false;
+        }
         if self.declared_type.is_none() {
             return false;
         }
         // "declared required provenance/checksum must resolve." A field the
-        // declaration did not write imposes nothing; one it wrote empty does
-        // not resolve.
-        if self.checksum.as_deref().is_some_and(str::is_empty) {
+        // declaration did not write imposes nothing. One it wrote resolves
+        // when it has the form its own value kind gives it — being non-empty
+        // was never that form, and it let `CHECKSUM: "x"` make a declaration
+        // traceable.
+        if self
+            .checksum
+            .as_deref()
+            .is_some_and(|written| !is_sha256_string(written))
+        {
             return false;
         }
+        // `string_uri_or_evidence_reference`: "One STRING, URI, or REF
+        // resolving to EVIDENCE." The reference form is settled a stage
+        // earlier — resolution refuses a REF that names anything but EVIDENCE
+        // with `error.reference.kind` — so what is left here is that something
+        // was written.
         if self.provenance.as_deref().is_some_and(str::is_empty) {
             return false;
         }
@@ -203,10 +257,18 @@ pub(crate) fn run(engine: &mut Engine, checks: &Checks, verdict: &Verdict) -> Ev
         };
 
         let value_expr = lcl_runtime::syntax::field_expr(&block, "VALUE").cloned();
+        // "PATH, URI, or REFERENCE to declared source data." The reference
+        // form names a declaration, which is what an observation is recorded
+        // against.
         let source_text = block
             .field("SOURCE")
             .and_then(|f| syntax::inline_expr(&f.body))
-            .map(lcl_runtime::syntax::render);
+            .map(|expr| {
+                (
+                    lcl_runtime::syntax::render(expr),
+                    syntax::reference_target(expr).map(str::to_string),
+                )
+            });
 
         let provision = match (value_expr, source_text) {
             (Some(expr), None) => match engine.evaluator().demand(&expr) {
@@ -216,7 +278,7 @@ pub(crate) fn run(engine: &mut Engine, checks: &Checks, verdict: &Verdict) -> Ev
                 Ok(value) => Provision::Value(value),
                 Err(fault) => Provision::Unresolved(format!("VALUE faulted: {}", fault.id)),
             },
-            (None, Some(source)) => Provision::Source(source),
+            (None, Some((source, names))) => Provision::Source(source, names),
             // "Exactly one SOURCE or VALUE when evaluated."
             (Some(_), Some(_)) => {
                 Provision::Unresolved("both SOURCE and VALUE are declared".to_string())
@@ -232,6 +294,19 @@ pub(crate) fn run(engine: &mut Engine, checks: &Checks, verdict: &Verdict) -> Ev
             span,
             declared_type,
             required,
+            observed: match &provision {
+                // "PATH, URI, or REFERENCE to declared source data." The
+                // reference form names a declaration, and `Observation` holds
+                // "the whole admissible target universe for a targeted
+                // post-execution check. Anything else is not observed."
+                //
+                // The PATH and URI forms name something outside the document.
+                // Nothing in this run necessarily touched one, and this layer
+                // performs no effect, so it is not asserted either way here —
+                // see the report for the open question that leaves.
+                Provision::Source(_, Some(names)) => engine.observation.observed(names),
+                _ => true,
+            },
             provision,
             checksum,
             provenance,
@@ -243,6 +318,9 @@ pub(crate) fn run(engine: &mut Engine, checks: &Checks, verdict: &Verdict) -> Ev
                 Provision::Unresolved(why) => {
                     format!("required evidence `{id}` did not resolve: {why}")
                 }
+                Provision::Source(source, _) if !record.observed => format!(
+                    "required evidence `{id}` names {source}, which this run did not observe"
+                ),
                 _ => format!("required evidence `{id}` is not traceable as declared"),
             };
             engine.emit(Emission {

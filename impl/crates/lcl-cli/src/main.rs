@@ -302,6 +302,11 @@ fn stage_command(document: Document, command: lcl_protocol::Command) -> Result<i
         inputs = inputs.with_text(id, expression);
     }
 
+    // `Run` decides `--locked` before its first effect, inside the walk. The
+    // three staged commands are judged afterwards, against the same report
+    // they produced.
+    let admitted_before_effects = matches!(command, lcl_protocol::Command::Run);
+
     let report = match command {
         lcl_protocol::Command::Check => engine.check(&unit, &provider),
         lcl_protocol::Command::Validate => engine.validate(&unit, &provider, &inputs),
@@ -346,7 +351,18 @@ fn stage_command(document: Document, command: lcl_protocol::Command) -> Result<i
         }
     };
 
-    if common.locked {
+    // A run that was admitted and then executed is reported. Re-reading the
+    // live lock here would judge a finished run against state its own
+    // authorized effects may have produced — and refusing would replace the
+    // report of work that really happened with an environment error, leaving
+    // the operator with effects they cannot see the account of. The admission
+    // already happened, against the exact snapshot this run executed; it does
+    // not happen twice.
+    //
+    // The staged commands still answer here. They reach step 9 at the
+    // furthest, so nothing has happened either way and the report in hand is
+    // the only source that was loaded.
+    if common.locked && !admitted_before_effects {
         if let Some(drift) = locked_drift(&project, &report)? {
             return Err(Failure::environment(drift));
         }

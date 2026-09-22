@@ -27,8 +27,8 @@ use lcl_capabilities::{AddressClass, Axes, Grant, ProfileFault, Refusal, Selecti
 use lcl_runtime::capability::CapabilityRequest;
 use lcl_runtime::diagnostic::RuntimeError;
 use lcl_runtime::operations::{Invocation, Resolution};
+use lcl_runtime::EffectState;
 use lcl_runtime::Value;
-use lcl_runtime::{EffectState, Observation};
 use std::collections::BTreeMap;
 
 /// The rows that prohibit an internal store as their mutation target.
@@ -215,7 +215,12 @@ pub(crate) fn graph_result(
         if proven_effect_free {
             return Resolution::failed(RuntimeError::ExecutionAction, "graph", detail);
         }
-        let mut observation = Observation::none();
+        // "result.command.mode is ... graph for REFERENCE[TASK|PHASE|SEQUENCE|
+        // ACTION|TEST] targets" — the mode is decided by the target, not by
+        // whether the graph completed, so a refused graph row declares it too.
+        // It is also how an enclosing aggregate recognises that these
+        // observations are inherited rather than this row's own.
+        let mut observation = schema::graph_command(None);
         observation.proven_effect_free = false;
         for effect in observed {
             observation = observation.with_effect(effect);
@@ -234,36 +239,27 @@ pub(crate) fn graph_result(
     Resolution::Completed(observation)
 }
 
-/// Every effect the graph's invocations recorded, in the order they began.
+/// Every effect the graph's producers recorded, in the order they began.
 ///
 /// The row "resolves ... normalized transitive dependency and effect unions of
 /// its reachable graph", and those unions are over the *axes* — the dependency
 /// and effect classes, which the request already carries. The observed-effect
-/// list is different evidence: it says what began and on what. Collapsing it by
-/// class and state alone would report two writes to two files as one write,
-/// which is not a normalization of anything — it is the loss of a target. So
-/// identical re-reports of one effect are folded and distinct targets are not.
+/// list is different evidence: it says what began, on what, and **how many
+/// times**. Two appends to one file describe themselves identically and are
+/// still two changes, so nothing here folds by description; what it does
+/// instead is take each occurrence from the producer that made it, once.
 fn graph_effects(
     outcome: &lcl_runtime::operations::GraphOutcome,
 ) -> Vec<lcl_runtime::ObservedEffect> {
-    let mut seen = std::collections::BTreeSet::new();
-    let mut effects = Vec::new();
-    for effect in outcome
+    outcome
         .invocations
         .iter()
-        .flat_map(|invocation| invocation.observed.iter())
-    {
-        let identity = (
-            effect.class,
-            effect.state,
-            effect.target.clone(),
-            effect.evidence.clone(),
-        );
-        if seen.insert(identity) {
-            effects.push(effect.clone());
-        }
-    }
-    effects
+        // A row in graph mode observed nothing itself: its list is a copy of
+        // what its own children did, and this aggregate reaches those children
+        // directly. Taking both would report one change as two.
+        .filter(|invocation| !invocation.aggregate)
+        .flat_map(|invocation| invocation.observed.iter().cloned())
+        .collect()
 }
 
 /// Resolve this invocation's actual dependency and effect sets.

@@ -855,7 +855,7 @@ impl lcl_capabilities::FileSystem for SharedFs {
         p: lcl_capabilities::Location<'_>,
         q: lcl_capabilities::Location<'_>,
         o: bool,
-    ) -> Result<u64, lcl_capabilities::FsError> {
+    ) -> Result<lcl_capabilities::Copied, lcl_capabilities::FsError> {
         self.0.borrow_mut().copy(p, q, o)
     }
 }

@@ -1376,7 +1376,7 @@ fn completion_record(completion: &Completion) -> CompletionRecord {
                     lcl_completion::Provision::Value(value) => {
                         ("value".to_string(), value.to_string())
                     }
-                    lcl_completion::Provision::Source(source) => {
+                    lcl_completion::Provision::Source(source, _) => {
                         ("source".to_string(), source.clone())
                     }
                     lcl_completion::Provision::Unresolved(why) => {

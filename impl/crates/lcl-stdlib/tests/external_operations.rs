@@ -2460,3 +2460,366 @@ fn boolean_and_numeric_answers_use_the_languages_own_parsing() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// AB-02 — two operations are two occurrences, even when they look identical
+// ---------------------------------------------------------------------------
+//
+// A graph's observed effects were folded by `(class, state, target, evidence)`.
+// That key is the effect's *description*, not the effect, so two appends to one
+// file — two separate operations, two separate byte changes — described
+// themselves identically and became one. Recovery and retry admission read that
+// list, so losing an occurrence loses a change that really happened.
+//
+// The other direction matters just as much: a nested graph's record carries its
+// children's observations, and the enclosing aggregate visits both that record
+// and the children themselves. Counting both would invent effects that never
+// happened. An aggregate's own observations are inherited, and the producers'
+// are the occurrences.
+
+/// A wrapper over a SEQUENCE of two appends to one file.
+fn graph_appends_document(target: &str) -> String {
+    format!(
+        "LCL:\n    VERSION: \"0.1.0\"\n\nSPECIFICATION:\n    ID: example.stdlib\n    \
+         NAME: \"Standard library fixture\"\n    VERSION: \"1.0.0\"\n    KIND: kind.task\n\
+         \nDATA:\n    ID: data.target\n    TYPE: PATH\n    VALUE: PATH({target:?})\n\
+         \nACTION:\n    ID: action.first\n    OPERATION: core.append\n    \
+         TARGET: REF(data.target)\n    PARAMETER:\n        NAME: content\n        \
+         TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: \"one\"\n\
+         \nACTION:\n    ID: action.second\n    OPERATION: core.append\n    \
+         TARGET: REF(data.target)\n    PARAMETER:\n        NAME: content\n        \
+         TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: \"two\"\n\
+         \nSEQUENCE:\n    ID: sequence.both\n    STEP:\n        ID: step.first\n        \
+         ACTION: REF(action.first)\n    STEP:\n        ID: step.second\n        \
+         ACTION: REF(action.second)\n\
+         \nACTION:\n    ID: action.wrapper\n    OPERATION: core.execute\n    \
+         TARGET: REF(sequence.both)\n\
+         \nGOAL:\n    ID: goal.subject\n    ASSERT: TRUE\n\
+         \nSUCCESS:\n    ID: success.subject\n    ALL: [TRUE]\n\
+         \nTASK:\n    ID: task.subject\n    GOAL: REF(goal.subject)\n    \
+         ACTION: REF(action.wrapper)\n    SUCCESS: REF(success.subject)\n\
+         \nEXECUTE:\n    REFERENCE: REF(task.subject)\n"
+    )
+}
+
+#[test]
+fn two_identical_appends_to_one_file_are_two_occurrences() {
+    let source = graph_appends_document("/srv/data/log.txt");
+    let filesystem = lcl_stdlib::MemoryFileSystem::new()
+        .with_scope("/srv/data")
+        .with_file("/srv/data/log.txt", b"");
+    let execution = run_graph_fs(
+        &source,
+        filesystem,
+        lcl_capabilities::Grants::none().permit_write("/srv/data"),
+    );
+
+    for child in ["action.first", "action.second"] {
+        let record = common::result_of(&execution, child);
+        assert_eq!(record.status, "status.succeeded", "{child}");
+        assert_eq!(record.observed_effects.len(), 1, "{child}");
+    }
+
+    let wrapper = common::result_of(&execution, "action.wrapper");
+    assert_eq!(
+        wrapper.status, "status.succeeded",
+        "{:?}",
+        wrapper.execution_errors
+    );
+    assert_eq!(
+        wrapper.observed_effects.len(),
+        2,
+        "two appends are two changes to that file: {:?}",
+        wrapper.observed_effects
+    );
+}
+
+/// A nested aggregate does not re-count the child observation it inherited.
+#[test]
+fn a_nested_aggregate_counts_each_child_observation_once() {
+    let source = "LCL:\n    VERSION: \"0.1.0\"\n\nSPECIFICATION:\n    ID: example.stdlib\n    \
+         NAME: \"Standard library fixture\"\n    VERSION: \"1.0.0\"\n    KIND: kind.task\n\
+         \nDATA:\n    ID: data.target\n    TYPE: PATH\n    VALUE: PATH(\"/srv/data/one.txt\")\n\
+         \nACTION:\n    ID: action.inner\n    OPERATION: core.write\n    \
+         TARGET: REF(data.target)\n    PARAMETER:\n        NAME: content\n        \
+         TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: \"one\"\n    \
+         PARAMETER:\n        NAME: create_if_missing\n        TYPE: BOOLEAN\n        \
+         REQUIRED: FALSE\n        VALUE: TRUE\n\
+         \nACTION:\n    ID: action.middle\n    OPERATION: core.execute\n    \
+         TARGET: REF(action.inner)\n\
+         \nACTION:\n    ID: action.outer\n    OPERATION: core.execute\n    \
+         TARGET: REF(action.middle)\n\
+         \nGOAL:\n    ID: goal.subject\n    ASSERT: TRUE\n\
+         \nSUCCESS:\n    ID: success.subject\n    ALL: [TRUE]\n\
+         \nTASK:\n    ID: task.subject\n    GOAL: REF(goal.subject)\n    \
+         ACTION: REF(action.outer)\n    SUCCESS: REF(success.subject)\n\
+         \nEXECUTE:\n    REFERENCE: REF(task.subject)\n";
+    let filesystem = lcl_stdlib::MemoryFileSystem::new().with_scope("/srv/data");
+    let execution = run_graph_fs(
+        source,
+        filesystem,
+        lcl_capabilities::Grants::none().permit_write("/srv/data"),
+    );
+
+    assert_eq!(
+        common::result_of(&execution, "action.inner")
+            .observed_effects
+            .len(),
+        1,
+        "the producer wrote once"
+    );
+    for wrapper in ["action.middle", "action.outer"] {
+        let record = common::result_of(&execution, wrapper);
+        assert_eq!(
+            record.status, "status.succeeded",
+            "{wrapper}: {:?}",
+            record.execution_errors
+        );
+        assert_eq!(
+            record.observed_effects.len(),
+            1,
+            "{wrapper} inherited one write and must not double it: {:?}",
+            record.observed_effects
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AB-01 — one refusal, one event, one phase
+// ---------------------------------------------------------------------------
+//
+// The graph-refusal path built its diagnostic and raised it with a phase fixed
+// at the call site, and then `record_of` built the same diagnostic again and
+// raised it with the phase the observation actually establishes. Two raw
+// occurrences for one refusal, and the one the caller returned — the one a
+// handler attaches to — was the one whose phase had been assumed rather than
+// observed.
+//
+// So a refusal raises its event once, the result and the diagnostic agree
+// about when it happened, and the returned identity is the raised one.
+
+/// Every diagnostic one declaration produced carrying one identifier.
+///
+/// Scoped to the producer, because an enclosing row and the child that failed
+/// under it can raise the same identifier for their own separate reasons — and
+/// the question here is how many times *one* refusal was raised.
+///
+/// `error.execution.action` registers `event: null`, so a graph refusal raises
+/// no event record and the raw emission is what there is to count.
+fn diagnostics_named<'a>(
+    execution: &'a Execution,
+    declaration: &str,
+    id: &str,
+) -> Vec<&'a lcl_runtime::Diagnostic> {
+    let ids: Vec<_> = execution
+        .invocations()
+        .iter()
+        .filter(|r| r.declaration.as_deref() == Some(declaration))
+        .map(|r| r.id.clone())
+        .collect();
+    execution
+        .diagnostics()
+        .iter()
+        .filter(|d| d.id.to_string() == id)
+        .filter(|d| d.producer.as_ref().is_some_and(|p| ids.contains(p)))
+        .collect()
+}
+
+#[test]
+fn a_graph_refusal_after_a_write_raises_one_post_effect_event() {
+    // The first child writes, the second cannot, so the wrapper refuses with
+    // its graph's effects already on disk.
+    let source = graph_writes_document("/srv/data/one.txt", "/srv/other/two.txt");
+    let filesystem = lcl_stdlib::MemoryFileSystem::new()
+        .with_scope("/srv/data")
+        .with_scope("/srv/other");
+    let execution = run_graph_fs(
+        &source,
+        filesystem,
+        lcl_capabilities::Grants::none().permit_write("/srv/data"),
+    );
+
+    let wrapper = common::result_of(&execution, "action.wrapper");
+    assert_ne!(wrapper.status, "status.succeeded");
+    assert_eq!(
+        common::errors_of(&execution, "action.wrapper"),
+        vec!["error.execution.action".to_string()],
+        "one refusal, named once"
+    );
+    let raised = diagnostics_named(&execution, "action.wrapper", "error.execution.action");
+    assert_eq!(
+        raised.len(),
+        1,
+        "one refusal emits one diagnostic: {:?}",
+        raised
+            .iter()
+            .map(|d| (d.sequence, d.span))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        wrapper.failure_phase,
+        lcl_runtime::FailurePhase::PostEffect,
+        "the graph had already written when it refused"
+    );
+    assert!(
+        execution
+            .events()
+            .iter()
+            .all(|e| e.event != "error.execution.action"),
+        "this identifier registers no event"
+    );
+}
+
+/// A host that fails without being able to prove it changed nothing.
+///
+/// "Absence of evidence never proves absence of effects": no effect is
+/// recorded and none is disproved, so the phase this establishes is
+/// `indeterminate` — which is neither of the two the call site could assume.
+struct UncertainHost;
+
+impl lcl_runtime::capability::Host for UncertainHost {
+    fn permits(
+        &mut self,
+        _request: &lcl_runtime::capability::CapabilityRequest,
+    ) -> lcl_runtime::capability::Permission {
+        lcl_runtime::capability::Permission::Granted
+    }
+
+    fn invoke(
+        &mut self,
+        _request: &lcl_runtime::capability::CapabilityRequest,
+    ) -> lcl_runtime::CapabilityOutcome {
+        let mut observation = lcl_runtime::Observation::none();
+        observation.proven_effect_free = false;
+        lcl_runtime::CapabilityOutcome::Failed {
+            detail: "the host cannot say whether it changed anything".to_string(),
+            observation,
+        }
+    }
+}
+
+fn run_against_host(source: &str, host: &mut dyn lcl_runtime::capability::Host) -> Execution {
+    let mut stdlib = common::stdlib().with_profiles(lcl_stdlib::filesystem_profiles());
+    let fixture = common::fixture(source);
+    lcl_runtime::Runtime::new(common::contracts())
+        .execute_with(
+            &fixture.planned,
+            &fixture.checked,
+            &fixture.resolved,
+            &mut stdlib,
+            host,
+        )
+        .expect("the document planned")
+}
+
+/// A refusal whose phase nobody can assume: the record and the diagnostic must
+/// still agree about it.
+#[test]
+fn a_graph_refusal_of_indeterminate_extent_agrees_with_its_diagnostic() {
+    let source = graph_writes_document("/srv/data/one.txt", "/srv/data/two.txt");
+    let execution = run_against_host(&source, &mut UncertainHost);
+
+    let wrapper = common::result_of(&execution, "action.wrapper");
+    assert_ne!(wrapper.status, "status.succeeded");
+    assert!(
+        wrapper.observed_effects.is_empty(),
+        "nothing was observed: {:?}",
+        wrapper.observed_effects
+    );
+    assert_eq!(
+        wrapper.failure_phase,
+        lcl_runtime::FailurePhase::Indeterminate,
+        "no effect is known and none is disproved"
+    );
+
+    let raised = diagnostics_named(&execution, "action.wrapper", "error.execution.action");
+    assert_eq!(
+        raised.len(),
+        1,
+        "one refusal, one diagnostic: {:?}",
+        raised
+            .iter()
+            .map(|d| (d.sequence, d.failure_phase))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        raised[0].failure_phase, wrapper.failure_phase,
+        "the diagnostic and the result must not disagree about when it happened"
+    );
+}
+
+#[test]
+fn an_effect_free_graph_refusal_raises_one_pre_effect_event() {
+    // No filesystem is installed, so the first child fails its precondition
+    // before effects and the graph refuses having changed nothing.
+    let source = graph_writes_document("/srv/data/one.txt", "/srv/data/two.txt");
+    let execution = common::run(&source);
+
+    let wrapper = common::result_of(&execution, "action.wrapper");
+    assert_ne!(wrapper.status, "status.succeeded");
+    let raised = diagnostics_named(&execution, "action.wrapper", "error.execution.action");
+    assert_eq!(
+        raised.len(),
+        1,
+        "one refusal emits one diagnostic: {:?}",
+        raised
+            .iter()
+            .map(|d| (d.sequence, d.span))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        wrapper.failure_phase,
+        lcl_runtime::FailurePhase::PreEffect,
+        "nothing began, and the diagnostic says so too"
+    );
+    assert!(wrapper.observed_effects.is_empty());
+}
+
+/// End to end: a graph that changed something is not blindly retried.
+///
+/// This is the chain the repairs above exist for. The adapter says what it did,
+/// the observation carries it, the graph row's record takes its phase and
+/// effect state from that, and `retry_safety` reads them: "a `pre_effect`
+/// attempt with `effect_state none` may be attempted again"; after known
+/// effects another attempt "is permitted only when exact evidence proves"
+/// safety. A row that reported `none` for a graph that had written would be
+/// admitted for a second attempt on the strength of an untruth.
+#[test]
+fn a_graph_that_changed_something_is_not_admitted_for_a_blind_retry() {
+    let source = graph_writes_document("/srv/data/one.txt", "/srv/other/two.txt").replace(
+        "ACTION:\n    ID: action.wrapper\n    OPERATION: core.execute\n    \
+             TARGET: REF(sequence.both)\n",
+        "HANDLER:\n    ID: handler.retry\n    EVENT: event.host_constraint\n    \
+             OPERATION: core.retry\n    LIMIT: 2\n\
+             \nACTION:\n    ID: action.wrapper\n    OPERATION: core.execute\n    \
+             TARGET: REF(sequence.both)\n    RETRY:\n        LIMIT: 2\n        \
+             HANDLER: REF(handler.retry)\n",
+    );
+    let filesystem = lcl_stdlib::MemoryFileSystem::new()
+        .with_scope("/srv/data")
+        .with_scope("/srv/other");
+    let execution = run_graph_fs(
+        &source,
+        filesystem,
+        lcl_capabilities::Grants::none().permit_write("/srv/data"),
+    );
+
+    let wrapper = common::result_of(&execution, "action.wrapper");
+    assert_ne!(wrapper.status, "status.succeeded");
+    assert_ne!(
+        wrapper.effect_state,
+        lcl_runtime::EffectState::None,
+        "the graph's first child wrote, so the row may not report none"
+    );
+    let attempts: Vec<usize> = execution
+        .invocations()
+        .iter()
+        .filter(|r| r.declaration.as_deref() == Some("action.wrapper"))
+        .map(|r| r.id.attempt)
+        .collect();
+    assert_eq!(
+        attempts,
+        vec![0],
+        "a graph with known effects was attempted again without evidence: {attempts:?}"
+    );
+}

@@ -752,3 +752,103 @@ fn locked_run_with_an_unreadable_lock_performs_no_effect() {
         "a lock that cannot be read cannot be said to agree"
     );
 }
+
+// ---------------------------------------------------------------------------
+// AB-06 — a run that was admitted and completed is reported
+// ---------------------------------------------------------------------------
+//
+// `--locked` decides before the effects, against the exact snapshot the walk
+// then executes. Having decided, it is decided: re-reading the live lock after
+// the run and refusing on what it says now discards the report of work that
+// already happened, and leaves the operator with an environment error where
+// their effects are.
+//
+// The lock is changed by the run itself, which is the one way to move it
+// between the admission and the old post-run re-read without racing the
+// process. The grant is explicit and the file is not source, so the source
+// lock the admission checked is untouched.
+
+/// A project whose action overwrites its own lock file.
+fn lock_rewriting_project(name: &str) -> (PathBuf, PathBuf) {
+    let root = scratch(name);
+    let lock = root.join("lcl.lock");
+    let source = format!(
+        "LCL:\n    VERSION: \"0.1.0\"\n\
+         \n\
+         SPECIFICATION:\n    ID: example.write\n    NAME: \"Rewrite the lock\"\n    \
+         VERSION: \"1.0.0\"\n    KIND: kind.task\n\
+         \n\
+         DATA:\n    ID: data.content\n    TYPE: STRING\n    VALUE: \"not a lock\"\n\
+         \n\
+         OUTPUT:\n    ID: output.written\n    TYPE: PATH\n    FORMAT: format.plain_text\n\
+         \n\
+         GOAL:\n    ID: goal.write\n    ASSERT: TRUE\n\
+         \n\
+         ALLOW:\n    ID: allow.write\n    OPERATION: core.write\n    \
+         TARGET: PATH({lock:?})\n    AUTHORITY: 900\n\
+         \n\
+         ACTION:\n    ID: action.write\n    OPERATION: core.write\n    \
+         TARGET: PATH({lock:?})\n    PARAMETER:\n        NAME: content\n        \
+         TYPE: STRING\n        REQUIRED: TRUE\n        VALUE: REF(data.content)\n    \
+         PARAMETER:\n        NAME: create_if_missing\n        TYPE: BOOLEAN\n        \
+         REQUIRED: FALSE\n        VALUE: TRUE\n    \
+         OUTPUT: REF(output.written)\n\
+         \n\
+         SUCCESS:\n    ID: success.write\n    ALL: [REF(output.written)]\n\
+         \n\
+         TASK:\n    ID: task.write\n    GOAL: REF(goal.write)\n    \
+         ACTION: REF(action.write)\n    OUTPUT: REF(output.written)\n    \
+         SUCCESS: REF(success.write)\n\
+         \n\
+         EXECUTE:\n    REFERENCE: REF(task.write)\n",
+        lock = lock.display().to_string()
+    );
+    write(root.join("main.lcl"), source);
+    write(
+        root.join("lcl.project.json"),
+        format!(
+            "{{\n  \"format\": \"lcl.project/1\",\n  \"spec\": {:?},\n  \
+             \"entry\": \"main.lcl\"\n}}\n",
+            canonical_root().display().to_string()
+        ),
+    );
+    (root, lock)
+}
+
+#[test]
+fn a_locked_run_that_completed_is_reported_even_if_the_lock_then_changed() {
+    let (root, lock) = lock_rewriting_project("locked_run_completed");
+    assert_eq!(lcl_in(&root, &["package", "lock"], &[]).code, SUCCESS);
+
+    let run = lcl_in(
+        &root,
+        &[
+            "run",
+            "--locked",
+            "--machine",
+            "--allow-write",
+            &root.display().to_string(),
+        ],
+        &[],
+    );
+
+    // The effect really happened: the lock file holds what the run wrote.
+    assert_eq!(
+        std::fs::read_to_string(&lock).expect("the lock file is there"),
+        "not a lock",
+        "the run performed its authorized effect"
+    );
+    // So the run must be reported, not replaced by an environment error about
+    // the state its own effects produced.
+    assert_ne!(
+        run.code, ENVIRONMENT,
+        "a completed run was discarded by a second admission check: {}{}",
+        run.stdout, run.stderr
+    );
+    assert!(
+        run.stdout.contains("status.succeeded"),
+        "the report of the completed run is emitted: {}{}",
+        run.stdout,
+        run.stderr
+    );
+}

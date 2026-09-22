@@ -679,6 +679,19 @@ fn receiving_contract(
     if kind.starts_with("reference") || kind == "operation_identifier_or_handler_reference" {
         return Expected::Identity;
     }
+    // "A boolean_expression or a possibly empty LIST containing only REF values
+    // whose targets evaluate to BOOLEAN or UNKNOWN."
+    //
+    // The bracket form is a list of identities, so it is received as one. That
+    // is what supplies the receiving context an empty bracket literal needs:
+    // without it the generic rule reaches "An empty bracket literal without one
+    // expected member type uses error.type.mismatch" and rejects `ALL: []`,
+    // which this value kind explicitly permits. An identity slot passes a
+    // scalar through unchanged, so the `boolean_expression` half of the kind
+    // keeps being judged as it was.
+    if kind == "boolean_or_reference_list" {
+        return Expected::Identity;
+    }
     if let Some(domain) = kind
         .strip_prefix("qualified_identifier(")
         .and_then(|rest| rest.strip_suffix(')'))

@@ -104,6 +104,38 @@ fn drain_turn(
     Ok(false)
 }
 
+/// Take the last of what the child wrote, once it can no longer write.
+///
+/// A deadline ends the supervision loop between drains, so bytes the program
+/// had already written can still be sitting in the pipe. They are output it
+/// really produced — `result.command` requires that "after start, started is
+/// TRUE and stdout and stderr are present" — and closing the descriptors
+/// without this loses them. Under load the window between the last drain and
+/// the deadline is wide enough to lose all of them, which is what made a
+/// timeout test intermittent rather than wrong.
+///
+/// Bounded, and deliberately so. It is called after termination, so the write
+/// ends are closed and these reads reach EOF; the elapsed bound covers the one
+/// case where cleanup could not establish that every group member is gone, and
+/// it never waits for output that is not already there.
+fn final_drain(
+    stream: &mut impl Read,
+    retained: &mut Vec<u8>,
+    truncated: &mut bool,
+    cap: usize,
+) -> io::Result<()> {
+    let started = Instant::now();
+    loop {
+        if drain_turn(stream, retained, truncated, cap)? {
+            return Ok(());
+        }
+        if started.elapsed() >= TEARDOWN {
+            return Ok(());
+        }
+        std::thread::sleep(INTERVAL);
+    }
+}
+
 /// All group members except the held leader, including zombies. The leader is
 /// still unreaped, so this process-group identity cannot belong to a new job.
 fn remaining_group_members(leader: u32) -> io::Result<Vec<u32>> {
@@ -255,11 +287,24 @@ pub(crate) fn run(
             std::thread::sleep(interval);
         }
     })();
+    // A deadline stops the loop between drains, so terminate first — nothing
+    // more can then be written — and only then take what is already in the
+    // pipes. Doing it the other way round discards output the program really
+    // produced.
+    let timed_out_now = matches!(&collection, Err((true, _)));
+    let cleanup = teardown(&mut child);
+    if timed_out_now {
+        if let Some(out) = stdout.as_mut() {
+            let _ = final_drain(out, &mut output.stdout, &mut output.truncated, cap);
+        }
+        if let Some(err) = stderr.as_mut() {
+            let _ = final_drain(err, &mut output.stderr, &mut output.truncated, cap);
+        }
+    }
     // Closing both descriptors is synchronous. There are no reader threads or
     // blocking joins, including on capture errors and deadline expiration.
     drop(stdout);
     drop(stderr);
-    let cleanup = teardown(&mut child);
     if let Ok(code) = &cleanup {
         output.exit_code = *code;
     }

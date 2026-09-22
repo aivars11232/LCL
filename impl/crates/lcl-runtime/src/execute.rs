@@ -1211,37 +1211,33 @@ impl<'a> Engine<'a> {
                         occurrence,
                     )
                 }
-                // The same, except that something had already happened. A
-                // dispatcher reaches this only on a first resolution, which no
-                // core row does today; it is answered here so that the arm
+                // The same, except that something may already have happened.
+                // A dispatcher reaches this only on a first resolution, which
+                // no core row does today; it is answered here so that the arm
                 // cannot be reached and silently dropped.
+                //
+                // `record_of` owns this refusal end to end: it derives the
+                // phase from the observation, emits the diagnostic once, and
+                // returns that emission's identity. Raising a second one here
+                // would put two occurrences in the log for one refusal and
+                // hand back the one whose phase was assumed rather than
+                // observed — which is the identity a handler then attaches to.
                 Resolution::Refused {
                     error,
                     cause,
                     detail,
                     observation,
-                } => {
-                    let fault = Fault::new(
-                        self.contracts,
+                } => self.record_of(
+                    &schema,
+                    Ok(CapabilityOutcome::Refused {
                         error,
-                        planned.span,
-                        cause.clone(),
-                        detail.clone(),
-                    );
-                    let occurrence = self.fault(&fault, planned, id, FailurePhase::PostEffect);
-                    let (record, _) = self.record_of(
-                        &schema,
-                        Ok(CapabilityOutcome::Refused {
-                            error,
-                            cause,
-                            detail,
-                            observation,
-                        }),
-                        planned,
-                        id,
-                    );
-                    (record, occurrence)
-                }
+                        cause,
+                        detail,
+                        observation,
+                    }),
+                    planned,
+                    id,
+                ),
                 // The row delegates to a referenced execution unit: run it
                 // here, then ask the row again with what it did.
                 Resolution::Graph(target) => {
@@ -1253,37 +1249,27 @@ impl<'a> Engine<'a> {
                             planned,
                             id,
                         ),
-                        // The row failed, but its graph had already changed
-                        // something. The observation carries what began, and
-                        // the phase is resolved from it rather than assumed.
+                        // The row failed, and its graph may already have
+                        // changed something. `record_of` resolves the phase
+                        // from the observation, emits the one diagnostic and
+                        // returns its identity; see the arm above for why
+                        // nothing is raised here.
                         Resolution::Refused {
                             error,
                             cause,
                             detail,
                             observation,
-                        } => {
-                            let fault = Fault::new(
-                                self.contracts,
+                        } => self.record_of(
+                            &schema,
+                            Ok(CapabilityOutcome::Refused {
                                 error,
-                                planned.span,
-                                cause.clone(),
-                                detail.clone(),
-                            );
-                            let occurrence =
-                                self.fault(&fault, planned, id, FailurePhase::PostEffect);
-                            let (record, _) = self.record_of(
-                                &schema,
-                                Ok(CapabilityOutcome::Refused {
-                                    error,
-                                    cause,
-                                    detail,
-                                    observation,
-                                }),
-                                planned,
-                                id,
-                            );
-                            (record, occurrence)
-                        }
+                                cause,
+                                detail,
+                                observation,
+                            }),
+                            planned,
+                            id,
+                        ),
                         Resolution::Failed {
                             error,
                             cause,
@@ -1745,6 +1731,13 @@ impl<'a> Engine<'a> {
                         .unwrap_or_default(),
                     observed: result.observed_effects.clone(),
                     effect_state: result.effect_state,
+                    // `result.command.mode` is `graph` exactly for a
+                    // REFERENCE target, which is the row whose observations
+                    // are its children's rather than its own.
+                    aggregate: matches!(
+                        result.fields.get("mode"),
+                        Some(Value::Identifier(mode)) if mode == "graph"
+                    ),
                     errors: result.execution_errors.clone(),
                 });
             if !decides {
@@ -1954,9 +1947,14 @@ impl<'a> Engine<'a> {
                 (record, None)
             }
             // The operation's own registered contract refused, naming an
-            // identifier its row lists. No effect occurred: a contract this
-            // side of the boundary is decided before the world changes, or
-            // over a representation already read without effect.
+            // identifier its row lists. Whether anything happened first is
+            // what the observation says: a contract this side of the boundary
+            // is often decided before the world changes, and a row that
+            // discovers its refusal only afterwards — `core.ask` once the
+            // question is out, a graph whose children already wrote — carries
+            // what began. This is the one place that refusal is classified
+            // and emitted, so the phase, the record and the returned event
+            // identity are all the same answer.
             Ok(CapabilityOutcome::Refused {
                 error,
                 cause,

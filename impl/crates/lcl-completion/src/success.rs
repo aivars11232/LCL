@@ -178,11 +178,33 @@ fn evaluate_success(engine: &mut Engine) -> Option<SuccessOutcome> {
         .into_iter()
         .find_map(|q| block.field(q.field()).map(|f| (q, f)))?;
 
-    // Members may be written as a reference LIST or as a single expression.
-    let references = syntax::reference_list(&field.body);
+    // "A boolean_expression or a possibly empty LIST containing only REF values
+    // whose targets evaluate to BOOLEAN or UNKNOWN." Which of the two was
+    // written is decided by the shape written, not by how many references it
+    // yielded: a list of nothing yields no references and is still a list, and
+    // reading it as the other form made `[]` one member whose value is an
+    // empty LIST — so the quantifier saw one member it could not judge where
+    // it should have seen none.
     let mut members: Vec<(String, Value)> = Vec::new();
-    if references.is_empty() {
-        if let Some(expr) = syntax::inline_expr(&field.body) {
+    if let Some(collection) = syntax::inline_collection(&field.body) {
+        for member in &collection.members {
+            match syntax::reference_target(member) {
+                // "Check references observe one scheduled result rather than
+                // rerunning the check."
+                Some(id) => {
+                    let id = id.to_string();
+                    let value = engine.evaluator().declaration_value(&id);
+                    members.push((id, value));
+                }
+                // This kind admits only REF members. One that is not a
+                // reference establishes no truth, and it is kept as a member
+                // that cannot rather than quietly dropped — dropping it would
+                // make a list of unjudgeable members quantify vacuously.
+                None => members.push((lcl_runtime::syntax::render(member), Value::Unknown)),
+            }
+        }
+    } else if let Some(expr) = syntax::inline_expr(&field.body) {
+        {
             let expr = expr.clone();
             let value = match engine.evaluator().demand(&expr) {
                 Ok(value) => value,
@@ -203,14 +225,6 @@ fn evaluate_success(engine: &mut Engine) -> Option<SuccessOutcome> {
                 }
             };
             members.push((lcl_runtime::syntax::render(&expr), value));
-        }
-    } else {
-        for (member, _) in references {
-            // A member reference reads one scheduled result rather than
-            // rerunning anything: "Check references observe one scheduled
-            // result rather than rerunning the check."
-            let value = engine.evaluator().declaration_value(&member);
-            members.push((member, value));
         }
     }
 
@@ -343,6 +357,26 @@ fn select_failure(
             }
             // "FALSE does not select a clause."
             Ok(Value::Boolean(false)) => continue,
+            // A condition that failed stops the scan.
+            //
+            // The order is stated: "An existing primary unhandled diagnostic
+            // always fixes status by its resolved default_status ... A FAILURE
+            // mapping cannot override that diagnostic. **Otherwise** evaluate
+            // applicable FAILURE clauses in source declaration order". Once a
+            // clause's own condition has raised a diagnostic, the "otherwise"
+            // no longer holds, and a later clause would be a mapping over it.
+            //
+            // MISSING and UNKNOWN "follow ordinary diagnostic handling before a
+            // later clause is considered". Handling happens at execution,
+            // through handler selection on the raised event; this step runs
+            // after execution has finished, so a diagnostic raised here has no
+            // handler left to recover it and is unhandled by construction.
+            //
+            // Continuing did not usually change the final status, because that
+            // precedence is applied elsewhere. What it changed is the verdict:
+            // a later clause was selected, and its requested status, its
+            // classification and its required evidence went into the record as
+            // the failure that was chosen.
             Ok(Value::Missing) => {
                 engine.emit(Emission {
                     id: CompletionError::RequiredMissing,
@@ -354,7 +388,7 @@ fn select_failure(
                     phase,
                     demand_resolved: false,
                 });
-                continue;
+                return None;
             }
             Ok(Value::Unknown) => {
                 engine.emit(Emission {
@@ -367,14 +401,17 @@ fn select_failure(
                     phase,
                     demand_resolved: false,
                 });
-                continue;
+                return None;
             }
-            // "follows ordinary diagnostic handling before a later clause is
-            // considered": the evaluator's own registered diagnostic.
+            // The evaluator's own registered diagnostic, kept with its own
+            // identity, stage and source.
             Err(fault) => {
                 crate::check::report_demand_fault(engine, &fault, &source, "FAILURE", &id, "WHEN");
-                continue;
+                return None;
             }
+            // A condition that is neither TRUE, FALSE, MISSING nor UNKNOWN is
+            // not a condition this clause can be selected on, and it raised no
+            // diagnostic of its own; the scan goes on.
             Ok(_) => continue,
         }
     }

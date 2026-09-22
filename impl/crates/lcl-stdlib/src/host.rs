@@ -761,19 +761,26 @@ impl HostAdapter {
             };
         }
         match filesystem.copy(source.location(), destination.location(), overwrite) {
-            Ok(bytes) => CapabilityOutcome::Completed(
-                schema::transfer(
+            Ok(copied) => {
+                let observation = schema::transfer(
                     source_value,
                     destination_value,
                     Value::Bytes(lcl_checker::numeric::Decimal::from_integer(
-                        lcl_checker::numeric::Integer::from_u64(bytes),
+                        lcl_checker::numeric::Integer::from_u64(copied.bytes),
                     )),
-                )
-                .with_effect(applied(
-                    EffectClass::Filesystem,
-                    Some(destination.path.display().to_string()),
-                )),
-            ),
+                );
+                // The effect follows what the adapter did, not how many bytes
+                // moved. A copy whose two ends are one file changed nothing
+                // and says so; a copy that created or emptied its destination
+                // changed it even though it transferred nothing.
+                CapabilityOutcome::Completed(match copied.changed {
+                    true => observation.with_effect(applied(
+                        EffectClass::Filesystem,
+                        Some(destination.path.display().to_string()),
+                    )),
+                    false => observation,
+                })
+            }
             Err(error) => transfer_precondition(error),
         }
     }

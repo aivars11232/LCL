@@ -184,13 +184,47 @@ pub trait FileSystem {
         to: Location<'_>,
         overwrite: bool,
     ) -> Result<(), FsError>;
-    /// Copy the target. Returns the number of bytes copied.
+    /// Copy the target. Returns what the copy actually did.
     fn copy(
         &mut self,
         from: Location<'_>,
         to: Location<'_>,
         overwrite: bool,
-    ) -> Result<u64, FsError>;
+    ) -> Result<Copied, FsError>;
+}
+
+/// What one copy did.
+///
+/// The two facts are independent and neither implies the other. A copy that
+/// transferred no bytes may still have created its destination or emptied an
+/// existing one — both are changes — and a copy whose two ends turned out to
+/// be one file transferred nothing *and* changed nothing. Reading "no bytes"
+/// as "no effect" gets the first pair wrong; reporting an effect for every
+/// success gets the second wrong.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Copied {
+    /// Bytes actually transferred.
+    pub bytes: u64,
+    /// Whether the destination was created or written.
+    pub changed: bool,
+}
+
+impl Copied {
+    /// A copy that wrote `bytes` to its destination.
+    pub fn wrote(bytes: u64) -> Copied {
+        Copied {
+            bytes,
+            changed: true,
+        }
+    }
+
+    /// A copy that established there was nothing to do.
+    pub fn unchanged() -> Copied {
+        Copied {
+            bytes: 0,
+            changed: false,
+        }
+    }
 }
 
 /// The real filesystem, confined to granted scopes.
@@ -245,6 +279,60 @@ impl RealFileSystem {
             ))));
         }
         Ok(resolved)
+    }
+}
+
+/// Create the destination's missing parents, saying what that actually made.
+///
+/// `create_dir_all` reports success or failure and not whether it created
+/// anything, and a transfer needs the difference: a directory it made is a
+/// change to the filesystem, so every later failure is a failure from after a
+/// change rather than from before one.
+///
+/// `Ok(None)` means the parent was already there and nothing was made.
+/// `Ok(Some(path))` names the topmost directory this call created. A failure
+/// is classified by **asking the filesystem** whether that topmost directory
+/// now exists, because `create_dir_all` can stop partway — it creates
+/// components in order — and its error alone does not say how far it got.
+///
+/// This does not eliminate every partial or racing outcome. Another process
+/// can create or remove a component between the look and the call, and this
+/// reports what it can establish rather than claiming the window is closed.
+fn create_parents(destination: &Path) -> Result<Option<PathBuf>, FsError> {
+    let Some(parent) = destination.parent() else {
+        return Ok(None);
+    };
+    if parent.as_os_str().is_empty() || parent.exists() {
+        return Ok(None);
+    }
+    // The topmost component that is absent now, which is the first one this
+    // call would create.
+    let mut topmost = parent.to_path_buf();
+    while let Some(above) = topmost.parent() {
+        if above.as_os_str().is_empty() || above.exists() {
+            break;
+        }
+        topmost = above.to_path_buf();
+    }
+    match std::fs::create_dir_all(parent) {
+        Ok(()) => Ok(Some(topmost)),
+        Err(error) if topmost.exists() => Err(io_after_change(error, &topmost)),
+        Err(error) => Err(io(error)),
+    }
+}
+
+/// Report `error` from after a change, when one was already made.
+///
+/// A transfer that created directories and then failed has changed the
+/// filesystem, whatever the later syscall says. An error that already reports
+/// a change keeps its own, more specific, target.
+fn after_created(created: &Option<PathBuf>, error: FsError) -> FsError {
+    match (created, error) {
+        (Some(path), FsError::Io(detail)) => FsError::IoAfterChange {
+            detail,
+            target: path.clone(),
+        },
+        (_, error) => error,
     }
 }
 
@@ -596,11 +684,13 @@ impl FileSystem for RealFileSystem {
         if destination.exists() && !overwrite {
             return Err(FsError::AlreadyExists(to.to_path_buf()));
         }
-        if let Some(parent) = destination.parent() {
-            std::fs::create_dir_all(parent).map_err(io)?;
-        }
+        // A move has no read-only step to order first, so what it can do is
+        // know what its own creation made and carry that through every later
+        // failure.
+        let created = create_parents(&destination)?;
         if overwrite || source.is_dir() {
-            return std::fs::rename(&source, &destination).map_err(io);
+            return std::fs::rename(&source, &destination)
+                .map_err(|error| after_created(&created, io(error)));
         }
         match std::fs::hard_link(&source, &destination) {
             // The link exists from here on. If the unlink then fails, a new
@@ -617,7 +707,8 @@ impl FileSystem for RealFileSystem {
             }
             // A filesystem without hard links, or a cross-device move. The
             // checked rename is the remaining answer, and it is still confined.
-            Err(_) => std::fs::rename(&source, &destination).map_err(io),
+            Err(_) => std::fs::rename(&source, &destination)
+                .map_err(|error| after_created(&created, io(error))),
         }
     }
 
@@ -631,7 +722,7 @@ impl FileSystem for RealFileSystem {
         from: Location<'_>,
         to: Location<'_>,
         overwrite: bool,
-    ) -> Result<u64, FsError> {
+    ) -> Result<Copied, FsError> {
         let source = self.admit(from, false)?;
         let destination = self.admit(to, true)?;
         let (from, to) = (from.path, to.path);
@@ -650,20 +741,23 @@ impl FileSystem for RealFileSystem {
         // pre-state, and the source is already unchanged, so both
         // postconditions hold with no bytes moved.
         if same_file(&source, &destination) {
-            return Ok(0);
+            return Ok(Copied::unchanged());
         }
-        if let Some(parent) = destination.parent() {
-            std::fs::create_dir_all(parent).map_err(io)?;
-        }
+        // The source is opened before anything is created. Reading it is not
+        // an effect, and a source that cannot be opened is by far the likeliest
+        // way this fails — so ordering it first means the commonest failure
+        // leaves the filesystem untouched instead of leaving directories
+        // behind and having to report them.
+        let mut reader = no_follow(std::fs::OpenOptions::new().read(true))
+            .open(&source)
+            .map_err(io)?;
+        let created = create_parents(&destination)?;
         if overwrite {
-            // Staged exactly like the reserving path below, so that each
-            // failure is reported from the phase it actually happened in.
-            // `std::fs::copy` does this internally and then returns one error
-            // for all of it, which made a failure after the destination had
-            // been truncated indistinguishable from one before it was opened.
-            let mut reader = no_follow(std::fs::OpenOptions::new().read(true))
-                .open(&source)
-                .map_err(io)?;
+            // Staged so that each failure is reported from the phase it
+            // actually happened in. `std::fs::copy` does this internally and
+            // then returns one error for all of it, which made a failure after
+            // the destination had been truncated indistinguishable from one
+            // before it was opened.
             let mut writer = no_follow(
                 std::fs::OpenOptions::new()
                     .write(true)
@@ -671,15 +765,14 @@ impl FileSystem for RealFileSystem {
                     .truncate(true),
             )
             .open(&destination)
-            .map_err(io)?;
+            .map_err(|error| after_created(&created, io(error)))?;
             // The destination is truncated by the open above, so anything that
-            // goes wrong from here has already changed it.
+            // goes wrong from here has already changed it — and so is it
+            // changed when nothing goes wrong and nothing is transferred.
             return std::io::copy(&mut reader, &mut writer)
+                .map(Copied::wrote)
                 .map_err(|error| io_after_change(error, &destination));
         }
-        let mut reader = no_follow(std::fs::OpenOptions::new().read(true))
-            .open(&source)
-            .map_err(io)?;
         let mut writer = match no_follow(std::fs::OpenOptions::new().write(true).create_new(true))
             .open(&destination)
         {
@@ -687,9 +780,11 @@ impl FileSystem for RealFileSystem {
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                 return Err(FsError::AlreadyExists(to.to_path_buf()))
             }
-            Err(error) => return Err(io(error)),
+            Err(error) => return Err(after_created(&created, io(error))),
         };
+        // The destination was created by the open above, whatever follows.
         std::io::copy(&mut reader, &mut writer)
+            .map(Copied::wrote)
             .map_err(|error| io_after_change(error, &destination))
     }
 }

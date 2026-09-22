@@ -267,6 +267,21 @@ async function harness(options) {
       })())`));
     },
     active() { return run("state.active"); },
+    /// Mark the report object a document currently holds.
+    ///
+    /// Every reply is a fresh object, so a mark that is still there afterwards
+    /// says the stored report was not replaced — without needing the two
+    /// replies to differ in content, which two analyses of one root revision
+    /// need not do at all.
+    markReport(id, mark) {
+      run(`state.docs.get(${JSON.stringify(id)}).report.__mark = ${JSON.stringify(mark)}`);
+    },
+    reportMark(id) {
+      return JSON.parse(run(`JSON.stringify((() => {
+        const d = state.docs.get(${JSON.stringify(id)});
+        return d && d.report ? d.report.__mark || null : null;
+      })())`));
+    },
     /// Everything the diagnostics panel is currently showing.
     ///
     /// The panel is shared by every tab, so what it says is a claim about the
@@ -626,6 +641,55 @@ const cases = [
       h.outcome("checked.lcl.txt"),
       "rejected",
       "a check of replaced text was kept as a verdict on the new text",
+    );
+  }],
+
+  // -------------------------------------------------------------------------
+  // AB-05 — two analyses of one root revision still have an order
+  // -------------------------------------------------------------------------
+  //
+  // The revision guard asks whether the root text changed. An analysis does
+  // not read only the root: `inspect` resolves the document's imports from
+  // disk, so two analyses issued at one root revision can describe different
+  // inputs, and the guard admits both. Whichever arrives last then wins,
+  // which on an inverted pair is the one describing the older state.
+  //
+  // What settles it is which request the answer belongs to. Each is issued
+  // with a generation, and an answer older than one already accepted is not
+  // applied — whatever the root revision says about it.
+  ["an analysis answer older than one already accepted is discarded", async h => {
+    await h.add("generation.lcl.txt", VALID_DOCUMENT);
+    const hold = h.hold("POST", { path: "/api/inspect" });
+    const first = h.run("runAnalysis()");
+    await bounded(hold.reached, "the first analysis reached the fixture");
+    // A second analysis of the same root revision — no edit between them.
+    await bounded(h.run("runAnalysis()"), "the second analysis answered");
+    h.markReport("generation.lcl.txt", "second");
+    hold.release();
+    await bounded(first, "the first analysis answered");
+    await settle();
+    assert.equal(
+      h.reportMark("generation.lcl.txt"),
+      "second",
+      "the earlier analysis replaced the later one's report",
+    );
+  }],
+
+  ["an explicit check older than an accepted analysis is discarded", async h => {
+    // They share one `report`, so ordering has to hold across both.
+    await h.add("shared.lcl.txt", VALID_DOCUMENT);
+    const hold = h.hold("POST", { path: "/api/check" });
+    const check = h.run(`$("#act-check").onclick()`);
+    await bounded(hold.reached, "the check reached the fixture");
+    await bounded(h.run("runAnalysis()"), "a later analysis answered");
+    h.markReport("shared.lcl.txt", "analysis");
+    hold.release();
+    await bounded(check, "the check answered");
+    await settle();
+    assert.equal(
+      h.reportMark("shared.lcl.txt"),
+      "analysis",
+      "an older check replaced a newer analysis in the shared report",
     );
   }],
 

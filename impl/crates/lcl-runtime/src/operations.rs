@@ -142,6 +142,13 @@ pub struct GraphInvocation {
     /// nobody could tell. A row aggregating a graph needs the difference to
     /// report its own phase truthfully.
     pub effect_state: crate::result::EffectState,
+    /// True when this invocation is itself a graph row, so its `observed` list
+    /// is what its own children did rather than anything it did.
+    ///
+    /// An enclosing aggregate reaches both this invocation and the producers
+    /// underneath it, and adding both would count one change twice. The
+    /// producers hold the occurrences; a row in graph mode holds a copy.
+    pub aggregate: bool,
     /// The execution errors it raised, in order.
     pub errors: Vec<String>,
 }

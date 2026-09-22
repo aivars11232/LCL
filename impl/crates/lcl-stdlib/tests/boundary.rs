@@ -322,3 +322,143 @@ fn an_effect_free_outcome_is_not_rejected_through_any_arm() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// AB-03 — a transfer that changed nothing did not have an effect
+// ---------------------------------------------------------------------------
+//
+// Copying a file onto itself is refused from doing damage and completes having
+// done nothing. The host then gave every successful copy an applied filesystem
+// effect, so the run reported changing a file it had deliberately left alone.
+//
+// The converse is the trap on the other side, and the controls below hold it:
+// a zero-byte transfer is not a no-op. A distinct empty source still creates
+// its destination, and emptying a nonempty destination changes it — both with
+// nothing transferred. So the disposition has to come from what the adapter
+// did, not from the byte count.
+
+/// A `core.copy` of one path to another, through the real adapter.
+fn copy_through_real_adapter(
+    directory: &TempDir,
+    from: &std::path::Path,
+    to: &std::path::Path,
+    overwrite: bool,
+) -> Execution {
+    let source = common::task(
+        &format!(
+            "{}{}",
+            common::data(
+                "data.from",
+                "PATH",
+                &format!("PATH({:?})", from.display().to_string())
+            ),
+            common::data(
+                "data.to",
+                "PATH",
+                &format!("PATH({:?})", to.display().to_string())
+            ),
+        ),
+        &[&format!(
+            "ID: action.copy\nOPERATION: core.copy\nTARGET: REF(data.from)\n\
+             PARAMETER:\n    NAME: destination\n    TYPE: PATH\n    REQUIRED: TRUE\n    \
+             VALUE: REF(data.to)\n\
+             PARAMETER:\n    NAME: overwrite\n    TYPE: BOOLEAN\n    REQUIRED: FALSE\n    \
+             VALUE: {}",
+            if overwrite { "TRUE" } else { "FALSE" }
+        )],
+    );
+    let root = directory.path.display().to_string();
+    let grants = Grants::none().permit_write(&root);
+    let mut host = HostAdapter::new(grants.clone()).with_filesystem(RealFileSystem::new(grants));
+    run_against(&source, &mut host)
+}
+
+#[test]
+fn a_copy_onto_the_same_file_reports_no_effect() {
+    let directory = TempDir::new("copy-noop");
+    let original = directory.join("original.txt");
+    std::fs::write(&original, b"the original content").expect("seeded");
+    let hard = directory.join("hard.txt");
+    std::fs::hard_link(&original, &hard).expect("a hard link");
+
+    for (name, destination) in [("itself", original.clone()), ("a hard link", hard)] {
+        let execution = copy_through_real_adapter(&directory, &original, &destination, true);
+        let result = common::result_of(&execution, "action.copy");
+        assert_eq!(
+            result.status, "status.succeeded",
+            "{name}: {:?}",
+            result.execution_errors
+        );
+        assert!(
+            result.observed_effects.is_empty(),
+            "{name}: nothing changed, so nothing is observed: {:?}",
+            result.observed_effects
+        );
+        assert_eq!(
+            result.effect_state,
+            lcl_runtime::EffectState::None,
+            "{name}"
+        );
+        assert_eq!(
+            std::fs::read(&original).expect("the file survives"),
+            b"the original content",
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn a_zero_byte_copy_that_creates_its_destination_reports_the_effect() {
+    let directory = TempDir::new("copy-empty-create");
+    let empty = directory.join("empty.txt");
+    std::fs::write(&empty, b"").expect("seeded");
+    let destination = directory.join("created.txt");
+
+    let execution = copy_through_real_adapter(&directory, &empty, &destination, false);
+    let result = common::result_of(&execution, "action.copy");
+    assert_eq!(
+        result.status, "status.succeeded",
+        "{:?}",
+        result.execution_errors
+    );
+    assert!(
+        destination.exists(),
+        "a distinct empty source still creates its destination"
+    );
+    assert_eq!(
+        result.observed_effects.len(),
+        1,
+        "creating a file is an effect however few bytes it holds: {:?}",
+        result.observed_effects
+    );
+    assert_eq!(result.effect_state, lcl_runtime::EffectState::Applied);
+}
+
+#[test]
+fn a_zero_byte_copy_that_empties_its_destination_reports_the_effect() {
+    let directory = TempDir::new("copy-empty-overwrite");
+    let empty = directory.join("empty.txt");
+    std::fs::write(&empty, b"").expect("seeded");
+    let destination = directory.join("had-content.txt");
+    std::fs::write(&destination, b"this content is about to go").expect("seeded");
+
+    let execution = copy_through_real_adapter(&directory, &empty, &destination, true);
+    let result = common::result_of(&execution, "action.copy");
+    assert_eq!(
+        result.status, "status.succeeded",
+        "{:?}",
+        result.execution_errors
+    );
+    assert_eq!(
+        std::fs::read(&destination).expect("still there"),
+        b"",
+        "the destination really was emptied"
+    );
+    assert_eq!(
+        result.observed_effects.len(),
+        1,
+        "emptying a file changes it, with nothing transferred: {:?}",
+        result.observed_effects
+    );
+    assert_eq!(result.effect_state, lcl_runtime::EffectState::Applied);
+}

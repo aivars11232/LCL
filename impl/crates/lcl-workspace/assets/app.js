@@ -134,6 +134,14 @@ function Doc(id, text, digest) {
     pendingSaves: 0,
     saveTail: Promise.resolve(),
     index: buildIndex(text),
+    /* Per-kind request generations. `revision` says whether the root text
+     * changed; it cannot say which of two requests made at one revision is
+     * the later, and an analysis reads more than the root — `inspect`
+     * resolves imports from disk — so two answers at one revision can
+     * describe different inputs. `issued` counts requests out, `accepted`
+     * remembers the newest answer applied, and an older one is not. */
+    issued: { tokens: 0, analysis: 0 },
+    accepted: { tokens: 0, analysis: 0 },
     tokens: null,        // token spans from the engine
     report: null,        // the last engine report for this document
     navigation: null,
@@ -641,13 +649,37 @@ function describes(doc, revision) {
   return state.docs.get(doc.id) === doc && doc.revision === revision;
 }
 
+/* Take the next generation for one kind of request on one document. */
+function issue(doc, kind) {
+  doc.issued[kind] += 1;
+  return doc.issued[kind];
+}
+
+/* Whether an answer may be applied, and record it if so.
+ *
+ * Two questions, and both have to hold. `describes` asks whether the document
+ * and its root text are still the ones that were asked about. The generation
+ * asks whether this answer is newer than the newest already applied, which is
+ * what orders two answers the revision cannot tell apart.
+ *
+ * `analysis` and the explicit check share one generation because they share
+ * one `report`: an answer to either is stale once the other has been applied
+ * on top of it. */
+function accepts(doc, revision, kind, generation) {
+  if (!describes(doc, revision)) return false;
+  if (generation <= doc.accepted[kind]) return false;
+  doc.accepted[kind] = generation;
+  return true;
+}
+
 async function refreshTokens() {
   const doc = current();
   if (!doc) return;
   const revision = doc.revision;
+  const generation = issue(doc, "tokens");
   try {
     const reply = await api("POST", "/api/tokens", { id: doc.id }, doc.text);
-    if (!describes(doc, revision)) return;
+    if (!accepts(doc, revision, "tokens", generation)) return;
     doc.tokens = reply.tokens;
     /* Painting is the active tab's business, and storing is the document's.
      * An answer for a tab nobody is looking at belongs in that tab's cache
@@ -663,6 +695,7 @@ async function runAnalysis() {
   const doc = current();
   if (!doc) return;
   const revision = doc.revision;
+  const generation = issue(doc, "analysis");
   await refreshTokens();
   /* The tokens step awaited, so the document may have moved on. Asking the
    * engine about text that is already gone would only produce another answer
@@ -674,7 +707,7 @@ async function runAnalysis() {
      * carries the resolver's bindings, which is what navigation needs. A
      * document that fails before resolution still gets its diagnostics. */
     const report = await api("POST", "/api/inspect", { id: doc.id }, doc.text);
-    if (!describes(doc, revision)) return;
+    if (!accepts(doc, revision, "analysis", generation)) return;
     doc.report = report;
     doc.navigation = report.navigation || null;
     /* Kept separately from the report: a run replaces `report`, and stepping
@@ -1469,8 +1502,9 @@ $("#act-check").onclick = async () => {
   const doc = current();
   if (!doc) return;
   const revision = doc.revision;
+  const generation = issue(doc, "analysis");
   const report = await api("POST", "/api/check", { id: doc.id }, doc.text);
-  if (!describes(doc, revision)) return;
+  if (!accepts(doc, revision, "analysis", generation)) return;
   doc.report = report;
   doc.navigation = null;
   if (current() !== doc) return;

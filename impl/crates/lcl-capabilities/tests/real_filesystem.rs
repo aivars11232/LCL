@@ -878,3 +878,146 @@ fn a_transfer_that_failed_before_opening_anything_reports_no_change() {
     );
     assert!(!destination.exists(), "and nothing was created");
 }
+
+// ---------------------------------------------------------------------------
+// AB-04 — directories created before a transfer fails are a change
+// ---------------------------------------------------------------------------
+//
+// A transfer creates the destination's missing parents before it moves any
+// bytes. If what follows fails, those directories are on disk: the filesystem
+// is not in the state it was in, and `FsError::Io` — whose documented meaning
+// is that the failure came "before the target was opened for modification.
+// Nothing began" — says the opposite.
+//
+// The source is opened before anything is created wherever that is possible,
+// so this stops being reachable for the commonest case rather than merely
+// being reported better. What cannot be ordered away is tracked: whether the
+// creation actually made a directory is established by asking the filesystem,
+// not assumed from the call's return.
+
+/// A source that exists and cannot be opened, without needing privileges.
+#[cfg(unix)]
+fn unreadable_file(at: &Path) {
+    std::fs::write(at, b"payload").expect("seeded");
+    set_mode(at, 0o000);
+}
+
+/// A copy that creates parents and then cannot read its source.
+#[cfg(unix)]
+#[test]
+fn a_copy_that_created_parents_then_failed_reports_a_change() {
+    let owned = Owned::new("copy-parents-created");
+    let (inside, _) = owned.split();
+    let source = inside.join("source.txt");
+    unreadable_file(&source);
+    let created = inside.join("made/here");
+    let destination = created.join("copied.txt");
+    assert!(!created.exists(), "the parents are absent before the call");
+
+    let mut fs = adapter(&inside);
+    let error = fs
+        .copy((&source).into(), (&destination).into(), false)
+        .expect_err("an unreadable source cannot be copied");
+    set_mode(&source, 0o644);
+
+    match created.exists() {
+        // Either the directories were never made — which is the better
+        // outcome and what the ordering aims for — or they were, and then the
+        // error may not say that nothing began.
+        false => assert!(
+            matches!(error, FsError::Io(_)),
+            "nothing was created, so nothing began: {error:?}"
+        ),
+        true => assert!(
+            matches!(error, FsError::IoAfterChange { .. }),
+            "{} was created before the failure: {error:?}",
+            created.display()
+        ),
+    }
+}
+
+/// A move that creates parents and then cannot link.
+#[cfg(unix)]
+#[test]
+fn a_move_that_created_parents_then_failed_reports_a_change() {
+    let owned = Owned::new("move-parents-created");
+    let (inside, _) = owned.split();
+    // A source directory: `rename` of a directory into a fresh path works, so
+    // the failure is forced at the destination side instead — the destination
+    // parent chain is created, and the link then collides with an existing
+    // entry of the same name.
+    let source = inside.join("source.txt");
+    std::fs::write(&source, b"payload").expect("seeded");
+    let created = inside.join("moved/into");
+    let destination = created.join("here.txt");
+    std::fs::create_dir_all(&created).expect("parents");
+    std::fs::create_dir(&destination).expect("a directory in the way");
+
+    let mut fs = adapter(&inside);
+    let error = fs
+        .rename((&source).into(), (&destination).into(), false)
+        .expect_err("a directory is in the destination's place");
+    assert!(
+        source.exists(),
+        "the source is still there, so nothing relocated"
+    );
+    assert!(
+        !matches!(error, FsError::IoAfterChange { .. }),
+        "nothing was created here, so nothing began: {error:?}"
+    );
+}
+
+/// The control: parents that already exist are not created, and a failure
+/// after them still reports that nothing began.
+#[cfg(unix)]
+#[test]
+fn a_transfer_whose_parents_already_exist_reports_no_change() {
+    let owned = Owned::new("copy-parents-present");
+    let (inside, _) = owned.split();
+    let source = inside.join("source.txt");
+    unreadable_file(&source);
+    let destination = inside.join("copied.txt");
+
+    let mut fs = adapter(&inside);
+    let error = fs
+        .copy((&source).into(), (&destination).into(), false)
+        .expect_err("an unreadable source cannot be copied");
+    set_mode(&source, 0o644);
+
+    assert!(
+        matches!(error, FsError::Io(_)),
+        "no directory was created, so nothing began: {error:?}"
+    );
+    assert!(!destination.exists(), "and nothing was written");
+}
+
+/// Creation that fails outright creates nothing, and says so.
+#[cfg(unix)]
+#[test]
+fn parent_creation_that_fails_outright_reports_no_change() {
+    let owned = Owned::new("copy-parents-refused");
+    let (inside, _) = owned.split();
+    let source = inside.join("source.txt");
+    std::fs::write(&source, b"payload").expect("seeded");
+    let locked = inside.join("locked");
+    std::fs::create_dir_all(&locked).expect("a directory to lock");
+    set_mode(&locked, 0o555);
+    let destination = locked.join("made/here/copied.txt");
+
+    let mut fs = adapter(&inside);
+    let error = fs
+        .copy((&source).into(), (&destination).into(), false)
+        .expect_err("the parent cannot be created");
+    let made = locked.join("made");
+    let existed = made.exists();
+    set_mode(&locked, 0o755);
+
+    assert!(
+        !existed,
+        "nothing could be created under a read-only parent"
+    );
+    assert!(
+        matches!(error, FsError::Io(_)),
+        "nothing was created, so nothing began: {error:?}"
+    );
+}

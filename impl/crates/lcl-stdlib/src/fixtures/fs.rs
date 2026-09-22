@@ -9,7 +9,7 @@
 //! that permitted what the real one refuses would let a conformance test pass
 //! against behavior no real run could reproduce.
 
-use lcl_capabilities::fs::{FileSystem, FsError, Location, Metadata, WriteMode};
+use lcl_capabilities::fs::{Copied, FileSystem, FsError, Location, Metadata, WriteMode};
 use lcl_capabilities::{Bounds, Grant, Grants};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -241,7 +241,7 @@ impl FileSystem for MemoryFileSystem {
         from: Location<'_>,
         to: Location<'_>,
         overwrite: bool,
-    ) -> Result<u64, FsError> {
+    ) -> Result<Copied, FsError> {
         let source = self.admit(from, false)?;
         let destination = self.admit(to, true)?;
         let (from, to) = (from.path, to.path);
@@ -253,8 +253,14 @@ impl FileSystem for MemoryFileSystem {
         if self.files.contains_key(&destination) && !overwrite {
             return Err(FsError::AlreadyExists(to.to_path_buf()));
         }
+        // This fixture keys its files by resolved path, so two names for one
+        // file are one key: copying a path onto itself changes nothing, as it
+        // does on a real filesystem.
+        if source == destination {
+            return Ok(Copied::unchanged());
+        }
         let bytes = content.len() as u64;
         self.files.insert(destination, content);
-        Ok(bytes)
+        Ok(Copied::wrote(bytes))
     }
 }

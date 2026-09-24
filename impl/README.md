@@ -1068,6 +1068,11 @@ of three of them. All five are closed, and the gate now claims
 > `reports/tasks/LCL-CLOSE-02_RESULT.md` and `reports/implementation/LCL_RESIDUAL_REPAIR_REPORT.md`.
 > As of 2026-09-16 (LCL-REPAIR-05/06) the claim is still `source_conforming`; the current semantic counts and the
 > one remaining failed sub-run are recorded in `reports/tasks/LCL-REPAIR-06_RESULT.md`.
+> **As of 2026-09-24 the `source_conforming` and BLOCKED statements above are historical.** With obligation mapping
+> revision r4 (`c592f8d9…780e`, commit `43a9917`) the production report establishes every required probe — source
+> 2,011 of 2,011 and semantic 402 of 402, none failed, missing or invalid — claims `semantics_conforming`, and the
+> readiness gate `m8_conformance_gate` accepts. See `reports/tasks/MAPPING_CORRECTION_R4_RESULT.md` and
+> `reports/tasks/FINAL_RELEASE_CLOSURE_RESULT.md`.
 
 Two of the five were diagnosed differently from how they were recorded. The
 `SUM`-over-empty defect was not in the reduction, which was correct; the fault

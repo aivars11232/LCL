@@ -1,5 +1,13 @@
 # LCL implementation conformance obligations — Core 0.1.0
 
+Status, 2026-09-24 (mapping revision r4, commit `43a9917`): every required
+obligation is established — source 2,011 of 2,011 and semantic 402 of 402,
+none failed, missing or invalid — the production claim is
+`semantics_conforming`, and the readiness gate `m8_conformance_gate` accepts.
+Evidence: `reports/tasks/MAPPING_CORRECTION_R4_RESULT.md` and
+`reports/tasks/FINAL_RELEASE_CLOSURE_RESULT.md`. The 2026-09-14 status below,
+and the outcome reports it names, are historical.
+
 Status, 2026-09-14 (LCL-CLOSURE-4T, Task LCL-CLOSE-02): conformance accounting
 and production reporting are complete; full semantic conformance is BLOCKED.
 This document defines required evidence; it does not report that the engine
@@ -181,4 +189,6 @@ report and generated conformance report, not in this requirement definition.
 Under the LCL-CLOSE-02 exit contract, reporting-correctness may close while full
 conformance remains BLOCKED. That is not the full objective passing. The exact
 remaining sub-runs and the engine defects they expose are listed in
-`reports/tasks/LCL-CLOSE-02_RESULT.md`.
+`reports/tasks/LCL-CLOSE-02_RESULT.md`. That was the position at LCL-CLOSE-02;
+since revision r4 no required sub-run remains unestablished (see the status at
+the top of this document).

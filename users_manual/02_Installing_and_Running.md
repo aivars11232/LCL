@@ -243,9 +243,28 @@ $ lcl-workspace ~/lcl-course --open
 
 It serves only your own computer (address `127.0.0.1`), protects the page with
 a secret token in the printed URL, and grants no capabilities. When a run
-wants to touch files, it asks first. This manual uses the command line, since
-that shows exactly what the tool reports, but everything works in the
-workspace too. See [Chapter 17](17_Tools_Reference.md).
+wants to touch files, it asks first.
+
+Using it:
+
+* **`+`** (next to "Project") creates a new document. A name without an
+  ending is created as `.lcl`, the native default. If you type `.lcl` or the
+  optional `.lcl.txt` yourself, that ending is kept (see section 2.9).
+* Until a document is open, the editor shows **No document open** and can't
+  be typed into. Check, Inspect, Run, Save and Reload are unavailable until
+  you create or select a document.
+* The editor numbers every line in a **gutter** on the left. Click a line
+  number to set a breakpoint for a run.
+* **Settings** (the ⚙ button at the top right) chooses the theme (System,
+  Dark or Light), the editor font size (11 to 20 px) and whether line
+  numbers are shown. Settings are remembered by your browser only. They never
+  change a document or how it runs.
+* Indentation is always four spaces. The Tab key inserts four spaces, never a
+  tab character, which LCL does not allow.
+
+This manual uses the command line, since that shows exactly what the tool
+reports, but everything works in the workspace too. See
+[Chapter 17](17_Tools_Reference.md).
 
 ## 2.9 File names: `.lcl` and `.lcl.txt`
 

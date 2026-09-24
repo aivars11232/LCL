@@ -149,6 +149,10 @@ The server listens only on `127.0.0.1`, your own computer, and every
 request needs the secret token included in the printed address. It grants no
 capabilities: when a run wants an effect, the workspace asks you first.
 
+In the page, `+` creates a document (`.lcl` unless you type `.lcl.txt`), and
+the ⚙ **Settings** button sets the theme, the editor font size and line
+numbers. These preferences are stored in your browser, not in the project.
+
 After `install.sh`, the desktop menu has an **LCL Workspace** entry, and
 `.lcl` files can be opened with it. Menu launches write any problem to
 `~/.local/state/lcl/launch.log`.

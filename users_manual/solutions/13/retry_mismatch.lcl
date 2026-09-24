@@ -1,0 +1,57 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.retry_mismatch
+    NAME: "A retry budget that does not match"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+WORKSPACE:
+    ID: workspace.lab
+    PATH: PATH("/tmp/lcl-manual/retry")
+    MODE: mode.read_only
+
+HANDLER:
+    ID: handler.retry_read
+    EVENT: event.host_constraint
+    OPERATION: core.retry
+    LIMIT: 2
+
+OUTPUT:
+    ID: output.text
+    TYPE: STRING
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.read
+    ASSERT: EXISTS(REF(output.text))
+
+ACTION:
+    ID: action.read
+    OPERATION: core.read
+    TARGET: PATH(REF(workspace.lab), "in.txt")
+    OUTPUT: REF(output.text)
+    RETRY:
+        LIMIT: 4
+        DELAY: DURATION(0, unit.second)
+        HANDLER: REF(handler.retry_read)
+
+VERIFY:
+    ID: verify.read
+    ASSERT: REF(output.text) == "data\n"
+
+SUCCESS:
+    ID: success.read
+    ALL: [REF(verify.read)]
+
+TASK:
+    ID: task.read
+    GOAL: REF(goal.read)
+    WORKSPACE: REF(workspace.lab)
+    ACTION: REF(action.read)
+    OUTPUT: REF(output.text)
+    SUCCESS: REF(success.read)
+
+EXECUTE:
+    REFERENCE: REF(task.read)

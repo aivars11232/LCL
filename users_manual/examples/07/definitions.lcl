@@ -1,0 +1,81 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.definitions
+    NAME: "Constants, terms and metadata"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+DEFINE:
+    ID: term.school_week
+    KIND: kind.term
+    MEANING: "The five school days from Monday to Friday."
+
+DEFINE:
+    ID: constant.days_per_week
+    KIND: kind.constant
+    TYPE: INTEGER
+    VALUE: 5
+
+DEFINE:
+    ID: constant.lesson_minutes
+    KIND: kind.constant
+    TYPE: INTEGER
+    VALUE: 50
+
+DEFINE:
+    ID: constant.weekly_formula
+    KIND: kind.constant
+    TYPE: STRING
+    VALUE: "target * REF(constant.days_per_week) * REF(constant.lesson_minutes)"
+
+INPUT:
+    ID: input.lessons_per_day
+    TYPE: INTEGER
+    VALUE: 6
+    DESCRIPTION: "Lessons on one school day."
+
+OUTPUT:
+    ID: output.minutes
+    TYPE: INTEGER
+    FORMAT: format.plain_text
+    DESCRIPTION: "Teaching minutes in one school week."
+
+GOAL:
+    ID: goal.minutes
+    ASSERT: REF(output.minutes) == 1500
+
+ACTION:
+    ID: action.minutes
+    OPERATION: core.calculate
+    TARGET: REF(input.lessons_per_day)
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: REF(constant.weekly_formula)
+    OUTPUT: REF(output.minutes)
+
+VERIFY:
+    ID: verify.minutes
+    ASSERT: REF(output.minutes) == 1500
+
+VERIFY:
+    ID: verify.metadata
+    ASSERT: REF(input.lessons_per_day).DESCRIPTION == "Lessons on one school day."
+
+SUCCESS:
+    ID: success.minutes
+    ALL: [REF(verify.minutes), REF(verify.metadata)]
+
+TASK:
+    ID: task.minutes
+    GOAL: REF(goal.minutes)
+    INPUT: REF(input.lessons_per_day)
+    ACTION: REF(action.minutes)
+    OUTPUT: REF(output.minutes)
+    SUCCESS: REF(success.minutes)
+
+EXECUTE:
+    REFERENCE: REF(task.minutes)

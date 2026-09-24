@@ -1,0 +1,52 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.default_rate
+    NAME: "A missing rate treated as 10"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+INPUT:
+    ID: input.rate
+    TYPE: INTEGER
+    REQUIRED: FALSE
+    DEFAULT: 10
+
+OUTPUT:
+    ID: output.rate_doubled
+    TYPE: INTEGER
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.rate
+    ASSERT: EXISTS(REF(output.rate_doubled))
+
+ACTION:
+    ID: action.double
+    OPERATION: core.calculate
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "REF(input.rate) * 2"
+    OUTPUT: REF(output.rate_doubled)
+
+VERIFY:
+    ID: verify.rate
+    ASSERT: EXISTS(REF(output.rate_doubled))
+
+SUCCESS:
+    ID: success.rate
+    ALL: [REF(verify.rate)]
+
+TASK:
+    ID: task.rate
+    GOAL: REF(goal.rate)
+    INPUT: REF(input.rate)
+    ACTION: REF(action.double)
+    OUTPUT: REF(output.rate_doubled)
+    SUCCESS: REF(success.rate)
+
+EXECUTE:
+    REFERENCE: REF(task.rate)

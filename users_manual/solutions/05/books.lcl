@@ -1,0 +1,60 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.library_books
+    NAME: "Books and seasons"
+    VERSION: "1.0.0"
+    KIND: kind.data
+
+DEFINE:
+    ID: type.book
+    KIND: kind.type
+    BASE: OBJECT
+    FIELD:
+        NAME: title
+        TYPE: STRING
+        REQUIRED: TRUE
+    FIELD:
+        NAME: pages
+        TYPE: INTEGER
+        REQUIRED: TRUE
+        MINIMUM: 1
+    FIELD:
+        NAME: subtitle
+        TYPE: STRING
+        REQUIRED: FALSE
+
+DEFINE:
+    ID: type.season
+    KIND: kind.type
+    BASE: ENUM
+    ITEM: spring
+    ITEM: summer
+    ITEM: autumn
+    ITEM: winter
+
+DATA:
+    ID: data.first_book
+    TYPE: OBJECT[REF(type.book)]
+    VALUE:
+        title: "Flatland"
+        pages: 96
+        subtitle: "A Romance of Many Dimensions"
+
+DATA:
+    ID: data.second_book
+    TYPE: OBJECT[REF(type.book)]
+    VALUE:
+        title: "The Number Devil"
+        pages: 262
+
+DATA:
+    ID: data.shelf
+    TYPE: LIST[OBJECT[REF(type.book)]]
+    VALUE: [REF(data.first_book), REF(data.second_book)]
+
+DATA:
+    ID: data.favourite_season
+    TYPE: REF(type.season)
+    VALUE: autumn

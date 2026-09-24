@@ -1,0 +1,38 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.test_double
+    NAME: "Test that doubling works"
+    VERSION: "1.0.0"
+    KIND: kind.test
+
+INPUT:
+    ID: input.value
+    TYPE: INTEGER
+    VALUE: 21
+
+OUTPUT:
+    ID: output.value
+    TYPE: INTEGER
+    FORMAT: format.plain_text
+
+ACTION:
+    ID: action.double
+    OPERATION: core.calculate
+    TARGET: REF(input.value)
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "target * 2"
+    OUTPUT: REF(output.value)
+
+TEST:
+    ID: test.double
+    ACTION: REF(action.double)
+    EXPECTED: 42
+    ACTUAL: REF(output.value)
+
+EXECUTE:
+    REFERENCE: REF(test.double)

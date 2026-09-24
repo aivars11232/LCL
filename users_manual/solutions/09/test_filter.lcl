@@ -1,0 +1,38 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.test_filter
+    NAME: "Test core.filter"
+    VERSION: "1.0.0"
+    KIND: kind.test
+
+INPUT:
+    ID: input.numbers
+    TYPE: LIST[INTEGER]
+    VALUE: [3, 8, 1, 9]
+
+OUTPUT:
+    ID: output.kept
+    TYPE: LIST[INTEGER]
+    FORMAT: format.json
+
+ACTION:
+    ID: action.keep_large
+    OPERATION: core.filter
+    TARGET: REF(input.numbers)
+    PARAMETER:
+        NAME: predicate
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "item > 2"
+    OUTPUT: REF(output.kept)
+
+TEST:
+    ID: test.keep_large
+    ACTION: REF(action.keep_large)
+    EXPECTED: [3, 8, 9]
+    ACTUAL: REF(output.kept)
+
+EXECUTE:
+    REFERENCE: REF(test.keep_large)

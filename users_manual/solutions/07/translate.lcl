@@ -1,0 +1,27 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.translate_operation
+    NAME: "A translation operation"
+    VERSION: "1.0.0"
+    KIND: kind.data
+    DOMAIN: "teaching"
+
+DEFINE:
+    ID: teaching.translate
+    KIND: kind.operation
+    MEANING: "Translate one text into the named language."
+    SIDE_EFFECT: FALSE
+    DEPENDENCY: [model]
+    DETERMINISTIC: FALSE
+    PARAMETER:
+        NAME: text
+        TYPE: STRING
+        REQUIRED: TRUE
+    PARAMETER:
+        NAME: language
+        TYPE: STRING
+        REQUIRED: TRUE
+    RESULT:
+        TYPE: STRING

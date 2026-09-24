@@ -1,0 +1,256 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.class_report
+    NAME: "End-of-term class report"
+    VERSION: "1.0.0"
+    KIND: kind.task
+    DOMAIN: "education"
+    DESCRIPTION: "Capstone project of the LCL users manual."
+
+DEFINE:
+    ID: term.pass
+    KIND: kind.term
+    MEANING: "A pupil passes the term with a mark of 50 or more out of 100."
+
+DEFINE:
+    ID: constant.pass_mark
+    KIND: kind.constant
+    TYPE: INTEGER
+    VALUE: 50
+
+DEFINE:
+    ID: type.result
+    KIND: kind.type
+    BASE: OBJECT
+    FIELD:
+        NAME: pupil
+        TYPE: STRING
+        REQUIRED: TRUE
+    FIELD:
+        NAME: mark
+        TYPE: INTEGER
+        REQUIRED: TRUE
+        MINIMUM: 0
+        MAXIMUM: 100
+
+DATA:
+    ID: data.ada
+    TYPE: OBJECT[REF(type.result)]
+    VALUE:
+        pupil: "Ada"
+        mark: 91
+
+DATA:
+    ID: data.alan
+    TYPE: OBJECT[REF(type.result)]
+    VALUE:
+        pupil: "Alan"
+        mark: 48
+
+DATA:
+    ID: data.grace
+    TYPE: OBJECT[REF(type.result)]
+    VALUE:
+        pupil: "Grace"
+        mark: 77
+
+DATA:
+    ID: data.katherine
+    TYPE: OBJECT[REF(type.result)]
+    VALUE:
+        pupil: "Katherine"
+        mark: 84
+
+DATA:
+    ID: data.tim
+    TYPE: OBJECT[REF(type.result)]
+    VALUE:
+        pupil: "Tim"
+        mark: 50
+
+INPUT:
+    ID: input.results
+    TYPE: LIST[OBJECT[REF(type.result)]]
+    VALUE: [REF(data.ada), REF(data.alan), REF(data.grace), REF(data.katherine), REF(data.tim)]
+    PROVENANCE: "Marks entered by the class teacher on 2026-07-10."
+
+WORKSPACE:
+    ID: workspace.reports
+    PATH: PATH("/tmp/lcl-manual/capstone")
+    MODE: mode.read_write
+
+FORBID:
+    ID: rule.keep_last_term_write
+    OPERATION: core.write
+    TARGET: PATH(REF(workspace.reports), "last_term.txt")
+    DESCRIPTION: "Last term's report must never be overwritten."
+
+FORBID:
+    ID: rule.keep_last_term_delete
+    OPERATION: core.delete
+    TARGET: PATH(REF(workspace.reports), "last_term.txt")
+    DESCRIPTION: "Last term's report must never be deleted."
+
+OUTPUT:
+    ID: output.passed
+    TYPE: LIST[OBJECT[REF(type.result)]]
+    FORMAT: format.json
+
+OUTPUT:
+    ID: output.honour_roll
+    TYPE: LIST[OBJECT[REF(type.result)]]
+    FORMAT: format.json
+
+OUTPUT:
+    ID: output.top_pupil
+    TYPE: STRING
+    FORMAT: format.plain_text
+
+OUTPUT:
+    ID: output.pass_rate
+    TYPE: DECIMAL
+    FORMAT: format.plain_text
+
+OUTPUT:
+    ID: output.saved
+    TYPE: BOOLEAN
+    FORMAT: format.plain_text
+
+EVIDENCE:
+    ID: evidence.marks_source
+    TYPE: STRING
+    VALUE: "Marks entered by the class teacher on 2026-07-10."
+    PROVENANCE: "INPUT input.results."
+    REQUIRED: TRUE
+
+GOAL:
+    ID: goal.report
+    ASSERT: REF(output.saved) == TRUE AND COUNT(REF(output.honour_roll)) == COUNT(REF(output.passed))
+
+VALIDATE:
+    ID: validate.class_not_empty
+    ASSERT: COUNT(REF(input.results)) >= 1
+
+ACTION:
+    ID: action.passed
+    OPERATION: core.filter
+    TARGET: REF(input.results)
+    PARAMETER:
+        NAME: predicate
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "(item).mark >= REF(constant.pass_mark)"
+    OUTPUT: REF(output.passed)
+
+ACTION:
+    ID: action.rank
+    OPERATION: core.sort
+    TARGET: REF(output.passed)
+    PARAMETER:
+        NAME: key
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "mark"
+    PARAMETER:
+        NAME: direction
+        TYPE: ENUM
+        REQUIRED: TRUE
+        VALUE: descending
+    OUTPUT: REF(output.honour_roll)
+
+ACTION:
+    ID: action.top_pupil
+    OPERATION: core.calculate
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "REF(output.honour_roll)[0].pupil"
+    OUTPUT: REF(output.top_pupil)
+
+ACTION:
+    ID: action.pass_rate
+    OPERATION: core.calculate
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "ROUND(COUNT(REF(output.passed)) * 100 / COUNT(REF(input.results)), 1)"
+    OUTPUT: REF(output.pass_rate)
+
+ACTION:
+    ID: action.save
+    OPERATION: core.create
+    TARGET: PATH(REF(workspace.reports), "honour_roll.txt")
+    PARAMETER:
+        NAME: content
+        TYPE: LIST[OBJECT[REF(type.result)]]
+        REQUIRED: TRUE
+        VALUE: REF(output.honour_roll)
+    OUTPUT: REF(output.saved)
+
+PHASE:
+    ID: phase.analyse
+    STEP:
+        ID: step.passed
+        ACTION: REF(action.passed)
+    STEP:
+        ID: step.rank
+        ACTION: REF(action.rank)
+    STEP:
+        ID: step.top_pupil
+        ACTION: REF(action.top_pupil)
+    STEP:
+        ID: step.pass_rate
+        ACTION: REF(action.pass_rate)
+
+PHASE:
+    ID: phase.publish
+    AFTER: REF(phase.analyse)
+    STEP:
+        ID: step.save
+        ACTION: REF(action.save)
+
+VERIFY:
+    ID: verify.only_passes
+    ASSERT: COUNT(REF(output.passed)) == 4
+    EVIDENCE: REF(evidence.marks_source)
+
+VERIFY:
+    ID: verify.ranked
+    ASSERT: REF(output.honour_roll)[0].mark >= REF(output.honour_roll)[3].mark
+
+VERIFY:
+    ID: verify.top_pupil
+    ASSERT: REF(output.top_pupil) == "Ada"
+
+VERIFY:
+    ID: verify.pass_rate
+    ASSERT: REF(output.pass_rate) == 80.0
+
+VERIFY:
+    ID: verify.saved
+    ASSERT: REF(output.saved) == TRUE
+
+FAILURE:
+    ID: failure.low_pass_rate
+    WHEN: REF(output.pass_rate) < 50.0
+    STATUS: status.failed
+
+SUCCESS:
+    ID: success.report
+    ALL: [REF(verify.only_passes), REF(verify.ranked), REF(verify.top_pupil), REF(verify.pass_rate), REF(verify.saved)]
+
+TASK:
+    ID: task.class_report
+    GOAL: REF(goal.report)
+    INPUT: REF(input.results)
+    WORKSPACE: REF(workspace.reports)
+    PHASE: [REF(phase.analyse), REF(phase.publish)]
+    OUTPUT: [REF(output.passed), REF(output.honour_roll), REF(output.top_pupil), REF(output.pass_rate), REF(output.saved)]
+    SUCCESS: REF(success.report)
+
+EXECUTE:
+    REFERENCE: REF(task.class_report)

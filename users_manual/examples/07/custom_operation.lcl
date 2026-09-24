@@ -1,0 +1,76 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.custom_operation
+    NAME: "A custom operation"
+    VERSION: "1.0.0"
+    KIND: kind.task
+    DOMAIN: "teaching"
+
+DEFINE:
+    ID: teaching.summarise
+    KIND: kind.operation
+    MEANING: "Summarise one text in at most the given number of words."
+    SIDE_EFFECT: FALSE
+    DEPENDENCY: [model]
+    DETERMINISTIC: FALSE
+    PARAMETER:
+        NAME: text
+        TYPE: STRING
+        REQUIRED: TRUE
+    PARAMETER:
+        NAME: maximum_words
+        TYPE: INTEGER
+        REQUIRED: TRUE
+        MINIMUM: 1
+    RESULT:
+        TYPE: STRING
+
+INPUT:
+    ID: input.article
+    TYPE: STRING
+    VALUE: "LCL is a declarative language for stating tasks exactly. It separates goals, rules, actions and checks."
+
+OUTPUT:
+    ID: output.summary
+    TYPE: STRING
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.summary
+    ASSERT: COUNT(REF(output.summary)) <= COUNT(REF(input.article))
+
+ACTION:
+    ID: action.summarise
+    OPERATION: teaching.summarise
+    PARAMETER:
+        NAME: text
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: REF(input.article)
+    PARAMETER:
+        NAME: maximum_words
+        TYPE: INTEGER
+        REQUIRED: TRUE
+        VALUE: 12
+    OUTPUT: REF(output.summary)
+
+VERIFY:
+    ID: verify.shorter
+    ASSERT: COUNT(REF(output.summary)) <= COUNT(REF(input.article))
+
+SUCCESS:
+    ID: success.summary
+    ALL: [REF(verify.shorter)]
+
+TASK:
+    ID: task.summarise
+    GOAL: REF(goal.summary)
+    INPUT: REF(input.article)
+    ACTION: REF(action.summarise)
+    OUTPUT: REF(output.summary)
+    SUCCESS: REF(success.summary)
+
+EXECUTE:
+    REFERENCE: REF(task.summarise)

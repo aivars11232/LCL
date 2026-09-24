@@ -1,0 +1,83 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: app.perimeters
+    NAME: "Perimeters of a square and a triangle"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+IMPORT:
+    ID: import.shapes
+    SOURCE: PATH("shapes.lcl")
+    NAMESPACE: shapes
+    VERSION: "1.0.0"
+
+INPUT:
+    ID: input.side
+    TYPE: INTEGER
+    VALUE: 5
+
+OUTPUT:
+    ID: output.perimeter
+    TYPE: INTEGER
+    FORMAT: format.plain_text
+
+INPUT:
+    ID: input.triangle_side
+    TYPE: INTEGER
+    VALUE: 7
+
+OUTPUT:
+    ID: output.triangle_perimeter
+    TYPE: INTEGER
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.perimeter
+    ASSERT: REF(output.perimeter) == 20
+
+ACTION:
+    ID: action.perimeter
+    OPERATION: core.calculate
+    TARGET: REF(input.side)
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "target * REF(shapes.constant.sides_of_square)"
+    OUTPUT: REF(output.perimeter)
+
+ACTION:
+    ID: action.triangle_perimeter
+    OPERATION: core.calculate
+    TARGET: REF(input.triangle_side)
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "target * REF(shapes.constant.sides_of_triangle)"
+    OUTPUT: REF(output.triangle_perimeter)
+
+VERIFY:
+    ID: verify.triangle_perimeter
+    ASSERT: REF(output.triangle_perimeter) == 21
+
+VERIFY:
+    ID: verify.perimeter
+    ASSERT: REF(output.perimeter) == 20
+
+SUCCESS:
+    ID: success.perimeter
+    ALL: [REF(verify.perimeter), REF(verify.triangle_perimeter)]
+
+TASK:
+    ID: task.perimeter
+    GOAL: REF(goal.perimeter)
+    INPUT: [REF(input.side), REF(input.triangle_side)]
+    ACTION: [REF(action.perimeter), REF(action.triangle_perimeter)]
+    OUTPUT: [REF(output.perimeter), REF(output.triangle_perimeter)]
+    SUCCESS: REF(success.perimeter)
+
+EXECUTE:
+    REFERENCE: REF(task.perimeter)

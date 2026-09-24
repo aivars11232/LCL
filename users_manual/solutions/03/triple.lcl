@@ -1,0 +1,52 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.triple
+    NAME: "Triple one number"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+INPUT:
+    ID: input.number
+    TYPE: INTEGER
+    VALUE: 14
+
+OUTPUT:
+    ID: output.tripled
+    TYPE: INTEGER
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.tripled
+    ASSERT: REF(output.tripled) == 42
+
+ACTION:
+    ID: action.triple
+    OPERATION: core.calculate
+    TARGET: REF(input.number)
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "REF(input.number) * 3"
+    OUTPUT: REF(output.tripled)
+
+VERIFY:
+    ID: verify.tripled
+    ASSERT: REF(output.tripled) == 42
+
+SUCCESS:
+    ID: success.tripled
+    ALL: [REF(verify.tripled)]
+
+TASK:
+    ID: task.triple
+    GOAL: REF(goal.tripled)
+    INPUT: REF(input.number)
+    ACTION: REF(action.triple)
+    OUTPUT: REF(output.tripled)
+    SUCCESS: REF(success.tripled)
+
+EXECUTE:
+    REFERENCE: REF(task.triple)

@@ -1,0 +1,56 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.difference
+    NAME: "Difference of two numbers"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+INPUT:
+    ID: input.larger
+    TYPE: INTEGER
+    VALUE: 100
+
+INPUT:
+    ID: input.smaller
+    TYPE: INTEGER
+    VALUE: 58
+
+OUTPUT:
+    ID: output.difference
+    TYPE: INTEGER
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.difference
+    ASSERT: REF(output.difference) == 42
+
+ACTION:
+    ID: action.subtract
+    OPERATION: core.calculate
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "REF(input.larger) - REF(input.smaller)"
+    OUTPUT: REF(output.difference)
+
+VERIFY:
+    ID: verify.difference
+    ASSERT: REF(output.difference) == 42
+
+SUCCESS:
+    ID: success.difference
+    ALL: [REF(verify.difference)]
+
+TASK:
+    ID: task.difference
+    GOAL: REF(goal.difference)
+    INPUT: [REF(input.larger), REF(input.smaller)]
+    ACTION: REF(action.subtract)
+    OUTPUT: REF(output.difference)
+    SUCCESS: REF(success.difference)
+
+EXECUTE:
+    REFERENCE: REF(task.difference)

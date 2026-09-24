@@ -1,0 +1,63 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.large_numbers
+    NAME: "The numbers above 5, as one list"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+INPUT:
+    ID: input.numbers
+    TYPE: SET[INTEGER]
+    VALUE: [4, 7, 10, 7]
+
+OUTPUT:
+    ID: output.as_list
+    TYPE: LIST[INTEGER]
+    FORMAT: format.json
+
+OUTPUT:
+    ID: output.large
+    TYPE: LIST[INTEGER]
+    FORMAT: format.json
+
+GOAL:
+    ID: goal.large
+    ASSERT: REF(output.large) == [7, 10]
+
+ACTION:
+    ID: action.as_list
+    OPERATION: core.sort
+    TARGET: REF(input.numbers)
+    OUTPUT: REF(output.as_list)
+
+ACTION:
+    ID: action.large
+    OPERATION: core.filter
+    TARGET: REF(output.as_list)
+    PARAMETER:
+        NAME: predicate
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "item > 5"
+    OUTPUT: REF(output.large)
+
+VERIFY:
+    ID: verify.large
+    ASSERT: REF(output.large) == [7, 10]
+
+SUCCESS:
+    ID: success.large
+    ALL: [REF(verify.large)]
+
+TASK:
+    ID: task.large
+    GOAL: REF(goal.large)
+    INPUT: REF(input.numbers)
+    ACTION: [REF(action.as_list), REF(action.large)]
+    OUTPUT: [REF(output.as_list), REF(output.large)]
+    SUCCESS: REF(success.large)
+
+EXECUTE:
+    REFERENCE: REF(task.large)

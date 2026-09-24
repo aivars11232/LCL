@@ -1,0 +1,18 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.comment
+    NAME: "A document with a comment"
+    VERSION: "1.0.0"
+    KIND: kind.data
+    DESCRIPTION: "Descriptions are labels for people, too."
+
+COMMENT:
+    CONTENT: "The rate below comes from the 2026 price list."
+
+DATA:
+    ID: data.rate
+    TYPE: DECIMAL
+    VALUE: 0.2
+    DESCRIPTION: "Standard rate as a fraction, not a percentage."

@@ -1,0 +1,27 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.archive_rules
+    NAME: "Archive rules"
+    VERSION: "1.0.0"
+    KIND: kind.library
+
+FORBID:
+    ID: rule.never_delete_archive
+    OPERATION: core.delete
+    TARGET: PATH("/srv/archive")
+
+FORBID:
+    ID: rule.never_move_archive
+    OPERATION: core.move
+    TARGET: PATH("/srv/archive")
+
+ALLOW:
+    ID: permission.incoming
+    OPERATION: core.create
+    TARGET: PATH("/srv/archive/incoming")
+
+PRESERVE:
+    ID: rule.keep_index
+    TARGET: PATH("/srv/archive/index.csv")

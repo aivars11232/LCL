@@ -1,0 +1,65 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.chapter6_answers
+    NAME: "Chapter 6 answers, checked"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+OUTPUT:
+    ID: output.done
+    TYPE: BOOLEAN
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.all_true
+    ASSERT: REF(output.done) == TRUE
+
+ACTION:
+    ID: action.done
+    OPERATION: core.return
+    TARGET: TRUE
+    OUTPUT: REF(output.done)
+
+VERIFY:
+    ID: verify.arithmetic
+    ASSERT: 20 - 4 * 3 == 8 AND (20 - 4) * 3 == 48
+
+VERIFY:
+    ID: verify.division
+    ASSERT: 9 / 4 == 2.25 AND ROUND(2 / 3, 3) == 0.667
+
+VERIFY:
+    ID: verify.nested_count
+    ASSERT: COUNT([[1, 2], [3]]) == 2
+
+VERIFY:
+    ID: verify.rounded_division_allowed
+    ASSERT: ROUND(2 / 3, 1) == 0.7
+
+VERIFY:
+    ID: verify.postcode_matches
+    ASSERT: "SW1A" MATCHES REGEX("[A-Z]{1,2}[0-9][A-Z0-9]?") AND "M1" MATCHES REGEX("[A-Z]{1,2}[0-9][A-Z0-9]?")
+
+VERIFY:
+    ID: verify.postcode_rejects
+    ASSERT: NOT ("sw1a" MATCHES REGEX("[A-Z]{1,2}[0-9][A-Z0-9]?")) AND NOT ("SW1AB" MATCHES REGEX("[A-Z]{1,2}[0-9][A-Z0-9]?"))
+
+VERIFY:
+    ID: verify.average
+    ASSERT: ROUND(SUM([12, 15, 9, 18]) / COUNT([12, 15, 9, 18]), 1) == 13.5
+
+SUCCESS:
+    ID: success.all_true
+    ALL: [REF(verify.arithmetic), REF(verify.division), REF(verify.nested_count), REF(verify.rounded_division_allowed), REF(verify.postcode_matches), REF(verify.postcode_rejects), REF(verify.average)]
+
+TASK:
+    ID: task.answers
+    GOAL: REF(goal.all_true)
+    ACTION: REF(action.done)
+    OUTPUT: REF(output.done)
+    SUCCESS: REF(success.all_true)
+
+EXECUTE:
+    REFERENCE: REF(task.answers)

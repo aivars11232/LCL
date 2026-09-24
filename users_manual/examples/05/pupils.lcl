@@ -1,0 +1,72 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.pupils
+    NAME: "A class register"
+    VERSION: "1.0.0"
+    KIND: kind.data
+
+DEFINE:
+    ID: type.pupil
+    KIND: kind.type
+    BASE: OBJECT
+    FIELD:
+        NAME: name
+        TYPE: STRING
+        REQUIRED: TRUE
+    FIELD:
+        NAME: year
+        TYPE: INTEGER
+        REQUIRED: TRUE
+        MINIMUM: 1
+        MAXIMUM: 13
+    FIELD:
+        NAME: nickname
+        TYPE: STRING
+        REQUIRED: FALSE
+
+DEFINE:
+    ID: type.weekday
+    KIND: kind.type
+    BASE: ENUM
+    ITEM: monday
+    ITEM: tuesday
+    ITEM: wednesday
+    ITEM: thursday
+    ITEM: friday
+
+DEFINE:
+    ID: type.mark
+    KIND: kind.type
+    BASE: INTEGER
+
+DATA:
+    ID: data.ada
+    TYPE: OBJECT[REF(type.pupil)]
+    VALUE:
+        name: "Ada"
+        year: 7
+
+DATA:
+    ID: data.grace
+    TYPE: OBJECT[REF(type.pupil)]
+    VALUE:
+        name: "Grace"
+        year: 8
+        nickname: "Amazing Grace"
+
+DATA:
+    ID: data.register
+    TYPE: LIST[OBJECT[REF(type.pupil)]]
+    VALUE: [REF(data.ada), REF(data.grace)]
+
+DATA:
+    ID: data.club_day
+    TYPE: REF(type.weekday)
+    VALUE: wednesday
+
+DATA:
+    ID: data.best_mark
+    TYPE: REF(type.mark)
+    VALUE: 10

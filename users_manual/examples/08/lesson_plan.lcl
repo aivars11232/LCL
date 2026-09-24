@@ -1,0 +1,95 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.lesson_plan
+    NAME: "Context, memory and state"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+SCOPE:
+    ID: scope.lesson
+    INCLUDE: REF(task.plan)
+
+CONTEXT:
+    ID: context.class
+    TYPE: OBJECT
+    SCOPE: REF(scope.lesson)
+    VALUE:
+        year_group: 8
+        subject: "mathematics"
+
+MEMORY:
+    ID: memory.teacher_preferences
+    TYPE: OBJECT
+    SCOPE: REF(scope.lesson)
+    MODE: mode.read_only
+    VALUE:
+        lesson_minutes: 50
+
+STATE:
+    ID: state.lessons_taught
+    TYPE: INTEGER
+    SCOPE: REF(scope.lesson)
+    MODE: mode.read_only
+    VALUE: 11
+
+OUTPUT:
+    ID: output.next_lesson
+    TYPE: INTEGER
+    FORMAT: format.plain_text
+
+OUTPUT:
+    ID: output.minutes_so_far
+    TYPE: INTEGER
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.plan
+    ASSERT: REF(output.next_lesson) == 12
+
+ACTION:
+    ID: action.next_lesson
+    OPERATION: core.calculate
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "REF(state.lessons_taught) + 1"
+    OUTPUT: REF(output.next_lesson)
+
+ACTION:
+    ID: action.minutes_so_far
+    OPERATION: core.calculate
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "REF(state.lessons_taught) * REF(memory.teacher_preferences).lesson_minutes"
+    OUTPUT: REF(output.minutes_so_far)
+
+VERIFY:
+    ID: verify.next_lesson
+    ASSERT: REF(output.next_lesson) == 12
+
+VERIFY:
+    ID: verify.minutes
+    ASSERT: REF(output.minutes_so_far) == 550
+
+VERIFY:
+    ID: verify.context_used
+    ASSERT: REF(context.class).subject == "mathematics"
+
+SUCCESS:
+    ID: success.plan
+    ALL: [REF(verify.next_lesson), REF(verify.minutes), REF(verify.context_used)]
+
+TASK:
+    ID: task.plan
+    GOAL: REF(goal.plan)
+    ACTION: [REF(action.next_lesson), REF(action.minutes_so_far)]
+    OUTPUT: [REF(output.next_lesson), REF(output.minutes_so_far)]
+    SUCCESS: REF(success.plan)
+
+EXECUTE:
+    REFERENCE: REF(task.plan)

@@ -1,0 +1,150 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.league
+    NAME: "League table"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+DEFINE:
+    ID: type.team
+    KIND: kind.type
+    BASE: OBJECT
+    FIELD:
+        NAME: name
+        TYPE: STRING
+        REQUIRED: TRUE
+    FIELD:
+        NAME: points
+        TYPE: INTEGER
+        REQUIRED: TRUE
+    FIELD:
+        NAME: division
+        TYPE: STRING
+        REQUIRED: TRUE
+
+DATA:
+    ID: data.lions
+    TYPE: OBJECT[REF(type.team)]
+    VALUE:
+        name: "Lions"
+        points: 12
+        division: "north"
+
+DATA:
+    ID: data.otters
+    TYPE: OBJECT[REF(type.team)]
+    VALUE:
+        name: "Otters"
+        points: 18
+        division: "south"
+
+DATA:
+    ID: data.hawks
+    TYPE: OBJECT[REF(type.team)]
+    VALUE:
+        name: "Hawks"
+        points: 15
+        division: "north"
+
+INPUT:
+    ID: input.teams
+    TYPE: LIST[OBJECT[REF(type.team)]]
+    VALUE: [REF(data.lions), REF(data.otters), REF(data.hawks)]
+
+OUTPUT:
+    ID: output.table
+    TYPE: LIST[OBJECT[REF(type.team)]]
+    FORMAT: format.json
+
+OUTPUT:
+    ID: output.by_division
+    TYPE: LIST[OBJECT]
+    FORMAT: format.json
+
+OUTPUT:
+    ID: output.leader_points
+    TYPE: INTEGER
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.table
+    ASSERT: REF(output.leader_points) == 18
+
+ACTION:
+    ID: action.sort
+    OPERATION: core.sort
+    TARGET: REF(input.teams)
+    PARAMETER:
+        NAME: key
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "points"
+    PARAMETER:
+        NAME: direction
+        TYPE: ENUM
+        REQUIRED: TRUE
+        VALUE: descending
+    OUTPUT: REF(output.table)
+
+ACTION:
+    ID: action.group
+    OPERATION: core.group
+    TARGET: REF(input.teams)
+    PARAMETER:
+        NAME: key
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "division"
+    OUTPUT: REF(output.by_division)
+
+ACTION:
+    ID: action.leader
+    OPERATION: core.calculate
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "REF(output.table)[0].points"
+    OUTPUT: REF(output.leader_points)
+
+PHASE:
+    ID: phase.arrange
+    MODE: mode.parallel
+    STEP:
+        ID: step.sort
+        ACTION: REF(action.sort)
+    STEP:
+        ID: step.group
+        ACTION: REF(action.group)
+
+PHASE:
+    ID: phase.report
+    AFTER: REF(phase.arrange)
+    STEP:
+        ID: step.leader
+        ACTION: REF(action.leader)
+
+VERIFY:
+    ID: verify.order
+    ASSERT: REF(output.table)[0].name == "Otters" AND REF(output.table)[2].name == "Lions"
+
+VERIFY:
+    ID: verify.groups
+    ASSERT: COUNT(REF(output.by_division)) == 2
+
+SUCCESS:
+    ID: success.table
+    ALL: [REF(verify.order), REF(verify.groups)]
+
+TASK:
+    ID: task.table
+    GOAL: REF(goal.table)
+    INPUT: REF(input.teams)
+    PHASE: [REF(phase.arrange), REF(phase.report)]
+    OUTPUT: [REF(output.table), REF(output.by_division), REF(output.leader_points)]
+    SUCCESS: REF(success.table)
+
+EXECUTE:
+    REFERENCE: REF(task.table)

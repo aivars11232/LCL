@@ -1,0 +1,78 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.marks
+    NAME: "Sort, filter and loop"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+INPUT:
+    ID: input.marks
+    TYPE: LIST[INTEGER]
+    VALUE: [72, 45, 90, 45, 61]
+
+OUTPUT:
+    ID: output.sorted
+    TYPE: LIST[INTEGER]
+    FORMAT: format.json
+
+OUTPUT:
+    ID: output.passing
+    TYPE: LIST[INTEGER]
+    FORMAT: format.json
+
+GOAL:
+    ID: goal.lists
+    ASSERT: REF(output.sorted) == [45, 45, 61, 72, 90]
+
+ACTION:
+    ID: action.sort
+    OPERATION: core.sort
+    TARGET: REF(input.marks)
+    OUTPUT: REF(output.sorted)
+
+ACTION:
+    ID: action.filter
+    OPERATION: core.filter
+    TARGET: REF(input.marks)
+    PARAMETER:
+        NAME: predicate
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "item >= 50"
+    OUTPUT: REF(output.passing)
+
+SEQUENCE:
+    ID: sequence.each
+    FOR EACH mark IN REF(input.marks):
+        STEP:
+            ID: step.show
+            ACTION:
+                ID: action.show
+                OPERATION: core.return
+                TARGET: REF(mark)
+
+VERIFY:
+    ID: verify.sorted
+    ASSERT: REF(output.sorted) == [45, 45, 61, 72, 90]
+
+VERIFY:
+    ID: verify.passing
+    ASSERT: REF(output.passing) == [72, 90, 61]
+
+SUCCESS:
+    ID: success.lists
+    ALL: [REF(verify.sorted), REF(verify.passing)]
+
+TASK:
+    ID: task.lists
+    GOAL: REF(goal.lists)
+    INPUT: REF(input.marks)
+    ACTION: [REF(action.sort), REF(action.filter)]
+    SEQUENCE: REF(sequence.each)
+    OUTPUT: [REF(output.sorted), REF(output.passing)]
+    SUCCESS: REF(success.lists)
+
+EXECUTE:
+    REFERENCE: REF(task.lists)

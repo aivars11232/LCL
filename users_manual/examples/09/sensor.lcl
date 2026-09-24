@@ -1,0 +1,66 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.checks
+    NAME: "Optional checks and quantifiers"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+INPUT:
+    ID: input.temperature
+    TYPE: DECIMAL
+    REQUIRED: FALSE
+    DEFAULT: 21.5
+
+OUTPUT:
+    ID: output.reading
+    TYPE: DECIMAL
+    FORMAT: format.plain_text
+
+EVIDENCE:
+    ID: evidence.sensor
+    TYPE: STRING
+    VALUE: "Reading taken from classroom sensor 3."
+    PROVENANCE: "Declared in this document for teaching."
+    REQUIRED: TRUE
+
+GOAL:
+    ID: goal.reading
+    ASSERT: EXISTS(REF(output.reading))
+
+ACTION:
+    ID: action.read
+    OPERATION: core.return
+    TARGET: REF(input.temperature)
+    OUTPUT: REF(output.reading)
+
+VERIFY:
+    ID: verify.plausible
+    ASSERT: REF(output.reading) > -50.0 AND REF(output.reading) < 60.0
+    EVIDENCE: REF(evidence.sensor)
+
+VERIFY:
+    ID: verify.comfortable
+    REQUIRED: FALSE
+    ASSERT: REF(output.reading) >= 18.0 AND REF(output.reading) <= 24.0
+
+VERIFY:
+    ID: verify.freezing_warning
+    WHEN: REF(output.reading) < 0.0
+    ASSERT: REF(output.reading) > -20.0
+
+SUCCESS:
+    ID: success.reading
+    ALL: [REF(verify.plausible)]
+
+TASK:
+    ID: task.reading
+    GOAL: REF(goal.reading)
+    INPUT: REF(input.temperature)
+    ACTION: REF(action.read)
+    OUTPUT: REF(output.reading)
+    SUCCESS: REF(success.reading)
+
+EXECUTE:
+    REFERENCE: REF(task.reading)

@@ -1,0 +1,72 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.order_checks
+    NAME: "Validate before, verify after"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+INPUT:
+    ID: input.price
+    TYPE: DECIMAL
+    REQUIRED: FALSE
+    DEFAULT: 19.99
+
+INPUT:
+    ID: input.quantity
+    TYPE: INTEGER
+    REQUIRED: FALSE
+    DEFAULT: 3
+
+OUTPUT:
+    ID: output.total
+    TYPE: DECIMAL
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.total
+    ASSERT: REF(output.total) > 0
+
+VALIDATE:
+    ID: validate.price
+    ASSERT: REF(input.price) >= 0.01 AND REF(input.price) <= 1000.00
+
+VALIDATE:
+    ID: validate.quantity
+    ASSERT: REF(input.quantity) >= 1
+
+ACTION:
+    ID: action.total
+    OPERATION: core.calculate
+    TARGET: REF(input.price)
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "REF(input.price) * REF(input.quantity)"
+    OUTPUT: REF(output.total)
+
+VERIFY:
+    ID: verify.total
+    ASSERT: REF(output.total) == REF(input.price) * REF(input.quantity)
+
+FAILURE:
+    ID: failure.too_large
+    WHEN: REF(output.total) > 500.00
+    STATUS: status.failed
+
+SUCCESS:
+    ID: success.total
+    ALL: [REF(verify.total)]
+
+TASK:
+    ID: task.total
+    GOAL: REF(goal.total)
+    INPUT: [REF(input.price), REF(input.quantity)]
+    ACTION: REF(action.total)
+    OUTPUT: REF(output.total)
+    SUCCESS: REF(success.total)
+
+EXECUTE:
+    REFERENCE: REF(task.total)

@@ -1,0 +1,21 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.conflict
+    NAME: "Two rules that cannot both hold"
+    VERSION: "1.0.0"
+    KIND: kind.library
+
+DATA:
+    ID: data.uniform_required
+    TYPE: BOOLEAN
+    VALUE: TRUE
+
+REQUIRE:
+    ID: rule.wear_uniform
+    ASSERT: REF(data.uniform_required) == TRUE
+
+REQUIRE:
+    ID: rule.no_uniform
+    ASSERT: REF(data.uniform_required) == FALSE

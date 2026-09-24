@@ -1,0 +1,97 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.special_values
+    NAME: "MISSING, UNKNOWN and NULL"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+DATA:
+    ID: data.middle_name
+    TYPE: NULL
+    VALUE: NULL
+
+DATA:
+    ID: data.marks
+    TYPE: LIST[INTEGER]
+    VALUE: [7, 9]
+
+OUTPUT:
+    ID: output.done
+    TYPE: BOOLEAN
+    FORMAT: format.plain_text
+
+OUTPUT:
+    ID: output.never
+    TYPE: INTEGER
+    FORMAT: format.plain_text
+    REQUIRED: FALSE
+
+GOAL:
+    ID: goal.all_true
+    ASSERT: REF(output.done) == TRUE
+
+ACTION:
+    ID: action.done
+    OPERATION: core.return
+    TARGET: TRUE
+    OUTPUT: REF(output.done)
+
+VERIFY:
+    ID: verify.not_unknown
+    ASSERT: (NOT UNKNOWN) == UNKNOWN
+
+VERIFY:
+    ID: verify.and_false
+    ASSERT: (FALSE AND UNKNOWN) == FALSE
+
+VERIFY:
+    ID: verify.and_true
+    ASSERT: (TRUE AND UNKNOWN) == UNKNOWN
+
+VERIFY:
+    ID: verify.or_false
+    ASSERT: (FALSE OR UNKNOWN) == UNKNOWN
+
+VERIFY:
+    ID: verify.or_true
+    ASSERT: (TRUE OR UNKNOWN) == TRUE
+
+VERIFY:
+    ID: verify.all_unknown
+    ASSERT: ALL([TRUE, UNKNOWN]) == UNKNOWN AND ALL([FALSE, UNKNOWN]) == FALSE
+
+VERIFY:
+    ID: verify.any_unknown
+    ASSERT: ANY([TRUE, UNKNOWN]) == TRUE AND ANY([FALSE, UNKNOWN]) == UNKNOWN
+
+VERIFY:
+    ID: verify.sentinels
+    ASSERT: MISSING == MISSING AND UNKNOWN == UNKNOWN AND MISSING != UNKNOWN
+
+VERIFY:
+    ID: verify.null_is_not_missing
+    ASSERT: REF(data.middle_name) == NULL AND REF(data.middle_name) != MISSING AND EXISTS(REF(data.middle_name))
+
+VERIFY:
+    ID: verify.missing_output
+    ASSERT: REF(output.never) == MISSING AND NOT EXISTS(REF(output.never))
+
+VERIFY:
+    ID: verify.missing_index
+    ASSERT: REF(data.marks)[10] == MISSING
+
+SUCCESS:
+    ID: success.all_true
+    ALL: [REF(verify.not_unknown), REF(verify.and_false), REF(verify.and_true), REF(verify.or_false), REF(verify.or_true), REF(verify.all_unknown), REF(verify.any_unknown), REF(verify.sentinels), REF(verify.null_is_not_missing), REF(verify.missing_output), REF(verify.missing_index)]
+
+TASK:
+    ID: task.special_values
+    GOAL: REF(goal.all_true)
+    ACTION: REF(action.done)
+    OUTPUT: [REF(output.done), REF(output.never)]
+    SUCCESS: REF(success.all_true)
+
+EXECUTE:
+    REFERENCE: REF(task.special_values)

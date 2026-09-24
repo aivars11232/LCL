@@ -1,0 +1,15 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: lib.safety
+    NAME: "School safety rules"
+    VERSION: "1.0.0"
+    KIND: kind.library
+    AUTHORITY: 700
+
+FORBID:
+    ID: rule.no_overwrite_register
+    OPERATION: core.write
+    TARGET: PATH("/tmp/lcl-manual/imports/register.txt")
+    AUTHORITY: 700

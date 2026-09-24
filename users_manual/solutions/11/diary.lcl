@@ -1,0 +1,53 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.diary
+    NAME: "Write today's diary line"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+WORKSPACE:
+    ID: workspace.diary
+    PATH: PATH("/tmp/lcl-manual/diary")
+    MODE: mode.read_write
+
+OUTPUT:
+    ID: output.entry
+    TYPE: PATH
+    FORMAT: format.plain_text
+    PROPERTY: target
+
+GOAL:
+    ID: goal.entry
+    ASSERT: EXISTS(REF(output.entry))
+
+ACTION:
+    ID: action.write_entry
+    OPERATION: core.create
+    TARGET: PATH(REF(workspace.diary), "today.txt")
+    PARAMETER:
+        NAME: content
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "Today I wrote my first LCL file.\n"
+    OUTPUT: REF(output.entry)
+
+VERIFY:
+    ID: verify.entry
+    ASSERT: EXISTS(REF(output.entry))
+
+SUCCESS:
+    ID: success.entry
+    ALL: [REF(verify.entry)]
+
+TASK:
+    ID: task.diary
+    GOAL: REF(goal.entry)
+    WORKSPACE: REF(workspace.diary)
+    ACTION: REF(action.write_entry)
+    OUTPUT: REF(output.entry)
+    SUCCESS: REF(success.entry)
+
+EXECUTE:
+    REFERENCE: REF(task.diary)

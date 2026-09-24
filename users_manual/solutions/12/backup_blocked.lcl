@@ -1,0 +1,117 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.backup_blocked
+    NAME: "A second file, not yet permitted"
+    VERSION: "1.0.0"
+    KIND: kind.task
+    AUTHORITY: 600
+
+WORKSPACE:
+    ID: workspace.reports
+    PATH: PATH("/tmp/lcl-manual/rules")
+    MODE: mode.read_write
+
+FORBID:
+    ID: rule.no_summary_file
+    OPERATION: core.create
+    TARGET: PATH(REF(workspace.reports), "summary.txt")
+    AUTHORITY: 600
+    DESCRIPTION: "Normally, reports are not written to disk."
+
+ALLOW:
+    ID: permission.summary_file
+    OPERATION: core.create
+    TARGET: PATH(REF(workspace.reports), "summary.txt")
+    AUTHORITY: 600
+    DESCRIPTION: "The end-of-term summary is the one exception."
+
+OVERRIDE:
+    ID: override.summary_file
+    WINNER: REF(permission.summary_file)
+    LOSER: REF(rule.no_summary_file)
+
+FORBID:
+    ID: rule.never_delete
+    OPERATION: core.delete
+    TARGET: PATH(REF(workspace.reports), "summary.txt")
+    AUTHORITY: 600
+
+FORBID:
+    ID: rule.no_backup_file
+    OPERATION: core.create
+    TARGET: PATH(REF(workspace.reports), "backup.txt")
+    AUTHORITY: 600
+
+PREFER:
+    ID: preference.short
+    ASSERT: COUNT(REF(output.summary_text)) <= 80
+
+OUTPUT:
+    ID: output.summary_text
+    TYPE: STRING
+    FORMAT: format.plain_text
+
+OUTPUT:
+    ID: output.summary_file
+    TYPE: PATH
+    FORMAT: format.plain_text
+    PROPERTY: target
+
+OUTPUT:
+    ID: output.backup_file
+    TYPE: PATH
+    FORMAT: format.plain_text
+    PROPERTY: target
+
+GOAL:
+    ID: goal.summary
+    ASSERT: EXISTS(REF(output.summary_file))
+
+ACTION:
+    ID: action.text
+    OPERATION: core.return
+    TARGET: "Term report: 28 pupils, average mark 71."
+    OUTPUT: REF(output.summary_text)
+
+ACTION:
+    ID: action.save
+    OPERATION: core.create
+    TARGET: PATH(REF(workspace.reports), "summary.txt")
+    PARAMETER:
+        NAME: content
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: REF(output.summary_text)
+    OUTPUT: REF(output.summary_file)
+
+ACTION:
+    ID: action.backup
+    OPERATION: core.create
+    TARGET: PATH(REF(workspace.reports), "backup.txt")
+    PARAMETER:
+        NAME: content
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: REF(output.summary_text)
+    OUTPUT: REF(output.backup_file)
+
+VERIFY:
+    ID: verify.saved
+    ASSERT: EXISTS(REF(output.summary_file))
+
+SUCCESS:
+    ID: success.summary
+    ALL: [REF(verify.saved)]
+
+TASK:
+    ID: task.summary
+    GOAL: REF(goal.summary)
+    WORKSPACE: REF(workspace.reports)
+    ACTION: [REF(action.text), REF(action.save), REF(action.backup)]
+    OUTPUT: [REF(output.summary_text), REF(output.summary_file), REF(output.backup_file)]
+    SUCCESS: REF(success.summary)
+
+EXECUTE:
+    REFERENCE: REF(task.summary)

@@ -1,0 +1,75 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.literals
+    NAME: "Every kind of literal"
+    VERSION: "1.0.0"
+    KIND: kind.data
+
+DATA:
+    ID: data.whole_number
+    TYPE: INTEGER
+    VALUE: 42
+
+DATA:
+    ID: data.negative_number
+    TYPE: INTEGER
+    VALUE: -7
+
+DATA:
+    ID: data.exact_decimal
+    TYPE: DECIMAL
+    VALUE: 3.14
+
+DATA:
+    ID: data.flag
+    TYPE: BOOLEAN
+    VALUE: TRUE
+
+DATA:
+    ID: data.greeting
+    TYPE: STRING
+    VALUE: "Hello, world!"
+
+DATA:
+    ID: data.with_escapes
+    TYPE: STRING
+    VALUE: "Tab:\t Quote:\" Backslash:\\ Snowman:\u2603"
+
+DATA:
+    ID: data.unicode_text
+    TYPE: STRING
+    VALUE: "Grüße, 世界"
+
+DATA:
+    ID: data.poem
+    TYPE: STRING
+    VALUE: """
+        Roses are red,
+          this line keeps two extra spaces,
+
+        and a blank line is kept too.
+    """
+
+DATA:
+    ID: data.short_list
+    TYPE: LIST[INTEGER]
+    VALUE: [1, 2, 3]
+
+DATA:
+    ID: data.long_list
+    TYPE: LIST[STRING]
+    VALUE: [
+        "first",
+        "second",
+        "third"
+    ]
+
+DATA:
+    ID: data.person
+    TYPE: OBJECT
+    VALUE:
+        name: "Ada"
+        age: 12
+        status: "student"

@@ -1,0 +1,52 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.task_first
+    NAME: "Double one number"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+TASK:
+    ID: task.double
+    GOAL: REF(goal.doubled)
+    INPUT: REF(input.number)
+    ACTION: REF(action.double)
+    OUTPUT: REF(output.doubled)
+    SUCCESS: REF(success.doubled)
+
+INPUT:
+    ID: input.number
+    TYPE: INTEGER
+    VALUE: 21
+
+OUTPUT:
+    ID: output.doubled
+    TYPE: INTEGER
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.doubled
+    ASSERT: REF(output.doubled) == 42
+
+ACTION:
+    ID: action.double
+    OPERATION: core.calculate
+    TARGET: REF(input.number)
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "REF(input.number) * 2"
+    OUTPUT: REF(output.doubled)
+
+VERIFY:
+    ID: verify.doubled
+    ASSERT: REF(output.doubled) == 42
+
+SUCCESS:
+    ID: success.doubled
+    ALL: [REF(verify.doubled)]
+
+EXECUTE:
+    REFERENCE: REF(task.double)

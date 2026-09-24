@@ -1,0 +1,85 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.todo
+    NAME: "Back up and extend a to-do list"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+WORKSPACE:
+    ID: workspace.notes
+    PATH: PATH("/tmp/lcl-manual/todo")
+    MODE: mode.read_write
+
+OUTPUT:
+    ID: output.todo_text
+    TYPE: STRING
+    FORMAT: format.plain_text
+
+OUTPUT:
+    ID: output.backup
+    TYPE: PATH
+    FORMAT: format.plain_text
+    TARGET: PATH(REF(workspace.notes), "todo_backup.txt")
+    PROPERTY: target
+
+OUTPUT:
+    ID: output.appended
+    TYPE: BOOLEAN
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.todo
+    ASSERT: EXISTS(REF(output.backup))
+
+ACTION:
+    ID: action.read
+    OPERATION: core.read
+    TARGET: PATH(REF(workspace.notes), "todo.txt")
+    OUTPUT: REF(output.todo_text)
+
+ACTION:
+    ID: action.backup
+    OPERATION: core.create
+    TARGET: REF(output.backup).TARGET
+    PARAMETER:
+        NAME: content
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: REF(output.todo_text)
+    OUTPUT: REF(output.backup)
+
+ACTION:
+    ID: action.append
+    OPERATION: core.append
+    TARGET: PATH(REF(workspace.notes), "todo.txt")
+    PARAMETER:
+        NAME: content
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "Learn LCL\n"
+    OUTPUT: REF(output.appended)
+
+VERIFY:
+    ID: verify.read
+    ASSERT: REF(output.todo_text) CONTAINS "Buy milk"
+
+VERIFY:
+    ID: verify.appended
+    ASSERT: REF(output.appended) == TRUE
+
+SUCCESS:
+    ID: success.todo
+    ALL: [REF(verify.read), REF(verify.appended)]
+
+TASK:
+    ID: task.todo
+    GOAL: REF(goal.todo)
+    WORKSPACE: REF(workspace.notes)
+    ACTION: [REF(action.read), REF(action.backup), REF(action.append)]
+    OUTPUT: [REF(output.todo_text), REF(output.backup), REF(output.appended)]
+    SUCCESS: REF(success.todo)
+
+EXECUTE:
+    REFERENCE: REF(task.todo)

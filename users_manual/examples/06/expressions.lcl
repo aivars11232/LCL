@@ -1,0 +1,129 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.expressions
+    NAME: "Expressions, checked"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+DATA:
+    ID: data.pupil
+    TYPE: OBJECT
+    VALUE:
+        name: "Ada"
+        year: 7
+
+DATA:
+    ID: data.marks
+    TYPE: LIST[INTEGER]
+    VALUE: [7, 9, 10]
+
+OUTPUT:
+    ID: output.done
+    TYPE: BOOLEAN
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.all_true
+    ASSERT: REF(output.done) == TRUE
+
+ACTION:
+    ID: action.done
+    OPERATION: core.return
+    TARGET: TRUE
+    OUTPUT: REF(output.done)
+
+VERIFY:
+    ID: verify.precedence
+    ASSERT: 2 + 3 * 4 == 14 AND (2 + 3) * 4 == 20
+
+VERIFY:
+    ID: verify.left_to_right
+    ASSERT: 10 - 3 - 2 == 5
+
+VERIFY:
+    ID: verify.unary_minus
+    ASSERT: -3 + 5 == 2
+
+VERIFY:
+    ID: verify.exact_division
+    ASSERT: 7 / 2 == 3.5 AND 1 / 8 == 0.125
+
+VERIFY:
+    ID: verify.rounding
+    ASSERT: ROUND(1 / 3, 2) == 0.33 AND ROUND(2.5, 0) == 2.0 AND ROUND(3.5, 0) == 4.0
+
+VERIFY:
+    ID: verify.comparison
+    ASSERT: 3 < 5 AND 5 <= 5 AND "apple" < "banana" AND DATE("2026-01-02") > DATE("2026-01-01")
+
+VERIFY:
+    ID: verify.not_needs_parentheses
+    ASSERT: NOT (1 == 2)
+
+VERIFY:
+    ID: verify.logic
+    ASSERT: (TRUE OR FALSE) AND NOT (TRUE AND FALSE)
+
+VERIFY:
+    ID: verify.functions
+    ASSERT: ABS(-2.5) == 2.5 AND MIN([4, 2, 9]) == 2 AND MAX([4, 2, 9]) == 9 AND SUM([4, 2, 9]) == 15
+
+VERIFY:
+    ID: verify.counting
+    ASSERT: COUNT([4, 2, 9]) == 3 AND COUNT("héllo") == 5 AND EMPTY("") AND NOT EMPTY([1])
+
+VERIFY:
+    ID: verify.quantifiers
+    ASSERT: ALL([TRUE, TRUE]) AND ANY([FALSE, TRUE]) AND NONE([FALSE, FALSE])
+
+VERIFY:
+    ID: verify.membership
+    ASSERT: "b" IN ["a", "b"] AND ["a", "b"] CONTAINS "a" AND "timetable" CONTAINS "table"
+
+VERIFY:
+    ID: verify.object_access
+    ASSERT: REF(data.pupil).name == "Ada" AND REF(data.pupil) CONTAINS "year"
+
+VERIFY:
+    ID: verify.list_index
+    ASSERT: REF(data.marks)[0] == 7 AND REF(data.marks)[2] == 10
+
+VERIFY:
+    ID: verify.index_out_of_range
+    ASSERT: REF(data.marks)[3] == MISSING AND REF(data.marks)[-1] == MISSING
+
+VERIFY:
+    ID: verify.regex_whole_string
+    ASSERT: "Ada" MATCHES REGEX("[A-Z][a-z]+") AND NOT ("Ada1" MATCHES REGEX("[A-Z][a-z]+"))
+
+VERIFY:
+    ID: verify.regex_ignore_case
+    ASSERT: "HELLO" MATCHES REGEX("hello", "i")
+
+VERIFY:
+    ID: verify.glob
+    ASSERT: "src/a/b/main.py" MATCHES GLOB("src/**/*.py") AND NOT ("src/a/notes.txt" MATCHES GLOB("src/*"))
+
+VERIFY:
+    ID: verify.durations
+    ASSERT: DURATION(1, unit.hour) + DURATION(30, unit.minute) == DURATION(90, unit.minute)
+
+VERIFY:
+    ID: verify.measures
+    ASSERT: MEASURE(2, unit.meter) + MEASURE(3, unit.meter) == MEASURE(5, unit.meter)
+
+SUCCESS:
+    ID: success.all_true
+    ALL: [REF(verify.precedence), REF(verify.left_to_right), REF(verify.unary_minus), REF(verify.exact_division), REF(verify.rounding), REF(verify.comparison), REF(verify.not_needs_parentheses), REF(verify.logic), REF(verify.functions), REF(verify.counting), REF(verify.quantifiers), REF(verify.membership), REF(verify.object_access), REF(verify.list_index), REF(verify.index_out_of_range), REF(verify.regex_whole_string), REF(verify.regex_ignore_case), REF(verify.glob), REF(verify.durations), REF(verify.measures)]
+
+TASK:
+    ID: task.expressions
+    GOAL: REF(goal.all_true)
+    ACTION: REF(action.done)
+    OUTPUT: REF(output.done)
+    SUCCESS: REF(success.all_true)
+
+EXECUTE:
+    REFERENCE: REF(task.expressions)

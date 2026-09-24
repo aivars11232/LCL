@@ -1,0 +1,59 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: app.register
+    NAME: "Try to overwrite the register"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+IMPORT:
+    ID: import.safety
+    SOURCE: PATH("safety.lcl")
+    NAMESPACE: safety
+    VERSION: "1.0.0"
+    AUTHORITY: 700
+
+WORKSPACE:
+    ID: workspace.school
+    PATH: PATH("/tmp/lcl-manual/imports")
+    MODE: mode.read_write
+
+OUTPUT:
+    ID: output.changed
+    TYPE: BOOLEAN
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.write
+    ASSERT: REF(output.changed) == TRUE
+
+ACTION:
+    ID: action.write
+    OPERATION: core.write
+    TARGET: PATH("/tmp/lcl-manual/imports/register.txt")
+    PARAMETER:
+        NAME: content
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "empty"
+    OUTPUT: REF(output.changed)
+
+VERIFY:
+    ID: verify.changed
+    ASSERT: REF(output.changed) == TRUE
+
+SUCCESS:
+    ID: success.write
+    ALL: [REF(verify.changed)]
+
+TASK:
+    ID: task.write
+    GOAL: REF(goal.write)
+    WORKSPACE: REF(workspace.school)
+    ACTION: REF(action.write)
+    OUTPUT: REF(output.changed)
+    SUCCESS: REF(success.write)
+
+EXECUTE:
+    REFERENCE: REF(task.write)

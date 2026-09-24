@@ -1,0 +1,89 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.grade_three_ways
+    NAME: "Three outcomes by score"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+INPUT:
+    ID: input.score
+    TYPE: INTEGER
+    REQUIRED: FALSE
+    DEFAULT: 72
+
+OUTPUT:
+    ID: output.distinction_message
+    TYPE: STRING
+    FORMAT: format.plain_text
+    REQUIRED: FALSE
+
+OUTPUT:
+    ID: output.pass_message
+    TYPE: STRING
+    FORMAT: format.plain_text
+    REQUIRED: FALSE
+
+OUTPUT:
+    ID: output.fail_message
+    TYPE: STRING
+    FORMAT: format.plain_text
+    REQUIRED: FALSE
+
+GOAL:
+    ID: goal.message
+    ASSERT: EXISTS(REF(output.distinction_message)) OR EXISTS(REF(output.pass_message)) OR EXISTS(REF(output.fail_message))
+
+ACTION:
+    ID: action.distinction
+    OPERATION: core.return
+    TARGET: "distinction"
+    OUTPUT: REF(output.distinction_message)
+
+ACTION:
+    ID: action.pass
+    OPERATION: core.return
+    TARGET: "passed"
+    OUTPUT: REF(output.pass_message)
+
+ACTION:
+    ID: action.fail
+    OPERATION: core.return
+    TARGET: "try again"
+    OUTPUT: REF(output.fail_message)
+
+SEQUENCE:
+    ID: sequence.grade
+    IF (REF(input.score) >= 70) THEN:
+        STEP:
+            ID: step.distinction
+            ACTION: REF(action.distinction)
+    ELSE:
+        IF (REF(input.score) >= 50) THEN:
+            STEP:
+                ID: step.pass
+                ACTION: REF(action.pass)
+        ELSE:
+            STEP:
+                ID: step.fail
+                ACTION: REF(action.fail)
+
+VERIFY:
+    ID: verify.one_message
+    ASSERT: EXISTS(REF(output.distinction_message)) OR EXISTS(REF(output.pass_message)) OR EXISTS(REF(output.fail_message))
+
+SUCCESS:
+    ID: success.message
+    ALL: [REF(verify.one_message)]
+
+TASK:
+    ID: task.grade
+    GOAL: REF(goal.message)
+    INPUT: REF(input.score)
+    SEQUENCE: REF(sequence.grade)
+    OUTPUT: [REF(output.distinction_message), REF(output.pass_message), REF(output.fail_message)]
+    SUCCESS: REF(success.message)
+
+EXECUTE:
+    REFERENCE: REF(task.grade)

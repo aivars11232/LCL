@@ -1,0 +1,70 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.equality
+    NAME: "How equality works"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+DATA:
+    ID: data.numbers
+    TYPE: SET[INTEGER]
+    VALUE: [3, 1, 3]
+
+OUTPUT:
+    ID: output.done
+    TYPE: BOOLEAN
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.rules_hold
+    ASSERT: REF(output.done) == TRUE
+
+ACTION:
+    ID: action.done
+    OPERATION: core.return
+    TARGET: TRUE
+    OUTPUT: REF(output.done)
+
+VERIFY:
+    ID: verify.set_collapses_duplicates
+    ASSERT: COUNT(REF(data.numbers)) == 2
+
+VERIFY:
+    ID: verify.integer_meets_decimal
+    ASSERT: 5 == 5.0 AND 0.1 + 0.2 == 0.3
+
+VERIFY:
+    ID: verify.list_order_matters
+    ASSERT: [1, 2] != [2, 1]
+
+VERIFY:
+    ID: verify.case_matters
+    ASSERT: "Ada" != "ada"
+
+VERIFY:
+    ID: verify.units_never_convert
+    ASSERT: MEASURE(1000, unit.meter) != MEASURE(1, unit.kilometer)
+
+VERIFY:
+    ID: verify.durations_normalise
+    ASSERT: DURATION(90, unit.second) == DURATION(1.5, unit.minute)
+
+VERIFY:
+    ID: verify.types_never_convert
+    ASSERT: "5" != 5
+
+SUCCESS:
+    ID: success.rules_hold
+    ALL: [REF(verify.set_collapses_duplicates), REF(verify.integer_meets_decimal), REF(verify.list_order_matters), REF(verify.case_matters), REF(verify.units_never_convert), REF(verify.durations_normalise), REF(verify.types_never_convert)]
+
+TASK:
+    ID: task.equality
+    GOAL: REF(goal.rules_hold)
+    ACTION: REF(action.done)
+    OUTPUT: REF(output.done)
+    SUCCESS: REF(success.rules_hold)
+
+EXECUTE:
+    REFERENCE: REF(task.equality)

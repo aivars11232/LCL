@@ -1,0 +1,126 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.shop
+    NAME: "A small shop order"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+INPUT:
+    ID: input.prices
+    TYPE: LIST[DECIMAL]
+    VALUE: [2.50, 0.99, 12.00, 4.75]
+
+INPUT:
+    ID: input.budget
+    TYPE: DECIMAL
+    REQUIRED: FALSE
+    DEFAULT: 25.00
+
+OUTPUT:
+    ID: output.cheap_items
+    TYPE: LIST[DECIMAL]
+    FORMAT: format.json
+
+OUTPUT:
+    ID: output.cheap_count
+    TYPE: INTEGER
+    FORMAT: format.plain_text
+    PROPERTY: count
+
+OUTPUT:
+    ID: output.total
+    TYPE: DECIMAL
+    FORMAT: format.plain_text
+
+OUTPUT:
+    ID: output.within_budget
+    TYPE: BOOLEAN
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.order
+    ASSERT: REF(output.within_budget) == TRUE
+
+ACTION:
+    ID: action.cheap_items
+    OPERATION: core.filter
+    TARGET: REF(input.prices)
+    PARAMETER:
+        NAME: predicate
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "item < 5.00"
+    OUTPUT: REF(output.cheap_items)
+
+ACTION:
+    ID: action.cheap_count
+    OPERATION: core.filter
+    TARGET: REF(input.prices)
+    PARAMETER:
+        NAME: predicate
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "item < 5.00"
+    OUTPUT: REF(output.cheap_count)
+
+ACTION:
+    ID: action.total
+    OPERATION: core.calculate
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "SUM(amounts) + delivery"
+    PARAMETER:
+        NAME: bindings
+        TYPE: OBJECT
+        REQUIRED: TRUE
+        VALUE:
+            amounts: REF(input.prices)
+            delivery: 3.00
+    OUTPUT: REF(output.total)
+
+ACTION:
+    ID: action.within_budget
+    OPERATION: core.compare
+    TARGET: REF(output.total)
+    PARAMETER:
+        NAME: against
+        TYPE: DECIMAL
+        REQUIRED: TRUE
+        VALUE: REF(input.budget)
+    PARAMETER:
+        NAME: criteria
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "<="
+    OUTPUT: REF(output.within_budget)
+
+VERIFY:
+    ID: verify.cheap
+    ASSERT: REF(output.cheap_items) == [2.50, 0.99, 4.75] AND REF(output.cheap_count) == 3
+
+VERIFY:
+    ID: verify.total
+    ASSERT: REF(output.total) == 23.24
+
+VERIFY:
+    ID: verify.budget
+    ASSERT: REF(output.within_budget) == TRUE
+
+SUCCESS:
+    ID: success.order
+    ALL: [REF(verify.cheap), REF(verify.total), REF(verify.budget)]
+
+TASK:
+    ID: task.order
+    GOAL: REF(goal.order)
+    INPUT: [REF(input.prices), REF(input.budget)]
+    ACTION: [REF(action.cheap_items), REF(action.cheap_count), REF(action.total), REF(action.within_budget)]
+    OUTPUT: [REF(output.cheap_items), REF(output.cheap_count), REF(output.total), REF(output.within_budget)]
+    SUCCESS: REF(success.order)
+
+EXECUTE:
+    REFERENCE: REF(task.order)

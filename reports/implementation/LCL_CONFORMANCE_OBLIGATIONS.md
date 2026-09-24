@@ -46,20 +46,55 @@ One concrete probe may cover several normative clauses. This does not create
 799 duplicate executions or turn catalog entries into executed tests. Tests of
 report arithmetic are instrument tests, never evidence about the LCL engine.
 
-## The implementation mapping, revision r3
+## The implementation mapping, revision r4
 
-The mapping is `impl/crates/lcl-conformance/src/obligations_v0.1.0_r3.json`,
-SHA-256 `296fc2bef03cb4a4ec45f00d5b43601f5c234a9d55a22c188ce477630013c3f3`,
-pinned in `obligations.rs` as `MAPPING_DIGEST`. It replaces revision r2 under
-an explicit owner approval; r2 replaced r1, which pinned probe identifiers only.
+The mapping is `impl/crates/lcl-conformance/src/obligations_v0.1.0_r4.json`,
+SHA-256 `c592f8d9e0b5feb69785256395c9b67cac08932cec96c492a3786ac6b6cd780e`,
+pinned in `obligations.rs` as `MAPPING_DIGEST`. It replaces revision r3 under a
+second explicit owner approval; r3 replaced r2 under the first, and r2 replaced
+r1, which pinned probe identifiers only.
 
-Two figures in this section were stale against r2 and are corrected here rather
+### What r4 changes, and what it does not
+
+r4 removes **exactly one** sub-run pin, from
+`semantic/operation_errors/core.execute`:
+
+    precondition/profile-out-of-bounds
+
+On that row the fault is not constructible. `check_bounds` in
+`impl/crates/lcl-capabilities/src/profile.rs` reaches
+`ProfileFault::OutOfBounds` down two paths, and `core.execute` closes both:
+
+- **Axis bounds.** The check reports the declared effects and dependencies
+  falling outside the row's maximum. `core.execute` permits every dependency
+  and effect a profile can actually declare. The registry gives its maxima as
+  four of five dependencies and seven of eight effects, and the two entries it
+  omits — `declared_state_only` and `none` — are `&'static str` sentinels in
+  `lcl-capabilities/src/address.rs`, not variants of `Dependency` or `Effect`.
+  `Dependency::ALL` has four members and `Effect::ALL` has seven, every one of
+  them permitted here, so `effects_outside` and `dependencies_outside` are
+  empty for every profile constructible against this row.
+- **Determinism.** The remaining path requires a `Deterministic` row. The
+  registry gives `core.execute` the determinism category `derived`, so the row
+  is `RowDeterminism::Derived` and that branch is never entered.
+
+The row and its probe remain; all 2,413 probes remain; 980 rows remain; no
+level was reclassified. The removal is confined to this one operation, and the
+label is **not** retired from the vocabulary:
+`precondition/profile-out-of-bounds` stays pinned, reachable and established on
+`core.analyze`, `core.verify`, `core.report` and `core.publish`, whose maxima
+are strictly narrower — three, two, one and two of the four declarable
+dependencies, and one, one, one and two of the seven declarable effects. The
+correction does not alter Core 0.1 semantics and does not expand any
+operation's capabilities.
+
+### What r3 changed, retained here as history
+
+Two figures in the r3 section were stale against r2 and were corrected rather
 than carried forward: the digest read `27e3271f…`, and the sub-run total read
 3,724 where r2 pinned 3,725.
 
-### What r3 changes, and what it does not
-
-r3 removes **exactly four** sub-run pins from
+r3 removed **exactly four** sub-run pins from
 `semantic/operation_errors/core.sort`:
 
     precondition/key-operation-profile-missing
@@ -84,15 +119,15 @@ Nothing else changed. The row and its probe remain; all 2,413 probes remain;
 980 rows remain; no level was reclassified; and the key-contract checks that
 rest on their own stated requirements —
 `precondition/incompatible-key-operation-signature` and
-`precondition/invalid-key-operation-axes` — are still pinned. The correction
-does not alter Core 0.1 semantics and does not expand any operation's
-capabilities. `core.execute precondition/profile-out-of-bounds` is a separate
-obligation and is **not** covered by this approval: it remains pinned and
-unestablished.
+`precondition/invalid-key-operation-axes` — are still pinned. That correction
+did not alter Core 0.1 semantics and did not expand any operation's
+capabilities. `core.execute precondition/profile-out-of-bounds` was a separate
+obligation outside that approval and stayed pinned and unestablished until r4
+closed it above.
 
 - **Probes.** All 2,413 probe IDs are kept: 2,011 source and 402 semantics.
 - **Sub-runs.** Each of the 319 semantic contract rows also pins its exact
-  required sub-run labels, **3,721** in total. They are derived from the row's
+  required sub-run labels, **3,720** in total. They are derived from the row's
   canonical requirement clauses and registry facts, and include clauses that no
   run exercises yet.
 - **Establishing a probe.** A grouped record establishes its probe only when

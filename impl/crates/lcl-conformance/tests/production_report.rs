@@ -18,10 +18,12 @@ use std::collections::BTreeSet;
 /// FINAL-02 populated the last two, `diagnostic_policy` and `failure_lifecycle`.
 const UNPOPULATED: [&str; 0] = [];
 
-/// Engine defects that faithful sub-runs expose while full semantic conformance
-/// stays BLOCKED (LCL-CLOSE-02; residual report, "P4c, operators and functions").
-/// Each entry is a failed probe and exactly the sub-runs that fail. A repair, or
-/// any new failure, changes this set and fails the test until it is reviewed.
+/// Engine defects that faithful sub-runs expose. The set is empty, which is one
+/// of the conditions for the semantic claim below; it was non-empty while full
+/// semantic conformance stayed BLOCKED (LCL-CLOSE-02; residual report, "P4c,
+/// operators and functions"). Each entry is a failed probe and exactly the
+/// sub-runs that fail. A repair, or any new failure, changes this set and fails
+/// the test until it is reviewed.
 /// LCL-REPAIR-05 repaired eight of the nine original sub-runs; PRETEST-01 (F01)
 /// repaired the ninth, `division/declared-bound`.
 const KNOWN_FAILED: [(&str, &[&str]); 0] = [];
@@ -104,7 +106,12 @@ fn the_production_report_executes_every_population_and_claims_exactly_what_it_su
         };
         assert!(accepted, "{}", account.describe());
     }
-    assert_eq!(report.claim(), ClaimLevel::Source);
+    // The mapping's r4 correction removed the last unconstructible sub-run pin
+    // (`core.execute precondition/profile-out-of-bounds`), so every required
+    // semantic probe is now carried by a passing real record and the report
+    // claims the higher level on its own. A regression at either level, or a
+    // new unestablished probe, drops this back to `Source` and fails here.
+    assert_eq!(report.claim(), ClaimLevel::Semantics);
 }
 
 #[test]
@@ -116,7 +123,7 @@ fn the_production_verdict_json_reconciles_with_the_pinned_inventory() {
     let parsed = json::parse(&report.render_verdict_json()).expect("the verdict is JSON");
     assert_eq!(
         parsed.get("claim").and_then(Json::as_str),
-        Some("source_conforming")
+        Some("semantics_conforming")
     );
     assert_eq!(
         parsed.get("mapping_digest").and_then(Json::as_str),

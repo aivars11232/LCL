@@ -52,6 +52,17 @@ pub enum DocumentError {
     /// A newer write to this exact path has already been published, so this
     /// one is stale and was not applied.
     Superseded(PathBuf),
+    /// The name is not an LCL document's: only the exact `.lcl` and
+    /// `.lcl.txt` endings are, and nothing else is deleted as one.
+    NotADocument(PathBuf),
+    /// Nothing is there.
+    NotFound(PathBuf),
+    /// Something is there, but it is a directory, a symbolic link or another
+    /// special file rather than a document file.
+    NotAFile(PathBuf),
+    /// The bytes on disk are not the ones the caller confirmed, so they were
+    /// left alone.
+    Changed(PathBuf),
 }
 
 impl std::fmt::Display for DocumentError {
@@ -82,6 +93,22 @@ impl std::fmt::Display for DocumentError {
             DocumentError::Io { path, detail } => {
                 write!(f, "{}: {detail}", path.display())
             }
+            DocumentError::NotADocument(path) => write!(
+                f,
+                "{} is not an LCL document: only a name ending in .lcl or .lcl.txt is",
+                path.display()
+            ),
+            DocumentError::NotFound(path) => write!(f, "{} does not exist", path.display()),
+            DocumentError::NotAFile(path) => write!(
+                f,
+                "{} is a directory, a link or another special file, not a document file",
+                path.display()
+            ),
+            DocumentError::Changed(path) => write!(
+                f,
+                "{} changed on disk after it was shown, so it was left alone",
+                path.display()
+            ),
         }
     }
 }
@@ -136,27 +163,8 @@ pub fn admissible(text: &str) -> Result<(String, bool), DocumentError> {
 /// does not exist yet. Every existing component is checked by the filesystem,
 /// and nothing that does not exist can introduce a link.
 pub fn resolve(root: &Path, relative: &str) -> Result<PathBuf, DocumentError> {
-    let requested = PathBuf::from(relative);
     let outside = || DocumentError::Outside(root.join(relative));
-
-    // Lexical normalisation. An absolute path, a root, a prefix or a `..` that
-    // climbs past the start is refused here, before anything is opened.
-    let mut normalised = PathBuf::new();
-    for component in requested.components() {
-        match component {
-            Component::Normal(part) => normalised.push(part),
-            Component::CurDir => {}
-            Component::ParentDir => {
-                if !normalised.pop() {
-                    return Err(outside());
-                }
-            }
-            Component::RootDir | Component::Prefix(_) => return Err(outside()),
-        }
-    }
-    if normalised.as_os_str().is_empty() {
-        return Err(outside());
-    }
+    let normalised = normalise(root, relative)?;
 
     let candidate = root.join(&normalised);
     if let Ok(canonical) = candidate.canonicalize() {
@@ -188,6 +196,113 @@ pub fn resolve(root: &Path, relative: &str) -> Result<PathBuf, DocumentError> {
         resolved.push(name);
     }
     Ok(resolved)
+}
+
+/// Lexical normalisation of one root-relative path. An absolute path, a root,
+/// a prefix or a `..` that climbs past the start is refused here, before
+/// anything is opened.
+fn normalise(root: &Path, relative: &str) -> Result<PathBuf, DocumentError> {
+    let outside = || DocumentError::Outside(root.join(relative));
+    let mut normalised = PathBuf::new();
+    for component in Path::new(relative).components() {
+        match component {
+            Component::Normal(part) => normalised.push(part),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !normalised.pop() {
+                    return Err(outside());
+                }
+            }
+            Component::RootDir | Component::Prefix(_) => return Err(outside()),
+        }
+    }
+    if normalised.as_os_str().is_empty() {
+        return Err(outside());
+    }
+    Ok(normalised)
+}
+
+/// Delete one document, and only the bytes the caller confirmed.
+///
+/// The request names a document and the SHA-256 of the content that was on
+/// screen when deletion was confirmed. Whatever else is true, this removes
+/// nothing else:
+///
+/// * the path is normalised lexically and its directory is canonicalised and
+///   proven inside the project, exactly as for a save;
+/// * the name must be an LCL document's, so an ordinary `.txt` file, a
+///   manifest or anything else in the project is never deleted through this;
+/// * the entry itself must be a regular file. It is not canonicalised: a
+///   symbolic link named `a.lcl` would resolve to its target, and deleting the
+///   target of a link the user pointed at is deleting a different file, so a
+///   link is refused instead, as is a directory;
+/// * the bytes are read and compared with the confirmed digest under the lock
+///   saves publish under, and removed in the same critical section, so no save
+///   from this process can land between the check and the removal.
+///
+/// A deletion also takes its place in the order writes were accepted in: a
+/// save accepted before it and still in flight is refused as superseded when
+/// it tries to publish, so a deleted document cannot come back from a write
+/// the person had already moved past. A save accepted after it creates the
+/// document again, which is what saving means.
+///
+/// Scope, as for saves: this orders what this process does. Another program
+/// replacing the file in the instant between the comparison and the removal
+/// is outside what a single `unlink` can rule out, and nothing here claims to.
+pub fn delete(root: &Path, relative: &str, expected_digest: &str) -> Result<(), DocumentError> {
+    let normalised = normalise(root, relative)?;
+    let shown = root.join(&normalised);
+    let name = normalised
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    if !lcl_project::is_document(&name) {
+        return Err(DocumentError::NotADocument(shown));
+    }
+    let parent = shown.parent().unwrap_or(root);
+    let directory = parent.canonicalize().map_err(|error| match error.kind() {
+        std::io::ErrorKind::NotFound => DocumentError::NotFound(shown.clone()),
+        _ => DocumentError::Io {
+            path: parent.to_path_buf(),
+            detail: format!("the directory is not readable: {error}"),
+        },
+    })?;
+    if directory != root && !lcl_capabilities::contains(root, &directory) {
+        return Err(DocumentError::Outside(directory));
+    }
+    let target = directory.join(&name);
+    let entry = std::fs::symlink_metadata(&target).map_err(|error| match error.kind() {
+        std::io::ErrorKind::NotFound => DocumentError::NotFound(shown.clone()),
+        _ => DocumentError::Io {
+            path: target.clone(),
+            detail: format!("the document is not readable: {error}"),
+        },
+    })?;
+    if !entry.file_type().is_file() {
+        return Err(DocumentError::NotAFile(shown));
+    }
+
+    let sequence = NEXT_WRITE.fetch_add(1, Ordering::SeqCst) + 1;
+    let mut order = PUBLISHED.lock().unwrap_or_else(|e| e.into_inner());
+    if order.get(&target).is_some_and(|newest| *newest > sequence) {
+        return Err(DocumentError::Superseded(target));
+    }
+    let bytes = std::fs::read(&target).map_err(|error| match error.kind() {
+        std::io::ErrorKind::NotFound => DocumentError::NotFound(shown.clone()),
+        _ => DocumentError::Io {
+            path: target.clone(),
+            detail: format!("the document is not readable: {error}"),
+        },
+    })?;
+    if lcl_spec::sha256::hex_digest(&bytes) != expected_digest {
+        return Err(DocumentError::Changed(shown));
+    }
+    std::fs::remove_file(&target).map_err(|error| DocumentError::Io {
+        path: target.clone(),
+        detail: format!("the document could not be deleted: {error}"),
+    })?;
+    order.insert(target, sequence);
+    Ok(())
 }
 
 /// Read one document.
@@ -307,6 +422,11 @@ static PUBLISHED: Mutex<BTreeMap<PathBuf, u64>> = Mutex::new(BTreeMap::new());
 #[allow(clippy::type_complexity)]
 static BEFORE_PUBLISH: Mutex<Option<std::sync::Arc<dyn Fn(&Path) + Send + Sync>>> =
     Mutex::new(None);
+
+/// One test at a time installs a hook: installing is a replacement, so two
+/// running in parallel would each clear or overwrite the other's.
+#[cfg(test)]
+static ONE_HOOK_AT_A_TIME: Mutex<()> = Mutex::new(());
 
 #[cfg(test)]
 fn before_publish(destination: &Path) {
@@ -514,6 +634,7 @@ mod tests {
     /// to. The ordering has to be decided where the bytes land.
     #[test]
     fn an_older_write_held_before_publication_cannot_replace_a_newer_one() {
+        let _hook = ONE_HOOK_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
         let directory = Directory::new();
         let root = directory.0.clone();
         std::fs::write(root.join("doc.lcl.txt"), b"original\n").unwrap();
@@ -588,6 +709,128 @@ mod tests {
             std::fs::read_to_string(root.join("doc.lcl.txt")).unwrap(),
             "content\n"
         );
+    }
+
+    #[test]
+    fn a_document_is_deleted_only_with_the_digest_that_was_confirmed() {
+        let directory = Directory::new();
+        let root = directory.0.canonicalize().unwrap();
+        let written = write(&root, "doc.lcl", "shown\n").unwrap();
+        // Not the bytes that were on screen, so they are left alone.
+        let other = lcl_spec::sha256::hex_digest(b"something else\n");
+        assert!(matches!(
+            delete(&root, "doc.lcl", &other),
+            Err(DocumentError::Changed(_))
+        ));
+        assert_eq!(
+            std::fs::read_to_string(root.join("doc.lcl")).unwrap(),
+            "shown\n"
+        );
+        delete(&root, "doc.lcl", &written.digest).expect("the confirmed bytes are deleted");
+        assert!(!root.join("doc.lcl").exists());
+        assert!(matches!(
+            delete(&root, "doc.lcl", &written.digest),
+            Err(DocumentError::NotFound(_))
+        ));
+        // Both endings are documents, in a directory too.
+        let text = write(&root, "sub/shared.lcl.txt", "text\n").unwrap();
+        delete(&root, "sub/shared.lcl.txt", &text.digest).expect("a .lcl.txt document");
+        assert!(!root.join("sub/shared.lcl.txt").exists());
+        assert!(root.join("sub").is_dir(), "its directory stays");
+    }
+
+    #[test]
+    fn nothing_but_a_document_file_inside_the_project_is_deleted() {
+        let directory = Directory::new();
+        let root = directory.0.canonicalize().unwrap();
+        let digest = |bytes: &[u8]| lcl_spec::sha256::hex_digest(bytes);
+        std::fs::write(root.join("notes.txt"), b"plain\n").unwrap();
+        std::fs::write(root.join("lcl.project.json"), b"{}\n").unwrap();
+        std::fs::create_dir(root.join("folder.lcl")).unwrap();
+        std::fs::write(root.join("target.lcl"), b"kept\n").unwrap();
+        std::os::unix::fs::symlink(root.join("target.lcl"), root.join("link.lcl")).unwrap();
+
+        assert!(matches!(
+            delete(&root, "notes.txt", &digest(b"plain\n")),
+            Err(DocumentError::NotADocument(_))
+        ));
+        assert!(matches!(
+            delete(&root, "lcl.project.json", &digest(b"{}\n")),
+            Err(DocumentError::NotADocument(_))
+        ));
+        assert!(matches!(
+            delete(&root, "folder.lcl", ""),
+            Err(DocumentError::NotAFile(_))
+        ));
+        // A link named like a document is refused, and neither the link nor
+        // the document it names is removed.
+        assert!(matches!(
+            delete(&root, "link.lcl", &digest(b"kept\n")),
+            Err(DocumentError::NotAFile(_))
+        ));
+        for escape in ["../outside.lcl", "/etc/outside.lcl", "sub/../../x.lcl", ""] {
+            assert!(
+                matches!(delete(&root, escape, ""), Err(DocumentError::Outside(_))),
+                "{escape:?}"
+            );
+        }
+        assert!(root.join("notes.txt").is_file());
+        assert!(root.join("lcl.project.json").is_file());
+        assert!(root.join("folder.lcl").is_dir());
+        assert!(std::fs::symlink_metadata(root.join("link.lcl"))
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(
+            std::fs::read_to_string(root.join("target.lcl")).unwrap(),
+            "kept\n"
+        );
+    }
+
+    /// A save accepted before a deletion, and still in flight when the
+    /// deletion happens, cannot bring the document back.
+    #[test]
+    fn a_save_accepted_before_a_deletion_cannot_bring_the_document_back() {
+        let _hook = ONE_HOOK_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let directory = Directory::new();
+        let root = directory.0.canonicalize().unwrap();
+        let original = write(&root, "gone.lcl.txt", "original\n").unwrap();
+
+        let watched = root.join("gone.lcl.txt");
+        let deleting = root.clone();
+        let digest = original.digest.clone();
+        let fired = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = std::sync::Arc::clone(&fired);
+        *BEFORE_PUBLISH.lock().unwrap() = Some(std::sync::Arc::new(move |destination: &Path| {
+            if destination != watched || flag.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                return;
+            }
+            delete(&deleting, "gone.lcl.txt", &digest)
+                .expect("the deletion is accepted after the save was");
+        }));
+        let late = write(
+            &root,
+            "gone.lcl.txt",
+            "a save that was already on its way\n",
+        );
+        *BEFORE_PUBLISH.lock().unwrap() = None;
+
+        assert!(
+            matches!(late, Err(DocumentError::Superseded(_))),
+            "the stale save must be told it was superseded: {late:?}"
+        );
+        assert!(
+            !root.join("gone.lcl.txt").exists(),
+            "a save older than the deletion brought the document back"
+        );
+        assert_eq!(
+            std::fs::read_dir(&root).unwrap().count(),
+            0,
+            "with no temporary left behind"
+        );
+        // A save made after the deletion is a new decision, and creates it again.
+        write(&root, "gone.lcl.txt", "saved again\n").expect("a later save");
+        assert!(root.join("gone.lcl.txt").is_file());
     }
 
     #[test]

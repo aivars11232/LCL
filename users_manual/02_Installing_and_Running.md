@@ -248,20 +248,45 @@ wants to touch files, it asks first.
 Using it:
 
 * **`+`** (next to "Project") creates a new document. A name without an
-  ending is created as `.lcl`, the native default. If you type `.lcl` or the
-  optional `.lcl.txt` yourself, that ending is kept (see section 2.9).
+  ending gets the default file type from Settings: `.lcl`, the native
+  default, unless you chose `.lcl.txt` there. If you type `.lcl` or `.lcl.txt`
+  yourself, that ending is kept (see section 2.9).
+* A new document's file is written to the project at once, but it only
+  becomes a document you keep when you save it. If you close a new document
+  you never saved, the workspace asks what to do: **Discard** removes the
+  file it created, **Save** keeps it as an ordinary document, and **Cancel**
+  takes you back to it.
+* Closing a document that already existed, or one you have saved, asks only
+  if it has unsaved edits. **Discard** then throws those edits away and leaves
+  the file on disk exactly as it was.
+* To delete a document, right-click it in the project tree and choose
+  **Delete…**, or select it there and press the Delete key. The workspace
+  always asks first, and says so if the document has unsaved edits, which
+  are lost too. Deleting removes the file from the project for good. If the
+  file changes on disk while the question is open, nothing is deleted. Only
+  `.lcl` and `.lcl.txt` documents can be deleted this way.
 * Until a document is open, the editor shows **No document open** and can't
   be typed into. Check, Inspect, Run, Save and Reload are unavailable until
   you create or select a document.
 * The editor numbers every line in a **gutter** on the left. Click a line
   number to set a breakpoint for a run.
-* **Settings** (the ⚙ button at the top right) chooses the theme (System,
-  Dark or Light), the editor font size (11 to 20 px) and whether line
-  numbers are shown. Settings are remembered by your browser only. They never
-  change a document or how it runs. Your browser keeps them for the
-  workspace's address, and that address changes every time the workspace
-  starts unless you give it a fixed `--port` (see Chapter 17), so otherwise a
-  new start begins with the default settings.
+* **Settings** (the ⚙ button at the top right) has three parts.
+  **Appearance** and **Editor** choose the theme (System, Dark or Light), the
+  editor font size (11 to 20 px) and whether line numbers are shown. Your
+  browser remembers these for the workspace's address, and that address
+  changes every time the workspace starts unless you give it a fixed `--port`
+  (see Chapter 17), so otherwise a new start begins with their defaults.
+  **Files** chooses the **default file type** for new documents and the
+  **default workspace location**: the folder that **LCL Workspace** opens
+  when you start it from the desktop menu. These two are kept for your
+  computer, in `~/.config/lcl/workspace-settings.json`, so they apply to every
+  launch. Type the folder's full path, starting with `/`. **Check** tells you
+  whether it exists, and a missing folder is only created if you press
+  **Create this folder**. Leave the path empty to use the built-in folder,
+  `~/.local/share/lcl/workspace`. A folder or document you open yourself,
+  such as `lcl-workspace ~/lcl-course` or a file opened from your file
+  manager, always wins over the default. None of these settings changes a
+  document or how it runs.
 * Indentation is always four spaces. The Tab key inserts four spaces, never a
   tab character, which LCL does not allow.
 
@@ -292,7 +317,7 @@ Everything in this manual works with either ending:
 
   | You type | The document is created as |
   |---|---|
-  | `notes` | `notes.lcl` (the native default) |
+  | `notes` | `notes.lcl` (the native default), or `notes.lcl.txt` if you chose that as the default file type in Settings |
   | `notes.lcl` | `notes.lcl` |
   | `notes.lcl.txt` | `notes.lcl.txt` |
 

@@ -42,6 +42,7 @@ pub mod intelligence;
 pub mod project;
 pub mod routes;
 pub mod server;
+pub mod settings;
 
 pub use document::{Document, DocumentError};
 pub use project::{Entry, Workspace, WorkspaceError};

@@ -72,6 +72,8 @@ button:disabled { opacity: 0.45; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 button.primary:hover:not(:disabled) { filter: brightness(1.1); color: var(--accent-ink); }
 button.icon { padding: 2px 8px; line-height: 1.2; font-size: 15px; }
+button.danger { background: var(--bad); border-color: var(--bad); color: var(--accent-ink); font-weight: 600; }
+button.danger:hover:not(:disabled) { filter: brightness(1.1); color: var(--accent-ink); }
 
 /* ---------------------------------------------------------------- layout */
 
@@ -139,6 +141,19 @@ button.icon { padding: 2px 8px; line-height: 1.2; font-size: 15px; }
 .tree li.dir { color: var(--ink-faint); cursor: default; font-size: 11.5px; }
 .tree li.dir:hover { background: transparent; }
 .tree li .dot { color: var(--warn); margin-right: 4px; }
+.tree li:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+
+/* A document's actions in the tree: Open and Delete. */
+.context-menu {
+  position: fixed; z-index: 40; min-width: 150px; padding: 4px;
+  display: flex; flex-direction: column; gap: 2px;
+  background: var(--bg-raised); border: 1px solid var(--line); border-radius: 6px;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.35);
+}
+.context-menu button { border: 0; text-align: left; padding: 5px 10px; background: transparent; }
+.context-menu button:hover, .context-menu button:focus-visible {
+  background: var(--line-soft); color: var(--accent); outline: none;
+}
 
 /* ---------------------------------------------------------------- editor */
 
@@ -363,7 +378,17 @@ button.icon { padding: 2px 8px; line-height: 1.2; font-size: 15px; }
 .modal .settings select, .modal .settings input[type="number"] {
   font: inherit; color: var(--ink); background: var(--bg-sunken);
   border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
-.modal .settings .note { grid-column: 1 / -1; font-size: 11px; color: var(--ink-faint); }
+.modal .settings .note { grid-column: 1 / -1; font-size: 11px; color: var(--ink-faint); margin: 0; }
+.modal .settings .path-field { display: flex; gap: 6px; min-width: 0; }
+.modal .settings .path-field input {
+  flex: 1; min-width: 0; font: 12px var(--mono); color: var(--ink); background: var(--bg-sunken);
+  border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
+.modal .settings .folder-status { min-height: 1.4em; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.modal .settings .folder-status button { font-size: 11px; padding: 2px 8px; }
+.modal .good { color: var(--good); }
+.modal .bad { color: var(--bad); }
+.modal .warning { color: var(--warn); }
+.modal .note { font-size: 11.5px; color: var(--ink-dim); }
 .modal .request .k { color: var(--ink-dim); display: inline-block; min-width: 9ch; }
 
 .toasts { position: fixed; right: 14px; bottom: 14px; display: flex;

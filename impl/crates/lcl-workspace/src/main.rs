@@ -37,6 +37,12 @@ OPTIONS:
     --profile <FILE>    A locale profile <locale>.json for localized documents,
                         after the project's \"profiles\" directory. Repeatable;
                         a later file for the same locale replaces an earlier one.
+    --default-project <PATH>
+                        The project to open when neither PROJECT nor --document
+                        is given: the default workspace chosen in Settings when
+                        that folder exists, and PATH otherwise. The desktop
+                        launcher passes its built-in default here. An explicit
+                        PROJECT or --document always wins.
     --create            Create a project here before opening it.
     --port <PORT>       Bind this loopback port instead of an ephemeral one.
     --open              Open the URL with xdg-open once the server is listening.
@@ -45,6 +51,11 @@ OPTIONS:
 
 The server binds 127.0.0.1 only and requires the session token in the printed
 URL. It grants the host no capability; a run asks before every effect.
+
+Settings chosen in the page that belong to the computer rather than the
+browser (the default workspace and the default ending for new documents) are
+kept in $XDG_CONFIG_HOME/lcl/workspace-settings.json, or
+~/.config/lcl/workspace-settings.json. They never enter a document.
 ";
 
 fn main() -> ExitCode {
@@ -64,6 +75,7 @@ fn run(argv: &[String]) -> Result<(), String> {
     let mut spec: Option<PathBuf> = None;
     let mut localized_spec: Option<PathBuf> = None;
     let mut profiles: Vec<PathBuf> = Vec::new();
+    let mut default_project: Option<PathBuf> = None;
     let mut port: u16 = 0;
     let mut create = false;
     let mut open = false;
@@ -87,6 +99,9 @@ fn run(argv: &[String]) -> Result<(), String> {
             "--spec" => spec = Some(PathBuf::from(value("--spec")?)),
             "--localized-spec" => localized_spec = Some(PathBuf::from(value("--localized-spec")?)),
             "--profile" => profiles.push(PathBuf::from(value("--profile")?)),
+            "--default-project" => {
+                default_project = Some(PathBuf::from(value("--default-project")?))
+            }
             "--port" => {
                 port = value("--port")?
                     .parse()
@@ -112,15 +127,29 @@ fn run(argv: &[String]) -> Result<(), String> {
     if document.is_some() && root.is_some() {
         return Err("pass either a project directory or --document, not both".to_string());
     }
+    // The settings file is read for one decision here, and the page reads and
+    // writes it through the routes. An explicit project or document always
+    // wins over it: a saved preference is a default, never an override.
+    let settings_file = lcl_workspace::settings::location();
+    let mut notice = None;
     let (root, open_document) = match &document {
         Some(path) => {
             let (root, id) = Workspace::locate_document(path).map_err(|e| e.to_string())?;
             (root, Some(id))
         }
         None => {
-            let root = match root {
-                Some(root) => root,
-                None => {
+            let root = match (root, &default_project) {
+                (Some(root), _) => root,
+                (None, Some(fallback)) => {
+                    let loaded = settings_file
+                        .as_deref()
+                        .map(lcl_workspace::settings::load)
+                        .unwrap_or_default();
+                    let (root, told) = lcl_workspace::settings::default_project(&loaded, fallback);
+                    notice = told;
+                    root
+                }
+                (None, None) => {
                     std::env::current_dir().map_err(|e| format!("no working directory: {e}"))?
                 }
             };
@@ -151,6 +180,9 @@ fn run(argv: &[String]) -> Result<(), String> {
         println!("  localized {}", localized.display());
     }
     println!("  open     {url}");
+    if let Some(notice) = &notice {
+        println!("  note     {notice}");
+    }
     println!();
     println!("The token in that URL is what authorises access. Do not share it.");
 
@@ -158,7 +190,10 @@ fn run(argv: &[String]) -> Result<(), String> {
         let _ = std::process::Command::new("xdg-open").arg(&url).status();
     }
 
-    let routes = Routes::new(Arc::new(workspace));
+    let routes = Routes::new(Arc::new(workspace))
+        .with_settings_file(settings_file)
+        .with_builtin_default(default_project)
+        .with_notice(notice);
     server
         .serve(Arc::new(routes))
         .map_err(|e| format!("the server stopped: {e}"))

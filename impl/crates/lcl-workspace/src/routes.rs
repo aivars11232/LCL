@@ -18,6 +18,7 @@ use crate::http::{Request, Response};
 use crate::intelligence;
 use crate::project::Workspace;
 use crate::server::{Outcome as RouteOutcome, Route};
+use crate::settings;
 use lcl_protocol::json::{Node, Object};
 use lcl_protocol::{Command, Granted, Inputs, Report};
 use std::path::PathBuf;
@@ -45,18 +46,57 @@ const BRAND_ICON_PNG: &[u8] = include_bytes!("../assets/brand/lcl-icon-32.png");
 pub struct Routes {
     workspace: Arc<Workspace>,
     runs: Runs,
+    /// The user's settings file, when this process knows where one lives.
+    settings_file: Option<PathBuf>,
+    /// The launcher's built-in default workspace, when a launcher named one.
+    builtin_default: Option<PathBuf>,
+    /// Something the person should be told about how this launch chose its
+    /// project, such as a chosen default workspace that no longer exists.
+    notice: Option<String>,
 }
 
 impl Routes {
+    /// Routes over one workspace, with no settings file: every setting is its
+    /// default and none can be saved. [`Routes::with_settings_file`] names one.
     pub fn new(workspace: Arc<Workspace>) -> Routes {
         Routes {
             workspace,
             runs: Runs::new(),
+            settings_file: None,
+            builtin_default: None,
+            notice: None,
         }
+    }
+
+    /// Read and write the workspace settings at `file`.
+    pub fn with_settings_file(mut self, file: Option<PathBuf>) -> Routes {
+        self.settings_file = file;
+        self
+    }
+
+    /// The folder the desktop launcher opens when no default is chosen.
+    pub fn with_builtin_default(mut self, folder: Option<PathBuf>) -> Routes {
+        self.builtin_default = folder;
+        self
+    }
+
+    /// Something to tell the person when the page loads.
+    pub fn with_notice(mut self, notice: Option<String>) -> Routes {
+        self.notice = notice;
+        self
     }
 
     pub fn workspace(&self) -> &Workspace {
         &self.workspace
+    }
+
+    /// The settings as they stand, read afresh so a change another window
+    /// saved is seen.
+    fn settings(&self) -> settings::Loaded {
+        match &self.settings_file {
+            Some(file) => settings::load(file),
+            None => settings::Loaded::default(),
+        }
     }
 }
 
@@ -101,6 +141,12 @@ impl Routes {
             ("GET", "/api/document") => self.read_document(request),
             ("PUT", "/api/document") => self.save_document(request),
             ("POST", "/api/document") => self.create_document(request),
+            ("DELETE", "/api/document") => self.delete_document(request),
+
+            ("GET", "/api/settings") => self.read_settings(),
+            ("PUT", "/api/settings") => self.save_settings(request),
+            ("GET", "/api/folder") => self.folder(request, false),
+            ("POST", "/api/folder") => self.folder(request, true),
 
             ("POST", "/api/tokens") => self.tokens(request),
             ("POST", "/api/check") => self.analyse(request, Command::Check),
@@ -109,7 +155,9 @@ impl Routes {
             ("POST", "/api/run") => self.start_run(request),
             ("POST", "/api/answer") => self.answer(request),
 
-            ("GET", _) | ("PUT", _) | ("POST", _) => Response::error(404, "no such route"),
+            ("GET", _) | ("PUT", _) | ("POST", _) | ("DELETE", _) => {
+                Response::error(404, "no such route")
+            }
             _ => Response::error(405, "method not allowed"),
         }
     }
@@ -155,6 +203,8 @@ impl Routes {
                 "open",
                 Node::optional(self.workspace.open_document().map(str::to_string)),
             )
+            // How this launch chose its project, when there is something to say.
+            .with("notice", Node::optional(self.notice.clone()))
             .pretty();
         Response::json(body)
     }
@@ -246,8 +296,9 @@ impl Routes {
     /// Separate from `PUT` on purpose. Saving must write exactly the name it
     /// was given, whichever ending it has; creating applies the naming default,
     /// which keeps an explicitly chosen `.lcl` or `.lcl.txt` and gives a name
-    /// without either the native `.lcl`. Keeping the two in one route would
-    /// mean guessing which of them the caller meant.
+    /// without either the default ending chosen in Settings — the native
+    /// `.lcl` unless the person chose `.lcl.txt`. Keeping the two in one route
+    /// would mean guessing which of them the caller meant.
     ///
     /// An existing file is never overwritten. Creation that silently replaced
     /// a document would be a data-loss path reachable by typing a name.
@@ -255,7 +306,8 @@ impl Routes {
         let Some(requested) = request.param("id") else {
             return Response::error(400, "a document id is required");
         };
-        let id = lcl_project::default_name(requested);
+        let ending = self.settings().settings.default_extension;
+        let id = lcl_project::default_name_with(requested, ending);
         // A bare suffix (`.lcl`, `.lcl.txt`, or an empty name given `.lcl`) has
         // nothing in front of it, which is exactly what `is_document` refuses.
         if !lcl_project::is_document(&id) {
@@ -286,6 +338,196 @@ impl Routes {
             }
             Err(e) => Response::error(422, &e.to_string()),
         }
+    }
+
+    /// Delete one document, if it still holds the bytes that were confirmed.
+    ///
+    /// `digest` is required: it is the SHA-256 of the content the person saw
+    /// when they confirmed, and a file that changed or was replaced since is
+    /// left alone and reported. See [`crate::document::delete`] for what else
+    /// is refused — anything but a regular `.lcl` or `.lcl.txt` file inside
+    /// the project.
+    fn delete_document(&self, request: &Request) -> Response {
+        use crate::DocumentError as D;
+        let Some(id) = request.param("id") else {
+            return Response::error(400, "a document id is required");
+        };
+        let Some(digest) = request.param("digest").filter(|d| !d.is_empty()) else {
+            return Response::error(
+                400,
+                "a digest is required: a deletion removes only the content that was confirmed",
+            );
+        };
+        match self.workspace.delete(id, digest) {
+            Ok(()) => Response::json(
+                Object::new()
+                    .with("id", Node::string(id))
+                    .with("deleted", Node::Bool(true))
+                    .pretty(),
+            ),
+            Err(crate::WorkspaceError::Document(error)) => {
+                let status = match &error {
+                    D::NotFound(_) => 404,
+                    D::Changed(_) | D::Superseded(_) => 409,
+                    D::Io { .. } => 500,
+                    _ => 400,
+                };
+                Response::error(status, &error.to_string())
+            }
+            Err(error) => Response::error(500, &error.to_string()),
+        }
+    }
+
+    /// The workspace settings, as the Settings dialog shows them.
+    fn read_settings(&self) -> Response {
+        Response::json(self.settings_json(&self.settings()))
+    }
+
+    fn settings_json(&self, loaded: &settings::Loaded) -> String {
+        let chosen = &loaded.settings.default_workspace;
+        Object::new()
+            .with("available", Node::Bool(self.settings_file.is_some()))
+            .with(
+                "file",
+                Node::optional(self.settings_file.as_ref().map(|f| f.display().to_string())),
+            )
+            .with("problem", Node::optional(loaded.problem.clone()))
+            .with("version", Node::u64(settings::VERSION))
+            .with(
+                "default_extension",
+                Node::string(loaded.settings.default_extension),
+            )
+            .with(
+                "default_workspace",
+                Node::optional(chosen.as_ref().map(|p| p.display().to_string())),
+            )
+            // Whether the chosen folder is usable right now: a launch would
+            // otherwise open the built-in default instead.
+            .with(
+                "default_workspace_exists",
+                match chosen {
+                    Some(path) => Node::Bool(path.is_dir()),
+                    None => Node::Null,
+                },
+            )
+            .with(
+                "builtin_default_workspace",
+                Node::optional(
+                    self.builtin_default
+                        .as_ref()
+                        .map(|p| p.display().to_string()),
+                ),
+            )
+            .with(
+                "current_workspace",
+                Node::string(self.workspace.root().display().to_string()),
+            )
+            .pretty()
+    }
+
+    /// Save the workspace settings from a JSON object.
+    ///
+    /// Either key may be left out to keep its current value. A default file
+    /// type must be `.lcl` or `.lcl.txt`. A default workspace must be an
+    /// absolute path to a folder that exists, or null for the built-in one;
+    /// creating a missing folder is a separate, explicit request.
+    fn save_settings(&self, request: &Request) -> Response {
+        let Some(file) = &self.settings_file else {
+            return Response::error(
+                409,
+                "this workspace has no settings file: set HOME or XDG_CONFIG_HOME",
+            );
+        };
+        let text = match request.text() {
+            Ok(text) => text,
+            Err(e) => return Response::error(400, &e.to_string()),
+        };
+        let body = match lcl_spec::json::parse(text) {
+            Ok(body) if body.as_object().is_some() => body,
+            _ => return Response::error(400, "the settings must be one JSON object"),
+        };
+        let mut next = self.settings().settings;
+        match body.get("default_extension") {
+            None => {}
+            Some(value) => match value.as_str().and_then(settings::ending) {
+                Some(suffix) => next.default_extension = suffix,
+                None => {
+                    return Response::error(422, "the default file type must be .lcl or .lcl.txt")
+                }
+            },
+        }
+        match body.get("default_workspace") {
+            None => {}
+            Some(lcl_spec::json::Json::Null) => next.default_workspace = None,
+            Some(value) => match value.as_str() {
+                Some("") => next.default_workspace = None,
+                Some(raw) => {
+                    let path = PathBuf::from(raw);
+                    if !path.is_absolute() {
+                        return Response::error(
+                            422,
+                            &format!("{raw} is not an absolute path; write it from /"),
+                        );
+                    }
+                    if !path.exists() {
+                        return Response::error(422, &format!("{raw} does not exist"));
+                    }
+                    if !path.is_dir() {
+                        return Response::error(422, &format!("{raw} is not a folder"));
+                    }
+                    next.default_workspace = Some(path);
+                }
+                None => {
+                    return Response::error(422, "the default workspace must be a path or null")
+                }
+            },
+        }
+        if let Err(detail) = settings::store(file, &next) {
+            return Response::error(500, &detail);
+        }
+        Response::json(self.settings_json(&settings::Loaded {
+            settings: next,
+            problem: None,
+        }))
+    }
+
+    /// Check one folder path, or create it.
+    ///
+    /// For choosing a default workspace, and nothing more: it answers about the
+    /// one absolute path it is given — whether it exists and is a folder — and
+    /// never lists what is in it, so it is not a way to browse the computer.
+    /// Creating happens only on `POST`, which the page sends after the person
+    /// confirmed the path it shows.
+    fn folder(&self, request: &Request, create: bool) -> Response {
+        let Some(raw) = request.param("path") else {
+            return Response::error(400, "a path is required");
+        };
+        let path = PathBuf::from(raw);
+        let absolute = path.is_absolute();
+        let mut created = false;
+        if create {
+            if !absolute {
+                return Response::error(400, &format!("{raw} is not an absolute path"));
+            }
+            if path.exists() && !path.is_dir() {
+                return Response::error(409, &format!("{raw} exists and is not a folder"));
+            }
+            if !path.exists() {
+                if let Err(e) = std::fs::create_dir_all(&path) {
+                    return Response::error(500, &format!("{raw} could not be created: {e}"));
+                }
+                created = true;
+            }
+        }
+        Response::json(
+            Object::new()
+                .with("path", Node::string(raw))
+                .with("absolute", Node::Bool(absolute))
+                .with("exists", Node::Bool(absolute && path.exists()))
+                .with("directory", Node::Bool(absolute && path.is_dir()))
+                .with("created", Node::Bool(created))
+                .pretty(),
+        )
     }
 
     /// Token spans for one buffer, produced by the real lexer.

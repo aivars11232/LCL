@@ -44,6 +44,11 @@ async function until(condition, label, ms = 4000) {
 /// The element that last took focus in the DOM double, as `document.activeElement`.
 let focused = null;
 
+/// Elements by id, as `document.querySelector("#id")` finds them. An element
+/// the page creates and gives an id is registered, so a case that reads or
+/// sets a control by id reaches the control the page made.
+let registry = null;
+
 async function bounded(promise, label) {
   let timer;
   try {
@@ -80,6 +85,11 @@ class Node {
       contains: item => classes.has(item),
     };
   }
+  get id() { return this._id || ""; }
+  set id(value) {
+    this._id = value;
+    if (registry) registry.set(`#${value}`, this);
+  }
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this.children = children; }
   querySelector(selector) {
@@ -104,6 +114,7 @@ async function harness(options) {
   const origin = options.server ? new URL(options.server).origin : "http://127.0.0.1:12345";
   const token = options.server ? new URL(options.server).searchParams.get("t") : "fixture-token";
   const nodes = new Map();
+  registry = nodes;
   const get = selector => {
     if (!nodes.has(selector)) nodes.set(selector, new Node());
     return nodes.get(selector);
@@ -130,6 +141,18 @@ async function harness(options) {
   let nextHold = null;
   let failListing = false;
   let failTokens = false;
+  // The computer's settings and the folders that exist, for controlled mode.
+  // In real-server mode the server's own settings file and filesystem answer.
+  const FIXTURE_SETTINGS = { default_extension: ".lcl", default_workspace: null };
+  let fixtureSettings = { ...FIXTURE_SETTINGS };
+  const folders = new Set(["/fixture"]);
+  const settingsReply = () => jsonReply({
+    available: true, file: "/fixture/.config/lcl/workspace-settings.json", problem: null, version: 1,
+    ...fixtureSettings,
+    default_workspace_exists: fixtureSettings.default_workspace === null ? null : folders.has(fixtureSettings.default_workspace),
+    builtin_default_workspace: null, current_workspace: "/fixture",
+  });
+  const isDocumentName = name => [".lcl.txt", ".lcl"].some(s => name.length > s.length && name.endsWith(s));
   const request = async (url, init = {}) => {
     url = new URL(url, origin);
     const method = init.method || "GET";
@@ -158,7 +181,50 @@ async function harness(options) {
         formal_version: "0.1.0", authority: "authoritative", identity_digest: "fixture", root: "/spec",
       } });
     } else if (url.pathname === "/api/documents") {
-      reply = jsonReply({ entries: [] });
+      reply = jsonReply({ entries: [...stored.keys()].sort().map(id => ({ id, directory: false, bytes: null })) });
+    } else if (url.pathname === "/api/document" && method === "POST") {
+      // Create: the default ending for a name without one, an explicit one
+      // kept, and never over an existing document.
+      const name = id.trim();
+      const created = name.endsWith(".lcl.txt") || name.endsWith(".lcl")
+        ? name : name + fixtureSettings.default_extension;
+      if (stored.has(created)) reply = jsonReply({ error: `${created} already exists` }, 409);
+      else {
+        stored.set(created, init.body);
+        reply = jsonReply({ id: created, requested: id, digest: hash(init.body), bytes: Buffer.byteLength(init.body) });
+      }
+    } else if (url.pathname === "/api/document" && method === "DELETE") {
+      const digest = url.searchParams.get("digest");
+      if (!isDocumentName(id.split("/").pop())) reply = jsonReply({ error: `${id} is not an LCL document` }, 400);
+      else if (!stored.has(id)) reply = jsonReply({ error: `${id} does not exist` }, 404);
+      else if (hash(stored.get(id)) !== digest) {
+        reply = jsonReply({ error: `${id} changed on disk after it was shown, so it was left alone` }, 409);
+      } else {
+        stored.delete(id);
+        reply = jsonReply({ id, deleted: true });
+      }
+    } else if (url.pathname === "/api/settings" && method === "GET") {
+      reply = settingsReply();
+    } else if (url.pathname === "/api/settings" && method === "PUT") {
+      const body = JSON.parse(init.body);
+      const where = body.default_workspace || null;
+      if (![".lcl", ".lcl.txt"].includes(body.default_extension)) {
+        reply = jsonReply({ error: "the default file type must be .lcl or .lcl.txt" }, 422);
+      } else if (where !== null && (!where.startsWith("/") || !folders.has(where))) {
+        reply = jsonReply({ error: `${where} does not exist` }, 422);
+      } else {
+        fixtureSettings = { default_extension: body.default_extension, default_workspace: where };
+        reply = settingsReply();
+      }
+    } else if (url.pathname === "/api/folder") {
+      const where = url.searchParams.get("path");
+      const absolute = where.startsWith("/");
+      if (method === "POST" && !absolute) reply = jsonReply({ error: `${where} is not an absolute path` }, 400);
+      else {
+        const created = method === "POST" && !folders.has(where);
+        if (method === "POST") folders.add(where);
+        reply = jsonReply({ path: where, absolute, exists: folders.has(where), directory: folders.has(where), created });
+      }
     } else if (url.pathname === "/api/tokens") {
       // One token spanning exactly the bytes that were submitted. The real
       // engine's tokens cover its input the same way, so an assertion about
@@ -196,6 +262,8 @@ async function harness(options) {
     } else if (url.pathname === "/api/document" && method === "GET" && stored.has(id)) {
       const text = stored.get(id);
       reply = jsonReply({ id, text, digest: hash(text) });
+    } else if (url.pathname === "/api/document" && method === "GET") {
+      reply = jsonReply({ error: `${id}: the document is not readable` }, 404);
     } else throw new Error(`unexpected fixture request ${method} ${url}`);
     if (hold) {
       hold.reached.resolve();
@@ -218,6 +286,8 @@ async function harness(options) {
   const run = code => vm.runInContext(code, context, { timeout: 3000 });
   return {
     sourceHash: hash(source), puts, get, run, local,
+    /// Whether files live on a real disk the case can inspect directly.
+    realDisk: Boolean(options.project),
     /// The page as served: the real server's in real-server mode, the file
     /// the server embeds otherwise.
     async page() {
@@ -293,6 +363,44 @@ async function harness(options) {
     async persisted(id) {
       return options.project ? fs.readFile(path.join(options.project, id), "utf8") : stored.get(id);
     },
+    /// Whether a document exists on disk (or in the fixture's store).
+    async exists(id) {
+      if (!options.project) return stored.has(id);
+      return fs.access(path.join(options.project, id)).then(() => true, () => false);
+    },
+    /// Another writer changes a document behind the page's back.
+    async writeBehind(id, text) {
+      if (options.project) await fs.writeFile(path.join(options.project, id), text);
+      else stored.set(id, text);
+    },
+    /// Another program removes a document behind the page's back.
+    async removeBehind(id) {
+      if (options.project) await fs.unlink(path.join(options.project, id));
+      else stored.delete(id);
+    },
+    /// An absolute folder path for the default-workspace cases: inside the
+    /// project's own dot directory in real-server mode, which the tree skips.
+    folder(name) {
+      return options.project ? path.join(options.project, ".folders", name) : `/fixture/${name}`;
+    },
+    /// Create a document the way a person does: + and the New document dialog.
+    async create(name) {
+      run("newDocument()");
+      get("#new-path").value = name;
+      await bounded(this.choose("Create"), `create ${name}`);
+      return run("state.active");
+    },
+    /// The documents the project tree lists.
+    treeIds() {
+      return JSON.parse(run("JSON.stringify(state.entries.filter(e => !e.directory).map(e => e.id))"));
+    },
+    modalOpen() { return get("#modal-backdrop").hidden === false; },
+    modalTitle() { return get("#modal-title").textContent; },
+    modalText() {
+      const collect = node => [node.textContent || ""].concat(node.children.flatMap(collect)).join(" ");
+      return collect(get("#modal-body")).replace(/\s+/g, " ").trim();
+    },
+    lifecycle(id) { return run(`(state.docs.get(${JSON.stringify(id)}) || {}).lifecycle || null`); },
     /// Dispatch one keydown at the production listener.
     ///
     /// The event goes to the same `document` the script registered on, so what
@@ -363,12 +471,21 @@ async function harness(options) {
         [node.textContent || ""].concat(node.children.flatMap(collect)).join(" ");
       return collect(get('.view[data-view="diagnostics"]')).trim();
     },
-    reset() {
+    async reset() {
       assert.equal(nextHold, null, "a test leaked a pending held response");
       run("state.docs.clear(); state.order=[]; state.active=null; code.value=''; closeModal();");
       local.clear();
       // Guarded so the suite can also be pointed at an older page as a control.
       run('if (typeof applySettings === "function") applySettings({ ...DEFAULT_SETTINGS })');
+      // The computer's settings go back to their defaults too, wherever they live.
+      fixtureSettings = { ...FIXTURE_SETTINGS };
+      if (options.server) {
+        const reply = await request(new URL("/api/settings", origin), {
+          method: "PUT", body: JSON.stringify({ default_extension: ".lcl", default_workspace: null }),
+        });
+        assert(reply.ok, `settings could not be reset: ${await reply.text()}`);
+      }
+      await run('typeof loadFileSettings === "function" ? loadFileSettings() : null');
       puts.length = 0;
       get("#toasts").replaceChildren();
     },
@@ -683,6 +800,230 @@ const uiCases = [
     assert.equal(h.get("#modal-backdrop").hidden, true);
     assert.equal(h.get("#shell").inert, false);
     assert.equal(opener(), true);
+  }],
+
+  // -------------------------------------------------------------------------
+  // UI-04 — a document's life: created, saved, discarded, deleted
+  // -------------------------------------------------------------------------
+  //
+  // New document wrote its file at once, and Discard only closed the buffer,
+  // so a document nobody chose to keep stayed in the project. Nothing could be
+  // deleted at all. A document now records how it came to be open, which is
+  // not the same question as whether it has unsaved edits, and only a new one
+  // that nobody saved has its file removed when it is discarded.
+  ["a new .lcl document that is discarded leaves no file, tab or tree entry", async h => {
+    const id = await h.create("fresh-discard");
+    assert.equal(id, "fresh-discard.lcl");
+    assert.equal(h.lifecycle(id), "created");
+    assert.equal(await h.exists(id), true, "creating writes the file");
+    assert(h.treeIds().includes(id));
+    // Not edited at all: closing is still the moment to decide.
+    h.close(id);
+    assert.equal(h.modalTitle(), "Unsaved new document");
+    assert(h.modalText().includes(`${id} has not been saved`), h.modalText());
+    await bounded(h.choose("Discard"), "discard");
+    assert.equal(await h.exists(id), false, "the created file survived Discard");
+    assert.equal(h.doc(id), null, "its tab stayed open");
+    assert(!h.treeIds().includes(id), "the tree still lists it");
+  }],
+
+  ["a new .lcl.txt document that is discarded after edits leaves nothing either", async h => {
+    const id = await h.create("fresh-discard.lcl.txt");
+    assert.equal(id, "fresh-discard.lcl.txt", "an explicit ending was not kept");
+    h.edit(`${h.doc(id).text}\nedited but never saved\n`);
+    h.close(id);
+    assert.equal(h.modalTitle(), "Unsaved new document");
+    await bounded(h.choose("Discard"), "discard");
+    assert.equal(await h.exists(id), false);
+    assert.equal(h.doc(id), null);
+    assert(!h.treeIds().includes(id));
+  }],
+
+  ["a new document saved from its close dialog is kept as an ordinary one", async h => {
+    const id = await h.create("saved-on-close");
+    h.close(id);
+    assert.equal(h.modalTitle(), "Unsaved new document");
+    await bounded(h.choose("Save"), "saved on close");
+    assert.equal(h.doc(id), null, "the tab did not close after saving");
+    assert.equal(await h.exists(id), true, "Save did not keep the file");
+  }],
+
+  ["a new document that was saved is kept, and a later discard drops only later edits", async h => {
+    const id = await h.create("kept-new.lcl");
+    h.edit('LCL:\n    VERSION: "0.1.0"\n');
+    assert.equal(await bounded(h.run("save()"), "explicit save"), true);
+    assert.equal(h.lifecycle(id), "saved");
+    const saved = await h.persisted(id);
+    h.edit(`${saved}unsaved later edit\n`);
+    h.close(id);
+    assert.equal(h.modalTitle(), "Unsaved changes", "a saved document was still treated as new");
+    h.choose("Discard");
+    assert.equal(h.doc(id), null);
+    assert.equal(await h.exists(id), true, "a saved document was deleted by Discard");
+    assert.equal(await h.persisted(id), saved, "the saved content changed");
+  }],
+
+  ["an existing document's discarded edits leave its file exactly as it was", async h => {
+    await h.add("existing-kept.lcl", "original text\n");
+    assert.equal(h.lifecycle("existing-kept.lcl"), "opened");
+    h.edit("edited text\n");
+    h.close("existing-kept.lcl");
+    assert.equal(h.modalTitle(), "Unsaved changes");
+    h.choose("Discard");
+    assert.equal(h.doc("existing-kept.lcl"), null);
+    assert.equal(await h.persisted("existing-kept.lcl"), "original text\n");
+    // Opened and closed untouched: nothing asked, nothing removed.
+    await h.add("existing-clean.lcl.txt", "clean\n");
+    h.close("existing-clean.lcl.txt");
+    assert.equal(h.modalOpen(), false);
+    assert.equal(await h.persisted("existing-clean.lcl.txt"), "clean\n");
+  }],
+
+  ["a new document that something else rewrote is kept when it is discarded", async h => {
+    const id = await h.create("changed-behind.lcl");
+    await h.writeBehind(id, "written by something else\n");
+    h.close(id);
+    await bounded(h.choose("Discard"), "discard");
+    assert.equal(h.doc(id), null, "the tab closes either way");
+    assert.equal(await h.exists(id), true, "a file changed after creation was deleted");
+    assert.equal(await h.persisted(id), "written by something else\n");
+    assert(h.toasts().some(t => t.includes("was kept")), h.toasts().join(" | "));
+  }],
+
+  ["deleting asks first, and Cancel changes nothing", async h => {
+    await h.add("delete-cancel.lcl", "keep me\n");
+    await bounded(h.run('deleteDocument("delete-cancel.lcl")'), "delete asked");
+    assert.equal(h.modalTitle(), 'Delete "delete-cancel.lcl"?');
+    assert(h.modalText().includes("This permanently removes the file from the project."));
+    assert(!h.modalText().includes("unsaved"), "a clean document was said to have unsaved edits");
+    h.choose("Cancel");
+    assert.equal(await h.persisted("delete-cancel.lcl"), "keep me\n");
+    assert.notEqual(h.doc("delete-cancel.lcl"), null);
+  }],
+
+  ["deleting an inactive .lcl document leaves the active one open", async h => {
+    await h.add("del-inactive.lcl", "a\n");
+    await h.add("del-active.lcl.txt", "b\n");
+    assert.equal(h.active(), "del-active.lcl.txt");
+    await bounded(h.run('deleteDocument("del-inactive.lcl")'), "asked");
+    await bounded(h.choose("Delete"), "deleted");
+    assert.equal(await h.exists("del-inactive.lcl"), false);
+    assert.equal(h.doc("del-inactive.lcl"), null, "its tab stayed");
+    assert.equal(h.active(), "del-active.lcl.txt");
+    assert(!h.treeIds().includes("del-inactive.lcl"), "the tree still lists it");
+    assert(h.treeIds().includes("del-active.lcl.txt"));
+  }],
+
+  ["deleting the active .lcl.txt document moves to another tab, then to the empty state", async h => {
+    await h.add("del-first.lcl", "first\n");
+    await h.add("del-second.lcl.txt", "second\n");
+    await bounded(h.run('deleteDocument("del-second.lcl.txt")'), "asked");
+    await bounded(h.choose("Delete"), "deleted");
+    assert.equal(await h.exists("del-second.lcl.txt"), false);
+    assert.equal(h.active(), "del-first.lcl");
+    assert.equal(h.get("#code").value, "first\n");
+    await bounded(h.run('deleteDocument("del-first.lcl")'), "asked");
+    await bounded(h.choose("Delete"), "deleted");
+    assert.equal(h.active(), null);
+    assert.deepEqual(uiState(h), { editable: false, empty: true, disabled: ALL_ACTIONS });
+  }],
+
+  ["deleting a document with unsaved edits says they are lost too", async h => {
+    await h.add("del-dirty.lcl", "saved\n");
+    h.edit("unsaved\n");
+    await bounded(h.run('deleteDocument("del-dirty.lcl")'), "asked");
+    assert(h.modalText().includes("unsaved edits"), h.modalText());
+    await bounded(h.choose("Delete"), "deleted");
+    assert.equal(await h.exists("del-dirty.lcl"), false);
+    assert.equal(h.doc("del-dirty.lcl"), null);
+  }],
+
+  ["a file that changed while deletion was being confirmed is not deleted", async h => {
+    await h.add("del-changed.lcl", "as shown\n");
+    await bounded(h.run('deleteDocument("del-changed.lcl")'), "asked");
+    await h.writeBehind("del-changed.lcl", "changed meanwhile\n");
+    await bounded(h.choose("Delete"), "refused");
+    assert.equal(await h.persisted("del-changed.lcl"), "changed meanwhile\n");
+    assert.notEqual(h.doc("del-changed.lcl"), null, "the open tab was closed anyway");
+    assert(h.toasts().some(t => t.includes("was not deleted")), h.toasts().join(" | "));
+  }],
+
+  ["a document that is already gone is reported, and the tree catches up", async h => {
+    await h.add("del-gone.lcl", "x\n");
+    await h.run("loadTree()");
+    assert(h.treeIds().includes("del-gone.lcl"));
+    await h.removeBehind("del-gone.lcl");
+    await bounded(h.run('deleteDocument("del-gone.lcl")'), "asked");
+    assert.equal(h.modalOpen(), false, "a question was asked about a file that is not there");
+    assert(h.toasts().some(t => t.includes("could not be read")), h.toasts().join(" | "));
+    assert(!h.treeIds().includes("del-gone.lcl"), "the tree still lists it");
+  }],
+
+  ["the default file type names a new document, and an explicit ending always wins", async h => {
+    h.run("newDocument()");
+    assert.equal(h.get("#new-path").value, "untitled.lcl");
+    h.choose("Cancel");
+    assert.equal(await h.create("typed-plain"), "typed-plain.lcl");
+
+    h.run("openSettings()");
+    assert.equal(h.get("#setting-file-type").value, ".lcl", ".lcl is the default");
+    h.get("#setting-file-type").value = ".lcl.txt";
+    await bounded(h.choose("Save"), "settings saved");
+    assert.equal(h.modalOpen(), false, "Settings did not save");
+    assert.equal(h.run("state.files.default_extension"), ".lcl.txt");
+
+    h.run("newDocument()");
+    assert.equal(h.get("#new-path").value, "untitled.lcl.txt");
+    assert(h.modalText().includes("created as .lcl.txt"), h.modalText());
+    h.choose("Cancel");
+    assert.equal(await h.create("typed-text"), "typed-text.lcl.txt");
+    assert.equal(await h.create("explicit-classic.lcl"), "explicit-classic.lcl");
+    assert.equal(await h.create("explicit-text.lcl.txt"), "explicit-text.lcl.txt");
+    assert.equal(await h.exists("typed-text.lcl"), false, "a stacked or converted twin exists");
+    assert.equal(await h.exists("explicit-classic.lcl.txt"), false, "an explicit ending was converted");
+    // Kept by the server, not only by the page.
+    await h.run("loadFileSettings()");
+    assert.equal(h.run("state.files.default_extension"), ".lcl.txt");
+  }],
+
+  ["Settings saves a default workspace that exists and creates a missing one only when asked", async h => {
+    const statusText = () => {
+      const collect = node => [node.textContent || ""].concat(node.children.flatMap(collect)).join(" ");
+      return collect(h.get("#setting-workspace-status"));
+    };
+    const missing = h.folder("new default");
+    h.run("openSettings()");
+    h.get("#setting-workspace").value = "relative/folder";
+    await bounded(h.choose("Save"), "relative refused");
+    assert.equal(h.modalOpen(), true, "a relative path was accepted");
+    assert.match(statusText(), /not an absolute path/);
+
+    h.get("#setting-workspace").value = missing;
+    await bounded(h.choose("Save"), "missing refused");
+    assert.equal(h.modalOpen(), true, "a folder that does not exist was saved");
+    assert.match(statusText(), /does not exist/);
+    if (h.realDisk) assert.equal(await fs.access(missing).then(() => true, () => false), false,
+      "the folder was created before anyone asked");
+
+    const create = h.get("#setting-workspace-status").children.find(c => c.textContent === "Create this folder");
+    assert(create, "no way to create the missing folder was offered");
+    await bounded(create.onclick(), "folder created");
+    assert.match(statusText(), /Created/);
+    await bounded(h.choose("Save"), "saved");
+    assert.equal(h.modalOpen(), false);
+    assert.equal(h.run("state.files.default_workspace"), missing);
+    assert(h.toasts().some(t => t.includes("Default workspace updated")), h.toasts().join(" | "));
+    assert(h.toasts().some(t => t.includes("next time LCL Workspace is launched")));
+
+    await h.run("loadFileSettings()");
+    assert.equal(h.run("state.files.default_workspace"), missing, "the server did not keep it");
+    // Emptied again: launches go back to the built-in folder.
+    h.run("openSettings()");
+    assert.equal(h.get("#setting-workspace").value, missing);
+    h.get("#setting-workspace").value = "";
+    await bounded(h.choose("Save"), "cleared");
+    await h.run("loadFileSettings()");
+    assert.equal(h.run("state.files.default_workspace"), null);
   }],
 
   ["the project tree marks a document unsaved from the first keystroke", async h => {
@@ -1101,7 +1442,7 @@ async function main() {
   console.log(`production app.js sha256 ${h.sourceHash}; transport ${options.server ? "real HTTP + disk" : "controlled"}; DOM test double`);
   let failures=0;
   for (const [name, test] of cases) {
-    h.reset();
+    await h.reset();
     try { await test(h); console.log(`PASS ${name}`); }
     catch (error) { failures++; console.error(`FAIL ${name}\n${error.stack}`); }
   }

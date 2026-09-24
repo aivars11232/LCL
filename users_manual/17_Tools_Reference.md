@@ -140,6 +140,7 @@ browser.
 | `--document <PATH>` | open one document; its project is found as for `lcl` |
 | `--spec <PATH>` | the specification package (else `LCL_SPEC`, else the project file) |
 | `--localized-spec <PATH>`, `--profile <FILE>` | for localized documents |
+| `--default-project <PATH>` | the folder to open when neither `PROJECT` nor `--document` is given: the default workspace chosen in Settings if that folder exists, otherwise `PATH` (the desktop launcher passes its built-in folder here) |
 | `--create` | create a project here before opening it |
 | `--port <PORT>` | use this port instead of a random one |
 | `--open` | open the printed address in the browser |
@@ -149,17 +150,32 @@ The server listens only on `127.0.0.1`, your own computer, and every
 request needs the secret token included in the printed address. It grants no
 capabilities: when a run wants an effect, the workspace asks you first.
 
-In the page, `+` creates a document (`.lcl` unless you type `.lcl.txt`), and
-the ⚙ **Settings** button sets the theme, the editor font size and line
-numbers. These preferences are stored in your browser, not in the project.
-The browser keeps them per address, and the address includes the port: a
-workspace started again with the same `--port` finds them, and one started
-on a random port (the default, and every menu launch) begins with the
-defaults.
+In the page, `+` creates a document. A name without an ending gets the
+default file type from Settings (`.lcl` unless you chose `.lcl.txt`), and an
+ending you type is kept. Closing a new document that was never saved asks
+whether to keep it: **Discard** removes the file created for it. Discarding
+the edits of any other document leaves its file as it is on disk.
+Right-clicking a document in the project tree, or pressing Delete when it is
+selected there, offers **Delete…**, which asks first and removes the file
+for good. It deletes nothing if the file changed while you were being asked.
+
+The ⚙ **Settings** button sets two kinds of setting:
+
+| Setting | Where it is kept |
+|---|---|
+| theme, editor font size, line numbers | in your browser, per address. The address includes the port: a workspace started again with the same `--port` finds them, and one started on a random port (the default, and every menu launch) begins with the defaults |
+| default file type, default workspace location | for your computer, in `$XDG_CONFIG_HOME/lcl/workspace-settings.json`, which is `~/.config/lcl/workspace-settings.json` unless you set `XDG_CONFIG_HOME` |
+
+None of them is ever written into a document or a project file, and none
+changes what a document means or how it runs.
 
 After `install.sh`, the desktop menu has an **LCL Workspace** entry, and
-`.lcl` files can be opened with it. Menu launches write any problem to
-`~/.local/state/lcl/launch.log`.
+`.lcl` files can be opened with it. A menu launch opens the default workspace
+location chosen in Settings, or `~/.local/share/lcl/workspace` when none is
+chosen or the chosen folder no longer exists. In that last case the page
+says why. Opening a document from your file manager, or starting
+`lcl-workspace` with a folder, always wins over the default. Menu launches
+write any problem to `~/.local/state/lcl/launch.log`.
 
 ## 17.9 Installing and uninstalling
 

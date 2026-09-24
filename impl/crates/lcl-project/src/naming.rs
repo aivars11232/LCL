@@ -73,11 +73,30 @@ pub fn is_document(name: &str) -> bool {
 /// never taken for a document. Opening, saving and running a document is
 /// untouched by this: nothing here renames a file that already exists.
 pub fn default_name(name: &str) -> String {
+    default_name_with(name, SUFFIX)
+}
+
+/// The name a newly created document is given when the person has chosen
+/// `ending` as their default for names written without one.
+///
+/// [`default_name`] is this with the native `.lcl`. A person may prefer the
+/// compatibility `.lcl.txt` for new documents instead; that preference is a
+/// product setting, and like everything in this module it changes a name and
+/// never a meaning. An explicitly written `.lcl` or `.lcl.txt` is still kept
+/// whichever default is set, and nothing is stacked. `ending` must be one of
+/// [`SUFFIXES`]; anything else is not an LCL ending, and the native one is
+/// given instead, so this can never produce a name the tree would not list.
+pub fn default_name_with(name: &str, ending: &str) -> String {
     let name = name.trim();
     if name.ends_with(TEXT_SUFFIX) || name.ends_with(SUFFIX) {
         return name.to_string();
     }
-    format!("{name}{SUFFIX}")
+    let ending = if SUFFIXES.contains(&ending) {
+        ending
+    } else {
+        SUFFIX
+    };
+    format!("{name}{ending}")
 }
 
 #[cfg(test)]
@@ -145,6 +164,43 @@ mod tests {
         // than being kept as though it were an LCL ending.
         assert_eq!(default_name("notes.txt"), "notes.txt.lcl");
         assert!(!is_document("notes.txt"));
+    }
+
+    #[test]
+    fn a_chosen_default_ending_applies_only_to_names_without_one() {
+        assert_eq!(default_name_with("notes", TEXT_SUFFIX), "notes.lcl.txt");
+        assert_eq!(
+            default_name_with("dir/task", TEXT_SUFFIX),
+            "dir/task.lcl.txt"
+        );
+        assert_eq!(default_name_with("notes", SUFFIX), "notes.lcl");
+        // An explicit ending wins over either default, and is never converted.
+        for ending in SUFFIXES {
+            assert_eq!(default_name_with("notes.lcl", ending), "notes.lcl");
+            assert_eq!(default_name_with("notes.lcl.txt", ending), "notes.lcl.txt");
+        }
+        // Never stacked, whichever default applied first.
+        for written in ["notes", "notes.lcl", "notes.lcl.txt"] {
+            let once = default_name_with(written, TEXT_SUFFIX);
+            assert_eq!(default_name_with(&once, TEXT_SUFFIX), once, "{written}");
+            assert_eq!(default_name_with(&once, SUFFIX), once, "{written}");
+        }
+        // `.txt` alone is still not an LCL ending.
+        assert_eq!(
+            default_name_with("notes.txt", TEXT_SUFFIX),
+            "notes.txt.lcl.txt"
+        );
+    }
+
+    #[test]
+    fn an_ending_that_is_not_an_lcl_ending_falls_back_to_the_native_one() {
+        for ending in [".txt", "", ".LCL", "lcl", ".lcl.bak"] {
+            assert_eq!(
+                default_name_with("notes", ending),
+                "notes.lcl",
+                "{ending:?}"
+            );
+        }
     }
 
     #[test]

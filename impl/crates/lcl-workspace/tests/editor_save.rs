@@ -5,7 +5,7 @@
 ///
 /// A floor, not an expected total: adding a case must not break the gate, and
 /// losing one must.
-const EXPECTED_CASES: usize = 41;
+const EXPECTED_CASES: usize = 55;
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -50,17 +50,25 @@ struct Process {
 }
 
 impl Process {
-    fn start(mut command: Command, root: &Path, name: &str) -> Self {
+    fn start(command: Command, root: &Path, name: &str) -> Self {
+        Process::start_with(command, root, name, &[])
+    }
+
+    fn start_with(mut command: Command, root: &Path, name: &str, env: &[(&str, PathBuf)]) -> Self {
         let log = root.join(name);
         let output = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&log)
             .unwrap();
-        let child = command
+        command
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
-            .env("TMPDIR", std::env::temp_dir())
+            .env("TMPDIR", std::env::temp_dir());
+        for (key, value) in env {
+            command.env(key, value);
+        }
+        let child = command
             .current_dir(root)
             .stdin(Stdio::null())
             .stdout(output.try_clone().unwrap())
@@ -196,7 +204,14 @@ fn production_editor_save_logic_survives_real_http() {
     let project = Project::new();
     let mut command = Command::new(&binary);
     command.arg(&project.0).arg("--spec").arg(spec);
-    let mut server = Process::start(command, &project.0, "server.log");
+    // The workspace settings this server reads and writes: its own, inside a
+    // dot directory of the project, which the project tree never lists.
+    let mut server = Process::start_with(
+        command,
+        &project.0,
+        "server.log",
+        &[("XDG_CONFIG_HOME", project.0.join(".config"))],
+    );
     let url = server.server_url();
     let mut command = Command::new("node");
     command

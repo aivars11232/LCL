@@ -488,6 +488,111 @@ fn a_menu_launch_with_no_document_opens_the_default_project() {
     );
 }
 
+/// The settings file the workspace page writes, naming `folder` as the
+/// default workspace, where a menu launch in `home` reads it.
+fn choose_default_workspace(home: &Path, folder: &Path) {
+    let dir = home.join(".config/lcl");
+    std::fs::create_dir_all(&dir).expect("writable");
+    std::fs::write(
+        dir.join("workspace-settings.json"),
+        format!(
+            "{{\"version\": 1, \"default_workspace\": \"{}\", \"default_extension\": \".lcl\"}}\n",
+            lcl_workspace::http::escape_json(&folder.display().to_string())
+        ),
+    )
+    .expect("writable");
+}
+
+/// The project root the launched workspace serves, and any notice about how
+/// the launch chose it.
+fn session_root(url: &str) -> (PathBuf, Option<String>, String) {
+    let (status, body) = get(url, "/api/session");
+    assert_eq!(status, 200, "the session route refused: {body}");
+    let session = lcl_spec::json::parse(&body).expect("the session is JSON");
+    let root = PathBuf::from(
+        session
+            .get("root")
+            .and_then(|root| root.as_str())
+            .expect("a root"),
+    );
+    let notice = session
+        .get("notice")
+        .and_then(|notice| notice.as_str())
+        .map(str::to_string);
+    (root, notice, body)
+}
+
+#[test]
+fn a_menu_launch_opens_the_default_workspace_chosen_in_settings() {
+    let home = Home::new("chosen");
+    install(&home);
+    // A folder name a shell would misread in every way it can. The launcher
+    // passes its own default as one quoted word, and the chosen folder is
+    // read by the workspace itself, so no shell ever sees this one.
+    let chosen = home.join("Documents/My LCL $HOME `echo x` 'q' \"d\" ;&* {a,b}");
+    std::fs::create_dir_all(&chosen).expect("writable");
+    choose_default_workspace(&home, &chosen);
+
+    let launched = launch(&home, None);
+    let url = await_url(&launched);
+    let (root, notice, body) = session_root(&url);
+    assert_eq!(
+        root,
+        chosen.canonicalize().unwrap(),
+        "a menu launch must open the default workspace chosen in Settings:\n{body}"
+    );
+    assert_eq!(notice, None, "{body}");
+}
+
+#[test]
+fn a_menu_launch_whose_chosen_default_is_gone_opens_the_built_in_one() {
+    let home = Home::new("gone");
+    install(&home);
+    let gone = home.join("Documents/moved away");
+    choose_default_workspace(&home, &gone);
+
+    let launched = launch(&home, None);
+    let url = await_url(&launched);
+    let (root, notice, body) = session_root(&url);
+    assert_eq!(
+        root,
+        home.join(".local/share/lcl/workspace")
+            .canonicalize()
+            .unwrap(),
+        "a chosen folder that is gone falls back to the built-in default:\n{body}"
+    );
+    assert!(
+        notice
+            .as_deref()
+            .unwrap_or_default()
+            .contains("does not exist"),
+        "the page must be told why:\n{body}"
+    );
+    assert!(
+        !gone.exists(),
+        "a launch created the folder the person had chosen"
+    );
+}
+
+#[test]
+fn a_file_association_opens_its_own_project_whatever_default_is_chosen() {
+    let home = Home::new("assoc-chosen");
+    install(&home);
+    let chosen = home.join("chosen");
+    std::fs::create_dir_all(&chosen).expect("writable");
+    choose_default_workspace(&home, &chosen);
+    let path = document(&home, "papers/report.lcl");
+
+    let launched = launch(&home, Some(&path));
+    let url = await_url(&launched);
+    let (root, _, body) = session_root(&url);
+    assert_eq!(
+        root,
+        home.join("papers").canonicalize().unwrap(),
+        "an explicitly opened document wins over the chosen default:\n{body}"
+    );
+}
+
 #[test]
 fn a_file_association_opens_that_document_in_its_own_project() {
     let home = Home::new("assoc");
@@ -1313,9 +1418,18 @@ fn install_paths_reach_the_workspace_exactly() {
         "--localized-spec".to_string(),
         text(&data.join("LCL_Core_0.2.0")),
     ];
+    // The built-in default arrives as the fallback for --default-project, so
+    // that a default workspace chosen in Settings can take its place.
     assert_eq!(
         recorded(None),
-        [&head[..], &[text(&data.join("workspace"))]].concat(),
+        [
+            &head[..],
+            &[
+                "--default-project".to_string(),
+                text(&data.join("workspace")),
+            ],
+        ]
+        .concat(),
         "a menu launch must pass every installed path unchanged"
     );
     let doc = document(&home, "doc.lcl");

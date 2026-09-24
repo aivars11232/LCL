@@ -27,7 +27,12 @@
 # With no argument this is a menu launch rather than a file association, and it
 # opens one explicit project directory. It is never the working directory and
 # never the home directory: a launcher that opened whatever it happened to
-# start in would make the visible file tree depend on ambient state.
+# start in would make the visible file tree depend on ambient state. That
+# directory is the default workspace the person chose in Settings, when it
+# exists; the workspace reads that choice itself, and falls back to the
+# built-in default_project passed here, which this script creates. The chosen
+# folder is never created here: making a path the person may have moved or
+# deleted is not a launcher's call, so the fallback opens and the page says why.
 set -eu
 
 bin=@BIN@
@@ -91,7 +96,7 @@ if [ "$#" -eq 1 ] && [ -n "$1" ]; then
     set -- --document "$1"
 else
     mkdir -p "$default_project"
-    set -- "$default_project"
+    set -- --default-project "$default_project"
 fi
 
 if [ -n "$localized_spec" ]; then

@@ -183,11 +183,26 @@ const state = {
   breakOnEffects: true,   // ask before every effect, which is the safe default
   breakOnOperations: false,
   settings: null,         // workspace preferences; see `applySettings`
+  /* The settings that belong to the computer rather than this browser: the
+   * default file type and the default workspace. The server keeps them in the
+   * user's configuration directory; see `loadFileSettings`. */
+  files: { available: false, default_extension: ".lcl", default_workspace: null },
 };
 
-function Doc(id, text, digest) {
+/* How a document came to be open, which is a different question from whether
+ * it has unsaved edits (`dirty`).
+ *
+ *   "opened"   read from a file that was already there;
+ *   "created"  made by + in this page, and not saved by anyone since, so the
+ *              file on disk is only this page's placeholder for it;
+ *   "saved"    saved explicitly at least once in this page.
+ *
+ * Only a "created" document's file is deleted when its edits are discarded:
+ * nobody chose to keep it. Every other discard leaves the file exactly as it
+ * is on disk. The state is never inferred from a name or from `dirty`. */
+function Doc(id, text, digest, lifecycle = "opened") {
   return {
-    id, text, digest,
+    id, text, digest, lifecycle,
     saved: text,
     revision: 0,
     pendingSaves: 0,
@@ -334,6 +349,10 @@ async function loadTree() {
 function renderTree() {
   const list = $("#tree");
   list.replaceChildren();
+  /* One document in the tree takes Tab focus, the open one or else the first;
+   * the arrow keys move between the rest. */
+  const files = state.entries.filter((e) => !e.directory);
+  const focusable = (files.find((e) => e.id === state.active) || files[0] || {}).id;
   for (const entry of state.entries) {
     const depth = entry.id.split("/").length - 1;
     const name = entry.id.split("/").pop();
@@ -346,17 +365,147 @@ function renderTree() {
     item.append(document.createTextNode(name));
     item.title = entry.id;
     if (entry.id === state.active) item.classList.add("open");
-    if (!entry.directory) item.onclick = () => openDocument(entry.id);
+    if (!entry.directory) {
+      item.dataset.id = entry.id;
+      item.tabIndex = entry.id === focusable ? 0 : -1;
+      item.onclick = () => openDocument(entry.id);
+      item.oncontextmenu = (e) => {
+        e.preventDefault();
+        openMenu(entry.id, e.clientX, e.clientY, item);
+      };
+      item.onkeydown = (e) => treeKey(e, entry.id, item);
+    }
     list.append(item);
   }
 }
 
+/* ---------------------------------------------------------- tree actions */
+
+/* The keys a focused document in the tree answers to. Delete only ever asks. */
+function treeKey(e, id, item) {
+  if (e.key === "Enter") { e.preventDefault(); openDocument(id); }
+  else if (e.key === "Delete") { e.preventDefault(); deleteDocument(id); }
+  else if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+    e.preventDefault();
+    const r = item.getBoundingClientRect();
+    openMenu(id, r.left + 16, r.bottom, item);
+  } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    const items = [...document.querySelectorAll("#tree li[data-id]")];
+    const next = items[items.indexOf(item) + (e.key === "ArrowDown" ? 1 : -1)];
+    if (next) {
+      item.tabIndex = -1;
+      next.tabIndex = 0;
+      next.focus();
+    }
+  }
+}
+
+/* The menu a document in the tree opens: one at a time, closed by choosing,
+ * by Escape, by clicking elsewhere or by focus leaving it. */
+let treeMenu = null;
+
+function closeMenu() {
+  if (!treeMenu) return;
+  const menu = treeMenu;
+  treeMenu = null;
+  menu.remove();
+}
+
+function openMenu(id, x, y, returnTo) {
+  closeMenu();
+  const menu = el("div", "context-menu");
+  menu.setAttribute("role", "menu");
+  menu.setAttribute("aria-label", id);
+  for (const [label, act] of [["Open", () => openDocument(id)], ["Delete…", () => deleteDocument(id)]]) {
+    const item = el("button", "", label);
+    item.setAttribute("role", "menuitem");
+    item.onclick = () => { closeMenu(); act(); };
+    menu.append(item);
+  }
+  menu.addEventListener("keydown", (e) => {
+    const items = [...menu.querySelectorAll("button")];
+    const at = items.indexOf(document.activeElement);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const step = e.key === "ArrowDown" ? 1 : items.length - 1;
+      items[(at + step) % items.length].focus();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      closeMenu();
+      if (returnTo) returnTo.focus();
+    }
+  });
+  menu.addEventListener("focusout", (e) => {
+    if (!menu.contains(e.relatedTarget)) closeMenu();
+  });
+  document.body.append(menu);
+  // Kept inside the window, wherever the click was.
+  const box = menu.getBoundingClientRect();
+  const view = document.documentElement;
+  menu.style.left = `${Math.max(0, Math.min(x, view.clientWidth - box.width - 4))}px`;
+  menu.style.top = `${Math.max(0, Math.min(y, view.clientHeight - box.height - 4))}px`;
+  treeMenu = menu;
+  menu.querySelector("button").focus();
+}
+
+document.addEventListener("mousedown", (e) => {
+  if (treeMenu && !treeMenu.contains(e.target)) closeMenu();
+});
+
+/* Delete one document from the project, after asking.
+ *
+ * The file is read first, so the question is about what is on disk now, and
+ * the deletion names that content's digest: if the file changes or is
+ * replaced while the question is open, the server leaves it alone and says
+ * so. An open document goes with it, unsaved edits and all, and the dialog
+ * says that too. */
+async function deleteDocument(id) {
+  let shown;
+  try {
+    shown = await api("GET", "/api/document", { id });
+  } catch (e) {
+    toast(`${id} could not be read, so it was not deleted. ${e.message}`, "bad");
+    try { await loadTree(); } catch (_) { /* the listing says what is there */ }
+    return;
+  }
+  const doc = state.docs.get(id);
+  const name = id.split("/").pop();
+  modal(`Delete "${name}"?`, (body) => {
+    body.append(el("p", "", "This permanently removes the file from the project."));
+    if (doc && (dirty(doc) || doc.pendingSaves)) {
+      body.append(el("p", "warning", "It is open with unsaved edits, and they are lost too."));
+    }
+  }, [
+    ["Cancel", "", (close) => close()],
+    ["Delete", "danger", async (close) => {
+      close();
+      try {
+        await api("DELETE", "/api/document", { id, digest: shown.digest });
+      } catch (e) {
+        toast(`${id} was not deleted. ${e.message}`, "bad");
+        try { await loadTree(); } catch (_) { /* as above */ }
+        return;
+      }
+      const open = state.docs.get(id);
+      if (open) dropDocument(open);
+      try { await loadTree(); } catch (_) { /* as above */ }
+      toast(`Deleted ${id}`, "good");
+    }],
+  ]);
+}
+
 /* ------------------------------------------------------------ documents */
 
-async function openDocument(id, { focusByte } = {}) {
+/* Open one document. `created` is the digest the create route reported, when
+ * this page has just created it: the document counts as newly created only if
+ * the file still holds exactly those bytes when it is read. */
+async function openDocument(id, { focusByte, created } = {}) {
   if (!state.docs.has(id)) {
     const reply = await api("GET", "/api/document", { id });
-    state.docs.set(id, Doc(reply.id, reply.text, reply.digest));
+    const lifecycle = created !== undefined && reply.digest === created ? "created" : "opened";
+    state.docs.set(id, Doc(reply.id, reply.text, reply.digest, lifecycle));
     state.order.push(id);
   }
   state.active = id;
@@ -370,22 +519,66 @@ async function openDocument(id, { focusByte } = {}) {
   code.focus();
 }
 
+/* Take one document out of the editor: its tab and its buffer. When it was
+ * the one on screen, the last remaining tab takes its place, or the empty
+ * state does. Nothing on disk is touched here. */
+function dropDocument(doc) {
+  if (state.docs.get(doc.id) !== doc) return;
+  state.docs.delete(doc.id);
+  state.order = state.order.filter((x) => x !== doc.id);
+  if (state.active === doc.id) {
+    state.active = state.order[state.order.length - 1] || null;
+    if (state.active) code.value = state.docs.get(state.active).text;
+  }
+  renderTabs(); renderTree(); render();
+}
+
+/* Discard a document this page created and nobody has saved: its file goes
+ * too, because nobody chose to keep it.
+ *
+ * A save already on its way decides first. If one lands, the document is an
+ * ordinary saved one, and discarding only drops the edits made since. The
+ * deletion names the bytes this page created, so a file that anything else
+ * has written since is kept, and the reply says so. */
+async function discardNew(doc) {
+  await doc.saveTail;
+  if (state.docs.get(doc.id) !== doc) return;
+  if (doc.lifecycle === "created") {
+    try {
+      await api("DELETE", "/api/document", { id: doc.id, digest: doc.digest });
+      toast(`Discarded ${doc.id}. Its file was removed.`);
+    } catch (e) {
+      toast(`${doc.id} was kept on disk. ${e.message}`, "warn");
+    }
+  }
+  dropDocument(doc);
+  try { await loadTree(); } catch (_) { /* the tree refreshes on the next listing */ }
+}
+
 function closeDocument(id) {
   const doc = state.docs.get(id);
   if (!doc) return;
-  const drop = () => {
-    if (state.docs.get(id) !== doc) return;
-    state.docs.delete(id);
-    state.order = state.order.filter((x) => x !== id);
-    if (state.active === id) {
-      state.active = state.order[state.order.length - 1] || null;
-      if (state.active) {
-        const next = state.docs.get(state.active);
-        code.value = next.text;
-      }
-    }
-    renderTabs(); renderTree(); render();
-  };
+  const drop = () => dropDocument(doc);
+  if (doc.lifecycle === "created") {
+    /* Whether or not it was edited: until someone saves it, a new document's
+     * file is only a placeholder, and closing it is the moment to decide. */
+    modal("Unsaved new document", (body) => {
+      body.append(el("p", "", `${id.split("/").pop()} has not been saved.`));
+      body.append(el("p", "note",
+        "Discard removes the file that was created for it. Save keeps it as an ordinary document."));
+    }, [
+      ["Cancel", "", (close) => close()],
+      ["Discard", "", (close) => { close(); return discardNew(doc); }],
+      ["Save", "primary", async (close) => {
+        close();
+        if (await save(doc)) {
+          if (!dirty(doc) && !doc.pendingSaves) drop();
+          else toast(`${id} still has unsaved changes.`, "warn");
+        }
+      }],
+    ]);
+    return;
+  }
   if (dirty(doc) || doc.pendingSaves) {
     modal("Unsaved changes", (body) => {
       body.append(el("p", "", `${id} has unsaved edits.`));
@@ -450,6 +643,9 @@ async function save(doc = current()) {
     // the next revision and must never be overwritten or marked as saved here.
     doc.saved = persisted;
     doc.digest = reply.digest;
+    // Saved on purpose: from now on it is an ordinary document, and a discard
+    // drops only edits made after this.
+    doc.lifecycle = "saved";
     if (doc.revision === revision && doc.text === submitted) {
       doc.text = persisted;
       doc.index = buildIndex(persisted);
@@ -513,14 +709,15 @@ async function reload() {
 }
 
 async function newDocument() {
+  const ending = state.files.default_extension;
   modal("New document", (body) => {
     body.append(el("p", "",
-      "A path inside the project. A name without an ending is created as " +
-      ".lcl. End it in .lcl.txt instead if it must open anywhere plain text " +
-      "does. The ending you type is kept, and existing documents keep their name."));
+      `A path inside the project. A name without an ending is created as ${ending}, ` +
+      "the default file type in Settings. Type .lcl or .lcl.txt yourself to choose " +
+      "either one: the ending you type is kept, and existing documents keep their name."));
     const input = el("input", "field");
     input.id = "new-path";
-    input.value = "untitled.lcl";
+    input.value = `untitled${ending}`;
     body.append(input);
   }, [
     ["Cancel", "", (close) => close()],
@@ -542,7 +739,7 @@ async function newDocument() {
          * final name, and the reply says what it chose. */
         const created = await api("POST", "/api/document", { id }, seed);
         await loadTree();
-        await openDocument(created.id);
+        await openDocument(created.id, { created: created.digest });
         toast(
           created.id === created.requested
             ? `Created ${created.id}`
@@ -632,8 +829,63 @@ function applySettings(settings) {
   syncScroll();
 }
 
+/* The computer's settings, as the server holds them. A page that cannot read
+ * them keeps the defaults, and Settings says they are unavailable. */
+async function loadFileSettings() {
+  try {
+    state.files = await api("GET", "/api/settings");
+  } catch (_) {
+    state.files = { available: false, default_extension: ".lcl", default_workspace: null };
+  }
+}
+
+/* What one folder path is, for the Settings dialog: said in `status`, with a
+ * button to create it when it does not exist. Creating happens only when
+ * that button, which names the exact path, is pressed. */
+async function describeFolder(path, status) {
+  if (!path) {
+    status.replaceChildren(el("span", "", "Empty: launches open the built-in folder" +
+      (state.files.builtin_default_workspace ? ` ${state.files.builtin_default_workspace}.` : ".")));
+    return true;
+  }
+  let folder;
+  try {
+    folder = await api("GET", "/api/folder", { path });
+  } catch (e) {
+    status.replaceChildren(el("span", "bad", e.message));
+    return false;
+  }
+  if (!folder.absolute) {
+    status.replaceChildren(el("span", "bad",
+      `${path} is not an absolute path. Write it from /, for example /home/you/LCL.`));
+    return false;
+  }
+  if (folder.exists && !folder.directory) {
+    status.replaceChildren(el("span", "bad", `${path} is a file, not a folder.`));
+    return false;
+  }
+  if (!folder.exists) {
+    const create = el("button", "", "Create this folder");
+    create.type = "button";
+    create.onclick = async () => {
+      try {
+        await api("POST", "/api/folder", { path });
+      } catch (e) {
+        status.replaceChildren(el("span", "bad", `Not created. ${e.message}`));
+        return;
+      }
+      status.replaceChildren(el("span", "good", `Created ${path}. Save to use it.`));
+    };
+    status.replaceChildren(el("span", "bad", `${path} does not exist. `), create);
+    return false;
+  }
+  status.replaceChildren(el("span", "good", `${path} is a folder.`));
+  return true;
+}
+
 function openSettings() {
   const now = state.settings || { ...DEFAULT_SETTINGS };
+  const files = state.files;
   modal("Settings", (body) => {
     const form = el("div", "settings");
 
@@ -671,17 +923,74 @@ function openSettings() {
     form.append(numbersLabel, numbers);
 
     form.append(el("p", "note",
-      `Saved in this browser only. Font size is ${FONT_MIN} to ${FONT_MAX} px. ` +
-      "Documents are always indented with spaces; Tab inserts four."));
+      `Appearance and Editor are saved in this browser only. Font size is ${FONT_MIN} to ` +
+      `${FONT_MAX} px. Documents are always indented with spaces; Tab inserts four.`));
+
+    /* Files: kept by the workspace for this computer, not by the browser. */
+    form.append(el("h3", "", "Files"));
+    const typeLabel = el("label", "", "Default file type");
+    typeLabel.htmlFor = "setting-file-type";
+    const type = el("select");
+    type.id = "setting-file-type";
+    for (const [value, label] of [[".lcl", "LCL (.lcl)"], [".lcl.txt", "LCL Text (.lcl.txt)"]]) {
+      const option = el("option", "", label);
+      option.value = value;
+      type.append(option);
+    }
+    type.value = files.default_extension;
+    form.append(typeLabel, type);
+
+    const whereLabel = el("label", "", "Default workspace location");
+    whereLabel.htmlFor = "setting-workspace";
+    const whereRow = el("div", "path-field");
+    const where = el("input");
+    where.id = "setting-workspace";
+    where.type = "text";
+    where.spellcheck = false;
+    where.value = files.default_workspace || "";
+    where.placeholder = files.builtin_default_workspace
+      ? `Empty: the built-in folder, ${files.builtin_default_workspace}`
+      : "Empty: the built-in folder";
+    const check = el("button", "", "Check");
+    check.type = "button";
+    whereRow.append(where, check);
+    form.append(whereLabel, whereRow);
+    const status = el("p", "note folder-status");
+    status.id = "setting-workspace-status";
+    check.onclick = () => describeFolder(where.value.trim(), status);
+    if (files.default_workspace && files.default_workspace_exists === false) {
+      status.append(el("span", "bad",
+        "This folder does not exist now, so a launch opens the built-in folder instead."));
+    }
+    form.append(status);
+    form.append(el("p", "note",
+      `Current workspace: ${files.current_workspace || (state.session && state.session.root) || ""}. ` +
+      "The default workspace is what LCL Workspace opens the next time it starts from the " +
+      "desktop menu; a folder or document opened explicitly still wins. Leave it empty for " +
+      "the built-in folder. The default file type applies only to new documents named " +
+      "without an ending."));
+    if (files.problem) form.append(el("p", "note warning", files.problem));
+    if (!files.available) {
+      type.disabled = where.disabled = check.disabled = true;
+      form.append(el("p", "note warning",
+        "These cannot be saved: this workspace has no configuration folder (HOME or " +
+        "XDG_CONFIG_HOME is not set)."));
+    }
     body.append(form);
   }, [
     ["Cancel", "", (close) => close()],
-    ["Reset to defaults", "", (close) => {
-      close();
-      applySettings({ ...DEFAULT_SETTINGS });
-      saveSettings(state.settings);
+    /* Fills in the defaults and leaves the choice to Save or Cancel: one of
+     * these sections decides what every future launch opens. */
+    ["Reset to defaults", "", () => {
+      $("#setting-theme").value = DEFAULT_SETTINGS.theme;
+      $("#setting-font-size").value = String(DEFAULT_SETTINGS.fontSize);
+      $("#setting-line-numbers").checked = DEFAULT_SETTINGS.lineNumbers;
+      if (files.available) {
+        $("#setting-file-type").value = ".lcl";
+        $("#setting-workspace").value = "";
+      }
     }],
-    ["Save", "primary", (close) => {
+    ["Save", "primary", async (close) => {
       /* A number field reports text it cannot read as "", which Number()
        * would take for 0 and clamp to the minimum. Unreadable is unreadable. */
       const typed = $("#setting-font-size").value.trim();
@@ -694,9 +1003,35 @@ function openSettings() {
         fontSize: clamped,
         lineNumbers: Boolean($("#setting-line-numbers").checked),
       });
+
+      /* The computer's settings first: a folder that is not there keeps the
+       * dialog open with the reason and, where it fits, a way to create it. */
+      const wanted = {
+        default_extension: $("#setting-file-type").value,
+        default_workspace: $("#setting-workspace").value.trim() || null,
+      };
+      const typeChanged = wanted.default_extension !== files.default_extension;
+      const whereChanged = wanted.default_workspace !== (files.default_workspace || null);
+      if (files.available && (typeChanged || whereChanged)) {
+        const status = $("#setting-workspace-status");
+        if (whereChanged && !(await describeFolder(wanted.default_workspace, status))) return;
+        try {
+          state.files = await api("PUT", "/api/settings", {}, JSON.stringify(wanted));
+        } catch (e) {
+          status.replaceChildren(el("span", "bad", `Not saved. ${e.message}`));
+          return;
+        }
+      }
+
       close();
       applySettings(next);
       if (!saveSettings(next)) toast("Settings apply now but could not be stored in this browser.", "warn");
+      if (files.available && whereChanged) {
+        toast("Default workspace updated. It will be used next time LCL Workspace is launched.", "good");
+      }
+      if (files.available && typeChanged) {
+        toast(`New documents named without an ending are now created as ${wanted.default_extension}.`, "good");
+      }
     }],
   ]);
 }
@@ -1853,6 +2188,10 @@ function scheduleAnalysis() {
   render();
   try {
     await loadSession();
+    await loadFileSettings();
+    /* How this launch chose its folder, when that is worth saying — such as
+     * a chosen default workspace that no longer exists. */
+    if (state.session.notice) toast(state.session.notice, "warn");
     await loadTree();
     /* What to show first, most specific wins. A document this launch was
      * opened for -- a desktop file association passes one -- then the

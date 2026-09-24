@@ -342,6 +342,12 @@ impl Workspace {
         Ok(document::create(self.project.root(), id, text)?)
     }
 
+    /// Delete one document, if its bytes are still the ones the caller
+    /// confirmed. See [`document::delete`] for everything this refuses.
+    pub fn delete(&self, id: &str, expected_digest: &str) -> Result<(), WorkspaceError> {
+        Ok(document::delete(self.project.root(), id, expected_digest)?)
+    }
+
     /// Whether one document exists at this instant. Creation must still use
     /// `create_document`: this observation cannot reserve a destination.
     pub fn exists(&self, id: &str) -> bool {

@@ -176,3 +176,58 @@ fn no_route_reshapes_a_report() {
         "the analysis route must return the engine's own projection"
     );
 }
+
+/// `.lcl.txt` is the same document as `.lcl` in the workspace too.
+///
+/// For every canonical valid example, the same bytes are stored under both
+/// endings. The workspace's record for the `.lcl.txt` document must equal its
+/// record for the `.lcl` one, apart from the document's own name, and must
+/// equal what the CLI reports for the `.lcl.txt` file byte for byte. A
+/// malformed document is refused identically under either ending, and a
+/// document of either ending locates the same project.
+#[test]
+fn both_endings_are_the_same_document_in_the_workspace() {
+    let (scratch, running) = serve_examples("equivalence-endings");
+    let mut documents: Vec<(String, String)> = valid_examples()
+        .into_iter()
+        .map(|name| {
+            let source = example(&name);
+            (name, source)
+        })
+        .collect();
+    documents.push((
+        "malformed.lcl".to_string(),
+        example("01_MINIMAL_TASK.lcl").replace("TASK:", "tAsK:"),
+    ));
+
+    for (name, source) in documents {
+        let text_name = format!("{name}.txt");
+        scratch.put(&name, &source);
+        scratch.put(&text_name, &source);
+        for command in ["check", "validate", "inspect"] {
+            let native = workspace(&running, command, &name, &source);
+            let text = workspace(&running, command, &text_name, &source);
+            assert_eq!(
+                native.replace(&name, "<document>"),
+                text.replace(&text_name, "<document>"),
+                "{name}: the workspace's {command} differs between .lcl and .lcl.txt"
+            );
+            assert_eq!(
+                text,
+                cli(command, &scratch.join(&text_name)),
+                "{text_name}: the workspace and the CLI disagree on {command}"
+            );
+        }
+
+        let (native_root, native_id) =
+            lcl_workspace::Workspace::locate_document(&scratch.join(&name)).expect("locates");
+        let (text_root, text_id) =
+            lcl_workspace::Workspace::locate_document(&scratch.join(&text_name)).expect("locates");
+        assert_eq!(
+            native_root, text_root,
+            "{name}: both endings open one project"
+        );
+        assert_eq!(native_id, name);
+        assert_eq!(text_id, text_name);
+    }
+}

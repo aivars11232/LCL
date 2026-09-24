@@ -265,9 +265,16 @@ Everything in this manual works with either ending:
   `lcl inspect task.lcl.txt` and `lcl run task.lcl.txt`;
 * a project's `entry`, and the `SOURCE` of an IMPORT (Chapter 14): a `.lcl`
   document may import a `.lcl.txt` one and the other way round;
-* `lcl-workspace`, which lists and opens both. New documents created in the
-  workspace are given the `.lcl.txt` ending, so they can be shared anywhere
-  plain text can.
+* `lcl-workspace`, which lists and opens both. When you create a new
+  document there, the ending you type is kept:
+
+  | You type | The document is created as |
+  |---|---|
+  | `notes` | `notes.lcl` (the native default) |
+  | `notes.lcl` | `notes.lcl` |
+  | `notes.lcl.txt` | `notes.lcl.txt` |
+
+  Saving an open document always keeps its name, whichever ending it has.
 
 The ending decides nothing about meaning. The same text gives exactly the
 same result under either name, and a mistake is reported with the same error

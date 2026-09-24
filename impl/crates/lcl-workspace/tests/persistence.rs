@@ -298,9 +298,10 @@ fn a_new_document_in_a_directory_that_does_not_exist_yet_is_still_inside() {
 // Two recognised endings
 // ---------------------------------------------------------------------------
 //
-// New documents default to `.lcl.txt`, so that a document can be shared and
-// edited anywhere plain text is. `.lcl` stays fully supported: nothing renames
-// a file, rewrites an import, or changes what a save writes.
+// `.lcl` is the native ending and the default for a new document named
+// without one; `.lcl.txt` is an optional compatibility ending, so that a
+// document can be shared and edited anywhere plain text is. Nothing renames a
+// file, rewrites an import, or changes what a save writes.
 
 #[test]
 fn the_tree_lists_both_endings_and_no_other_text_file() {
@@ -358,8 +359,8 @@ fn a_document_of_either_ending_reads_saves_and_reopens_identically() {
 
 #[test]
 fn saving_a_classic_document_never_renames_it() {
-    // The rule that makes the new default safe: creation applies it, saving
-    // does not. An open `.lcl` document stays `.lcl` for as long as it exists.
+    // Creation applies the naming default; saving does not. An open `.lcl`
+    // document stays `.lcl` for as long as it exists.
     let (scratch, workspace) = common::project_of_examples("no-rename");
     let source = common::example("01_MINIMAL_TASK.lcl");
     scratch.put("legacy.lcl", &source);

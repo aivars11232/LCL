@@ -40,10 +40,11 @@ pub const EXTENSION: &str = "lcl";
 
 /// Every file ending this product recognises, most specific first.
 ///
-/// `.lcl.txt` is the ending a newly created document is given, so that a
-/// document can be shared and edited anywhere plain text is. It is recognised
-/// in addition to `.lcl`, never instead of it, and it changes no language rule:
-/// both are read, checked and run by the same engine under the same contracts.
+/// `.lcl` is the native ending. `.lcl.txt` is an optional compatibility ending,
+/// so that a document can be shared and edited anywhere plain text is. It is
+/// recognised in addition to `.lcl`, never instead of it, and it changes no
+/// language rule: both are read, checked and run by the same engine under the
+/// same contracts.
 ///
 /// A file that merely ends in `.txt` is not an LCL document. Only the exact
 /// two-part ending is recognised.

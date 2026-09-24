@@ -244,9 +244,10 @@ impl Routes {
     /// Create one document, under the name the naming default gives it.
     ///
     /// Separate from `PUT` on purpose. Saving must write exactly the name it
-    /// was given, or opening a `.lcl` document and pressing save would rename
-    /// it; creating applies the default, which is the text form. Keeping the
-    /// two in one route would mean guessing which of them the caller meant.
+    /// was given, whichever ending it has; creating applies the naming default,
+    /// which keeps an explicitly chosen `.lcl` or `.lcl.txt` and gives a name
+    /// without either the native `.lcl`. Keeping the two in one route would
+    /// mean guessing which of them the caller meant.
     ///
     /// An existing file is never overwritten. Creation that silently replaced
     /// a document would be a data-loss path reachable by typing a name.
@@ -255,7 +256,9 @@ impl Routes {
             return Response::error(400, "a document id is required");
         };
         let id = lcl_project::default_name(requested);
-        if id.is_empty() || id == lcl_project::TEXT_SUFFIX {
+        // A bare suffix (`.lcl`, `.lcl.txt`, or an empty name given `.lcl`) has
+        // nothing in front of it, which is exactly what `is_document` refuses.
+        if !lcl_project::is_document(&id) {
             return Response::error(400, "a document needs a name");
         }
         // Preserve the early response, but do not use this observation as a

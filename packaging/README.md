@@ -106,8 +106,10 @@ lcl-workspace --document src/main.lcl --open   # open one document's project
 
 ## What a document is called
 
-New documents are created as `name.lcl.txt`, so they can be shared, opened and
-edited anywhere plain text is. Both endings are recognised everywhere: the
+`.lcl` is the native ending: a new document named without an ending is
+created as `name.lcl`. `.lcl.txt` is an optional compatibility ending for
+places that only handle plain text; a name you give with either ending is kept
+exactly as you typed it. Both endings are recognised everywhere: the
 project tree, opening, saving, checking, running and the `.lcl` file
 association. Nothing renames an existing document, and saving writes exactly
 the name it opened.

@@ -84,9 +84,9 @@ fn the_shipped_mime_package_matches_what_the_tool_reports() {
 
 /// A `.lcl.txt` document is the same document under a different name.
 ///
-/// The follow-up to post-Task-20: new documents default to `.lcl.txt` so they
-/// travel as plain text. The name must change nothing about the verdict, and
-/// ending in `.txt` must never relax validation.
+/// `.lcl.txt` is the optional compatibility ending, for documents that travel
+/// as plain text. The name must change nothing about the verdict, and ending
+/// in `.txt` must never relax validation.
 #[test]
 fn the_text_ending_neither_changes_a_verdict_nor_relaxes_validation() {
     let valid = example("01_MINIMAL_TASK.lcl");

@@ -15,23 +15,25 @@
 //!
 //! ## Two suffixes, one language
 //!
-//! `.lcl.txt` is the default for a new document so that a document can be
-//! shared, opened and edited anywhere plain text is, without anything having to
-//! know what LCL is. That is a distribution convenience and nothing more: a
-//! `.lcl.txt` file is checked, run and refused by exactly the same engine and
-//! exactly the same rules as a `.lcl` file, and ending a name in `.txt` never
-//! relaxes validation.
+//! `.lcl` is the native suffix, and the default for a new document named
+//! without one. `.lcl.txt` is an optional compatibility suffix, for places that
+//! only know how to handle plain text: a document can be shared, opened and
+//! edited anywhere plain text is, without anything having to know what LCL is.
+//! That is a distribution convenience and nothing more: a `.lcl.txt` file is
+//! checked, run and refused by exactly the same engine and exactly the same
+//! rules as a `.lcl` file, and ending a name in `.txt` never relaxes
+//! validation.
 //!
-//! `.lcl` remains fully supported. Nothing renames an existing document,
-//! rewrites an import, or changes the name a file is saved under.
+//! A suffix someone chose explicitly is kept. Nothing renames an existing
+//! document, rewrites an import, or changes the name a file is saved under.
 //!
 //! A file that merely ends in `.txt` is **not** an LCL document. Only the exact
 //! `.lcl.txt` ending is recognised, so ordinary text files stay ordinary.
 
-/// The historical suffix, still fully supported.
+/// The native suffix, and the default for a new document named without one.
 pub const SUFFIX: &str = ".lcl";
 
-/// The default suffix for a newly created document.
+/// The optional compatibility suffix, kept whenever it is chosen explicitly.
 pub const TEXT_SUFFIX: &str = ".lcl.txt";
 
 /// Every recognised document suffix, most specific first.
@@ -55,28 +57,27 @@ pub fn is_document(name: &str) -> bool {
 
 /// The name a newly created document is given.
 ///
-/// `name` keeps a recognised suffix it already has, and is given the default
-/// one when it has none. Suffixes are never stacked:
+/// `name` keeps a recognised suffix it already has, whichever of the two the
+/// person chose, and is given the native `.lcl` suffix when it has none.
+/// Suffixes are never stacked:
 ///
 /// | written | created as |
 /// | --- | --- |
-/// | `notes` | `notes.lcl.txt` |
-/// | `notes.lcl` | `notes.lcl.txt` |
+/// | `notes` | `notes.lcl` |
+/// | `notes.lcl` | `notes.lcl` |
 /// | `notes.lcl.txt` | `notes.lcl.txt` |
+/// | `notes.txt` | `notes.txt.lcl` |
 ///
-/// `notes.lcl` becomes `notes.lcl.txt` rather than staying as written because
-/// this is the *default* applied to a name being created, and the default is
-/// the text form. Opening, saving and running a `.lcl` document is untouched by
-/// this: nothing here renames a file that already exists.
+/// A plain `.txt` ending is not a recognised suffix, so `notes.txt` is given
+/// the default like any other name without one, and an ordinary text file is
+/// never taken for a document. Opening, saving and running a document is
+/// untouched by this: nothing here renames a file that already exists.
 pub fn default_name(name: &str) -> String {
     let name = name.trim();
-    if name.ends_with(TEXT_SUFFIX) {
+    if name.ends_with(TEXT_SUFFIX) || name.ends_with(SUFFIX) {
         return name.to_string();
     }
-    if let Some(stem) = name.strip_suffix(SUFFIX) {
-        return format!("{stem}{TEXT_SUFFIX}");
-    }
-    format!("{name}{TEXT_SUFFIX}")
+    format!("{name}{SUFFIX}")
 }
 
 #[cfg(test)]
@@ -112,21 +113,38 @@ mod tests {
     }
 
     #[test]
-    fn a_default_name_never_stacks_a_suffix() {
-        assert_eq!(default_name("notes"), "notes.lcl.txt");
-        assert_eq!(default_name("notes.lcl"), "notes.lcl.txt");
+    fn a_default_name_keeps_an_explicit_suffix_and_never_stacks_one() {
+        assert_eq!(default_name("notes"), "notes.lcl");
+        assert_eq!(default_name("notes.lcl"), "notes.lcl");
         assert_eq!(default_name("notes.lcl.txt"), "notes.lcl.txt");
         // Applying it twice changes nothing, which is what "never stacks"
         // means in the one case a caller is most likely to get wrong.
-        assert_eq!(default_name(&default_name("notes")), "notes.lcl.txt");
-        assert_eq!(default_name(&default_name("notes.lcl")), "notes.lcl.txt");
+        for written in ["notes", "notes.lcl", "notes.lcl.txt"] {
+            assert_eq!(
+                default_name(&default_name(written)),
+                default_name(written),
+                "{written}"
+            );
+        }
     }
 
     #[test]
     fn a_default_name_keeps_the_path_in_front_of_it() {
-        assert_eq!(default_name("src/main"), "src/main.lcl.txt");
-        assert_eq!(default_name("src/main.lcl"), "src/main.lcl.txt");
-        assert_eq!(default_name("  spaced  "), "spaced.lcl.txt");
+        assert_eq!(default_name("src/main"), "src/main.lcl");
+        assert_eq!(default_name("src/main.lcl"), "src/main.lcl");
+        assert_eq!(default_name("src/main.lcl.txt"), "src/main.lcl.txt");
+        assert_eq!(default_name("dir/task"), "dir/task.lcl");
+        assert_eq!(default_name("dir/task.lcl"), "dir/task.lcl");
+        assert_eq!(default_name("dir/task.lcl.txt"), "dir/task.lcl.txt");
+        assert_eq!(default_name("  spaced  "), "spaced.lcl");
+    }
+
+    #[test]
+    fn an_ordinary_text_name_is_not_taken_for_a_suffix() {
+        // `.txt` alone is not recognised, so it gets the native default rather
+        // than being kept as though it were an LCL ending.
+        assert_eq!(default_name("notes.txt"), "notes.txt.lcl");
+        assert!(!is_document("notes.txt"));
     }
 
     #[test]

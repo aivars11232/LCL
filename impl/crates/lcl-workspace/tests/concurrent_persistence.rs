@@ -207,20 +207,22 @@ fn authenticated_same_and_normalized_names_have_one_complete_winner() {
         &server,
         &server,
         ["same", "same"],
-        "same.lcl.txt",
+        "same.lcl",
     );
     create_pair(
         &scratch.path,
         &server,
         &server,
         ["alias", "alias.lcl"],
-        "alias.lcl.txt",
+        "alias.lcl",
     );
+    // An explicitly chosen `.lcl.txt` is its own name (it no longer shares a
+    // file with `full`), so its race is between two requests for that name.
     create_pair(
         &scratch.path,
         &server,
         &server,
-        ["full.lcl.txt", "full"],
+        ["full.lcl.txt", "full.lcl.txt"],
         "full.lcl.txt",
     );
     assert_eq!(
@@ -239,7 +241,7 @@ fn separate_workspace_processes_cannot_both_create_the_same_document() {
         &left,
         &right,
         ["shared", "shared.lcl"],
-        "shared.lcl.txt",
+        "shared.lcl",
     );
 }
 

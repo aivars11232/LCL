@@ -420,15 +420,19 @@ const SEED: &str = "LCL:\n    VERSION: \"0.1.0\"\n\nSPECIFICATION:\n    ID: exam
                     DOMAIN: \"general\"\n";
 
 #[test]
-fn a_new_document_defaults_to_the_text_ending_without_stacking_it() {
+fn a_new_document_gets_lcl_unless_an_ending_was_chosen() {
+    // `.lcl` is the native default for a name without an ending; an explicitly
+    // chosen `.lcl` or `.lcl.txt` is kept as written, and nothing is stacked.
     let (scratch, running) = serve_examples("create-default");
     scratch.put("notes.txt", "ordinary text stays ordinary\n");
     for (written, expected) in [
-        ("plain", "plain.lcl.txt"),
-        ("classic.lcl", "classic.lcl.txt"),
+        ("plain", "plain.lcl"),
+        ("classic.lcl", "classic.lcl"),
         ("modern.lcl.txt", "modern.lcl.txt"),
-        ("nested/deep.lcl", "nested/deep.lcl.txt"),
-        ("notes.txt", "notes.txt.lcl.txt"),
+        ("nested/deep", "nested/deep.lcl"),
+        ("nested/chosen.lcl", "nested/chosen.lcl"),
+        ("nested/shared.lcl.txt", "nested/shared.lcl.txt"),
+        ("notes.txt", "notes.txt.lcl"),
     ] {
         let reply = create(&running, written, SEED);
         assert_eq!(reply.status, 200, "{written}: {}", reply.body);
@@ -444,6 +448,18 @@ fn a_new_document_defaults_to_the_text_ending_without_stacking_it() {
             "{expected} is not on disk"
         );
     }
+    // No stacked or converted twin was created beside what was asked for.
+    for absent in [
+        "plain.lcl.txt",
+        "classic.lcl.txt",
+        "modern.lcl.txt.lcl",
+        "modern.lcl",
+        "nested/chosen.lcl.txt",
+        "nested/shared.lcl",
+        "notes.txt.lcl.txt",
+    ] {
+        assert!(!scratch.join(absent).exists(), "{absent} must not exist");
+    }
     assert_eq!(
         std::fs::read_to_string(scratch.join("notes.txt")).unwrap(),
         "ordinary text stays ordinary\n"
@@ -451,38 +467,63 @@ fn a_new_document_defaults_to_the_text_ending_without_stacking_it() {
 }
 
 #[test]
+fn a_name_that_is_only_a_suffix_is_refused() {
+    let (_scratch, running) = serve_examples("create-bare");
+    for written in [".lcl", ".lcl.txt", "%20%20"] {
+        let reply = create(&running, written, SEED);
+        assert_eq!(reply.status, 400, "{written:?}: {}", reply.body);
+    }
+}
+
+#[test]
 fn creating_over_an_existing_document_is_refused_rather_than_overwriting_it() {
     let (scratch, running) = serve_examples("create-conflict");
     assert_eq!(create(&running, "once", SEED).status, 200);
-    let original = std::fs::read_to_string(scratch.join("once.lcl.txt")).expect("readable");
+    let original = std::fs::read_to_string(scratch.join("once.lcl")).expect("readable");
 
     let again = create(&running, "once", "LCL:\n");
     assert_eq!(again.status, 409, "{}", again.body);
     assert_eq!(
-        std::fs::read_to_string(scratch.join("once.lcl.txt")).expect("readable"),
+        std::fs::read_to_string(scratch.join("once.lcl")).expect("readable"),
         original,
         "a refused creation must leave the document untouched"
     );
 
-    // The same document, named the other way, is the same document.
-    let by_other_name = create(&running, "once.lcl", SEED);
+    // The same document, named with its ending, is the same document.
+    let by_full_name = create(&running, "once.lcl", SEED);
     assert_eq!(
-        by_other_name.status, 409,
-        "`once.lcl` defaults to `once.lcl.txt`, which already exists: {}",
-        by_other_name.body
+        by_full_name.status, 409,
+        "`once` defaults to `once.lcl`, which already exists: {}",
+        by_full_name.body
+    );
+
+    // An explicitly chosen `.lcl.txt` is a different file name, so it does not
+    // collide with `once.lcl`, and creating it leaves `once.lcl` untouched.
+    let text_form = create(&running, "once.lcl.txt", "LCL:\n");
+    assert_eq!(text_form.status, 200, "{}", text_form.body);
+    assert!(scratch.join("once.lcl.txt").is_file());
+    assert_eq!(
+        std::fs::read_to_string(scratch.join("once.lcl")).expect("readable"),
+        original,
+        "creating once.lcl.txt must not touch once.lcl"
+    );
+    assert_eq!(
+        create(&running, "once.lcl.txt", SEED).status,
+        409,
+        "and once.lcl.txt, now existing, is refused in turn"
     );
 
     // Neither is_file precheck recognizes these occupied names. The atomic
     // publication error must still become a conflict and preserve the entry.
     let missing = scratch.join("missing.txt");
-    let link = scratch.join("link.lcl.txt");
+    let link = scratch.join("link.lcl");
     std::os::unix::fs::symlink(&missing, &link).unwrap();
     let refused = create(&running, "link", SEED);
     assert_eq!(refused.status, 409, "{}", refused.body);
     assert_eq!(std::fs::read_link(link).unwrap(), missing);
     assert!(!missing.exists());
 
-    let directory = scratch.join("occupied.lcl.txt");
+    let directory = scratch.join("occupied.lcl");
     std::fs::create_dir(&directory).unwrap();
     std::fs::write(directory.join("user.txt"), b"preserved").unwrap();
     let refused = create(&running, "occupied", SEED);
@@ -513,8 +554,29 @@ fn saving_writes_the_exact_name_it_was_given() {
     assert!(scratch.join(name).is_file());
     assert!(
         !scratch.join("01_MINIMAL_TASK.lcl.txt").exists(),
-        "a save created a second document under the default name"
+        "a save created a second document under another name"
     );
+
+    // An open `.lcl.txt` document is saved under exactly that name too.
+    let text_name = "shared.lcl.txt";
+    scratch.put(text_name, &edited);
+    let reply = send(
+        running.address,
+        "PUT",
+        &format!("/api/document?id={text_name}&t={}", running.token),
+        &[],
+        edited.as_bytes(),
+    );
+    assert_eq!(reply.status, 200, "{}", reply.body);
+    let parsed = lcl_spec::json::parse(&reply.body).expect("a reply is JSON");
+    assert_eq!(text(parsed.get("id").unwrap()), text_name);
+    assert!(scratch.join(text_name).is_file());
+    for renamed in ["shared.lcl", "shared.lcl.txt.lcl"] {
+        assert!(
+            !scratch.join(renamed).exists(),
+            "saving {text_name} created {renamed}"
+        );
+    }
 }
 
 #[test]
@@ -522,7 +584,7 @@ fn a_created_document_is_checked_and_run_like_any_other() {
     // The ending is not a way past the engine. A `.lcl.txt` document goes
     // through the same route, the same engine and the same contracts.
     let (_scratch, running) = serve_examples("create-check");
-    let created = create(&running, "fresh", SEED);
+    let created = create(&running, "fresh.lcl.txt", SEED);
     assert_eq!(created.status, 200);
 
     let checked = send(

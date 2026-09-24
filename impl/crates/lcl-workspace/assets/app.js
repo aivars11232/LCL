@@ -399,12 +399,12 @@ async function reload() {
 async function newDocument() {
   modal("New document", (body) => {
     body.append(el("p", "",
-      "A path inside the project. New documents are created as .lcl.txt, " +
-      "so they open anywhere plain text does. Existing .lcl documents keep " +
-      "their name."));
+      "A path inside the project. A name without an ending is created as " +
+      ".lcl. End it in .lcl.txt instead if it must open anywhere plain text " +
+      "does. The ending you type is kept, and existing documents keep their name."));
     const input = el("input", "field");
     input.id = "new-path";
-    input.value = "untitled.lcl.txt";
+    input.value = "untitled.lcl";
     body.append(input);
   }, [
     ["Cancel", "", (close) => close()],
@@ -420,7 +420,7 @@ async function newDocument() {
           'LCL:\n    VERSION: "0.1.0"\n\n' +
           'SPECIFICATION:\n    ID: example.new\n    NAME: "New document"\n' +
           '    VERSION: "1.0.0"\n    KIND: kind.task\n    DOMAIN: "general"\n';
-        /* Creating is its own route: it applies the .lcl.txt default and
+        /* Creating is its own route: it applies the .lcl default and
          * refuses to overwrite. Saving stays exact, so an open document is
          * never renamed under the person editing it. The server decides the
          * final name, and the reply says what it chose. */

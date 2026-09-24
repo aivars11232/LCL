@@ -24,8 +24,8 @@ document's meaning comes from its bytes and the version it declares. So:
 `linux/lcl.xml` is a shared-mime-info package defining `text/x-lcl`, with globs
 for `*.lcl` and `*.lcl.txt` and a magic rule matching a document's first bytes.
 
-`*.lcl.txt` is the ending a newly created document is given, so a document can
-be shared and edited anywhere plain text is. It is recognised **in addition to**
+`*.lcl` is the native ending. `*.lcl.txt` is an optional compatibility ending,
+so a document can be shared and edited anywhere plain text is. It is recognised **in addition to**
 `*.lcl`, never instead of it, and it changes no language rule: both are read,
 checked and run by the same engine under the same contracts, and ending a name
 in `.txt` never relaxes validation.

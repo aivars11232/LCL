@@ -258,7 +258,10 @@ Using it:
 * **Settings** (the ⚙ button at the top right) chooses the theme (System,
   Dark or Light), the editor font size (11 to 20 px) and whether line
   numbers are shown. Settings are remembered by your browser only. They never
-  change a document or how it runs.
+  change a document or how it runs. Your browser keeps them for the
+  workspace's address, and that address changes every time the workspace
+  starts unless you give it a fixed `--port` (see Chapter 17), so otherwise a
+  new start begins with the default settings.
 * Indentation is always four spaces. The Tab key inserts four spaces, never a
   tab character, which LCL does not allow.
 

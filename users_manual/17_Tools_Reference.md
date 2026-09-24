@@ -152,6 +152,10 @@ capabilities: when a run wants an effect, the workspace asks you first.
 In the page, `+` creates a document (`.lcl` unless you type `.lcl.txt`), and
 the ⚙ **Settings** button sets the theme, the editor font size and line
 numbers. These preferences are stored in your browser, not in the project.
+The browser keeps them per address, and the address includes the port: a
+workspace started again with the same `--port` finds them, and one started
+on a random port (the default, and every menu launch) begins with the
+defaults.
 
 After `install.sh`, the desktop menu has an **LCL Workspace** entry, and
 `.lcl` files can be opened with it. Menu launches write any problem to

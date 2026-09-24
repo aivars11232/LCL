@@ -110,6 +110,64 @@ function buildIndex(text) {
   };
 }
 
+/* ------------------------------------------------------- carrying spans */
+
+/* One edit between two texts, as the smallest range that changed.
+ *
+ * Bytes [from, oldTo) of `before` became bytes [from, newTo) of `after`, and
+ * the text ahead of `from` and from `oldTo` on is the same in both. `lines` is
+ * how many line feeds the edit added, negative when it removed some. Found by
+ * comparing the two texts, so it does not matter how the edit was made. */
+function editBetween(before, beforeIndex, after, afterIndex) {
+  const shorter = Math.min(before.length, after.length);
+  let head = 0;
+  while (head < shorter && before.charCodeAt(head) === after.charCodeAt(head)) head++;
+  let tail = 0;
+  while (tail < shorter - head &&
+         before.charCodeAt(before.length - 1 - tail) === after.charCodeAt(after.length - 1 - tail)) {
+    tail++;
+  }
+  /* A character outside the Basic Multilingual Plane is two UTF-16 units. A
+   * byte offset taken inside a pair is the pair's first byte, so the head is
+   * safe; a tail that starts on the second unit of a changed pair would leave
+   * that pair out of the edit, so it gives the unit back. */
+  const second = after.charCodeAt(after.length - tail);
+  if (tail > 0 && second >= 0xdc00 && second <= 0xdfff) tail--;
+  const feeds = (text, from, to) => {
+    let n = 0;
+    for (let i = from; i < to; i++) if (text.charCodeAt(i) === 10) n++;
+    return n;
+  };
+  return {
+    from: beforeIndex.byte(head),
+    oldTo: beforeIndex.byte(before.length - tail),
+    newTo: afterIndex.byte(after.length - tail),
+    lines: feeds(after, head, after.length - tail) - feeds(before, head, before.length - tail),
+  };
+}
+
+/* Carry byte spans across one edit, deciding nothing about them.
+ *
+ * A span wholly ahead of the edit stays; a span wholly after it moves with
+ * its text, and a line it names moves by the line feeds the edit added or
+ * removed; a span the edit touched is dropped, and what it covered is drawn
+ * plain until the engine describes the new text. Every span that survives
+ * still covers exactly the characters the engine described. */
+function carry(spans, edit) {
+  if (!spans) return spans;
+  const shift = edit.newTo - edit.oldTo;
+  const kept = [];
+  for (const span of spans) {
+    if (span.start < edit.from && span.end <= edit.from) kept.push(span);
+    else if (span.start >= edit.oldTo) {
+      const moved = { ...span, start: span.start + shift, end: span.end + shift };
+      if (typeof span.line === "number") moved.line = span.line + edit.lines;
+      kept.push(moved);
+    }
+  }
+  return kept;
+}
+
 /* --------------------------------------------------------------- state */
 
 const state = {
@@ -143,9 +201,14 @@ function Doc(id, text, digest) {
      * remembers the newest answer applied, and an older one is not. */
     issued: { tokens: 0, analysis: 0 },
     accepted: { tokens: 0, analysis: 0 },
-    tokens: null,        // token spans from the engine
+    tokens: null,        // token spans from the engine, carried across edits
     report: null,        // the last engine report for this document
     navigation: null,
+    /* What the editor draws from `report` and `navigation`: squiggles and
+     * reference marks, as byte spans. Kept apart from the report, which is
+     * the engine's record and is shown as it arrived, because these move with
+     * the text when it is edited (see `carry`). */
+    marks: { squiggles: [], refs: [] },
     breakpoints: new Set(),
     stepAt: null,
   };
@@ -153,6 +216,39 @@ function Doc(id, text, digest) {
 
 const current = () => (state.active ? state.docs.get(state.active) : null);
 const dirty = (doc) => doc && doc.text !== doc.saved;
+
+/* Replace a document's text, as one edit.
+ *
+ * How typing and a reload change a document: the index is rebuilt, the
+ * revision moves on, and the spans already drawn move with the text they
+ * describe instead of staying at byte offsets that now hold other characters.
+ * No answer about the old text is applied to the new one; its spans only
+ * move, and the next answer replaces them. */
+function replaceText(doc, text) {
+  const index = buildIndex(text);
+  const edit = editBetween(doc.text, doc.index, text, index);
+  doc.tokens = carry(doc.tokens, edit);
+  doc.marks = { squiggles: carry(doc.marks.squiggles, edit), refs: carry(doc.marks.refs, edit) };
+  doc.text = text;
+  doc.index = index;
+  doc.revision++;
+}
+
+/* Take the editor's marks from the report and resolver data `doc` now holds. */
+function markReport(doc) {
+  const squiggles = [];
+  for (const d of (doc.report && doc.report.diagnostics) || []) {
+    if (d.source !== doc.id) continue;
+    squiggles.push({
+      start: d.span.start, end: d.span.end, severity: severityOf(d), line: d.position.line,
+    });
+  }
+  const refs = [];
+  for (const r of (doc.navigation && doc.navigation.references) || []) {
+    if (r.source === doc.id) refs.push({ start: r.span.start, end: r.span.end });
+  }
+  doc.marks = { squiggles, refs };
+}
 
 /* ----------------------------------------------------------------- dom */
 
@@ -179,7 +275,12 @@ function toast(message, kind = "") {
   setTimeout(() => node.remove(), kind === "bad" ? 8000 : 4000);
 }
 
+/* Where focus returns when the open modal closes. */
+let modalOpener = null;
+
 function modal(title, build, actions) {
+  /* Recorded once: a modal that replaces an open one keeps the first one's. */
+  if ($("#modal-backdrop").hidden) modalOpener = document.activeElement;
   $("#modal-title").textContent = title;
   const body = $("#modal-body");
   body.replaceChildren();
@@ -192,10 +293,23 @@ function modal(title, build, actions) {
     bar.append(button);
   }
   $("#modal-backdrop").hidden = false;
+  /* The page behind takes no focus and no clicks while a modal is open, so
+   * Tab stays in the dialog and nothing reaches a document behind it. */
+  $("#shell").inert = true;
   const first = body.querySelector("input, select, textarea") || bar.querySelector("button");
   if (first) first.focus();
 }
-function closeModal() { $("#modal-backdrop").hidden = true; }
+function closeModal() {
+  if ($("#modal-backdrop").hidden) return;
+  $("#modal-backdrop").hidden = true;
+  $("#shell").inert = false;
+  /* Back to whatever opened it, if that can still take focus. */
+  const opener = modalOpener;
+  modalOpener = null;
+  if (opener && opener.isConnected && !opener.disabled && typeof opener.focus === "function") {
+    opener.focus();
+  }
+}
 
 /* -------------------------------------------------------------- project */
 
@@ -380,9 +494,7 @@ async function reload() {
       toast(`${doc.id} was edited while it reloaded; your edits are kept.`, "warn");
       return;
     }
-    doc.text = reply.text;
-    doc.revision++;
-    doc.index = buildIndex(doc.text);
+    replaceText(doc, reply.text);
     if (current() === doc) code.value = doc.text;
     renderTabs(); renderTree(); render();
     await refreshTokens();
@@ -570,7 +682,10 @@ function openSettings() {
       saveSettings(state.settings);
     }],
     ["Save", "primary", (close) => {
-      const requested = Number($("#setting-font-size").value);
+      /* A number field reports text it cannot read as "", which Number()
+       * would take for 0 and clamp to the minimum. Unreadable is unreadable. */
+      const typed = $("#setting-font-size").value.trim();
+      const requested = typed === "" ? NaN : Number(typed);
       const clamped = Math.min(FONT_MAX, Math.max(FONT_MIN,
         Number.isFinite(requested) ? Math.round(requested) : DEFAULT_SETTINGS.fontSize));
       const next = validSettings({
@@ -599,11 +714,13 @@ function render() {
     paint.replaceChildren();
     gutter.replaceChildren();
     $("#doc-state").textContent = "";
+    $("#cursor").textContent = "";
     return;
   }
   paintTokens(doc);
   renderGutter(doc);
   $("#doc-state").textContent = dirty(doc) ? "modified" : "saved";
+  updateCursor();
   syncScroll();
 }
 
@@ -685,7 +802,9 @@ const PAINT_LIMIT = 400000;
  * Three layers, all of them engine-supplied: token classes from the lexer,
  * squiggles from the diagnostics each stage emitted, and reference marks from
  * the resolver's bindings. The frontend decides none of the three; it decides
- * only which CSS class expresses each.
+ * only which CSS class expresses each. Between an edit and the engine's next
+ * answer, each layer's spans have moved with the text they describe, and the
+ * characters the edit touched are plain (see `carry`).
  *
  * Built with DOM nodes rather than innerHTML. The content is the user's
  * document, and assembling markup out of it would make every `<` in a string
@@ -714,23 +833,17 @@ function paintTokens(doc) {
     for (let b = token.start; b < token.end && b < total; b++) cls[b] = id;
   }
 
-  if (doc.report && doc.report.diagnostics) {
-    for (const d of doc.report.diagnostics) {
-      if (d.source !== doc.id) continue;
-      const id = SEVERITY.indexOf(severityOf(d));
-      if (id <= 0) continue;
-      const end = Math.max(d.span.end, d.span.start + 1);
-      for (let b = d.span.start; b < end && b < total; b++) {
-        if (squiggle[b] < id || squiggle[b] === 0) squiggle[b] = id;
-      }
+  for (const mark of doc.marks.squiggles) {
+    const id = SEVERITY.indexOf(mark.severity);
+    if (id <= 0) continue;
+    const end = Math.max(mark.end, mark.start + 1);
+    for (let b = mark.start; b < end && b < total; b++) {
+      if (squiggle[b] < id || squiggle[b] === 0) squiggle[b] = id;
     }
   }
 
-  if (doc.navigation) {
-    for (const r of doc.navigation.references) {
-      if (r.source !== doc.id) continue;
-      for (let b = r.span.start; b < r.span.end && b < total; b++) isRef[b] = 1;
-    }
+  for (const mark of doc.marks.refs) {
+    for (let b = mark.start; b < mark.end && b < total; b++) isRef[b] = 1;
   }
 
   /* Walk the bytes, cutting a new span wherever any layer changes. */
@@ -791,13 +904,11 @@ function severityOf(d) {
 
 function diagnosticLines(doc) {
   const marks = new Map();
-  if (!doc.report || !doc.report.diagnostics) return marks;
-  for (const d of doc.report.diagnostics) {
-    if (d.source !== doc.id) continue;
-    /* The engine's own derived line, not one counted here. */
-    const line = d.position.line;
-    const severity = severityOf(d) === "bad" ? "bad" : "warn";
-    if (marks.get(line) !== "bad") marks.set(line, severity);
+  for (const mark of doc.marks.squiggles) {
+    /* The engine's own derived line, not one counted here; an edit ahead of
+     * it moves it by the line feeds that edit added or removed. */
+    const severity = mark.severity === "bad" ? "bad" : "warn";
+    if (marks.get(mark.line) !== "bad") marks.set(mark.line, severity);
   }
   return marks;
 }
@@ -856,8 +967,14 @@ async function refreshTokens() {
      * and nowhere on screen. */
     if (current() === doc) render();
   } catch (_) {
-    /* A failed token request leaves the document painted as plain text,
-     * which is honest: no engine answer, no highlighting. */
+    /* No engine answer, no highlighting: a failed request about the text on
+     * screen leaves it painted as plain text. A failure about text that has
+     * since changed, or older than an answer already applied, says nothing
+     * about what is there now. */
+    if (describes(doc, revision) && generation > doc.accepted.tokens) {
+      doc.tokens = null;
+      if (current() === doc) render();
+    }
   }
 }
 
@@ -880,6 +997,7 @@ async function runAnalysis() {
     if (!accepts(doc, revision, "analysis", generation)) return;
     doc.report = report;
     doc.navigation = report.navigation || null;
+    markReport(doc);
     /* Kept separately from the report: a run replaces `report`, and stepping
      * needs the plan to turn an invocation's node index into a span. */
     if (report.structure) doc.plan = report.structure.plan;
@@ -1136,6 +1254,7 @@ async function startRun() {
   state.run = {
     id: started.run, finished: false, paused: null,
     operations: [], effects: [], report: null, document: doc.id,
+    given: doc, revision: doc.revision,   // the document and text it was given
   };
   doc.stepAt = null;
   showView("execution");
@@ -1178,7 +1297,13 @@ function follow(run) {
   source.addEventListener("report", (e) => {
     run.report = JSON.parse(e.data);
     const doc = state.docs.get(run.document);
-    if (doc) { doc.report = run.report; doc.stepAt = null; }
+    if (doc) {
+      doc.report = run.report;
+      doc.stepAt = null;
+      /* Its spans are drawn only on the text the run was given. Edited since,
+       * the marks already drawn stay: they have moved with the text. */
+      if (describes(run.given, run.revision)) markReport(doc);
+    }
     renderDiagnostics(doc || {});
     renderExecution();
     renderCompletion(run.report);
@@ -1633,12 +1758,12 @@ code.addEventListener("input", () => {
    * if anything does reach it, re-rendering the empty state discards it
    * rather than keeping text nobody can see. */
   if (!doc) { render(); return; }
-  doc.text = code.value;
-  doc.revision++;
-  doc.index = buildIndex(doc.text);
+  const wasDirty = dirty(doc);
+  replaceText(doc, code.value);
   doc.stepAt = null;
   render();
   renderTabs();
+  if (dirty(doc) !== wasDirty) renderTree();
   scheduleAnalysis();
 });
 code.addEventListener("scroll", syncScroll);
@@ -1680,6 +1805,7 @@ $("#act-check").onclick = async () => {
   if (!accepts(doc, revision, "analysis", generation)) return;
   doc.report = report;
   doc.navigation = null;
+  markReport(doc);
   if (current() !== doc) return;
   renderDiagnostics(doc); renderStructure(doc); render();
   showView("diagnostics");

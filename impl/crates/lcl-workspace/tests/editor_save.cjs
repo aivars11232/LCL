@@ -41,6 +41,9 @@ async function until(condition, label, ms = 4000) {
   assert(condition(), `${label}: not reached within ${ms}ms`);
 }
 
+/// The element that last took focus in the DOM double, as `document.activeElement`.
+let focused = null;
+
 async function bounded(promise, label) {
   let timer;
   try {
@@ -67,6 +70,7 @@ class Node {
     this.value = "";
     this.textContent = "";
     this.hidden = true;
+    this.isConnected = true;
     this.scrollTop = this.scrollLeft = this.selectionStart = this.selectionEnd = 0;
     const classes = new Set();
     this.classList = {
@@ -91,7 +95,7 @@ class Node {
     this.events.get(name).push(callback);
   }
   dispatchEvent(event) { for (const callback of this.events.get(event.type) || []) callback(event); }
-  focus() {}
+  focus() { focused = this; }
   remove() {}
   setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; }
 }
@@ -112,6 +116,7 @@ async function harness(options) {
   document.createDocumentFragment = () => new Node("fragment");
   document.body = new Node("body");
   document.documentElement = new Node("html");
+  Object.defineProperty(document, "activeElement", { get: () => focused || document.body });
   const stored = new Map();
   const puts = [];
   // Browser-local storage for workspace preferences. In real-server mode the
@@ -124,6 +129,7 @@ async function harness(options) {
   };
   let nextHold = null;
   let failListing = false;
+  let failTokens = false;
   const request = async (url, init = {}) => {
     url = new URL(url, origin);
     const method = init.method || "GET";
@@ -138,6 +144,9 @@ async function harness(options) {
     if (url.pathname === "/api/documents" && failListing) {
       failListing = false;
       reply = jsonReply({ error: "listing unavailable after persistence" }, 503);
+    } else if (url.pathname === "/api/tokens" && failTokens) {
+      failTokens = false;
+      reply = jsonReply({ error: "tokens unavailable" }, 503);
     } else if (options.server) {
       reply = await fetch(url, {
         ...init,
@@ -242,6 +251,31 @@ async function harness(options) {
       return { reached: held.reached.promise, release: () => held.release.resolve() };
     },
     failNextListing() { failListing = true; },
+    failNextTokens() { failTokens = true; },
+    /// The stylesheet as served, like `page()`.
+    async stylesheet() {
+      return options.server
+        ? await (await fetch(new URL(`/app.css?t=${token}`, origin), { signal: AbortSignal.timeout(4000) })).text()
+        : await fs.readFile(path.join(path.dirname(options.app), "app.css"), "utf8");
+    },
+    /// The painted layer as runs of text, each with the classes drawn on it.
+    paintedRuns() {
+      const runs = [];
+      const walk = node => {
+        if (node.tagName === "fragment") node.children.forEach(walk);
+        else runs.push({ cls: node.className || "", text: node.textContent || "" });
+      };
+      get("#paint").children.forEach(walk);
+      return runs;
+    },
+    /// Line numbers in the gutter that carry a diagnostic mark, as "line:kind".
+    gutterMarks() {
+      const flat = nodes => nodes.flatMap(node =>
+        node.tagName === "fragment" ? flat(node.children) : [node]);
+      return flat(get("#gutter").children).flatMap(node =>
+        ["bad", "warn"].filter(kind => node.classList.contains(`has-${kind}`))
+          .map(kind => `${node.textContent}:${kind}`));
+    },
     async add(id, text = "saved\n") {
       const reply = await request(new URL(`/api/document?id=${encodeURIComponent(id)}`, origin), { method: "PUT", body: text });
       assert(reply.ok, await reply.text());
@@ -479,7 +513,9 @@ const uiCases = [
   }],
 
   ["the font size is bounded to 11 to 20 px", async h => {
-    for (const [typed, applied] of [["99", 20], ["3", 11], ["14.6", 15], ["not a number", 13], ["", 11]]) {
+    // A browser's number field reports text it cannot read as "", so "" is the
+    // unreadable case in practice: it falls back like any other, not to 11.
+    for (const [typed, applied] of [["99", 20], ["3", 11], ["14.6", 15], ["not a number", 13], ["", 13], ["  ", 13]]) {
       h.run("openSettings()");
       h.get("#setting-theme").value = "system";
       h.get("#setting-font-size").value = typed;
@@ -525,6 +561,139 @@ const uiCases = [
     await h.add("untouched.lcl", "LCL:\n");
     assert.equal(await h.persisted("untouched.lcl"), "LCL:\n", "a preference reached the document");
     assert(!h.puts.some(p => (p.body || "").includes("fontSize")), "a preference was sent to the server");
+  }],
+
+  // -------------------------------------------------------------------------
+  // UI-03 — what a real browser showed that the cases above did not
+  // -------------------------------------------------------------------------
+  //
+  // Found by driving the workspace in headless Firefox. Scrolled to the end of
+  // a long document, the painted text sat one line below the text being typed:
+  // a <pre> has no row after a final line feed and a textarea does. And while
+  // an edit waited for the engine, the previous answer's spans were drawn at
+  // their old byte offsets, so every colour after the edit slid onto other
+  // characters. The rest are smaller: a cursor position shown with no document,
+  // a failed token request that kept old colours, a dialog that dropped focus,
+  // and a project tree that missed the first unsaved edit.
+  ["the painted layer has the row a textarea gives a final line feed", async h => {
+    // The rendering itself is checked in a browser; this keeps the rules that
+    // make it right from being dropped.
+    const css = await h.stylesheet();
+    assert.match(css, /\.paint::after\s*\{\s*content:\s*"\\A";\s*\}/, "the row after a final line feed is gone");
+    assert.match(css, /\.paint\s*\{[^}]*scrollbar-width:\s*none/, "the paint layer shows a scrollbar of its own");
+  }],
+
+  ["an edit moves the engine's colours with the text instead of leaving them behind", async h => {
+    const text = 'LCL:\n    VERSION: "0.1.0"\n';
+    await h.add("carry.lcl", text);
+    // Spans as the engine gives them: LCL, its colon, VERSION.
+    h.run(`current().tokens = [
+      { class: "keyword", start: 0, end: 3 }, { class: "symbol", start: 3, end: 4 },
+      { class: "keyword", start: 9, end: 16 }]; render()`);
+    const drawn = () => h.paintedRuns().filter(r => r.cls).map(r => `${r.cls}=${r.text}`);
+    assert.deepEqual(drawn(), ["t-keyword=LCL", "t-symbol=:", "t-keyword=VERSION"]);
+
+    // Typed ahead of every span: they all move, and what was typed is plain.
+    h.edit("XX" + text);
+    assert.deepEqual(drawn(), ["t-keyword=LCL", "t-symbol=:", "t-keyword=VERSION"],
+      "colours stayed at their old byte offsets and landed on other characters");
+    assert.equal(h.paintedRuns()[0].cls, "", "typed text was coloured before the engine saw it");
+    assert.equal(h.painted(), "XX" + text);
+
+    // Typed inside a span: that one is dropped until the engine answers.
+    h.edit("XX" + text.replace("VERSION", "VERXSION"));
+    assert.deepEqual(drawn(), ["t-keyword=LCL", "t-symbol=:"]);
+    assert.equal(h.painted(), "XX" + text.replace("VERSION", "VERXSION"));
+
+    // Deleted from the start: the rest moves back.
+    h.edit(text.replace("VERSION", "VERXSION"));
+    assert.deepEqual(drawn(), ["t-keyword=LCL", "t-symbol=:"]);
+  }],
+
+  ["an edit moves squiggles and the gutter's diagnostic lines with the text", async h => {
+    const text = 'LCL:\n    VERSION: "0.1.0"\n';
+    await h.add("marks.lcl", text);
+    h.run(`(() => {
+      const doc = current();
+      doc.tokens = [];
+      doc.report = { outcome: "rejected", reached: "grammar_or_schema", diagnostics: [{
+        id: "error.fixture", source: doc.id, span: { start: 9, end: 16 }, position: { line: 2, column: 5 },
+        stage: "grammar_or_schema", default_status: "status.invalid", meaning: "fixture", detail: null,
+        primary: true,
+      }] };
+      // Guarded so that an older page, which drew the report directly, can
+      // still be run as a control and fail on what it draws.
+      if (typeof markReport === "function") markReport(doc);
+      render();
+    })()`);
+    const squiggled = () => h.paintedRuns().filter(r => r.cls.includes("sq-bad")).map(r => r.text);
+    assert.deepEqual(squiggled(), ["VERSION"]);
+    assert.deepEqual(h.gutterMarks(), ["2:bad"]);
+
+    // Two lines added above it: the squiggle stays on VERSION, the mark on its line.
+    h.edit("\n\n" + text);
+    assert.deepEqual(squiggled(), ["VERSION"], "the squiggle stayed at its old byte offsets");
+    assert.deepEqual(h.gutterMarks(), ["4:bad"], "the diagnostic line did not move with its text");
+
+    // An edit inside it drops it until the engine looks again.
+    h.edit("\n\n" + text.replace("VERSION", "VER SION"));
+    assert.deepEqual(squiggled(), []);
+    assert.deepEqual(h.gutterMarks(), []);
+    // The report is the engine's record, and moving marks does not rewrite it.
+    assert.equal(h.run("current().report.diagnostics[0].span.start"), 9);
+  }],
+
+  ["a failed token request paints the text plain instead of keeping old colours", async h => {
+    const text = 'LCL:\n    VERSION: "0.1.0"\n';
+    await h.add("failed-tokens.lcl", text);
+    h.run(`current().tokens = [{ class: "keyword", start: 0, end: 3 }]; render()`);
+    assert(h.paintedRuns().some(r => r.cls === "t-keyword"), "the case needs colours on screen first");
+    h.failNextTokens();
+    await bounded(h.run("refreshTokens()"), "failed token request");
+    assert.equal(h.run("current().tokens"), null);
+    assert.deepEqual(h.paintedRuns(), [{ cls: "", text }], "colours from an earlier answer are still drawn");
+  }],
+
+  ["the status bar shows a cursor position only while a document is open", async h => {
+    assert.match(await h.page(), /<span id="cursor"><\/span>/, "the page ships a cursor position with no document");
+    h.run("render()");
+    assert.equal(h.get("#cursor").textContent, "");
+    await h.add("cursor.lcl", "LCL:\n");
+    assert.match(h.get("#cursor").textContent, /^1:1 /);
+    h.close("cursor.lcl");
+    assert.equal(h.get("#cursor").textContent, "", "the closed document's position is still shown");
+  }],
+
+  ["a dialog takes focus, holds the page behind it inert and gives focus back", async h => {
+    await h.add("focus.lcl", "LCL:\n");
+    const opener = () => h.run('document.activeElement === document.querySelector("#act-settings")');
+    h.get("#act-settings").focus();
+    h.run("openSettings()");
+    assert.equal(h.get("#shell").inert, true, "the page behind the dialog still takes focus and clicks");
+    assert.equal(h.run("document.activeElement.id"), "setting-theme", "Settings did not take focus");
+    h.choose("Cancel");
+    assert.equal(h.get("#shell").inert, false, "the page stayed inert after the dialog closed");
+    assert.equal(opener(), true, "focus did not return to the Settings button");
+
+    // Escape closes too, and a dialog opened over another keeps the first opener.
+    h.get("#act-settings").focus();
+    h.run("openSettings()");
+    h.run("newDocument()");
+    h.press("Escape");
+    assert.equal(h.get("#modal-backdrop").hidden, true);
+    assert.equal(h.get("#shell").inert, false);
+    assert.equal(opener(), true);
+  }],
+
+  ["the project tree marks a document unsaved from the first keystroke", async h => {
+    await h.add("tree-dot.lcl", "LCL:\n");
+    h.run('state.entries = [{ id: "tree-dot.lcl", directory: false }]; renderTree()');
+    const dotted = () => h.get("#tree").children.some(li => li.children.some(c => c.className === "dot"));
+    assert.equal(dotted(), false);
+    h.edit("LCL:\nX\n");
+    assert.equal(dotted(), true, "the tree did not show the unsaved edit");
+    h.edit("LCL:\n");
+    assert.equal(dotted(), false, "the tree kept its mark after the edit was undone");
   }],
 ];
 

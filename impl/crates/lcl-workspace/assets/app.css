@@ -165,8 +165,12 @@ button.icon { padding: 2px 8px; line-height: 1.2; font-size: 15px; }
 
 .editor { flex: 1; display: flex; min-height: 0; overflow: hidden; position: relative; }
 
+/* The gutter and the paint layer only follow the source: `syncScroll` moves
+   them to its scroll position and nothing else scrolls them. Neither shows a
+   scrollbar, so each keeps spare room past its end, or the source could scroll
+   past its own horizontal scrollbar to a place they cannot follow. */
 .gutter {
-  flex: 0 0 auto; padding: 10px 8px 10px 12px;
+  flex: 0 0 auto; padding: 10px 8px calc(10px + 48px) 12px;
   text-align: right; color: var(--ink-faint);
   font: var(--editor-font)/var(--row) var(--mono);
   background: var(--bg-sunken); border-right: 1px solid var(--line-soft);
@@ -206,7 +210,15 @@ button.icon { padding: 2px 8px; line-height: 1.2; font-size: 15px; }
   position: absolute; inset: 0;
   border: 0;
 }
-.paint { color: var(--ink); pointer-events: none; z-index: 1; }
+.paint {
+  color: var(--ink); pointer-events: none; z-index: 1;
+  scrollbar-width: none; padding-bottom: calc(10px + 48px); padding-right: calc(16px + 48px);
+}
+/* A textarea gives the line after a final line feed a row of its own, and a
+   <pre> does not. Every LCL document ends in a line feed, so without this row
+   the paint layer is one line shorter than the source, and scrolled to the end
+   its text is drawn one line below where it is typed. */
+.paint::after { content: "\A"; }
 .code {
   color: transparent; background: transparent; caret-color: var(--ink);
   resize: none; outline: none; z-index: 2;

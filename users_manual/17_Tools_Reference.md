@@ -20,7 +20,7 @@ lcl <command> [options] [document]
 | `lcl package vendor <uri> <file>` | | puts a local file into the project's package cache under a URI, for imports by URI |
 | `lcl package list` | | lists what the package cache holds |
 | `lcl spec` | | reports the specification package's path, version, identity and authority |
-| `lcl syntax` | | prints syntax facts for editors and tools: file extensions, encoding, word counts |
+| `lcl syntax` | | prints syntax facts for editors and tools: the recognised endings (`.lcl.txt`, `.lcl`), encoding, word counts |
 | `lcl version` | | prints the tool, protocol and language versions |
 | `lcl help` | | prints the built-in help |
 
@@ -46,6 +46,10 @@ in `lcl.project.json`.
 A run grants nothing unless an `--allow-*` option says so. An operation that
 needs a capability that was not granted reports `error.host.constraint`, and
 the run ends `status.blocked` (Chapter 11).
+
+Every command accepts a document ending in `.lcl` (the native ending) or
+`.lcl.txt` (the optional compatibility ending), with identical results. See
+section 2.9.
 
 ## 17.3 Exit codes
 

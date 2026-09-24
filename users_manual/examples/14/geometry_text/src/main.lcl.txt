@@ -1,0 +1,58 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: app.perimeter
+    NAME: "Perimeter of a square"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+IMPORT:
+    ID: import.shapes
+    SOURCE: PATH("shapes.lcl.txt")
+    NAMESPACE: shapes
+    VERSION: "1.0.0"
+
+INPUT:
+    ID: input.side
+    TYPE: INTEGER
+    VALUE: 5
+
+OUTPUT:
+    ID: output.perimeter
+    TYPE: INTEGER
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.perimeter
+    ASSERT: REF(output.perimeter) == 20
+
+ACTION:
+    ID: action.perimeter
+    OPERATION: core.calculate
+    TARGET: REF(input.side)
+    PARAMETER:
+        NAME: expression
+        TYPE: STRING
+        REQUIRED: TRUE
+        VALUE: "target * REF(shapes.constant.sides_of_square)"
+    OUTPUT: REF(output.perimeter)
+
+VERIFY:
+    ID: verify.perimeter
+    ASSERT: REF(output.perimeter) == 20
+
+SUCCESS:
+    ID: success.perimeter
+    ALL: [REF(verify.perimeter)]
+
+TASK:
+    ID: task.perimeter
+    GOAL: REF(goal.perimeter)
+    INPUT: REF(input.side)
+    ACTION: REF(action.perimeter)
+    OUTPUT: REF(output.perimeter)
+    SUCCESS: REF(success.perimeter)
+
+EXECUTE:
+    REFERENCE: REF(task.perimeter)

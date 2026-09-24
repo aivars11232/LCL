@@ -1,0 +1,14 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: lib.shapes
+    NAME: "Shape constants"
+    VERSION: "1.0.0"
+    KIND: kind.library
+
+DEFINE:
+    ID: constant.sides_of_square
+    KIND: kind.constant
+    TYPE: INTEGER
+    VALUE: 4

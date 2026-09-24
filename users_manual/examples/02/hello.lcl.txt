@@ -1,0 +1,41 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.hello
+    NAME: "Hello"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+OUTPUT:
+    ID: output.greeting
+    TYPE: STRING
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.greeting
+    ASSERT: REF(output.greeting) == "Hello, world!"
+
+ACTION:
+    ID: action.greet
+    OPERATION: core.return
+    TARGET: "Hello, world!"
+    OUTPUT: REF(output.greeting)
+
+VERIFY:
+    ID: verify.greeting
+    ASSERT: REF(output.greeting) == "Hello, world!"
+
+SUCCESS:
+    ID: success.greeting
+    ALL: [REF(verify.greeting)]
+
+TASK:
+    ID: task.hello
+    GOAL: REF(goal.greeting)
+    ACTION: REF(action.greet)
+    OUTPUT: REF(output.greeting)
+    SUCCESS: REF(success.greeting)
+
+EXECUTE:
+    REFERENCE: REF(task.hello)

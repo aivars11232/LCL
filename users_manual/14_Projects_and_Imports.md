@@ -118,6 +118,14 @@ the prefix, the reference does not resolve:
 error.reference.unresolved [resolution]: `REF(constant.sides_of_square)` in this fragment resolves to no declaration
 ```
 
+Either file ending works on both sides of an import (see section 2.9). The
+folder `examples/14/geometry_text/` is the same project with every document
+saved as `.lcl.txt`: its entry is `src/main.lcl.txt`, which imports
+`PATH("shapes.lcl.txt")`, and it gives exactly the same result.
+
+<!-- lcl-run: file=examples/14/geometry_text/src/main.lcl.txt expect=run:succeeded -->
+<!-- lcl-run: file=examples/14/geometry_text/src/shapes.lcl.txt expect=validate -->
+
 This is deliberate: nothing from an import mixes silently into your own
 names. The namespace rules:
 

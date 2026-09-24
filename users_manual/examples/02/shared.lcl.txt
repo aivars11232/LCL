@@ -1,0 +1,41 @@
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.shared
+    NAME: "A document saved as .lcl.txt"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+OUTPUT:
+    ID: output.note
+    TYPE: STRING
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.note
+    ASSERT: REF(output.note) == "Shared as plain text."
+
+ACTION:
+    ID: action.note
+    OPERATION: core.return
+    TARGET: "Shared as plain text."
+    OUTPUT: REF(output.note)
+
+VERIFY:
+    ID: verify.note
+    ASSERT: REF(output.note) == "Shared as plain text."
+
+SUCCESS:
+    ID: success.note
+    ALL: [REF(verify.note)]
+
+TASK:
+    ID: task.shared
+    GOAL: REF(goal.note)
+    ACTION: REF(action.note)
+    OUTPUT: REF(output.note)
+    SUCCESS: REF(success.note)
+
+EXECUTE:
+    REFERENCE: REF(task.shared)

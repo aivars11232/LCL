@@ -95,7 +95,7 @@ $ export LCL_SPEC=$PWD/canonical/LCL_Core_0.1.0
 $ python3 users_manual/tools/verify_examples.py --lcl ~/.local/bin/lcl
 ```
 
-It ends with a summary line, `92 example(s) checked, 30 fragment(s) skipped,
+It ends with a summary line, `97 example(s) checked, 30 fragment(s) skipped,
 0 failure(s)` for this edition, and exits with status 0 only when every
 example behaved as described. (Fragments are the short pieces of a document
 shown on their own, which cannot run by themselves.) Examples that use files

@@ -247,11 +247,100 @@ wants to touch files, it asks first. This manual uses the command line, since
 that shows exactly what the tool reports, but everything works in the
 workspace too. See [Chapter 17](17_Tools_Reference.md).
 
-## 2.9 File names
+## 2.9 File names: `.lcl` and `.lcl.txt`
 
-LCL documents end in `.lcl`. The tools also accept `.lcl.txt`, which some
-systems open more easily as plain text. The ending never changes the rules.
-Documents with either ending are judged the same way.
+LCL source files normally use `.lcl`. You may alternatively use `.lcl.txt`
+when a website, file-sharing service, editor, operating system or other tool
+does not recognise `.lcl`. Both contain ordinary UTF-8 text and have identical
+LCL meaning.
+
+| Ending | Status |
+|---|---|
+| `.lcl` | the native, default LCL extension |
+| `.lcl.txt` | an optional compatibility extension |
+
+Everything in this manual works with either ending:
+
+* every command: `lcl check task.lcl.txt`, `lcl validate task.lcl.txt`,
+  `lcl inspect task.lcl.txt` and `lcl run task.lcl.txt`;
+* a project's `entry`, and the `SOURCE` of an IMPORT (Chapter 14): a `.lcl`
+  document may import a `.lcl.txt` one and the other way round;
+* `lcl-workspace`, which lists and opens both. New documents created in the
+  workspace are given the `.lcl.txt` ending, so they can be shared anywhere
+  plain text can.
+
+The ending decides nothing about meaning. The same text gives exactly the
+same result under either name, and a mistake is reported with the same error
+under either name: ending a file in `.txt` never relaxes a check. Only the
+exact two-part ending `.lcl.txt` is recognised as LCL, so an ordinary text
+file such as `notes.txt` is not treated as an LCL document. Upper-case endings
+such as `.LCL` are not recognised either.
+
+You never need to rename existing files. To try it, save a copy of
+`hello.lcl` as `hello.lcl.txt` and run it:
+
+<!-- lcl-run: file=examples/02/hello.lcl.txt expect=run:succeeded -->
+<!-- lcl-run: file=examples/02/hello.lcl.txt expect=check -->
+
+```
+$ cp hello.lcl hello.lcl.txt
+$ lcl run hello.lcl.txt
+status.succeeded
+  VERIFY verify.greeting = TRUE (required)
+  SUCCESS success.greeting ALL = TRUE
+  OUTPUT output.greeting published = "Hello, world!"
+  because: SuccessSatisfied
+  2 invocation(s), 0 event(s), 3 step(s)
+```
+
+This small document was written directly as a `.lcl.txt` file:
+
+<!-- lcl: file=examples/02/shared.lcl.txt expect=run:succeeded -->
+```lcl
+LCL:
+    VERSION: "0.1.0"
+
+SPECIFICATION:
+    ID: course.shared
+    NAME: "A document saved as .lcl.txt"
+    VERSION: "1.0.0"
+    KIND: kind.task
+
+OUTPUT:
+    ID: output.note
+    TYPE: STRING
+    FORMAT: format.plain_text
+
+GOAL:
+    ID: goal.note
+    ASSERT: REF(output.note) == "Shared as plain text."
+
+ACTION:
+    ID: action.note
+    OPERATION: core.return
+    TARGET: "Shared as plain text."
+    OUTPUT: REF(output.note)
+
+VERIFY:
+    ID: verify.note
+    ASSERT: REF(output.note) == "Shared as plain text."
+
+SUCCESS:
+    ID: success.note
+    ALL: [REF(verify.note)]
+
+TASK:
+    ID: task.shared
+    GOAL: REF(goal.note)
+    ACTION: REF(action.note)
+    OUTPUT: REF(output.note)
+    SUCCESS: REF(success.note)
+
+EXECUTE:
+    REFERENCE: REF(task.shared)
+```
+
+The rest of this manual uses `.lcl`, the native ending.
 
 ## Summary
 
@@ -263,6 +352,8 @@ Documents with either ending are judged the same way.
   `run` does the work, and `inspect` shows the plan.
 * Exit code 1 means the document is wrong. Exit code 2 means the work did not
   succeed.
+* `.lcl` is the native ending. `.lcl.txt` is an optional compatibility ending
+  with exactly the same meaning.
 
 ## Exercises
 

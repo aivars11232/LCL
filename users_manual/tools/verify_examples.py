@@ -231,8 +231,11 @@ def main():
                 else:
                     print(f"ok    {label}: {fields.get('expect')}")
 
-    for document in sorted(MANUAL.rglob("*.lcl")):
-        if document.resolve() not in referenced and "seed" not in document.parts:
+    # The same recognition rule as the LCL tools: `.lcl` or `.lcl.txt`, and
+    # never an ordinary `.txt` file.
+    sources = [p for p in MANUAL.rglob("*") if p.is_file() and p.name.endswith((".lcl", ".lcl.txt"))]
+    for document in sorted(sources):
+        if document.resolve() not in referenced and "seed" not in "/".join(document.parts):
             print(f"FAIL  {document.relative_to(MANUAL)}: not shown in or checked by any page")
             failures += 1
 

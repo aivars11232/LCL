@@ -18,13 +18,14 @@
       <span class="where" id="project-root">opening…</span>
     </div>
     <div class="actions">
-      <button id="act-check" class="run" title="Steps 1 to 5. No effect can occur.">Check</button>
-      <button id="act-inspect" class="run" title="Steps 1 to 9, reported structurally. No effect can occur.">Inspect</button>
-      <button id="act-run" class="run primary" title="Steps 1 to 13.">Run</button>
-      <button id="act-save" title="Write this document to disk.">Save</button>
-      <button id="act-reload" title="Discard edits and re-read from disk.">Reload</button>
+      <button id="act-check" class="run" title="Steps 1 to 5. No effect can occur." disabled>Check</button>
+      <button id="act-inspect" class="run" title="Steps 1 to 9, reported structurally. No effect can occur." disabled>Inspect</button>
+      <button id="act-run" class="run primary" title="Steps 1 to 13." disabled>Run</button>
+      <button id="act-save" title="Write this document to disk." disabled>Save</button>
+      <button id="act-reload" title="Discard edits and re-read from disk." disabled>Reload</button>
     </div>
     <div class="spec" id="spec-identity" title="The specification package every result here was produced against."></div>
+    <button id="act-settings" class="icon" title="Settings" aria-label="Settings">⚙</button>
   </header>
 
   <nav id="sidebar">
@@ -43,7 +44,11 @@
         <pre id="paint" class="paint" aria-hidden="true"></pre>
         <textarea id="code" class="code" spellcheck="false" autocapitalize="off"
                   autocomplete="off" autocorrect="off" wrap="off"
-                  aria-label="LCL source"></textarea>
+                  aria-label="LCL source" disabled></textarea>
+      </div>
+      <div id="empty-state" class="empty-editor">
+        <p class="title">No document open</p>
+        <p>Create a new LCL document with + or select one from the project.</p>
       </div>
     </div>
     <div id="statusbar" class="statusbar">

@@ -55,7 +55,14 @@ class Node {
     this.tagName = tag;
     this.children = [];
     this.events = new Map();
-    this.style = {};
+    // Custom properties as the CSSOM exposes them; the production script sets
+    // the editor's font size and row height through setProperty.
+    const properties = new Map();
+    this.style = {
+      setProperty: (name, value) => properties.set(name, String(value)),
+      getPropertyValue: name => properties.get(name) || "",
+      removeProperty: name => properties.delete(name),
+    };
     this.dataset = {};
     this.value = "";
     this.textContent = "";
@@ -66,6 +73,7 @@ class Node {
       add: (...items) => items.forEach(item => classes.add(item)),
       remove: (...items) => items.forEach(item => classes.delete(item)),
       toggle: (item, on) => on ? classes.add(item) : classes.delete(item),
+      contains: item => classes.has(item),
     };
   }
   append(...children) { this.children.push(...children); }
@@ -106,6 +114,14 @@ async function harness(options) {
   document.documentElement = new Node("html");
   const stored = new Map();
   const puts = [];
+  // Browser-local storage for workspace preferences. In real-server mode the
+  // server never sees it either: these settings are presentation only.
+  const local = new Map();
+  const localStorage = {
+    getItem: key => (local.has(key) ? local.get(key) : null),
+    setItem: (key, value) => { local.set(key, String(value)); },
+    removeItem: key => { local.delete(key); },
+  };
   let nextHold = null;
   let failListing = false;
   const request = async (url, init = {}) => {
@@ -179,7 +195,7 @@ async function harness(options) {
     return reply;
   };
   const context = vm.createContext({
-    document, location: { origin, search: `?t=${token}` }, fetch: request,
+    document, location: { origin, search: `?t=${token}` }, fetch: request, localStorage,
     URL, URLSearchParams, Event, TextEncoder,
     getComputedStyle: () => ({ getPropertyValue: () => "20" }),
     // Analysis/toast timers are controlled; no production function is replaced.
@@ -192,7 +208,28 @@ async function harness(options) {
   assert(!document.body.children.length, document.body.children.map(node => node.textContent).join("\n") || "frontend boot failed");
   const run = code => vm.runInContext(code, context, { timeout: 3000 });
   return {
-    sourceHash: hash(source), puts, get, run,
+    sourceHash: hash(source), puts, get, run, local,
+    /// The page as served: the real server's in real-server mode, the file
+    /// the server embeds otherwise.
+    async page() {
+      return options.server
+        ? await (await fetch(new URL(`/?t=${token}`, origin), { signal: AbortSignal.timeout(4000) })).text()
+        : await fs.readFile(path.join(path.dirname(options.app), "index.html"), "utf8");
+    },
+    /// Everything painted on the visible layer, as text.
+    painted() {
+      const collect = node => (node.children.length
+        ? node.children.map(collect).join("")
+        : node.textContent || "");
+      return collect(get("#paint"));
+    },
+    /// The line numbers shown. A fragment's children are inserted in its
+    /// place, as the DOM does; this double keeps the fragment, so flatten it.
+    gutterLines() {
+      const flat = nodes => nodes.flatMap(node =>
+        node.tagName === "fragment" ? flat(node.children) : [node]);
+      return flat(get("#gutter").children).map(node => node.textContent);
+    },
     /// Hold one matching request until the case releases it.
     ///
     /// `path` and `skip` exist because one production call can make several
@@ -295,6 +332,9 @@ async function harness(options) {
     reset() {
       assert.equal(nextHold, null, "a test leaked a pending held response");
       run("state.docs.clear(); state.order=[]; state.active=null; code.value=''; closeModal();");
+      local.clear();
+      // Guarded so the suite can also be pointed at an older page as a control.
+      run('if (typeof applySettings === "function") applySettings({ ...DEFAULT_SETTINGS })');
       puts.length = 0;
       get("#toasts").replaceChildren();
     },
@@ -319,7 +359,177 @@ const VALID_DOCUMENT = [
   "",
 ].join("\n");
 
+
+/// Document-dependent controls, as `syncDocumentUI` leaves them.
+function uiState(h) {
+  const actions = ["#act-check", "#act-inspect", "#act-run", "#act-save", "#act-reload"];
+  return {
+    editable: h.get("#code").disabled === false,
+    empty: h.get("#empty-state").hidden === false,
+    disabled: actions.filter(a => h.get(a).disabled === true),
+  };
+}
+const ALL_ACTIONS = ["#act-check", "#act-inspect", "#act-run", "#act-save", "#act-reload"];
+
+const uiCases = [
+  // -------------------------------------------------------------------------
+  // UI-02 — the empty workspace, the visible editor and Settings
+  // -------------------------------------------------------------------------
+  //
+  // The observed defect: with no document open, the source textarea (which is
+  // transparent, so that the engine-painted layer underneath is what is seen)
+  // stayed editable, and typing produced text nobody could see. This case is
+  // first so that it sees the page exactly as it booted over an empty project.
+  ["an empty workspace boots with no editable editor and no document actions", async h => {
+    assert.equal(h.active(), null, "an empty project opened a document");
+    assert.deepEqual(uiState(h), { editable: false, empty: true, disabled: ALL_ACTIONS });
+    assert.notEqual(h.get("#act-new").disabled, true, "+ New document must stay available");
+    // Anything that reaches the textarea anyway is discarded, not kept unseen.
+    h.edit("typed into nothing");
+    assert.equal(h.get("#code").value, "", "invisible text accumulated with no document");
+    assert.equal(h.run("state.docs.size"), 0);
+  }],
+
+  ["the page ships with the editor and document actions disabled before any script runs", async h => {
+    const page = await h.page();
+    assert.match(page, /<textarea id="code"[^>]*\sdisabled>/, "the textarea is not disabled in the markup");
+    for (const id of ["act-check", "act-inspect", "act-run", "act-save", "act-reload"]) {
+      assert.match(page, new RegExp(`<button id="${id}"[^>]*\\sdisabled>`), `${id} is not disabled in the markup`);
+    }
+    assert.match(page, /<button id="act-new"[^>]*>\+<\/button>/, "+ must be present and enabled");
+    assert.match(page, /<button id="act-settings"[^>]*title="Settings"/, "the Settings button is missing");
+    assert.match(page, /No document open/, "the empty-state message is missing");
+  }],
+
+  ["opening a document makes the editor editable and its text visible with line numbers", async h => {
+    const text = 'LCL:\n    VERSION: "0.1.0"\n';
+    await h.add("visible.lcl", text);
+    assert.deepEqual(uiState(h), { editable: true, empty: false, disabled: [] });
+    assert.equal(h.painted(), text, "the painted layer does not show the document");
+    assert.deepEqual(h.gutterLines(), ["1", "2", "3"]);
+
+    // Typing repaints at once, before any analysis answers.
+    h.edit(text + "A\nB\n");
+    assert.equal(h.painted(), text + "A\nB\n", "typed text is not visible");
+    assert.deepEqual(h.gutterLines(), ["1", "2", "3", "4", "5"], "new lines did not get numbers");
+
+    h.edit("LCL:\n");
+    assert.deepEqual(h.gutterLines(), ["1", "2"], "removed lines kept their numbers");
+
+    // An empty open document still has line 1.
+    h.edit("");
+    assert.deepEqual(h.gutterLines(), ["1"]);
+    assert.equal(h.painted(), "");
+  }],
+
+  ["without tokens the document is painted as plain text, never left invisible", async h => {
+    const text = 'LCL:\n    VERSION: "0.1.0"\n';
+    await h.add("plain.lcl.txt", text);
+    h.run("current().tokens = null; render()");
+    assert.equal(h.painted(), text, "no tokens left the text unpainted");
+    // Tokens from an older revision cover fewer bytes than the new text: every
+    // byte of the new text must still be painted.
+    h.edit(text + "SPECIFICATION:\n");
+    assert.equal(h.painted(), text + "SPECIFICATION:\n");
+  }],
+
+  ["closing the final tab returns to the empty state", async h => {
+    await h.add("last.lcl", "LCL:\n");
+    await bounded(h.run("runAnalysis()"), "analysis of the last document");
+    assert.notEqual(h.diagnosticsText(), "Nothing checked yet.", "the case needs a report on screen first");
+    assert.equal(uiState(h).editable, true);
+    h.close("last.lcl");
+    assert.equal(h.active(), null);
+    assert.deepEqual(uiState(h), { editable: false, empty: true, disabled: ALL_ACTIONS });
+    assert.equal(h.get("#code").value, "", "the closed document's text stayed in the textarea");
+    assert.deepEqual(h.gutterLines(), [], "line numbers stayed after the last tab closed");
+    assert.equal(h.painted(), "");
+    assert.equal(h.diagnosticsText(), "Nothing checked yet.",
+      "the diagnostics of the closed document are still shown");
+  }],
+
+  ["Settings offers the three themes and saves font size and line numbers", async h => {
+    h.run("openSettings()");
+    const find = (node, tag) => node.tagName === tag ? node
+      : node.children.map(child => find(child, tag)).find(Boolean) || null;
+    const select = find(h.get("#modal-body"), "select");
+    assert(select, "the Settings modal has no theme choice");
+    assert.deepEqual(select.children.map(o => o.value), ["system", "dark", "light"]);
+    assert.equal(select.value, "system", "System is the default theme");
+
+    h.get("#setting-theme").value = "light";
+    h.get("#setting-font-size").value = "17";
+    h.get("#setting-line-numbers").checked = false;
+    h.choose("Save");
+    assert.equal(h.run("document.documentElement.dataset.theme"), "light");
+    assert.equal(h.run('document.documentElement.style.getPropertyValue("--editor-font")'), "17px");
+    assert.equal(h.run('document.documentElement.style.getPropertyValue("--row")'), "26px");
+    assert.equal(h.run('document.documentElement.classList.contains("no-gutter")'), true);
+    const stored = JSON.parse(h.local.get("lcl.workspace.settings"));
+    assert.deepEqual(stored, { version: 1, theme: "light", fontSize: 17, lineNumbers: false });
+
+    // Line numbers back on, System theme: the override is removed again.
+    h.run("openSettings()");
+    h.get("#setting-theme").value = "system";
+    h.get("#setting-font-size").value = "17";
+    h.get("#setting-line-numbers").checked = true;
+    h.choose("Save");
+    assert.equal(h.run("document.documentElement.dataset.theme"), undefined);
+    assert.equal(h.run('document.documentElement.classList.contains("no-gutter")'), false);
+  }],
+
+  ["the font size is bounded to 11 to 20 px", async h => {
+    for (const [typed, applied] of [["99", 20], ["3", 11], ["14.6", 15], ["not a number", 13], ["", 11]]) {
+      h.run("openSettings()");
+      h.get("#setting-theme").value = "system";
+      h.get("#setting-font-size").value = typed;
+      h.get("#setting-line-numbers").checked = true;
+      h.choose("Save");
+      assert.equal(h.run("state.settings.fontSize"), applied, `typed ${JSON.stringify(typed)}`);
+    }
+  }],
+
+  ["stored preferences are restored, and invalid ones fall back to defaults", async h => {
+    const restore = raw => {
+      if (raw === null) h.local.delete("lcl.workspace.settings");
+      else h.local.set("lcl.workspace.settings", raw);
+      h.run("applySettings(loadSettings())");
+      return JSON.parse(h.run("JSON.stringify(state.settings)"));
+    };
+    const defaults = { version: 1, theme: "system", fontSize: 13, lineNumbers: true };
+
+    assert.deepEqual(restore(JSON.stringify({ version: 1, theme: "dark", fontSize: 15, lineNumbers: false })),
+      { version: 1, theme: "dark", fontSize: 15, lineNumbers: false });
+    assert.equal(h.run("document.documentElement.dataset.theme"), "dark");
+    assert.equal(h.run('document.documentElement.style.getPropertyValue("--editor-font")'), "15px");
+    assert.equal(h.run('document.documentElement.classList.contains("no-gutter")'), true);
+
+    assert.deepEqual(restore(null), defaults, "nothing stored");
+    assert.deepEqual(restore("{not json"), defaults, "corrupt JSON");
+    assert.deepEqual(restore(JSON.stringify({ version: 99, theme: "dark", fontSize: 15 })), defaults,
+      "another version");
+    // Field by field: a bad field falls back alone, good ones are kept.
+    assert.deepEqual(restore(JSON.stringify({ version: 1, theme: "neon", fontSize: 40, lineNumbers: "yes" })),
+      defaults);
+    assert.deepEqual(restore(JSON.stringify({ version: 1, theme: "light", fontSize: 12.5, lineNumbers: true })),
+      { ...defaults, theme: "light" });
+    assert.equal(h.run('document.documentElement.classList.contains("no-gutter")'), false);
+  }],
+
+  ["preferences never reach the engine or the project", async h => {
+    h.run("openSettings()");
+    h.get("#setting-theme").value = "dark";
+    h.get("#setting-font-size").value = "18";
+    h.get("#setting-line-numbers").checked = false;
+    h.choose("Save");
+    await h.add("untouched.lcl", "LCL:\n");
+    assert.equal(await h.persisted("untouched.lcl"), "LCL:\n", "a preference reached the document");
+    assert(!h.puts.some(p => (p.body || "").includes("fontSize")), "a preference was sent to the server");
+  }],
+];
+
 const cases = [
+  ...uiCases,
   ["failed close-save retains document, edits and dirty state", async h => {
     await h.add("failed.lcl.txt"); h.edit("unsaved\rtext");
     h.close("failed.lcl.txt"); await bounded(h.choose("Save"), "failed close save");

@@ -124,6 +124,7 @@ const state = {
   inputs: [],
   breakOnEffects: true,   // ask before every effect, which is the safe default
   breakOnOperations: false,
+  settings: null,         // workspace preferences; see `applySettings`
 };
 
 function Doc(id, text, digest) {
@@ -166,6 +167,11 @@ const el = (tag, cls, text) => {
 const code = $("#code");
 const paint = $("#paint");
 const gutter = $("#gutter");
+const emptyState = $("#empty-state");
+
+/* Every control that acts on the open document. With no document they are
+ * disabled together, by `syncDocumentUI`, and by nothing else. */
+const DOCUMENT_ACTIONS = ["#act-check", "#act-inspect", "#act-run", "#act-save", "#act-reload"];
 
 function toast(message, kind = "") {
   const node = el("div", `toast ${kind}`, message);
@@ -186,7 +192,7 @@ function modal(title, build, actions) {
     bar.append(button);
   }
   $("#modal-backdrop").hidden = false;
-  const first = body.querySelector("input, textarea") || bar.querySelector("button");
+  const first = body.querySelector("input, select, textarea") || bar.querySelector("button");
   if (first) first.focus();
 }
 function closeModal() { $("#modal-backdrop").hidden = true; }
@@ -262,8 +268,6 @@ function closeDocument(id) {
       if (state.active) {
         const next = state.docs.get(state.active);
         code.value = next.text;
-      } else {
-        code.value = "";
       }
     }
     renderTabs(); renderTree(); render();
@@ -440,6 +444,148 @@ async function newDocument() {
   ]);
 }
 
+/* ------------------------------------------------------------- settings */
+
+/* Workspace preferences.
+ *
+ * Presentation only, and kept in this browser's local storage. They never
+ * enter a document, a project manifest or a request to the engine, so no
+ * setting here can change what a document means or how it runs.
+ *
+ * The stored object carries a version, so a later release can migrate it.
+ * Anything unreadable, from another version, or out of range falls back to
+ * the default for that field rather than failing the page. */
+const SETTINGS_KEY = "lcl.workspace.settings";
+const SETTINGS_VERSION = 1;
+const THEMES = ["system", "dark", "light"];
+const FONT_MIN = 11;
+const FONT_MAX = 20;
+const DEFAULT_SETTINGS = Object.freeze({
+  version: SETTINGS_VERSION, theme: "system", fontSize: 13, lineNumbers: true,
+});
+
+function storage() {
+  /* Absent, or refused by the browser's privacy settings: either way the
+   * page works with defaults and simply remembers nothing. */
+  try { return globalThis.localStorage || null; } catch (_) { return null; }
+}
+
+function validSettings(raw) {
+  const s = { ...DEFAULT_SETTINGS };
+  if (!raw || typeof raw !== "object" || raw.version !== SETTINGS_VERSION) return s;
+  if (THEMES.includes(raw.theme)) s.theme = raw.theme;
+  if (Number.isInteger(raw.fontSize) && raw.fontSize >= FONT_MIN && raw.fontSize <= FONT_MAX) {
+    s.fontSize = raw.fontSize;
+  }
+  if (typeof raw.lineNumbers === "boolean") s.lineNumbers = raw.lineNumbers;
+  return s;
+}
+
+function loadSettings() {
+  const store = storage();
+  if (!store) return { ...DEFAULT_SETTINGS };
+  try {
+    const text = store.getItem(SETTINGS_KEY);
+    return validSettings(text ? JSON.parse(text) : null);
+  } catch (_) {
+    return { ...DEFAULT_SETTINGS };
+  }
+}
+
+function saveSettings(settings) {
+  const store = storage();
+  if (!store) return false;
+  try {
+    store.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/* Apply preferences to the page.
+ *
+ * Theme narrows `color-scheme` through `data-theme` ("system" removes it and
+ * the operating system decides). Font size sets the editor's type size and its
+ * row height together, which the source, the paint layer and the gutter all
+ * read, so their lines stay aligned at every size. */
+function applySettings(settings) {
+  state.settings = settings;
+  const root = document.documentElement;
+  if (settings.theme === "system") delete root.dataset.theme;
+  else root.dataset.theme = settings.theme;
+  root.style.setProperty("--editor-font", `${settings.fontSize}px`);
+  root.style.setProperty("--row", `${Math.round(settings.fontSize * 20 / 13)}px`);
+  root.classList.toggle("no-gutter", !settings.lineNumbers);
+  syncScroll();
+}
+
+function openSettings() {
+  const now = state.settings || { ...DEFAULT_SETTINGS };
+  modal("Settings", (body) => {
+    const form = el("div", "settings");
+
+    form.append(el("h3", "", "Appearance"));
+    const themeLabel = el("label", "", "Theme");
+    themeLabel.htmlFor = "setting-theme";
+    const theme = el("select");
+    theme.id = "setting-theme";
+    for (const [value, label] of [["system", "System"], ["dark", "Dark"], ["light", "Light"]]) {
+      const option = el("option", "", label);
+      option.value = value;
+      theme.append(option);
+    }
+    theme.value = now.theme;
+    form.append(themeLabel, theme);
+
+    form.append(el("h3", "", "Editor"));
+    const sizeLabel = el("label", "", "Font size (px)");
+    sizeLabel.htmlFor = "setting-font-size";
+    const size = el("input");
+    size.id = "setting-font-size";
+    size.type = "number";
+    size.min = String(FONT_MIN);
+    size.max = String(FONT_MAX);
+    size.step = "1";
+    size.value = String(now.fontSize);
+    form.append(sizeLabel, size);
+
+    const numbersLabel = el("label", "", "Show line numbers");
+    numbersLabel.htmlFor = "setting-line-numbers";
+    const numbers = el("input");
+    numbers.id = "setting-line-numbers";
+    numbers.type = "checkbox";
+    numbers.checked = now.lineNumbers;
+    form.append(numbersLabel, numbers);
+
+    form.append(el("p", "note",
+      `Saved in this browser only. Font size is ${FONT_MIN} to ${FONT_MAX} px. ` +
+      "Documents are always indented with spaces; Tab inserts four."));
+    body.append(form);
+  }, [
+    ["Cancel", "", (close) => close()],
+    ["Reset to defaults", "", (close) => {
+      close();
+      applySettings({ ...DEFAULT_SETTINGS });
+      saveSettings(state.settings);
+    }],
+    ["Save", "primary", (close) => {
+      const requested = Number($("#setting-font-size").value);
+      const clamped = Math.min(FONT_MAX, Math.max(FONT_MIN,
+        Number.isFinite(requested) ? Math.round(requested) : DEFAULT_SETTINGS.fontSize));
+      const next = validSettings({
+        version: SETTINGS_VERSION,
+        theme: $("#setting-theme").value,
+        fontSize: clamped,
+        lineNumbers: Boolean($("#setting-line-numbers").checked),
+      });
+      close();
+      applySettings(next);
+      if (!saveSettings(next)) toast("Settings apply now but could not be stored in this browser.", "warn");
+    }],
+  ]);
+}
+
 /* --------------------------------------------------------------- render */
 
 /* Paint the document.
@@ -448,6 +594,7 @@ async function newDocument() {
  * document has tokens, it renders as plain text rather than as a guess. */
 function render() {
   const doc = current();
+  syncDocumentUI(doc);
   if (!doc) {
     paint.replaceChildren();
     gutter.replaceChildren();
@@ -458,6 +605,29 @@ function render() {
   renderGutter(doc);
   $("#doc-state").textContent = dirty(doc) ? "modified" : "saved";
   syncScroll();
+}
+
+/* The one transition between "no document" and "a document is open".
+ *
+ * The source textarea is transparent by design: what is seen is the paint
+ * layer under it. With no document there is nothing to paint, so an editable
+ * textarea would take keystrokes and show none of them. With no document it
+ * is therefore disabled and emptied, the empty-state panel says why, and every
+ * action that needs a document is disabled with it. Called from `render`,
+ * which every open, close, edit, save and reload already goes through. */
+function syncDocumentUI(doc) {
+  const open = Boolean(doc);
+  code.disabled = !open;
+  if (!open && code.value !== "") code.value = "";
+  emptyState.hidden = open;
+  for (const selector of DOCUMENT_ACTIONS) $(selector).disabled = !open;
+  /* A report describes one document. With none open, the analysis panels go
+   * back to their empty state instead of describing a closed tab. */
+  if (!open) {
+    view("diagnostics").replaceChildren(el("div", "empty", "Nothing checked yet."));
+    view("structure").replaceChildren(el("div", "empty",
+      "Run Inspect to see imports, declarations and the execution plan."));
+  }
 }
 
 function renderGutter(doc) {
@@ -1459,7 +1629,10 @@ function renderCapabilities() {
 
 code.addEventListener("input", () => {
   const doc = current();
-  if (!doc) return;
+  /* The textarea is disabled with no document, so this should not happen;
+   * if anything does reach it, re-rendering the empty state discards it
+   * rather than keeping text nobody can see. */
+  if (!doc) { render(); return; }
   doc.text = code.value;
   doc.revision++;
   doc.index = buildIndex(doc.text);
@@ -1516,6 +1689,7 @@ $("#act-run").onclick = startRun;
 $("#act-save").onclick = () => save();
 $("#act-reload").onclick = reload;
 $("#act-new").onclick = newDocument;
+$("#act-settings").onclick = openSettings;
 
 function showView(name) {
   for (const t of document.querySelectorAll(".tabstrip .tab")) {
@@ -1547,6 +1721,10 @@ function scheduleAnalysis() {
 /* ----------------------------------------------------------------- boot */
 
 (async function boot() {
+  /* Preferences and the empty state come first, before any request, so the
+   * page never shows an editable editor with nothing in it. */
+  applySettings(loadSettings());
+  render();
   try {
     await loadSession();
     await loadTree();

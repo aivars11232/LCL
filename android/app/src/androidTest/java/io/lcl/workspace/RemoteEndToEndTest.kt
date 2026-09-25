@@ -4,7 +4,6 @@ import android.app.Activity
 import android.app.Instrumentation
 import android.content.Intent
 import android.graphics.Bitmap
-import android.net.Uri
 import android.os.Build
 import android.security.keystore.KeyInfo
 import android.util.Log
@@ -188,14 +187,18 @@ class RemoteEndToEndTest {
         val fingerprint = arg("fp")
         waitFor("pair_new")
         shot("p1_01_home_unpaired")
-        // The link arrives from outside the app, as from the phone's camera app.
-        // It only fills the form in: nothing is trusted until Pair is pressed.
-        instrumentation.targetContext.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        waitFor("pair_preview")
+        val labelBefore = label()
+        val pcsBefore = pairedPcs()
+        // The link the PC printed, pasted on the Pair screen. (No other app can
+        // hand the app a link; see IncomingIntentsTest.) It only fills the form
+        // in: nothing is trusted, recorded or connected until Pair is pressed.
+        pairWith(link)
         Thread.sleep(2_000)
         val shown = "Fingerprint " + fingerprint.chunked(4).take(8).joinToString(" ")
         rule.onNode(hasText(shown, substring = true), useUnmergedTree = true).assertExists()
-        assertTrue("an outside link paired without the person", deviceKeys().isEmpty())
+        assertTrue("a pasted link paired without the person", deviceKeys().isEmpty())
+        assertEquals("a pasted link recorded a PC before Pair", pcsBefore, pairedPcs())
+        assertEquals("a pasted link connected before Pair", labelBefore, label())
         shot("p1_02_pair_confirm")
         rule.onNodeWithTag("pair_button").performClick()
         waitForLabel("Connected")
@@ -432,7 +435,7 @@ class RemoteEndToEndTest {
 
     /**
      * Phase 8: the app's own QR scanner. A scanned code only fills the form in,
-     * exactly as a pasted or outside link does: no key is made, no PC is
+     * exactly as a pasted link does: no key is made, no PC is
      * recorded and nothing connects until Pair is pressed — and then it pairs,
      * which also proves the one-time code was still unused. (No camera is
      * used; see [scan].)

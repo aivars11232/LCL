@@ -146,6 +146,13 @@ log "installed; app data cleared"
 # refused, never shown or sent repaired; a UTF-8 one is shown exactly.
 phase LocalDocumentScreenTest#a_file_that_is_not_utf8_is_refused_and_never_shown_or_sent
 phase LocalDocumentScreenTest#a_utf8_file_is_shown_exactly_and_can_be_checked
+# What other apps can hand the app: never a pairing link, whether as a link a
+# camera app or a browser opens or sent to the app by name; .lcl and .lcl.txt
+# documents still open it, and a plain .txt file does not.
+phase IncomingIntentsTest#no_activity_of_the_app_takes_a_pairing_link
+phase IncomingIntentsTest#a_pairing_link_sent_to_the_app_by_name_fills_nothing_in
+phase IncomingIntentsTest#lcl_documents_from_other_apps_still_open_the_app_and_plain_txt_does_not
+phase IncomingIntentsTest#an_lcl_or_lcl_txt_file_linked_from_another_app_opens_exactly
 
 serve
 "$remote" identity --json >"$out/identity.json"
@@ -153,7 +160,8 @@ serve
 link=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["link"])' "$out/pair.json")
 fingerprint=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["fingerprint"])' "$out/pair.json")
 
-# 1. Pair, edit, save, check, inspect, run with approvals.
+# 1. Pair (the link pasted on the Pair screen), edit, save, check, inspect,
+# run with approvals.
 phase p1_pair_and_work -e link "'$link'" -e fp "$fingerprint" -e workdir "$todo"
 check "the phone's edit is on disk" grep -q 'to-do list (phone)"' "$project/todo.lcl"
 check "the run created todo_backup.txt" test -f "$todo/todo_backup.txt"

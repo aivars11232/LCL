@@ -32,13 +32,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- A pairing link, from a QR code read by any camera app. -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="lclpair" android:host="pair" />
-            </intent-filter>
+            <!-- No filter takes pairing links (lclpair://). A link carries a
+                 one-time code that pairs whoever uses it first, and any app
+                 can claim a custom scheme; so the code is read only by the
+                 app's own scanner, or pasted on the Pair screen. -->
 
             <!-- LCL documents: exactly .lcl and .lcl.txt. An ordinary .txt
                  file is not claimed. -->

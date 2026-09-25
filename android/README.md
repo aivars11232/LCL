@@ -167,14 +167,26 @@ Pairing is done once per phone and PC.
 1. On the PC: **LCL Workspace → Settings → Android devices → Pair Android
    device**, or `lcl-remote pair` in a terminal. A QR code appears, with the
    PC's fingerprint.
-2. On the phone: **LCL → Pair a PC → Scan QR code**. (Or paste the link the PC
-   printed; or scan with the phone's camera app, which opens LCL.)
-3. The phone shows the PC's name and fingerprint and asks. Compare the
-   fingerprint with the one on the PC's screen, then press **Pair**.
+2. On the phone, open **LCL**.
+3. Choose **Pair a PC**.
+4. Choose **Scan QR code** and scan the PC's QR code.
+5. The phone shows the PC's name and fingerprint. Check that the fingerprint
+   is the one on the PC's screen.
+6. Press **Pair**.
 
-A code read by the app's own scanner, and a link that arrives from outside
-the app — the camera app, a web page, a message — only fill the form in. No
-key is made, nothing is recorded and nothing connects until you press Pair.
+Scan with LCL's own **Scan QR code**, not with the phone's camera app or
+another scanner app. The QR code holds an `lclpair://` link with a one-time
+code, and the code pairs whoever uses it first; any app can claim that link
+scheme, so LCL takes no pairing link from another app. A camera app, a web
+page or a message cannot open LCL's pairing, and a link another app sends to
+LCL is ignored.
+
+Advanced, instead of scanning: paste the link `lcl-remote pair` prints into
+the text field on **Pair a PC**. Treat the link like the QR code: it pairs
+whoever uses it first, until it is used or expires.
+
+A scanned code and a pasted link only fill the form in. No key is made,
+nothing is recorded and nothing connects until you press Pair.
 
 The QR code carries: the link format version, the PC's id and name, the
 SHA-256 fingerprint of the PC's certificate, the addresses to try, a one-time
@@ -363,6 +375,11 @@ What is **not implemented**:
 - **One-time bootstrap.** A pairing code is 32 random bytes, stored by the PC
   only as a hash, good once and for minutes, consumed under a file lock. A
   replayed or expired code pairs nothing.
+- **The code goes only into LCL's own form.** An unused code, with a new key,
+  is all the PC asks of a device that pairs. So the app takes no pairing link
+  from another app: no intent filter handles `lclpair://` and none is
+  BROWSABLE, and a link sent to the app's activity by name is ignored. Only
+  the app's own scanner, or the person pasting a link, fills the Pair form in.
 - **Fail closed.** A malformed first message, an unsupported protocol version,
   an unknown or revoked device, a device naming another device's id, an
   unreadable trust store: one error, then the connection closes. Before a
@@ -398,14 +415,19 @@ What is **not implemented**:
   (pairing, restart without QR, backoff, offline, network change, a moved PC,
   an impostor at the old address, Disconnect, Forget, revocation, several PCs)
   and the workspace controller (answers applied only to the revision they
-  describe, save conflicts, PC edits, runs, approvals, reconnect). The
+  describe, save conflicts, PC edits, runs, approvals, reconnect), and the
+  manifest (no filter takes `lclpair://` links and none is BROWSABLE; the
+  launcher and the `.lcl` / `.lcl.txt` document filter are kept). The
   connection tests use a real certificate and key, made by the JDK's `keytool`
   when the tests run.
 - **End to end on a device** (`tools/e2e.sh`): the app on an emulator (or a
   phone) against a real `lcl-remote serve` with its own XDG directories, real
   Android Keystore and TLS, and the real engine. It opens a local file that is
-  not UTF-8 (refused) and one that is (shown exactly); pairs from a link
-  delivered like a camera scan, edits, saves, checks, validates, inspects and
+  not UTF-8 (refused) and one that is (shown exactly); checks against the
+  installed app that no activity takes a pairing link, that one sent to the
+  app by name fills nothing in, and that `.lcl` and `.lcl.txt` files linked
+  from another app still open (a plain `.txt` does not); pairs from the link
+  pasted on the Pair screen, edits, saves, checks, validates, inspects and
   runs with approvals, and checks each result on the PC's disk; then restarts
   the app, reboots the phone, cuts the network, restarts the PC service, edits
   on the PC (including a real conflict), revokes, re-pairs and forgets; and
@@ -429,6 +451,13 @@ What is **not implemented**:
 - Tested on an emulator (Android 16, x86_64). Not yet tested on a physical
   phone, with a physical camera scanning a QR code, on a phone on a separate
   LAN, or over the Internet or mobile data.
+- A pairing QR code scanned with another app is read by that app. LCL takes
+  no `lclpair://` links, but another installed app can claim the scheme, and
+  a camera or scanner app that opens links can then pass it the whole link,
+  one-time code included; whoever uses an unused code first pairs. What
+  guards against it is how the code is used: scan only with **Scan QR code**
+  in LCL; a code works once and expires within minutes (5 by default); and
+  the PC lists every paired device, to revoke one you do not know.
 - A save's precondition sees every change made to the file before the PC
   compares, and two devices cannot both save over one revision; but another
   program on the PC that replaces the file in the instant between the
@@ -453,6 +482,6 @@ What is **not implemented**:
 | *Could not reach the PC at …* | The service is not running (`lcl-remote status`), the firewall blocks TCP 47300, or the phone is on another network with no route to the PC. |
 | *The computer at … is not the PC this device paired with* | Another machine answers at that address, or the PC's identity was reset (`uninstall.sh --purge`). Pair again only if you know why. |
 | *Not trusted — This PC revoked this device* | Revoked on the PC. Pair again with a new QR code. |
-| *This pairing code was already used* / *has expired* | Show a new QR code. |
+| *This pairing code was already used* / *has expired* | Show a new QR code. If a code you did not use was already used, look at the PC's device list and revoke any device you do not know. |
 | *Offline — no network* | The phone has no network at all; it connects as soon as it has one. |
 | A document shows *changed on the PC* | Someone saved it on the PC while you had unsaved edits; choose Use PC version or Keep mine. |

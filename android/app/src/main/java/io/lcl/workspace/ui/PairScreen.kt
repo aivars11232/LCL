@@ -38,8 +38,8 @@ import kotlinx.coroutines.launch
 
 /** Pair with a PC from the one-time QR code it shows. */
 @Composable
-fun PairScreen(container: AppContainer, initialLink: String?, onPaired: () -> Unit, onBack: () -> Unit) {
-    var link by remember { mutableStateOf(initialLink ?: "") }
+fun PairScreen(container: AppContainer, onPaired: () -> Unit, onBack: () -> Unit) {
+    var link by remember { mutableStateOf("") }
     var deviceName by remember { mutableStateOf(Build.MODEL ?: "Android device") }
     var working by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
@@ -69,8 +69,8 @@ fun PairScreen(container: AppContainer, initialLink: String?, onPaired: () -> Un
             link = it.trim()
         }
     }
-    // A link from outside the app (a web page, another app, the system camera)
-    // or from the scanner only fills the form in. Trusting a PC is always this
+    // Only the scanner and the person's own paste fill the form in; no other
+    // app can hand it a link (see LclRoot). Trusting a PC is always this
     // person's decision, made here, with the PC's name and fingerprint in front
     // of them.
     val preview = remember(link) { runCatching { PairingLink.parse(link) }.getOrNull() }

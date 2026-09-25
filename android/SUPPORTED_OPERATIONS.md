@@ -13,7 +13,7 @@ code the desktop workspace uses.
 
 | Operation | App | Remote operation | Notes |
 |---|---|---|---|
-| Pair with a PC by QR code | ✅ | `hello` intent `pair` | In-app scanner, the camera app (`lclpair://` link), or a pasted link. Each only fills the form in; nothing is trusted, and nothing connects, until Pair is pressed. |
+| Pair with a PC by QR code | ✅ | `hello` intent `pair` | The app's own scanner (**Pair a PC → Scan QR code**), or a link pasted on that screen. Each only fills the form in; nothing is trusted, and nothing connects, until Pair is pressed. By design, no pairing link is taken from another app — the camera app, a browser, a message: the link's one-time code pairs whoever uses it first. |
 | Reconnect without a QR code | ✅ | `hello` intent `connect` | On every app start, after network loss or change, after a PC restart. |
 | Several paired PCs | ✅ | — | One active connection at a time; switch on the PCs screen. |
 | Disconnect | ✅ | (closes the socket) | Pairing kept. |

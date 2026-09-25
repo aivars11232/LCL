@@ -31,14 +31,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.lcl.workspace.AppContainer
 import io.lcl.workspace.connection.ConnectionState
-import io.lcl.workspace.remote.PairingLink
 import io.lcl.workspace.workspace.LclNames
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 
 sealed interface Screen {
     data object Home : Screen
-    data class Pair(val link: String? = null) : Screen
+    data object Pair : Screen
     data object Workspace : Screen
     data object Settings : Screen
     data object About : Screen
@@ -59,12 +58,13 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
         val opened = intent ?: return@LaunchedEffect
         incoming.value = null
         val data = opened.data ?: return@LaunchedEffect
-        when {
-            data.scheme == PairingLink.SCHEME -> screen = Screen.Pair(data.toString())
-            opened.action == Intent.ACTION_VIEW -> {
-                val name = data.lastPathSegment?.substringAfterLast('/') ?: ""
-                if (LclNames.isDocument(name) || data.scheme == "content") screen = Screen.LocalDocument(data)
-            }
+        // Other apps can hand the app a document, never a pairing link: that
+        // carries a one-time code, which only the app's own scanner reads (or
+        // the person pastes on the Pair screen). The launcher activity is
+        // exported, so an app can still name it; a link sent so is ignored.
+        if (opened.action == Intent.ACTION_VIEW) {
+            val name = data.lastPathSegment?.substringAfterLast('/') ?: ""
+            if (LclNames.isDocument(name) || data.scheme == "content") screen = Screen.LocalDocument(data)
         }
     }
     LaunchedEffect(Unit) {
@@ -83,14 +83,13 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
                         Screen.Home -> HomeScreen(
                             container = container,
                             state = connection,
-                            onPair = { screen = Screen.Pair() },
+                            onPair = { screen = Screen.Pair },
                             onOpenWorkspace = { screen = Screen.Workspace },
                             onSettings = { screen = Screen.Settings },
                             onAbout = { screen = Screen.About },
                         )
-                        is Screen.Pair -> PairScreen(
+                        Screen.Pair -> PairScreen(
                             container = container,
-                            initialLink = current.link,
                             onPaired = { screen = Screen.Workspace },
                             onBack = back,
                         )

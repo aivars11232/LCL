@@ -169,6 +169,12 @@ The ⚙ **Settings** button sets two kinds of setting:
 None of them is ever written into a document or a project file, and none
 changes what a document means or how it runs.
 
+Settings also has **Android devices** when `lcl-remote` is installed beside
+`lcl-workspace` or on `PATH`: a pairing QR code for LCL for Android, the paired
+devices with whether each is online and when it last connected, and **Revoke**.
+Those are kept by `lcl-remote` itself, not by the workspace; see
+`remote/README.md` in the source.
+
 After `install.sh`, the desktop menu has an **LCL Workspace** entry, and
 `.lcl` files can be opened with it. A menu launch opens the default workspace
 location chosen in Settings, or `~/.local/share/lcl/workspace` when none is

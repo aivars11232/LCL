@@ -976,6 +976,7 @@ function openSettings() {
         "These cannot be saved: this workspace has no configuration folder (HOME or " +
         "XDG_CONFIG_HOME is not set)."));
     }
+    androidDevices(form);
     body.append(form);
   }, [
     ["Cancel", "", (close) => close()],
@@ -1034,6 +1035,149 @@ function openSettings() {
       }
     }],
   ]);
+}
+
+/* ------------------------------------------------------- android devices */
+
+/* LCL for Android pairs with this PC through `lcl-remote`, which keeps its own
+ * identity and list of trusted devices. This section only shows what it
+ * reports and asks it to pair or revoke; it changes nothing that is saved. */
+function androidDevices(form) {
+  form.append(el("h3", "", "Android devices"));
+  const box = el("div", "remote");
+  box.id = "remote-devices";
+  const status = el("p", "note", "Looking for lcl-remote…");
+  const list = el("div", "remote-list");
+  const pair = el("button", "", "Pair Android device");
+  pair.type = "button";
+  pair.id = "remote-pair";
+  pair.hidden = true;
+  const code = el("div", "remote-code");
+  box.append(status, list, pair, code);
+  form.append(box);
+
+  let devices = [];
+  let timer = null;
+  const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+  /* Closed, or replaced by another dialog: nothing more to show or poll. */
+  const showing = () => box.isConnected && !$("#modal-backdrop").hidden;
+  const when = (seconds) => seconds ? new Date(seconds * 1000).toLocaleString() : "never";
+
+  async function refresh() {
+    if (!showing()) { stop(); return null; }
+    let reply;
+    try {
+      reply = await api("GET", "/api/remote/devices");
+    } catch (e) {
+      status.replaceChildren(el("span", "bad", `Android devices are unavailable: ${e.message}`));
+      return null;
+    }
+    if (reply.installed === false) {
+      status.replaceChildren("LCL for Android pairs with this PC through lcl-remote, which is not installed here.");
+      return null;
+    }
+    status.replaceChildren(reply.service_running
+      ? el("span", "good", "The Android service is running; paired devices can connect.")
+      : el("span", "bad",
+        "The Android service is not running, so paired devices cannot connect. Start it with " +
+        "`lcl-remote serve`, or `systemctl --user start lcl-remote`."));
+    devices = reply.devices || [];
+    list.replaceChildren();
+    if (devices.length === 0) list.append(el("p", "note", "No Android device is paired."));
+    for (const d of devices) {
+      const row = el("div", "remote-device");
+      row.dataset.id = d.id;
+      const state = d.revoked_at ? `revoked ${when(d.revoked_at)}` : (d.online ? "online" : "offline");
+      row.append(
+        el("span", "remote-name", d.name),
+        el("span", d.revoked_at ? "bad" : (d.online ? "good" : "note"), state),
+        el("span", "note", `last connected ${when(d.last_seen)} · paired ${when(d.paired_at)}`),
+      );
+      if (!d.revoked_at) {
+        const revoke = el("button", "", "Revoke");
+        revoke.type = "button";
+        /* Two steps: revoking ends the device's trust until it pairs again. */
+        revoke.onclick = async () => {
+          if (revoke.dataset.confirm !== "1") {
+            revoke.dataset.confirm = "1";
+            revoke.textContent = "Revoke — click again to confirm";
+            setTimeout(() => { revoke.dataset.confirm = ""; revoke.textContent = "Revoke"; }, 5000);
+            return;
+          }
+          revoke.disabled = true;
+          try {
+            await api("POST", "/api/remote/revoke", { id: d.id });
+            code.replaceChildren(); // an earlier "is paired" would now be wrong
+            toast(`${d.name} is revoked. It is disconnected and must pair again with a new QR code.`, "good");
+          } catch (e) {
+            toast(`Not revoked. ${e.message}`, "bad");
+          }
+          refresh();
+        };
+        row.append(revoke);
+      }
+      list.append(row);
+    }
+    pair.hidden = false;
+    return reply;
+  }
+
+  pair.onclick = async () => {
+    pair.disabled = true;
+    stop();
+    let issued;
+    try {
+      issued = await api("POST", "/api/remote/pair");
+    } catch (e) {
+      code.replaceChildren(el("p", "note warning", `No pairing code: ${e.message}`));
+      pair.disabled = false;
+      return;
+    }
+    const known = new Set(devices.map((d) => d.id));
+    /* An image, not markup: nothing lcl-remote printed becomes part of the page. */
+    const qr = el("img", "qr");
+    qr.alt = "Pairing QR code";
+    qr.src = "data:image/svg+xml;base64," + btoa(issued.svg);
+    const fingerprint = (issued.fingerprint.match(/.{4}/g) || []).slice(0, 8).join(" ");
+    const left = el("p", "note");
+    const link = el("input");
+    link.id = "remote-link";
+    link.type = "text";
+    link.readOnly = true;
+    link.value = issued.link;
+    const linkLabel = el("label", "note", "Or paste this link into the app:");
+    linkLabel.htmlFor = "remote-link";
+    code.replaceChildren(
+      qr,
+      el("p", "", "On the phone: LCL → Pair a PC → Scan QR code. The phone shows this fingerprint before it pairs:"),
+      el("p", "mono", `${fingerprint} …`),
+      el("p", "note", `The code works once. Addresses in it: ${issued.addresses.join(", ")}.`),
+      left,
+      linkLabel,
+      link,
+    );
+    const tick = async () => {
+      const seconds = Math.round(issued.expires - Date.now() / 1000);
+      const reply = await refresh();
+      const fresh = reply && devices.find((d) => !known.has(d.id));
+      if (fresh) {
+        stop();
+        code.replaceChildren(el("p", "good", `${fresh.name} is paired. It reconnects by itself from now on.`));
+        pair.disabled = false;
+      } else if (seconds <= 0) {
+        stop();
+        code.replaceChildren(el("p", "note", "The code expired. Pair Android device makes a new one."));
+        pair.disabled = false;
+      } else {
+        left.textContent = `Waiting for the phone… the code expires in ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}.`;
+      }
+    };
+    timer = setInterval(tick, 2000);
+    tick();
+  };
+
+  /* After the dialog is on screen: this runs while it is still being built. */
+  Promise.resolve().then(refresh);
 }
 
 /* --------------------------------------------------------------- render */

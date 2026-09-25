@@ -176,6 +176,15 @@ impl Session {
         }
     }
 
+    /// Every event from `from` onward, as the log holds them now, without
+    /// waiting. For a reader that polls several things at once — a remote
+    /// session multiplexing runs, file changes and its own socket — where
+    /// [`Session::events_from`]'s wait would hold everything else up.
+    pub fn events_since(&self, from: usize) -> Vec<(String, String)> {
+        let log = self.log.lock().unwrap_or_else(|e| e.into_inner());
+        log.get(from..).map(<[_]>::to_vec).unwrap_or_default()
+    }
+
     pub fn finish(&self) {
         {
             let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());

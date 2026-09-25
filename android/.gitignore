@@ -1,0 +1,15 @@
+# Build outputs and machine-local files. The release process records every
+# untracked file that is not ignored as source, so these must stay listed.
+/build/
+/app/build/
+/.gradle/
+/.kotlin/
+/local.properties
+
+# Signing identities never belong in the repository: release signing reads
+# the keystore and its passwords from outside it (see README.md).
+*.jks
+*.keystore
+*.p12
+*.pk8
+keystore.properties

@@ -41,6 +41,9 @@ language authority, and nothing in the implementation reads them:
   to it.
 - `apps/` holds example LCL projects, and `packaging/` holds the installer and
   release scripts.
+- `android/` is LCL for Android, a native app that works on a paired PC's
+  projects through that PC's engine, and `remote/` is `lcl-remote`, the PC
+  service it pairs with. See `android/README.md`.
 - `releases/` holds built artifacts. Candidates under `releases/candidates/` are
   evidence of the source state recorded in each one's provenance, not of the
   current tree.

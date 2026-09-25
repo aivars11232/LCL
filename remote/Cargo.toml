@@ -1,0 +1,36 @@
+# The LCL remote companion service: the PC side of the Android app.
+#
+# A Cargo workspace of its own, on purpose. The LCL toolchain in `impl/` is
+# built on `std` alone, with no external crate anywhere in its graph and a
+# Rust 1.75 floor its release gate checks. A remote-control service needs real
+# cryptography — TLS 1.3 and ECDSA — and that is not something to write by
+# hand, so this crate takes audited implementations (`rustls` on `ring`) and a
+# QR encoder, and keeps them here, where they cannot enter the engine's graph.
+#
+# It depends on the engine crates by path and changes none of them: every
+# document, check, inspection and run goes through `lcl-workspace`'s own
+# routes, in process, exactly as the browser workspace uses them.
+[package]
+name = "lcl-remote"
+version = "0.1.0"
+edition = "2021"
+# `std::fs::File::lock`, used to serialise the device and pairing registries
+# between the service and the command line.
+rust-version = "1.89"
+publish = false
+description = "The PC side of LCL for Android: pairing, trusted devices and an authenticated, encrypted remote session over the same engine the CLI and the workspace use."
+
+[[bin]]
+name = "lcl-remote"
+path = "src/main.rs"
+
+[dependencies]
+lcl-workspace = { path = "../impl/crates/lcl-workspace" }
+lcl-protocol = { path = "../impl/crates/lcl-protocol" }
+lcl-project = { path = "../impl/crates/lcl-project" }
+lcl-spec = { path = "../impl/crates/lcl-spec" }
+rustls = { version = "0.23.42", default-features = false, features = ["ring", "std"] }
+ring = "0.17.14"
+qrcode = { version = "0.14", default-features = false }
+
+[workspace]

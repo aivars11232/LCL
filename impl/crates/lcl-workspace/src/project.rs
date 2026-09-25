@@ -337,6 +337,22 @@ impl Workspace {
         Ok(document::write(self.project.root(), id, text)?)
     }
 
+    /// Save one document only if its file still holds the revision whose
+    /// SHA-256 is `expected`. See [`document::write_expecting`].
+    pub fn save_expecting(
+        &self,
+        id: &str,
+        text: &str,
+        expected: &str,
+    ) -> Result<Document, WorkspaceError> {
+        Ok(document::write_expecting(
+            self.project.root(),
+            id,
+            text,
+            expected,
+        )?)
+    }
+
     /// Atomically create a document without replacing an occupied destination.
     pub fn create_document(&self, id: &str, text: &str) -> Result<Document, WorkspaceError> {
         Ok(document::create(self.project.root(), id, text)?)

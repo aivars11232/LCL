@@ -153,6 +153,17 @@ async function harness(options) {
     builtin_default_workspace: null, current_workspace: "/fixture",
   });
   const isDocumentName = name => [".lcl.txt", ".lcl"].some(s => name.length > s.length && name.endsWith(s));
+  // Android devices as the stand-in lcl-remote reports them (editor_save.rs
+  // writes the same behaviour as a script for real-server mode): Phone A is
+  // paired; a pairing code brings Phone B; revoking aa11 revokes Phone A.
+  const remote = { paired: false, revoked: false };
+  const remoteDevices = () => ({
+    service_running: true,
+    devices: [
+      { id: "aa11", name: "Phone A", fingerprint: "a", paired_at: 1790000000, last_seen: 1790000100, revoked_at: remote.revoked ? 1790000300 : null, online: false },
+      ...(remote.paired ? [{ id: "bb22", name: "Phone B", fingerprint: "b", paired_at: 1790000200, last_seen: 1790000200, revoked_at: null, online: true }] : []),
+    ],
+  });
   const request = async (url, init = {}) => {
     url = new URL(url, origin);
     const method = init.method || "GET";
@@ -203,6 +214,18 @@ async function harness(options) {
         stored.delete(id);
         reply = jsonReply({ id, deleted: true });
       }
+    } else if (url.pathname === "/api/remote/devices") {
+      reply = jsonReply(remoteDevices());
+    } else if (url.pathname === "/api/remote/pair" && method === "POST") {
+      remote.paired = true;
+      reply = jsonReply({
+        link: "lclpair://pair?v=1&c=fixture", svg: '<svg xmlns="http://www.w3.org/2000/svg"/>',
+        expires: Math.floor(Date.now() / 1000) + 300, addresses: ["192.0.2.1:47300"],
+        pc: "Fixture PC", fingerprint: "0123456789abcdef".repeat(4),
+      });
+    } else if (url.pathname === "/api/remote/revoke" && method === "POST") {
+      if (id === "aa11") { remote.revoked = true; reply = jsonReply({ revoked: id, message: "revoked Phone A (aa11)" }); }
+      else reply = jsonReply({ error: `no paired device has the id ${id}` }, 502);
     } else if (url.pathname === "/api/settings" && method === "GET") {
       reply = settingsReply();
     } else if (url.pathname === "/api/settings" && method === "PUT") {
@@ -276,7 +299,7 @@ async function harness(options) {
     URL, URLSearchParams, Event, TextEncoder,
     getComputedStyle: () => ({ getPropertyValue: () => "20" }),
     // Analysis/toast timers are controlled; no production function is replaced.
-    setTimeout: () => 1, clearTimeout: () => {}, console,
+    setTimeout: () => 1, clearTimeout: () => {}, setInterval: () => 1, clearInterval: () => {}, btoa, console,
   });
   const source = options.server
     ? await (await fetch(new URL(`/app.js?t=${token}`, origin), { signal: AbortSignal.timeout(4000) })).text()
@@ -627,6 +650,36 @@ const uiCases = [
     h.choose("Save");
     assert.equal(h.run("document.documentElement.dataset.theme"), undefined);
     assert.equal(h.run('document.documentElement.classList.contains("no-gutter")'), false);
+  }],
+
+  ["Settings → Android devices: the list, a QR code shown as an image, and revoking in two steps", async h => {
+    h.run("openSettings()");
+    const box = h.get("#remote-devices");
+    const words = node => [node.textContent || ""].concat(node.children.flatMap(words)).join(" ").replace(/\s+/g, " ").trim();
+    const find = (node, test) => test(node) ? node : node.children.map(child => find(child, test)).find(Boolean) || null;
+    await until(() => words(box).includes("Phone A"), "the paired devices are listed");
+    assert(words(box).includes("The Android service is running"), words(box));
+    assert(words(box).includes("offline"), words(box));
+
+    // Revoking ends a device's trust, so it takes two clicks.
+    const revoke = () => find(box, node => node.tagName === "button" && /^Revoke/.test(node.textContent));
+    revoke().onclick();
+    assert.equal(revoke().textContent, "Revoke — click again to confirm");
+    assert(!words(box).includes("revoked"), "one click revoked the device");
+    await bounded(revoke().onclick(), "the revocation");
+    await until(() => words(box).includes("revoked"), "the device shows as revoked");
+    assert.equal(revoke(), null, "a revoked device still offers Revoke");
+
+    // A pairing code: the QR code is an image, never markup put into the page,
+    // with the fingerprint the phone shows before it pairs.
+    await bounded(h.get("#remote-pair").onclick(), "a pairing code");
+    const qr = find(box, node => node.tagName === "img");
+    assert(qr && qr.src.startsWith("data:image/svg+xml;base64,"), "the QR code is not a data image");
+    assert(words(box).includes("0123 4567 89ab cdef 0123 4567 89ab cdef …"), words(box));
+    const link = find(box, node => node.tagName === "input");
+    assert(link.value.startsWith("lclpair://pair?"), link.value);
+    await until(() => words(box).includes("Phone B is paired"), "the new device is noticed");
+    h.choose("Cancel");
   }],
 
   ["the font size is bounded to 11 to 20 px", async h => {

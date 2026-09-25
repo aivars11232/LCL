@@ -17,6 +17,7 @@ use crate::execution::{Answer, Breaks, Runs, Session, WatchedHost, WatchedOperat
 use crate::http::{Request, Response};
 use crate::intelligence;
 use crate::project::Workspace;
+use crate::remote;
 use crate::server::{Outcome as RouteOutcome, Route};
 use crate::settings;
 use lcl_protocol::json::{Node, Object};
@@ -90,6 +91,18 @@ impl Routes {
         &self.workspace
     }
 
+    /// One run's events from `from` onward, and whether the run has finished,
+    /// without waiting: the same log `/api/events` streams, for a caller that
+    /// is not an HTTP stream. `None` when this workspace has no such run.
+    pub fn run_events(&self, run: &str, from: usize) -> Option<(Vec<(String, String)>, bool)> {
+        let session = self.runs.get(run)?;
+        // Finished is read first: an event emitted after this read is still
+        // returned by the read below, so a caller that sees `true` together
+        // with a batch has everything.
+        let finished = session.is_finished();
+        Some((session.events_since(from), finished))
+    }
+
     /// The settings as they stand, read afresh so a change another window
     /// saved is seen.
     fn settings(&self) -> settings::Loaded {
@@ -154,6 +167,11 @@ impl Routes {
             ("POST", "/api/validate") => self.analyse(request, Command::Validate),
             ("POST", "/api/run") => self.start_run(request),
             ("POST", "/api/answer") => self.answer(request),
+
+            // Android devices, through `lcl-remote`; see `crate::remote`.
+            ("GET", "/api/remote/devices") => remote_devices(),
+            ("POST", "/api/remote/pair") => remote_pair(),
+            ("POST", "/api/remote/revoke") => remote_revoke(request),
 
             ("GET", _) | ("PUT", _) | ("POST", _) | ("DELETE", _) => {
                 Response::error(404, "no such route")
@@ -806,4 +824,54 @@ fn inputs_of(request: &Request) -> Result<Inputs, String> {
         }
     }
     Ok(inputs)
+}
+
+// ---------------------------------------------------------------------------
+// Android devices
+// ---------------------------------------------------------------------------
+
+/// The paired devices and whether the service is running, as `lcl-remote`
+/// reports them; `{"installed":false}` when it is not installed.
+fn remote_devices() -> Response {
+    let Some(program) = remote::binary() else {
+        return Response::json("{\"installed\":false}".to_string());
+    };
+    match remote::run(&program, &["devices", "--json"]) {
+        Ok(json) => Response::json(json),
+        Err(detail) => Response::error(502, &detail),
+    }
+}
+
+/// A new one-time pairing code: the link, its QR code as SVG, and when it
+/// expires. Each call makes a new one.
+fn remote_pair() -> Response {
+    let Some(program) = remote::binary() else {
+        return Response::error(503, "lcl-remote is not installed on this PC");
+    };
+    match remote::run(&program, &["pair", "--json"]) {
+        Ok(json) => Response::json(json),
+        Err(detail) => Response::error(502, &detail),
+    }
+}
+
+/// Stop trusting one device. It is disconnected and must pair again.
+fn remote_revoke(request: &Request) -> Response {
+    let Some(id) = request.param("id") else {
+        return Response::error(400, "a device id is required");
+    };
+    if !remote::valid_device_id(id) {
+        return Response::error(400, "that is not a device id");
+    }
+    let Some(program) = remote::binary() else {
+        return Response::error(503, "lcl-remote is not installed on this PC");
+    };
+    match remote::run(&program, &["revoke", id]) {
+        Ok(said) => Response::json(
+            Object::new()
+                .with("revoked", Node::string(id))
+                .with("message", Node::string(said.trim()))
+                .compact(),
+        ),
+        Err(detail) => Response::error(502, &detail),
+    }
 }

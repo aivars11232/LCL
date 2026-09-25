@@ -651,3 +651,44 @@ fn the_frontend_never_assigns_markup() {
     }
     assert!(sinks.is_empty(), "markup sinks in app.js: {sinks:#?}");
 }
+
+#[test]
+fn revoking_an_android_device_takes_only_a_device_id() {
+    // Refused before any program is looked for or run, installed or not.
+    let (_scratch, running) = serve_examples("remote-revoke");
+    for id in ["-rf", "..%2Fdevices.json", "a%20b", "ABC", ""] {
+        let reply = send(
+            running.address,
+            "POST",
+            &format!("/api/remote/revoke?t={}&id={id}", running.token),
+            &[],
+            b"",
+        );
+        assert_eq!(reply.status, 400, "{id:?}: {}", reply.body);
+    }
+    let missing = send(
+        running.address,
+        "POST",
+        &format!("/api/remote/revoke?t={}", running.token),
+        &[],
+        b"",
+    );
+    assert_eq!(missing.status, 400);
+}
+
+#[test]
+fn android_device_routes_need_the_session_token() {
+    let (_scratch, running) = serve_examples("remote-token");
+    for (method, path) in [
+        ("GET", "/api/remote/devices"),
+        ("POST", "/api/remote/pair"),
+        ("POST", "/api/remote/revoke?id=00"),
+    ] {
+        let reply = send(running.address, method, path, &[], b"");
+        assert_eq!(
+            reply.status, 403,
+            "{method} {path} without the token: {}",
+            reply.body
+        );
+    }
+}

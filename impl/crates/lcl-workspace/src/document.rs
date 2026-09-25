@@ -328,7 +328,26 @@ pub fn read(root: &Path, relative: &str) -> Result<Document, DocumentError> {
 /// intact rather than a half-written one. Same directory, because a rename
 /// across filesystems is a copy and would lose that property.
 pub fn write(root: &Path, relative: &str, text: &str) -> Result<Document, DocumentError> {
-    persist(root, relative, text, Publication::Replace)
+    persist(root, relative, text, Publication::Replace, None)
+}
+
+/// Write one document only if the file still holds the bytes whose SHA-256 is
+/// `expected`: the revision the writer started from.
+///
+/// For a writer that is not the only one — a paired device editing a copy
+/// while the file can also change on the computer — so that a save made from
+/// a stale revision is refused instead of silently replacing newer content.
+/// The comparison is made inside the same critical section as the rename, so
+/// no save from this process can land between the check and the replacement.
+/// A file that changed reports [`DocumentError::Changed`], and one that is gone
+/// [`DocumentError::NotFound`]; in both cases nothing is written.
+pub fn write_expecting(
+    root: &Path,
+    relative: &str,
+    text: &str,
+    expected: &str,
+) -> Result<Document, DocumentError> {
+    persist(root, relative, text, Publication::Replace, Some(expected))
 }
 
 /// Publish complete bytes only if the destination is absent. A same-directory
@@ -336,7 +355,7 @@ pub fn write(root: &Path, relative: &str, text: &str) -> Result<Document, Docume
 /// Filesystems without that operation fail explicitly; there is no replacing
 /// rename fallback. Ordinary saving continues to use `write`.
 pub fn create(root: &Path, relative: &str, text: &str) -> Result<Document, DocumentError> {
-    persist(root, relative, text, Publication::Create)
+    persist(root, relative, text, Publication::Create, None)
 }
 
 #[derive(Clone, Copy)]
@@ -350,6 +369,7 @@ fn persist(
     relative: &str,
     text: &str,
     publication: Publication,
+    expected: Option<&str>,
 ) -> Result<Document, DocumentError> {
     let path = resolve(root, relative)?;
     let (text, _) = admissible(text)?;
@@ -368,7 +388,7 @@ fn persist(
     #[cfg(test)]
     before_publish(&path);
 
-    prepared.publish(&path, publication, sequence)?;
+    prepared.publish(&path, publication, sequence, expected)?;
 
     let digest = lcl_spec::sha256::hex_digest(text.as_bytes());
     Ok(Document {
@@ -487,6 +507,7 @@ impl Temporary {
         destination: &Path,
         publication: Publication,
         sequence: u64,
+        expected: Option<&str>,
     ) -> Result<(), DocumentError> {
         // One critical section: decide whether this write is still the newest
         // for this path, and publish it, without letting go in between. A check
@@ -507,6 +528,25 @@ impl Temporary {
             let error = DocumentError::Superseded(destination.to_path_buf());
             drop(order);
             return Err(self.failure(error));
+        }
+        // A writer that named the revision it started from replaces only that
+        // revision, decided under the same lock as the rename below.
+        if let Some(expected) = expected {
+            let refusal = match std::fs::read(destination) {
+                Ok(bytes) if lcl_spec::sha256::hex_digest(&bytes) == expected => None,
+                Ok(_) => Some(DocumentError::Changed(destination.to_path_buf())),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    Some(DocumentError::NotFound(destination.to_path_buf()))
+                }
+                Err(error) => Some(DocumentError::Io {
+                    path: destination.to_path_buf(),
+                    detail: format!("the document is not readable: {error}"),
+                }),
+            };
+            if let Some(error) = refusal {
+                drop(order);
+                return Err(self.failure(error));
+            }
         }
         let published = match publication {
             Publication::Create => std::fs::hard_link(&self.path, destination),
@@ -602,11 +642,11 @@ mod tests {
         let (a, b) = std::thread::scope(|scope| {
             let a = scope.spawn(|| {
                 barrier.wait();
-                left.publish(&target, Publication::Create, 1)
+                left.publish(&target, Publication::Create, 1, None)
             });
             let b = scope.spawn(|| {
                 barrier.wait();
-                right.publish(&target, Publication::Create, 2)
+                right.publish(&target, Publication::Create, 2, None)
             });
             (a.join().unwrap(), b.join().unwrap())
         });
@@ -834,13 +874,48 @@ mod tests {
     }
 
     #[test]
+    fn a_save_from_a_stale_revision_is_refused_and_writes_nothing() {
+        let directory = Directory::new();
+        let root = directory.0.canonicalize().unwrap();
+        let first = write(&root, "shared.lcl", "revision one\n").unwrap();
+        // Someone else saves a newer revision.
+        write(&root, "shared.lcl", "revision two\n").unwrap();
+        let stale = write_expecting(&root, "shared.lcl", "from revision one\n", &first.digest);
+        assert!(matches!(stale, Err(DocumentError::Changed(_))), "{stale:?}");
+        assert_eq!(
+            std::fs::read_to_string(root.join("shared.lcl")).unwrap(),
+            "revision two\n",
+            "a stale revision replaced newer content"
+        );
+        // Starting from the current revision, it saves.
+        let current = lcl_spec::sha256::hex_digest(b"revision two\n");
+        let saved = write_expecting(&root, "shared.lcl", "revision three\n", &current).unwrap();
+        assert_eq!(
+            saved.digest,
+            lcl_spec::sha256::hex_digest(b"revision three\n")
+        );
+        // A file that is gone is not recreated by a save that expected it.
+        std::fs::remove_file(root.join("shared.lcl")).unwrap();
+        let gone = write_expecting(&root, "shared.lcl", "again\n", &saved.digest);
+        assert!(matches!(gone, Err(DocumentError::NotFound(_))), "{gone:?}");
+        assert!(!root.join("shared.lcl").exists());
+        assert_eq!(
+            std::fs::read_dir(&root).unwrap().count(),
+            0,
+            "no temporary left behind"
+        );
+    }
+
+    #[test]
     fn failed_publication_cleans_its_temporary_and_preserves_existing_data() {
         let directory = Directory::new();
         let target = directory.0.join("occupied");
         std::fs::create_dir(&target).unwrap();
         std::fs::write(target.join("user.txt"), b"preserved").unwrap();
         let prepared = Temporary::prepare(&directory.0, b"replacement").unwrap();
-        assert!(prepared.publish(&target, Publication::Replace, 1).is_err());
+        assert!(prepared
+            .publish(&target, Publication::Replace, 1, None)
+            .is_err());
         assert_eq!(
             std::fs::read(target.join("user.txt")).unwrap(),
             b"preserved"

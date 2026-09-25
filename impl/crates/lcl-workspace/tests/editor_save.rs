@@ -5,7 +5,7 @@
 ///
 /// A floor, not an expected total: adding a case must not break the gate, and
 /// losing one must.
-const EXPECTED_CASES: usize = 55;
+const EXPECTED_CASES: usize = 56;
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -178,6 +178,49 @@ impl Drop for Process {
     }
 }
 
+/// A stand-in `lcl-remote`, so the Android-devices routes run a real program
+/// with the real arguments: Phone A is paired, a pairing code brings Phone B,
+/// and revoking `aa11` revokes Phone A. The controlled mode of
+/// editor_save.cjs answers the same way.
+fn stand_in_remote(project: &Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = project.join(".remote");
+    std::fs::create_dir(&dir).unwrap();
+    let script = dir.join("lcl-remote");
+    std::fs::write(
+        &script,
+        r#"#!/bin/sh
+dir=$(dirname "$0")
+case "$1 $2" in
+"devices --json")
+    revoked=null
+    [ -f "$dir/revoked" ] && revoked=1790000300
+    new=
+    [ -f "$dir/paired" ] && new=',{"id":"bb22","name":"Phone B","fingerprint":"b","paired_at":1790000200,"last_seen":1790000200,"revoked_at":null,"online":true}'
+    printf '{"service_running":true,"devices":[{"id":"aa11","name":"Phone A","fingerprint":"a","paired_at":1790000000,"last_seen":1790000100,"revoked_at":%s,"online":false}%s]}
+' "$revoked" "$new"
+    ;;
+"pair --json")
+    : >"$dir/paired"
+    printf '{"link":"lclpair://pair?v=1&c=standin","svg":"<svg/>","expires":%s,"addresses":["192.0.2.1:47300"],"pc":"Stand-in PC","fingerprint":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
+' "$(($(date +%s) + 300))"
+    ;;
+"revoke aa11")
+    : >"$dir/revoked"
+    echo "revoked Phone A (aa11); it is disconnected and must pair again"
+    ;;
+*)
+    echo "lcl-remote: unexpected arguments: $*" >&2
+    exit 2
+    ;;
+esac
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    script
+}
+
 #[test]
 fn production_editor_save_logic_survives_real_http() {
     let (binary, spec) = match (
@@ -202,15 +245,20 @@ fn production_editor_save_logic_survives_real_http() {
     );
     println!("explicit spec: {}", spec.display());
     let project = Project::new();
+    let remote = stand_in_remote(&project.0);
     let mut command = Command::new(&binary);
     command.arg(&project.0).arg("--spec").arg(spec);
     // The workspace settings this server reads and writes: its own, inside a
-    // dot directory of the project, which the project tree never lists.
+    // dot directory of the project, which the project tree never lists. The
+    // Android-devices routes run a stand-in lcl-remote from another one.
     let mut server = Process::start_with(
         command,
         &project.0,
         "server.log",
-        &[("XDG_CONFIG_HOME", project.0.join(".config"))],
+        &[
+            ("XDG_CONFIG_HOME", project.0.join(".config")),
+            ("LCL_REMOTE_BIN", remote),
+        ],
     );
     let url = server.server_url();
     let mut command = Command::new("node");

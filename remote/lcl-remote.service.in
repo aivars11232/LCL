@@ -1,0 +1,16 @@
+[Unit]
+Description=LCL remote service for paired Android devices
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Serves only paired devices, over TLS 1.3 with both ends pinned. Every
+# document, check and run goes through the same engine and rules as LCL
+# Workspace. See remote/README.md.
+ExecStart=@EXEC@ serve
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

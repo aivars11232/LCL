@@ -40,6 +40,7 @@ pub mod execution;
 pub mod http;
 pub mod intelligence;
 pub mod project;
+pub mod remote;
 pub mod routes;
 pub mod server;
 pub mod settings;

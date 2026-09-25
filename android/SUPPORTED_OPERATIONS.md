@@ -13,7 +13,7 @@ code the desktop workspace uses.
 
 | Operation | App | Remote operation | Notes |
 |---|---|---|---|
-| Pair with a PC by QR code | ✅ | `hello` intent `pair` | The app's own scanner (**Pair a PC → Scan QR code**), or a link pasted on that screen. Each only fills the form in; nothing is trusted, and nothing connects, until Pair is pressed. By design, no pairing link is taken from another app — the camera app, a browser, a message: the link's one-time code pairs whoever uses it first. |
+| Pair with a PC by QR code | ✅ | `hello` intent `pair`, `pairing_version` 2 → `pairing_pending` … `paired` | The app's own scanner (**Pair a PC → Scan QR code**), or pairing text (`LCLPAIR\|v=2&…`, not a link) pasted on that screen. Each only fills the form in; nothing is asked until Pair is pressed. Scanning does not trust the phone: after Pair, the phone shows a verification code and waits; the PC lists the request with the same code, and the phone is trusted only once the person approves that request on the PC (`lcl-remote approve`, or Settings → Android devices). Denied, expired or cancelled: the attempt's key is deleted and nothing is saved. By design, no pairing code is taken from another app — the camera app, a browser, a message. Older `lclpair://` links are refused. |
 | Reconnect without a QR code | ✅ | `hello` intent `connect` | On every app start, after network loss or change, after a PC restart. |
 | Several paired PCs | ✅ | — | One active connection at a time; switch on the PCs screen. |
 | Disconnect | ✅ | (closes the socket) | Pairing kept. |

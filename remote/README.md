@@ -1,9 +1,9 @@
 # lcl-remote — the PC side of LCL for Android
 
 `lcl-remote` lets paired Android devices work on this PC's LCL: its projects,
-its documents and its engine. It pairs devices by one-time QR code, keeps the
-list of devices it trusts, and serves each one an encrypted, authenticated
-session over the protocol `lcl.remote/1`. The app is described in
+its documents and its engine. It pairs devices by one-time QR code and your
+approval on this PC, keeps the list of devices it trusts, and serves each one
+an encrypted, authenticated session over the protocol `lcl.remote/1`. The app is described in
 [../android/README.md](../android/README.md).
 
 It is not the desktop workspace's local server exposed to the network. That
@@ -59,6 +59,9 @@ builds it from this source tree. Building needs Rust 1.89 or newer.
 ```
 lcl-remote serve [--spec PATH] [--localized-spec PATH] [--listen ADDR] [--port PORT] [--no-discovery]
 lcl-remote pair [--address HOST:PORT]... [--minutes N] [--json]
+lcl-remote pending [--json]
+lcl-remote approve REQUEST-ID
+lcl-remote deny REQUEST-ID
 lcl-remote devices [--json]
 lcl-remote revoke DEVICE-ID
 lcl-remote rename DEVICE-ID NAME
@@ -69,10 +72,22 @@ lcl-remote status [--json]
 ```
 
 - `pair` prints a QR code in the terminal, the PC's fingerprint grouped the way
-  the phone shows it, and the link to paste instead. `--json` gives the link,
-  the QR code as SVG, the expiry, addresses and fingerprint. The code is good
-  for one device and 5 minutes (`--minutes`, 1–60). Addresses default to this
-  PC's own plus any added with `address add`.
+  the phone shows it, and the pairing text to paste instead. `--json` gives
+  the pairing text (`payload`), the QR code as SVG, the expiry, addresses and
+  fingerprint. The code pairs at most one device and is good for 5 minutes
+  (`--minutes`, 1–60). Addresses default to this PC's own plus any added with
+  `address add`. **Scanning the QR code does not trust the phone**: it only
+  lets the phone ask (see `pending`).
+- `pending` lists the pairing requests waiting for you: request id, the name
+  the device gave, its full certificate fingerprint, its **verification
+  code**, when it asked and when it expires. `--json` gives the same. It never
+  shows the pairing code.
+- `approve` trusts the device that made one request. Approve only the request
+  whose verification code is the one your phone shows. The phone finishes
+  pairing by itself within a few seconds. One code approves at most one
+  request; approving another for the same code is refused.
+- `deny` refuses one request; that device can never use it again. The code
+  stays usable by your own phone.
 - `devices` lists every device: name, id, fingerprint, when it paired, when it
   was last connected, whether it is online now, and whether it is revoked.
 - `revoke` ends one device's trust. Its live connection is closed within a
@@ -87,8 +102,9 @@ lcl-remote status [--json]
   `remote.json` the running service cannot read shares nothing but the default
   workspace.
 
-The same pairing, device list and revocation are in **LCL Workspace →
-Settings → Android devices**, which runs this program.
+The same pairing, pending requests (**Approve…** then **Approve device**, or
+**Deny**), device list and revocation are in **LCL Workspace → Settings →
+Android devices**, which runs this program.
 
 ## Files
 
@@ -102,26 +118,62 @@ directories:
 | `~/.config/lcl/remote/identity.json` | the PC's id and name |
 | `~/.config/lcl/remote/devices.json` | trusted devices: id, name, certificate fingerprint, paired, last seen, protocol, revoked |
 | `~/.config/lcl/remote/remote.json` | settings: listen address, ports, extra projects, public addresses |
-| `~/.local/state/lcl/remote/pairing.json` | pairing challenges: only the SHA-256 of each code, its expiry, and who used it |
+| `~/.local/state/lcl/remote/pairing.json` | pairing challenges — only the SHA-256 of each code, its expiry, the request approved for it and who used it — and pairing requests: request id, code, device name, certificate fingerprint, verification code, status (`pending`, `approved`, `denied`, `finalized`, `superseded`) |
 | `~/.local/state/lcl/remote/status.json` | the running service's port and live sessions, for `status` and `devices` |
 
 A trust store that cannot be read trusts nobody.
 
 ## Pairing and trust
 
+A pairing code lets a device **ask**; only the person at this PC can make it
+trusted.
+
 1. `pair` makes a challenge: 32 random bytes, stored only as a SHA-256, with
-   an expiry. The QR code carries
-   `lclpair://pair?v=1&pc=<id>&n=<name>&fp=<certificate SHA-256>&a=<host:port>…&c=<code>&e=<expiry>`
-   — no private key, no reusable secret.
+   an expiry. The QR code carries plain pairing text, not a link:
+   `LCLPAIR|v=2&pc=<id>&n=<name>&fp=<certificate SHA-256>&a=<host:port>…&c=<code>&e=<expiry>`
+   — no URI scheme, no private key, no reusable secret, no approval.
 2. The phone connects to an address from the code and checks, inside the TLS
    handshake, that the PC's certificate has exactly that fingerprint.
 3. The phone makes its own key in Android Keystore and presents a certificate
    for it; TLS proves it holds the key.
-4. The phone sends `hello` with intent `pair` and the code. The PC consumes
-   the challenge under a file lock — a used, expired or unknown code is
-   refused — and records the device by its certificate's fingerprint.
-5. From then on the phone connects with intent `connect` and its key. The code
+4. The phone sends `hello` with intent `pair`, `pairing_version` 2 and the
+   code. The PC checks the code and records a **pending request** bound to
+   that challenge and to that certificate's fingerprint — nothing more: no
+   device record, no `welcome`, no session. It answers `pairing_pending` with
+   the request id and the verification code, and closes the connection. The
+   code is not used up, so someone else who read the QR code and asked first
+   cannot lock the real phone out. Asking again with the same key is the same
+   request.
+5. The phone shows the verification code; `lcl-remote pending` (or the
+   workspace) shows the same one. The person approves the matching request.
+6. The phone asks again every two seconds with the same key and code. Once its
+   request is approved, the PC records the device by its certificate's
+   fingerprint, spends the code, supersedes every other request for it, and
+   answers `paired` and `welcome`: the session starts.
+7. From then on the phone connects with intent `connect` and its key. The code
    is never used again.
+
+The verification code is the first 12 hex digits of
+`SHA-256("lcl-pair-v2" 0x00 <PC fingerprint> 0x00 hex(SHA-256(<code>)) 0x00 <device fingerprint>)`,
+shown as `abcd-ef12-3456`. It is for a person to compare and is not secret;
+approval itself is bound to the request's full certificate fingerprint and
+to its challenge, never to a request id, a name or an address.
+
+At most 8 requests wait per code and 32 on this PC; one more is refused
+(`pairing_busy`). Requests expire with their code and are pruned; a denied
+request stays denied while its code lives.
+
+Finishing is ordered so that a crash cannot let another device in: the
+approved request is first given the id its device record will have (written to
+`pairing.json`), then the record is made in `devices.json` under that id (or
+found there, if the first try got that far), and only then are the request
+and the code marked done. Whatever the crash left, only the approved
+certificate can finish it, and no other request can be approved meanwhile.
+The pairing lock is always taken before the device registry's, never the
+reverse.
+
+Devices paired before approval existed keep their records and reconnect with
+`connect` as before; nothing about an existing pairing changes.
 
 Addresses are only where to look. Neither side identifies the other by IP
 address, network or host name.
@@ -140,11 +192,19 @@ anything more is read.
 included):
 
 ```json
-{"type":"hello","protocol":"lcl.remote/1","intent":"pair","code":"…","name":"Pixel 9"}
+{"type":"hello","protocol":"lcl.remote/1","intent":"pair","pairing_version":2,"code":"…","name":"Pixel 9"}
 {"type":"hello","protocol":"lcl.remote/1","intent":"connect","device":"ce7f8408067ea40f"}
 ```
 
-The PC answers `paired` (after pairing) and then `welcome`:
+To a pairing `hello` whose request is not approved, the PC answers once and
+closes the connection:
+
+```json
+{"type":"pairing_pending","request":"8c1f2e3d4a5b6c7d","verification":"abcd-ef12-3456","expires":1790000300,"pc":{…}}
+```
+
+Once the request is approved, and to a `connect`, the PC answers `paired`
+(after pairing) and then `welcome`:
 
 ```json
 {"type":"paired","device":{"id":"…","name":"…"},"pc":{"id":"…","name":"…","fingerprint":"…"}}
@@ -161,7 +221,11 @@ or one error, after which it closes the connection:
 |---|---|
 | `malformed` | not JSON, not a `hello`, or missing fields |
 | `unsupported_protocol` | another protocol version |
-| `pairing_refused` | the code is unknown, used or expired |
+| `pairing_upgrade_required` | a pairing `hello` without `pairing_version` 2: the older flow, which trusted whoever used a code first |
+| `unsupported_pairing_version` | a pairing `hello` naming a later pairing version |
+| `pairing_refused` | the code is unknown, spent, approved for another device, or expired |
+| `pairing_denied` | this device's request was denied on the PC |
+| `pairing_busy` | too many requests are waiting for a decision |
 | `not_paired` | no paired device has this certificate |
 | `revoked` | this device was revoked |
 | `identity_mismatch` | the device named a device id that is not its own |
@@ -224,7 +288,10 @@ trusted.
 **Versioning.** The protocol version is not the LCL language version and not
 the engine protocol. A future `lcl.remote/2` will be refused by a `/1` PC with
 `unsupported_protocol`, and the reverse, rather than half-understood. The
-pairing link has its own version (`v=1`).
+pairing text has its own version (`v=2`), and so does the pairing flow a
+`hello` names (`pairing_version` 2). Version 1 — the `lclpair://pair?v=1`
+link, and a pairing `hello` without `pairing_version` — is refused for new
+pairing.
 
 ## Security
 
@@ -240,8 +307,13 @@ pairing link has its own version (`v=1`).
   and certificate fingerprint with the project and run. Only that device can
   `follow` it or `answer` its pauses (`continue`, `deny`, `cancel`); another
   paired device gets `403`, however it learned the run id.
-- Replay: a pairing code works once; the TLS session protects every later
-  message against replay and tampering.
+- Pairing: a code alone trusts nobody. Whoever holds it can make a pending
+  request, bound to the certificate it proved; only approval on this PC
+  trusts that exact certificate, and the code then trusts no one else. A
+  stolen code can make noise (up to 8 waiting requests) but not a trusted
+  device.
+- Replay: a spent code pairs nothing more; the TLS session protects every
+  later message against replay and tampering.
 - Resource limits: 32 connections at a time, of which at most 8 — and at most
   4 from any one address — may be unauthenticated (still in TLS or before
   `hello`); 10 seconds from connecting to finish TLS and say hello; an 8 KiB
@@ -249,7 +321,8 @@ pairing link has its own version (`v=1`).
   connection over a limit is closed at once. Every connection's slot is given
   back when its thread ends, however it ends. There is no rate limiting beyond
   these: peers that keep reconnecting can occupy the unauthenticated slots and
-  delay new connections, but not disturb authenticated sessions.
+  delay new connections, but not disturb authenticated sessions. A device
+  waiting for approval holds no connection: each ask is answered and closed.
 - Saving (`save`) replaces a file only if it still has the digest the device
   started from, compared and renamed in one critical section of this service,
   so two devices cannot both save over one revision. A change any program made
@@ -295,7 +368,13 @@ cargo fmt --check
 ```
 
 The end-to-end tests in `tests/remote.rs` run a real service on a loopback
-port with real TLS: pairing, expired and reused codes, the wrong PC, malformed
+port with real TLS: pairing only through approval on the PC (a valid code
+alone trusting nobody, a stolen code used first, approval bound to the exact
+certificate, denial leaving the code to the real phone, one code never
+approving two devices, expiry, refusal of the older pairing flow, bounded and
+deduplicated requests, a device paired before approval existed reconnecting,
+`pending`, `approve` and `deny` run as commands), expired and reused codes,
+the wrong PC, malformed
 and unsupported hellos, unpaired, revoked and impersonating devices, `unpair`,
 several devices, path traversal, a link out of the project and unknown
 operations, saves over a stale revision and two devices saving from one

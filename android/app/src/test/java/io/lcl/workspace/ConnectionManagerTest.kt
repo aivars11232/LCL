@@ -2,15 +2,21 @@ package io.lcl.workspace
 
 import io.lcl.workspace.connection.ConnectionManager
 import io.lcl.workspace.connection.ConnectionState
+import io.lcl.workspace.connection.PAIRING_POLL_MS
+import io.lcl.workspace.connection.PendingPairing
 import io.lcl.workspace.data.MemoryStore
 import io.lcl.workspace.data.PcStore
+import io.lcl.workspace.remote.PairingVerification
 import io.lcl.workspace.remote.Transport
+import io.lcl.workspace.remote.long
 import io.lcl.workspace.remote.str
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -70,13 +76,160 @@ class ConnectionManagerTest {
         assertEquals("dev1", record.deviceId)
         assertTrue(identities.keys.containsKey(record.keyAlias))
         assertEquals("pc1", manager.connected.pc.pcId)
-        val hello = pc.hellos.single()
-        assertEquals("pair", hello.str("intent"))
-        assertEquals("Pixel", hello.str("name"))
+        // It asked, the PC approved, it asked again: both times as the
+        // current pairing flow.
+        assertEquals(2, pc.hellos.size)
+        for (hello in pc.hellos) {
+            assertEquals("pair", hello.str("intent"))
+            assertEquals(2L, hello.long("pairing_version"))
+            assertEquals("Pixel", hello.str("name"))
+        }
         // The one-time code is spent, and nothing on the device keeps it.
         assertNull(pc.code)
         assertFalse(backing.get("pcs")!!.contains(link.code))
         assertEquals("pc1", store.activeId())
+    }
+
+    @Test
+    fun pairing_waits_for_the_pc_and_saves_nothing_until_approved() = runTest {
+        val manager = manager()
+        pc.decision = FakePc.Decision.WAIT
+        val link = pc.link(clock)
+        val shown = mutableListOf<PendingPairing>()
+        val result = async { manager.pair(link, "Pixel") { shown += it } }
+        runCurrent()
+        // Pending: the verification code is this device's own, and nothing
+        // is saved, active or connected.
+        val key = identities.keys.keys.single()
+        assertEquals(PairingVerification.of(pc.fingerprint, link.code, testIdentity().fingerprint), shown.last().verification)
+        assertEquals("Test PC", shown.last().pcName)
+        assertTrue(store.all().isEmpty())
+        assertNull(store.activeId())
+        assertEquals(ConnectionState.NoPc, manager.state.value)
+        assertFalse(result.isCompleted)
+        // It asks again every two seconds, never sooner.
+        val asked = pc.attempts
+        advanceTimeBy(PAIRING_POLL_MS - 1)
+        runCurrent()
+        assertEquals(asked, pc.attempts)
+        advanceTimeBy(2)
+        runCurrent()
+        assertEquals(asked + 1, pc.attempts)
+        assertTrue("a PC was saved while the request was pending", store.all().isEmpty())
+        // Approved on the PC: saved, active and connected, with the same key.
+        pc.approve(testIdentity().fingerprint)
+        advanceTimeBy(PAIRING_POLL_MS)
+        runCurrent()
+        val record = result.await().getOrThrow()
+        assertEquals(key, record.keyAlias)
+        assertEquals(record, store.get("pc1"))
+        assertEquals("pc1", store.activeId())
+        assertTrue(manager.state.value is ConnectionState.Connected)
+    }
+
+    @Test
+    fun a_denied_request_deletes_its_key_and_saves_nothing() = runTest {
+        val manager = manager()
+        pc.decision = FakePc.Decision.DENY
+        val failure = manager.pair(pc.link(clock), "Pixel").exceptionOrNull()!!
+        assertTrue(failure.message, failure.message!!.contains("denied"))
+        assertTrue(identities.keys.isEmpty())
+        assertEquals(1, identities.deleted.size)
+        assertTrue(store.all().isEmpty())
+        assertEquals(ConnectionState.NoPc, manager.state.value)
+    }
+
+    @Test
+    fun a_request_nobody_approves_expires_and_deletes_its_key() = runTest {
+        val manager = manager()
+        pc.decision = FakePc.Decision.WAIT
+        val result = async { manager.pair(pc.link(clock), "Pixel") }
+        runCurrent()
+        assertEquals(1, identities.keys.size)
+        clock += 300
+        advanceTimeBy(PAIRING_POLL_MS + 1)
+        runCurrent()
+        val failure = result.await().exceptionOrNull()!!
+        assertTrue(failure.message, failure.message!!.contains("expired"))
+        assertTrue(identities.keys.isEmpty())
+        assertTrue(store.all().isEmpty())
+    }
+
+    @Test
+    fun cancelling_a_waiting_request_deletes_its_key_and_stops_asking() = runTest {
+        val manager = manager()
+        pc.decision = FakePc.Decision.WAIT
+        val attempt = launch { manager.pair(pc.link(clock), "Pixel") }
+        runCurrent()
+        assertEquals(1, identities.keys.size)
+        attempt.cancel()
+        runCurrent()
+        assertTrue(identities.keys.isEmpty())
+        assertTrue(store.all().isEmpty())
+        val asked = pc.attempts
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertEquals("a cancelled request kept asking", asked, pc.attempts)
+    }
+
+    @Test
+    fun a_waiting_request_outlasts_a_moment_without_the_pc() = runTest {
+        val manager = manager()
+        pc.decision = FakePc.Decision.WAIT
+        val result = async { manager.pair(pc.link(clock), "Pixel") }
+        runCurrent()
+        pc.reachable = emptySet()
+        advanceTimeBy(PAIRING_POLL_MS * 3)
+        runCurrent()
+        assertFalse(result.isCompleted)
+        assertEquals(1, identities.keys.size)
+        pc.reachable = setOf(home)
+        pc.approve(testIdentity().fingerprint)
+        advanceTimeBy(PAIRING_POLL_MS + 1)
+        runCurrent()
+        assertTrue(result.await().isSuccess)
+    }
+
+    @Test
+    fun a_pc_showing_another_verification_code_is_not_paired() = runTest {
+        val manager = manager()
+        pc.wrongVerification = true
+        val failure = manager.pair(pc.link(clock), "Pixel").exceptionOrNull()!!
+        assertTrue(failure.message, failure.message!!.contains("verification code does not match"))
+        assertTrue(identities.keys.isEmpty())
+        assertTrue(store.all().isEmpty())
+    }
+
+    @Test
+    fun a_key_left_by_an_unfinished_pairing_is_deleted_at_the_next_start() = runTest {
+        paired()
+        val used = store.get("pc1")!!.keyAlias
+        identities.keys["lcl-pc-pc1-left-behind"] = testIdentity()
+        identities.keys["not-this-app-s"] = testIdentity()
+        manager().start()
+        runCurrent()
+        assertEquals(setOf(used, "not-this-app-s"), identities.keys.keys)
+    }
+
+    @Test
+    fun a_pc_paired_before_approval_existed_reconnects_without_a_qr_code() = runTest {
+        // What an earlier version of the app saved, and the key it made.
+        backing.put(
+            "pcs",
+            """[{"pc_id":"pc1","name":"Test PC","fingerprint":"${pc.fingerprint}","addresses":["$home"],""" +
+                """"device_id":"dev9","key_alias":"lcl-pc-pc1-0b1c","paired_at":999000,"last_connected":999100,"last_address":"$home"}]""",
+        )
+        backing.put("active_pc", "pc1")
+        identities.keys["lcl-pc-pc1-0b1c"] = testIdentity()
+        pc.devices[testIdentity().fingerprint] = "dev9"
+        val manager = manager()
+        manager.start()
+        runCurrent()
+        assertEquals("pc1", manager.connected.pc.pcId)
+        val hello = pc.hellos.single()
+        assertEquals("connect", hello.str("intent"))
+        assertEquals("dev9", hello.str("device"))
+        assertTrue(identities.keys.containsKey("lcl-pc-pc1-0b1c"))
     }
 
     @Test
@@ -111,9 +264,18 @@ class ConnectionManagerTest {
         val first = store.get("pc1")!!.keyAlias
         val used = pc.link(clock).also { pc.code = null }
         assertTrue(manager.pair(used, "Pixel").isFailure)
+        // Denied, or never approved: the working pairing is untouched.
+        pc.decision = FakePc.Decision.DENY
+        assertTrue(manager.pair(pc.link(clock), "Pixel").isFailure)
+        pc.decision = FakePc.Decision.WAIT
+        val waiting = launch { manager.pair(pc.link(clock), "Pixel") }
+        runCurrent()
+        waiting.cancel()
+        runCurrent()
         assertEquals(first, store.get("pc1")!!.keyAlias)
-        assertTrue(identities.keys.containsKey(first))
+        assertEquals(setOf(first), identities.keys.keys)
         assertTrue("a failed pairing broke the working one", manager.state.value is ConnectionState.Connected)
+        pc.decision = FakePc.Decision.APPROVE
         val second = manager.pair(pc.link(clock), "Pixel").getOrThrow().keyAlias
         runCurrent()
         assertNotEquals(first, second)
@@ -244,6 +406,7 @@ class ConnectionManagerTest {
     @Test
     fun disconnect_ends_the_connection_but_keeps_the_pairing() = runTest {
         val manager = paired()
+        val pairing = pc.attempts
         val session = pc.sessions.last()
         manager.disconnect()
         runCurrent()
@@ -251,7 +414,7 @@ class ConnectionManagerTest {
         assertTrue(manager.state.value is ConnectionState.Disconnected)
         advanceTimeBy(600_000)
         runCurrent()
-        assertEquals("reconnected after Disconnect", 1, pc.attempts)
+        assertEquals("reconnected after Disconnect", pairing, pc.attempts)
         assertNotNull(store.get("pc1"))
         assertEquals(1, identities.keys.size)
         manager.reconnectNow()
@@ -278,6 +441,7 @@ class ConnectionManagerTest {
     @Test
     fun forget_deletes_the_key_and_the_record() = runTest {
         val manager = paired()
+        val pairing = pc.attempts
         val alias = store.get("pc1")!!.keyAlias
         manager.forget("pc1")
         runCurrent()
@@ -291,7 +455,7 @@ class ConnectionManagerTest {
         assertTrue(pc.sessions.last().closed.isCompleted)
         manager().start() // the next app start has nothing to go back to
         runCurrent()
-        assertEquals(1, pc.attempts)
+        assertEquals(pairing, pc.attempts)
     }
 
     @Test
@@ -327,6 +491,7 @@ class ConnectionManagerTest {
     @Test
     fun revocation_during_a_session_ends_it() = runTest {
         val manager = paired()
+        val pairing = pc.attempts
         val session = pc.sessions.last()
         session.emit(buildJsonObject { put("type", "event"); put("event", "revoked") })
         runCurrent()
@@ -334,7 +499,7 @@ class ConnectionManagerTest {
         assertTrue(session.closed.isCompleted)
         advanceTimeBy(600_000)
         runCurrent()
-        assertEquals(1, pc.attempts)
+        assertEquals(pairing, pc.attempts)
     }
 
     @Test

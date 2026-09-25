@@ -1,21 +1,25 @@
 package io.lcl.workspace.remote
 
+import java.io.ByteArrayOutputStream
 import java.util.Base64
 
 /**
  * What a pairing QR code says: the PC to trust, where to try reaching it, and
- * a one-time code.
+ * a one-time code. It is plain pairing text, not a link — no URI scheme,
+ * nothing a camera app or a browser would open:
  *
  * ```
- * lclpair://pair?v=1&pc=<id>&n=<name>&fp=<certificate SHA-256>
- *               &a=<host:port>[&a=...]&c=<one-time code>&e=<expiry>
+ * LCLPAIR|v=2&pc=<id>&n=<name>&fp=<certificate SHA-256>
+ *         &a=<host:port>[&a=...]&c=<one-time code>&e=<expiry>
  * ```
  *
  * `fp` is the PC's identity: the connection is refused unless the PC presents
  * exactly that certificate. Addresses are only where to look; they are never
- * part of who the PC is. The code is good for one pairing and a few minutes,
- * and is never stored. Mirrors `lcl-remote`'s `pairing::Link`, and refuses
- * the same malformed links.
+ * part of who the PC is. The code only lets this device **ask** the PC to
+ * trust it; the person at the PC approves the request. The code is never
+ * stored. Mirrors `lcl-remote`'s `pairing::Payload`, and refuses the same
+ * malformed text — and the older `lclpair://` links, whose code trusted
+ * whoever used it first.
  */
 data class PairingLink(
     val version: Int,
@@ -29,12 +33,16 @@ data class PairingLink(
     fun isExpired(nowSeconds: Long): Boolean = nowSeconds >= expires
 
     companion object {
-        const val SCHEME = "lclpair"
-        const val VERSION = 1
+        const val PREFIX = "LCLPAIR|"
+        const val VERSION = 2
+        private const val LEGACY_PREFIX = "lclpair://"
+        const val OLDER_FLOW = "This pairing code uses the older pairing flow. Update LCL on the PC and show a new QR code."
 
-        /** Read a link, or throw [InvalidLink] saying what is wrong with it. */
-        fun parse(uri: String): PairingLink {
-            val query = uri.trim().removePrefix("$SCHEME://pair?").takeIf { it != uri.trim() }
+        /** Read pairing text, or throw [InvalidLink] saying what is wrong with it. */
+        fun parse(text: String): PairingLink {
+            val trimmed = text.trim()
+            if (trimmed.startsWith(LEGACY_PREFIX)) throw InvalidLink(OLDER_FLOW)
+            val query = trimmed.removePrefix(PREFIX).takeIf { it != trimmed }
                 ?: throw InvalidLink("This is not an LCL pairing code.")
             val single = mutableMapOf<String, String>()
             val addresses = mutableListOf<String>()
@@ -52,8 +60,9 @@ data class PairingLink(
                 }
             }
             val version = single["v"]?.toIntOrNull() ?: throw InvalidLink("The pairing code has no version.")
+            if (version < VERSION) throw InvalidLink(OLDER_FLOW)
             if (version != VERSION) {
-                throw InvalidLink("This pairing code is version $version; this app reads version $VERSION. Update the app or the PC.")
+                throw InvalidLink("This pairing code is version $version; this app reads version $VERSION. Update the app.")
             }
             val fingerprint = single["fp"] ?: throw InvalidLink("The pairing code does not identify the PC.")
             if (fingerprint.length != 64 || fingerprint.any { it !in '0'..'9' && it !in 'a'..'f' }) {
@@ -105,3 +114,29 @@ data class PairingLink(
 }
 
 class InvalidLink(message: String) : Exception(message)
+
+/**
+ * The short verification code this device and the PC both show for one
+ * pairing request, `abcd-ef12-3456`: the first 48 bits of
+ *
+ * ```
+ * SHA-256("lcl-pair-v2" 0x00 pcFingerprint 0x00 hex(SHA-256(code)) 0x00 deviceFingerprint)
+ * ```
+ *
+ * It binds the PC, the code and this device's own certificate, so the person
+ * at the PC can tell this device's request from anyone else's who holds the
+ * same code. It is not a secret. Computed here, never taken from the PC; the
+ * same function as `lcl-remote`'s `pairing::verification`, checked against
+ * the same test values.
+ */
+object PairingVerification {
+    fun of(pcFingerprint: String, code: String, deviceFingerprint: String): String {
+        val material = ByteArrayOutputStream()
+        for ((index, part) in listOf("lcl-pair-v2", pcFingerprint, sha256Hex(code.toByteArray(Charsets.UTF_8)), deviceFingerprint).withIndex()) {
+            if (index > 0) material.write(0)
+            material.write(part.toByteArray(Charsets.UTF_8))
+        }
+        val digest = sha256Hex(material.toByteArray())
+        return "${digest.substring(0, 4)}-${digest.substring(4, 8)}-${digest.substring(8, 12)}"
+    }
+}

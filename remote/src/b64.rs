@@ -1,4 +1,4 @@
-//! Base64url without padding (RFC 4648 §5), for pairing codes and links.
+//! Base64url without padding (RFC 4648 §5), for pairing codes.
 
 const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 

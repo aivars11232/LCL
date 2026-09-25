@@ -162,42 +162,74 @@ paired. See [../remote/README.md](../remote/README.md).
 
 ## Pairing
 
-Pairing is done once per phone and PC.
+Pairing is done once per phone and PC. **Scanning the QR code does not trust
+the phone.** After you press Pair on the phone, you approve the phone on the
+PC, where it waits with a verification code.
 
 1. On the PC: **LCL Workspace → Settings → Android devices → Pair Android
    device**, or `lcl-remote pair` in a terminal. A QR code appears, with the
    PC's fingerprint.
-2. On the phone, open **LCL**.
-3. Choose **Pair a PC**.
-4. Choose **Scan QR code** and scan the PC's QR code.
-5. The phone shows the PC's name and fingerprint. Check that the fingerprint
+2. On the phone, open **LCL** and choose **Pair a PC → Scan QR code**. Scan the
+   PC's QR code.
+3. The phone shows the PC's name and fingerprint. Check that the fingerprint
    is the one on the PC's screen.
-6. Press **Pair**.
+4. Press **Pair**.
+5. The phone shows **Waiting for approval** and a **verification code**, such
+   as `abcd-ef12-3456`.
+6. The PC lists the phone's request with the same verification code: in
+   **Settings → Android devices → Pending pairing requests**, or with
+   `lcl-remote pending` in a terminal.
+7. Approve the request whose verification code matches the phone: **Approve…**
+   then **Approve device**, or `lcl-remote approve REQUEST-ID`. Deny any request
+   you do not recognise (**Deny**, or `lcl-remote deny REQUEST-ID`).
+8. The phone finishes pairing by itself within a few seconds and connects.
+
+While the phone waits, nothing is saved on it and nothing is trusted on the
+PC. Cancel on the phone, a denial on the PC, or the code expiring (five
+minutes) ends the attempt: the phone deletes the key it made for it and
+records nothing. A phone that already paired with this PC keeps its working
+pairing if a new attempt fails.
 
 Scan with LCL's own **Scan QR code**, not with the phone's camera app or
-another scanner app. The QR code holds an `lclpair://` link with a one-time
-code, and the code pairs whoever uses it first; any app can claim that link
-scheme, so LCL takes no pairing link from another app. A camera app, a web
-page or a message cannot open LCL's pairing, and a link another app sends to
-LCL is ignored.
+another scanner app. The QR code holds plain pairing text, not a link:
 
-Advanced, instead of scanning: paste the link `lcl-remote pair` prints into
-the text field on **Pair a PC**. Treat the link like the QR code: it pairs
-whoever uses it first, until it is used or expires.
+```text
+LCLPAIR|v=2&pc=<id>&n=<name>&fp=<PC certificate SHA-256>&a=<address>[&a=…]&c=<one-time code>&e=<expiry>
+```
 
-A scanned code and a pasted link only fill the form in. No key is made,
-nothing is recorded and nothing connects until you press Pair.
+It has no URI scheme, so a camera app shows it as text and opens nothing, and
+LCL takes pairing text from no other app. Advanced, instead of scanning: paste
+the text `lcl-remote pair` prints (or the text box under the QR code in the
+workspace) into the field on **Pair a PC**.
 
-The QR code carries: the link format version, the PC's id and name, the
+Why approval: whoever reads the QR code — another app the QR code was scanned
+with, or someone looking over your shoulder — holds the one-time code too. The
+code alone only lets a device **ask**. Each asking device gets its own
+verification code, computed from the PC, the code and that device's own key,
+so a stranger's request shows a different code from your phone's. Approving
+trusts exactly the key of the request you approved; the code then stops
+working for everyone else. Denying a stranger's request leaves the code usable
+by your phone.
+
+A scanned code and pasted text only fill the form in. No key is made, nothing
+is recorded and nothing connects until you press Pair.
+
+The QR code carries: the pairing-text version (2), the PC's id and name, the
 SHA-256 fingerprint of the PC's certificate, the addresses to try, a one-time
-code and its expiry. It carries no private key and no reusable password. The
-code works once and for five minutes (`lcl-remote pair --minutes N`, 1–60);
-the PC stores only its SHA-256 and marks it used the moment a device pairs.
+code and its expiry. It carries no private key, no approval and no reusable
+password. The code works for five minutes (`lcl-remote pair --minutes N`,
+1–60) and pairs at most one device; the PC stores only its SHA-256.
 
-During pairing the phone makes a new ECDSA P-256 key inside Android Keystore,
-proves it holds it in the TLS handshake, and the PC records the device by the
-fingerprint of that certificate. From then on the phone connects with that key;
-the QR code is never needed again.
+Older pairing links (`lclpair://pair?v=1&…`, from before approval) are refused:
+*This pairing code uses the older pairing flow. Update LCL on the PC and show
+a new QR code.* Phones already paired before this change keep reconnecting as
+before; they do not need a new QR code or an approval.
+
+During pairing the phone makes a new ECDSA P-256 key inside Android Keystore
+and proves it holds it in the TLS handshake of every request; once you approve
+that request, the PC records the device by the fingerprint of that
+certificate. From then on the phone connects with that key; the QR code is
+never needed again.
 
 Whether that key is hardware-backed depends on the phone. Android Keystore
 may keep it in a StrongBox secure element, in a trusted execution environment
@@ -372,14 +404,24 @@ What is **not implemented**:
   the old phone. PC: the device list (`devices.json`, `0600`) with each
   device's name, certificate fingerprint, pairing date, last connection,
   protocol and revocation.
-- **One-time bootstrap.** A pairing code is 32 random bytes, stored by the PC
-  only as a hash, good once and for minutes, consumed under a file lock. A
-  replayed or expired code pairs nothing.
-- **The code goes only into LCL's own form.** An unused code, with a new key,
-  is all the PC asks of a device that pairs. So the app takes no pairing link
-  from another app: no intent filter handles `lclpair://` and none is
-  BROWSABLE, and a link sent to the app's activity by name is ignored. Only
-  the app's own scanner, or the person pasting a link, fills the Pair form in.
+- **One-time bootstrap, approved on the PC.** A pairing code is 32 random
+  bytes, stored by the PC only as a hash, good for minutes. It is not enough
+  to be trusted: a device that asks with it becomes a pending request, bound
+  to that code and to the fingerprint of the certificate it proved it holds
+  the key for, and has no session and no rights. Only the person at the PC
+  approving that exact request (`lcl-remote approve`, or the workspace's
+  Settings) trusts that exact key; the code is spent when the approved device
+  finishes pairing, and every other request for it is refused. At most 8
+  requests wait per code and 32 per PC; a pending device's connection is
+  closed after each answer. A replayed, spent, denied or expired code pairs
+  nothing, and the PC refuses a pairing `hello` without `pairing_version` 2
+  (`pairing_upgrade_required`), whatever client sends it.
+- **The code goes only into LCL's own form.** The app takes no pairing code
+  from another app: the QR code holds pairing text with no URI scheme, no
+  intent filter handles `lclpair://` or anything else pairing-related and
+  none is BROWSABLE, and a link sent to the app's activity by name is ignored.
+  Only the app's own scanner, or the person pasting the text, fills the Pair
+  form in.
 - **Fail closed.** A malformed first message, an unsupported protocol version,
   an unknown or revoked device, a device naming another device's id, an
   unreadable trust store: one error, then the connection closes. Before a
@@ -409,10 +451,15 @@ What is **not implemented**:
 
 ## Testing
 
-- **JVM unit tests** (`./gradlew testDebugUnitTest`): the pairing link, frames,
+- **JVM unit tests** (`./gradlew testDebugUnitTest`): the pairing text (and the
+  refusal of older links), the verification code against the same test values
+  as the PC, frames,
   pinning, UTF-8/UTF-16 offsets and spans that move with edits, undo, the
   document revision model, stores and settings, the connection manager
-  (pairing, restart without QR, backoff, offline, network change, a moved PC,
+  (pairing that waits for the PC's approval, saving nothing until then;
+  denial, expiry and Cancel deleting the attempt's key; a failed attempt
+  leaving an older pairing alone; a PC paired before approval existed
+  reconnecting; restart without QR, backoff, offline, network change, a moved PC,
   an impostor at the old address, Disconnect, Forget, revocation, several PCs)
   and the workspace controller (answers applied only to the revision they
   describe, save conflicts, PC edits, runs, approvals, reconnect), and the
@@ -426,20 +473,30 @@ What is **not implemented**:
   not UTF-8 (refused) and one that is (shown exactly); checks against the
   installed app that no activity takes a pairing link, that one sent to the
   app by name fills nothing in, and that `.lcl` and `.lcl.txt` files linked
-  from another app still open (a plain `.txt` does not); pairs from the link
-  pasted on the Pair screen, edits, saves, checks, validates, inspects and
-  runs with approvals, and checks each result on the PC's disk; then restarts
-  the app, reboots the phone, cuts the network, restarts the PC service, edits
-  on the PC (including a real conflict), revokes, re-pairs and forgets; and
-  last pairs through the app's own **Scan QR code** button, checking that the
-  scanned code made no key, no record and no connection until Pair was
-  pressed. The camera itself is not used: the instrumentation answers the
-  scanner's camera activity with the scanned link, and everything after it is
-  the app's own code. It also checks that About reports the key's protection
+  from another app still open (a plain `.txt` does not); pairs from the text
+  pasted on the Pair screen — the phone shows its verification code, the host
+  script checks that `lcl-remote pending` lists the same code and that the PC
+  trusts nothing yet, and approves with `lcl-remote approve` — then edits,
+  saves, checks, validates, inspects and runs with approvals, and checks each
+  result on the PC's disk; then restarts the app, reboots the phone, cuts the
+  network, restarts the PC service, edits on the PC (including a real
+  conflict), revokes, re-pairs (approved on the PC) and forgets; pairs through
+  the app's own **Scan QR code** button, checking that the scanned code made
+  no key, no record and no connection until Pair was pressed and the PC
+  approved; and last refuses an older pairing link and has the PC deny a
+  request, checking that the phone deleted that attempt's key, recorded
+  nothing and stayed connected with its working pairing. The camera itself is
+  not used: the instrumentation answers the scanner's camera activity with
+  the scanned text, and everything after it is the app's own code. It also checks that About reports the key's protection
   as Android reports it. It fails on any ANR or crash the system records for
   the app.
 - **The PC side** has its own tests (`cargo test` in `remote/`), including
-  several devices, revocation and impersonation, runs that pause at every
+  a stolen code used first (both requests pending, only the approved phone
+  trusted), denial leaving the code to the real phone, one code never
+  approving two devices, approval bound to the exact certificate, expiry,
+  refusal of the older pairing flow, a device paired before approval existed
+  reconnecting, bounded and deduplicated requests, a crash between approval
+  and trust, several devices, revocation and impersonation, runs that pause at every
   effect even when asked not to, runs another device cannot follow or answer,
   unsharing a project while the service runs, two devices saving from one
   revision, and peers that send oversized, broken or no first messages or
@@ -451,13 +508,15 @@ What is **not implemented**:
 - Tested on an emulator (Android 16, x86_64). Not yet tested on a physical
   phone, with a physical camera scanning a QR code, on a phone on a separate
   LAN, or over the Internet or mobile data.
-- A pairing QR code scanned with another app is read by that app. LCL takes
-  no `lclpair://` links, but another installed app can claim the scheme, and
-  a camera or scanner app that opens links can then pass it the whole link,
-  one-time code included; whoever uses an unused code first pairs. What
-  guards against it is how the code is used: scan only with **Scan QR code**
-  in LCL; a code works once and expires within minutes (5 by default); and
-  the PC lists every paired device, to revoke one you do not know.
+- A pairing QR code scanned with another app is read by that app, one-time
+  code included. That no longer pairs anything: the other app can only make
+  a pending request, which shows a verification code different from your
+  phone's and is trusted only if someone approves it on the PC. It can make
+  noise — up to 8 waiting requests per code, which may keep your phone's
+  request from being recorded until you deny them or show a new QR code.
+  Approve only the request whose code your phone shows.
+- The verification code is 48 bits, for a person to compare; approval itself
+  is bound to the request's full certificate fingerprint.
 - A save's precondition sees every change made to the file before the PC
   compares, and two devices cannot both save over one revision; but another
   program on the PC that replaces the file in the instant between the
@@ -483,5 +542,9 @@ What is **not implemented**:
 | *The computer at … is not the PC this device paired with* | Another machine answers at that address, or the PC's identity was reset (`uninstall.sh --purge`). Pair again only if you know why. |
 | *Not trusted — This PC revoked this device* | Revoked on the PC. Pair again with a new QR code. |
 | *This pairing code was already used* / *has expired* | Show a new QR code. If a code you did not use was already used, look at the PC's device list and revoke any device you do not know. |
+| *Waiting for approval* does not end | Approve the request on the PC: Settings → Android devices, or `lcl-remote pending` then `lcl-remote approve REQUEST-ID`. |
+| *The PC denied this device* | The request was denied on the PC. Press Pair again, or show a new QR code, and approve the request whose code matches. |
+| *too many pairing requests are waiting* | Someone else holds the code. Deny the requests you do not recognise, or show a new QR code. |
+| *This pairing code uses the older pairing flow* | The PC's `lcl-remote` is from before approval, or the text is an old `lclpair://` link. Update LCL on the PC and show a new QR code. |
 | *Offline — no network* | The phone has no network at all; it connects as soon as it has one. |
 | A document shows *changed on the PC* | Someone saved it on the PC while you had unsaved edits; choose Use PC version or Keep mine. |

@@ -1,11 +1,11 @@
-//! A pairing link as a QR code: for a terminal, and as an SVG image.
+//! Pairing text as a QR code: for a terminal, and as an SVG image.
 
 use qrcode::{Color, EcLevel, QrCode};
 
 /// The code's modules, dark as `true`, row by row.
 pub fn matrix(text: &str) -> Result<(usize, Vec<bool>), String> {
     let code = QrCode::with_error_correction_level(text.as_bytes(), EcLevel::M)
-        .map_err(|e| format!("the link does not fit a QR code: {e}"))?;
+        .map_err(|e| format!("the pairing text does not fit a QR code: {e}"))?;
     let width = code.width();
     let dark = code
         .to_colors()

@@ -155,15 +155,26 @@ async function harness(options) {
   const isDocumentName = name => [".lcl.txt", ".lcl"].some(s => name.length > s.length && name.endsWith(s));
   // Android devices as the stand-in lcl-remote reports them (editor_save.rs
   // writes the same behaviour as a script for real-server mode): Phone A is
-  // paired; a pairing code brings Phone B; revoking aa11 revokes Phone A.
-  const remote = { paired: false, revoked: false };
+  // paired; a pairing code brings two requests, Phone B's and a stranger's
+  // whose name is markup; only approving c0ffee01 trusts Phone B, only
+  // denying badd0000 denies the stranger; revoking aa11 revokes Phone A.
+  const remote = { issued: false, approved: false, denied: false, revoked: false };
   const remoteDevices = () => ({
     service_running: true,
     devices: [
       { id: "aa11", name: "Phone A", fingerprint: "a", paired_at: 1790000000, last_seen: 1790000100, revoked_at: remote.revoked ? 1790000300 : null, online: false },
-      ...(remote.paired ? [{ id: "bb22", name: "Phone B", fingerprint: "b", paired_at: 1790000200, last_seen: 1790000200, revoked_at: null, online: true }] : []),
+      ...(remote.approved ? [{ id: "bb22", name: "Phone B", fingerprint: "b", paired_at: 1790000200, last_seen: 1790000200, revoked_at: null, online: true }] : []),
     ],
   });
+  const remotePending = () => {
+    const expires = Math.floor(Date.now() / 1000) + 240;
+    const requests = [];
+    if (remote.issued && !remote.approved) {
+      requests.push({ request: "c0ffee01", name: "Phone B", fingerprint: "bbbb0000".repeat(8), verification: "abcd-ef12-3456", created: 1790000150, expires, status: "pending" });
+      if (!remote.denied) requests.push({ request: "badd0000", name: "<img src=x onerror=alert(1)>", fingerprint: "eeee0000".repeat(8), verification: "9999-0000-1111", created: 1790000140, expires, status: "pending" });
+    }
+    return { service_running: true, requests };
+  };
   const request = async (url, init = {}) => {
     url = new URL(url, origin);
     const method = init.method || "GET";
@@ -217,12 +228,20 @@ async function harness(options) {
     } else if (url.pathname === "/api/remote/devices") {
       reply = jsonReply(remoteDevices());
     } else if (url.pathname === "/api/remote/pair" && method === "POST") {
-      remote.paired = true;
+      remote.issued = true;
       reply = jsonReply({
-        link: "lclpair://pair?v=1&c=fixture", svg: '<svg xmlns="http://www.w3.org/2000/svg"/>',
+        payload: "LCLPAIR|v=2&c=fixture", svg: '<svg xmlns="http://www.w3.org/2000/svg"/>',
         expires: Math.floor(Date.now() / 1000) + 300, addresses: ["192.0.2.1:47300"],
         pc: "Fixture PC", fingerprint: "0123456789abcdef".repeat(4),
       });
+    } else if (url.pathname === "/api/remote/pending") {
+      reply = jsonReply(remotePending());
+    } else if (url.pathname === "/api/remote/approve" && method === "POST") {
+      if (id === "c0ffee01") { remote.approved = true; reply = jsonReply({ request: id, decision: "approve", message: "approved Phone B" }); }
+      else reply = jsonReply({ error: `unexpected arguments: approve ${id}` }, 502);
+    } else if (url.pathname === "/api/remote/deny" && method === "POST") {
+      if (id === "badd0000") { remote.denied = true; reply = jsonReply({ request: id, decision: "deny", message: "denied" }); }
+      else reply = jsonReply({ error: `unexpected arguments: deny ${id}` }, 502);
     } else if (url.pathname === "/api/remote/revoke" && method === "POST") {
       if (id === "aa11") { remote.revoked = true; reply = jsonReply({ revoked: id, message: "revoked Phone A (aa11)" }); }
       else reply = jsonReply({ error: `no paired device has the id ${id}` }, 502);
@@ -660,6 +679,7 @@ const uiCases = [
     await until(() => words(box).includes("Phone A"), "the paired devices are listed");
     assert(words(box).includes("The Android service is running"), words(box));
     assert(words(box).includes("offline"), words(box));
+    await until(() => words(h.get("#remote-pending")).includes("No pairing request is waiting"), "the pending requests are shown, none yet");
 
     // Revoking ends a device's trust, so it takes two clicks.
     const revoke = () => find(box, node => node.tagName === "button" && /^Revoke/.test(node.textContent));
@@ -671,14 +691,66 @@ const uiCases = [
     assert.equal(revoke(), null, "a revoked device still offers Revoke");
 
     // A pairing code: the QR code is an image, never markup put into the page,
-    // with the fingerprint the phone shows before it pairs.
+    // with the fingerprint the phone shows before it asks, and the pairing
+    // text is plain text, not a link.
     await bounded(h.get("#remote-pair").onclick(), "a pairing code");
     const qr = find(box, node => node.tagName === "img");
     assert(qr && qr.src.startsWith("data:image/svg+xml;base64,"), "the QR code is not a data image");
     assert(words(box).includes("0123 4567 89ab cdef 0123 4567 89ab cdef …"), words(box));
-    const link = find(box, node => node.tagName === "input");
-    assert(link.value.startsWith("lclpair://pair?"), link.value);
+    assert(words(box).includes("Scanning does not trust the phone"), words(box));
+    const text = find(box, node => node.tagName === "input");
+    assert(text.value.startsWith("LCLPAIR|v=2&") && !text.value.includes("://"), text.value);
+    assert.equal(h.get("#remote-link"), text);
+    h.choose("Cancel");
+  }],
+
+  ["Settings → Android devices: pending pairing requests are approved only after a confirmation, and denied at once", async h => {
+    h.run("openSettings()");
+    const box = h.get("#remote-devices");
+    const pending = h.get("#remote-pending");
+    const words = node => [node.textContent || ""].concat(node.children.flatMap(words)).join(" ").replace(/\s+/g, " ").trim();
+    const find = (node, test) => test(node) ? node : node.children.map(child => find(child, test)).find(Boolean) || null;
+    const all = (node, test) => (test(node) ? [node] : []).concat(node.children.flatMap(child => all(child, test)));
+    const row = request => find(pending, node => node.dataset && node.dataset.request === request);
+    const control = (node, label) => find(node, child => child.tagName === "button" && child.textContent === label);
+    await until(() => words(box).includes("Phone A"), "the paired devices are listed");
+    await bounded(h.get("#remote-pair").onclick(), "a pairing code");
+    await until(() => row("c0ffee01") && row("badd0000"), "both pairing requests are listed");
+
+    // Each request with its verification code and full fingerprint; a name
+    // that is markup stays text, and nothing but the QR code is an image.
+    assert(words(row("c0ffee01")).includes("abcd-ef12-3456"), words(row("c0ffee01")));
+    assert(words(row("c0ffee01")).includes("bbbb0000".repeat(8)), words(row("c0ffee01")));
+    assert(words(row("badd0000")).includes("<img src=x onerror=alert(1)>"), words(row("badd0000")));
+    assert.equal(all(box, node => node.tagName === "img").length, 1, "a device name became an image");
+    // Requests are not devices: the trusted list is apart and unchanged.
+    const list = find(box, node => node.className === "remote-list");
+    assert(!words(list).includes("Phone B"), words(list));
+
+    // Deny the stranger: one click, and its request is gone.
+    await bounded(control(row("badd0000"), "Deny").onclick(), "the denial");
+    await until(() => !row("badd0000") && row("c0ffee01"), "the denied request is gone, the other stays");
+
+    // Approve takes a second, explicit step that shows the code and fingerprint.
+    control(row("c0ffee01"), "Approve…").onclick();
+    const confirm = find(row("c0ffee01"), node => node.className === "remote-confirm");
+    assert(confirm, "Approve… trusted the phone without asking");
+    assert(words(confirm).includes("Approve this Android device?"), words(confirm));
+    assert(words(confirm).includes("Verification code: abcd-ef12-3456"), words(confirm));
+    assert(words(confirm).includes(`Fingerprint: ${"bbbb0000".repeat(8)}`), words(confirm));
+    assert(!words(list).includes("Phone B"), "one click approved the phone");
+    control(confirm, "Cancel").onclick();
+    assert.equal(find(row("c0ffee01"), node => node.className === "remote-confirm"), null, "Cancel kept the confirmation");
+    await settle();
+    assert(!words(find(box, node => node.className === "remote-list")).includes("Phone B"), "Cancel approved the phone");
+
+    control(row("c0ffee01"), "Approve…").onclick();
+    const approve = control(find(row("c0ffee01"), node => node.className === "remote-confirm"), "Approve device");
+    await bounded(approve.onclick(), "the approval");
+    await until(() => !row("c0ffee01"), "the approved request leaves the pending list");
+    await until(() => words(find(box, node => node.className === "remote-list")).includes("Phone B"), "the approved phone is listed as a device");
     await until(() => words(box).includes("Phone B is paired"), "the new device is noticed");
+    assert(words(pending).includes("No pairing request is waiting"), words(pending));
     h.choose("Cancel");
   }],
 

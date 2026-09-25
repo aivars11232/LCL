@@ -1,11 +1,13 @@
-//! Android devices, from the desktop: pairing, the device list, revocation.
+//! Android devices, from the desktop: pairing, approving pairing requests,
+//! the device list, revocation.
 //!
 //! The PC side of LCL for Android is its own program, `lcl-remote`, with its
 //! own identity and trust store. The workspace reimplements none of it: its
 //! routes run that program with fixed arguments — `devices --json`,
-//! `pair --json`, `revoke ID` — and hand the answer to the page. The only
-//! thing a request can put on that command line is a device id, and only one
-//! that looks like one. There is no shell.
+//! `pair --json`, `pending --json`, `approve ID`, `deny ID`, `revoke ID` —
+//! and hand the answer to the page. The only thing a request can put on that
+//! command line is a device or request id, and only one that looks like one.
+//! There is no shell.
 //!
 //! The routes sit behind the same loopback address and session token as
 //! every other workspace route, so only the person at this PC reaches them.
@@ -66,6 +68,12 @@ pub fn valid_device_id(id: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+/// A pairing request id as `lcl-remote` writes them: lowercase hexadecimal,
+/// exactly like a device id, and checked the same way.
+pub fn valid_request_id(id: &str) -> bool {
+    valid_device_id(id)
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
@@ -121,6 +129,8 @@ mod tests {
             &"a".repeat(65),
         ] {
             assert!(!valid_device_id(bad), "{bad:?} was accepted");
+            assert!(!valid_request_id(bad), "{bad:?} was accepted");
         }
+        assert!(valid_request_id("8c1f2e3d4a5b6c7d"));
     }
 }

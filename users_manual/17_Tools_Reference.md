@@ -170,10 +170,14 @@ None of them is ever written into a document or a project file, and none
 changes what a document means or how it runs.
 
 Settings also has **Android devices** when `lcl-remote` is installed beside
-`lcl-workspace` or on `PATH`: a pairing QR code for LCL for Android, the paired
-devices with whether each is online and when it last connected, and **Revoke**.
-Those are kept by `lcl-remote` itself, not by the workspace; see
-`remote/README.md` in the source.
+`lcl-workspace` or on `PATH`: a pairing QR code for LCL for Android, the
+pending pairing requests, the paired devices with whether each is online and
+when it last connected, and **Revoke**. Scanning the QR code does not trust
+the phone. After Pair is pressed on the phone, its request appears under
+**Pending pairing requests** with a verification code; approve it (**Approve…**,
+then **Approve device**) only if that code is the one the phone shows, and
+**Deny** any request you do not recognise. Those are kept by `lcl-remote`
+itself, not by the workspace; see `remote/README.md` in the source.
 
 After `install.sh`, the desktop menu has an **LCL Workspace** entry, and
 `.lcl` files can be opened with it. A menu launch opens the default workspace

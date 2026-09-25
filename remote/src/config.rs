@@ -26,7 +26,7 @@ pub struct Config {
     /// Projects shared besides the default workspace.
     pub projects: Vec<PathBuf>,
     /// Addresses a device can use from other networks — a name or public
-    /// address forwarded to this PC — put into pairing links after the local
+    /// address forwarded to this PC — put into pairing codes after the local
     /// ones. The service does not make itself reachable from the Internet;
     /// this only tells a device where it already is.
     pub public_addresses: Vec<String>,

@@ -677,12 +677,41 @@ fn revoking_an_android_device_takes_only_a_device_id() {
 }
 
 #[test]
+fn approving_or_denying_a_pairing_request_takes_only_a_request_id() {
+    // Refused before any program is looked for or run, installed or not.
+    let (_scratch, running) = serve_examples("remote-decide");
+    for route in ["approve", "deny"] {
+        for id in ["-rf", "--json", "..%2Fpairing.json", "a%20b", "ABC", ""] {
+            let reply = send(
+                running.address,
+                "POST",
+                &format!("/api/remote/{route}?t={}&id={id}", running.token),
+                &[],
+                b"",
+            );
+            assert_eq!(reply.status, 400, "{route} {id:?}: {}", reply.body);
+        }
+        let missing = send(
+            running.address,
+            "POST",
+            &format!("/api/remote/{route}?t={}", running.token),
+            &[],
+            b"",
+        );
+        assert_eq!(missing.status, 400, "{route} without an id");
+    }
+}
+
+#[test]
 fn android_device_routes_need_the_session_token() {
     let (_scratch, running) = serve_examples("remote-token");
     for (method, path) in [
         ("GET", "/api/remote/devices"),
         ("POST", "/api/remote/pair"),
         ("POST", "/api/remote/revoke?id=00"),
+        ("GET", "/api/remote/pending"),
+        ("POST", "/api/remote/approve?id=00"),
+        ("POST", "/api/remote/deny?id=00"),
     ] {
         let reply = send(running.address, method, path, &[], b"");
         assert_eq!(

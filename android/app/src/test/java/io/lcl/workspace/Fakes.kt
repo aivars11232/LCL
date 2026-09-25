@@ -5,9 +5,11 @@ import io.lcl.workspace.remote.DeviceIdentity
 import io.lcl.workspace.remote.IdentityStore
 import io.lcl.workspace.remote.Opened
 import io.lcl.workspace.remote.PairingLink
+import io.lcl.workspace.remote.PairingVerification
 import io.lcl.workspace.remote.Reply
 import io.lcl.workspace.remote.Session
 import io.lcl.workspace.remote.Transport
+import io.lcl.workspace.remote.long
 import io.lcl.workspace.remote.str
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -60,6 +62,7 @@ class FakeIdentities : IdentityStore {
     override fun delete(alias: String) {
         if (keys.remove(alias) != null) deleted += alias
     }
+    override fun aliases(): List<String> = keys.keys.toList()
 }
 
 class FakeNetwork : NetworkMonitor {
@@ -97,7 +100,9 @@ class FakeSession(
 
 /**
  * A PC reachable at some addresses, with a fingerprint, the devices it
- * trusts, and a pairing code it accepts once.
+ * trusts, and a pairing code. As the real PC does, it records a device that
+ * asks with the code as a pending request, and trusts it only once the person
+ * at the PC approved that very request.
  */
 class FakePc(
     val pcId: String = "pc1",
@@ -106,6 +111,9 @@ class FakePc(
     var reachable: Set<String> = setOf("192.168.1.20:47300"),
     var code: String? = null,
 ) : Transport {
+    /** What the person at the PC does with a new request, before the device asks again. */
+    enum class Decision { APPROVE, DENY, WAIT }
+
     /** Trusted devices: certificate fingerprint to the id this PC gave it. */
     val devices = mutableMapOf<String, String>()
     val revoked = mutableSetOf<String>()
@@ -115,6 +123,12 @@ class FakePc(
     /** When set, a connection attempt waits on it: a slow network, mid-handshake. */
     var hold: CompletableDeferred<Unit>? = null
     var answer: suspend (String, JsonObject) -> Reply = { _, _ -> Reply(200, JsonObject(emptyMap())) }
+    var decision = Decision.APPROVE
+    /** Pairing requests for the current code: certificate fingerprint to "pending", "approved" or "denied". */
+    val requests = mutableMapOf<String, String>()
+    /** A PC that shows a verification code other than the device's own. */
+    var wrongVerification = false
+    private var expires = 0L
     private var nextDevice = 1
 
     /** Show a QR code: a fresh one-time code, good for five minutes. */
@@ -122,9 +136,21 @@ class FakePc(
         val fresh = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32) { (nextCode + it).toByte() })
         nextCode += 1
         code = fresh
-        return PairingLink(1, pcId, name, fingerprint, reachable.toList(), fresh, now + 300)
+        expires = now + 300
+        requests.clear()
+        return PairingLink(2, pcId, name, fingerprint, reachable.toList(), fresh, expires)
     }
     private var nextCode = 1
+
+    fun approve(device: String) {
+        check(requests[device] == "pending") { "no pending request for $device" }
+        requests[device] = "approved"
+    }
+
+    fun deny(device: String) {
+        check(requests[device] == "pending") { "no pending request for $device" }
+        requests[device] = "denied"
+    }
 
     override suspend fun open(address: String, pin: String, identity: DeviceIdentity, hello: JsonObject): Opened {
         attempts += 1
@@ -138,11 +164,30 @@ class FakePc(
         var paired: JsonObject? = null
         when (hello.str("intent")) {
             "pair" -> {
+                if (hello.long("pairing_version") != 2L) {
+                    return Opened.Refused("pairing_upgrade_required", "this device uses the older pairing flow")
+                }
                 val offered = hello.str("code")
                 if (offered == null || offered != code) {
                     return Opened.Refused("pairing_refused", "this pairing code was already used; show a new QR code")
                 }
+                when (requests[device]) {
+                    null, "pending" -> {
+                        if (device !in requests) {
+                            requests[device] = "pending"
+                            when (decision) {
+                                Decision.APPROVE -> requests[device] = "approved"
+                                Decision.DENY -> requests[device] = "denied"
+                                Decision.WAIT -> Unit
+                            }
+                        }
+                        val shown = PairingVerification.of(fingerprint, offered, device)
+                        return Opened.Pending("req-$device".take(20), if (wrongVerification) "0000-0000-0000" else shown, expires, name)
+                    }
+                    "denied" -> return Opened.Refused("pairing_denied", "the PC denied this device's pairing request")
+                }
                 code = null
+                requests.clear()
                 val id = "dev${nextDevice++}"
                 devices[device] = id
                 revoked -= device

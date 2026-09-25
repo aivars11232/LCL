@@ -26,10 +26,18 @@ import java.security.MessageDigest
 object Protocol {
     const val VERSION = "lcl.remote/1"
 
+    /** The pairing flow this app speaks: the PC approves each new device. */
+    const val PAIRING_VERSION = 2
+
+    /**
+     * Ask the PC to trust this device. The PC answers `pairing_pending` until
+     * the person at the PC approved this very request, then `paired`.
+     */
     fun helloPair(code: String, deviceName: String): JsonObject = buildJsonObject {
         put("type", "hello")
         put("protocol", VERSION)
         put("intent", "pair")
+        put("pairing_version", PAIRING_VERSION)
         put("code", code)
         put("name", deviceName)
     }

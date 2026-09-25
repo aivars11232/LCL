@@ -1041,27 +1041,127 @@ function openSettings() {
 
 /* LCL for Android pairs with this PC through `lcl-remote`, which keeps its own
  * identity and list of trusted devices. This section only shows what it
- * reports and asks it to pair or revoke; it changes nothing that is saved. */
+ * reports and asks it to pair, approve, deny or revoke; it changes nothing
+ * that is saved.
+ *
+ * A pairing code only lets a phone ask. Its request waits under Pending
+ * pairing requests until the person approves it here — after comparing the
+ * verification code the phone shows — and approving takes a second,
+ * explicit step. Trusted devices are listed apart from requests. */
 function androidDevices(form) {
   form.append(el("h3", "", "Android devices"));
   const box = el("div", "remote");
   box.id = "remote-devices";
   const status = el("p", "note", "Looking for lcl-remote…");
   const list = el("div", "remote-list");
+  const requests = el("div", "remote-requests");
+  requests.id = "remote-pending";
   const pair = el("button", "", "Pair Android device");
   pair.type = "button";
   pair.id = "remote-pair";
   pair.hidden = true;
   const code = el("div", "remote-code");
-  box.append(status, list, pair, code);
+  box.append(status, list, requests, pair, code);
   form.append(box);
 
   let devices = [];
+  let waiting = [];
+  /* The pairing code on screen, and the devices known before it was shown. */
+  let shown = null;
+  /* The request whose approval is being confirmed, kept across refreshes. */
+  let confirming = null;
   let timer = null;
-  const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+  let watch = null;
+  const stop = () => {
+    if (timer) { clearInterval(timer); timer = null; }
+    if (watch) { clearInterval(watch); watch = null; }
+  };
   /* Closed, or replaced by another dialog: nothing more to show or poll. */
   const showing = () => box.isConnected && !$("#modal-backdrop").hidden;
   const when = (seconds) => seconds ? new Date(seconds * 1000).toLocaleString() : "never";
+  const remaining = (expires) => {
+    const seconds = Math.max(0, Math.round(expires - Date.now() / 1000));
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  };
+  const button = (label, onclick) => {
+    const node = el("button", "", label);
+    node.type = "button";
+    node.onclick = onclick;
+    return node;
+  };
+
+  async function decide(r, decision) {
+    confirming = null;
+    try {
+      await api("POST", `/api/remote/${decision}`, { id: r.request });
+      toast(decision === "approve"
+        ? `${r.name} is approved. The phone finishes pairing by itself within a few seconds.`
+        : `${r.name}'s request is denied. It is not trusted.`, "good");
+    } catch (e) {
+      toast(`${decision === "approve" ? "Not approved" : "Not denied"}. ${e.message}`, "bad");
+    }
+    await refresh();
+  }
+
+  /* The requests last reported, as rows. Every name and code is text. */
+  function showRequests() {
+    requests.replaceChildren(el("h4", "", "Pending pairing requests"));
+    if (waiting.length === 0) {
+      requests.append(el("p", "note", "No pairing request is waiting."));
+      return;
+    }
+    requests.append(el("p", "note",
+      "A phone that scanned a pairing code asks to be trusted. Approve only the request whose " +
+      "verification code your phone shows; deny any you do not recognise."));
+    if (!waiting.some((r) => r.request === confirming)) confirming = null;
+    for (const r of waiting) {
+      const row = el("div", "remote-request");
+      row.dataset.request = r.request;
+      row.append(
+        el("span", "remote-name", r.name),
+        el("span", "remote-verification mono", r.verification),
+        el("span", "note mono", `fingerprint ${r.fingerprint}`),
+        el("span", "note", r.status === "approved"
+          ? "approved; the phone finishes pairing by itself"
+          : `asked ${when(r.created)} · expires in ${remaining(r.expires)}`),
+      );
+      if (r.status === "pending" && confirming === r.request) {
+        const confirm = el("div", "remote-confirm");
+        confirm.append(
+          el("p", "", "Approve this Android device?"),
+          el("p", "", `Verification code: ${r.verification}`),
+          el("p", "mono", `Fingerprint: ${r.fingerprint}`),
+          el("p", "note", "Approve only if the phone shows this same verification code."),
+          button("Approve device", () => decide(r, "approve")),
+          button("Cancel", () => { confirming = null; showRequests(); }),
+        );
+        row.append(confirm);
+      } else if (r.status === "pending") {
+        row.append(
+          button("Approve…", () => { confirming = r.request; showRequests(); }),
+          button("Deny", () => decide(r, "deny")),
+        );
+      }
+      requests.append(row);
+    }
+  }
+
+  async function refreshRequests() {
+    let reply;
+    try {
+      reply = await api("GET", "/api/remote/pending");
+    } catch (e) {
+      requests.replaceChildren(el("h4", "", "Pending pairing requests"),
+        el("p", "bad", `Pairing requests are unavailable: ${e.message}`));
+      return;
+    }
+    if (reply.installed === false) { requests.replaceChildren(); return; }
+    waiting = reply.requests || [];
+    showRequests();
+    /* Requests change from the phone's side too; follow them while any wait. */
+    if (waiting.length > 0 && !timer && !watch) watch = setInterval(refresh, 2000);
+    if (watch && waiting.length === 0) { clearInterval(watch); watch = null; }
+  }
 
   async function refresh() {
     if (!showing()) { stop(); return null; }
@@ -1073,7 +1173,7 @@ function androidDevices(form) {
       return null;
     }
     if (reply.installed === false) {
-      status.replaceChildren("LCL for Android pairs with this PC through lcl-remote, which is not installed here.");
+      status.replaceChildren(el("span", "", "LCL for Android pairs with this PC through lcl-remote, which is not installed here."));
       return null;
     }
     status.replaceChildren(reply.service_running
@@ -1118,7 +1218,16 @@ function androidDevices(form) {
       }
       list.append(row);
     }
+    await refreshRequests();
     pair.hidden = false;
+    /* Noticed on any refresh — the one after an approval, or a later one. */
+    const fresh = shown && devices.find((d) => !shown.known.has(d.id));
+    if (fresh) {
+      shown = null;
+      if (timer) { clearInterval(timer); timer = null; }
+      code.replaceChildren(el("p", "good", `${fresh.name} is paired. It reconnects by itself from now on.`));
+      pair.disabled = false;
+    }
     return reply;
   }
 
@@ -1133,43 +1242,44 @@ function androidDevices(form) {
       pair.disabled = false;
       return;
     }
-    const known = new Set(devices.map((d) => d.id));
+    shown = { known: new Set(devices.map((d) => d.id)), expires: issued.expires };
     /* An image, not markup: nothing lcl-remote printed becomes part of the page. */
     const qr = el("img", "qr");
     qr.alt = "Pairing QR code";
     qr.src = "data:image/svg+xml;base64," + btoa(issued.svg);
     const fingerprint = (issued.fingerprint.match(/.{4}/g) || []).slice(0, 8).join(" ");
     const left = el("p", "note");
-    const link = el("input");
-    link.id = "remote-link";
-    link.type = "text";
-    link.readOnly = true;
-    link.value = issued.link;
-    const linkLabel = el("label", "note", "Or paste this link into the app:");
-    linkLabel.htmlFor = "remote-link";
+    const text = el("input");
+    text.id = "remote-link";
+    text.type = "text";
+    text.readOnly = true;
+    text.value = issued.payload;
+    const textLabel = el("label", "note", "Or paste this pairing text into the app:");
+    textLabel.htmlFor = "remote-link";
     code.replaceChildren(
       qr,
-      el("p", "", "On the phone: LCL → Pair a PC → Scan QR code. The phone shows this fingerprint before it pairs:"),
+      el("p", "", "On the phone: LCL → Pair a PC → Scan QR code. The phone shows this fingerprint before it asks to pair:"),
       el("p", "mono", `${fingerprint} …`),
-      el("p", "note", `The code works once. Addresses in it: ${issued.addresses.join(", ")}.`),
+      el("p", "", "Scanning does not trust the phone. After Pair is pressed on the phone, its request appears under " +
+        "Pending pairing requests: approve it only if its verification code is the one the phone shows."),
+      el("p", "note", `The code pairs one device. Addresses in it: ${issued.addresses.join(", ")}.`),
       left,
-      linkLabel,
-      link,
+      textLabel,
+      text,
     );
     const tick = async () => {
       const seconds = Math.round(issued.expires - Date.now() / 1000);
-      const reply = await refresh();
-      const fresh = reply && devices.find((d) => !known.has(d.id));
-      if (fresh) {
+      await refresh();
+      if (!shown) return; // paired: nothing left to count down
+      if (seconds <= 0) {
         stop();
-        code.replaceChildren(el("p", "good", `${fresh.name} is paired. It reconnects by itself from now on.`));
-        pair.disabled = false;
-      } else if (seconds <= 0) {
-        stop();
+        shown = null;
         code.replaceChildren(el("p", "note", "The code expired. Pair Android device makes a new one."));
         pair.disabled = false;
+      } else if (waiting.some((r) => r.status === "pending")) {
+        left.textContent = `A request is waiting below: compare its verification code with the phone. The code expires in ${remaining(issued.expires)}.`;
       } else {
-        left.textContent = `Waiting for the phone… the code expires in ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}.`;
+        left.textContent = `Waiting for the phone… the code expires in ${remaining(issued.expires)}.`;
       }
     };
     timer = setInterval(tick, 2000);

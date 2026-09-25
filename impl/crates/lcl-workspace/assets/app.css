@@ -414,3 +414,11 @@ button.danger:hover:not(:disabled) { filter: brightness(1.1); color: var(--accen
 .remote-code .qr { width: 232px; height: 232px; background: #fff; padding: 8px; border-radius: 6px; image-rendering: pixelated; }
 .remote-code .mono { font-family: var(--mono, monospace); }
 .remote-code input { width: 100%; font-family: var(--mono, monospace); font-size: 12px; }
+.remote-requests { display: grid; gap: 6px; margin: 6px 0; }
+.remote-requests h4 { margin: 4px 0 0; }
+.remote-request { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.remote-request .remote-name { font-weight: 600; }
+.remote-request .mono, .remote-confirm .mono { font-family: var(--mono, monospace); overflow-wrap: anywhere; }
+.remote-request .remote-verification { font-size: 1.25em; font-weight: 700; letter-spacing: 0.05em; }
+.remote-confirm { flex-basis: 100%; display: grid; gap: 4px; justify-items: start; padding: 8px; border: 1px solid currentColor; border-radius: 6px; }
+.remote-confirm p { margin: 0; }

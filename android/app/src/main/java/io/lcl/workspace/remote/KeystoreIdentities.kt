@@ -19,6 +19,9 @@ interface IdentityStore {
     fun create(alias: String, subject: String): DeviceIdentity
     fun delete(alias: String)
 
+    /** Every key this store holds. */
+    fun aliases(): List<String> = emptyList()
+
     /** Where the key's material is kept, as far as the platform says; `null` if unknown. */
     fun protection(alias: String): KeyProtection? = null
 }
@@ -102,6 +105,8 @@ class KeystoreIdentities : IdentityStore {
         val keystore = keystore()
         if (keystore.containsAlias(alias)) keystore.deleteEntry(alias)
     }
+
+    override fun aliases(): List<String> = keystore().aliases().toList()
 
     override fun protection(alias: String): KeyProtection? {
         val key = keystore().getKey(alias, null) as? PrivateKey ?: return null

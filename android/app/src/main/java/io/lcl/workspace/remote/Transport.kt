@@ -43,8 +43,13 @@ interface Session {
 sealed interface Opened {
     /** Let in. `paired` is set when this connection paired the device. */
     data class Accepted(val session: Session, val paired: JsonObject?) : Opened
-    /** Refused by the PC, with its reason: not_paired, revoked, pairing_refused, … */
+    /** Refused by the PC, with its reason: not_paired, revoked, pairing_refused, pairing_denied, … */
     data class Refused(val code: String, val message: String) : Opened
+    /**
+     * A pairing request the PC recorded and has not decided on. Nothing is
+     * trusted, and the PC closed the connection; ask again later.
+     */
+    data class Pending(val request: String, val verification: String, val expires: Long, val pcName: String?) : Opened
 }
 
 /** Opens connections. The real one is [TlsTransport]; tests substitute their own. */
@@ -105,6 +110,15 @@ class TlsTransport(private val connectTimeoutMs: Int = 4_000) : Transport {
                 "error" -> {
                     socket.close()
                     Opened.Refused(first.str("code") ?: "error", first.str("message") ?: "the PC refused")
+                }
+                "pairing_pending" -> {
+                    socket.close()
+                    Opened.Pending(
+                        request = first.str("request") ?: throw IOException("the PC's pending answer names no request"),
+                        verification = first.str("verification") ?: throw IOException("the PC's pending answer has no verification code"),
+                        expires = first.long("expires") ?: throw IOException("the PC's pending answer has no expiry"),
+                        pcName = first.obj("pc")?.str("name"),
+                    )
                 }
                 else -> {
                     socket.close()

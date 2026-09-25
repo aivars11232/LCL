@@ -258,12 +258,30 @@ fn code(home: &Home, ttl: u64) -> String {
         .1
 }
 
-/// Pair a device and return its authenticated connection and device id.
-fn pair(home: &Home, pc: &Pc, device: &Device, name: &str) -> (Client, String) {
-    let code = code(home, 300);
+/// A device asks to pair with `code`, as the app does when Pair is pressed:
+/// the PC's answer. A pending answer ends the connection.
+fn ask(pc: &Pc, device: &Device, code: &str, name: &str) -> Json {
+    let mut client = connect(pc, device, &pc.fingerprint).expect("TLS to the pinned PC");
+    client.hello(&format!(
+        "\"intent\":\"pair\",\"pairing_version\":2,\"code\":\"{code}\",\"name\":{}",
+        json_string(name)
+    ))
+}
+
+/// The person at the PC approves one request, through the PC's own pairing
+/// state (what `lcl-remote approve` does).
+fn approve(home: &Home, request: &str) {
+    Pairing::new(&home.paths())
+        .approve(request, paths::now())
+        .unwrap();
+}
+
+/// The device asks again after its request was approved: it is paired, and
+/// this connection is its first session.
+fn finish(pc: &Pc, device: &Device, code: &str, name: &str) -> (Client, String) {
     let mut client = connect(pc, device, &pc.fingerprint).expect("TLS to the pinned PC");
     let paired = client.hello(&format!(
-        "\"intent\":\"pair\",\"code\":\"{code}\",\"name\":{}",
+        "\"intent\":\"pair\",\"pairing_version\":2,\"code\":\"{code}\",\"name\":{}",
         json_string(name)
     ));
     assert_eq!(s(&paired, "type"), "paired", "{paired:?}");
@@ -271,6 +289,16 @@ fn pair(home: &Home, pc: &Pc, device: &Device, name: &str) -> (Client, String) {
     assert_eq!(s(&welcome, "type"), "welcome");
     let id = s(welcome.get("device").unwrap(), "id");
     (client, id)
+}
+
+/// Pair a device as a person does — it asks, the PC approves that request,
+/// it asks again — and return its authenticated connection and device id.
+fn pair(home: &Home, pc: &Pc, device: &Device, name: &str) -> (Client, String) {
+    let code = code(home, 300);
+    let pending = ask(pc, device, &code, name);
+    assert_eq!(s(&pending, "type"), "pairing_pending", "{pending:?}");
+    approve(home, &s(&pending, "request"));
+    finish(pc, device, &code, name)
 }
 
 fn reconnect(pc: &Pc, device: &Device) -> (Client, Json) {
@@ -350,6 +378,11 @@ fn a_pairing_code_names_the_port_the_service_really_listens_on() {
     }
     assert!(output.status.success(), "{stderr}");
     let reply = lcl_spec::json::parse(std::str::from_utf8(&output.stdout).unwrap()).unwrap();
+    // Plain pairing text, not a link: nothing a camera app would open.
+    let payload = s(&reply, "payload");
+    assert!(payload.starts_with("LCLPAIR|v=2&"), "{payload}");
+    assert!(!payload.contains("://"), "{payload}");
+    assert!(reply.get("link").is_none(), "a link is still offered");
     let addresses = reply.get("addresses").and_then(Json::as_array).unwrap();
     assert!(!addresses.is_empty());
     let port = format!(":{}", pc.address.port());
@@ -364,34 +397,397 @@ fn an_expired_or_reused_code_is_refused() {
     let home = Home::new("codes");
     let pc = start(&home);
     let expired = code(&home, 0);
-    let mut client = connect(&pc, &device(), &pc.fingerprint).unwrap();
-    let answer = client.hello(&format!(
-        "\"intent\":\"pair\",\"code\":\"{expired}\",\"name\":\"late\""
-    ));
+    let answer = ask(&pc, &device(), &expired, "late");
     assert_eq!(s(&answer, "code"), "pairing_refused");
     assert!(s(&answer, "message").contains("expired"));
 
     let used = code(&home, 300);
-    let mut first = connect(&pc, &device(), &pc.fingerprint).unwrap();
-    assert_eq!(
-        s(
-            &first.hello(&format!(
-                "\"intent\":\"pair\",\"code\":\"{used}\",\"name\":\"first\""
-            )),
-            "type"
-        ),
-        "paired"
-    );
-    let mut second = connect(&pc, &device(), &pc.fingerprint).unwrap();
-    let answer = second.hello(&format!(
-        "\"intent\":\"pair\",\"code\":\"{used}\",\"name\":\"replay\""
-    ));
+    let first = device();
+    let pending = ask(&pc, &first, &used, "first");
+    approve(&home, &s(&pending, "request"));
+    finish(&pc, &first, &used, "first");
+    let answer = ask(&pc, &device(), &used, "replay");
     assert_eq!(
         s(&answer, "code"),
         "pairing_refused",
         "a QR code paired twice"
     );
     assert!(s(&answer, "message").contains("already used"));
+}
+
+// ---------------------------------------------------------------------------
+// A11: a pairing code asks; only the PC's approval trusts
+// ---------------------------------------------------------------------------
+
+/// The devices the PC trusts, straight from its registry.
+fn trusted(home: &Home) -> Vec<lcl_remote::devices::Device> {
+    lcl_remote::devices::Registry::new(&home.paths())
+        .list()
+        .unwrap()
+        .into_iter()
+        .filter(|d| !d.is_revoked())
+        .collect()
+}
+
+#[test]
+fn a11_r1_a_valid_code_alone_does_not_create_trust() {
+    let home = Home::new("a11-r1");
+    let pc = start(&home);
+    let code = code(&home, 300);
+    let stranger = device();
+    let mut client = connect(&pc, &stranger, &pc.fingerprint).unwrap();
+    let answer = client.hello(&format!(
+        "\"intent\":\"pair\",\"pairing_version\":2,\"code\":\"{code}\",\"name\":\"whoever holds the code\""
+    ));
+    assert_eq!(
+        s(&answer, "type"),
+        "pairing_pending",
+        "a valid code alone was answered with {answer:?}"
+    );
+    assert!(
+        client.closed_within(Duration::from_secs(3)),
+        "a pending candidate kept its connection"
+    );
+    assert!(
+        trusted(&home).is_empty(),
+        "a valid code alone made a trusted device: {:?}",
+        trusted(&home)
+    );
+    let (_c, refused) = reconnect(&pc, &stranger);
+    assert_eq!(
+        s(&refused, "code"),
+        "not_paired",
+        "a candidate nobody approved connected: {refused:?}"
+    );
+    // Asking again changes nothing: still the same pending request.
+    let again = ask(&pc, &stranger, &code, "whoever holds the code");
+    assert_eq!(s(&again, "type"), "pairing_pending");
+    assert_eq!(s(&again, "request"), s(&answer, "request"));
+    assert!(trusted(&home).is_empty());
+}
+
+/// What the phone computes and shows for its own request: the PC's
+/// fingerprint, the code it scanned, and its own certificate.
+fn phone_verification(pc: &Pc, code: &str, device: &Device) -> String {
+    lcl_remote::pairing::verification(
+        &pc.fingerprint,
+        &lcl_spec::sha256::hex_digest(code.as_bytes()),
+        &identity::fingerprint(&device.certificate),
+    )
+}
+
+/// `lcl-remote pending --json`, as the person at the PC reads it.
+fn pending_requests(home: &Home) -> Vec<Json> {
+    let output = cli(home, &["pending", "--json"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let listed = lcl_spec::json::parse(std::str::from_utf8(&output.stdout).unwrap()).unwrap();
+    listed
+        .get("requests")
+        .and_then(Json::as_array)
+        .unwrap()
+        .to_vec()
+}
+
+fn cli_ok(home: &Home, args: &[&str]) -> String {
+    let output = cli(home, args);
+    assert!(
+        output.status.success(),
+        "{args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).unwrap()
+}
+
+fn cli_refused(home: &Home, args: &[&str]) -> String {
+    let output = cli(home, args);
+    assert!(!output.status.success(), "{args:?} was accepted");
+    String::from_utf8(output.stderr).unwrap()
+}
+
+#[test]
+fn a11_r2_approval_trusts_only_the_exact_certificate() {
+    let home = Home::new("a11-r2");
+    let pc = start(&home);
+    let code = code(&home, 300);
+    let (a, b) = (device(), device());
+    let pending = ask(&pc, &a, &code, "Phone A");
+    let request = s(&pending, "request");
+    assert_eq!(
+        s(&pending, "verification"),
+        phone_verification(&pc, &code, &a)
+    );
+    let said = cli_ok(&home, &["approve", &request]);
+    assert!(said.contains("approved Phone A"), "{said}");
+    assert!(trusted(&home).is_empty(), "approval alone made a record");
+
+    // Another key with the same code, naming A's request: nothing.
+    let mut client = connect(&pc, &b, &pc.fingerprint).unwrap();
+    let answer = client.hello(&format!(
+        "\"intent\":\"pair\",\"pairing_version\":2,\"code\":\"{code}\",\"name\":\"Phone A\",\"request\":\"{request}\""
+    ));
+    assert_eq!(s(&answer, "code"), "pairing_refused", "{answer:?}");
+    // A with another code of this PC: a new request, not A's approval.
+    let other_code = self::code(&home, 300);
+    let elsewhere = ask(&pc, &a, &other_code, "Phone A");
+    assert_eq!(s(&elsewhere, "type"), "pairing_pending", "{elsewhere:?}");
+    assert_ne!(s(&elsewhere, "request"), request);
+    // A at another PC, with this PC's code: that PC never issued it.
+    let other_home = Home::new("a11-r2-other");
+    let other_pc = start(&other_home);
+    let there = ask(&other_pc, &a, &code, "Phone A");
+    assert_eq!(s(&there, "code"), "pairing_refused", "{there:?}");
+    assert!(trusted(&other_home).is_empty());
+
+    // A itself, with the approved code: trusted, and only A.
+    let (_live, id) = finish(&pc, &a, &code, "Phone A");
+    let devices = trusted(&home);
+    assert_eq!(devices.len(), 1);
+    assert_eq!(devices[0].id, id);
+    assert_eq!(
+        devices[0].fingerprint,
+        identity::fingerprint(&a.certificate)
+    );
+    let (_c, welcome) = reconnect(&pc, &a);
+    assert_eq!(s(&welcome, "type"), "welcome");
+    let (_c, refused) = reconnect(&pc, &b);
+    assert_eq!(s(&refused, "code"), "not_paired");
+    // The request that paired is not pending any more.
+    let still: Vec<String> = pending_requests(&home)
+        .iter()
+        .map(|r| s(r, "request"))
+        .collect();
+    assert!(!still.contains(&request), "{still:?}");
+}
+
+#[test]
+fn a11_r3_a_stolen_code_used_first_still_trusts_nobody_but_the_approved_phone() {
+    let home = Home::new("a11-r3");
+    let pc = start(&home);
+    let code = code(&home, 300);
+    let (attacker, phone) = (device(), device());
+
+    // The attacker asks first; the phone second; and both at once, too.
+    let first = ask(&pc, &attacker, &code, "Pixel 8");
+    assert_eq!(s(&first, "type"), "pairing_pending", "{first:?}");
+    let racing: Vec<_> = [attacker.clone(), phone.clone()]
+        .into_iter()
+        .map(|d| {
+            let (pc, code) = (pc.clone(), code.clone());
+            std::thread::spawn(move || ask(&pc, &d, &code, "Pixel 8"))
+        })
+        .collect();
+    for answer in racing {
+        let answer = answer.join().unwrap();
+        assert_eq!(s(&answer, "type"), "pairing_pending", "{answer:?}");
+    }
+    assert!(trusted(&home).is_empty(), "a race made a trusted device");
+    let (_c, refused) = reconnect(&pc, &attacker);
+    assert_eq!(s(&refused, "code"), "not_paired");
+
+    // The PC lists both — the same name, told apart by their verification
+    // codes — and never the code itself.
+    let listed = pending_requests(&home);
+    assert_eq!(listed.len(), 2, "{listed:?}");
+    let output = cli_ok(&home, &["pending", "--json"]) + &cli_ok(&home, &["pending"]);
+    assert!(!output.contains(&code), "pending shows the pairing code");
+    let mine = phone_verification(&pc, &code, &phone);
+    assert_ne!(mine, phone_verification(&pc, &code, &attacker));
+    let chosen: Vec<&Json> = listed
+        .iter()
+        .filter(|r| s(r, "verification") == mine)
+        .collect();
+    assert_eq!(chosen.len(), 1);
+    assert_eq!(
+        s(chosen[0], "fingerprint"),
+        identity::fingerprint(&phone.certificate)
+    );
+    cli_ok(&home, &["approve", &s(chosen[0], "request")]);
+
+    let (_live, id) = finish(&pc, &phone, &code, "Pixel 8");
+    let again = ask(&pc, &attacker, &code, "Pixel 8");
+    assert_eq!(s(&again, "code"), "pairing_refused", "{again:?}");
+    let (_c, refused) = reconnect(&pc, &attacker);
+    assert_eq!(s(&refused, "code"), "not_paired");
+    let late = ask(&pc, &device(), &code, "Pixel 8");
+    assert_eq!(s(&late, "code"), "pairing_refused", "{late:?}");
+    let devices = trusted(&home);
+    assert_eq!(devices.len(), 1);
+    assert_eq!(devices[0].id, id);
+    assert!(pending_requests(&home).is_empty());
+}
+
+#[test]
+fn a11_r4_denying_a_stranger_leaves_the_code_to_the_real_phone() {
+    let home = Home::new("a11-r4");
+    let pc = start(&home);
+    let code = code(&home, 300);
+    let (attacker, phone) = (device(), device());
+    let stranger = ask(&pc, &attacker, &code, "Phone");
+    let said = cli_ok(&home, &["deny", &s(&stranger, "request")]);
+    assert!(said.contains("denied"), "{said}");
+    let again = ask(&pc, &attacker, &code, "Phone");
+    assert_eq!(s(&again, "code"), "pairing_denied", "{again:?}");
+    assert!(pending_requests(&home).is_empty());
+
+    let mine = ask(&pc, &phone, &code, "Phone");
+    assert_eq!(s(&mine, "type"), "pairing_pending", "{mine:?}");
+    cli_ok(&home, &["approve", &s(&mine, "request")]);
+    let (_live, id) = finish(&pc, &phone, &code, "Phone");
+    assert_eq!(trusted(&home).len(), 1);
+    assert_eq!(trusted(&home)[0].id, id);
+    assert!(cli_refused(&home, &["approve", &s(&stranger, "request")]).contains("denied"));
+}
+
+#[test]
+fn a11_r5_one_code_never_approves_two_devices() {
+    let home = Home::new("a11-r5");
+    let pc = start(&home);
+    let code = code(&home, 300);
+    let (a, b) = (device(), device());
+    let first = s(&ask(&pc, &a, &code, "A"), "request");
+    let second = s(&ask(&pc, &b, &code, "B"), "request");
+    cli_ok(&home, &["approve", &first]);
+    let refused = cli_refused(&home, &["approve", &second]);
+    assert!(refused.contains("another device was approved"), "{refused}");
+    assert!(cli_refused(&home, &["approve", &first]).contains("already approved"));
+    finish(&pc, &a, &code, "A");
+    let answer = ask(&pc, &b, &code, "B");
+    assert_eq!(s(&answer, "code"), "pairing_refused", "{answer:?}");
+    assert!(cli_refused(&home, &["approve", &second]).contains("another device was approved"));
+    assert_eq!(trusted(&home).len(), 1);
+    // Unknown request ids approve nothing either.
+    assert!(cli_refused(&home, &["approve", "0000000000000000"]).contains("no pairing request"));
+}
+
+#[test]
+fn a11_r6_pending_and_approved_requests_expire_with_their_code() {
+    let home = Home::new("a11-r6");
+    let pc = start(&home);
+    let (a, b) = (device(), device());
+    let never = code(&home, 4);
+    let decided = code(&home, 4);
+    let undecided = s(&ask(&pc, &a, &never, "A"), "request");
+    let approved = s(&ask(&pc, &b, &decided, "B"), "request");
+    cli_ok(&home, &["approve", &approved]);
+    std::thread::sleep(Duration::from_millis(5_100));
+    assert!(cli_refused(&home, &["approve", &undecided]).contains("expired"));
+    let late = ask(&pc, &a, &never, "A");
+    assert_eq!(s(&late, "code"), "pairing_refused", "{late:?}");
+    assert!(s(&late, "message").contains("expired"));
+    // Approved in time, but the phone came back too late: no trust.
+    let late = ask(&pc, &b, &decided, "B");
+    assert_eq!(s(&late, "code"), "pairing_refused", "{late:?}");
+    assert!(s(&late, "message").contains("expired"));
+    assert!(trusted(&home).is_empty());
+    assert!(pending_requests(&home).is_empty());
+}
+
+#[test]
+fn a11_r7_the_older_pairing_flow_is_refused_by_the_pc() {
+    let home = Home::new("a11-r7");
+    let pc = start(&home);
+    let code = code(&home, 300);
+    for (version, expected) in [
+        ("", "pairing_upgrade_required"),
+        (",\"pairing_version\":1", "pairing_upgrade_required"),
+        (",\"pairing_version\":\"2\"", "pairing_upgrade_required"),
+        (",\"pairing_version\":null", "pairing_upgrade_required"),
+        (",\"pairing_version\":3", "unsupported_pairing_version"),
+    ] {
+        let mut client = connect(&pc, &device(), &pc.fingerprint).unwrap();
+        let answer = client.hello(&format!(
+            "\"intent\":\"pair\",\"code\":\"{code}\",\"name\":\"old app\"{version}"
+        ));
+        assert_eq!(s(&answer, "code"), expected, "{version}: {answer:?}");
+        assert!(client.closed_within(Duration::from_secs(3)));
+    }
+    assert!(trusted(&home).is_empty());
+    assert!(
+        pending_requests(&home).is_empty(),
+        "an old-flow hello was recorded"
+    );
+    // The code was not touched: the current flow still asks with it.
+    let answer = ask(&pc, &device(), &code, "new app");
+    assert_eq!(s(&answer, "type"), "pairing_pending", "{answer:?}");
+}
+
+#[test]
+fn a11_r8_a_device_paired_before_a11_reconnects_with_no_qr_code_or_approval() {
+    // The files a PC paired before A11 has: devices.json as it wrote it, and
+    // a version 1 pairing.json whose code the device used.
+    let home = Home::new("a11-r8");
+    let phone = device();
+    let fingerprint = identity::fingerprint(&phone.certificate);
+    let paths = home.paths();
+    lcl_remote::paths::write_private(
+        &paths.config.join("devices.json"),
+        format!(
+            "{{\n  \"version\": 1,\n  \"devices\": [\n    {{\n      \"id\": \"5a4e3c2b1a0f9e8d\",\n      \"name\": \"Pixel 7\",\n      \"fingerprint\": \"{fingerprint}\",\n      \"paired_at\": 1790000000,\n      \"last_seen\": 1790000100,\n      \"protocol\": \"lcl.remote/1\",\n      \"revoked_at\": null\n    }}\n  ]\n}}\n"
+        )
+        .as_bytes(),
+    )
+    .unwrap();
+    let now = paths::now();
+    lcl_remote::paths::write_private(
+        &paths.state.join("pairing.json"),
+        format!(
+            "{{\n  \"version\": 1,\n  \"challenges\": [\n    {{\n      \"id\": \"0011223344556677\",\n      \"hash\": \"{}\",\n      \"created\": {},\n      \"expires\": {},\n      \"consumed_at\": {},\n      \"consumed_by\": \"{fingerprint}\"\n    }}\n  ]\n}}\n",
+            "0".repeat(64),
+            now - 600,
+            now - 300,
+            now - 590
+        )
+        .as_bytes(),
+    )
+    .unwrap();
+    let pc = start(&home);
+    let (mut client, welcome) = reconnect(&pc, &phone);
+    assert_eq!(s(&welcome, "type"), "welcome", "{welcome:?}");
+    assert_eq!(s(welcome.get("device").unwrap(), "id"), "5a4e3c2b1a0f9e8d");
+    let (status, body) = client.request("projects", "");
+    assert_eq!(status, 200, "{body:?}");
+    let mut named = connect(&pc, &phone, &pc.fingerprint).unwrap();
+    let answer = named.hello("\"intent\":\"connect\",\"device\":\"5a4e3c2b1a0f9e8d\"");
+    assert_eq!(s(&answer, "type"), "welcome", "{answer:?}");
+    assert!(pending_requests(&home).is_empty());
+    // The old pairing state is still read: new pairing works beside it.
+    let fresh = code(&home, 300);
+    let answer = ask(&pc, &device(), &fresh, "New phone");
+    assert_eq!(s(&answer, "type"), "pairing_pending", "{answer:?}");
+}
+
+#[test]
+fn a11_r9_pending_requests_are_deduplicated_and_bounded() {
+    use lcl_remote::pairing::MAX_PENDING_PER_CHALLENGE;
+    let home = Home::new("a11-r9");
+    let pc = start(&home);
+    let code = code(&home, 300);
+    let phone = device();
+    let first = s(&ask(&pc, &phone, &code, "Phone"), "request");
+    for _ in 0..5 {
+        assert_eq!(s(&ask(&pc, &phone, &code, "Phone"), "request"), first);
+    }
+    assert_eq!(pending_requests(&home).len(), 1);
+    for i in 1..MAX_PENDING_PER_CHALLENGE {
+        let answer = ask(&pc, &device(), &code, &format!("Phone {i}"));
+        assert_eq!(s(&answer, "type"), "pairing_pending", "{answer:?}");
+    }
+    let full = ask(&pc, &device(), &code, "one too many");
+    assert_eq!(s(&full, "code"), "pairing_busy", "{full:?}");
+    assert_eq!(pending_requests(&home).len(), MAX_PENDING_PER_CHALLENGE);
+    // Those already waiting are still answered, the same as before.
+    assert_eq!(s(&ask(&pc, &phone, &code, "Phone"), "request"), first);
+    // A request that is not a hello a PC can read fails closed.
+    let mut client = connect(&pc, &device(), &pc.fingerprint).unwrap();
+    let answer = client.hello("\"intent\":\"pair\",\"pairing_version\":2,\"code\":7");
+    assert_eq!(s(&answer, "code"), "malformed", "{answer:?}");
+    assert!(trusted(&home).is_empty());
+    let stored = std::fs::read_to_string(home.paths().state.join("pairing.json")).unwrap();
+    assert!(!stored.contains(&code), "the pairing code is stored");
 }
 
 #[test]
@@ -647,8 +1043,13 @@ fn every_refused_connection_gives_its_slot_back() {
     let phone = device();
     let (paired, _) = pair(&home, &pc, &phone, "Phone");
     drop(paired);
+    // A phone waiting for approval asks every few seconds; each ask is a
+    // connection of its own, closed once answered.
+    let (waiting, code) = (device(), code(&home, 300));
     // More refusals than there are slots of any kind, one after another.
     for i in 0..lcl_remote::service::MAX_CONNECTIONS + 8 {
+        let answer = ask(&pc, &waiting, &code, "waiting");
+        assert_eq!(s(&answer, "type"), "pairing_pending", "attempt {i}");
         let mut client = connect(&pc, &device(), &pc.fingerprint).unwrap();
         client.send("not json");
         assert!(

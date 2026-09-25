@@ -46,7 +46,8 @@ import java.security.PrivateKey
  * Each test is one phase. The host script (android/tools/e2e.sh) runs them in
  * order and does what only the host can between them: restart the app or the
  * emulator, stop the service, edit or check files on the PC, revoke the
- * device. Arguments come as `-e name value`: `link`, `fp`, `workdir`, `oldlink`.
+ * device, approve or deny a pairing request. Arguments come as `-e name
+ * value`: `link` (pairing text), `fp`, `workdir`, `oldlink`.
  */
 @RunWith(AndroidJUnit4::class)
 class RemoteEndToEndTest {
@@ -129,6 +130,27 @@ class RemoteEndToEndTest {
     }
 
     /**
+     * Press Pair. The PC records a request and the screen shows this device's
+     * verification code; nothing is saved or connected until the person at
+     * the PC approves it. The host script is told the code (after [marker]),
+     * checks that the PC lists that very code and trusts nothing new yet, and
+     * approves or denies the request with `lcl-remote` itself: nothing in this
+     * test decides for the PC.
+     */
+    private fun pressPairAndWaitForThePc(marker: String) {
+        val pcsBefore = pairedPcs()
+        val keysBefore = deviceKeys().size
+        rule.onNodeWithTag("pair_button").performScrollTo().performClick()
+        waitFor("pair_verification")
+        val code = textOf("pair_verification")
+        assertTrue("not a verification code: $code", Regex("[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}").matches(code))
+        assertEquals("a pending request saved a PC", pcsBefore, pairedPcs())
+        assertEquals("the pending request has no key of its own", keysBefore + 1, deviceKeys().size)
+        shot("${marker.lowercase()}_waiting_for_the_pc")
+        ready("$marker $code")
+    }
+
+    /**
      * Press the app's own Scan QR code button and have the scanner read
      * `link`. The camera activity is never started: the instrumentation
      * answers its launch with the result a scan of the PC's QR code gives, so
@@ -168,14 +190,14 @@ class RemoteEndToEndTest {
         return status
     }
 
-    /** Pair from a link and stop: for pairing with the code the PC's own window shows. */
+    /** Pair from pairing text and stop, once the PC approves (the host does it). */
     @Test
     fun p0_pair_only() {
         waitFor("pair_new")
         pairWith(arg("link"))
         shot("p0_01_pair_confirm")
-        rule.onNodeWithTag("pair_button").performClick()
-        waitForLabel("Connected")
+        pressPairAndWaitForThePc("PENDING_P0")
+        waitForLabel("Connected", 120_000)
         shot("p0_02_paired")
         ready("PAIRED")
     }
@@ -189,9 +211,10 @@ class RemoteEndToEndTest {
         shot("p1_01_home_unpaired")
         val labelBefore = label()
         val pcsBefore = pairedPcs()
-        // The link the PC printed, pasted on the Pair screen. (No other app can
-        // hand the app a link; see IncomingIntentsTest.) It only fills the form
-        // in: nothing is trusted, recorded or connected until Pair is pressed.
+        // The pairing text the PC printed, pasted on the Pair screen. (No other
+        // app can hand it to the app; see IncomingIntentsTest.) It only fills
+        // the form in: nothing is trusted, recorded or connected until Pair is
+        // pressed — and then not until the PC approves.
         pairWith(link)
         Thread.sleep(2_000)
         val shown = "Fingerprint " + fingerprint.chunked(4).take(8).joinToString(" ")
@@ -200,8 +223,8 @@ class RemoteEndToEndTest {
         assertEquals("a pasted link recorded a PC before Pair", pcsBefore, pairedPcs())
         assertEquals("a pasted link connected before Pair", labelBefore, label())
         shot("p1_02_pair_confirm")
-        rule.onNodeWithTag("pair_button").performClick()
-        waitForLabel("Connected")
+        pressPairAndWaitForThePc("PENDING_P1")
+        waitForLabel("Connected", 120_000)
 
         // The device key: in Android Keystore, one per PC, never exportable.
         val keys = deviceKeys()
@@ -402,13 +425,13 @@ class RemoteEndToEndTest {
         assertEquals("a revoked device kept trying", "Not trusted", label())
     }
 
-    /** Phase 7: a used QR code pairs nothing; a new one pairs again; Forget deletes the pairing and the key. */
+    /** Phase 7: a used QR code pairs nothing; a new one pairs again once the PC approves; Forget deletes the pairing and the key. */
     @Test
     fun p7_repair_then_forget() {
         rule.waitUntil("the app settles", 60_000) { label() in setOf("Not trusted", "Connected", "Offline") }
         assertEquals("the revoked pairing came back by itself", "Not trusted", label())
         pairWith(arg("oldlink"))
-        rule.onNodeWithTag("pair_button").performClick()
+        rule.onNodeWithTag("pair_button").performScrollTo().performClick()
         waitFor("pair_problem")
         Log.i(TAG, "old code: " + textOf("pair_problem"))
         assertTrue(textOf("pair_problem"), textOf("pair_problem").contains("already used"))
@@ -416,8 +439,8 @@ class RemoteEndToEndTest {
         rule.onNodeWithTag("pair_link").performTextClearance()
         rule.onNodeWithTag("pair_link").performTextInput(arg("link"))
         waitFor("pair_preview")
-        rule.onNodeWithTag("pair_button").performClick()
-        waitForLabel("Connected")
+        pressPairAndWaitForThePc("PENDING_P7")
+        waitForLabel("Connected", 120_000)
         assertEquals("the old key was kept", 1, deviceKeys().size)
         shot("p7_02_paired_again")
 
@@ -435,10 +458,10 @@ class RemoteEndToEndTest {
 
     /**
      * Phase 8: the app's own QR scanner. A scanned code only fills the form in,
-     * exactly as a pasted link does: no key is made, no PC is
-     * recorded and nothing connects until Pair is pressed — and then it pairs,
-     * which also proves the one-time code was still unused. (No camera is
-     * used; see [scan].)
+     * exactly as pasted text does: no key is made, no PC is recorded and
+     * nothing connects until Pair is pressed — and then the PC is asked, and
+     * it pairs once the PC approves, which also proves the one-time code was
+     * still unused. (No camera is used; see [scan].)
      */
     @Test
     fun p8_scan_fills_the_form_and_pairs_only_on_confirmation() {
@@ -463,10 +486,44 @@ class RemoteEndToEndTest {
         assertFalse("a scanned code was tried before Pair", exists("pair_problem"))
         shot("p8_01_scanned_confirm")
 
-        rule.onNodeWithTag("pair_button").performClick()
-        waitForLabel("Connected")
+        pressPairAndWaitForThePc("PENDING_P8")
+        waitForLabel("Connected", 120_000)
         assertEquals(keysBefore.size + 1, deviceKeys().size)
         shot("p8_02_paired")
+    }
+
+    /**
+     * Phase 9: pairing text from before approval existed is refused before
+     * anything is made; a request the PC denies (the host does it) leaves no
+     * key and no record, and the pairing already working stays connected.
+     */
+    @Test
+    fun p9_older_or_denied_pairing_leaves_nothing_and_keeps_the_pairing() {
+        waitForLabel("Connected")
+        val keysBefore = deviceKeys()
+        val pcsBefore = pairedPcs()
+        goHome()
+        rule.onNodeWithTag("pair_new").performClick()
+        val older = arg("link").replace("LCLPAIR|", "lclpair://pair?").replace("v=2", "v=1")
+        rule.onNodeWithTag("pair_link").performTextInput(older)
+        rule.onNodeWithTag("pair_button").performScrollTo().performClick()
+        waitFor("pair_problem")
+        Log.i(TAG, "older pairing text: " + textOf("pair_problem"))
+        assertTrue(textOf("pair_problem"), textOf("pair_problem").contains("older pairing flow"))
+        assertEquals("older pairing text made a key", keysBefore, deviceKeys())
+        shot("p9_01_older_text_refused")
+
+        rule.onNodeWithTag("pair_link").performTextClearance()
+        rule.onNodeWithTag("pair_link").performTextInput(arg("link"))
+        waitFor("pair_preview")
+        pressPairAndWaitForThePc("PENDING_P9")
+        rule.waitUntil("the PC's denial reaches the phone", 120_000) { exists("pair_problem") }
+        Log.i(TAG, "denied: " + textOf("pair_problem"))
+        assertTrue(textOf("pair_problem"), textOf("pair_problem").contains("denied"))
+        shot("p9_02_denied")
+        assertEquals("a denied request kept its key", keysBefore, deviceKeys())
+        assertEquals("a denied request recorded a PC", pcsBefore, pairedPcs())
+        assertEquals("a denied request broke the working pairing", "Connected", label())
     }
 
     private companion object {

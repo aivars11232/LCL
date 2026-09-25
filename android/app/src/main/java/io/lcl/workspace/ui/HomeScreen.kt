@@ -60,7 +60,7 @@ fun HomeScreen(
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("No PC is paired yet.", fontWeight = FontWeight.SemiBold)
-                    Text("On the PC, run `lcl-remote pair` (or use Settings → Android devices in the LCL workspace), then scan the QR code it shows with Pair a PC → Scan QR code, here in this app.")
+                    Text("On the PC, run `lcl-remote pair` (or use Settings → Android devices in the LCL workspace), scan the QR code it shows with Pair a PC → Scan QR code, here in this app, then approve this device on the PC.")
                 }
             }
         }

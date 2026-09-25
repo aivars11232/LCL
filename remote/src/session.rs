@@ -5,17 +5,24 @@
 //! 1. **TLS 1.3**, both ends presenting certificates (see [`crate::tls`]).
 //! 2. **`hello`**, the device's first message, naming the protocol version it
 //!    speaks and what it came to do:
-//!    * `"intent": "pair"` with a one-time `code` from a QR code and a device
-//!      `name`. The code is used up whatever happens next, and the device is
-//!      recorded as trusted by the fingerprint of the certificate it just
-//!      proved it holds the key for.
+//!    * `"intent": "pair"` with `"pairing_version": 2`, a `code` from a QR
+//!      code and a device `name`. This only **asks** to be trusted: the PC
+//!      records a pending request bound to the code and to the fingerprint of
+//!      the certificate the device just proved it holds the key for, answers
+//!      `pairing_pending` with a verification code, and closes the
+//!      connection. The device asks again every few seconds with the same
+//!      key and code. Once the person at the PC approved exactly that request
+//!      (`lcl-remote approve`, or the workspace's Settings), the next ask is
+//!      answered `paired`, the device is trusted and the code is spent (see
+//!      [`crate::pairing`]). A `hello` without `pairing_version` 2 is refused
+//!      (`pairing_upgrade_required`).
 //!    * `"intent": "connect"`, for a device already paired. It is let in only
 //!      if its certificate's fingerprint belongs to a device that is paired
 //!      and not revoked.
 //!
 //!    Anything else — another protocol version, a malformed message, an
-//!    unknown or revoked certificate, a used or expired code — is answered
-//!    with one `error` and the connection is closed.
+//!    unknown or revoked certificate, a used, expired or denied code — is
+//!    answered with one `error` and the connection is closed.
 //! 3. **Requests**, `{"type":"request","id":N,"op":...}`, each answered by one
 //!    `response` with the same id. Every operation is one of a fixed list;
 //!    there is no operation that runs a command, reads a path the device
@@ -39,7 +46,7 @@ use crate::config::Config;
 use crate::devices::{Device, Refusal, Registry};
 use crate::frame;
 use crate::identity::Identity;
-use crate::pairing::Pairing;
+use crate::pairing::{Pairing, Presented, Refusal as PairingRefusal, PAIRING_VERSION};
 use crate::paths::{self, Paths};
 use crate::projects::{Project, Projects};
 use crate::service::Slot;
@@ -357,14 +364,55 @@ fn admit(wire: &mut Wire, shared: &Shared, hello: &str, fingerprint: &str) -> Op
     let now = paths::now();
     let device = match field("intent") {
         Some("pair") => {
+            // Only the flow in which the PC approves each new device. A hello
+            // from before it — or one that leaves the version out — is refused
+            // here, whatever client sent it.
+            match hello.get("pairing_version").and_then(Json::as_u64) {
+                Some(PAIRING_VERSION) => {}
+                Some(version) if version > PAIRING_VERSION => {
+                    return refuse(
+                        wire,
+                        "unsupported_pairing_version",
+                        &format!("this PC pairs with pairing version {PAIRING_VERSION}; update LCL on the PC"),
+                    )
+                }
+                _ => {
+                    return refuse(
+                        wire,
+                        "pairing_upgrade_required",
+                        "this device uses the older pairing flow, which this PC no longer accepts; update LCL for Android and scan a new QR code",
+                    )
+                }
+            }
             let (Some(code), Some(name)) = (field("code"), field("name")) else {
                 return refuse(wire, "malformed", "pairing needs a code and a device name");
             };
-            if let Err(refusal) = shared.pairing.consume(code, fingerprint, now) {
-                return refuse(wire, "pairing_refused", &refusal.to_string());
-            }
-            match shared.registry.add(name, fingerprint, PROTOCOL, now) {
-                Ok(device) => {
+            let presented = shared.pairing.present(
+                code,
+                fingerprint,
+                name,
+                &shared.identity.fingerprint,
+                &shared.registry,
+                PROTOCOL,
+                now,
+            );
+            match presented {
+                // Not trusted: the device is told what to show and to ask
+                // again, and the connection ends. It holds no session, and no
+                // connection is kept open while the person decides.
+                Ok(Presented::Pending(candidate)) => {
+                    let _ = wire.send(
+                        &Object::new()
+                            .with("type", Node::string("pairing_pending"))
+                            .with("request", Node::string(&candidate.request))
+                            .with("verification", Node::string(&candidate.verification))
+                            .with("expires", Node::u64(candidate.expires))
+                            .with("pc", pc_node(&shared.identity))
+                            .compact(),
+                    );
+                    return None;
+                }
+                Ok(Presented::Paired(device)) => {
                     let paired = Object::new()
                         .with("type", Node::string("paired"))
                         .with("device", device_node(&device))
@@ -373,7 +421,14 @@ fn admit(wire: &mut Wire, shared: &Shared, hello: &str, fingerprint: &str) -> Op
                     wire.send(&paired).ok()?;
                     device
                 }
-                Err(e) => return refuse(wire, "unavailable", &e),
+                Err(PairingRefusal::Denied) => {
+                    return refuse(wire, "pairing_denied", &PairingRefusal::Denied.to_string())
+                }
+                Err(PairingRefusal::Busy) => {
+                    return refuse(wire, "pairing_busy", &PairingRefusal::Busy.to_string())
+                }
+                Err(PairingRefusal::Unreadable(e)) => return refuse(wire, "unavailable", &e),
+                Err(refusal) => return refuse(wire, "pairing_refused", &refusal.to_string()),
             }
         }
         Some("connect") => match shared.registry.authorize(fingerprint) {

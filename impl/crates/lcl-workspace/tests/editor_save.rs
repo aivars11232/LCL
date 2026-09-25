@@ -179,9 +179,11 @@ impl Drop for Process {
 }
 
 /// A stand-in `lcl-remote`, so the Android-devices routes run a real program
-/// with the real arguments: Phone A is paired, a pairing code brings Phone B,
-/// and revoking `aa11` revokes Phone A. The controlled mode of
-/// editor_save.cjs answers the same way.
+/// with the real arguments: Phone A is paired; a pairing code brings two
+/// pairing requests — Phone B's (`c0ffee01`) and a stranger's (`badd0000`,
+/// whose name is markup) — and only `approve c0ffee01` trusts Phone B, only
+/// `deny badd0000` denies the stranger; revoking `aa11` revokes Phone A. The
+/// controlled mode of editor_save.cjs answers the same way.
 fn stand_in_remote(project: &Path) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let dir = project.join(".remote");
@@ -196,14 +198,32 @@ case "$1 $2" in
     revoked=null
     [ -f "$dir/revoked" ] && revoked=1790000300
     new=
-    [ -f "$dir/paired" ] && new=',{"id":"bb22","name":"Phone B","fingerprint":"b","paired_at":1790000200,"last_seen":1790000200,"revoked_at":null,"online":true}'
+    [ -f "$dir/approved" ] && new=',{"id":"bb22","name":"Phone B","fingerprint":"b","paired_at":1790000200,"last_seen":1790000200,"revoked_at":null,"online":true}'
     printf '{"service_running":true,"devices":[{"id":"aa11","name":"Phone A","fingerprint":"a","paired_at":1790000000,"last_seen":1790000100,"revoked_at":%s,"online":false}%s]}
 ' "$revoked" "$new"
     ;;
 "pair --json")
-    : >"$dir/paired"
-    printf '{"link":"lclpair://pair?v=1&c=standin","svg":"<svg/>","expires":%s,"addresses":["192.0.2.1:47300"],"pc":"Stand-in PC","fingerprint":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
+    : >"$dir/issued"
+    printf '{"payload":"LCLPAIR|v=2&c=standin","svg":"<svg/>","expires":%s,"addresses":["192.0.2.1:47300"],"pc":"Stand-in PC","fingerprint":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
 ' "$(($(date +%s) + 300))"
+    ;;
+"pending --json")
+    expires=$(($(date +%s) + 240))
+    list=
+    if [ -f "$dir/issued" ] && [ ! -f "$dir/approved" ]; then
+        list='{"request":"c0ffee01","name":"Phone B","fingerprint":"bbbb0000bbbb0000bbbb0000bbbb0000bbbb0000bbbb0000bbbb0000bbbb0000","verification":"abcd-ef12-3456","created":1790000150,"expires":'$expires',"status":"pending"}'
+        [ -f "$dir/denied" ] || list="$list"',{"request":"badd0000","name":"<img src=x onerror=alert(1)>","fingerprint":"eeee0000eeee0000eeee0000eeee0000eeee0000eeee0000eeee0000eeee0000","verification":"9999-0000-1111","created":1790000140,"expires":'$expires',"status":"pending"}'
+    fi
+    printf '{"service_running":true,"requests":[%s]}
+' "$list"
+    ;;
+"approve c0ffee01")
+    : >"$dir/approved"
+    echo "approved Phone B (request c0ffee01, verification code abcd-ef12-3456)"
+    ;;
+"deny badd0000")
+    : >"$dir/denied"
+    echo "denied the stranger (request badd0000); it is not trusted"
     ;;
 "revoke aa11")
     : >"$dir/revoked"

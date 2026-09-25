@@ -288,9 +288,13 @@ Using it:
   manager, always wins over the default. **Android devices** pairs a phone
   or tablet running LCL for Android with this computer, through `lcl-remote`,
   which is installed separately (see `android/README.md` in the source):
-  **Pair Android device** shows a one-time QR code, and every paired device is
-  listed with whether it is online and when it last connected, and can be
-  revoked. None of these settings changes a document or how it runs.
+  **Pair Android device** shows a one-time QR code. Scanning the QR code does
+  not trust the phone: after you press Pair on the phone, it shows a
+  verification code, and the same request waits here under **Pending pairing
+  requests** until you approve the one whose code matches (**Approve…**, then
+  **Approve device**) or deny it. Every paired device is listed with whether
+  it is online and when it last connected, and can be revoked. None of these
+  settings changes a document or how it runs.
 * Indentation is always four spaces. The Tab key inserts four spaces, never a
   tab character, which LCL does not allow.
 

@@ -5,6 +5,9 @@
 //! device's own keystore and never leaves it. Nothing about a device's
 //! address, network or name decides whether it is trusted.
 //!
+//! A device is added here only when the person at the PC approved its pairing
+//! request (see [`crate::pairing`]); holding a pairing code never adds one.
+//!
 //! Revoking a device keeps its record, marked revoked, so the list still says
 //! what happened; a revoked fingerprint never authenticates again. The same
 //! device can be trusted again only by pairing afresh from a new QR code,
@@ -138,7 +141,7 @@ impl Registry {
         Ok(out)
     }
 
-    /// Trust one more device.
+    /// Trust one more device, under a new id.
     pub fn add(
         &self,
         name: &str,
@@ -147,8 +150,32 @@ impl Registry {
         now: u64,
     ) -> Result<Device, String> {
         let id = hex(&random::<8>(&SystemRandom::new())?);
+        self.enroll(&id, name, fingerprint, protocol, now)
+    }
+
+    /// Trust one more device under the id `id`, which pairing reserved for it
+    /// before calling this. Called again for the same id and certificate — a
+    /// pairing finished again after a crash — it finds the record it made and
+    /// makes no second one.
+    pub fn enroll(
+        &self,
+        id: &str,
+        name: &str,
+        fingerprint: &str,
+        protocol: &str,
+        now: u64,
+    ) -> Result<Device, String> {
         let name = clean_name(name);
         self.update(|devices| {
+            if let Some(done) = devices
+                .iter()
+                .find(|d| d.id == id && d.fingerprint == fingerprint && !d.is_revoked())
+            {
+                return Ok(done.clone());
+            }
+            if devices.iter().any(|d| d.id == id) {
+                return Err(format!("the device id {id} is already taken"));
+            }
             // One live record per key: pairing the same key again (from a new
             // QR code) replaces an older live record rather than doubling it.
             for device in devices.iter_mut() {
@@ -157,7 +184,7 @@ impl Registry {
                 }
             }
             let device = Device {
-                id,
+                id: id.to_string(),
                 name,
                 fingerprint: fingerprint.to_string(),
                 paired_at: now,
@@ -230,7 +257,7 @@ impl Registry {
 }
 
 /// A device name as a person would read it: printable, trimmed, bounded.
-fn clean_name(name: &str) -> String {
+pub fn clean_name(name: &str) -> String {
     let cleaned: String = name.chars().filter(|c| !c.is_control()).take(64).collect();
     let cleaned = cleaned.trim().to_string();
     if cleaned.is_empty() {
@@ -277,6 +304,24 @@ mod tests {
             .unwrap();
         assert_ne!(again.id, a.id);
         assert_eq!(registry.authorize(&"a".repeat(64)).unwrap().id, again.id);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn enrolling_again_after_a_crash_makes_no_second_record() {
+        let (registry, root) = registry("enroll");
+        let first = registry
+            .enroll("00aa", "Phone", &"a".repeat(64), "lcl.remote/1", 10)
+            .unwrap();
+        let again = registry
+            .enroll("00aa", "Phone", &"a".repeat(64), "lcl.remote/1", 11)
+            .unwrap();
+        assert_eq!(first, again);
+        assert_eq!(registry.list().unwrap().len(), 1);
+        // The id is the reserved one; it cannot be taken by another key.
+        assert!(registry
+            .enroll("00aa", "Other", &"b".repeat(64), "lcl.remote/1", 12)
+            .is_err());
         std::fs::remove_dir_all(&root).unwrap();
     }
 

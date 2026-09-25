@@ -48,6 +48,9 @@ class IncomingIntentsTest {
     private val link = "lclpair://pair?v=1&pc=0123456789abcdef0123456789abcdef&n=Some%20PC&fp=${"a".repeat(64)}" +
         "&a=10.0.2.2:9&c=${Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32) { 7 })}&e=4102444800"
 
+    /** The same PC's pairing text as the app reads it now. */
+    private val text = link.replace("lclpair://pair?", "LCLPAIR|").replace("v=1", "v=2")
+
     private fun exists(tag: String) = rule.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
 
     private fun source(): String =
@@ -78,6 +81,10 @@ class IncomingIntentsTest {
             send(Intent(view).addCategory(Intent.CATEGORY_BROWSABLE).setPackage(context.packageName))
         }
         assertFalse(exists("pair_link"))
+        // Nor is the current pairing text, which is no link at all, taken
+        // when it is shared or opened as text.
+        assertEquals(emptyList<String>(), handlers(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)))
+        assertEquals(emptyList<String>(), handlers(Intent(Intent.ACTION_VIEW, Uri.parse(text))))
     }
 
     @Test

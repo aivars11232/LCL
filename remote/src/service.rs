@@ -142,7 +142,7 @@ impl Service {
         let listener = TcpListener::bind((listen.as_str(), port))
             .map_err(|e| format!("could not listen on {listen}:{port}: {e}"))?;
         let discovery = if options.discovery {
-            // Not fatal: a PC reached by address or link still works.
+            // Not fatal: a PC reached by the addresses in its pairing code still works.
             UdpSocket::bind(("0.0.0.0", config.discovery_port)).ok()
         } else {
             None
@@ -243,7 +243,7 @@ fn write_status(shared: &Shared, port: u16) {
 }
 
 /// This PC's IPv4 addresses on the networks it routes through, for pairing
-/// links. Finding the route sends nothing: a UDP socket is only connected.
+/// codes. Finding the route sends nothing: a UDP socket is only connected.
 pub fn local_addresses() -> Vec<String> {
     let mut out = Vec::new();
     for target in [

@@ -4,7 +4,7 @@ use lcl_protocol::json::{Node, Object};
 use lcl_remote::config::Config;
 use lcl_remote::devices::{Device, Registry};
 use lcl_remote::identity::Identity;
-use lcl_remote::pairing::{Link, Pairing, DEFAULT_TTL_SECONDS, LINK_VERSION};
+use lcl_remote::pairing::{Candidate, Pairing, Payload, DEFAULT_TTL_SECONDS, PAYLOAD_VERSION};
 use lcl_remote::paths::{self, Paths};
 use lcl_remote::projects::{project_id, Projects, Specs};
 use lcl_remote::service::{self, Options, Service};
@@ -24,10 +24,18 @@ USAGE:
         rules as the desktop workspace.
 
     lcl-remote pair [--address HOST:PORT]... [--minutes N] [--json]
-        Show a one-time QR code to pair an Android device. It is good for one
-        device and 5 minutes. Addresses default to this PC's own, plus any
-        added with `lcl-remote address add`.
+        Show a one-time QR code to pair an Android device, good for 5
+        minutes. Scanning it does not trust the phone: after Pair is pressed
+        on the phone, the phone waits until you approve it here. Addresses
+        default to this PC's own, plus any added with `lcl-remote address add`.
 
+    lcl-remote pending [--json]         Pairing requests waiting for you, with
+                                        the verification code each phone shows.
+    lcl-remote approve REQUEST-ID       Trust the phone that made this request.
+                                        Approve only if its phone shows the
+                                        same verification code.
+    lcl-remote deny REQUEST-ID          Refuse one request. The QR code stays
+                                        usable by your own phone.
     lcl-remote devices [--json]         List paired devices.
     lcl-remote revoke DEVICE-ID         Stop trusting one device. It is
                                         disconnected and must pair again.
@@ -68,6 +76,25 @@ fn run(args: &[String]) -> Result<(), String> {
         "serve" => serve(paths, rest),
         "pair" => pair(&paths, rest, json),
         "devices" => devices(&paths, json),
+        "pending" => pending(&paths, json),
+        "approve" => {
+            let id = rest.first().ok_or("approve needs a request id")?;
+            let approved = Pairing::new(&paths).approve(id, paths::now())?;
+            println!(
+                "approved {} (request {}, verification code {}); it finishes pairing by itself within a few seconds",
+                approved.name, approved.request, approved.verification
+            );
+            Ok(())
+        }
+        "deny" => {
+            let id = rest.first().ok_or("deny needs a request id")?;
+            let denied = Pairing::new(&paths).deny(id, paths::now())?;
+            println!(
+                "denied {} (request {}); it is not trusted",
+                denied.name, denied.request
+            );
+            Ok(())
+        }
         "revoke" => {
             let id = rest.first().ok_or("revoke needs a device id")?;
             let device = Registry::new(&paths).revoke(id, paths::now())?;
@@ -181,8 +208,8 @@ fn pair(paths: &Paths, rest: &[String], json: bool) -> Result<(), String> {
         );
     }
     let (challenge, code) = Pairing::new(paths).create(paths::now(), minutes * 60)?;
-    let link = Link {
-        version: LINK_VERSION,
+    let payload = Payload {
+        version: PAYLOAD_VERSION,
         pc_id: identity.pc_id.clone(),
         pc_name: identity.name.clone(),
         fingerprint: identity.fingerprint.clone(),
@@ -190,13 +217,13 @@ fn pair(paths: &Paths, rest: &[String], json: bool) -> Result<(), String> {
         code,
         expires: challenge.expires,
     };
-    let uri = link.to_uri();
+    let text = payload.to_text();
     if json {
         println!(
             "{}",
             Object::new()
-                .with("link", Node::string(&uri))
-                .with("svg", Node::string(lcl_remote::qr::svg(&uri)?))
+                .with("payload", Node::string(&text))
+                .with("svg", Node::string(lcl_remote::qr::svg(&text)?))
                 .with("expires", Node::u64(challenge.expires))
                 .with("addresses", Node::array(addresses.iter().map(Node::string)))
                 .with("pc", Node::string(&identity.name))
@@ -205,10 +232,10 @@ fn pair(paths: &Paths, rest: &[String], json: bool) -> Result<(), String> {
         );
         return Ok(());
     }
-    println!("{}", lcl_remote::qr::terminal(&uri)?);
+    println!("{}", lcl_remote::qr::terminal(&text)?);
     println!("Scan this with LCL on your Android device: Pair a PC → Scan QR code.");
     println!(
-        "It works once, for {minutes} minute(s). This PC is {}.",
+        "It works for {minutes} minute(s) and pairs one device. This PC is {}.",
         identity.name
     );
     // The same grouping the app shows before it pairs, to compare by eye.
@@ -218,8 +245,70 @@ fn pair(paths: &Paths, rest: &[String], json: bool) -> Result<(), String> {
     println!("Fingerprint: {} …", groups.join(" "));
     println!("Addresses in the code: {}", addresses.join(", "));
     println!();
-    println!("Or paste this link into the app:");
-    println!("{uri}");
+    println!("Scanning does not trust the phone. After you press Pair on the phone, it shows a");
+    println!("verification code; approve the request with the same code here:");
+    println!("    lcl-remote pending");
+    println!("    lcl-remote approve REQUEST-ID");
+    println!();
+    println!("Or paste this pairing text into the app:");
+    println!("{text}");
+    Ok(())
+}
+
+/// Pairing requests waiting for the person at this PC.
+fn pending(paths: &Paths, json: bool) -> Result<(), String> {
+    let now = paths::now();
+    let requests = Pairing::new(paths).candidates(now)?;
+    if json {
+        let items = requests.iter().map(|c: &Candidate| {
+            Object::new()
+                .with("request", Node::string(&c.request))
+                .with("name", Node::string(&c.name))
+                .with("fingerprint", Node::string(&c.fingerprint))
+                .with("verification", Node::string(&c.verification))
+                .with("created", Node::u64(c.created))
+                .with("expires", Node::u64(c.expires))
+                .with("status", Node::string(c.status_at(now)))
+                .into()
+        });
+        println!(
+            "{}",
+            Object::new()
+                .with("service_running", Node::Bool(live_status(paths).is_some()))
+                .with("requests", Node::array(items))
+                .pretty()
+        );
+        return Ok(());
+    }
+    if requests.is_empty() {
+        println!("No pairing request is waiting. Pair a device with: lcl-remote pair");
+        return Ok(());
+    }
+    println!("Pairing requests waiting on this PC. Approve only the one whose verification");
+    println!("code is the code your phone shows; deny any you do not recognise.");
+    for c in &requests {
+        let left = c.expires.saturating_sub(now);
+        println!();
+        println!("  request       {}", c.request);
+        println!("  device        {}", c.name);
+        println!("  verification  {}", c.verification);
+        println!("  fingerprint   {}", c.fingerprint);
+        println!(
+            "  asked         {}; expires in {}:{:02}",
+            ago(c.created),
+            left / 60,
+            left % 60
+        );
+        println!(
+            "  status        {}",
+            match c.status_at(now) {
+                "approved" => "approved; the phone finishes pairing by itself",
+                _ => "waiting for your decision",
+            }
+        );
+    }
+    println!();
+    println!("Approve: lcl-remote approve REQUEST-ID    Deny: lcl-remote deny REQUEST-ID");
     Ok(())
 }
 

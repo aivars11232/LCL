@@ -72,17 +72,20 @@ finish() {
 }
 trap finish EXIT
 
-# One phase of RemoteEndToEndTest, in a fresh app process. Its output and its
-# log lines are kept as NN_name.txt and NN_name.log, in the order run.
+# One phase of RemoteEndToEndTest — or, named Class#method, of another test
+# class — in a fresh app process. Its output and its log lines are kept as
+# NN_name.txt and NN_name.log, in the order run.
 phase() {
     local name=$1
     shift
+    local target=io.lcl.workspace.RemoteEndToEndTest#$name
+    case $name in *'#'*) target=io.lcl.workspace.$name ;; esac
     # Counted from the records on disk: phases also run in the background.
     local done record
     done=$(find "$out" -maxdepth 1 -name '[0-9][0-9]_*.txt' | wc -l)
-    record="$out/$(printf %02d $((done + 1)))_$name"
+    record="$out/$(printf %02d $((done + 1)))_${name//#/_}"
     "$adb" logcat -c
-    "$adb" shell am instrument -w "$@" -e class "io.lcl.workspace.RemoteEndToEndTest#$name" "$runner" >"$record.txt" 2>&1 || true
+    "$adb" shell am instrument -w "$@" -e class "$target" "$runner" >"$record.txt" 2>&1 || true
     "$adb" logcat -d -s LclE2E:I >"$record.log" 2>&1 || true
     if grep -q '^OK (1 test)' "$record.txt"; then
         log "PASS $name"
@@ -138,6 +141,11 @@ log "building the app and its instrumented tests"
 "$adb" install -r -t -d "$android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk" >/dev/null
 "$adb" shell pm clear io.lcl.workspace >/dev/null
 log "installed; app data cleared"
+
+# 0. A file opened from elsewhere on the phone: one that is not UTF-8 is
+# refused, never shown or sent repaired; a UTF-8 one is shown exactly.
+phase LocalDocumentScreenTest#a_file_that_is_not_utf8_is_refused_and_never_shown_or_sent
+phase LocalDocumentScreenTest#a_utf8_file_is_shown_exactly_and_can_be_checked
 
 serve
 "$remote" identity --json >"$out/identity.json"
@@ -248,6 +256,26 @@ old = devices[sys.argv[2]]
 assert old["revoked_at"], old
 assert len(devices) == 2, devices
 PY2
+
+# 9. The app's own scanner: a scanned code fills the form in, and pairs only
+# when Pair is pressed. (The camera activity is answered by the test; no
+# camera is used.)
+"$remote" pair --address "$address" --json >"$out/pair-scan.json"
+scanned=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["link"])' "$out/pair-scan.json")
+phase p8_scan_fills_the_form_and_pairs_only_on_confirmation -e link "'$scanned'"
+"$remote" devices --json >"$out/devices-scan.json"
+check "the scanned code paired one new device, once Pair was pressed" python3 - "$out/devices-scan.json" <<'PY3'
+import json, sys
+devices = json.load(open(sys.argv[1]))["devices"]
+assert len(devices) == 3, devices
+newest = max(devices, key=lambda d: d["paired_at"])
+assert not newest["revoked_at"], newest
+PY3
+check "every pairing code is consumed" python3 - "$XDG_STATE_HOME/lcl/remote/pairing.json" <<'PY4'
+import json, sys
+challenges = json.load(open(sys.argv[1]))["challenges"]
+assert challenges and all(c["consumed_at"] for c in challenges), challenges
+PY4
 
 no_lcl_failures
 "$adb" shell settings put global hide_error_dialogs 0

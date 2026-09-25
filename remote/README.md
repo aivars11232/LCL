@@ -79,7 +79,13 @@ lcl-remote status [--json]
   second and it cannot connect again; only a new QR code pairs it again. Other
   devices are unaffected.
 - `projects` are the folders devices can open: the desktop workspace's default
-  folder, plus any added.
+  folder, plus any added. `projects add` and `projects remove` take effect for
+  a running service at once — it reads `remote.json` on every request, with no
+  restart. A removed project disappears from the list and every request for it
+  is refused from then on; its open routes are closed and the runs devices
+  started in it are cancelled, each device being told its run was stopped. A
+  `remote.json` the running service cannot read shares nothing but the default
+  workspace.
 
 The same pairing, device list and revocation are in **LCL Workspace →
 Settings → Android devices**, which runs this program.
@@ -125,9 +131,13 @@ address, network or host name.
 **Transport.** TCP, then TLS 1.3 only (no earlier version, no session tickets,
 no early data), ALPN `lcl.remote/1`. Both ends present certificates; each
 accepts the other only by pinned SHA-256. Inside, every message is one frame:
-a 4-byte big-endian length and that many bytes of UTF-8 JSON, at most 16 MiB.
+a 4-byte big-endian length and that many bytes of UTF-8 JSON, at most 16 MiB
+once the device is authenticated. Before that, the one frame it may send,
+`hello`, is at most 8 KiB; a longer length closes the connection before
+anything more is read.
 
-**Hello.** The device's first message, within 10 seconds:
+**Hello.** The device's first message, within 10 seconds of connecting (TLS
+included):
 
 ```json
 {"type":"hello","protocol":"lcl.remote/1","intent":"pair","code":"…","name":"Pixel 9"}
@@ -181,9 +191,9 @@ workspace's routes do; `body` is the route's JSON.
 | `create` | `project`, `name`, `text` | `POST /api/document` |
 | `delete` | `project`, `document`, `digest` | `DELETE /api/document`, only if unchanged |
 | `tokens`, `check`, `validate`, `inspect` | `project`, `document`, `text` | the matching workspace route, over the text sent |
-| `run` | `project`, `document`, `text`, `grants` {read, write, program, host}, `inputs`, `break_effects` (default true), `break_operations` | `POST /api/run`; the run's events follow as events |
-| `follow` | `project`, `run`, `from` | resumes a run's events from index `from` after a reconnect |
-| `answer` | `project`, `run`, `sequence`, `answer` (`continue`, `deny`, `cancel`) | `POST /api/answer` |
+| `run` | `project`, `document`, `text`, `grants` {read, write, program, host}, `inputs`, `break_operations` | `POST /api/run` with a pause before every effect, always — a `break_effects` field is ignored; the run's events follow as events |
+| `follow` | `project`, `run`, `from` | resumes a run's events from index `from` after a reconnect; `403` unless this device started the run |
+| `answer` | `project`, `run`, `sequence`, `answer` (`continue`, `deny`, `cancel`) | `POST /api/answer`; `403` unless this device started the run |
 
 A message that is not a well-formed request closes the connection. An
 operation outside this list is answered `400`. A project that is not shared is
@@ -200,7 +210,10 @@ outside it is refused.
 ```
 
 Run events are the run's own event log — `operation`, `permission`, `effect`,
-`paused`, `resumed`, `report`, `failed` — in order, then `end`.
+`paused`, `resumed`, `report`, `failed` — in order, then `end`. When the
+run's project stops being shared, the device instead gets `failed` with
+`"error": "this project is no longer shared by this PC, so the run was
+stopped"`, then `end`.
 Their count is what `follow`'s `from` refers to; `end` is not counted.
 `document_changed` carries `"digest": null` when the file was deleted.
 
@@ -219,13 +232,31 @@ pairing link has its own version (`v=1`).
   command, reads a path a device names, or reaches outside the shared
   projects. The desktop's local server is not exposed.
 - A run from a device is the workspace's run: the document's authority, the
-  capability rules, the host grants and the pauses before effects all apply.
-  Effects wait for the device's answer over the authenticated session;
-  pairing never approves anything.
+  capability rules and the host grants all apply. On top of that, the PC makes
+  every remote run pause before every effect; a device cannot ask it not to.
+  Effects wait for the answer over the authenticated session; pairing never
+  approves anything.
+- A run belongs to the device that started it: the PC records its device id
+  and certificate fingerprint with the project and run. Only that device can
+  `follow` it or `answer` its pauses (`continue`, `deny`, `cancel`); another
+  paired device gets `403`, however it learned the run id.
 - Replay: a pairing code works once; the TLS session protects every later
   message against replay and tampering.
-- Resource limits: 16 MiB per frame, 32 connections at a time, 10 seconds to
-  say hello, 90 seconds of silence.
+- Resource limits: 32 connections at a time, of which at most 8 — and at most
+  4 from any one address — may be unauthenticated (still in TLS or before
+  `hello`); 10 seconds from connecting to finish TLS and say hello; an 8 KiB
+  first message; 16 MiB per frame after that; 90 seconds of silence. A
+  connection over a limit is closed at once. Every connection's slot is given
+  back when its thread ends, however it ends. There is no rate limiting beyond
+  these: peers that keep reconnecting can occupy the unauthenticated slots and
+  delay new connections, but not disturb authenticated sessions.
+- Saving (`save`) replaces a file only if it still has the digest the device
+  started from, compared and renamed in one critical section of this service,
+  so two devices cannot both save over one revision. A change any program made
+  before the comparison is seen; another program — the desktop workspace, whose
+  own saves carry no precondition, or an editor — that replaces the file in the
+  instant between the comparison and the rename is not locked out, and is
+  replaced.
 - The PC's private key and the trust store are readable by the user only.
   Nothing secret is logged.
 
@@ -266,7 +297,11 @@ cargo fmt --check
 The end-to-end tests in `tests/remote.rs` run a real service on a loopback
 port with real TLS: pairing, expired and reused codes, the wrong PC, malformed
 and unsupported hellos, unpaired, revoked and impersonating devices, `unpair`,
-several devices, path traversal and unknown operations, saves over a stale
-revision, edits on the PC, Check / Validate / Inspect, and runs that pause
-before every effect, are denied, cannot get an effect the PC did not permit,
-and are followed after the connection drops.
+several devices, path traversal, a link out of the project and unknown
+operations, saves over a stale revision and two devices saving from one
+revision, edits on the PC, a project shared and unshared while the service
+runs, Check / Validate / Inspect, and runs that pause before every effect even
+when asked not to, are denied, cannot get an effect the PC did not permit, are
+followed after the connection drops, and cannot be followed or answered by
+another device; and peers that send an oversized, partial, non-UTF-8 or no
+first message, or crowd the unauthenticated slots.

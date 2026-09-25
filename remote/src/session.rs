@@ -22,8 +22,10 @@
 //!    names, or reaches anything but the shared projects. Document and engine
 //!    operations are the desktop workspace's own routes, called in process,
 //!    so a device is refused exactly what the workspace would refuse, and a
-//!    run is authorized, permitted and paused exactly as a run from the
-//!    workspace is.
+//!    run is authorized and permitted exactly as a run from the workspace is.
+//!    A remote run also always pauses before every effect — the PC sets that,
+//!    not the device — and only the device that started a run may follow it
+//!    or answer its pauses.
 //!    `unpair` is the one operation about trust itself: a device that forgets
 //!    this PC asks to be revoked, and can only ever revoke itself.
 //! 4. **Events** the PC sends on its own: a run's progress and its pauses, a
@@ -40,6 +42,7 @@ use crate::identity::Identity;
 use crate::pairing::Pairing;
 use crate::paths::{self, Paths};
 use crate::projects::{Project, Projects};
+use crate::service::Slot;
 use lcl_protocol::json::{Node, Object};
 use lcl_spec::json::Json;
 use lcl_workspace::http::Request;
@@ -48,7 +51,7 @@ use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 /// The remote protocol this build speaks. Not the LCL language version, and
@@ -59,7 +62,7 @@ pub const PROTOCOL: &str = "lcl.remote/1";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// How long a device may take to finish TLS and say `hello`.
-const HELLO_WITHIN: Duration = Duration::from_secs(10);
+pub const HELLO_WITHIN: Duration = Duration::from_secs(10);
 /// How long a connection may stay silent; devices ping well within it.
 const IDLE_LIMIT: Duration = Duration::from_secs(90);
 /// How often a read gives way to everything else a session watches.
@@ -78,8 +81,25 @@ pub struct Shared {
     pub tls: Arc<rustls::ServerConfig>,
     /// Connections that are authenticated now, for the status file.
     pub live: Mutex<BTreeMap<u64, Live>>,
+    /// Who started each remote run, by (project, run).
+    owners: Mutex<BTreeMap<(String, String), Owner>>,
     next: AtomicU64,
     about: Mutex<Option<String>>,
+}
+
+/// The device that started a run: the only one that may follow it or answer
+/// its pauses, cancelling included.
+///
+/// Run ids are counted per project and are easy to guess, and every paired
+/// device can reach every shared project, so knowing an id must not be enough.
+/// The record binds the run to the device the PC authenticated when the run
+/// was started — its id and the fingerprint of the certificate it proved — and
+/// to the very routes the run lives in: run ids start again in routes opened
+/// afresh, and a record must never answer for a run it did not see started.
+struct Owner {
+    device: String,
+    fingerprint: String,
+    routes: Weak<Routes>,
 }
 
 /// One authenticated connection, as the status file reports it.
@@ -108,9 +128,43 @@ impl Shared {
             projects,
             tls,
             live: Mutex::new(BTreeMap::new()),
+            owners: Mutex::new(BTreeMap::new()),
             next: AtomicU64::new(1),
             about: Mutex::new(None),
         })
+    }
+}
+
+impl Shared {
+    /// The projects shared at this moment (see [`Projects::current`]). Runs
+    /// devices started in a project that is no longer shared are cancelled:
+    /// nothing can reach them to answer their pauses any more.
+    fn current_projects(&self) -> Vec<Project> {
+        let (projects, closed) = self.projects.current(&self.paths);
+        if !closed.is_empty() {
+            let mut owners = self.owners.lock().unwrap_or_else(|e| e.into_inner());
+            owners.retain(|(_, run), owner| {
+                let Some(routes) = owner.routes.upgrade() else {
+                    return false;
+                };
+                if !closed.iter().any(|c| Arc::ptr_eq(c, &routes)) {
+                    return true;
+                }
+                let _ = route(
+                    &routes,
+                    "POST",
+                    "/api/answer",
+                    &[
+                        ("run", run.clone()),
+                        ("sequence", "0".into()),
+                        ("answer", "cancel".into()),
+                    ],
+                    "",
+                );
+                false
+            });
+        }
+        projects
     }
 }
 
@@ -183,8 +237,9 @@ fn failure(id: u64, status: u16, message: &str) -> String {
     )
 }
 
-/// Serve one accepted TCP connection until it ends.
-pub fn serve(tcp: TcpStream, shared: Arc<Shared>) {
+/// Serve one accepted TCP connection until it ends. `slot` is its place among
+/// the connections served, given back when this returns, however it returns.
+pub fn serve(tcp: TcpStream, shared: Arc<Shared>, mut slot: Slot) {
     let peer = tcp
         .peer_addr()
         .map(|a| a.to_string())
@@ -200,9 +255,10 @@ pub fn serve(tcp: TcpStream, shared: Arc<Shared>) {
     let Ok(connection) = rustls::ServerConnection::new(Arc::clone(&shared.tls)) else {
         return;
     };
+    // Until the device is authenticated it may send one small frame, hello.
     let mut wire = Wire {
         tls: rustls::StreamOwned::new(connection, tcp),
-        reader: frame::Reader::default(),
+        reader: frame::Reader::with_limit(frame::MAX_HELLO_FRAME),
     };
 
     // The handshake, bounded.
@@ -241,6 +297,8 @@ pub fn serve(tcp: TcpStream, shared: Arc<Shared>) {
         let _ = wire.tls.flush();
         return;
     };
+    slot.authenticated();
+    wire.reader.set_limit(frame::MAX_FRAME);
 
     let key = shared.next.fetch_add(1, Ordering::Relaxed);
     shared
@@ -259,9 +317,11 @@ pub fn serve(tcp: TcpStream, shared: Arc<Shared>) {
     let _ = shared.registry.touch(&device.id, paths::now());
     let mut session = Session {
         shared: Arc::clone(&shared),
+        device: device.id.clone(),
         fingerprint,
         watched: BTreeMap::new(),
         runs: Vec::new(),
+        closings_seen: shared.projects.closings(),
     };
     let _ = session.serve(&mut wire);
     shared
@@ -390,10 +450,15 @@ struct Watching {
 
 struct Session {
     shared: Arc<Shared>,
+    /// The device this connection authenticated as, and its certificate.
+    device: String,
     fingerprint: String,
     /// Open documents: (project, document) → the digest last known on disk.
     watched: BTreeMap<(String, String), Option<String>>,
     runs: Vec<Watching>,
+    /// [`Projects::closings`] when this session last let go of what belongs
+    /// to projects no longer shared.
+    closings_seen: u64,
 }
 
 impl Session {
@@ -423,6 +488,7 @@ impl Session {
                         return Err(End::Refused);
                     }
                 }
+                self.forget_unshared(wire)?;
                 self.check_documents(wire)?;
             }
             if heard.elapsed() > IDLE_LIMIT {
@@ -477,13 +543,15 @@ impl Session {
                 )
             }
             _ => {
-                let Some(project) =
-                    param("project").and_then(|p| self.projects().into_iter().find(|x| x.id == p))
-                else {
-                    return Some(failure(id, 404, "no such project is shared by this PC"));
+                let opened = match param("project") {
+                    Some(project) => self.shared.projects.open(&self.shared.paths, project),
+                    None => Ok(None),
                 };
-                let routes = match self.shared.projects.routes(&project) {
-                    Ok(routes) => routes,
+                let (project, routes) = match opened {
+                    Ok(Some(opened)) => opened,
+                    Ok(None) => {
+                        return Some(failure(id, 404, "no such project is shared by this PC"))
+                    }
                     Err(e) => return Some(failure(id, 500, &e)),
                 };
                 self.project_op(id, op, &project, &routes, &message)
@@ -492,9 +560,7 @@ impl Session {
     }
 
     fn projects(&self) -> Vec<Project> {
-        self.shared
-            .projects
-            .list(&self.shared.paths, &self.shared.config)
+        self.shared.current_projects()
     }
 
     fn project_op(
@@ -600,6 +666,9 @@ impl Session {
                     if routes.run_events(&run, 0).is_none() {
                         return Err(format!("no run {run} is known to this project any more"));
                     }
+                    if !self.owns(project, routes, &run) {
+                        return Ok(not_yours(&run));
+                    }
                     if !self
                         .runs
                         .iter()
@@ -614,23 +683,31 @@ impl Session {
                     }
                     (200, "{\"following\":true}".to_string())
                 }
-                "answer" => call(
-                    "POST",
-                    "/api/answer",
-                    &[
-                        ("run", need(param("run"), "a run")?),
-                        (
-                            "sequence",
-                            message
-                                .get("sequence")
-                                .and_then(Json::as_u64)
-                                .map(|n| n.to_string())
-                                .unwrap_or_default(),
-                        ),
-                        ("answer", need(param("answer"), "an answer")?),
-                    ],
-                    "",
-                ),
+                "answer" => {
+                    let run = need(param("run"), "a run")?;
+                    // An answer to a run this device did not start is refused
+                    // before it reaches the run: continue, deny and cancel alike.
+                    if routes.run_events(&run, 0).is_some() && !self.owns(project, routes, &run) {
+                        return Ok(not_yours(&run));
+                    }
+                    call(
+                        "POST",
+                        "/api/answer",
+                        &[
+                            ("run", run),
+                            (
+                                "sequence",
+                                message
+                                    .get("sequence")
+                                    .and_then(Json::as_u64)
+                                    .map(|n| n.to_string())
+                                    .unwrap_or_default(),
+                            ),
+                            ("answer", need(param("answer"), "an answer")?),
+                        ],
+                        "",
+                    )
+                }
                 other => return Err(format!("unknown operation {other}")),
             })
         })();
@@ -759,11 +836,11 @@ impl Session {
         if !inputs.is_empty() {
             query.push(("input", inputs));
         }
-        // Pausing before every effect is the default, as in the workspace; a
-        // device has to ask explicitly not to be asked.
-        if message.get("break_effects").and_then(Json::as_bool) != Some(false) {
-            query.push(("break_effects", "1".into()));
-        }
+        // A remote run pauses before every effect, always. The PC enforces it
+        // rather than trusting the device to ask: whatever `break_effects` a
+        // request carries is ignored, so no paired device can have an effect
+        // happen that the person holding it did not approve at its pause.
+        query.push(("break_effects", "1".into()));
         if message.get("break_operations").and_then(Json::as_bool) == Some(true) {
             query.push(("break_operations", "1".into()));
         }
@@ -773,6 +850,23 @@ impl Session {
                 .ok()
                 .and_then(|b| b.get("run").and_then(Json::as_str).map(str::to_string))
             {
+                let mut owners = self.shared.owners.lock().unwrap_or_else(|e| e.into_inner());
+                // Records of runs their routes no longer keep answer nothing.
+                owners.retain(|(_, run), owner| {
+                    owner
+                        .routes
+                        .upgrade()
+                        .is_some_and(|routes| routes.run_events(run, 0).is_some())
+                });
+                owners.insert(
+                    (project.id.clone(), run.clone()),
+                    Owner {
+                        device: self.device.clone(),
+                        fingerprint: self.fingerprint.clone(),
+                        routes: Arc::downgrade(routes),
+                    },
+                );
+                drop(owners);
                 self.runs.push(Watching {
                     project: project.id.clone(),
                     run,
@@ -784,7 +878,24 @@ impl Session {
         Ok((status, body))
     }
 
+    /// Whether this device started `run`, in these very routes.
+    fn owns(&self, project: &Project, routes: &Arc<Routes>, run: &str) -> bool {
+        let owners = self.shared.owners.lock().unwrap_or_else(|e| e.into_inner());
+        owners
+            .get(&(project.id.clone(), run.to_string()))
+            .is_some_and(|owner| {
+                owner.device == self.device
+                    && owner.fingerprint == self.fingerprint
+                    && Weak::ptr_eq(&owner.routes, &Arc::downgrade(routes))
+            })
+    }
+
     fn forward_runs(&mut self, wire: &mut Wire) -> Result<(), End> {
+        // Routes were closed somewhere since this session last looked: some
+        // run followed here may be in them, and nothing more of it may pass.
+        if self.shared.projects.closings() != self.closings_seen {
+            self.forget_unshared(wire)?;
+        }
         let mut index = 0;
         while index < self.runs.len() {
             let watching = &mut self.runs[index];
@@ -821,14 +932,55 @@ impl Session {
         Ok(())
     }
 
+    /// Let go of what belongs to a project this PC no longer shares: its open
+    /// documents are no longer watched, and each run the device was following
+    /// there — stopped by [`Shared::current_projects`] — is reported ended,
+    /// and nothing more of it is sent.
+    fn forget_unshared(&mut self, wire: &mut Wire) -> Result<(), End> {
+        let seen = self.shared.projects.closings();
+        let shared: Vec<String> = self.projects().into_iter().map(|p| p.id).collect();
+        self.closings_seen = seen;
+        self.watched
+            .retain(|(project, _), _| shared.contains(project));
+        let mut index = 0;
+        while index < self.runs.len() {
+            let watching = &self.runs[index];
+            if shared.contains(&watching.project)
+                && self
+                    .shared
+                    .projects
+                    .is_open(&watching.project, &watching.routes)
+            {
+                index += 1;
+                continue;
+            }
+            let gone = self.runs.remove(index);
+            let stopped = Object::new()
+                .with(
+                    "error",
+                    Node::string(
+                        "this project is no longer shared by this PC, so the run was stopped",
+                    ),
+                )
+                .compact();
+            for (name, data) in [("failed", stopped.as_str()), ("end", "{}")] {
+                wire.send(&format!(
+                    "{{\"type\":\"event\",\"event\":\"run\",\"project\":{},\"run\":{},\"name\":{},\"data\":{}}}",
+                    text(&gone.project),
+                    text(&gone.run),
+                    text(name),
+                    data
+                ))?;
+            }
+        }
+        Ok(())
+    }
+
     /// Tell the device about open documents that changed on this PC.
     fn check_documents(&mut self, wire: &mut Wire) -> Result<(), End> {
-        let projects = self.projects();
         for ((project, doc), known) in self.watched.iter_mut() {
-            let Some(p) = projects.iter().find(|p| &p.id == project) else {
-                continue;
-            };
-            let Ok(routes) = self.shared.projects.routes(p) else {
+            let Ok(Some((_, routes))) = self.shared.projects.open(&self.shared.paths, project)
+            else {
                 continue;
             };
             let now = routes.workspace().read(doc).ok().map(|d| d.digest);
@@ -887,6 +1039,23 @@ impl Session {
         *cached = Some(about.clone());
         about
     }
+}
+
+/// The refusal a device gets for a run another device started. It is the same
+/// whether the run is another device's or was never this one's, so it tells
+/// the asker nothing about whose it is.
+fn not_yours(run: &str) -> (u16, String) {
+    (
+        403,
+        Object::new()
+            .with(
+                "error",
+                Node::string(format!(
+                    "run {run} was not started by this device; only the device that started a run can follow or answer it"
+                )),
+            )
+            .compact(),
+    )
 }
 
 /// Call one workspace route in process. The route table is the workspace's

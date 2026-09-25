@@ -43,6 +43,7 @@ import io.lcl.workspace.editor.EditorState
 import io.lcl.workspace.remote.Protocol
 import io.lcl.workspace.remote.obj
 import io.lcl.workspace.remote.str
+import io.lcl.workspace.workspace.LocalText
 import io.lcl.workspace.workspace.OpenDocument
 import io.lcl.workspace.workspace.WorkspaceController
 import kotlinx.coroutines.Dispatchers
@@ -104,6 +105,9 @@ fun AboutScreen(container: AppContainer, connection: ConnectionState, onBack: ()
     val deviceFingerprint = remember(pc?.keyAlias) {
         pc?.let { runCatching { container.identities.load(it.keyAlias)?.fingerprint }.getOrNull() }
     }
+    val keyProtection = remember(pc?.keyAlias) {
+        pc?.let { runCatching { container.identities.protection(it.keyAlias) }.getOrNull() }
+    }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Title("About", onBack)
         @Composable
@@ -117,6 +121,7 @@ fun AboutScreen(container: AppContainer, connection: ConnectionState, onBack: ()
         row("PC", pc?.let { "${it.name} (${it.pcId})" })
         row("PC fingerprint", pc?.fingerprint)
         row("This device's fingerprint for it", deviceFingerprint)
+        row("This device's key", keyProtection?.let { "Android Keystore, not exportable · ${it.description}" })
         row("PC service", about?.str("service"))
         row("PC engine protocol", about?.str("engine_protocol"))
         val core = about?.obj("core")
@@ -132,7 +137,8 @@ fun AboutScreen(container: AppContainer, connection: ConnectionState, onBack: ()
 /**
  * A `.lcl` or `.lcl.txt` file opened from elsewhere on this phone. It is shown
  * as it is — nothing on the phone judges LCL — and the connected PC can check
- * or inspect it with its engine.
+ * or inspect it with its engine. A file that is not valid UTF-8 is refused
+ * rather than shown or sent repaired (see [LocalText]).
  */
 @Composable
 fun LocalDocumentScreen(container: AppContainer, uri: Uri, settings: AppSettings, onBack: () -> Unit) {
@@ -145,25 +151,13 @@ fun LocalDocumentScreen(container: AppContainer, uri: Uri, settings: AppSettings
     LaunchedEffect(uri) {
         runCatching {
             withContext(Dispatchers.IO) {
-                context.contentResolver.openInputStream(uri)!!.use { stream ->
-                    // Read at most 4 MB; `readNBytes` would need Android 13.
-                    val limit = 4 * 1024 * 1024
-                    val bytes = java.io.ByteArrayOutputStream()
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        val read = stream.read(buffer)
-                        if (read < 0) break
-                        bytes.write(buffer, 0, read)
-                        require(bytes.size() <= limit) { "The file is larger than 4 MB." }
-                    }
-                    bytes.toString(Charsets.UTF_8.name())
-                }
+                context.contentResolver.openInputStream(uri)!!.use(LocalText::read)
             }
         }.onSuccess { text = it }.onFailure { problem = it.message }
     }
     Column(Modifier.fillMaxSize().padding(8.dp)) {
         Title(name, onBack)
-        problem?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        problem?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("local_problem")) }
         val loaded = text ?: return@Column
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (op in listOf("check", "inspect")) {
@@ -188,6 +182,7 @@ fun LocalDocumentScreen(container: AppContainer, uri: Uri, settings: AppSettings
                         }
                     },
                     enabled = connection(container) is ConnectionState.Connected,
+                    modifier = Modifier.testTag("local_$op"),
                 ) { Text("${op.replaceFirstChar { it.uppercase() }} on PC") }
             }
         }

@@ -11,12 +11,19 @@
 //! [`lcl_workspace::Workspace`]: the same object the desktop workspace serves
 //! its browser page from. A remote request is one of those routes, called in
 //! process.
+//!
+//! What is shared is decided afresh on every access, from `remote.json` as it
+//! is on disk at that moment, so `lcl-remote projects add` and `remove` take
+//! effect for a running service from its next request, with no restart. A
+//! project that is no longer shared cannot be opened, and routes kept open for
+//! it are closed.
 
 use crate::config::Config;
 use crate::paths::Paths;
 use lcl_workspace::{Routes, Workspace};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// One shared project.
@@ -71,6 +78,9 @@ pub struct Projects {
     specs: Specs,
     settings_file: PathBuf,
     open: Mutex<BTreeMap<String, Arc<Routes>>>,
+    /// How many times routes have been closed, so a session can notice at
+    /// once that routes it holds may be among them.
+    closings: AtomicU64,
 }
 
 impl Projects {
@@ -79,6 +89,7 @@ impl Projects {
             specs,
             settings_file: paths.workspace_settings.clone(),
             open: Mutex::new(BTreeMap::new()),
+            closings: AtomicU64::new(0),
         }
     }
 
@@ -116,11 +127,56 @@ impl Projects {
         out
     }
 
-    /// The routes for one project, opening it the first time.
-    pub fn routes(&self, project: &Project) -> Result<Arc<Routes>, String> {
+    /// The projects shared at this moment, and the routes of any project that
+    /// is no longer shared, closed here and handed back so the runs in them
+    /// can be stopped.
+    pub fn current(&self, paths: &Paths) -> (Vec<Project>, Vec<Arc<Routes>>) {
         let mut open = self.open.lock().unwrap_or_else(|e| e.into_inner());
+        let projects = self.list(paths, &shared_now(paths));
+        let mut closed = Vec::new();
+        open.retain(|id, routes| {
+            let shared = projects.iter().any(|p| &p.id == id);
+            if !shared {
+                closed.push(Arc::clone(routes));
+            }
+            shared
+        });
+        if !closed.is_empty() {
+            self.closings.fetch_add(1, Ordering::SeqCst);
+        }
+        (projects, closed)
+    }
+
+    /// How many times [`Projects::current`] has closed routes so far.
+    pub fn closings(&self) -> u64 {
+        self.closings.load(Ordering::SeqCst)
+    }
+
+    /// Whether `routes` are the ones open for project `id` now: false once
+    /// they were closed, even if the project has been shared again since.
+    pub fn is_open(&self, id: &str, routes: &Arc<Routes>) -> bool {
+        let open = self.open.lock().unwrap_or_else(|e| e.into_inner());
+        open.get(id)
+            .is_some_and(|current| Arc::ptr_eq(current, routes))
+    }
+
+    /// One project shared at this moment, by id, and its routes, opened the
+    /// first time. `None` when no project with that id is shared now.
+    ///
+    /// Deciding that the project is shared and handing out its routes happen
+    /// under one lock, the one [`Projects::current`] closes routes under, so a
+    /// project is never opened again once its removal has been seen.
+    pub fn open(&self, paths: &Paths, id: &str) -> Result<Option<(Project, Arc<Routes>)>, String> {
+        let mut open = self.open.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(project) = self
+            .list(paths, &shared_now(paths))
+            .into_iter()
+            .find(|p| p.id == id)
+        else {
+            return Ok(None);
+        };
         if let Some(routes) = open.get(&project.id) {
-            return Ok(Arc::clone(routes));
+            return Ok(Some((project, Arc::clone(routes))));
         }
         let workspace = Workspace::open_with(
             &project.root,
@@ -132,8 +188,15 @@ impl Projects {
             Routes::new(Arc::new(workspace)).with_settings_file(Some(self.settings_file.clone())),
         );
         open.insert(project.id.clone(), Arc::clone(&routes));
-        Ok(routes)
+        Ok(Some((project, routes)))
     }
+}
+
+/// `remote.json` as it is on disk now. One that cannot be read shares no
+/// folder beyond the default workspace: a running service does not guess
+/// which folders were meant.
+fn shared_now(paths: &Paths) -> Config {
+    Config::load(paths).unwrap_or_default()
 }
 
 /// The stable id of a project root.

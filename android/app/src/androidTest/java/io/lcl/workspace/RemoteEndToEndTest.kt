@@ -1,5 +1,7 @@
 package io.lcl.workspace
 
+import android.app.Activity
+import android.app.Instrumentation
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
@@ -22,6 +24,9 @@ import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.text.TextRange
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.google.zxing.client.android.Intents
+import com.journeyapps.barcodescanner.CaptureActivity
+import io.lcl.workspace.remote.KeyProtection
 import io.lcl.workspace.remote.PairingLink
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -124,6 +129,26 @@ class RemoteEndToEndTest {
         waitFor("pair_preview")
     }
 
+    /**
+     * Press the app's own Scan QR code button and have the scanner read
+     * `link`. The camera activity is never started: the instrumentation
+     * answers its launch with the result a scan of the PC's QR code gives, so
+     * everything after the camera — the app's launcher, the scan contract and
+     * what the app does with the result — is the app's own code.
+     */
+    private fun scan(link: String) {
+        val read = Instrumentation.ActivityResult(Activity.RESULT_OK, Intent().putExtra(Intents.Scan.RESULT, link))
+        val camera = instrumentation.addMonitor(CaptureActivity::class.java.name, read, true)
+        try {
+            rule.onNodeWithTag("scan").performClick()
+            rule.waitUntil("the scanner is started and answered", 10_000) { camera.hits > 0 }
+        } finally {
+            instrumentation.removeMonitor(camera)
+        }
+    }
+
+    private fun pairedPcs(): String? = instrumentation.targetContext.getSharedPreferences("lcl", 0).getString("pcs", null)
+
     private fun run(grant: String, answer: String): String {
         action("run")
         waitFor("grant_read")
@@ -184,6 +209,13 @@ class RemoteEndToEndTest {
         val info = KeyFactory.getInstance(key.algorithm, "AndroidKeyStore").getKeySpec(key, KeyInfo::class.java)
         val level = if (Build.VERSION.SDK_INT >= 31) "securityLevel=${info.securityLevel}" else legacyLevel(info)
         Log.i(TAG, "device key ${keys.single()}: ${key.algorithm}, $level")
+        // The app reports what the platform says about this very key; it does
+        // not assume hardware.
+        val container = (instrumentation.targetContext.applicationContext as LclApplication).container
+        val reported = container.identities.protection(keys.single())
+        val direct = if (Build.VERSION.SDK_INT >= 31) KeyProtection.of(info.securityLevel, false) else KeyProtection.of(null, legacyInside(info))
+        assertEquals(direct, reported)
+        Log.i(TAG, "device key protection reported by the app: $reported")
         // Nothing reusable is written in plain files: no code, no key.
         val code = PairingLink.parse(link).code
         val preferences = File(instrumentation.targetContext.dataDir, "shared_prefs").listFiles().orEmpty()
@@ -258,6 +290,8 @@ class RemoteEndToEndTest {
         }
         assertTrue(textOf("about:LCL Core 0.2"), textOf("about:LCL Core 0.2").contains(arg("core02")))
         assertEquals("lcl.remote/1", textOf("about:Remote protocol"))
+        assertTrue(textOf("about:This device's key"), textOf("about:This device's key").startsWith("Android Keystore, not exportable · "))
+        Log.i(TAG, "about key: ${textOf("about:This device's key")}")
         Log.i(TAG, "about: ${textOf("about:LCL Core 0.1")} | ${textOf("about:LCL Core 0.2")} | ${textOf("about:PC service")}")
         shot("p2_02_about")
         back()
@@ -396,11 +430,50 @@ class RemoteEndToEndTest {
         assertFalse(after.contains(id))
     }
 
+    /**
+     * Phase 8: the app's own QR scanner. A scanned code only fills the form in,
+     * exactly as a pasted or outside link does: no key is made, no PC is
+     * recorded and nothing connects until Pair is pressed — and then it pairs,
+     * which also proves the one-time code was still unused. (No camera is
+     * used; see [scan].)
+     */
+    @Test
+    fun p8_scan_fills_the_form_and_pairs_only_on_confirmation() {
+        val link = arg("link")
+        rule.waitUntil("the app settles", 60_000) { label() in setOf("No PC", "Connected", "Offline", "Not trusted") }
+        val labelBefore = label()
+        goHome()
+        rule.onNodeWithTag("pair_new").performClick()
+        val keysBefore = deviceKeys()
+        val pcsBefore = pairedPcs()
+
+        scan(link)
+        waitFor("pair_preview")
+        val field = rule.onNodeWithTag("pair_link").fetchSemanticsNode().config.getOrNull(SemanticsProperties.EditableText)?.text
+        assertEquals("the scanned link did not fill the form", link, field)
+        val shown = "Fingerprint " + PairingLink.parse(link).fingerprint.chunked(4).take(8).joinToString(" ")
+        rule.onNode(hasText(shown, substring = true), useUnmergedTree = true).assertExists()
+        Thread.sleep(3_000) // time enough for a pairing that must not happen
+        assertEquals("a scanned code made a pairing key before Pair", keysBefore, deviceKeys())
+        assertEquals("a scanned code recorded a PC before Pair", pcsBefore, pairedPcs())
+        assertEquals("a scanned code connected before Pair", labelBefore, label())
+        assertFalse("a scanned code was tried before Pair", exists("pair_problem"))
+        shot("p8_01_scanned_confirm")
+
+        rule.onNodeWithTag("pair_button").performClick()
+        waitForLabel("Connected")
+        assertEquals(keysBefore.size + 1, deviceKeys().size)
+        shot("p8_02_paired")
+    }
+
     private companion object {
         const val TAG = "LclE2E"
 
         /** Before API 31 this is the only way to ask. */
         @Suppress("DEPRECATION")
         fun legacyLevel(info: KeyInfo) = "insideSecureHardware=${info.isInsideSecureHardware}"
+
+        @Suppress("DEPRECATION")
+        fun legacyInside(info: KeyInfo) = info.isInsideSecureHardware
     }
 }

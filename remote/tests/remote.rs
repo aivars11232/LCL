@@ -53,6 +53,7 @@ impl Drop for Home {
 }
 
 /// A running PC.
+#[derive(Clone)]
 struct Pc {
     address: SocketAddr,
     fingerprint: String,
@@ -168,6 +169,26 @@ impl Client {
                 Err(_) => return None,
             }
         }
+    }
+
+    /// Whether the PC closes this connection within `within`, rather than
+    /// keeping it open. Whatever arrives meanwhile is kept in the reader.
+    fn closed_within(&mut self, within: Duration) -> bool {
+        let deadline = Instant::now() + within;
+        let mut buffer = [0u8; 16384];
+        while Instant::now() < deadline {
+            match self.tls.read(&mut buffer) {
+                Ok(0) => return true,
+                Ok(n) => self.reader.feed(&buffer[..n]),
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    ) => {}
+                Err(_) => return true,
+            }
+        }
+        false
     }
 
     fn hello(&mut self, fields: &str) -> Json {
@@ -504,6 +525,185 @@ fn a_device_cannot_claim_to_be_another() {
 }
 
 // ---------------------------------------------------------------------------
+// Peers nobody has authenticated
+// ---------------------------------------------------------------------------
+
+/// Whether the PC closes a plain TCP connection within `within`.
+fn tcp_closed_within(tcp: &mut TcpStream, within: Duration) -> bool {
+    tcp.set_read_timeout(Some(Duration::from_millis(50)))
+        .unwrap();
+    let deadline = Instant::now() + within;
+    let mut buffer = [0u8; 1024];
+    while Instant::now() < deadline {
+        match tcp.read(&mut buffer) {
+            Ok(0) => return true,
+            Ok(_) => {}
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) => {}
+            Err(_) => return true,
+        }
+    }
+    false
+}
+
+#[test]
+fn a_first_message_larger_than_a_hello_is_refused_at_once() {
+    use lcl_remote::frame::MAX_HELLO_FRAME;
+    let home = Home::new("bighello");
+    let pc = start(&home);
+    let phone = device();
+    let (paired, _) = pair(&home, &pc, &phone, "Phone");
+    drop(paired);
+
+    // A paired device's own hello, padded past what a hello needs: closed,
+    // and not welcomed.
+    let mut client = connect(&pc, &phone, &pc.fingerprint).unwrap();
+    let padding = "x".repeat(MAX_HELLO_FRAME);
+    client.send(&format!(
+        "{{\"type\":\"hello\",\"protocol\":\"lcl.remote/1\",\"intent\":\"connect\",\"padding\":\"{padding}\"}}"
+    ));
+    assert!(
+        client.closed_within(Duration::from_secs(5)),
+        "an oversized hello was not refused"
+    );
+    let answered = client.reader.next_frame();
+    assert!(
+        matches!(answered, Ok(None)),
+        "an oversized hello was answered: {answered:?}"
+    );
+
+    // Only a length announced, and no body: closed at once, not kept
+    // waiting for bytes that would have to be buffered.
+    let mut client = connect(&pc, &phone, &pc.fingerprint).unwrap();
+    client.send_raw(&(MAX_HELLO_FRAME as u32 + 1).to_be_bytes());
+    assert!(
+        client.closed_within(Duration::from_secs(2)),
+        "a peer announcing a large first message was kept waiting for it"
+    );
+
+    // Once authenticated, a document-sized frame is read whole.
+    let (mut client, welcome) = reconnect(&pc, &phone);
+    assert_eq!(s(&welcome, "type"), "welcome");
+    let (status, body) =
+        client.request("ping", &format!("\"padding\":\"{}\"", "y".repeat(1 << 20)));
+    assert_eq!(status, 200, "{body:?}");
+}
+
+#[test]
+fn silent_slow_and_broken_peers_are_closed_by_the_hello_deadline() {
+    let home = Home::new("slow");
+    let pc = start(&home);
+    let within = lcl_remote::session::HELLO_WITHIN + Duration::from_secs(3);
+    // Side by side, so the test waits for one deadline and not three.
+    let silent_tcp = {
+        let pc = pc.clone();
+        std::thread::spawn(move || {
+            let mut tcp = TcpStream::connect(pc.address).unwrap();
+            tcp_closed_within(&mut tcp, within)
+        })
+    };
+    let silent_tls = {
+        let pc = pc.clone();
+        std::thread::spawn(move || {
+            let mut client = connect(&pc, &device(), &pc.fingerprint).unwrap();
+            client.closed_within(within)
+        })
+    };
+    let partial = {
+        let pc = pc.clone();
+        std::thread::spawn(move || {
+            let mut client = connect(&pc, &device(), &pc.fingerprint).unwrap();
+            client.send_raw(&[0, 0, 0, 100, b'{', b'"', b't', b'y', b'p', b'e', b'"']);
+            client.closed_within(within)
+        })
+    };
+    assert!(
+        silent_tcp.join().unwrap(),
+        "a connection that said nothing stayed open"
+    );
+    assert!(
+        silent_tls.join().unwrap(),
+        "a device that never said hello stayed connected"
+    );
+    assert!(
+        partial.join().unwrap(),
+        "a hello that never finished kept the connection open"
+    );
+
+    // A first frame that is not UTF-8 closes the connection at once.
+    let mut client = connect(&pc, &device(), &pc.fingerprint).unwrap();
+    client.send_raw(&[0, 0, 0, 2, 0xff, 0xfe]);
+    assert!(client.closed_within(Duration::from_secs(2)));
+    assert!(matches!(client.reader.next_frame(), Ok(None)));
+}
+
+#[test]
+fn every_refused_connection_gives_its_slot_back() {
+    let home = Home::new("slots");
+    let pc = start(&home);
+    let phone = device();
+    let (paired, _) = pair(&home, &pc, &phone, "Phone");
+    drop(paired);
+    // More refusals than there are slots of any kind, one after another.
+    for i in 0..lcl_remote::service::MAX_CONNECTIONS + 8 {
+        let mut client = connect(&pc, &device(), &pc.fingerprint).unwrap();
+        client.send("not json");
+        assert!(
+            client.closed_within(Duration::from_secs(5)),
+            "refused connection {i} stayed open"
+        );
+        let (_c, answer) = reconnect(&pc, &device());
+        assert_eq!(s(&answer, "code"), "not_paired", "attempt {i}");
+        drop(TcpStream::connect(pc.address).unwrap()); // comes and goes at once
+    }
+    let (_c, welcome) = reconnect(&pc, &phone);
+    assert_eq!(s(&welcome, "type"), "welcome", "slots were not given back");
+}
+
+#[test]
+fn unauthenticated_peers_cannot_crowd_out_the_rest() {
+    use lcl_remote::service::MAX_UNAUTHENTICATED_PER_ADDRESS;
+    let home = Home::new("crowd");
+    let pc = start(&home);
+    let phone = device();
+    let (mut live, _) = pair(&home, &pc, &phone, "Phone");
+
+    // Peers that connect and say nothing, as many as one address may have.
+    let idle: Vec<TcpStream> = (0..MAX_UNAUTHENTICATED_PER_ADDRESS)
+        .map(|_| TcpStream::connect(pc.address).unwrap())
+        .collect();
+    // One more from the same address is closed at once, not left to wait.
+    let mut extra = TcpStream::connect(pc.address).unwrap();
+    assert!(
+        tcp_closed_within(&mut extra, Duration::from_secs(2)),
+        "an address held more unauthenticated connections than it may"
+    );
+    // The authenticated session is untouched by all of it.
+    let (status, body) = live.request("ping", "");
+    assert_eq!(status, 200, "{body:?}");
+
+    // When they leave, their slots are free again at once.
+    drop(idle);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match connect(&pc, &phone, &pc.fingerprint) {
+            Ok(mut client) => {
+                let answer = client.hello("\"intent\":\"connect\"");
+                assert_eq!(s(&answer, "type"), "welcome", "{answer:?}");
+                break;
+            }
+            Err(e) => {
+                assert!(Instant::now() < deadline, "the slots never came back: {e}");
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Projects and documents
 // ---------------------------------------------------------------------------
 
@@ -606,6 +806,41 @@ fn a_save_lands_only_on_the_revision_it_started_from() {
 }
 
 #[test]
+fn two_devices_saving_from_one_revision_cannot_both_land() {
+    let home = Home::new("twosavers");
+    std::fs::create_dir_all(home.workspace()).unwrap();
+    std::fs::write(home.workspace().join("doc.lcl"), VALID).unwrap();
+    let pc = start(&home);
+    let (mut a, _) = pair(&home, &pc, &device(), "Phone A");
+    let (mut b, _) = pair(&home, &pc, &device(), "Phone B");
+    let project = project(&mut a);
+    let open = format!("\"project\":\"{project}\",\"document\":\"doc.lcl\"");
+    let base = s(&a.request("open", &open).1, "digest");
+    assert_eq!(s(&b.request("open", &open).1, "digest"), base);
+
+    // Both save at once, each over the revision it opened.
+    let save = |mut client: Client, value: &str| {
+        let text = VALID.replace("VALUE: 1", value);
+        let fields = format!(
+            "\"project\":\"{project}\",\"document\":\"doc.lcl\",\"base\":\"{base}\",\"text\":{}",
+            json_string(&text)
+        );
+        std::thread::spawn(move || (client.request("save", &fields).0, text))
+    };
+    let a = save(a, "VALUE: 2");
+    let b = save(b, "VALUE: 3");
+    let (a, b) = (a.join().unwrap(), b.join().unwrap());
+    let mut statuses = [a.0, b.0];
+    statuses.sort_unstable();
+    assert_eq!(statuses, [200, 409], "A: {}, B: {}", a.0, b.0);
+    let landed = if a.0 == 200 { a.1 } else { b.1 };
+    assert_eq!(
+        std::fs::read_to_string(home.workspace().join("doc.lcl")).unwrap(),
+        landed
+    );
+}
+
+#[test]
 fn an_edit_made_on_the_pc_reaches_the_device() {
     let home = Home::new("pcedit");
     std::fs::create_dir_all(home.workspace()).unwrap();
@@ -659,6 +894,183 @@ fn paths_outside_the_project_and_unknown_operations_are_refused() {
     }
     let (status, _) = client.request("tree", "\"project\":\"not-a-project\"");
     assert_eq!(status, 404);
+}
+
+/// `lcl-remote` itself, run beside the service on this PC's files, as a person
+/// runs it.
+fn cli(home: &Home, args: &[&str]) -> std::process::Output {
+    std::process::Command::new(env!("CARGO_BIN_EXE_lcl-remote"))
+        .args(args)
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("XDG_CONFIG_HOME", home.0.join("config"))
+        .env("XDG_STATE_HOME", home.0.join("state"))
+        .env("XDG_DATA_HOME", home.0.join("data"))
+        .output()
+        .unwrap()
+}
+
+fn listed(client: &mut Client) -> Vec<String> {
+    let (status, body) = client.request("projects", "");
+    assert_eq!(status, 200, "{body:?}");
+    body.get("projects")
+        .and_then(Json::as_array)
+        .unwrap()
+        .iter()
+        .map(|p| s(p, "id"))
+        .collect()
+}
+
+#[test]
+fn a_project_stops_being_shared_at_once_without_a_restart() {
+    let home = Home::new("unshare");
+    let extra = home.0.join("extra");
+    std::fs::create_dir_all(&extra).unwrap();
+    std::fs::write(extra.join("doc.lcl"), VALID).unwrap();
+    let folder = home.0.join("todo");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("todo.txt"), "Buy milk\n").unwrap();
+    let pc = start(&home);
+    let (mut client, _) = pair(&home, &pc, &device(), "sharer");
+    let folder_name = extra.display().to_string();
+
+    // Shared while the service runs: offered from the next request on.
+    let added = cli(&home, &["projects", "add", &folder_name]);
+    assert!(
+        added.status.success(),
+        "{}",
+        String::from_utf8_lossy(&added.stderr)
+    );
+    let id = lcl_remote::projects::project_id(&extra.canonicalize().unwrap());
+    assert!(
+        listed(&mut client).contains(&id),
+        "a new share was not offered"
+    );
+    let target = format!("\"project\":\"{id}\"");
+    let (status, body) = client.request("open", &format!("{target},\"document\":\"doc.lcl\""));
+    assert_eq!(status, 200, "{body:?}");
+    // A run in it, held at its first pause: its routes are open and cached.
+    let grants = format!(
+        "{{\"read\":[{0}],\"write\":[{0}]}}",
+        json_string(&folder.display().to_string())
+    );
+    let text = json_string(&backup_document(&folder));
+    let run_fields =
+        format!("{target},\"document\":\"backup.lcl\",\"text\":{text},\"grants\":{grants}");
+    let (status, started) = client.request("run", &run_fields);
+    assert_eq!(status, 200, "{started:?}");
+    let run = s(&started, "run");
+    let this_run = |name: &'static str| {
+        let run = run.clone();
+        move |m: &Json| {
+            m.get("event").and_then(Json::as_str) == Some("run")
+                && m.get("run").and_then(Json::as_str) == Some(run.as_str())
+                && m.get("name").and_then(Json::as_str) == Some(name)
+        }
+    };
+    let paused = client
+        .event(Duration::from_secs(20), this_run("paused"))
+        .expect("the run pauses before its first effect");
+    let sequence = paused
+        .get("data")
+        .and_then(|d| d.get("sequence"))
+        .and_then(Json::as_u64)
+        .unwrap();
+
+    // Unshared while the service runs, and no restart.
+    let removed = cli(&home, &["projects", "remove", &folder_name]);
+    assert!(
+        removed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&removed.stderr)
+    );
+    assert!(
+        !listed(&mut client).contains(&id),
+        "an unshared project is still offered"
+    );
+    let base = lcl_spec::sha256::hex_digest(VALID.as_bytes());
+    for (op, fields) in [
+        ("tree", String::new()),
+        ("open", ",\"document\":\"doc.lcl\"".to_string()),
+        (
+            "save",
+            format!(",\"document\":\"doc.lcl\",\"base\":\"{base}\",\"text\":\"changed\\n\""),
+        ),
+        (
+            "check",
+            format!(",\"document\":\"doc.lcl\",\"text\":{}", json_string(VALID)),
+        ),
+        ("follow", format!(",\"run\":\"{run}\",\"from\":0")),
+        (
+            "answer",
+            format!(",\"run\":\"{run}\",\"sequence\":{sequence},\"answer\":\"continue\""),
+        ),
+    ] {
+        let (status, body) = client.request(op, &format!("{target}{fields}"));
+        assert_eq!(status, 404, "{op} reached an unshared project: {body:?}");
+    }
+    let (status, body) = client.request("run", &run_fields);
+    assert_eq!(
+        status, 404,
+        "a run started in an unshared project: {body:?}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(extra.join("doc.lcl")).unwrap(),
+        VALID,
+        "a save reached an unshared project"
+    );
+    // The run it held is stopped, and the device is told; its effect never
+    // happened.
+    let failed = client
+        .event(Duration::from_secs(5), this_run("failed"))
+        .expect("the device was not told its run was stopped");
+    assert!(s(failed.get("data").unwrap(), "error").contains("no longer shared"));
+    assert!(client
+        .event(Duration::from_secs(5), this_run("end"))
+        .is_some());
+    assert!(!folder.join("todo_backup.txt").exists());
+    assert_eq!(
+        std::fs::read_to_string(folder.join("todo.txt")).unwrap(),
+        "Buy milk\n"
+    );
+
+    // Shared again: offered again, opened afresh.
+    assert!(cli(&home, &["projects", "add", &folder_name])
+        .status
+        .success());
+    assert!(listed(&mut client).contains(&id));
+    let (status, body) = client.request("open", &format!("{target},\"document\":\"doc.lcl\""));
+    assert_eq!(status, 200, "{body:?}");
+}
+
+#[test]
+fn a_link_out_of_the_project_is_neither_read_nor_written() {
+    let home = Home::new("symlink");
+    std::fs::create_dir_all(home.workspace()).unwrap();
+    let outside = home.0.join("outside.lcl");
+    std::fs::write(&outside, VALID).unwrap();
+    std::os::unix::fs::symlink(&outside, home.workspace().join("escape.lcl")).unwrap();
+    let pc = start(&home);
+    let (mut client, _) = pair(&home, &pc, &device(), "links");
+    let project = project(&mut client);
+    let (status, body) = client.request(
+        "open",
+        &format!("\"project\":\"{project}\",\"document\":\"escape.lcl\""),
+    );
+    assert!(
+        status >= 400,
+        "a link out of the project was read: {body:?}"
+    );
+    let base = lcl_spec::sha256::hex_digest(VALID.as_bytes());
+    let (status, body) = client.request(
+        "save",
+        &format!("\"project\":\"{project}\",\"document\":\"escape.lcl\",\"base\":\"{base}\",\"text\":\"changed\\n\""),
+    );
+    assert!(
+        status >= 400,
+        "a link out of the project was written: {body:?}"
+    );
+    assert_eq!(std::fs::read_to_string(&outside).unwrap(), VALID);
 }
 
 // ---------------------------------------------------------------------------
@@ -872,4 +1284,154 @@ fn a_device_cannot_get_an_effect_the_pc_did_not_permit() {
         !folder.join("todo_backup.txt").exists(),
         "a denied effect happened"
     );
+}
+
+#[test]
+fn only_the_device_that_started_a_run_can_follow_or_answer_it() {
+    let home = Home::new("owner");
+    let folder = home.0.join("todo");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("todo.txt"), "Buy milk\n").unwrap();
+    let pc = start(&home);
+    let (mut a, _) = pair(&home, &pc, &device(), "Phone A");
+    let (mut b, _) = pair(&home, &pc, &device(), "Phone B");
+    let project = project(&mut a);
+    let grants = format!(
+        "{{\"read\":[{0}],\"write\":[{0}]}}",
+        json_string(&folder.display().to_string())
+    );
+    let text = json_string(&backup_document(&folder));
+    let (status, started) = a.request("run", &format!("\"project\":\"{project}\",\"document\":\"backup.lcl\",\"text\":{text},\"grants\":{grants}"));
+    assert_eq!(status, 200, "{started:?}");
+    let run = s(&started, "run");
+    let is_run = |m: &Json| m.get("event").and_then(Json::as_str) == Some("run");
+    let paused = a
+        .event(Duration::from_secs(20), |m| {
+            is_run(m) && m.get("name").and_then(Json::as_str) == Some("paused")
+        })
+        .expect("A's run pauses before its first effect");
+    let sequence = paused
+        .get("data")
+        .and_then(|d| d.get("sequence"))
+        .and_then(Json::as_u64)
+        .unwrap();
+    a.events.retain(|m| !is_run(m));
+
+    // B is paired and knows the run's id, and still gets nothing of it.
+    let (status, body) = b.request(
+        "follow",
+        &format!("\"project\":\"{project}\",\"run\":\"{run}\",\"from\":0"),
+    );
+    assert_eq!(status, 403, "B followed A's run: {body:?}");
+    for answer in ["continue", "deny", "cancel"] {
+        let (status, body) = b.request(
+            "answer",
+            &format!("\"project\":\"{project}\",\"run\":\"{run}\",\"sequence\":{sequence},\"answer\":\"{answer}\""),
+        );
+        assert_eq!(status, 403, "B answered {answer} for A's run: {body:?}");
+    }
+    let leaked = b.event(Duration::from_secs(1), is_run);
+    assert!(leaked.is_none(), "B was sent A's run: {leaked:?}");
+    assert!(
+        !b.events.iter().any(is_run),
+        "B was sent A's run: {:?}",
+        b.events
+    );
+    // A's run is exactly where B found it: paused, nothing done, not cancelled.
+    let moved = a.event(Duration::from_millis(500), is_run);
+    assert!(moved.is_none(), "B's answer moved A's run: {moved:?}");
+    assert!(!folder.join("todo_backup.txt").exists());
+
+    // A still follows and answers its own run, to the end.
+    let (status, body) = a.request(
+        "follow",
+        &format!("\"project\":\"{project}\",\"run\":\"{run}\",\"from\":0"),
+    );
+    assert_eq!(status, 200, "{body:?}");
+    let (status, body) = a.request(
+        "answer",
+        &format!("\"project\":\"{project}\",\"run\":\"{run}\",\"sequence\":{sequence},\"answer\":\"continue\""),
+    );
+    assert_eq!(status, 200, "{body:?}");
+    let (_, report) = run_until_end(&mut a, "continue");
+    let completion = report.get("completion").expect("a completion");
+    assert_eq!(s(completion, "terminal_status"), "status.succeeded");
+    assert!(folder.join("todo_backup.txt").is_file());
+}
+
+#[test]
+fn a_device_cannot_switch_off_the_pause_before_an_effect() {
+    let home = Home::new("mustpause");
+    let folder = home.0.join("todo");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("todo.txt"), "Buy milk\n").unwrap();
+    let pc = start(&home);
+    let (mut client, _) = pair(&home, &pc, &device(), "runner");
+    let project = project(&mut client);
+    let grants = format!(
+        "{{\"read\":[{0}],\"write\":[{0}]}}",
+        json_string(&folder.display().to_string())
+    );
+    let text = json_string(&backup_document(&folder));
+
+    // Granted, and asking not to be asked: the PC pauses all the same.
+    let (status, started) = client.request("run", &format!("\"project\":\"{project}\",\"document\":\"backup.lcl\",\"text\":{text},\"grants\":{grants},\"break_effects\":false"));
+    assert_eq!(status, 200, "{started:?}");
+    let is_run = |m: &Json| m.get("event").and_then(Json::as_str) == Some("run");
+    // `operation` only says which operation is being dispatched; the host
+    // gate, where an effect is permitted or not, comes after it.
+    let first = client
+        .event(Duration::from_secs(20), |m| {
+            is_run(m) && m.get("name").and_then(Json::as_str) != Some("operation")
+        })
+        .expect("the run went quiet");
+    assert_eq!(
+        s(&first, "name"),
+        "paused",
+        "a run went ahead without pausing: {first:?}"
+    );
+    let data = first.get("data").unwrap();
+    assert_eq!(s(data, "kind"), "effect");
+
+    // Held there: nothing happens while the device has not answered. What
+    // arrived before the pause was already passed over; only what follows it
+    // counts.
+    client.events.retain(|m| !is_run(m));
+    let moved = client.event(Duration::from_millis(1500), is_run);
+    assert!(
+        moved.is_none(),
+        "the run moved on without an answer: {moved:?}"
+    );
+    assert!(!folder.join("todo_backup.txt").exists());
+    assert_eq!(
+        std::fs::read_to_string(folder.join("todo.txt")).unwrap(),
+        "Buy milk\n"
+    );
+
+    // Only answers move it, and every effect has its own pause before it.
+    let sequence = data.get("sequence").and_then(Json::as_u64).unwrap();
+    let run = s(&first, "run");
+    let (status, _) = client.request(
+        "answer",
+        &format!("\"project\":\"{project}\",\"run\":\"{run}\",\"sequence\":{sequence},\"answer\":\"continue\""),
+    );
+    assert_eq!(status, 200);
+    let (rest, report) = run_until_end(&mut client, "continue");
+    let mut paused = true;
+    let mut effects = 0;
+    for name in &rest {
+        match name.as_str() {
+            "paused" => paused = true,
+            "effect" => {
+                assert!(paused, "an effect without its own pause: {rest:?}");
+                paused = false;
+                effects += 1;
+            }
+            _ => {}
+        }
+    }
+    assert!(effects >= 2, "{rest:?}");
+    let completion = report.get("completion").expect("a completion");
+    assert_eq!(s(completion, "terminal_status"), "status.succeeded");
+    assert!(folder.join("todo_backup.txt").is_file());
 }

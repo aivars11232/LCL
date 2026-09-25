@@ -172,8 +172,9 @@ Pairing is done once per phone and PC.
 3. The phone shows the PC's name and fingerprint and asks. Compare the
    fingerprint with the one on the PC's screen, then press **Pair**.
 
-A link that arrives from outside the app — the camera app, a web page, a
-message — only fills the form in. Nothing is trusted until you press Pair.
+A code read by the app's own scanner, and a link that arrives from outside
+the app — the camera app, a web page, a message — only fill the form in. No
+key is made, nothing is recorded and nothing connects until you press Pair.
 
 The QR code carries: the link format version, the PC's id and name, the
 SHA-256 fingerprint of the PC's certificate, the addresses to try, a one-time
@@ -186,12 +187,23 @@ proves it holds it in the TLS handshake, and the PC records the device by the
 fingerprint of that certificate. From then on the phone connects with that key;
 the QR code is never needed again.
 
+Whether that key is hardware-backed depends on the phone. Android Keystore
+may keep it in a StrongBox secure element, in a trusted execution environment
+(TEE), or in software; in every case it is not exportable and the app holds
+only a handle. The app requires none of the hardware kinds, so phones without
+them are supported, and **About → This device's key** shows what Android
+reports for the key. The emulator the app is tested on reports a software
+key; no physical phone has been checked yet.
+
 ## Working on a document
 
 - **Projects and files.** The PC's shared projects (its default workspace, plus
   any added with `lcl-remote projects add`), their `.lcl` and `.lcl.txt`
   documents, and a project picker. Other files, `.txt` included, are not LCL
-  and are not listed.
+  and are not listed. `lcl-remote projects add` and `remove` take effect for a
+  running service at once: a removed project is gone from the list and every
+  request for it is refused from the next one on, and a run the phone started
+  there is stopped and reported ended.
 - **Editor.** Monospace text that is always visible; line numbers that start
   at 1, follow every inserted or deleted line at once, scroll with the text and
   can be hidden; no wrapping, with horizontal scrolling for long lines;
@@ -208,7 +220,13 @@ the QR code is never needed again.
   changed on the PC meanwhile, nothing is written: the app shows the PC's
   version and asks — **Use PC version** or **Keep mine**. Keep mine makes your
   text an edit of the PC's newer revision, and the next Save writes it, because
-  you chose so. There is no last-write-wins.
+  you chose so. Two paired devices saving from the same revision cannot both
+  land (tested). The exact boundary: the PC sees every change made to the file
+  before it compares, whoever made it; it cannot lock out another program on
+  the PC — the desktop workspace, whose saves carry no precondition, or any
+  editor — that replaces the file in the instant between that comparison and
+  the save's atomic rename. That window is the time to read and hash the file,
+  not the time the phone had it open.
 - **Changes made on the PC** arrive while a document is open. A copy with no
   unsaved edits is refreshed; one with unsaved edits is stopped with the choice
   above.
@@ -217,13 +235,15 @@ the QR code is never needed again.
   `test.lcl.txt` are kept as typed.
 - **Run** starts the document on the PC. You grant host permissions for this
   run (read and write paths, programs, network hosts, inputs); the document's
-  own authorizations still apply. The run pauses before every effect and shows
+  own authorizations still apply. The run pauses before every effect — the PC
+  enforces that for every remote run, and no device can turn it off — and shows
   what the engine says it is — operation, target, parameters, category,
   effects, where in the document, and what authorized it — and waits for
   **Allow**, **Deny** or **Stop run**. Pairing never approves anything by
   itself. Events and the final status and outputs are shown as they come. If
   the connection drops, the run keeps going on the PC and is followed again
-  from the first event the phone missed.
+  from the first event the phone missed. Only the device that started a run
+  can follow it or answer its pauses; another paired device is refused.
 - **Settings** (this device only): theme System / Dark / Light, font size,
   line numbers.
 - **About**: app version, remote protocol version, the connected PC and its
@@ -233,7 +253,10 @@ the QR code is never needed again.
   Android version and ABIs.
 - **Opening a file.** A `.lcl` or `.lcl.txt` file opened from another app is
   shown read-only and can be checked or inspected on the connected PC, as if it
-  were a document of the current project.
+  were a document of the current project. Its bytes must be valid UTF-8 (at
+  most 4 MB): a file that is not is refused with the offset of the first bad
+  byte, and is neither shown nor sent to the PC — never repaired with
+  replacement characters.
 
 ## Connections: pairing is not a connection
 
@@ -319,7 +342,9 @@ What is **not implemented**:
 - **Two identities, both keys.** The PC has an ECDSA P-256 key and a
   self-signed certificate (`~/.config/lcl/remote/identity.key`, `0600`, in a
   `0700` directory). Each phone has one key *per PC*, generated in Android
-  Keystore, non-exportable; the app only holds a handle. Neither private key
+  Keystore, non-exportable; the app only holds a handle. Whether the phone
+  keeps it in hardware (StrongBox or TEE) or in software is the phone's
+  choice, reported in About; hardware is not required. Neither private key
   ever leaves its device or appears in a QR code, a log or a file the app
   writes.
 - **Pinned both ways.** TLS 1.3 only. The phone accepts exactly the PC
@@ -340,16 +365,30 @@ What is **not implemented**:
   replayed or expired code pairs nothing.
 - **Fail closed.** A malformed first message, an unsupported protocol version,
   an unknown or revoked device, a device naming another device's id, an
-  unreadable trust store: one error, then the connection closes. Frames are
-  limited to 16 MiB and connections to 32 at a time.
+  unreadable trust store: one error, then the connection closes. Before a
+  device is authenticated it has 10 seconds to finish TLS and say `hello`, and
+  its first message may be at most 8 KiB; a longer one, a frame that is not
+  UTF-8 or silence closes the connection. After, frames may be up to 16 MiB.
+  At most 32 connections are served at once, of which at most 8 — and at most
+  4 from any one address — may be unauthenticated, so peers that connect and
+  say nothing cannot crowd out paired devices' sessions. Every connection's
+  place is given back however it ends.
 - **No new powers.** A device can use a fixed list of operations. None runs a
   command, reads an arbitrary path, or reaches anything outside the shared
   projects. Document and engine operations are the workspace's own routes, so
   a device is refused exactly what the workspace would refuse, and a run is
-  authorized, permitted and paused exactly as a run from the workspace.
-- **Approvals.** A run pauses before every effect by default and waits for an
-  answer over the authenticated session. Nothing is approved because a device
-  is paired.
+  authorized and permitted exactly as a run from the workspace.
+- **Approvals.** Every remote run pauses before every effect and waits for an
+  answer over the authenticated session. The PC sets this for each remote run
+  and ignores a request not to; nothing is approved because a device is
+  paired.
+- **Runs belong to their device.** The PC records which device (by id and
+  certificate fingerprint) started each remote run. Only that device can
+  follow the run or answer its pauses — continue, deny or cancel; any other
+  paired device is refused, whatever run id it names.
+- **Sharing is live.** What is shared is read from `remote.json` on every
+  request, so removing a project refuses it at once, without restarting the
+  service.
 
 ## Testing
 
@@ -364,20 +403,36 @@ What is **not implemented**:
   when the tests run.
 - **End to end on a device** (`tools/e2e.sh`): the app on an emulator (or a
   phone) against a real `lcl-remote serve` with its own XDG directories, real
-  Android Keystore and TLS, and the real engine. It pairs from a link delivered
-  like a camera scan, edits, saves, checks, validates, inspects and runs with
-  approvals, and checks each result on the PC's disk; then restarts the app,
-  reboots the phone, cuts the network, restarts the PC service, edits on the PC
-  (including a real conflict), revokes, re-pairs and forgets. It fails on any
-  ANR or crash the system records for the app.
+  Android Keystore and TLS, and the real engine. It opens a local file that is
+  not UTF-8 (refused) and one that is (shown exactly); pairs from a link
+  delivered like a camera scan, edits, saves, checks, validates, inspects and
+  runs with approvals, and checks each result on the PC's disk; then restarts
+  the app, reboots the phone, cuts the network, restarts the PC service, edits
+  on the PC (including a real conflict), revokes, re-pairs and forgets; and
+  last pairs through the app's own **Scan QR code** button, checking that the
+  scanned code made no key, no record and no connection until Pair was
+  pressed. The camera itself is not used: the instrumentation answers the
+  scanner's camera activity with the scanned link, and everything after it is
+  the app's own code. It also checks that About reports the key's protection
+  as Android reports it. It fails on any ANR or crash the system records for
+  the app.
 - **The PC side** has its own tests (`cargo test` in `remote/`), including
-  several devices, revocation and impersonation.
+  several devices, revocation and impersonation, runs that pause at every
+  effect even when asked not to, runs another device cannot follow or answer,
+  unsharing a project while the service runs, two devices saving from one
+  revision, and peers that send oversized, broken or no first messages or
+  crowd the connection slots.
 
 ## Known limitations
 
 - No relay and no NAT traversal; see [Networks](#networks-what-works-where).
 - Tested on an emulator (Android 16, x86_64). Not yet tested on a physical
-  phone, and not over the Internet.
+  phone, with a physical camera scanning a QR code, on a phone on a separate
+  LAN, or over the Internet or mobile data.
+- A save's precondition sees every change made to the file before the PC
+  compares, and two devices cannot both save over one revision; but another
+  program on the PC that replaces the file in the instant between the
+  comparison and the rename is not locked out (see **Save** above).
 - One active PC connection at a time (any number of paired PCs).
 - Remote documents are read-only while offline; there is no offline editing
   queue.

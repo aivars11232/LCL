@@ -6,13 +6,14 @@ operation the app sends (see [../remote/README.md](../remote/README.md)), and
 "PC route" is the LCL Workspace route the PC runs for it, in process — the same
 code the desktop workspace uses.
 
-✅ supported · ⏳ not in the app yet · — not applicable
+✅ supported (implemented; what is tested, and on what, is in
+[README.md](README.md#testing)) · ⏳ not in the app yet · — not applicable
 
 ## Connection and trust
 
 | Operation | App | Remote operation | Notes |
 |---|---|---|---|
-| Pair with a PC by QR code | ✅ | `hello` intent `pair` | In-app scanner, the camera app (`lclpair://` link), or a pasted link. Always confirmed on the phone. |
+| Pair with a PC by QR code | ✅ | `hello` intent `pair` | In-app scanner, the camera app (`lclpair://` link), or a pasted link. Each only fills the form in; nothing is trusted, and nothing connects, until Pair is pressed. |
 | Reconnect without a QR code | ✅ | `hello` intent `connect` | On every app start, after network loss or change, after a PC restart. |
 | Several paired PCs | ✅ | — | One active connection at a time; switch on the PCs screen. |
 | Disconnect | ✅ | (closes the socket) | Pairing kept. |
@@ -25,13 +26,13 @@ code the desktop workspace uses.
 
 | Operation | App | Remote operation | PC route |
 |---|---|---|---|
-| List shared projects | ✅ | `projects` | the service's project list |
+| List shared projects | ✅ | `projects` | the service's project list, read from `remote.json` on every request |
 | Switch project | ✅ | — | |
 | Project tree (`.lcl` and `.lcl.txt` only) | ✅ | `tree` | `GET /api/documents` |
 | PC's default file ending | ✅ | `settings` | `GET /api/settings` |
 | Open a document | ✅ | `open` | `GET /api/document` |
 | Close a document | ✅ | `close` | — (stops change notifications) |
-| Save over the revision it came from | ✅ | `save` with `base` | `Workspace::save_expecting`, compare-and-swap under the document lock |
+| Save over the revision it came from | ✅ | `save` with `base` | `Workspace::save_expecting`: compare and atomic rename in one critical section of the PC service; see **Save** in [README.md](README.md) for the exact boundary |
 | Conflict: use the PC's version | ✅ | `open` | `GET /api/document` |
 | Conflict: keep mine | ✅ | then `save` | as Save |
 | Reload | ✅ | `open` | `GET /api/document` |
@@ -39,7 +40,7 @@ code the desktop workspace uses.
 | New document (`test` → `test.lcl`, explicit endings kept) | ✅ | `create` | `POST /api/document` |
 | Delete a document | ⏳ | `delete` with `digest` | `DELETE /api/document` — in the protocol, not yet in the app's UI |
 | Rename, move, new folder | ⏳ | — | not in the protocol yet |
-| Open a `.lcl` / `.lcl.txt` file from another app | ✅ | `check` / `inspect` | read-only view, judged on the PC |
+| Open a `.lcl` / `.lcl.txt` file from another app | ✅ | `check` / `inspect` | read-only view, judged on the PC; strict UTF-8, at most 4 MB — anything else is refused and nothing is sent |
 
 ## Editing
 
@@ -74,11 +75,11 @@ code the desktop workspace uses.
 |---|---|---|---|
 | Run the document on screen | ✅ | `run` | `POST /api/run` |
 | Host grants for the run: read, write, programs, hosts, inputs | ✅ | `run` `grants`, `inputs` | as the workspace's run dialog |
-| Pause before every effect | ✅ (always on) | `run` `break_effects` | |
+| Pause before every effect | ✅ (always on) | `run` | forced by the PC for every remote run; a `break_effects` field is ignored |
 | Pause before every operation | ⏳ | `run` `break_operations` | in the protocol, not in the app |
-| Effect approval: Allow / Deny / Stop run | ✅ | `answer` | `POST /api/answer` |
+| Effect approval: Allow / Deny / Stop run | ✅ | `answer` | `POST /api/answer`, only from the device that started the run |
 | Run events, final status, outputs | ✅ | `run` events | the run's event log |
-| Follow a run again after a reconnect | ✅ | `follow` with `from` | the run's event log, from the first event missed |
+| Follow a run again after a reconnect | ✅ | `follow` with `from` | the run's event log, from the first event missed; only the device that started the run |
 | Breakpoints and stepping (desktop debugger) | ⏳ | — | |
 
 ## This device
@@ -88,7 +89,7 @@ code the desktop workspace uses.
 | Theme System / Dark / Light | ✅ |
 | Font size | ✅ |
 | Line numbers on / off | ✅ |
-| About: app, protocol, PC, fingerprints, PC service and engine protocol, LCL Core 0.1 and 0.2 identities, Android version and ABIs | ✅ |
+| About: app, protocol, PC, fingerprints, this device's key protection (StrongBox, TEE or software, as Android reports it), PC service and engine protocol, LCL Core 0.1 and 0.2 identities, Android version and ABIs | ✅ |
 
 ## Never available to a device
 
@@ -100,4 +101,6 @@ These are not operations the PC offers, whatever a device sends:
   allow it;
 - changing the PC's settings, its shared projects, its trusted devices (other
   than revoking itself) or its identity;
+- following, approving, denying or cancelling a run another device started;
+- a run whose effects happen without a pause the device answered;
 - anything before the device has proved it holds a paired key.

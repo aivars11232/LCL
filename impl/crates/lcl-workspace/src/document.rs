@@ -341,6 +341,17 @@ pub fn write(root: &Path, relative: &str, text: &str) -> Result<Document, Docume
 /// no save from this process can land between the check and the replacement.
 /// A file that changed reports [`DocumentError::Changed`], and one that is gone
 /// [`DocumentError::NotFound`]; in both cases nothing is written.
+///
+/// Scope, stated exactly. Every change made to the file before the comparison
+/// is seen, whoever made it: this process, another LCL process or any other
+/// program. What the critical section excludes is writers in *this process*:
+/// no other save or deletion from it can land between the comparison and the
+/// rename. Another process that replaces the file in the instant between the
+/// comparison and the rename — the desktop workspace, whose own saves carry no
+/// precondition, or any editor — is not excluded, and its bytes are replaced.
+/// That instant is the time it takes to read and hash the file, not the time
+/// the writer had the document open. Closing it would need a lock every writer
+/// honours, and other programs honour none; nothing here claims to.
 pub fn write_expecting(
     root: &Path,
     relative: &str,
@@ -902,6 +913,86 @@ mod tests {
         assert_eq!(
             std::fs::read_dir(&root).unwrap().count(),
             0,
+            "no temporary left behind"
+        );
+    }
+
+    /// The precondition sees a change made by a program other than this one
+    /// at any time before the comparison — here after the save was accepted
+    /// and its bytes prepared, the latest moment it can be seen.
+    #[test]
+    fn a_change_another_program_made_before_the_comparison_is_caught() {
+        let _hook = ONE_HOOK_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let directory = Directory::new();
+        let root = directory.0.canonicalize().unwrap();
+        let first = write(&root, "shared.lcl", "revision one\n").unwrap();
+
+        let watched = root.join("shared.lcl");
+        let fired = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = std::sync::Arc::clone(&fired);
+        *BEFORE_PUBLISH.lock().unwrap() = Some(std::sync::Arc::new(move |destination: &Path| {
+            if destination != watched || flag.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                return;
+            }
+            // Not through this module: as an editor on the computer writes.
+            std::fs::write(destination, "an editor's revision\n").unwrap();
+        }));
+        let late = write_expecting(&root, "shared.lcl", "from revision one\n", &first.digest);
+        *BEFORE_PUBLISH.lock().unwrap() = None;
+
+        assert!(fired.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(matches!(late, Err(DocumentError::Changed(_))), "{late:?}");
+        assert_eq!(
+            std::fs::read_to_string(root.join("shared.lcl")).unwrap(),
+            "an editor's revision\n",
+            "the other program's revision was replaced"
+        );
+        assert_eq!(
+            std::fs::read_dir(&root).unwrap().count(),
+            1,
+            "no temporary left behind"
+        );
+    }
+
+    /// Two writers holding the same revision — two paired devices, say —
+    /// cannot both land, however their saves interleave in this process.
+    #[test]
+    fn two_saves_from_one_revision_cannot_both_land() {
+        let _hook = ONE_HOOK_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let directory = Directory::new();
+        let root = directory.0.canonicalize().unwrap();
+        let base = write(&root, "shared.lcl", "revision one\n").unwrap().digest;
+
+        let watched = root.join("shared.lcl");
+        let other = root.clone();
+        let other_base = base.clone();
+        let fired = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = std::sync::Arc::clone(&fired);
+        *BEFORE_PUBLISH.lock().unwrap() = Some(std::sync::Arc::new(move |destination: &Path| {
+            if destination != watched || flag.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                return;
+            }
+            write_expecting(&other, "shared.lcl", "second writer\n", &other_base)
+                .expect("the save accepted second, still on the base revision, lands");
+        }));
+        let first = write_expecting(&root, "shared.lcl", "first writer\n", &base);
+        *BEFORE_PUBLISH.lock().unwrap() = None;
+
+        assert!(fired.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(
+            matches!(
+                first,
+                Err(DocumentError::Superseded(_)) | Err(DocumentError::Changed(_))
+            ),
+            "both saves from one revision landed: {first:?}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join("shared.lcl")).unwrap(),
+            "second writer\n"
+        );
+        assert_eq!(
+            std::fs::read_dir(&root).unwrap().count(),
+            1,
             "no temporary left behind"
         );
     }

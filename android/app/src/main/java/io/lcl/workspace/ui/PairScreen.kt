@@ -61,15 +61,18 @@ fun PairScreen(container: AppContainer, initialLink: String?, onPaired: () -> Un
         }
     }
 
+    // A scanned code, like a pasted link, only fills the form in: no key is
+    // made and no connection is tried until Pair is pressed.
     val scanner = rememberLauncherForActivityResult(ScanContract()) { result ->
         result.contents?.let {
-            link = it
-            pair(it)
+            problem = null
+            link = it.trim()
         }
     }
     // A link from outside the app (a web page, another app, the system camera)
-    // only fills the form in. Trusting a PC is always this person's decision,
-    // made here, with the PC's name and fingerprint in front of them.
+    // or from the scanner only fills the form in. Trusting a PC is always this
+    // person's decision, made here, with the PC's name and fingerprint in front
+    // of them.
     val preview = remember(link) { runCatching { PairingLink.parse(link) }.getOrNull() }
 
     Column(

@@ -33,9 +33,11 @@
             </intent-filter>
 
             <!-- No filter takes pairing links (lclpair://). A link carries a
-                 one-time code that pairs whoever uses it first, and any app
-                 can claim a custom scheme; so the code is read only by the
-                 app's own scanner, or pasted on the Pair screen. -->
+                 one-time code, and any app can claim a custom scheme. The
+                 code alone trusts no device: holding it only lets a device
+                 make a pending request, and the PC must approve that
+                 request's certificate. Still, pairing starts only from the
+                 app's own scanner, or text pasted on the Pair screen. -->
 
             <!-- LCL documents: exactly .lcl and .lcl.txt. An ordinary .txt
                  file is not claimed. -->

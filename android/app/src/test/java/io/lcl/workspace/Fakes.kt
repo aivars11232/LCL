@@ -30,17 +30,20 @@ import java.util.Base64
 import javax.net.ssl.SSLHandshakeException
 
 /**
- * A real certificate and EC key, made once per test run by the JDK's own
- * keytool, so no key file is ever part of the source. It lives only in this
- * test process; the temporary keystore it came from is deleted at once.
+ * Real certificates and EC keys, each made by the JDK's own keytool the first
+ * time a test asks for it, so no key file is ever part of the source. They
+ * live only in this test process; the temporary keystore each came from is
+ * deleted at once.
  */
-private val identity: DeviceIdentity by lazy {
+private val made = mutableMapOf<Int, DeviceIdentity>()
+
+private fun keytoolIdentity(n: Int): DeviceIdentity {
     val dir = Files.createTempDirectory("lcl-test-identity")
     val store = dir.resolve("device.p12")
     val keytool = Paths.get(System.getProperty("java.home"), "bin", "keytool").toString()
     val process = ProcessBuilder(
         keytool, "-genkeypair", "-alias", "device", "-keyalg", "EC", "-groupname", "secp256r1",
-        "-sigalg", "SHA256withECDSA", "-dname", "CN=LCL test device", "-validity", "1",
+        "-sigalg", "SHA256withECDSA", "-dname", "CN=LCL test device $n", "-validity", "1",
         "-keystore", store.toString(), "-storetype", "PKCS12", "-storepass", "test-only", "-keypass", "test-only",
     ).redirectErrorStream(true).start()
     val output = process.inputStream.bufferedReader().readText()
@@ -49,17 +52,28 @@ private val identity: DeviceIdentity by lazy {
     Files.newInputStream(store).use { keystore.load(it, "test-only".toCharArray()) }
     Files.delete(store)
     Files.delete(dir)
-    DeviceIdentity(keystore.getCertificate("device") as X509Certificate, keystore.getKey("device", "test-only".toCharArray()) as PrivateKey)
+    return DeviceIdentity(keystore.getCertificate("device") as X509Certificate, keystore.getKey("device", "test-only".toCharArray()) as PrivateKey)
 }
 
-fun testIdentity(): DeviceIdentity = identity
+/** Test identity number [n]: a key and certificate of its own, the same one every time it is asked for. */
+fun testIdentity(n: Int = 0): DeviceIdentity = synchronized(made) { made.getOrPut(n) { keytoolIdentity(n) } }
 
-class FakeIdentities : IdentityStore {
+/**
+ * Device keys as Android Keystore makes them: every [create] is a new key with
+ * a certificate of its own, so two pairing attempts never share a
+ * fingerprint. The first key made is [testIdentity]; another phone's store
+ * starts at another number ([first]), so two phones never share a key either.
+ */
+class FakeIdentities(private val first: Int = 0) : IdentityStore {
     val keys = mutableMapOf<String, DeviceIdentity>()
     val deleted = mutableListOf<String>()
+    /** Told about each key just before it is deleted. */
+    var onDelete: (String) -> Unit = {}
+    private var created = 0
     override fun load(alias: String) = keys[alias]
-    override fun create(alias: String, subject: String) = testIdentity().also { keys[alias] = it }
+    override fun create(alias: String, subject: String) = testIdentity(first + created++).also { keys[alias] = it }
     override fun delete(alias: String) {
+        if (alias in keys) onDelete(alias)
         if (keys.remove(alias) != null) deleted += alias
     }
     override fun aliases(): List<String> = keys.keys.toList()
@@ -102,7 +116,10 @@ class FakeSession(
  * A PC reachable at some addresses, with a fingerprint, the devices it
  * trusts, and a pairing code. As the real PC does, it records a device that
  * asks with the code as a pending request, and trusts it only once the person
- * at the PC approved that very request.
+ * at the PC approved that very request. As the real PC does, it keeps one
+ * record per certificate: a device that pairs again with a new key is a second
+ * record, and the first stays trusted until it is revoked. `unpair` revokes
+ * the certificate of the session that asks, never another.
  */
 class FakePc(
     val pcId: String = "pc1",
@@ -128,8 +145,26 @@ class FakePc(
     val requests = mutableMapOf<String, String>()
     /** A PC that shows a verification code other than the device's own. */
     var wrongVerification = false
+    /** Set: what the PC answers `unpair` instead of revoking, as when its trust store cannot be written. */
+    var unpairFails: Reply? = null
+    /** Certificates whose connections never get through, as when the network drops them. */
+    val unreachableFor = mutableSetOf<String>()
+    /** The certificates sessions revoked with `unpair`, in order. */
+    val unpaired = mutableListOf<String>()
     private var expires = 0L
     private var nextDevice = 1
+
+    /** The certificates this PC trusts now. */
+    fun live(): Set<String> = devices.keys - revoked
+
+    /** What the real PC does for `unpair`: it revokes the certificate the session proved, never another. */
+    private fun unpair(device: String): Reply {
+        unpairFails?.let { return it }
+        if (device !in devices || device in revoked) return reply(403, "error" to "this device is not trusted here")
+        revoked += device
+        unpaired += device
+        return reply(200, "unpaired" to true)
+    }
 
     /** Show a QR code: a fresh one-time code, good for five minutes. */
     fun link(now: Long): PairingLink {
@@ -156,6 +191,7 @@ class FakePc(
         attempts += 1
         hold?.await()
         if (address !in reachable) throw IOException("unreachable $address")
+        if (identity.fingerprint in unreachableFor) throw IOException("the connection to $address was lost")
         if (pin != fingerprint) {
             throw SSLHandshakeException("pin").apply { initCause(CertificateException("this is not the PC this device paired with")) }
         }
@@ -208,7 +244,7 @@ class FakePc(
             put("pc", buildJsonObject { put("id", pcId); put("name", name); put("fingerprint", fingerprint) })
             put("device", buildJsonObject { put("id", devices.getValue(device)) })
         }
-        val session = FakeSession(welcome) { op, fields -> answer(op, fields) }
+        val session = FakeSession(welcome) { op, fields -> if (op == "unpair") unpair(device) else answer(op, fields) }
         sessions += session
         return Opened.Accepted(session, paired)
     }

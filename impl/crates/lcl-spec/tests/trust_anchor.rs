@@ -8,12 +8,20 @@
 //! All mutation happens on throwaway copies under Cargo's `CARGO_TARGET_TMPDIR`. The
 //! canonical release is never written to.
 
+use lcl_spec::anchor::APPROVED_PACKAGE_0_2_0;
 use lcl_spec::{Authority, SpecError, SpecPackage, TrustAnchor, APPROVED_PACKAGE};
 use std::path::{Path, PathBuf};
 
 fn canonical_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../../canonical/LCL_Core_0.1.0")
+        .canonicalize()
+        .expect("canonical package must be present")
+}
+
+fn canonical_0_2_0_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../canonical/LCL_Core_0.2.0")
         .canonicalize()
         .expect("canonical package must be present")
 }
@@ -227,6 +235,80 @@ fn self_consistent_registry_forgery_is_rejected() {
     );
 
     std::fs::remove_dir_all(&dir).ok();
+}
+
+/// The Core 0.2.0 anchor is as load-bearing as the default one. The approved
+/// 0.2.0 package opens under it; a copy altered and then made internally
+/// perfect again is refused — whether the alteration is to the language (a
+/// reserved word renamed in the localization registry) or to the closure
+/// record (the review it cites made to name another package identity).
+#[test]
+fn self_consistent_0_2_0_forgeries_are_rejected() {
+    let genuine = SpecPackage::open_with_anchor(canonical_0_2_0_root(), &APPROVED_PACKAGE_0_2_0)
+        .expect("the approved 0.2.0 package opens under its anchor");
+    assert!(genuine.is_authoritative());
+    assert_eq!(
+        genuine.identity_digest(),
+        APPROVED_PACKAGE_0_2_0.identity_digest
+    );
+
+    let forgeries = [
+        (
+            "forgery-0.2.0-registry",
+            "10_REGISTRIES/localization_surface_v0.2.0.json",
+            "\"ELSE\"",
+            "\"ELIF\"",
+        ),
+        (
+            "forgery-0.2.0-closure",
+            "00_RELEASE/05_LANGUAGE_CLOSURE.json",
+            "00daee8de1919c4945ef04ff65edb22164bd8046a493be08a87d5fa3b4c3e604",
+            "00daee8de1919c4945ef04ff65edb22164bd8046a493be08a87d5fa3b4c3e605",
+        ),
+    ];
+    for (name, victim_rel, from, to) in forgeries {
+        let dir = scratch(name);
+        let pkg_dir = dir.join("LCL_Core_0.2.0");
+        copy_tree(&canonical_0_2_0_root(), &pkg_dir);
+        let victim = pkg_dir.join(victim_rel);
+        let old_hash = hash_file(&victim);
+        let text = std::fs::read_to_string(&victim).unwrap();
+        assert_eq!(
+            text.matches(from).count(),
+            1,
+            "fixture assumption: {from} in {victim_rel}"
+        );
+        let altered = text.replacen(from, to, 1);
+        assert_eq!(
+            altered.len(),
+            text.len(),
+            "replacement must preserve length"
+        );
+        std::fs::write(&victim, &altered).unwrap();
+
+        regenerate_internal_metadata(&pkg_dir, victim_rel, &old_hash);
+
+        let unverified = SpecPackage::open_unverified(&pkg_dir).expect("forgery loads");
+        assert!(
+            unverified.integrity().is_verified(),
+            "{victim_rel}: forgery should be internally consistent, defects: {:#?}",
+            unverified.integrity().defects
+        );
+        match SpecPackage::open_with_anchor(&pkg_dir, &APPROVED_PACKAGE_0_2_0) {
+            Err(SpecError::TrustAnchorMismatch {
+                expected,
+                actual,
+                internally_consistent,
+                ..
+            }) => {
+                assert_eq!(expected, APPROVED_PACKAGE_0_2_0.identity_digest);
+                assert_ne!(actual, APPROVED_PACKAGE_0_2_0.identity_digest);
+                assert!(internally_consistent);
+            }
+            other => panic!("{victim_rel}: forgery was not rejected by the anchor: {other:?}"),
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
 
 /// The integrity summary must not use the word "VERIFIED", which would imply

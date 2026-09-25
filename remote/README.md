@@ -86,8 +86,10 @@ lcl-remote status [--json]
   whose verification code is the one your phone shows. The phone finishes
   pairing by itself within a few seconds. One code approves at most one
   request; approving another for the same code is refused.
-- `deny` refuses one request; that device can never use it again. The code
-  stays usable by your own phone.
+- `deny` refuses one request; that device can never use it again. Denying a
+  request you have not approved leaves the code usable by your own phone.
+  Denying one you approved that has not finished pairing withdraws the
+  approval, and that code then pairs nobody: show a new QR code.
 - `devices` lists every device: name, id, fingerprint, when it paired, when it
   was last connected, whether it is online now, and whether it is revoked.
 - `revoke` ends one device's trust. Its live connection is closed within a
@@ -118,7 +120,7 @@ directories:
 | `~/.config/lcl/remote/identity.json` | the PC's id and name |
 | `~/.config/lcl/remote/devices.json` | trusted devices: id, name, certificate fingerprint, paired, last seen, protocol, revoked |
 | `~/.config/lcl/remote/remote.json` | settings: listen address, ports, extra projects, public addresses |
-| `~/.local/state/lcl/remote/pairing.json` | pairing challenges — only the SHA-256 of each code, its expiry, the request approved for it and who used it — and pairing requests: request id, code, device name, certificate fingerprint, verification code, status (`pending`, `approved`, `denied`, `finalized`, `superseded`) |
+| `~/.local/state/lcl/remote/pairing.json` | pairing challenges — only the SHA-256 of each code, its expiry, the request approved for it and who used it — and pairing requests: request id, the id of the challenge it was made with, device name, certificate fingerprint, verification code, status (`pending`, `approved`, `denied`, `finalized`, `superseded`), when it was made, decided and expires, and the device id reserved when it finishes. No code itself is stored anywhere. |
 | `~/.local/state/lcl/remote/status.json` | the running service's port and live sessions, for `status` and `devices` |
 
 A trust store that cannot be read trusts nobody.
@@ -174,6 +176,14 @@ reverse.
 
 Devices paired before approval existed keep their records and reconnect with
 `connect` as before; nothing about an existing pairing changes.
+
+A phone that pairs this PC again makes a new key, so it becomes a second
+record, and the first stays trusted: the PC cannot tell a replacement from a
+second phone, and never guesses by name. The app ends the old record itself.
+Its old key connects as itself and sends `unpair`, which revokes exactly the
+record of the certificate that asks, and only once the PC confirmed that — or
+refused the old key as `revoked` or `not_paired` — does the phone delete that
+key.
 
 Addresses are only where to look. Neither side identifies the other by IP
 address, network or host name.
@@ -376,7 +386,8 @@ deduplicated requests, a device paired before approval existed reconnecting,
 `pending`, `approve` and `deny` run as commands), expired and reused codes,
 the wrong PC, malformed
 and unsupported hellos, unpaired, revoked and impersonating devices, `unpair`,
-several devices, path traversal, a link out of the project and unknown
+a phone pairing again with a new key (its old record trusted until that key
+unpairs itself, and nothing else ended by it), several devices, path traversal, a link out of the project and unknown
 operations, saves over a stale revision and two devices saving from one
 revision, edits on the PC, a project shared and unshared while the service
 runs, Check / Validate / Inspect, and runs that pause before every effect even

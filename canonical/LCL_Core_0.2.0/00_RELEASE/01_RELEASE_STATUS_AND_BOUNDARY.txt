@@ -4,18 +4,24 @@ NORMATIVE
 
 1. STATUS
 
+LANGUAGE_STATUS: BARE_SPECIFICATION_COMPLETE
 PACKAGE_STATUS: UNRELEASED_CANDIDATE
 
 This tree is the LCL Core 0.2.0 bare-language specification candidate
 identified by 00_CANONICAL_SOURCE_AND_PROVENANCE.txt. It adds localized source
 spelling, defined by 02_LEXICAL/13_LOCALIZED_SOURCE_AND_LOCALE_DIRECTIVE.txt and
-the localization registries, to the unchanged meaning of LCL Core 0.1.0. The
-independent_review decision in 05_LANGUAGE_CLOSURE.json is pending for these
-additions, so this package declares no active language completion status and
-does not permit the final release gate. Fresh MANIFEST.json,
-VALIDATION_REPORT.txt and SHA256SUMS.txt bind the candidate bytes for integrity
-only. A modified tree must pass fresh validation; these declarations alone are
-not proof of correctness or integrity.
+the localization registries, to the unchanged meaning of LCL Core 0.1.0. Every
+decision in 05_LANGUAGE_CLOSURE.json is closed. The last, independent_review,
+was closed on 2026-09-25 by the owner's acceptance of the independent technical
+review recorded in reports/tasks/FINAL-05_RESULT.md, for the package identity
+00daee8de1919c4945ef04ff65edb22164bd8046a493be08a87d5fa3b4c3e604; recording it
+changed only release metadata and the integrity files, not a language-definition
+byte. The ledger therefore permits the final release gate, but the package is
+not released: it remains an unreleased candidate until the final release stage
+records the release status, regenerates the integrity files and binds an archive
+to those bytes. Fresh MANIFEST.json, VALIDATION_REPORT.txt and SHA256SUMS.txt
+bind the candidate bytes for integrity only. A modified tree must pass fresh
+validation; these declarations alone are not proof of correctness or integrity.
 
 LCL Core 0.1.0 remains the separate released package canonical/LCL_Core_0.1.0,
 whose archive is LCL_Core_0.1.0_Bare_Language_2026-09-05.zip. Its

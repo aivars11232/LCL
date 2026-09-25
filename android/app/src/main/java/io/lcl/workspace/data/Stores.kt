@@ -55,6 +55,8 @@ data class PcRecord(
     val pairedAt: Long,
     val lastConnected: Long? = null,
     val lastAddress: String? = null,
+    /** Earlier keys of this device for the PC, kept until the PC is shown to trust them no more. */
+    val retiring: List<RetiringKey> = emptyList(),
 ) {
     fun toJson(): JsonObject = buildJsonObject {
         put("pc_id", pcId)
@@ -66,6 +68,7 @@ data class PcRecord(
         put("paired_at", pairedAt)
         put("last_connected", lastConnected?.let(::JsonPrimitive) ?: JsonNull)
         put("last_address", lastAddress?.let(::JsonPrimitive) ?: JsonNull)
+        put("retiring", JsonArray(retiring.map { it.toJson() }))
     }
 
     companion object {
@@ -80,7 +83,28 @@ data class PcRecord(
                 pairedAt = json.long("paired_at") ?: 0,
                 lastConnected = json.long("last_connected"),
                 lastAddress = json.str("last_address"),
+                retiring = json.arr("retiring")?.mapNotNull { (it as? JsonObject)?.let(RetiringKey::fromJson) } ?: emptyList(),
             )
+        }.getOrNull()
+    }
+}
+
+/**
+ * A key this device used for a PC before it paired that PC again. Every
+ * pairing makes a new key, so the PC holds a record for each, and it may
+ * still trust this one: it is kept, with the id the PC gave it, until the PC
+ * is shown to trust it no more. [problem] says why that has not happened yet.
+ */
+data class RetiringKey(val keyAlias: String, val deviceId: String, val problem: String? = null) {
+    fun toJson(): JsonObject = buildJsonObject {
+        put("key_alias", keyAlias)
+        put("device_id", deviceId)
+        put("problem", problem?.let(::JsonPrimitive) ?: JsonNull)
+    }
+
+    companion object {
+        fun fromJson(json: JsonObject): RetiringKey? = runCatching {
+            RetiringKey(json.str("key_alias")!!, json.str("device_id") ?: "", json.str("problem"))
         }.getOrNull()
     }
 }

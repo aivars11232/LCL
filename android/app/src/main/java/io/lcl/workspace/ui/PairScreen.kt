@@ -33,6 +33,7 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import io.lcl.workspace.AppContainer
 import io.lcl.workspace.connection.PendingPairing
+import io.lcl.workspace.data.PcRecord
 import io.lcl.workspace.remote.InvalidLink
 import io.lcl.workspace.remote.PairingLink
 import kotlinx.coroutines.Job
@@ -42,7 +43,9 @@ import kotlinx.coroutines.launch
  * Pair with a PC from the one-time QR code it shows. Scanning or pasting only
  * fills the form in. Pair asks the PC to trust this device; the screen then
  * shows the verification code and waits until the person approves the
- * request on the PC — or denies it, it expires, or they cancel here.
+ * request on the PC — or denies it, it expires, or they cancel here. Pairing
+ * a PC again is finished only once the PC trusts the replaced key no more;
+ * when that cannot be shown, the screen says so instead of moving on.
  */
 @Composable
 fun PairScreen(container: AppContainer, onPaired: () -> Unit, onBack: () -> Unit) {
@@ -52,6 +55,8 @@ fun PairScreen(container: AppContainer, onPaired: () -> Unit, onBack: () -> Unit
     var waiting by remember { mutableStateOf<PendingPairing?>(null) }
     var attempt by remember { mutableStateOf<Job?>(null) }
     var problem by remember { mutableStateOf<String?>(null) }
+    // Paired again, but the PC may still trust the key this pairing replaced.
+    var unfinished by remember { mutableStateOf<PcRecord?>(null) }
     val scope = rememberCoroutineScope()
 
     fun pair(text: String) {
@@ -66,7 +71,8 @@ fun PairScreen(container: AppContainer, onPaired: () -> Unit, onBack: () -> Unit
         attempt = scope.launch {
             try {
                 val result = container.connection.pair(parsed, deviceName.ifBlank { "Android device" }) { waiting = it }
-                result.onSuccess { onPaired() }.onFailure { problem = it.message ?: "Pairing failed." }
+                result.onSuccess { if (it.retiring.isEmpty()) onPaired() else unfinished = it }
+                    .onFailure { problem = it.message ?: "Pairing failed." }
             } finally {
                 working = false
                 waiting = null
@@ -102,6 +108,7 @@ fun PairScreen(container: AppContainer, onPaired: () -> Unit, onBack: () -> Unit
     ) {
         Text("Pair a PC", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         val pending = waiting
+        val incomplete = unfinished
         if (pending != null) {
             Card(Modifier.fillMaxWidth().testTag("pair_waiting")) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -129,6 +136,14 @@ fun PairScreen(container: AppContainer, onPaired: () -> Unit, onBack: () -> Unit
                 OutlinedButton(onClick = { cancel() }, modifier = Modifier.testTag("pair_cancel")) { Text("Cancel") }
                 CircularProgressIndicator(Modifier.padding(start = 8.dp))
             }
+        } else if (incomplete != null) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Paired with ${incomplete.name} again, and connected", fontWeight = FontWeight.SemiBold)
+                    Text(retiringNotice(incomplete), color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("pair_retiring"))
+                }
+            }
+            Button(onClick = onPaired, modifier = Modifier.testTag("pair_continue")) { Text("Continue") }
         } else {
             Text(
                 "On the PC, run `lcl-remote pair`, or open Settings → Android devices in the LCL workspace, " +

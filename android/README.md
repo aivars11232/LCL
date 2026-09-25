@@ -231,6 +231,19 @@ that request, the PC records the device by the fingerprint of that
 certificate. From then on the phone connects with that key; the QR code is
 never needed again.
 
+Pairing a PC again (a new QR code for a PC this phone is paired with) makes
+a new key too, so the PC then holds two records for this phone, and nothing
+tells it the first is replaced. The phone ends it: after the PC approves the
+new request, the old key connects as itself and asks the PC to revoke it
+(`unpair` ends exactly the record of the certificate that asks), or learns
+that the PC already revoked or forgot it; only then is the old key deleted.
+If the PC cannot confirm that — it cannot be reached, or cannot write its
+trust store — the new pairing works, and the Pair screen and the PC's card
+say that the PC may still trust the earlier key, with its device id. The
+phone keeps that key and tries again each time it connects to the PC; you can
+also revoke that device on the PC. Another phone paired with the same PC is
+never touched, whatever its name.
+
 Whether that key is hardware-backed depends on the phone. Android Keystore
 may keep it in a StrongBox secure element, in a trusted execution environment
 (TEE), or in software; in every case it is not exportable and the app holds
@@ -342,7 +355,7 @@ on screen, read-only, until the PC is back.
 | | Where | Connection | Trust | Afterwards |
 |---|---|---|---|---|
 | **Disconnect** | phone, PCs screen | closed now | kept | **Reconnect**, or the next app start, connects again — no QR code |
-| **Forget PC** | phone, PCs screen | closed | this phone deletes the PC's record and its own key for that PC; if connected, it also asks the PC to revoke it | only a new QR code pairs them again |
+| **Forget PC** | phone, PCs screen | closed | this phone deletes the PC's record and its own keys for that PC; if connected, it also asks the PC to revoke it, and an earlier key the PC may still trust asks once more for itself | only a new QR code pairs them again |
 | **Revoke device** | PC: Settings → Android devices, or `lcl-remote revoke ID` | ended within a second | the PC refuses that device from now on | the phone shows *Not trusted*; only a new QR code pairs it again |
 
 Revoking one device leaves every other device alone. Trust is never recreated
@@ -458,15 +471,19 @@ What is **not implemented**:
   document revision model, stores and settings, the connection manager
   (pairing that waits for the PC's approval, saving nothing until then;
   denial, expiry and Cancel deleting the attempt's key; a failed attempt
-  leaving an older pairing alone; a PC paired before approval existed
+  leaving an older pairing alone; pairing again, which retires the old key
+  before deleting it so the PC trusts only the new one, keeps it when the PC
+  cannot confirm that — also across a restart and in Forget — and never
+  touches another phone; a PC paired before approval existed
   reconnecting; restart without QR, backoff, offline, network change, a moved PC,
   an impostor at the old address, Disconnect, Forget, revocation, several PCs)
   and the workspace controller (answers applied only to the revision they
   describe, save conflicts, PC edits, runs, approvals, reconnect), and the
   manifest (no filter takes `lclpair://` links and none is BROWSABLE; the
   launcher and the `.lcl` / `.lcl.txt` document filter are kept). The
-  connection tests use a real certificate and key, made by the JDK's `keytool`
-  when the tests run.
+  connection tests use real certificates and keys — a new one for every
+  pairing attempt, as on a phone — made by the JDK's `keytool` when the tests
+  run.
 - **End to end on a device** (`tools/e2e.sh`): the app on an emulator (or a
   phone) against a real `lcl-remote serve` with its own XDG directories, real
   Android Keystore and TLS, and the real engine. It opens a local file that is
@@ -483,9 +500,13 @@ What is **not implemented**:
   conflict), revokes, re-pairs (approved on the PC) and forgets; pairs through
   the app's own **Scan QR code** button, checking that the scanned code made
   no key, no record and no connection until Pair was pressed and the PC
-  approved; and last refuses an older pairing link and has the PC deny a
+  approved; refuses an older pairing link and has the PC deny a
   request, checking that the phone deleted that attempt's key, recorded
-  nothing and stayed connected with its working pairing. The camera itself is
+  nothing and stayed connected with its working pairing; and last pairs the
+  same PC again while it still trusts the phone, checking with
+  `lcl-remote devices` that the old key's record is revoked and the new one
+  is the only one trusted, then Forgets, checking that the PC trusts nothing
+  of the phone. The camera itself is
   not used: the instrumentation answers the scanner's camera activity with
   the scanned text, and everything after it is the app's own code. It also checks that About reports the key's protection
   as Android reports it. It fails on any ANR or crash the system records for

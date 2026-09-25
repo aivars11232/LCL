@@ -18,6 +18,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +34,20 @@ import io.lcl.workspace.data.PcRecord
 import java.text.DateFormat
 import java.util.Date
 
+/**
+ * Said while a PC may still trust an earlier key of this device, one that
+ * pairing again could not yet retire (see ConnectionManager.pair): which
+ * device it is on the PC, why it is not retired yet, and what to do.
+ */
+fun retiringNotice(pc: PcRecord): String {
+    val devices = pc.retiring.joinToString(", ") { it.deviceId.ifBlank { "id unknown" } }
+    val why = pc.retiring.mapNotNull { it.problem?.trimEnd('.') }.distinct().joinToString("; ")
+    return "${pc.name} may still trust this device's earlier key (device $devices)" +
+        (if (why.isEmpty()) "." else ": LCL could not end that yet — $why.") +
+        " It tries again each time it connects to ${pc.name}. To end it now, revoke that device " +
+        "on the PC: lcl-remote revoke ID, or Settings → Android devices in the LCL workspace."
+}
+
 /** The PCs this device is paired with, and the connection to the active one. */
 @Composable
 fun HomeScreen(
@@ -44,7 +59,7 @@ fun HomeScreen(
     onAbout: () -> Unit,
 ) {
     var forgetting by remember { mutableStateOf<PcRecord?>(null) }
-    val pcs = container.connection.pcs()
+    val pcs by container.connection.records.collectAsState()
     val active = state.pcOrNull
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -76,6 +91,14 @@ fun HomeScreen(
                         style = MaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace,
                     )
+                    if (pc.retiring.isNotEmpty()) {
+                        Text(
+                            retiringNotice(pc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.testTag("retiring:${pc.pcId}"),
+                        )
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (isActive && state is ConnectionState.Connected) {
                             Button(onClick = onOpenWorkspace, Modifier.testTag("open_workspace")) { Text("Open workspace") }
@@ -105,7 +128,15 @@ fun HomeScreen(
                 Text(
                     "This deletes this device's key for ${pc.name} and everything it knows about it. " +
                         "To use it again you will need a new QR code from the PC. Disconnect instead " +
-                        "if you only want to stop the connection.",
+                        "if you only want to stop the connection." +
+                        if (pc.retiring.isEmpty()) {
+                            ""
+                        } else {
+                            " ${pc.name} may also still trust an earlier key of this device (device " +
+                                pc.retiring.joinToString(", ") { it.deviceId } + "): it asks the PC once more to " +
+                                "stop trusting it, and is deleted too. If the PC cannot be reached, revoke that " +
+                                "device on the PC."
+                        },
                 )
             },
             confirmButton = {

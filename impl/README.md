@@ -3,10 +3,10 @@
 This directory is a **consumer** of the canonical specification at
 `../canonical/LCL_Core_0.1.0` and, when one is named, of the Core 0.2.0
 localization candidate at `../canonical/LCL_Core_0.2.0`, whose engine judges
-documents that declare 0.2.0 or are localized. Core 0.2.0 is unreleased: its
-independent review is pending. This directory is part of neither package, is
-not listed in their `MANIFEST.json` or `SHA256SUMS.txt`, and never writes to
-`canonical/`.
+documents that declare 0.2.0 or are localized. Core 0.2.0 is unreleased; the
+owner accepted its independent review on 2026-09-25. This directory is part of
+neither package, is not listed in their `MANIFEST.json` or `SHA256SUMS.txt`,
+and never writes to `canonical/`.
 
 Building this does not change the release's status. The `complete_example_parse_matrix`
 and `semantic_case_execution` gates remain `OUT_OF_SCOPE` for LCL Core 0.1.0, because the

@@ -1,20 +1,24 @@
 LCL CORE 0.2.0 BARE LANGUAGE SPECIFICATION - VALIDATION SNAPSHOT
 
-SNAPSHOT DATE: 2026-09-20
+SNAPSHOT DATE: 2026-09-25
 PACKAGE SCOPE: BARE LANGUAGE SPECIFICATION ONLY
-LANGUAGE-DEFINITION STATUS: NOT DECLARED COMPLETE (independent review pending)
+LANGUAGE-DEFINITION STATUS: BARE_SPECIFICATION_COMPLETE
 PACKAGE STATUS: UNRELEASED_CANDIDATE
 SNAPSHOT RESULT: PASS (focused checks preceding final integrity verification)
 FORMAL VERSION: 0.2.0
-SNAPSHOT UTC: 2026-09-20T20:33:20Z
-MANIFEST SHA-256: c1ab983de2566a11356c2b8d1e7d2b667c1cfce4661d1b5d27cfed4aad336e67
+SNAPSHOT UTC: 2026-09-25T17:42:29Z
+MANIFEST SHA-256: 9f3a2eb989fdc758e3ca54cb70552af0f3e8b7a4bab988c222a1e9b219b76c73
 
 LANGUAGE CLOSURE
 
-8 of 9 decision areas in 00_RELEASE/05_LANGUAGE_CLOSURE.json are
-closed. Pending: independent_review. The Core 0.2.0 localization additions
-have not received an independent review, so no language completion status is
-declared and release_gate_permitted is false. This snapshot is static
+9 of 9 decision areas in 00_RELEASE/05_LANGUAGE_CLOSURE.json are
+closed. The last, independent_review, was closed on 2026-09-25 by the owner's
+acceptance of the independent technical review recorded in
+reports/tasks/FINAL-05_RESULT.md, for the package identity
+00daee8de1919c4945ef04ff65edb22164bd8046a493be08a87d5fa3b4c3e604. Only release
+metadata and these integrity files changed after that identity.
+release_gate_permitted is true. The package remains an UNRELEASED_CANDIDATE: it
+is not released and no archive of it exists. This snapshot is static
 consistency evidence, not a formal proof of absence of every possible defect.
 
 FRESH FOCUSED CHECKS
@@ -92,6 +96,7 @@ MANIFEST.json hashes 213 stable payload files out of
 This report binds the exact manifest hash above. SHA256SUMS.txt is generated
 next and hashes 215 files, excluding only itself. The full
 validate_release.py --scope all gate runs only after those steps; its actual
-result is recorded outside this package in reports/tasks/FINAL-03_RESULT.md.
+result is recorded outside this package in
+reports/implementation/LCL_CORE_0_2_INDEPENDENT_REVIEW_CLOSURE.md.
 No archive of this candidate exists. LCL Core 0.1.0 and its archive remain
 unchanged and do not substitute for the fresh results of this candidate.

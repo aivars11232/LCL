@@ -30,10 +30,12 @@ import java.util.Base64
 
 /**
  * What other apps can hand LCL, checked against the installed app. A pairing
- * link carries a one-time code that pairs whoever uses it first, and any app
- * can register a custom scheme, so no app — a camera app, a browser, a
- * message — can pass one to LCL: no activity takes such links, and one sent
- * to the app by name fills nothing in. Only the app's own scanner and the Pair
+ * link carries a one-time code, and any app can register a custom scheme. The
+ * code alone trusts no device — holding it only lets a device make a pending
+ * request, and the PC must approve that request's certificate — but pairing
+ * starts only in LCL itself, so no app — a camera app, a browser, a message —
+ * can pass a link to LCL: no activity takes such links, and one sent to the
+ * app by name fills nothing in. Only the app's own scanner and the Pair
  * screen's text field fill the form. Documents (.lcl, .lcl.txt) still open
  * from other apps. No PC is needed.
  */

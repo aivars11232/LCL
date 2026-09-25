@@ -1,5 +1,25 @@
 LCL CORE CHANGELOG
 
+0.2.0 BARE-SPECIFICATION-COMPLETE CANDIDATE - INDEPENDENT REVIEW CLOSURE
+
+- Closed independent_review, the last pending decision in
+  00_RELEASE/05_LANGUAGE_CLOSURE.json. On 2026-09-25 the owner accepted the
+  independent technical review recorded in reports/tasks/FINAL-05_RESULT.md,
+  which examined this package at identity
+  00daee8de1919c4945ef04ff65edb22164bd8046a493be08a87d5fa3b4c3e604 (216 files),
+  the localization additions included, and found no technical blocker.
+- With every decision closed, the ledger permits the final release gate and
+  00_RELEASE/01 declares LANGUAGE_STATUS: BARE_SPECIFICATION_COMPLETE. The
+  package stays an UNRELEASED_CANDIDATE: it is not released and no archive
+  exists.
+- Changed only release metadata: 00_RELEASE/00, 01 and 05, README.txt,
+  VERSION.txt and this changelog. No normative text, registry, error, fixture,
+  conformance case, grammar or tool changed; every language-definition byte is
+  a reviewed byte.
+- Regenerated MANIFEST.json (status bare_specification_complete_candidate),
+  VALIDATION_REPORT.txt and SHA256SUMS.txt from the current bytes. The package
+  identity therefore changes; the new one is recorded outside the package.
+
 0.2.0 LOCALIZATION FEATURE CANDIDATE - FINAL-03
 
 - Closed the invalid-UTF-8 version-attribution ambiguity (blocker F10) with the

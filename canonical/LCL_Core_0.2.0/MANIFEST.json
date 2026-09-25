@@ -1,7 +1,7 @@
 {
-  "package": "LCL Core 0.2.0 Localization Feature Candidate",
+  "package": "LCL Core 0.2.0 Bare-Specification-Complete Candidate",
   "formal_version": "0.2.0",
-  "status": "localization_feature_candidate",
+  "status": "bare_specification_complete_candidate",
   "release_ready": false,
   "package_scope": "bare_language_specification",
   "out_of_scope_artifacts": [
@@ -17,7 +17,7 @@
     "deployment_tooling"
   ],
   "package_root": "LCL_Core_0.2.0",
-  "generated_utc": "2026-09-20T20:33:20Z",
+  "generated_utc": "2026-09-25T17:42:29Z",
   "package_file_count": 216,
   "manifest_record_count": 213,
   "checksum_record_count": 215,
@@ -68,13 +68,13 @@
   "files": [
     {
       "path": "00_RELEASE/00_CANONICAL_SOURCE_AND_PROVENANCE.txt",
-      "bytes": 3050,
-      "sha256": "da0e59aee97540456566251bf1c68b2fe7331629973f7feeadb07ae164a08f78"
+      "bytes": 3120,
+      "sha256": "45bd3e154170684e0a1f111f902ac546d90bdb5c9a75019d52fb43e736cd04d9"
     },
     {
       "path": "00_RELEASE/01_RELEASE_STATUS_AND_BOUNDARY.txt",
-      "bytes": 3415,
-      "sha256": "c55ceb4c5cc2a7abad2613261b19bc97d2cbc25639c3a29a5e9557418b739310"
+      "bytes": 3918,
+      "sha256": "a6cfaccaa2ad318b11bafc6cb7c80d67d721eab9742fb72a6682b8fb0d1e0de8"
     },
     {
       "path": "00_RELEASE/02_NORMATIVE_AUTHORITY_ORDER.txt",
@@ -93,8 +93,8 @@
     },
     {
       "path": "00_RELEASE/05_LANGUAGE_CLOSURE.json",
-      "bytes": 4558,
-      "sha256": "a21b76e01ddd42b77f8864d74548736c7edca0dc65a1f963981816ae9d186ae7"
+      "bytes": 4908,
+      "sha256": "a93756f84e72f3f9b77567a35310ad49c07757133335b517067e910dcc0685ed"
     },
     {
       "path": "01_FOUNDATION/01_PURPOSE_AND_TERMINOLOGY.txt",
@@ -1113,8 +1113,8 @@
     },
     {
       "path": "CHANGELOG.txt",
-      "bytes": 11952,
-      "sha256": "dca6e59115e5bc8ae2095fd7b1666b0df134f623137b4197f1b88189450fa03e"
+      "bytes": 13145,
+      "sha256": "2107b3e0c9e6b574b2585ad22c95cf545a6fe8bbffcf1d098949e76f67c86c32"
     },
     {
       "path": "INDEX.txt",
@@ -1123,13 +1123,13 @@
     },
     {
       "path": "README.txt",
-      "bytes": 4160,
-      "sha256": "8a4b2ba71ee6844cd46ac30eae0b3cb44dc6fcd1d506aa3957eb3df459c197b2"
+      "bytes": 4288,
+      "sha256": "277817851ad328dd819c163d2f8305f1040e175f1183f169602a628869b04ee2"
     },
     {
       "path": "VERSION.txt",
-      "bytes": 892,
-      "sha256": "29647f3a39f3c26626055ff2c6768a442cc4da64ba038ded1426bb019f784517"
+      "bytes": 943,
+      "sha256": "b1890648137a1db8930b838d202c1695e945d2612c723e9fab48a159698dfb77"
     }
   ]
 }

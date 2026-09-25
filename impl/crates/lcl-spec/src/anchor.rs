@@ -61,28 +61,37 @@ pub const APPROVED_PACKAGE: TrustAnchor = TrustAnchor {
     identity_digest: "00d648b162939d06c44838481a67c39bc12c64bdd6d105035c24150148fe67ed",
 };
 
-/// The approved LCL Core 0.2.0 package: the localization feature candidate.
+/// The approved LCL Core 0.2.0 package: the localization feature, a
+/// bare-specification-complete candidate.
 ///
 /// Corresponds to `canonical/LCL_Core_0.2.0` as generated on 2026-09-15 under
 /// LCL-FEATURE-04 (the owner approved anchoring it, decision D3, 2026-09-15),
 /// regenerated under PRETEST-03 after the strict-UTF-8 repair of
-/// `TOOLS/validate_localization.py`, and regenerated again under FINAL-03 after
-/// owner decision F10_DECISION=A (atomic decode, 2026-09-20) was stated in
-/// `02_LEXICAL/01` and `02_LEXICAL/13`; its `MANIFEST.json` has SHA-256
-/// `c1ab983de2566a11356c2b8d1e7d2b667c1cfce4661d1b5d27cfed4aad336e67`. The
+/// `TOOLS/validate_localization.py`, regenerated under FINAL-03 after owner
+/// decision F10_DECISION=A (atomic decode, 2026-09-20) was stated in
+/// `02_LEXICAL/01` and `02_LEXICAL/13`, and regenerated again on 2026-09-25
+/// after the owner accepted the independent technical review
+/// `reports/tasks/FINAL-05_RESULT.md` of identity
+/// `00daee8de1919c4945ef04ff65edb22164bd8046a493be08a87d5fa3b4c3e604`. That
+/// closed the last language decision, `independent_review`, and changed only
+/// release metadata and the integrity files, not a language-definition byte.
+/// Its `MANIFEST.json` has SHA-256
+/// `9f3a2eb989fdc758e3ca54cb70552af0f3e8b7a4bab988c222a1e9b219b76c73`. The
 /// previous identities were
-/// `e86121c734cb51065b791329738b9ed6b77c53e03e0eebbb2ad1076bea973ef0` and
-/// `6e7303157f5ba378b4e8c0b89852a7a81b00b6dd26b85cac36a8977532690ceb`. It is an
-/// unreleased candidate: its independent review is pending and no archive exists.
+/// `e86121c734cb51065b791329738b9ed6b77c53e03e0eebbb2ad1076bea973ef0`,
+/// `6e7303157f5ba378b4e8c0b89852a7a81b00b6dd26b85cac36a8977532690ceb` and the
+/// reviewed `00daee8d…e604`. Every language decision is closed and the release
+/// gate is permitted, but it is still an unreleased candidate: no release
+/// status is recorded and no archive exists.
 ///
 /// It is not the default. [`crate::SpecPackage::open`] stays pinned to
 /// [`APPROVED_PACKAGE`]; a caller selects this package explicitly through
 /// [`crate::SpecPackage::open_with_anchor`].
 pub const APPROVED_PACKAGE_0_2_0: TrustAnchor = TrustAnchor {
-    label: "LCL Core 0.2.0 Localization Feature Candidate (2026-09-15)",
+    label: "LCL Core 0.2.0 Bare-Specification-Complete Candidate (2026-09-25)",
     formal_version: "0.2.0",
     package_file_count: 216,
-    identity_digest: "00daee8de1919c4945ef04ff65edb22164bd8046a493be08a87d5fa3b4c3e604",
+    identity_digest: "061a79c92c76ed7bb05968adde24b016cae3b30666b8fb289c6ab968907e8b3f",
 };
 
 /// Accumulates a package identity digest from `(path, content-hash)` pairs.

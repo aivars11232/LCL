@@ -10,11 +10,14 @@ import javax.xml.parsers.DocumentBuilderFactory
 
 /**
  * What the app's manifest lets other apps hand it. A pairing link carries a
- * one-time code that pairs whoever uses it first, and any app can register a
- * custom scheme, so no filter takes `lclpair://` links and none is BROWSABLE:
- * a camera app, a browser or a message cannot pass one to this app. The
- * launcher and `.lcl` / `.lcl.txt` documents still open it. The instrumented
- * IncomingIntentsTest checks the same against the installed app.
+ * one-time code, and any app can register a custom scheme. The code alone
+ * trusts no device — holding it only lets a device make a pending request,
+ * and the PC must approve that request's certificate — but pairing starts
+ * only from the app's own scanner or the Pair screen, so no filter takes
+ * `lclpair://` links and none is BROWSABLE: a camera app, a browser or a
+ * message cannot pass one to this app. The launcher and `.lcl` / `.lcl.txt`
+ * documents still open it. The instrumented IncomingIntentsTest checks the
+ * same against the installed app.
  */
 class ManifestTest {
     private val android = "http://schemas.android.com/apk/res/android"

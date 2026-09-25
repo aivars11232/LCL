@@ -170,6 +170,10 @@ class RemoteEndToEndTest {
 
     private fun pairedPcs(): String? = instrumentation.targetContext.getSharedPreferences("lcl", 0).getString("pcs", null)
 
+    /** One text field of the saved PC record, as the app stored it. */
+    private fun pairedField(name: String): String =
+        Regex("\"$name\":\"([^\"]*)\"").find(pairedPcs() ?: "")?.groupValues?.get(1) ?: error("no $name in ${pairedPcs()}")
+
     private fun run(grant: String, answer: String): String {
         action("run")
         waitFor("grant_read")
@@ -441,6 +445,9 @@ class RemoteEndToEndTest {
         waitFor("pair_preview")
         pressPairAndWaitForThePc("PENDING_P7")
         waitForLabel("Connected", 120_000)
+        // Pairing again finishes only once the old key is retired (A12); the
+        // PC revoked it in p6, and says so when that key connects.
+        rule.waitUntil("pairing again finishes", 30_000) { !exists("pair_waiting") && deviceKeys().size == 1 }
         assertEquals("the old key was kept", 1, deviceKeys().size)
         shot("p7_02_paired_again")
 
@@ -524,6 +531,56 @@ class RemoteEndToEndTest {
         assertEquals("a denied request kept its key", keysBefore, deviceKeys())
         assertEquals("a denied request recorded a PC", pcsBefore, pairedPcs())
         assertEquals("a denied request broke the working pairing", "Connected", label())
+    }
+
+    /**
+     * Phase 10 (A12): the same PC paired again while this device is still
+     * trusted. Android Keystore makes a new key, so the PC gets a second
+     * certificate; once the PC approves it, the old key asks the PC to stop
+     * trusting it, and only then is it deleted. The host then checks on the PC
+     * that the old device is revoked and the new one is the only one trusted.
+     */
+    @Test
+    fun p10_pair_again_while_trusted_retires_the_old_key() {
+        waitForLabel("Connected")
+        val before = deviceKeys()
+        assertEquals(1, before.size)
+        val oldDevice = pairedField("device_id")
+        pairWith(arg("link"))
+        pressPairAndWaitForThePc("PENDING_P10")
+        rule.waitUntil("the new pairing is saved and the old key is gone", 120_000) {
+            exists("pair_retiring") ||
+                (!exists("pair_waiting") && label() == "Connected" && deviceKeys().let { it.size == 1 && it != before })
+        }
+        assertFalse(
+            "the old key could not be retired: " + runCatching { textOf("pair_retiring") }.getOrDefault(""),
+            exists("pair_retiring"),
+        )
+        val newDevice = pairedField("device_id")
+        assertTrue("pairing again kept the old device id", newDevice != oldDevice)
+        assertFalse("the saved record still names the old key", pairedPcs()!!.contains(before.single()))
+        shot("p10_01_paired_again")
+        ready("REPLACED $oldDevice $newDevice")
+    }
+
+    /**
+     * Phase 11 (A12): Forget after pairing again. This device keeps no key for
+     * the PC; the host checks that the PC trusts nothing of it.
+     */
+    @Test
+    fun p11_forget_after_pairing_again() {
+        waitForLabel("Connected")
+        goHome()
+        val id = pairedField("pc_id")
+        rule.onNodeWithTag("forget:$id").performScrollTo().performClick()
+        rule.onNodeWithTag("forget_confirm").performClick()
+        rule.waitUntil("the PC is forgotten", 10_000) { label() == "No PC" }
+        rule.waitUntil("every key for the PC is deleted", 30_000) { deviceKeys().isEmpty() }
+        shot("p11_01_forgotten")
+        // Forget asks the PC in the background; this process stays long enough
+        // for that to finish before the host looks.
+        Thread.sleep(5_000)
+        ready("FORGOTTEN")
     }
 
     private companion object {

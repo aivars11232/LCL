@@ -34,8 +34,12 @@ USAGE:
     lcl-remote approve REQUEST-ID       Trust the phone that made this request.
                                         Approve only if its phone shows the
                                         same verification code.
-    lcl-remote deny REQUEST-ID          Refuse one request. The QR code stays
-                                        usable by your own phone.
+    lcl-remote deny REQUEST-ID          Refuse one request. Denying a request
+                                        you have not approved leaves the QR
+                                        code usable by your own phone.
+                                        Denying one you approved that has not
+                                        paired yet withdraws the approval, and
+                                        that QR code then pairs nobody.
     lcl-remote devices [--json]         List paired devices.
     lcl-remote revoke DEVICE-ID         Stop trusting one device. It is
                                         disconnected and must pair again.

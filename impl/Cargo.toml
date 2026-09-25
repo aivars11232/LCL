@@ -63,7 +63,7 @@
 # runs before lexing. The lexer's word map, the resolver, `lcl-protocol`'s
 # `Engines`, the project manifest and lock, the CLI and the workspace carry it,
 # and a Core 0.2.0 package is used only when one is named. Core 0.2.0 is an
-# unreleased candidate whose independent review is pending.
+# unreleased candidate; the owner accepted its independent review on 2026-09-25.
 #
 # Dependency policy: std only. The spec authority loader is the trust root for
 # every later layer, so it carries no third-party supply-chain surface.

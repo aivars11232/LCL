@@ -11,7 +11,7 @@ Only the packages under `canonical/` define LCL:
 | Package | Status | Identity digest |
 |---|---|---|
 | `canonical/LCL_Core_0.1.0/` | Active Core 0.1.0 authority, protected and never modified | `00d648b162939d06c44838481a67c39bc12c64bdd6d105035c24150148fe67ed` |
-| `canonical/LCL_Core_0.2.0/` | Unreleased localization feature candidate: independent review pending, `release_gate_permitted` false | `00daee8de1919c4945ef04ff65edb22164bd8046a493be08a87d5fa3b4c3e604` |
+| `canonical/LCL_Core_0.2.0/` | Unreleased localization candidate, bare specification complete: the owner accepted its independent review on 2026-09-25 (reviewed identity `00daee8de1919c4945ef04ff65edb22164bd8046a493be08a87d5fa3b4c3e604`), `release_gate_permitted` true; not released, no archive | `061a79c92c76ed7bb05968adde24b016cae3b30666b8fb289c6ab968907e8b3f` |
 
 Inside each package, `00_RELEASE/02_NORMATIVE_AUTHORITY_ORDER.txt` decides how
 its artifacts rank. Nothing outside a package root is a normative input to the

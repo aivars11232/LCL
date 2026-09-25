@@ -1,8 +1,8 @@
 LCL CORE 0.2.0 BARE LANGUAGE SPECIFICATION
 
 Formal language version: 0.2.0
-Language-definition state: not declared complete; independent review of the
-  localization additions is pending
+Language-definition state: BARE_SPECIFICATION_COMPLETE; the owner accepted the
+  independent review of the package, localization additions included
 Package state: UNRELEASED_CANDIDATE; integrity metadata binds candidate bytes only
 Package scope: bare language specification only
 
@@ -48,9 +48,10 @@ SCOPE AND VALIDATION BOUNDARY
   fixtures; the fixture profiles prove the mechanism, not translation quality or
   coverage;
 - static language-contract checks and the Core 0.1.0 independent semantic
-  reviews support the closed decisions; the Core 0.2.0 localization additions
-  have no independent review yet; bounded source-hygiene checks are not a
-  complete lexer;
+  reviews support the closed decisions; the Core 0.2.0 package, localization
+  additions included, had an independent technical review that the owner
+  accepted (see 00_RELEASE/05_LANGUAGE_CLOSURE.json); bounded source-hygiene
+  checks are not a complete lexer;
 - MANIFEST.json, VALIDATION_REPORT.txt and SHA256SUMS.txt bind the current
   candidate payload for integrity only, and no archive of this candidate exists;
 - LCL Core 0.1.0 remains released as canonical/LCL_Core_0.1.0 with its archive

@@ -14,10 +14,11 @@ code the desktop workspace uses.
 | Operation | App | Remote operation | Notes |
 |---|---|---|---|
 | Pair with a PC by QR code | ✅ | `hello` intent `pair`, `pairing_version` 2 → `pairing_pending` … `paired` | The app's own scanner (**Pair a PC → Scan QR code**), or pairing text (`LCLPAIR\|v=2&…`, not a link) pasted on that screen. Each only fills the form in; nothing is asked until Pair is pressed. Scanning does not trust the phone: after Pair, the phone shows a verification code and waits; the PC lists the request with the same code, and the phone is trusted only once the person approves that request on the PC (`lcl-remote approve`, or Settings → Android devices). Denied, expired or cancelled: the attempt's key is deleted and nothing is saved. By design, no pairing code is taken from another app — the camera app, a browser, a message. Older `lclpair://` links are refused. |
+| Pair a PC again | ✅ | as pairing, then `hello` intent `connect` with the old key and `unpair` | A new key, approved on the PC like any pairing. The replaced key then connects as itself and asks the PC to revoke it (or the PC refuses it as revoked or unknown); only then is it deleted. If the PC cannot confirm that, the new pairing works, the Pair screen and the PC's card say the PC may still trust the earlier key, and the phone keeps that key and tries again on every connection. |
 | Reconnect without a QR code | ✅ | `hello` intent `connect` | On every app start, after network loss or change, after a PC restart. |
 | Several paired PCs | ✅ | — | One active connection at a time; switch on the PCs screen. |
 | Disconnect | ✅ | (closes the socket) | Pairing kept. |
-| Forget PC | ✅ | `unpair` when connected | Deletes this phone's key and record for the PC; the PC is asked to revoke the device. |
+| Forget PC | ✅ | `unpair` when connected | Deletes this phone's key and record for the PC; the PC is asked to revoke the device. An earlier key the PC may still trust (see Pair a PC again) asks once more for itself, then is deleted too. |
 | Revoke device | — | `revoked` event | Done on the PC; the phone shows *Not trusted*. |
 | Keep-alive | ✅ | `ping` | Every 20 s. |
 | PC identity and versions | ✅ | `about` | Shown in About. |

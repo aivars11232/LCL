@@ -920,6 +920,71 @@ fn a_device_cannot_claim_to_be_another() {
     assert_eq!(s(&answer, "code"), "identity_mismatch");
 }
 
+/// A12: the app makes a new key for every pairing, so a phone that pairs this
+/// PC again while it is still trusted becomes a second record, and the first
+/// stays trusted — the PC cannot tell a replacement from a second phone, and
+/// must not guess by name. Only the old key itself can end the old record: a
+/// connection it authenticates, then `unpair`. That ends exactly that record,
+/// never the new key or another phone, and from then on the old key is refused
+/// as `revoked`, which is how the phone learns the retirement is done.
+#[test]
+fn a12_a_replaced_key_stays_trusted_until_it_unpairs_itself_and_nothing_else_ends() {
+    let home = Home::new("a12-replace");
+    let pc = start(&home);
+    let (old, tablet) = (device(), device());
+    let (_old_live, old_id) = pair(&home, &pc, &old, "Pixel");
+    // Another phone with the same name: a separate device, not a replacement.
+    let (_tablet_live, tablet_id) = pair(&home, &pc, &tablet, "Pixel");
+    // The first phone pairs again: a new key, a new QR code, a new approval.
+    let new = device();
+    let (mut new_live, new_id) = pair(&home, &pc, &new, "Pixel");
+    let ids = |home: &Home| {
+        let mut ids: Vec<String> = trusted(home).into_iter().map(|d| d.id).collect();
+        ids.sort();
+        ids
+    };
+    let mut all = vec![old_id.clone(), tablet_id.clone(), new_id.clone()];
+    all.sort();
+    assert_eq!(
+        ids(&home),
+        all,
+        "the PC trusts the old key beside the new one"
+    );
+
+    // The old key retires itself.
+    let (mut retiring, welcome) = reconnect(&pc, &old);
+    assert_eq!(s(&welcome, "type"), "welcome", "{welcome:?}");
+    assert_eq!(s(welcome.get("device").unwrap(), "id"), old_id);
+    let (status, body) = retiring.request("unpair", "");
+    assert_eq!(status, 200, "{body:?}");
+    assert_eq!(body.get("unpaired").and_then(Json::as_bool), Some(true));
+    let mut left = vec![tablet_id.clone(), new_id.clone()];
+    left.sort();
+    assert_eq!(ids(&home), left, "unpair ended another record than its own");
+    let (_c, answer) = reconnect(&pc, &old);
+    assert_eq!(
+        s(&answer, "code"),
+        "revoked",
+        "the retired key still connects"
+    );
+
+    // The new pairing and the other phone are untouched.
+    let (status, _) = new_live.request("ping", "");
+    assert_eq!(status, 200);
+    let (_c, answer) = reconnect(&pc, &tablet);
+    assert_eq!(
+        s(&answer, "type"),
+        "welcome",
+        "retiring one phone's key ended another phone"
+    );
+
+    // Forget on the phone afterwards: its new key unpairs too, and nothing of
+    // that phone is trusted any more.
+    let (status, _) = new_live.request("unpair", "");
+    assert_eq!(status, 200);
+    assert_eq!(ids(&home), vec![tablet_id]);
+}
+
 // ---------------------------------------------------------------------------
 // Peers nobody has authenticated
 // ---------------------------------------------------------------------------

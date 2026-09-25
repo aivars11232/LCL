@@ -40,8 +40,8 @@
     },
     {
       "id": "independent_review",
-      "status": "pending",
-      "summary": "Core 0.1.0 basis: Fresh read-only lexical/forms, expression/library, and graph/check/lifecycle/OUTPUT reviews resolved every definite finding. Follow-up review confirmed processing-order alignment and detection of the multiline literal registry/prose contradiction. No outstanding semantic blocker was identified in these bounded reviews. The Core 0.2.0 localization additions (02_LEXICAL/13, localization_surface_v0.2.0.json, locale_profile_schema_v0.2.0.json, the localization errors and the localization fixtures) have not received an independent review, so this decision remains pending until the owner accepts such a review."
+      "status": "closed",
+      "summary": "Core 0.1.0 basis: Fresh read-only lexical/forms, expression/library, and graph/check/lifecycle/OUTPUT reviews resolved every definite finding. Follow-up review confirmed processing-order alignment and detection of the multiline literal registry/prose contradiction. No outstanding semantic blocker was identified in these bounded reviews. Core 0.2.0: the independent technical review recorded in reports/tasks/FINAL-05_RESULT.md examined this package at identity 00daee8de1919c4945ef04ff65edb22164bd8046a493be08a87d5fa3b4c3e604 (216 files), the localization additions (02_LEXICAL/13, localization_surface_v0.2.0.json, locale_profile_schema_v0.2.0.json, the localization errors and the localization fixtures) included, and found no technical blocker. On 2026-09-25 the owner accepted that review for that identity, which closes this decision. Recording the closure changed only release metadata and the regenerated integrity files; every language-definition byte is a reviewed byte."
     },
     {
       "id": "static_validation",
@@ -49,5 +49,5 @@
       "summary": "Core 0.1.0 basis: Fresh focused filesystem, text, structured, grammar, registry and catalog checks pass; 514 language-contract checks have no violations. Fourteen representative isolated static contract mutations are detected, 15 bounded source fixtures match, and six supplementary source-hygiene probes match. These checks do not execute LCL; final integrity and release validation follow closure. For Core 0.2.0, validate_localization.py re-derives the localization surface, checks the locale profile schema and fixture profiles, rejects invalid-profile mutations, and evaluates every localization source fixture; fresh gate results are recorded outside the package."
     }
   ],
-  "release_gate_permitted": false
+  "release_gate_permitted": true
 }

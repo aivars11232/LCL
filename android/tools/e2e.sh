@@ -245,7 +245,7 @@ check "a same-signed update (versionCode 2) installed over the paired app" \
 
 # The specification identities the PC's engine must report (task authority).
 core01=00d648b162939d06c44838481a67c39bc12c64bdd6d105035c24150148fe67ed
-core02=00daee8de1919c4945ef04ff65edb22164bd8046a493be08a87d5fa3b4c3e604
+core02=061a79c92c76ed7bb05968adde24b016cae3b30666b8fb289c6ab968907e8b3f
 
 # 2. The app is closed and opened again: it reconnects with no QR code.
 "$adb" shell am force-stop io.lcl.workspace
@@ -364,6 +364,50 @@ assert [c["status"] for c in last] == ["denied"], last
 PY4
 "$remote" pending --json >"$out/pending-final.json"
 check "no pairing request is left waiting" python3 -c 'import json,sys; assert json.load(open(sys.argv[1]))["requests"] == []' "$out/pending-final.json"
+
+# 11. The same PC paired again while it still trusts this phone (A12). Android
+# Keystore makes a new key, so the PC sees a second certificate; once the PC
+# approves it, the old key itself asks the PC to stop trusting it, and only
+# then does the phone delete it. The PC must then trust exactly the new key.
+# Then Forget: nothing of this phone stays trusted.
+old=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1]))["devices"]; print(max(d, key=lambda x: x["paired_at"])["id"])' "$out/devices-denied.json")
+"$remote" pair --address "$address" --json >"$out/pair-while-trusted.json"
+again_trusted=$(payload "$out/pair-while-trusted.json")
+phase p10_pair_again_while_trusted_retires_the_old_key -e link "'$again_trusted'" &
+waiting=$!
+decide_on_pc approve PENDING_P10
+wait "$waiting"
+replaced=$(cat "$out"/*_p10_pair_again_while_trusted_retires_the_old_key.log | grep -o 'REPLACED [0-9a-f]* [0-9a-f]*' | tail -1)
+"$remote" devices --json >"$out/devices-replaced.json"
+check "pairing again while trusted revoked the old key and trusts exactly the new one" python3 - "$out/devices-replaced.json" "$old" "$replaced" <<'PY6'
+import json, sys
+devices = {d["id"]: d for d in json.load(open(sys.argv[1]))["devices"]}
+old = sys.argv[2]
+_, said_old, new = sys.argv[3].split()
+assert said_old == old, ("the phone replaced", said_old, "but the PC's working device was", old)
+assert devices[old]["fingerprint"] != devices[new]["fingerprint"], "the new pairing reused the old certificate"
+assert devices[old]["revoked_at"], ("the PC still trusts the replaced key", devices[old])
+assert not devices[new]["revoked_at"], devices[new]
+live = [d["id"] for d in devices.values() if not d["revoked_at"]]
+assert live == [new], ("trusted now", live)
+PY6
+phase p11_forget_after_pairing_again
+live=0
+for _ in $(seq 30); do
+    live=$(live_devices)
+    [ "$live" = 0 ] && break
+    sleep 0.5
+done
+"$remote" devices --json >"$out/devices-forgotten.json"
+check "after Forget the PC trusts nothing of this phone, the replaced key included" python3 - "$out/devices-forgotten.json" "$replaced" <<'PY7'
+import json, sys
+devices = {d["id"]: d for d in json.load(open(sys.argv[1]))["devices"]}
+_, old, new = sys.argv[2].split()
+assert devices[old]["revoked_at"] and devices[new]["revoked_at"], (devices[old], devices[new])
+assert not [d for d in devices.values() if not d["revoked_at"]], devices
+PY7
+"$remote" pending --json >"$out/pending-after-a12.json"
+check "no pairing request is left waiting after pairing again" python3 -c 'import json,sys; assert json.load(open(sys.argv[1]))["requests"] == []' "$out/pending-after-a12.json"
 
 no_lcl_failures
 "$adb" shell settings put global hide_error_dialogs 0

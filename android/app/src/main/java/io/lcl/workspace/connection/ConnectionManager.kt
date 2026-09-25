@@ -2,6 +2,7 @@ package io.lcl.workspace.connection
 
 import io.lcl.workspace.data.PcRecord
 import io.lcl.workspace.data.PcStore
+import io.lcl.workspace.data.RetiringKey
 import io.lcl.workspace.remote.IdentityStore
 import io.lcl.workspace.remote.Opened
 import io.lcl.workspace.remote.PairingLink
@@ -11,6 +12,7 @@ import io.lcl.workspace.remote.RemoteException
 import io.lcl.workspace.remote.Reply
 import io.lcl.workspace.remote.Session
 import io.lcl.workspace.remote.Transport
+import io.lcl.workspace.remote.bool
 import io.lcl.workspace.remote.constantTimeEquals
 import io.lcl.workspace.remote.obj
 import io.lcl.workspace.remote.str
@@ -29,6 +31,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
@@ -84,6 +88,9 @@ data class PendingPairing(
 /** How often a device waiting for approval asks the PC again. */
 const val PAIRING_POLL_MS = 2_000L
 
+/** How long retiring one earlier key may take: connecting with it, and the PC's answer. */
+const val RETIRE_WITHIN_MS = 15_000L
+
 /** Every device key this app makes is named with this, then the PC's id. */
 private const val KEY_PREFIX = "lcl-pc-"
 
@@ -112,8 +119,14 @@ class ConnectionManager(
     /** Events from whichever session is live, in order. */
     val events: SharedFlow<JsonObject> = _events
 
+    private val _records = MutableStateFlow(store.all())
+    /** The PCs this device is paired with, as saved; it follows every change made here. */
+    val records: StateFlow<List<PcRecord>> = _records
+
     private var loop: Job? = null
     private val wake = Channel<Unit>(Channel.CONFLATED)
+    /** One retirement at a time (see [retirePrevious]), so two never race over a key or a record. */
+    private val retirements = Mutex()
 
     init {
         scope.launch { network.changes.collect { wake.trySend(Unit) } }
@@ -121,13 +134,23 @@ class ConnectionManager(
 
     fun pcs(): List<PcRecord> = store.all()
 
+    private fun save(record: PcRecord) {
+        store.save(record)
+        _records.value = store.all()
+    }
+
+    /** Change a PC's record as it is saved now; nothing if it is gone. */
+    private fun update(pcId: String, change: (PcRecord) -> PcRecord) {
+        store.get(pcId)?.let(change)?.let(::save)
+    }
+
     /**
      * Resume the active PC, as the app does on every start. A key no saved PC
-     * uses — made for a pairing the process did not live to finish — is
-     * deleted first.
+     * uses or is retiring — made for a pairing the process did not live to
+     * finish — is deleted first.
      */
     fun start() {
-        val used = store.all().map { it.keyAlias }.toSet()
+        val used = store.all().flatMap { pc -> listOf(pc.keyAlias) + pc.retiring.map { it.keyAlias } }.toSet()
         for (alias in runCatching { identities.aliases() }.getOrDefault(emptyList())) {
             if (alias.startsWith(KEY_PREFIX) && alias !in used) runCatching { identities.delete(alias) }
         }
@@ -156,9 +179,11 @@ class ConnectionManager(
     }
 
     /**
-     * Forget a PC: its trust and its key are deleted, and only a new QR code
+     * Forget a PC: its trust and its keys are deleted, and only a new QR code
      * pairs it again. If the PC is connected it is also asked to stop trusting
      * this device; forgetting never waits for that, and succeeds without it.
+     * An earlier key the PC may still trust ([PcRecord.retiring]) asks it once
+     * more to stop trusting it, then is deleted whether the PC answered or not.
      */
     fun forget(pcId: String) {
         val pc = store.get(pcId) ?: return
@@ -171,10 +196,21 @@ class ConnectionManager(
         }
         runCatching { identities.delete(pc.keyAlias) }
         store.remove(pcId)
+        _records.value = store.all()
         live?.let { session ->
             scope.launch {
                 runCatching { withTimeout(3_000) { session.request("unpair") } }
                 session.close()
+            }
+        }
+        if (pc.retiring.isNotEmpty()) {
+            scope.launch {
+                retirements.withLock {
+                    for (key in pc.retiring) {
+                        retire(pc, key)
+                        runCatching { identities.delete(key.keyAlias) }
+                    }
+                }
             }
         }
     }
@@ -201,6 +237,16 @@ class ConnectionManager(
      * the person presses Cancel or leaves the screen — the new key is deleted
      * and nothing is saved. An older pairing with the same PC is replaced only
      * once this one has succeeded, so a failed attempt breaks nothing.
+     *
+     * Replacing it ends only when the PC trusts the older key no more. The PC
+     * keeps a record per key, so it now trusts both, and only the older key
+     * itself can end its record. The new pairing is saved with the older key
+     * listed in [PcRecord.retiring]; that key then asks the PC to stop
+     * trusting it ([retirePrevious]), and is deleted only once the PC is shown
+     * to trust it no more. When that cannot be shown now, the key stays
+     * listed, with why, and is tried again each time this PC is connected: the
+     * record returned says so, and a replacement is never reported finished
+     * before it is.
      */
     suspend fun pair(link: PairingLink, deviceName: String, onPending: (PendingPairing) -> Unit = {}): Result<PcRecord> {
         if (link.isExpired(now())) {
@@ -222,6 +268,8 @@ class ConnectionManager(
         // The address that answered with a pending request, tried first from then on.
         var answering: String? = null
         var expires = link.expires
+        // Once saved, the new key is the pairing's own, not this attempt's to delete.
+        var saved = false
         try {
             while (true) {
                 val order = answering?.let { listOf(it) + (link.addresses - it) } ?: link.addresses
@@ -267,12 +315,17 @@ class ConnectionManager(
                                 pairedAt = now(),
                                 lastConnected = now(),
                                 lastAddress = address,
+                                // The key used for this PC until now stays until the PC trusts it no more.
+                                retiring = previous?.let { it.retiring + RetiringKey(it.keyAlias, it.deviceId) }
+                                    ?.filter { it.keyAlias != alias }?.distinctBy { it.keyAlias }.orEmpty(),
                             )
-                            store.save(record)
+                            save(record)
                             store.setActive(record.pcId)
-                            if (previous != null && previous.keyAlias != alias) runCatching { identities.delete(previous.keyAlias) }
+                            saved = true
                             startLoop(record, opened.session to address)
-                            return Result.success(record)
+                            if (record.retiring.isEmpty()) return Result.success(record)
+                            // In the app's own scope, so leaving the Pair screen does not stop it.
+                            return Result.success(scope.async { retirePrevious(record.pcId) }.await() ?: record)
                         }
                     }
                     if (waiting) break
@@ -286,7 +339,7 @@ class ConnectionManager(
                 if (now() >= expires) return failed("The pairing request expired before the PC approved it. Show a new QR code on the PC.")
             }
         } catch (e: CancellationException) {
-            runCatching { identities.delete(alias) }
+            if (!saved) runCatching { identities.delete(alias) }
             throw e
         }
     }
@@ -315,6 +368,8 @@ class ConnectionManager(
             var handed = adopted
             while (isActive) {
                 val current = store.get(pc.pcId) ?: pc
+                // A session pair() hands over: it finishes its own retirements.
+                val fromPairing = handed != null
                 val connected: Pair<Session, String>? = handed ?: run {
                     if (!network.available.value) {
                         _state.value = ConnectionState.Offline(current)
@@ -342,13 +397,17 @@ class ConnectionManager(
                 if (connected != null) {
                     val (session, address) = connected
                     attempt = 0
-                    val updated = current.copy(
+                    // The record as saved now: a retirement may have changed it while this connected.
+                    val latest = store.get(pc.pcId) ?: current
+                    val updated = latest.copy(
                         lastConnected = now(),
                         lastAddress = address,
-                        addresses = (listOf(address) + current.addresses).distinct().take(8),
+                        addresses = (listOf(address) + latest.addresses).distinct().take(8),
                     )
-                    store.save(updated)
+                    save(updated)
                     _state.value = ConnectionState.Connected(updated, session, address)
+                    // The PC can be reached: earlier keys it may still trust are tried again.
+                    if (!fromPairing && updated.retiring.isNotEmpty()) launch { retirePrevious(pc.pcId) }
                     val forwarding = launch { session.events.collect { _events.emit(it) } }
                     val revoked = launch {
                         session.events.first { it.str("event") == "revoked" }
@@ -383,6 +442,85 @@ class ConnectionManager(
         data class Live(val session: Session, val address: String) : Outcome
         data class Refused(val code: String, val message: String) : Outcome
         data class Unreachable(val reason: String) : Outcome
+    }
+
+    /**
+     * Retire the earlier keys a PC's record lists (see [pair]), one at a time.
+     * A key the PC is shown to trust no more is taken off the list, then
+     * deleted; one that is not stays listed, with why. The record as saved
+     * afterwards, or `null` if the PC was forgotten meanwhile ([forget] then
+     * sees to its keys).
+     */
+    private suspend fun retirePrevious(pcId: String): PcRecord? = retirements.withLock {
+        for (key in store.get(pcId)?.retiring.orEmpty()) {
+            val pc = store.get(pcId) ?: break
+            when (val outcome = retire(pc, key)) {
+                Retirement.Done -> {
+                    update(pcId) { it.copy(retiring = it.retiring.filterNot { k -> k.keyAlias == key.keyAlias }) }
+                    runCatching { identities.delete(key.keyAlias) }
+                }
+                is Retirement.NotYet -> update(pcId) { record ->
+                    record.copy(retiring = record.retiring.map { if (it.keyAlias == key.keyAlias) it.copy(problem = outcome.problem) else it })
+                }
+            }
+        }
+        store.get(pcId)
+    }
+
+    private sealed interface Retirement {
+        /** The PC does not trust the key: it revoked it now, or had revoked it or never known it. */
+        data object Done : Retirement
+        data class NotYet(val problem: String) : Retirement
+    }
+
+    /**
+     * Ask the PC to stop trusting one earlier key of this device. The key
+     * connects as itself and sends `unpair`: the PC revokes the record of the
+     * certificate that connection proved, so exactly that record ends, and no
+     * other can be named. Only the PC's own answer is proof — `unpaired`, or
+     * the key refused as revoked or unknown; anything else is not.
+     */
+    private suspend fun retire(pc: PcRecord, key: RetiringKey): Retirement {
+        val identity = runCatching { identities.load(key.keyAlias) }.getOrNull()
+            ?: return Retirement.NotYet("this device no longer holds that key, so only the PC can end its trust")
+        // A key with the certificate the pairing uses now is not an earlier
+        // one: the PC keeps one record per certificate, and unpairing with it
+        // would end this pairing.
+        val current = runCatching { identities.load(pc.keyAlias)?.fingerprint }.getOrNull()
+        if (current != null && constantTimeEquals(current, identity.fingerprint)) return Retirement.Done
+        return withTimeoutOrNull(RETIRE_WITHIN_MS) {
+            var problem = "the PC could not be reached"
+            for (address in (listOfNotNull(pc.lastAddress) + pc.addresses).distinct()) {
+                val opened = try {
+                    transport.open(address, pc.fingerprint, identity, Protocol.helloConnect(null))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    problem = describe(e, address)
+                    continue
+                }
+                return@withTimeoutOrNull when (opened) {
+                    is Opened.Refused ->
+                        if (opened.code in setOf("revoked", "not_paired")) Retirement.Done else Retirement.NotYet(opened.message)
+                    is Opened.Pending -> Retirement.NotYet("the PC answered as if this device were pairing")
+                    is Opened.Accepted -> try {
+                        val reply = opened.session.request("unpair")
+                        if (reply.ok && reply.obj.bool("unpaired") == true) {
+                            Retirement.Done
+                        } else {
+                            Retirement.NotYet(reply.error ?: "the PC answered ${reply.status}")
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Retirement.NotYet("the connection ended before the PC answered")
+                    } finally {
+                        opened.session.close()
+                    }
+                }
+            }
+            Retirement.NotYet(problem)
+        } ?: Retirement.NotYet("the PC did not answer in time")
     }
 
     /** Try every address this PC might be at: last good one first, then the rest, then the local network. */

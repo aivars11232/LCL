@@ -50,10 +50,11 @@ backward-compatible features. Every valid Core 0.1.0 program keeps its meaning,
 and localized spelling is accepted only in documents declaring VERSION "0.2.0",
 so this version is 0.2.0.
 
-The package status is UNRELEASED_CANDIDATE. The independent review of the
-localization additions is pending in 05_LANGUAGE_CLOSURE.json, and no archive of
-this package exists. Fresh MANIFEST.json, VALIDATION_REPORT.txt and
-SHA256SUMS.txt bind its bytes for integrity only.
+The package status is UNRELEASED_CANDIDATE. The owner accepted the independent
+review of this package, localization additions included, on 2026-09-25, which
+closed the last decision in 05_LANGUAGE_CLOSURE.json; no archive of this package
+exists. Fresh MANIFEST.json, VALIDATION_REPORT.txt and SHA256SUMS.txt bind its
+bytes for integrity only.
 
 This package is the language definition only. It must never be represented as
 containing, requiring, or having been validated by a lexer, parser, interpreter,

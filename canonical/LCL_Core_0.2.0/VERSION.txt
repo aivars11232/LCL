@@ -1,7 +1,8 @@
 LCL Core 0.2.0 Bare Language Specification Candidate
 Formal version: 0.2.0
-Language-definition status: not declared complete; independent review of the
-localization additions is pending
+Language-definition status: BARE_SPECIFICATION_COMPLETE; the owner accepted the
+independent review of the package, localization additions included, on
+2026-09-25
 Package status: UNRELEASED_CANDIDATE
 Package scope: bare language specification only
 Base package: LCL Core 0.1.0 Bare Language Specification Release, archive

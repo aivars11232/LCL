@@ -1,0 +1,3 @@
+EXPECTED_ERROR: error.numeric.non_terminating
+EXPECTED_TERMINAL_STATUS: status.invalid
+RULE: Reject a non-terminating quotient outside the direct first-argument context of ROUND.

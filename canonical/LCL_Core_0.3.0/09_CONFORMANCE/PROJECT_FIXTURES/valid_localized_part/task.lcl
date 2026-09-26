@@ -1,0 +1,50 @@
+@locale lv-LV
+LCL:
+    VERSIJA: "0.3.0"
+
+SPECIFIKĀCIJA:
+    ID: fixture.task
+    NOSAUKUMS: "Double one integer"
+    VERSIJA: "1.0.0"
+    VEIDS: kind.part.task
+
+IEVADE:
+    ID: input.value
+    TIPS: VESELS
+    VĒRTĪBA: 4
+
+IZVADE:
+    ID: output.value
+    TIPS: VESELS
+    FORMĀTS: format.plain_text
+
+MĒRĶIS:
+    ID: goal.double
+    APGALVOT: ATS(output.value) == 8
+
+DARBĪBA:
+    ID: action.calculate
+    OPERĀCIJA: core.calculate
+    ADRESĀTS: ATS(input.value)
+    PARAMETRS:
+        NOSAUKUMS: expression
+        TIPS: VIRKNE
+        OBLIGĀTS: PATIESS
+        VĒRTĪBA: "REF(input.value) * 2"
+    IZVADE: ATS(output.value)
+
+PĀRBAUDĪT:
+    ID: verify.value
+    APGALVOT: ATS(output.value) == 8
+
+PANĀKUMS:
+    ID: success.double
+    VISI: [ATS(verify.value)]
+
+UZDEVUMS:
+    ID: task.double
+    MĒRĶIS: ATS(goal.double)
+    IEVADE: ATS(input.value)
+    DARBĪBA: ATS(action.calculate)
+    IZVADE: ATS(output.value)
+    PANĀKUMS: ATS(success.double)

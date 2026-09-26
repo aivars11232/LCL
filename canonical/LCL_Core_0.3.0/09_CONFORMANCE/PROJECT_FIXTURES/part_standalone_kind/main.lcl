@@ -1,0 +1,21 @@
+LCL:
+    VERSION: "0.3.0"
+
+SPECIFICATION:
+    ID: fixture.project
+    NAME: "Standalone kind as part"
+    VERSION: "1.0.0"
+    KIND: kind.project
+
+PART:
+    ID: part.lib
+    SOURCE: PATH("library.lcl")
+    KIND: kind.part.rules
+
+PART:
+    ID: part.task
+    SOURCE: PATH("task.lcl")
+    KIND: kind.part.task
+
+EXECUTE:
+    REFERENCE: REF(task.double)

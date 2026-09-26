@@ -1,0 +1,18 @@
+LCL Core 0.3.0 Bare Language Specification Candidate
+Formal version: 0.3.0
+Language-definition status: no active completion status; the independent review
+of the Core 0.3.0 project additions is pending
+Package status: UNRELEASED_CANDIDATE
+Package scope: bare language specification only
+Base package: LCL Core 0.2.0 Bare-Specification-Complete Candidate
+(canonical/LCL_Core_0.2.0, identity
+061a79c92c76ed7bb05968adde24b016cae3b30666b8fb289c6ab968907e8b3f)
+Created: 2026-09-26 by the owner-approved Core 0.3 Task 01
+Integrity metadata: regenerated from the current bytes as MANIFEST.json, then
+VALIDATION_REPORT.txt, then SHA256SUMS.txt
+Release archive: none
+Out of scope: this package defines the language only. No lexer, parser,
+interpreter, compiler, runtime, semantic execution engine, UI, IDE, provider
+integration, locale detection or translation provider, project manager, agent
+framework, or deployment tooling is included, and no such absence is a release
+blocker.

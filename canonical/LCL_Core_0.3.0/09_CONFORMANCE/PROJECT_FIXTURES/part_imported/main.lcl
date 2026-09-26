@@ -1,0 +1,22 @@
+LCL:
+    VERSION: "0.3.0"
+
+SPECIFICATION:
+    ID: fixture.project
+    NAME: "Part imported"
+    VERSION: "1.0.0"
+    KIND: kind.project
+
+PART:
+    ID: part.task
+    SOURCE: PATH("task.lcl")
+    KIND: kind.part.task
+
+IMPORT:
+    ID: import.rules
+    SOURCE: PATH("rules.lcl")
+    NAMESPACE: shared
+    VERSION: "1.0.0"
+
+EXECUTE:
+    REFERENCE: REF(task.double)

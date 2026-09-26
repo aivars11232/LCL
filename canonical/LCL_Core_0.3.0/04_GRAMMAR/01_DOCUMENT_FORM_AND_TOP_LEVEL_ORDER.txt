@@ -1,0 +1,17 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Document Form and Top-level Order
+LANGUAGE VERSION: 0.3.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+First non-blank block: LCL with exact VERSION. Second: SPECIFICATION. IMPORT,
+EXTENSION and PART are resolved before other declarations. Remaining top-level block
+order does not change meaning except where a contract explicitly uses source
+order: lexical STEP order, ordered execution-child fields, FAILURE selection,
+handler candidate ordering, and explicit BEFORE/AFTER constraints. kind.task, kind.test and kind.project require exactly one EXECUTE.
+Other kinds forbid EXECUTE. A project is one specification over its entry and
+parts; where a contract uses source order across source units, a project uses
+project source order under 05_SEMANTICS/13_PROJECTS_PARTS_AND_PROJECT_ADMISSION.txt.
+
+Top-level block legality by KIND is closed in the block-schema registry.

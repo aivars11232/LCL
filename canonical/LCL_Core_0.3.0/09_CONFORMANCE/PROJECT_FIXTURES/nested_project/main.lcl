@@ -1,0 +1,21 @@
+LCL:
+    VERSION: "0.3.0"
+
+SPECIFICATION:
+    ID: fixture.project
+    NAME: "Nested project"
+    VERSION: "1.0.0"
+    KIND: kind.project
+
+PART:
+    ID: part.inner
+    SOURCE: PATH("inner.lcl")
+    KIND: kind.part.task
+
+PART:
+    ID: part.task
+    SOURCE: PATH("task.lcl")
+    KIND: kind.part.task
+
+EXECUTE:
+    REFERENCE: REF(task.double)

@@ -1,0 +1,19 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Import, Extension, and Reference Form
+LANGUAGE VERSION: 0.3.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+IMPORT/EXTENSION require ID, SOURCE, NAMESPACE, and exact VERSION. URI sources
+also require CHECKSUM. Imported declarations resolve as namespace.local_id.
+Unqualified REF resolves local namespace only. Wildcard imports and implicit
+namespace merging are invalid. Cycles are invalid.
+
+PART requires ID, SOURCE and KIND and is legal only in a kind.project entry.
+SOURCE is one PATH with one relative STRING, resolved from the project entry;
+KIND is one project part kind; REQUIRED is optional and defaults to TRUE. A
+PART is not an import and declares no namespace: the entry and its parts share
+one project namespace, and an unqualified REF resolves in it. A project's
+IMPORT and EXTENSION namespaces are owned in the whole project namespace. The
+complete contract is 10_REGISTRIES/block_schemas_v0.3.0.json#/project_contract.

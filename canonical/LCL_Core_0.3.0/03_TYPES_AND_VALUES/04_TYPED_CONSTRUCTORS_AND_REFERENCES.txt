@@ -1,0 +1,124 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Typed Constructors and References
+LANGUAGE VERSION: 0.3.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+    REF(identifier)
+    PATH("/absolute/path")
+    PATH(REF(workspace.id), "relative/path")
+    URI("https://example.invalid/resource")
+    GLOB("src/**/*.py")
+    REGEX("^[a-z]+$")
+    REGEX("^[a-z]+$", "ims")
+    DATE("2026-08-30")
+    TIME("14:30:00")
+    TIME("14:30:00+02:00")
+    DATETIME("2026-08-30T14:30:00")
+    DATETIME("2026-08-30T14:30:00+02:00")
+    DURATION(5, unit.second)
+    PERCENTAGE(90)
+    BYTES(1024)
+    MEASURE(1920, unit.pixel)
+
+The constructor registry defines the exact accepted overloads; calls are never
+variadic. Arguments are positional only and named arguments are invalid syntax.
+PATH accepts one STRING, or one WORKSPACE reference followed by one
+relative STRING. A one-STRING relative PATH is legal only as IMPORT.SOURCE or
+EXTENSION.SOURCE, where it resolves from the importing document, or as
+PART.SOURCE, where it resolves from the project entry; otherwise that form
+requires an absolute path. The WORKSPACE form must resolve to the workspace root
+or one of its descendants. Containment is checked on the resolved target, not by
+textual prefix, so parent traversal, links, or equivalent indirection cannot
+escape the root. Escape produces error.value.out_of_range.
+
+URI accepts one STRING matching the RFC 3986 absolute-URI profile with a scheme;
+a relative URI reference is invalid. Temporal constructors use the exact
+temporal_literal_contract below, a closed narrowing of the named RFC forms.
+DATE is RFC 3339 full-date. TIME is RFC 3339
+partial-time and DATETIME is RFC 3339 full-date, "T", and partial-time. TIME and
+DATETIME accept an optional offset; omission means UTC.
+
+REGEX accepts either a pattern STRING or a pattern STRING and canonical flags
+STRING as defined by the closed REGEX profile. DURATION accepts a non-negative
+number and a registered Time-category unit. PERCENTAGE accepts a number from 0
+through 100 inclusive. BYTES accepts a non-negative INTEGER. MEASURE accepts a
+number and any registered unit, including a Time-category unit, unless a more
+specific normative field or operation contract narrows it.
+
+REF accepts an identifier, not a quoted string, and resolves exactly once.
+Its complete contextual contract is
+10_REGISTRIES/types_v0.3.0.json#/reference_context_contract.
+
+An explicit reference field, reference-typed value, source type/schema, or
+operation target/argument explicitly naming a REFERENCE alternative or an
+addressable-identity metatype retains the resolved identity. A broad
+meta.material_value slot alone does not select identity mode; it reads a
+value-bearing REF once. An explicit identity alternative takes precedence if
+that receiving slot also admits material values. The context applies to a direct
+REF, parentheses around
+it, or members of a reference-typed collection; it does not change the operand
+rules inside another function, operator, property access, or index access.
+
+Every other occurrence is a value context. REF reads exactly one bound value
+of INPUT, DATA, CONTEXT, MEMORY, STATE, OUTPUT, DEFINE kind.constant, or a
+loop-local binding. REF to VALIDATE or VERIFY reads its Boolean check result.
+Other declarations remain reference identities. A stored REFERENCE remains a
+reference value after that one read; there is no recursive dereference. Thus
+REF(input.number) + 1 reads the number, whereas a REFERENCE-typed VALUE:
+REF(input.number) stores its declaration identity. Equality between two stored
+reference values compares their referent identities.
+
+A reserved uppercase property immediately following REF, allowing parentheses
+around REF, reads the declaration's registered field before reading its bound
+value. REF(output.copy).TARGET therefore reads the declared TARGET even before
+OUTPUT has a result. A lowercase property instead reads the evaluated OBJECT
+value: REF(output.image).width selects the result's width property. An absent
+optional declared field yields MISSING. An unregistered declared field or a
+property on an incompatible value family uses error.operator.operand. Repeated
+declaration fields yield their values as a LIST in source occurrence order;
+block-valued fields yield references to the blocks, never inferred objects.
+
+Reading an absent or not-yet-bound value yields MISSING. Reading an existing
+binding whose value cannot be determined yields UNKNOWN. REQUIRED, DEFAULT,
+and dependency-order rules then apply. A read does not invoke an operation,
+start a producer, reorder execution, or rerun a VALIDATE/VERIFY check.
+
+EXACT TEMPORAL PROFILE
+
+Authority: 10_REGISTRIES/types_v0.3.0.json#/temporal_literal_contract
+
+DATE
+Exactly YYYY-MM-DD with year 0001..9999, month 01..12, and a valid day in the
+proleptic Gregorian calendar. Leap years are divisible by 4 except centuries
+not divisible by 400.
+
+TIME
+Exactly HH:MM:SS with optional . followed by one or more decimal digits, then
+optional Z or signed HH:MM offset. Hours 00..23, minutes 00..59, seconds
+00..59; leap-second 60 is excluded. Offset hours 00..23 and minutes 00..59.
+Only uppercase T and Z are accepted. -00:00 is excluded because it denotes an
+unknown offset; +00:00 and Z denote UTC. Omitted offset is UTC.
+
+DATETIME
+Exactly DATE spelling, uppercase T, and TIME spelling under this profile.
+
+NORMALIZATION
+Fractions are exact rational seconds; trailing fractional zeros do not change
+value. TIME key is local seconds since nominal midnight minus signed offset
+seconds, without modulo-24-hour wrapping or a real calendar date. DATETIME key
+is exact Gregorian day count relative to 0001-01-01 times 86400 plus that TIME
+key. All days have exactly 86400 seconds; normalized comparison keys may cross
+the representable source-date endpoints.
+
+ERROR
+error.literal.invalid
+
+OUTPUT INSTANCE READS
+
+OUTPUT value reads obey
+built_in_groups_and_results_v0.3.0.json#/result_contract/output_projection: one
+producer source per declaration, instance-local loop scope, attempt-local retry
+binding and ordered publication. A value read never activates a producer; an
+unavailable binding yields MISSING.

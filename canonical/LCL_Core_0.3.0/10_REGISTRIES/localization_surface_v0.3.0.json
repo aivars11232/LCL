@@ -1,0 +1,1261 @@
+{
+  "language": "LCL",
+  "version": "0.3.0",
+  "closed": true,
+  "purpose": "Machine-readable classification of every human-facing lexical construct of LCL 0.3.0 for source localization. Localization changes only the source spelling of localized_lexeme entries; every other construct is canonical or user data.",
+  "classification_values": {
+    "localized_lexeme": "A registered reserved word. A validated locale profile may map source spellings to this canonical word; the canonical token identity crossing into grammar is always the reserved word itself.",
+    "localized_preferred_display_only": "A registered canonical identifier. Source always spells it canonically; a profile may supply a display label for tools, which is never accepted as source and never alters identity, diagnostics, or evidence.",
+    "canonical_invariant": "A structural or registry construct with exactly one spelling in every locale.",
+    "user_data_never_translate": "Author-supplied data or names. Never mapped, translated, normalized, or rewritten by localization."
+  },
+  "rule": "Every reserved word, adopted or excluded symbol, structural source class, registered qualified identifier domain, registry metadata vocabulary, and user-data token class is classified exactly once. A construct added to a later registry without a classification here is invalid. A locale profile may map spellings only to localized_lexeme entries.",
+  "counts": {
+    "reserved_words": 142,
+    "localized_lexeme": 142,
+    "adopted_symbols": 21,
+    "excluded_exact_lexemes": 23,
+    "structural_source_classes": 5,
+    "qualified_identifier_domains": 12,
+    "registry_metadata_vocabularies": 13,
+    "user_data_token_classes": 8
+  },
+  "reserved_words": {
+    "ABS": {
+      "classification": "localized_lexeme",
+      "registry_category": "function",
+      "source": "keywords_v0.3.0.json#/keywords/ABS"
+    },
+    "ACTION": {
+      "classification": "localized_lexeme",
+      "registry_category": "block/field",
+      "source": "keywords_v0.3.0.json#/keywords/ACTION"
+    },
+    "ACTUAL": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/ACTUAL"
+    },
+    "AFTER": {
+      "classification": "localized_lexeme",
+      "registry_category": "field/operator",
+      "source": "keywords_v0.3.0.json#/keywords/AFTER"
+    },
+    "ALL": {
+      "classification": "localized_lexeme",
+      "registry_category": "field/function",
+      "source": "keywords_v0.3.0.json#/keywords/ALL"
+    },
+    "ALLOW": {
+      "classification": "localized_lexeme",
+      "registry_category": "block",
+      "source": "keywords_v0.3.0.json#/keywords/ALLOW"
+    },
+    "AND": {
+      "classification": "localized_lexeme",
+      "registry_category": "operator",
+      "source": "keywords_v0.3.0.json#/keywords/AND"
+    },
+    "ANY": {
+      "classification": "localized_lexeme",
+      "registry_category": "field/function",
+      "source": "keywords_v0.3.0.json#/keywords/ANY"
+    },
+    "ASSERT": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/ASSERT"
+    },
+    "ASSUME": {
+      "classification": "localized_lexeme",
+      "registry_category": "block",
+      "source": "keywords_v0.3.0.json#/keywords/ASSUME"
+    },
+    "AUTHORITY": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/AUTHORITY"
+    },
+    "BASE": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/BASE"
+    },
+    "BEFORE": {
+      "classification": "localized_lexeme",
+      "registry_category": "field/operator",
+      "source": "keywords_v0.3.0.json#/keywords/BEFORE"
+    },
+    "BOOLEAN": {
+      "classification": "localized_lexeme",
+      "registry_category": "type",
+      "source": "keywords_v0.3.0.json#/keywords/BOOLEAN"
+    },
+    "BYTES": {
+      "classification": "localized_lexeme",
+      "registry_category": "type/constructor",
+      "source": "keywords_v0.3.0.json#/keywords/BYTES"
+    },
+    "CHECKSUM": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/CHECKSUM"
+    },
+    "COMMENT": {
+      "classification": "localized_lexeme",
+      "registry_category": "block/field",
+      "source": "keywords_v0.3.0.json#/keywords/COMMENT"
+    },
+    "CONTAINS": {
+      "classification": "localized_lexeme",
+      "registry_category": "operator",
+      "source": "keywords_v0.3.0.json#/keywords/CONTAINS"
+    },
+    "CONTENT": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/CONTENT"
+    },
+    "CONTEXT": {
+      "classification": "localized_lexeme",
+      "registry_category": "block",
+      "source": "keywords_v0.3.0.json#/keywords/CONTEXT"
+    },
+    "COUNT": {
+      "classification": "localized_lexeme",
+      "registry_category": "function",
+      "source": "keywords_v0.3.0.json#/keywords/COUNT"
+    },
+    "DATA": {
+      "classification": "localized_lexeme",
+      "registry_category": "block",
+      "source": "keywords_v0.3.0.json#/keywords/DATA"
+    },
+    "DATE": {
+      "classification": "localized_lexeme",
+      "registry_category": "type/constructor",
+      "source": "keywords_v0.3.0.json#/keywords/DATE"
+    },
+    "DATETIME": {
+      "classification": "localized_lexeme",
+      "registry_category": "type/constructor",
+      "source": "keywords_v0.3.0.json#/keywords/DATETIME"
+    },
+    "DECIMAL": {
+      "classification": "localized_lexeme",
+      "registry_category": "type",
+      "source": "keywords_v0.3.0.json#/keywords/DECIMAL"
+    },
+    "DEFAULT": {
+      "classification": "localized_lexeme",
+      "registry_category": "field/block",
+      "source": "keywords_v0.3.0.json#/keywords/DEFAULT"
+    },
+    "DEFINE": {
+      "classification": "localized_lexeme",
+      "registry_category": "block",
+      "source": "keywords_v0.3.0.json#/keywords/DEFINE"
+    },
+    "DELAY": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/DELAY"
+    },
+    "DEPENDENCY": {
+      "classification": "localized_lexeme",
+      "registry_category": "block/field",
+      "source": "keywords_v0.3.0.json#/keywords/DEPENDENCY"
+    },
+    "DESCRIPTION": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/DESCRIPTION"
+    },
+    "DETERMINISTIC": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/DETERMINISTIC"
+    },
+    "DOMAIN": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/DOMAIN"
+    },
+    "DURATION": {
+      "classification": "localized_lexeme",
+      "registry_category": "type/constructor",
+      "source": "keywords_v0.3.0.json#/keywords/DURATION"
+    },
+    "EACH": {
+      "classification": "localized_lexeme",
+      "registry_category": "control",
+      "source": "keywords_v0.3.0.json#/keywords/EACH"
+    },
+    "ELSE": {
+      "classification": "localized_lexeme",
+      "registry_category": "control",
+      "source": "keywords_v0.3.0.json#/keywords/ELSE"
+    },
+    "EMPTY": {
+      "classification": "localized_lexeme",
+      "registry_category": "function",
+      "source": "keywords_v0.3.0.json#/keywords/EMPTY"
+    },
+    "ENCODING": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/ENCODING"
+    },
+    "ENUM": {
+      "classification": "localized_lexeme",
+      "registry_category": "type",
+      "source": "keywords_v0.3.0.json#/keywords/ENUM"
+    },
+    "ERROR": {
+      "classification": "localized_lexeme",
+      "registry_category": "field/block",
+      "source": "keywords_v0.3.0.json#/keywords/ERROR"
+    },
+    "EVENT": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/EVENT"
+    },
+    "EVIDENCE": {
+      "classification": "localized_lexeme",
+      "registry_category": "block/field",
+      "source": "keywords_v0.3.0.json#/keywords/EVIDENCE"
+    },
+    "EXAMPLE": {
+      "classification": "localized_lexeme",
+      "registry_category": "block/field",
+      "source": "keywords_v0.3.0.json#/keywords/EXAMPLE"
+    },
+    "EXCLUDE": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/EXCLUDE"
+    },
+    "EXECUTE": {
+      "classification": "localized_lexeme",
+      "registry_category": "block/field",
+      "source": "keywords_v0.3.0.json#/keywords/EXECUTE"
+    },
+    "EXISTS": {
+      "classification": "localized_lexeme",
+      "registry_category": "function",
+      "source": "keywords_v0.3.0.json#/keywords/EXISTS"
+    },
+    "EXPECTED": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/EXPECTED"
+    },
+    "EXTENSION": {
+      "classification": "localized_lexeme",
+      "registry_category": "block",
+      "source": "keywords_v0.3.0.json#/keywords/EXTENSION"
+    },
+    "FAILURE": {
+      "classification": "localized_lexeme",
+      "registry_category": "block/field",
+      "source": "keywords_v0.3.0.json#/keywords/FAILURE"
+    },
+    "FALLBACK": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/FALLBACK"
+    },
+    "FALSE": {
+      "classification": "localized_lexeme",
+      "registry_category": "literal",
+      "source": "keywords_v0.3.0.json#/keywords/FALSE"
+    },
+    "FIELD": {
+      "classification": "localized_lexeme",
+      "registry_category": "block",
+      "source": "keywords_v0.3.0.json#/keywords/FIELD"
+    },
+    "FOR": {
+      "classification": "localized_lexeme",
+      "registry_category": "control",
+      "source": "keywords_v0.3.0.json#/keywords/FOR"
+    },
+    "FORBID": {
+      "classification": "localized_lexeme",
+      "registry_category": "block",
+      "source": "keywords_v0.3.0.json#/keywords/FORBID"
+    },
+    "FORMAT": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/FORMAT"
+    },
+    "GLOB": {
+      "classification": "localized_lexeme",
+      "registry_category": "type/constructor",
+      "source": "keywords_v0.3.0.json#/keywords/GLOB"
+    },
+    "GOAL": {
+      "classification": "localized_lexeme",
+      "registry_category": "block/field",
+      "source": "keywords_v0.3.0.json#/keywords/GOAL"
+    },
+    "HANDLER": {
+      "classification": "localized_lexeme",
+      "registry_category": "block/field",
+      "source": "keywords_v0.3.0.json#/keywords/HANDLER"
+    },
+    "ID": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/ID"
+    },
+    "IF": {
+      "classification": "localized_lexeme",
+      "registry_category": "control",
+      "source": "keywords_v0.3.0.json#/keywords/IF"
+    },
+    "IMPORT": {
+      "classification": "localized_lexeme",
+      "registry_category": "block",
+      "source": "keywords_v0.3.0.json#/keywords/IMPORT"
+    },
+    "IN": {
+      "classification": "localized_lexeme",
+      "registry_category": "operator/control",
+      "source": "keywords_v0.3.0.json#/keywords/IN"
+    },
+    "INCLUDE": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/INCLUDE"
+    },
+    "INPUT": {
+      "classification": "localized_lexeme",
+      "registry_category": "block/field",
+      "source": "keywords_v0.3.0.json#/keywords/INPUT"
+    },
+    "INTEGER": {
+      "classification": "localized_lexeme",
+      "registry_category": "type",
+      "source": "keywords_v0.3.0.json#/keywords/INTEGER"
+    },
+    "ITEM": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/ITEM"
+    },
+    "ITEM_TYPE": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/ITEM_TYPE"
+    },
+    "KIND": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/KIND"
+    },
+    "LCL": {
+      "classification": "localized_lexeme",
+      "registry_category": "block",
+      "source": "keywords_v0.3.0.json#/keywords/LCL"
+    },
+    "LIMIT": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/LIMIT"
+    },
+    "LIST": {
+      "classification": "localized_lexeme",
+      "registry_category": "type",
+      "source": "keywords_v0.3.0.json#/keywords/LIST"
+    },
+    "LOSER": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/LOSER"
+    },
+    "MATCHES": {
+      "classification": "localized_lexeme",
+      "registry_category": "operator",
+      "source": "keywords_v0.3.0.json#/keywords/MATCHES"
+    },
+    "MAX": {
+      "classification": "localized_lexeme",
+      "registry_category": "function",
+      "source": "keywords_v0.3.0.json#/keywords/MAX"
+    },
+    "MAXIMUM": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/MAXIMUM"
+    },
+    "MEANING": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/MEANING"
+    },
+    "MEASURE": {
+      "classification": "localized_lexeme",
+      "registry_category": "type/constructor",
+      "source": "keywords_v0.3.0.json#/keywords/MEASURE"
+    },
+    "MEMORY": {
+      "classification": "localized_lexeme",
+      "registry_category": "block",
+      "source": "keywords_v0.3.0.json#/keywords/MEMORY"
+    },
+    "MIN": {
+      "classification": "localized_lexeme",
+      "registry_category": "function",
+      "source": "keywords_v0.3.0.json#/keywords/MIN"
+    },
+    "MINIMUM": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/MINIMUM"
+    },
+    "MISSING": {
+      "classification": "localized_lexeme",
+      "registry_category": "literal",
+      "source": "keywords_v0.3.0.json#/keywords/MISSING"
+    },
+    "MODE": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/MODE"
+    },
+    "NAME": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/NAME"
+    },
+    "NAMESPACE": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/NAMESPACE"
+    },
+    "NONE": {
+      "classification": "localized_lexeme",
+      "registry_category": "field/function",
+      "source": "keywords_v0.3.0.json#/keywords/NONE"
+    },
+    "NOT": {
+      "classification": "localized_lexeme",
+      "registry_category": "operator",
+      "source": "keywords_v0.3.0.json#/keywords/NOT"
+    },
+    "NULL": {
+      "classification": "localized_lexeme",
+      "registry_category": "literal/type",
+      "source": "keywords_v0.3.0.json#/keywords/NULL"
+    },
+    "OBJECT": {
+      "classification": "localized_lexeme",
+      "registry_category": "type",
+      "source": "keywords_v0.3.0.json#/keywords/OBJECT"
+    },
+    "OPERATION": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/OPERATION"
+    },
+    "OR": {
+      "classification": "localized_lexeme",
+      "registry_category": "operator",
+      "source": "keywords_v0.3.0.json#/keywords/OR"
+    },
+    "OUTPUT": {
+      "classification": "localized_lexeme",
+      "registry_category": "block/field",
+      "source": "keywords_v0.3.0.json#/keywords/OUTPUT"
+    },
+    "OVERRIDE": {
+      "classification": "localized_lexeme",
+      "registry_category": "block",
+      "source": "keywords_v0.3.0.json#/keywords/OVERRIDE"
+    },
+    "PARAMETER": {
+      "classification": "localized_lexeme",
+      "registry_category": "block",
+      "source": "keywords_v0.3.0.json#/keywords/PARAMETER"
+    },
+    "PART": {
+      "classification": "localized_lexeme",
+      "registry_category": "block",
+      "source": "keywords_v0.3.0.json#/keywords/PART"
+    },
+    "PATH": {
+      "classification": "localized_lexeme",
+      "registry_category": "type/constructor/field",
+      "source": "keywords_v0.3.0.json#/keywords/PATH"
+    },
+    "PATTERN": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/PATTERN"
+    },
+    "PERCENTAGE": {
+      "classification": "localized_lexeme",
+      "registry_category": "type/constructor",
+      "source": "keywords_v0.3.0.json#/keywords/PERCENTAGE"
+    },
+    "PHASE": {
+      "classification": "localized_lexeme",
+      "registry_category": "block/field",
+      "source": "keywords_v0.3.0.json#/keywords/PHASE"
+    },
+    "PREFER": {
+      "classification": "localized_lexeme",
+      "registry_category": "block",
+      "source": "keywords_v0.3.0.json#/keywords/PREFER"
+    },
+    "PRESERVE": {
+      "classification": "localized_lexeme",
+      "registry_category": "block",
+      "source": "keywords_v0.3.0.json#/keywords/PRESERVE"
+    },
+    "PRIORITY": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/PRIORITY"
+    },
+    "PROPERTY": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/PROPERTY"
+    },
+    "PROVENANCE": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/PROVENANCE"
+    },
+    "REF": {
+      "classification": "localized_lexeme",
+      "registry_category": "constructor",
+      "source": "keywords_v0.3.0.json#/keywords/REF"
+    },
+    "REFERENCE": {
+      "classification": "localized_lexeme",
+      "registry_category": "field/type",
+      "source": "keywords_v0.3.0.json#/keywords/REFERENCE"
+    },
+    "REGEX": {
+      "classification": "localized_lexeme",
+      "registry_category": "type/constructor",
+      "source": "keywords_v0.3.0.json#/keywords/REGEX"
+    },
+    "REQUIRE": {
+      "classification": "localized_lexeme",
+      "registry_category": "block",
+      "source": "keywords_v0.3.0.json#/keywords/REQUIRE"
+    },
+    "REQUIRED": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/REQUIRED"
+    },
+    "RESULT": {
+      "classification": "localized_lexeme",
+      "registry_category": "field/block",
+      "source": "keywords_v0.3.0.json#/keywords/RESULT"
+    },
+    "RETRY": {
+      "classification": "localized_lexeme",
+      "registry_category": "block",
+      "source": "keywords_v0.3.0.json#/keywords/RETRY"
+    },
+    "ROUND": {
+      "classification": "localized_lexeme",
+      "registry_category": "function",
+      "source": "keywords_v0.3.0.json#/keywords/ROUND"
+    },
+    "SCHEMA": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/SCHEMA"
+    },
+    "SCOPE": {
+      "classification": "localized_lexeme",
+      "registry_category": "block/field",
+      "source": "keywords_v0.3.0.json#/keywords/SCOPE"
+    },
+    "SEQUENCE": {
+      "classification": "localized_lexeme",
+      "registry_category": "block/field",
+      "source": "keywords_v0.3.0.json#/keywords/SEQUENCE"
+    },
+    "SET": {
+      "classification": "localized_lexeme",
+      "registry_category": "type",
+      "source": "keywords_v0.3.0.json#/keywords/SET"
+    },
+    "SIDE_EFFECT": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/SIDE_EFFECT"
+    },
+    "SOURCE": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/SOURCE"
+    },
+    "SPECIFICATION": {
+      "classification": "localized_lexeme",
+      "registry_category": "block",
+      "source": "keywords_v0.3.0.json#/keywords/SPECIFICATION"
+    },
+    "STATE": {
+      "classification": "localized_lexeme",
+      "registry_category": "block",
+      "source": "keywords_v0.3.0.json#/keywords/STATE"
+    },
+    "STATUS": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/STATUS"
+    },
+    "STEP": {
+      "classification": "localized_lexeme",
+      "registry_category": "block",
+      "source": "keywords_v0.3.0.json#/keywords/STEP"
+    },
+    "STRING": {
+      "classification": "localized_lexeme",
+      "registry_category": "type",
+      "source": "keywords_v0.3.0.json#/keywords/STRING"
+    },
+    "SUCCESS": {
+      "classification": "localized_lexeme",
+      "registry_category": "block/field",
+      "source": "keywords_v0.3.0.json#/keywords/SUCCESS"
+    },
+    "SUM": {
+      "classification": "localized_lexeme",
+      "registry_category": "function",
+      "source": "keywords_v0.3.0.json#/keywords/SUM"
+    },
+    "TARGET": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/TARGET"
+    },
+    "TASK": {
+      "classification": "localized_lexeme",
+      "registry_category": "block/field",
+      "source": "keywords_v0.3.0.json#/keywords/TASK"
+    },
+    "TERM": {
+      "classification": "localized_lexeme",
+      "registry_category": "kind",
+      "source": "keywords_v0.3.0.json#/keywords/TERM"
+    },
+    "TEST": {
+      "classification": "localized_lexeme",
+      "registry_category": "block/field",
+      "source": "keywords_v0.3.0.json#/keywords/TEST"
+    },
+    "THEN": {
+      "classification": "localized_lexeme",
+      "registry_category": "control",
+      "source": "keywords_v0.3.0.json#/keywords/THEN"
+    },
+    "TIME": {
+      "classification": "localized_lexeme",
+      "registry_category": "type/constructor",
+      "source": "keywords_v0.3.0.json#/keywords/TIME"
+    },
+    "TOLERANCE": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/TOLERANCE"
+    },
+    "TRUE": {
+      "classification": "localized_lexeme",
+      "registry_category": "literal",
+      "source": "keywords_v0.3.0.json#/keywords/TRUE"
+    },
+    "TYPE": {
+      "classification": "localized_lexeme",
+      "registry_category": "field/kind",
+      "source": "keywords_v0.3.0.json#/keywords/TYPE"
+    },
+    "UNIT": {
+      "classification": "localized_lexeme",
+      "registry_category": "field/type",
+      "source": "keywords_v0.3.0.json#/keywords/UNIT"
+    },
+    "UNKNOWN": {
+      "classification": "localized_lexeme",
+      "registry_category": "literal",
+      "source": "keywords_v0.3.0.json#/keywords/UNKNOWN"
+    },
+    "URI": {
+      "classification": "localized_lexeme",
+      "registry_category": "type/constructor",
+      "source": "keywords_v0.3.0.json#/keywords/URI"
+    },
+    "VALIDATE": {
+      "classification": "localized_lexeme",
+      "registry_category": "block/field",
+      "source": "keywords_v0.3.0.json#/keywords/VALIDATE"
+    },
+    "VALUE": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/VALUE"
+    },
+    "VERIFY": {
+      "classification": "localized_lexeme",
+      "registry_category": "block/field",
+      "source": "keywords_v0.3.0.json#/keywords/VERIFY"
+    },
+    "VERSION": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/VERSION"
+    },
+    "WHEN": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/WHEN"
+    },
+    "WINNER": {
+      "classification": "localized_lexeme",
+      "registry_category": "field",
+      "source": "keywords_v0.3.0.json#/keywords/WINNER"
+    },
+    "WORKSPACE": {
+      "classification": "localized_lexeme",
+      "registry_category": "block/field",
+      "source": "keywords_v0.3.0.json#/keywords/WORKSPACE"
+    }
+  },
+  "word_form_cross_checks": {
+    "operators": {
+      "!=": {
+        "lexical_form": "symbol_or_structure",
+        "classification": "canonical_invariant"
+      },
+      "*": {
+        "lexical_form": "symbol_or_structure",
+        "classification": "canonical_invariant"
+      },
+      "+": {
+        "lexical_form": "symbol_or_structure",
+        "classification": "canonical_invariant"
+      },
+      "-": {
+        "lexical_form": "symbol_or_structure",
+        "classification": "canonical_invariant"
+      },
+      "/": {
+        "lexical_form": "symbol_or_structure",
+        "classification": "canonical_invariant"
+      },
+      "<": {
+        "lexical_form": "symbol_or_structure",
+        "classification": "canonical_invariant"
+      },
+      "<=": {
+        "lexical_form": "symbol_or_structure",
+        "classification": "canonical_invariant"
+      },
+      "==": {
+        "lexical_form": "symbol_or_structure",
+        "classification": "canonical_invariant"
+      },
+      ">": {
+        "lexical_form": "symbol_or_structure",
+        "classification": "canonical_invariant"
+      },
+      ">=": {
+        "lexical_form": "symbol_or_structure",
+        "classification": "canonical_invariant"
+      },
+      "AND": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "AND"
+      },
+      "CONTAINS": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "CONTAINS"
+      },
+      "IN": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "IN"
+      },
+      "MATCHES": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "MATCHES"
+      },
+      "NOT": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "NOT"
+      },
+      "OR": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "OR"
+      },
+      "index access": {
+        "lexical_form": "symbol_or_structure",
+        "classification": "canonical_invariant"
+      },
+      "property access": {
+        "lexical_form": "symbol_or_structure",
+        "classification": "canonical_invariant"
+      },
+      "unary -": {
+        "lexical_form": "symbol_or_structure",
+        "classification": "canonical_invariant"
+      }
+    },
+    "functions": {
+      "ABS": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "ABS"
+      },
+      "ALL": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "ALL"
+      },
+      "ANY": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "ANY"
+      },
+      "COUNT": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "COUNT"
+      },
+      "EMPTY": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "EMPTY"
+      },
+      "EXISTS": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "EXISTS"
+      },
+      "MAX": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "MAX"
+      },
+      "MIN": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "MIN"
+      },
+      "NONE": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "NONE"
+      },
+      "ROUND": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "ROUND"
+      },
+      "SUM": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "SUM"
+      }
+    },
+    "constructors": {
+      "BYTES": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "BYTES"
+      },
+      "DATE": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "DATE"
+      },
+      "DATETIME": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "DATETIME"
+      },
+      "DURATION": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "DURATION"
+      },
+      "GLOB": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "GLOB"
+      },
+      "MEASURE": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "MEASURE"
+      },
+      "PATH": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "PATH"
+      },
+      "PERCENTAGE": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "PERCENTAGE"
+      },
+      "REGEX": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "REGEX"
+      },
+      "TIME": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "TIME"
+      },
+      "URI": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "URI"
+      }
+    },
+    "types": {
+      "BOOLEAN": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "BOOLEAN"
+      },
+      "BYTES": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "BYTES"
+      },
+      "DATE": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "DATE"
+      },
+      "DATETIME": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "DATETIME"
+      },
+      "DECIMAL": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "DECIMAL"
+      },
+      "DURATION": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "DURATION"
+      },
+      "ENUM": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "ENUM"
+      },
+      "GLOB": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "GLOB"
+      },
+      "INTEGER": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "INTEGER"
+      },
+      "LIST[T]": {
+        "lexical_form": "reserved_word_with_symbols",
+        "classification": "localized_lexeme",
+        "reserved_word": "LIST",
+        "symbols": "canonical_invariant"
+      },
+      "MEASURE": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "MEASURE"
+      },
+      "NULL": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "NULL"
+      },
+      "OBJECT": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "OBJECT"
+      },
+      "PATH": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "PATH"
+      },
+      "PERCENTAGE": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "PERCENTAGE"
+      },
+      "REFERENCE[T]": {
+        "lexical_form": "reserved_word_with_symbols",
+        "classification": "localized_lexeme",
+        "reserved_word": "REFERENCE",
+        "symbols": "canonical_invariant"
+      },
+      "REGEX": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "REGEX"
+      },
+      "SET[T]": {
+        "lexical_form": "reserved_word_with_symbols",
+        "classification": "localized_lexeme",
+        "reserved_word": "SET",
+        "symbols": "canonical_invariant"
+      },
+      "STRING": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "STRING"
+      },
+      "TIME": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "TIME"
+      },
+      "URI": {
+        "lexical_form": "reserved_word",
+        "classification": "localized_lexeme",
+        "reserved_word": "URI"
+      }
+    }
+  },
+  "symbols": {
+    "adopted": {
+      ":": "canonical_invariant",
+      "\"": "canonical_invariant",
+      "\"\"\"": "canonical_invariant",
+      "\\": "canonical_invariant",
+      "(": "canonical_invariant",
+      ")": "canonical_invariant",
+      "[": "canonical_invariant",
+      "]": "canonical_invariant",
+      ",": "canonical_invariant",
+      ".": "canonical_invariant",
+      "_": "canonical_invariant",
+      "+": "canonical_invariant",
+      "-": "canonical_invariant",
+      "*": "canonical_invariant",
+      "/": "canonical_invariant",
+      "==": "canonical_invariant",
+      "!=": "canonical_invariant",
+      "<": "canonical_invariant",
+      "<=": "canonical_invariant",
+      ">": "canonical_invariant",
+      ">=": "canonical_invariant"
+    },
+    "excluded_exact_lexemes": {
+      "=": "canonical_invariant",
+      "{": "canonical_invariant",
+      "}": "canonical_invariant",
+      ";": "canonical_invariant",
+      "'": "canonical_invariant",
+      "#": "canonical_invariant",
+      "&": "canonical_invariant",
+      "&&": "canonical_invariant",
+      "|": "canonical_invariant",
+      "||": "canonical_invariant",
+      "!": "canonical_invariant",
+      "$": "canonical_invariant",
+      "%": "canonical_invariant",
+      "~": "canonical_invariant",
+      "^": "canonical_invariant",
+      "->": "canonical_invariant",
+      "?": "canonical_invariant",
+      "...": "canonical_invariant",
+      "`": "canonical_invariant",
+      "```": "canonical_invariant",
+      "//": "canonical_invariant",
+      "/*": "canonical_invariant",
+      "*/": "canonical_invariant"
+    }
+  },
+  "structural_source_classes": {
+    "SPACE": "canonical_invariant",
+    "LINE_FEED": "canonical_invariant",
+    "BLANK_LINE": "canonical_invariant",
+    "INDENTATION": "canonical_invariant",
+    "LOCALE_DIRECTIVE": "canonical_invariant"
+  },
+  "qualified_identifier_domains": {
+    "definition_kinds": {
+      "classification": "localized_preferred_display_only",
+      "source": "built_in_groups_and_results_v0.3.0.json#/enum_groups/definition_kinds",
+      "member_count": 8
+    },
+    "document_kinds": {
+      "classification": "localized_preferred_display_only",
+      "source": "built_in_groups_and_results_v0.3.0.json#/enum_groups/document_kinds",
+      "member_count": 14
+    },
+    "encodings": {
+      "classification": "localized_preferred_display_only",
+      "source": "formats_encodings_units_v0.3.0.json#/encodings",
+      "member_count": 3
+    },
+    "errors": {
+      "classification": "localized_preferred_display_only",
+      "source": "built_in_groups_and_results_v0.3.0.json#/enum_groups/errors",
+      "member_count": 90
+    },
+    "events": {
+      "classification": "localized_preferred_display_only",
+      "source": "built_in_groups_and_results_v0.3.0.json#/enum_groups/events",
+      "member_count": 5
+    },
+    "formats": {
+      "classification": "localized_preferred_display_only",
+      "source": "formats_encodings_units_v0.3.0.json#/formats",
+      "member_count": 14
+    },
+    "modes": {
+      "classification": "localized_preferred_display_only",
+      "source": "built_in_groups_and_results_v0.3.0.json#/enum_groups/modes",
+      "member_count": 5
+    },
+    "project_part_kinds": {
+      "classification": "localized_preferred_display_only",
+      "source": "built_in_groups_and_results_v0.3.0.json#/enum_groups/project_part_kinds",
+      "member_count": 8
+    },
+    "statuses": {
+      "classification": "localized_preferred_display_only",
+      "source": "built_in_groups_and_results_v0.3.0.json#/enum_groups/statuses",
+      "member_count": 12
+    },
+    "units": {
+      "classification": "localized_preferred_display_only",
+      "source": "formats_encodings_units_v0.3.0.json#/units",
+      "member_count": 26
+    },
+    "core_operation_ids": {
+      "classification": "localized_preferred_display_only",
+      "source": "operations_v0.3.0.json#/contracts",
+      "member_count": 39
+    },
+    "semantic_meta_types": {
+      "classification": "canonical_invariant",
+      "source": "semantic_meta_types_v0.3.0.json#/meta_types",
+      "member_count": 8
+    }
+  },
+  "registry_metadata_vocabularies": {
+    "authority_classes": {
+      "classification": "canonical_invariant",
+      "source": "built_in_groups_and_results_v0.3.0.json#/enum_groups/authority_classes",
+      "member_count": 5,
+      "note": "registry metadata vocabulary; never a source word"
+    },
+    "cardinalities": {
+      "classification": "canonical_invariant",
+      "source": "built_in_groups_and_results_v0.3.0.json#/enum_groups/cardinalities",
+      "member_count": 5,
+      "note": "registry metadata vocabulary; never a source word"
+    },
+    "conformance_classes": {
+      "classification": "canonical_invariant",
+      "source": "built_in_groups_and_results_v0.3.0.json#/enum_groups/conformance_classes",
+      "member_count": 4,
+      "note": "registry metadata vocabulary; never a source word"
+    },
+    "dependency_classes": {
+      "classification": "canonical_invariant",
+      "source": "built_in_groups_and_results_v0.3.0.json#/enum_groups/dependency_classes",
+      "member_count": 5,
+      "note": "registry metadata vocabulary; never a source word"
+    },
+    "determinism_values": {
+      "classification": "canonical_invariant",
+      "source": "built_in_groups_and_results_v0.3.0.json#/enum_groups/determinism_values",
+      "member_count": 4,
+      "note": "registry metadata vocabulary; never a source word"
+    },
+    "effect_classes": {
+      "classification": "canonical_invariant",
+      "source": "built_in_groups_and_results_v0.3.0.json#/enum_groups/effect_classes",
+      "member_count": 8,
+      "note": "registry metadata vocabulary; never a source word"
+    },
+    "evidence_kinds": {
+      "classification": "canonical_invariant",
+      "source": "built_in_groups_and_results_v0.3.0.json#/enum_groups/evidence_kinds",
+      "member_count": 6,
+      "note": "registry metadata vocabulary; never a source word"
+    },
+    "failure_dispositions": {
+      "classification": "canonical_invariant",
+      "source": "built_in_groups_and_results_v0.3.0.json#/enum_groups/failure_dispositions",
+      "member_count": 6,
+      "note": "registry metadata vocabulary; never a source word"
+    },
+    "lifecycle_stages": {
+      "classification": "canonical_invariant",
+      "source": "built_in_groups_and_results_v0.3.0.json#/enum_groups/lifecycle_stages",
+      "member_count": 8,
+      "note": "registry metadata vocabulary; never a source word"
+    },
+    "operation_axis_markers": {
+      "classification": "canonical_invariant",
+      "source": "built_in_groups_and_results_v0.3.0.json#/enum_groups/operation_axis_markers",
+      "member_count": 1,
+      "note": "registry metadata vocabulary; never a source word"
+    },
+    "operation_categories": {
+      "classification": "canonical_invariant",
+      "source": "built_in_groups_and_results_v0.3.0.json#/enum_groups/operation_categories",
+      "member_count": 4,
+      "note": "registry metadata vocabulary; never a source word"
+    },
+    "source_kinds": {
+      "classification": "canonical_invariant",
+      "source": "built_in_groups_and_results_v0.3.0.json#/enum_groups/source_kinds",
+      "member_count": 4,
+      "note": "registry metadata vocabulary; never a source word"
+    },
+    "target_kinds": {
+      "classification": "canonical_invariant",
+      "source": "built_in_groups_and_results_v0.3.0.json#/enum_groups/target_kinds",
+      "member_count": 6,
+      "note": "registry metadata vocabulary; never a source word"
+    }
+  },
+  "user_data_token_classes": {
+    "SIMPLE_IDENTIFIER": "user_data_never_translate",
+    "QUALIFIED_IDENTIFIER_USER_DECLARED": "user_data_never_translate",
+    "STRING": "user_data_never_translate",
+    "MULTILINE_STRING": "user_data_never_translate",
+    "INTEGER_LITERAL": "user_data_never_translate",
+    "DECIMAL_LITERAL": "user_data_never_translate",
+    "CONSTRUCTOR_ARGUMENT_CONTENT": "user_data_never_translate",
+    "COMMENT_DESCRIPTION_EXAMPLE_NAME_MEANING_CONTENT": "user_data_never_translate"
+  },
+  "prose_guidance_registries": {
+    "ambiguous_replacements_v0.3.0.json": {
+      "classification": "user_data_never_translate",
+      "entry_count": 16,
+      "note": "Its phrases describe author prose, which occurs only inside STRING or MULTILINE_STRING content. It registers no source lexeme."
+    }
+  }
+}

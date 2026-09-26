@@ -1,0 +1,453 @@
+{
+  "valid_minimal": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "accept",
+      "parts": [
+        [
+          "task.lcl",
+          "kind.part.task",
+          "required",
+          "loaded"
+        ]
+      ]
+    },
+    "note": "One entry and one task part holding the canonical minimal task."
+  },
+  "valid_all_roles": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "accept",
+      "parts": [
+        [
+          "description.lcl",
+          "kind.part.description",
+          "required",
+          "loaded"
+        ],
+        [
+          "definitions.lcl",
+          "kind.part.definitions",
+          "required",
+          "loaded"
+        ],
+        [
+          "data.lcl",
+          "kind.part.data",
+          "required",
+          "loaded"
+        ],
+        [
+          "context.lcl",
+          "kind.part.context",
+          "required",
+          "loaded"
+        ],
+        [
+          "rules.lcl",
+          "kind.part.rules",
+          "required",
+          "loaded"
+        ],
+        [
+          "output.lcl",
+          "kind.part.output",
+          "required",
+          "loaded"
+        ],
+        [
+          "checks.lcl",
+          "kind.part.checks",
+          "required",
+          "loaded"
+        ],
+        [
+          "task/build.lcl",
+          "kind.part.task",
+          "required",
+          "loaded"
+        ]
+      ]
+    },
+    "note": "Every part kind, with cross-file REF in both directions: build uses data, output and checks; data uses definitions; checks use output; context uses rules; rules use build; the entry executes build."
+  },
+  "valid_optional_absent": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "accept",
+      "parts": [
+        [
+          "description.lcl",
+          "kind.part.description",
+          "optional",
+          "omitted"
+        ],
+        [
+          "task.lcl",
+          "kind.part.task",
+          "required",
+          "loaded"
+        ]
+      ]
+    },
+    "note": "An optional part whose source is absent is omitted without a diagnostic."
+  },
+  "valid_optional_present": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "accept",
+      "parts": [
+        [
+          "description.lcl",
+          "kind.part.description",
+          "optional",
+          "loaded"
+        ],
+        [
+          "task.lcl",
+          "kind.part.task",
+          "required",
+          "loaded"
+        ]
+      ]
+    },
+    "note": "An obtained optional part is processed like a required part."
+  },
+  "valid_localized_part": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "accept",
+      "profiles": [
+        "lv-LV"
+      ],
+      "locales": {
+        "main.lcl": "canonical",
+        "task.lcl": "lv-LV"
+      },
+      "parts": [
+        [
+          "task.lcl",
+          "kind.part.task",
+          "required",
+          "loaded"
+        ]
+      ]
+    },
+    "note": "Each unit selects its own locale: a canonical entry and an lv-LV part in one project."
+  },
+  "missing_required_part": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "reject",
+      "diagnostics": [
+        {
+          "error": "error.project.part_missing",
+          "stage": "resolution",
+          "source": "main.lcl",
+          "offset": 182
+        }
+      ]
+    },
+    "note": "A required part whose source does not exist."
+  },
+  "part_kind_mismatch": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "reject",
+      "diagnostics": [
+        {
+          "error": "error.project.part_kind",
+          "stage": "resolution",
+          "source": "description.lcl",
+          "offset": 113
+        }
+      ]
+    },
+    "note": "The part declares a different part kind than its PART."
+  },
+  "part_standalone_kind": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "reject",
+      "diagnostics": [
+        {
+          "error": "error.project.part_kind",
+          "stage": "resolution",
+          "source": "library.lcl",
+          "offset": 117
+        }
+      ]
+    },
+    "note": "A standalone kind.library document named by PART is not a project part."
+  },
+  "role_violation": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "reject",
+      "diagnostics": [
+        {
+          "error": "error.block.context",
+          "stage": "grammar_or_schema",
+          "source": "rules.lcl",
+          "offset": 130
+        }
+      ]
+    },
+    "note": "A rules part may not declare an ACTION."
+  },
+  "unknown_part_kind": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "reject",
+      "diagnostics": [
+        {
+          "error": "error.field.type",
+          "stage": "grammar_or_schema",
+          "source": "main.lcl",
+          "offset": 204
+        }
+      ]
+    },
+    "note": "PART KIND outside the closed project_part_kinds domain."
+  },
+  "unknown_document_kind": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "reject",
+      "diagnostics": [
+        {
+          "error": "error.field.type",
+          "stage": "grammar_or_schema",
+          "source": "task.lcl",
+          "offset": 125
+        }
+      ]
+    },
+    "note": "SPECIFICATION KIND outside the closed document_kinds domain."
+  },
+  "duplicate_id_across_parts": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "reject",
+      "diagnostics": [
+        {
+          "error": "error.id.duplicate",
+          "stage": "resolution",
+          "source": "task.lcl",
+          "offset": 216
+        }
+      ]
+    },
+    "note": "output.value is declared in output.lcl and again in task.lcl, later in project order."
+  },
+  "unresolved_cross_file_reference": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "reject",
+      "diagnostics": [
+        {
+          "error": "error.reference.unresolved",
+          "stage": "resolution",
+          "source": "task.lcl",
+          "offset": 696
+        }
+      ]
+    },
+    "note": "A REF that no project unit declares."
+  },
+  "part_duplicate": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "reject",
+      "diagnostics": [
+        {
+          "error": "error.project.part_duplicate",
+          "stage": "resolution",
+          "source": "main.lcl",
+          "offset": 254
+        }
+      ]
+    },
+    "note": "Two PART declarations resolve to the same source unit."
+  },
+  "nested_project": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "reject",
+      "diagnostics": [
+        {
+          "error": "error.project.placement",
+          "stage": "resolution",
+          "source": "inner.lcl",
+          "offset": 121
+        }
+      ]
+    },
+    "note": "A kind.project document named by PART."
+  },
+  "part_as_root": {
+    "entry": "task.lcl",
+    "expected": {
+      "outcome": "reject",
+      "diagnostics": [
+        {
+          "error": "error.project.placement",
+          "stage": "resolution",
+          "source": "task.lcl",
+          "offset": 125
+        }
+      ]
+    },
+    "note": "A project part evaluated as the root."
+  },
+  "part_imported": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "reject",
+      "diagnostics": [
+        {
+          "error": "error.project.placement",
+          "stage": "resolution",
+          "source": "rules.lcl",
+          "offset": 113
+        }
+      ]
+    },
+    "note": "A project part used as an IMPORT source, while the project's own task part executes."
+  },
+  "part_lcl_version": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "reject",
+      "diagnostics": [
+        {
+          "error": "error.version.unsupported",
+          "stage": "resolution",
+          "source": "task.lcl",
+          "offset": 18
+        }
+      ]
+    },
+    "note": "A part declaring another LCL version."
+  },
+  "part_specification_version": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "reject",
+      "diagnostics": [
+        {
+          "error": "error.version.mismatch",
+          "stage": "resolution",
+          "source": "task.lcl",
+          "offset": 107
+        }
+      ]
+    },
+    "note": "A part whose SPECIFICATION VERSION differs from the entry's."
+  },
+  "entry_without_execute": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "reject",
+      "diagnostics": [
+        {
+          "error": "error.block.required",
+          "stage": "grammar_or_schema",
+          "source": "main.lcl",
+          "offset": 223
+        }
+      ]
+    },
+    "note": "kind.project requires exactly one EXECUTE; an omitted top-level block is located at end of file."
+  },
+  "part_with_execute": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "reject",
+      "diagnostics": [
+        {
+          "error": "error.block.context",
+          "stage": "grammar_or_schema",
+          "source": "task.lcl",
+          "offset": 891
+        }
+      ]
+    },
+    "note": "Only the entry declares EXECUTE."
+  },
+  "part_with_import": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "reject",
+      "diagnostics": [
+        {
+          "error": "error.block.context",
+          "stage": "grammar_or_schema",
+          "source": "rules.lcl",
+          "offset": 130
+        }
+      ]
+    },
+    "note": "Only the entry declares IMPORT and EXTENSION."
+  },
+  "import_cycle": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "reject",
+      "diagnostics": [
+        {
+          "error": "error.import.cycle",
+          "stage": "resolution",
+          "source": "lib_b.lcl",
+          "offset": 175
+        }
+      ]
+    },
+    "note": "The project's import graph closes a cycle."
+  },
+  "reference_cycle_across_parts": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "reject",
+      "diagnostics": [
+        {
+          "error": "error.reference.cycle",
+          "stage": "resolution",
+          "source": "defs_a.lcl",
+          "offset": 202
+        }
+      ]
+    },
+    "note": "Two definitions in two parts that depend on each other; the cycle is located at the BASE value of the first declaration in project source order, as for one document."
+  },
+  "invalid_utf8_part": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "reject",
+      "diagnostics": [
+        {
+          "error": "error.encoding.invalid",
+          "stage": "lexical",
+          "source": "description.lcl",
+          "offset": 162
+        }
+      ]
+    },
+    "note": "One required part that is not valid UTF-8 prevents the whole project from executing."
+  },
+  "malformed_part": {
+    "entry": "main.lcl",
+    "expected": {
+      "outcome": "reject",
+      "diagnostics": [
+        {
+          "error": "error.delimiter.unclosed",
+          "stage": "lexical",
+          "source": "task.lcl",
+          "offset": 913
+        }
+      ]
+    },
+    "note": "A required part with one malformed token (an unclosed list delimiter) prevents the whole project from executing."
+  }
+}

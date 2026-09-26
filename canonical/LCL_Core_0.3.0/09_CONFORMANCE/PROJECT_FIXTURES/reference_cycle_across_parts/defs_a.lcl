@@ -1,0 +1,13 @@
+LCL:
+    VERSION: "0.3.0"
+
+SPECIFICATION:
+    ID: fixture.defs_a
+    NAME: "Definitions A"
+    VERSION: "1.0.0"
+    KIND: kind.part.definitions
+
+DEFINE:
+    ID: type.first
+    KIND: kind.type
+    BASE: REF(type.second)

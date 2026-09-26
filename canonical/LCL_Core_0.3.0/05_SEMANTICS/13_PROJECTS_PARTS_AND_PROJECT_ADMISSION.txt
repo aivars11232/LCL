@@ -1,0 +1,215 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Projects, Parts, and Project Admission
+LANGUAGE VERSION: 0.3.0
+STATUS: NORMATIVE
+DATE: 2026-09-26
+
+
+A project is one LCL specification whose source is distributed over an
+explicitly declared, ordered set of source units: one kind.project entry and the
+parts it declares with PART. A project adds no type, value, operation, status or
+execution semantics. It decides which source units form one specification, how
+they share one namespace, and when the whole specification is admitted for
+execution.
+
+Every rule below is the exact text of the machine-readable contract, which this
+document mirrors and cannot change.
+
+PROJECT CONTRACT
+
+Authority: 10_REGISTRIES/block_schemas_v0.3.0.json#/project_contract
+
+IDENTITY
+A project exists only where explicit source declares one. A document whose LCL
+VERSION is 0.3.0 and whose SPECIFICATION KIND is kind.project is a project
+entry. No directory, file name, host manifest or tool setting makes a document a
+project entry, a project part, or a member of a project.
+
+ENTRY
+An evaluation has exactly one root source unit. When that root is a kind.project
+entry, the evaluation is a project evaluation of that entry. The entry's file
+name has no meaning; main.lcl is only a conventional name. A kind.project
+document that is not the evaluation root, including one named by a PART, IMPORT
+or EXTENSION, uses error.project.placement at its SPECIFICATION KIND value.
+
+PARTS
+The project parts are exactly the source units the entry names with PART, in
+PART source order. PART SOURCE is one PATH with one relative STRING, resolved
+from the entry's source unit exactly as a relative IMPORT SOURCE PATH resolves
+from its importing document. PART KIND is the part's role and is one member of
+project_part_kinds. The part declares SPECIFICATION KIND equal to its PART KIND;
+a part declaring any other KIND except kind.project uses error.project.part_kind
+at the part's SPECIFICATION KIND value. A document whose KIND is a project part
+kind is legal only as a part of the evaluation root's project; as the evaluation
+root, or as an IMPORT or EXTENSION source, it uses error.project.placement at
+its SPECIFICATION KIND value. Two PART declarations of one project, or a PART
+and an IMPORT or EXTENSION of that project, that resolve to the same source unit
+use error.project.part_duplicate at the later SOURCE value in project source
+order.
+
+REQUIRED AND OPTIONAL PARTS
+PART REQUIRED defaults to TRUE. A required part whose source cannot be obtained
+uses error.project.part_missing at its PART SOURCE value. A part declared
+REQUIRED FALSE whose source is absent, meaning that the host reports that no
+source exists at its resolved path, is omitted: it contributes no source unit,
+declaration or diagnostic, and the evaluation records the omission. Every other
+failure to obtain an optional part's source uses error.project.part_missing, and
+an obtained optional part is processed exactly as a required part. Omission
+never satisfies a reference: a REF that only an omitted part could resolve uses
+error.reference.unresolved.
+
+PROJECT SOURCE ORDER
+Project source order is the entry, then each part in PART source order, then
+every IMPORT and EXTENSION unit in import resolution order; within one source
+unit it is lexical order. Wherever a contract orders by source position across
+source units, including FAILURE selection, handler candidate ordering, check
+prerequisite tie-breaks and diagnostic stable_order, a project evaluation
+compares source units in project source order before byte offsets. File system
+enumeration order, file creation or modification time, file name collation,
+locale collation and host traversal order are never ordering inputs.
+
+PROJECT NAMESPACE AND CROSS-FILE REFERENCES
+The entry and its parts share one project namespace, as if their top-level
+declarations were written in one document in project source order. An
+unqualified REF in the entry or in any part resolves in that namespace, and no
+role restricts visibility. IDs, SPECIFICATION IDs included, are unique across
+the project: an ID declared in two project units uses error.id.duplicate at the
+later declaration in project source order, and no declaration replaces another.
+IMPORT and EXTENSION namespaces declared by the entry are owned in the whole
+project namespace, so no declaration of any part may occupy an import-owned
+first identifier segment. The project namespace is resolved only when it is
+complete: every required part is obtained, and every obtained unit has passed
+the localization, lexical and grammar_or_schema stages and the part, placement
+and version rules. Otherwise no REF of the project is resolved, and no
+error.id.duplicate or error.reference.unresolved is inferred from the incomplete
+namespace; the diagnostics that made it incomplete reject the project.
+
+VERSIONS
+Every project unit declares LCL VERSION 0.3.0; a part declaring another LCL
+version uses error.version.unsupported. Every part declares the entry's exact
+SPECIFICATION VERSION; a different version uses error.version.mismatch at the
+part's SPECIFICATION VERSION value. IMPORT and EXTENSION keep their exact
+version rules.
+
+AUTHORITY
+Every project unit is local specification. A declaration without AUTHORITY takes
+its own unit's SPECIFICATION AUTHORITY, and no import ceiling applies to a
+project part. Imported and extension declarations keep their import ceiling.
+
+CHECK SELECTION
+For check selection, the entry and every obtained part together are the EXECUTE
+root source document. Imported checks remain unselected unless an explicit
+reference selects them.
+
+LOCALIZATION
+Localization applies to each project unit separately under 02_LEXICAL/13: each
+unit selects its own locale, and units of one project may select different
+locales. A localization-stage error in any obtained unit rejects the project.
+
+PROJECT ADMISSION
+A project is admitted exactly when processing steps 1 through 9 complete for the
+whole project with no unhandled diagnostic: every required part is obtained,
+every obtained unit passes the localization, lexical, grammar_or_schema,
+resolution, static_or_expression and validation stages, including its kind's
+top-level block legality, and every rule of this contract holds. No effect of a
+project evaluation precedes admission. A defect in any obtained unit rejects the
+whole project; there is no partial or best-effort project execution.
+
+STANDALONE DOCUMENTS
+A document of kind.task, kind.library, kind.extension, kind.data or kind.test
+keeps its standalone meaning, and project rules apply only when the evaluation
+root is a kind.project entry. A document declaring LCL VERSION 0.1.0 or 0.2.0 is
+processed only under that version's rules.
+
+PART KINDS (ROLES)
+
+Authority: 10_REGISTRIES/block_schemas_v0.3.0.json#/document_kind_blocks and
+10_REGISTRIES/built_in_groups_and_results_v0.3.0.json#/enum_groups/project_part_kinds.
+A part kind is the part's role. It closes the part's legal top-level blocks
+exactly as any document kind does; a forbidden block uses error.block.context.
+The kind.task top-level blocks other than IMPORT, EXTENSION, EXECUTE, COMMENT
+and EXAMPLE form seven families: execution (GOAL, TASK, DEPENDENCY, ACTION,
+PHASE, SEQUENCE, HANDLER), rules, context, data, output, checks and definitions.
+kind.part.task admits every family. Each other part kind admits one family, or
+none for description, plus the non-normative COMMENT and EXAMPLE. No part kind
+admits PART, IMPORT, EXTENSION or EXECUTE; those belong to the entry.
+
+kind.project
+    Purpose: entry; structural.
+    Top-level blocks: IMPORT, EXTENSION, PART, EXECUTE, COMMENT, EXAMPLE.
+
+kind.part.task
+    Purpose: normative; executable.
+    Top-level blocks: DEFINE, WORKSPACE, DATA, CONTEXT, MEMORY, STATE, INPUT,
+    SCOPE, GOAL, TASK, DEPENDENCY, ACTION, ALLOW, FORBID, REQUIRE, PREFER,
+    PRESERVE, OVERRIDE, PHASE, SEQUENCE, HANDLER, OUTPUT, VALIDATE, VERIFY,
+    TEST, EVIDENCE, SUCCESS, FAILURE, ASSUME, COMMENT, EXAMPLE.
+
+kind.part.description
+    Purpose: descriptive; non-normative.
+    Top-level blocks: COMMENT, EXAMPLE.
+
+kind.part.rules
+    Purpose: normative; constrains execution.
+    Top-level blocks: SCOPE, ALLOW, FORBID, REQUIRE, PREFER, PRESERVE, OVERRIDE,
+    COMMENT, EXAMPLE.
+
+kind.part.context
+    Purpose: normative; supporting information.
+    Top-level blocks: WORKSPACE, CONTEXT, MEMORY, STATE, COMMENT, EXAMPLE.
+
+kind.part.data
+    Purpose: normative; supplies values.
+    Top-level blocks: DATA, INPUT, ASSUME, COMMENT, EXAMPLE.
+
+kind.part.output
+    Purpose: normative; declares results.
+    Top-level blocks: OUTPUT, COMMENT, EXAMPLE.
+
+kind.part.checks
+    Purpose: normative; verification and completion.
+    Top-level blocks: VALIDATE, VERIFY, TEST, EVIDENCE, SUCCESS, FAILURE,
+    COMMENT, EXAMPLE.
+
+kind.part.definitions
+    Purpose: normative; vocabulary and types.
+    Top-level blocks: DEFINE, COMMENT, EXAMPLE.
+
+EXAMPLE (INFORMATIVE)
+
+A project entry, conventionally main.lcl, and one of its parts. The part refers
+to scope.files, declared in rules.lcl, with a plain REF because the project
+shares one namespace.
+
+    LCL:
+        VERSION: "0.3.0"
+
+    SPECIFICATION:
+        ID: shop.project
+        NAME: "Shop build"
+        VERSION: "1.0.0"
+        KIND: kind.project
+
+    PART:
+        ID: part.rules
+        SOURCE: PATH("rules.lcl")
+        KIND: kind.part.rules
+
+    PART:
+        ID: part.build
+        SOURCE: PATH("task/build.lcl")
+        KIND: kind.part.task
+
+    PART:
+        ID: part.notes
+        SOURCE: PATH("description.lcl")
+        KIND: kind.part.description
+        REQUIRED: FALSE
+
+    EXECUTE:
+        REFERENCE: REF(task.build)
+
+task/build.lcl declares SPECIFICATION KIND kind.part.task and SPECIFICATION
+VERSION "1.0.0", and its TASK task.build may name SCOPE: REF(scope.files). If
+description.lcl is absent the project is still admitted, because that part is
+optional and nothing refers to it.

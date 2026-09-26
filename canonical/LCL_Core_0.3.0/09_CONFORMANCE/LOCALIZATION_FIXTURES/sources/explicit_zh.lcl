@@ -1,0 +1,14 @@
+@locale zh-CN
+LCL:
+    版本: "0.3.0"
+
+规范:
+    标识: fixture.localized_minimum
+    名称: "Localized minimum"
+    版本: "1.0.0"
+    种类: kind.data
+
+数据:
+    标识: data.count
+    类型: 整数
+    值: 3

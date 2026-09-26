@@ -1,0 +1,23 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Language and Specification Versioning
+LANGUAGE VERSION: 0.3.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+LCL.VERSION selects language semantics and must be exact MAJOR.MINOR.PATCH.
+SPECIFICATION.VERSION versions the document contract separately. latest,
+ranges, wildcards, omitted components, and date-only versions are invalid.
+
+Patch releases repair contradiction/clarity without intentional valid-program
+breakage. Minor releases may add backward-compatible constructs. Major releases
+may change grammar/semantics. Core 0.3.0 does not assume future compatibility.
+
+Core 0.2.0 added localized source spelling as a backward-compatible minor
+feature. Core 0.3.0 retains it and adds projects as a backward-compatible
+minor feature: the kind.project entry, the project part kinds, the PART block
+and the project contract of
+05_SEMANTICS/13_PROJECTS_PARTS_AND_PROJECT_ADMISSION.txt.
+A document declaring VERSION "0.1.0" is processed only under Core 0.1.0
+rules, and a document declaring VERSION "0.2.0" only under Core 0.2.0 rules.
+Under this package, localized spelling and projects require VERSION "0.3.0".

@@ -1,0 +1,14 @@
+LCL:
+    VERSION: "0.3.0"
+
+SPECIFICATION:
+    ID: fixture.lib_b
+    NAME: "fixture.lib_b"
+    VERSION: "1.0.0"
+    KIND: kind.library
+
+IMPORT:
+    ID: import.next
+    SOURCE: PATH("lib_a.lcl")
+    NAMESPACE: liba
+    VERSION: "1.0.0"

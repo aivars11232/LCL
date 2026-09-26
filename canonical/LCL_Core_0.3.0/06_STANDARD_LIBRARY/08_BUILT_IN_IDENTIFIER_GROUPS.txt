@@ -1,0 +1,73 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Built-in Kinds, Modes, Events, Formats, Encodings, and Units
+LANGUAGE VERSION: 0.3.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+DOCUMENT_KINDS
+
+    kind.task
+    kind.library
+    kind.extension
+    kind.data
+    kind.test
+    kind.project
+    kind.part.task
+    kind.part.description
+    kind.part.rules
+    kind.part.context
+    kind.part.data
+    kind.part.output
+    kind.part.checks
+    kind.part.definitions
+
+PROJECT_PART_KINDS
+
+    kind.part.task
+    kind.part.description
+    kind.part.rules
+    kind.part.context
+    kind.part.data
+    kind.part.output
+    kind.part.checks
+    kind.part.definitions
+
+DEFINITION_KINDS
+
+    kind.term
+    kind.constant
+    kind.type
+    kind.operation
+    kind.format
+    kind.event
+    kind.status
+    kind.error
+
+MODES
+
+    mode.read_only
+    mode.read_write
+    mode.create
+    mode.sequential
+    mode.parallel
+
+EVENTS
+
+    event.missing
+    event.unknown
+    event.dependency_failure
+    event.execution_error
+    event.host_constraint
+
+RESERVED_NAMESPACES
+
+    core
+    encoding
+    error
+    event
+    format
+    kind
+    mode
+    status
+    unit

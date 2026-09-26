@@ -1,0 +1,76 @@
+LCL CORE 0.3.0 BARE LANGUAGE SPECIFICATION
+RELEASE STATUS AND BOUNDARY
+NORMATIVE
+
+1. STATUS
+
+PACKAGE_STATUS: UNRELEASED_CANDIDATE
+
+This tree is the LCL Core 0.3.0 bare-language specification candidate
+identified by 00_CANONICAL_SOURCE_AND_PROVENANCE.txt. It adds multi-file
+projects, defined by 05_SEMANTICS/13_PROJECTS_PARTS_AND_PROJECT_ADMISSION.txt and
+10_REGISTRIES/block_schemas_v0.3.0.json#/project_contract, to the unchanged
+meaning of LCL Core 0.2.0, localized source spelling included. The
+independent_review decision in 05_LANGUAGE_CLOSURE.json is pending for these
+additions, so this package declares no active language completion status and
+does not permit the final release gate. Fresh MANIFEST.json,
+VALIDATION_REPORT.txt and SHA256SUMS.txt bind the candidate bytes for integrity
+only. A modified tree must pass fresh validation; these declarations alone are
+not proof of correctness or integrity.
+
+LCL Core 0.1.0 remains the separate released package canonical/LCL_Core_0.1.0,
+whose archive is LCL_Core_0.1.0_Bare_Language_2026-09-05.zip, and LCL Core
+0.2.0 remains the separate unreleased candidate canonical/LCL_Core_0.2.0. Their
+classifications, hashes and archive do not validate this candidate. No archive
+of this candidate exists.
+
+Parser/runtime/executable-semantic evidence is outside the bare-language scope
+and is not a release blocker. This package is not parser-verified, executed or
+runtime-tested. Static checks provide evidence within their documented scope;
+they are not a proof that no future defect exists.
+
+2. LANGUAGE BOUNDARY
+
+The language consists of source notation, vocabulary, lexical rules, types and
+values, grammar, expressions, declarations, control flow, diagnostics, semantics,
+standard-library contracts, versioning and conformance requirements in this
+package. Every normative artifact needed to read the language is included.
+
+Localized spelling changes only the source representation of reserved words. It
+adds no type, value, operation, status, error, or execution semantics. A locale
+profile is data supplied outside this package; this package defines how a
+profile is validated, selected and pinned.
+
+A project decides which source units form one specification, how they share one
+namespace and when that specification is admitted; it adds no type, value,
+operation or execution semantics beyond its own resolution-stage diagnostics.
+The project model is language: explicit source declares it, and no project
+manager, directory convention or host manifest can make a document a project.
+
+WORKSPACE is a language declaration of an explicit path base and access bounds;
+it is not a workspace-management application. Filesystem, process and network
+operations have abstract target, parameter, dependency, effect, result and error
+contracts. Those contracts define observable language behavior without requiring
+this package to contain a host, product, provider or executable implementation.
+
+A UI, IDE, workspace/project manager, portal, desktop controller, provider
+connector, database implementation, agent framework, compiler, interpreter,
+parser, runtime or executable conformance engine is outside this completion.
+Their absence does not make the bare-language specification incomplete.
+
+3. INTERPRETATION INPUT
+
+A conforming LC may use only the LCL source and sources explicitly referenced by
+that source as normative task input. The parts that a project entry declares
+with PART are sources explicitly referenced by that source. The validated locale
+profile selected for a
+document under 02_LEXICAL/13 is lexical input for the spelling of reserved words
+in that document only. Unreferenced chat history, hidden memory, provider
+defaults and historical task packages cannot alter LCL meaning.
+
+4. UNKNOWN FEATURES
+
+Syntax, keywords, symbols, identifiers, fields, operations or types absent from
+this version's closed registries are rejected. A word is a known spelling only
+as a canonical reserved word or as a spelling of the selected validated locale
+profile. Unknown features are not guessed.

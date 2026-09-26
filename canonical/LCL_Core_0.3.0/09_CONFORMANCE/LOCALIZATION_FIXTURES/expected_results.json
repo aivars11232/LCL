@@ -1,0 +1,385 @@
+{
+  "profiles": {
+    "profiles/lv-LV.json": "valid",
+    "profiles/nl-NL.json": "valid",
+    "profiles/ru-RU.json": "valid",
+    "profiles/zh-CN.json": "valid"
+  },
+  "sources": {
+    "sources/ambiguous_mixed_lv_nl.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "error": "error.localization.detection_ambiguous",
+        "offset": 9
+      }
+    },
+    "sources/auto_lv.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "locale": "lv-LV",
+        "method": "auto"
+      }
+    },
+    "sources/auto_nl.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "locale": "nl-NL",
+        "method": "auto"
+      }
+    },
+    "sources/auto_ru.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "locale": "ru-RU",
+        "method": "auto"
+      }
+    },
+    "sources/auto_zh.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "locale": "zh-CN",
+        "method": "auto"
+      }
+    },
+    "sources/canonical_en.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "method": "canonical"
+      }
+    },
+    "sources/canonical_unknown_word_without_profiles.lcl": {
+      "available": [],
+      "expected": {
+        "error": "error.localization.detection_failed",
+        "offset": 202
+      }
+    },
+    "sources/canonical_with_foreign_string.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "method": "canonical"
+      }
+    },
+    "sources/confusable_mixed_script_word.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "error": "error.localization.confusable",
+        "offset": 189
+      }
+    },
+    "sources/confusable_skeleton_word.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "error": "error.localization.confusable",
+        "offset": 269
+      }
+    },
+    "sources/detection_failed_unknown_word.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "error": "error.localization.detection_failed",
+        "offset": 148
+      }
+    },
+    "sources/directive_malformed_spacing.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "error": "error.localization.directive_invalid",
+        "offset": 0
+      }
+    },
+    "sources/directive_repeated.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "error": "error.localization.directive_invalid",
+        "offset": 228
+      }
+    },
+    "sources/directive_second_line.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "error": "error.localization.directive_invalid",
+        "offset": 5
+      }
+    },
+    "sources/explicit_conflicts_with_pin.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "error": "error.localization.profile_drift"
+      },
+      "pin": {
+        "identity": "@profile",
+        "locale": "lv-LV"
+      }
+    },
+    "sources/explicit_lv.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "locale": "lv-LV",
+        "method": "explicit"
+      }
+    },
+    "sources/explicit_nl.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "locale": "nl-NL",
+        "method": "explicit"
+      }
+    },
+    "sources/explicit_ru.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "locale": "ru-RU",
+        "method": "explicit"
+      }
+    },
+    "sources/explicit_tag_case_insensitive.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "locale": "lv-LV",
+        "method": "explicit"
+      }
+    },
+    "sources/explicit_zh.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "locale": "zh-CN",
+        "method": "explicit"
+      }
+    },
+    "sources/locale_tag_malformed.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "error": "error.localization.locale_invalid",
+        "offset": 8
+      }
+    },
+    "sources/mixed_canonical_word_auto.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "error": "error.localization.mixed",
+        "offset": 184
+      }
+    },
+    "sources/mixed_canonical_word_explicit.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "error": "error.localization.mixed",
+        "offset": 169
+      }
+    },
+    "sources/multibyte_offset_unknown_word.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "error": "error.keyword.unknown",
+        "offset": 220
+      }
+    },
+    "sources/pinned_identity_drift.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "error": "error.localization.profile_drift"
+      },
+      "pin": {
+        "identity": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "locale": "lv-LV"
+      }
+    },
+    "sources/pinned_matching_identity.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "locale": "lv-LV",
+        "method": "pinned"
+      },
+      "pin": {
+        "identity": "@profile",
+        "locale": "lv-LV"
+      }
+    },
+    "sources/strings_in_other_languages_auto.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "locale": "lv-LV",
+        "method": "auto"
+      }
+    },
+    "sources/strings_in_other_languages_explicit.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "locale": "lv-LV",
+        "method": "explicit"
+      }
+    },
+    "sources/unavailable_explicit_locale.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "error": "error.localization.profile_unavailable",
+        "offset": 0
+      }
+    },
+    "sources/unavailable_resolver.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "error": "error.localization.profile_unavailable"
+      },
+      "resolver_available": false
+    },
+    "sources/unknown_word_under_profile.lcl": {
+      "available": [
+        "lv-LV",
+        "nl-NL",
+        "ru-RU",
+        "zh-CN"
+      ],
+      "expected": {
+        "error": "error.keyword.unknown",
+        "offset": 226
+      }
+    }
+  }
+}

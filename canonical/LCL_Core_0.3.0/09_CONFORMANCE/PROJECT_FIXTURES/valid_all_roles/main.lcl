@@ -1,0 +1,51 @@
+LCL:
+    VERSION: "0.3.0"
+
+SPECIFICATION:
+    ID: fixture.project
+    NAME: "Every role"
+    VERSION: "1.0.0"
+    KIND: kind.project
+
+PART:
+    ID: part.description
+    SOURCE: PATH("description.lcl")
+    KIND: kind.part.description
+
+PART:
+    ID: part.definitions
+    SOURCE: PATH("definitions.lcl")
+    KIND: kind.part.definitions
+
+PART:
+    ID: part.data
+    SOURCE: PATH("data.lcl")
+    KIND: kind.part.data
+
+PART:
+    ID: part.context
+    SOURCE: PATH("context.lcl")
+    KIND: kind.part.context
+
+PART:
+    ID: part.rules
+    SOURCE: PATH("rules.lcl")
+    KIND: kind.part.rules
+
+PART:
+    ID: part.output
+    SOURCE: PATH("output.lcl")
+    KIND: kind.part.output
+
+PART:
+    ID: part.checks
+    SOURCE: PATH("checks.lcl")
+    KIND: kind.part.checks
+
+PART:
+    ID: part.build
+    SOURCE: PATH("task/build.lcl")
+    KIND: kind.part.task
+
+EXECUTE:
+    REFERENCE: REF(task.double)

@@ -1,0 +1,17 @@
+LCL:
+    VERSION: "0.3.0"
+
+SPECIFICATION:
+    ID: fixture.rules
+    NAME: "Rules"
+    VERSION: "1.0.0"
+    KIND: kind.part.rules
+
+SCOPE:
+    ID: scope.task
+    INCLUDE: REF(task.double)
+
+FORBID:
+    ID: rule.no_delete
+    OPERATION: core.delete
+    TARGET: REF(scope.task)

@@ -1,0 +1,13 @@
+LCL:
+    ВЕРСИЯ: "0.3.0"
+
+СПЕЦИФИКАЦИЯ:
+    ИД: fixture.localized_minimum
+    ИМЯ: "Localized minimum"
+    ВЕРСИЯ: "1.0.0"
+    ВИД: kind.data
+
+ДАННЫЕ:
+    ИД: data.count
+    ТИП: ЦЕЛОЕ
+    ЗНАЧЕНИЕ: 3

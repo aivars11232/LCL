@@ -1,0 +1,13 @@
+LCL:
+    VERSION: "0.3.0"
+
+SPECIFICATION:
+    ID: fixture.data
+    NAME: "Data"
+    VERSION: "1.0.0"
+    KIND: kind.part.data
+
+INPUT:
+    ID: input.value
+    TYPE: REF(type.counter)
+    VALUE: 4

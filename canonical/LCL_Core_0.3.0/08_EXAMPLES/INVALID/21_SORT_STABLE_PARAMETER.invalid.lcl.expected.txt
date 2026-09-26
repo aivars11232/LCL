@@ -1,0 +1,3 @@
+EXPECTED_ERROR: error.operation.parameter
+EXPECTED_TERMINAL_STATUS: status.invalid
+RULE: core.sort has exactly key and direction parameters; stable and comparator are unregistered because LIST stability is fixed and SET ties require distinct keys.

@@ -1,0 +1,11 @@
+LCL:
+    VERSION: "0.3.0"
+
+SPECIFICATION:
+    ID: fixture.library
+    NAME: "Library"
+    VERSION: "1.0.0"
+    KIND: kind.library
+
+COMMENT:
+    CONTENT: "Doubles one integer; this part is non-normative."

@@ -1,0 +1,73 @@
+LCL CORE 0.3.0
+CANONICAL SOURCE AND PROVENANCE
+NORMATIVE RELEASE METADATA
+
+1. CANONICAL SOURCE
+
+This package root is the only canonical source tree for LCL Core 0.3.0. Language
+meaning is determined by the artifacts inside this tree under
+00_RELEASE/02_NORMATIVE_AUTHORITY_ORDER.txt. Files outside this package root are
+not normative inputs to the language.
+
+2. CANONICAL BASE
+
+LCL Core 0.3.0 was created on 26 September 2026 under the owner-approved Core
+0.3 Task 01 (the multi-file project model) from the Core 0.2.0 candidate
+canonical/LCL_Core_0.2.0: 216 files with LCL-PACKAGE-IDENTITY-V1 identity
+061a79c92c76ed7bb05968adde24b016cae3b30666b8fb289c6ab968907e8b3f, whose
+independent review the owner accepted on 25 September 2026.
+
+Creation copied every file except MANIFEST.json, VALIDATION_REPORT.txt and
+SHA256SUMS.txt, and changed the language version 0.2.0 to 0.3.0 in file names,
+headers, registry versions and LCL source. CHANGELOG.txt kept its history
+unchanged. Replacing 0.3.0 by 0.2.0 in every other created file reproduced its
+source bytes exactly. The 0.2.0 and 0.1.0 packages are unchanged and remain the
+immutable compatible baselines.
+
+3. CHANGES FROM 0.2.0
+
+Every later change is a deliberate Core 0.3.0 decision:
+
+- multi-file projects in 05_SEMANTICS/13_PROJECTS_PARTS_AND_PROJECT_ADMISSION.txt
+  and 10_REGISTRIES/block_schemas_v0.3.0.json#/project_contract: the
+  kind.project entry, eight project part kinds, the PART block, required and
+  optional parts, project source order, one shared project namespace, versions,
+  authority, check selection, localization and project admission;
+- four resolution-stage error.project identifiers and the widened meaning of
+  error.version.mismatch, with their enum group, catalog entries and prose;
+- the PART reserved word, block schema, field signatures, part_source_path value
+  kind and part_kind domain, the project_part_kinds group, the extended
+  document_kinds group, and the re-derived localization surface;
+- amendments to 01_FOUNDATION/01, 03 and 04, 02_LEXICAL/04, 06 and 13,
+  03_TYPES_AND_VALUES/03 and 04, 04_GRAMMAR/01, 05, 08, 09, 10 and 13,
+  05_SEMANTICS/01, 04 and 10, 06_STANDARD_LIBRARY/06 and 08,
+  07_VERSIONING_AND_EXTENSIONS/01 and 02, and 09_CONFORMANCE/01;
+- in 04_GRAMMAR/13, the registry's own field-signature counts; the 0.1.0 and
+  0.2.0 packages state 335 fields and 67 value-kind expressions while their
+  registries, which rank first, hold 334 and 68;
+- TOOLS/validate_projects.py and 09_CONFORMANCE/PROJECT_FIXTURES, eight project
+  decision witnesses and 22 catalog entries;
+- validate_release.py, validate_language_contracts.py,
+  validate_source_fixtures.py and generate_integrity.py checks, counts and hash
+  pins, each re-derived pin checked against the 0.2.0 package or against the
+  reverted intended change;
+- release metadata in 00_RELEASE, README.txt, VERSION.txt, CHANGELOG.txt and
+  INDEX.txt.
+
+4. VERSION AND STATUS
+
+00_RELEASE/04_CHANGE_CONTROL.txt requires a minor release for added
+backward-compatible features. Every valid Core 0.2.0 program keeps its meaning,
+and projects are accepted only in documents declaring VERSION "0.3.0", so this
+version is 0.3.0.
+
+The package status is UNRELEASED_CANDIDATE. The independent review of the Core
+0.3.0 additions is pending in 05_LANGUAGE_CLOSURE.json, and no archive of this
+package exists. Fresh MANIFEST.json, VALIDATION_REPORT.txt and SHA256SUMS.txt
+bind its bytes for integrity only.
+
+This package is the language definition only. It must never be represented as
+containing, requiring, or having been validated by a lexer, parser, interpreter,
+compiler, runtime, semantic execution engine, UI, IDE, provider integration, or
+deployment tooling. Parser and executable-semantic evidence is outside the
+package scope and is reported as OUT_OF_SCOPE, never as PASS.

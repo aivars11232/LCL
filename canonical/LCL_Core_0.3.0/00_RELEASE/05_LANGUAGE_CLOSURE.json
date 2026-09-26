@@ -1,0 +1,58 @@
+{
+  "language": "LCL",
+  "version": "0.3.0",
+  "scope": "bare_language",
+  "decisions": [
+    {
+      "id": "types_and_references",
+      "status": "closed",
+      "summary": "Closed exact source types, transparent aliases, nominal enum domains, structural OBJECT schema identity, reference value/identity contexts, metadata access, positional calls, indexes, and loop-local OUTPUT reads. String decoding, material identities and exact temporal values are closed in types_v0.3.0.json and mirrored prose."
+    },
+    {
+      "id": "expressions_and_functions",
+      "status": "closed",
+      "summary": "Closed evaluation order, short circuit, sentinel propagation, strict equality, empty/duplicate collection behavior, quantifiers, reductions, signature metatypes, and common unit-mismatch diagnostics."
+    },
+    {
+      "id": "patterns",
+      "status": "closed",
+      "summary": "Closed self-contained Core GLOB and REGEX profiles: syntax, decoded escapes, scalar classes, path segments, anchors, quantifiers, flags, whole-input matching, exact value identity and diagnostics; no unspecified external dialect is normative."
+    },
+    {
+      "id": "library_parameters",
+      "status": "closed",
+      "summary": "Closed expression fragments, predicate bindings, comparison criteria, group shape, read-range schema/units/bounds, reference-only validation schemas and same-family STRING/LIST append content; all 39 operation contracts and nine result schemas remain aligned."
+    },
+    {
+      "id": "control_and_diagnostics",
+      "status": "closed",
+      "summary": "Closed structural graph activation/order/cycles, sibling edges, parallel independence, loop instances, continuation, singular OUTPUT ownership, retry/fallback publication, selected check scheduling and concrete-target applicability, root completion, aliases, lifecycle and dynamic diagnostic demand."
+    },
+    {
+      "id": "project_model",
+      "status": "closed",
+      "summary": "Closed the multi-file project model. On 2026-09-26 the owner chose one shared project namespace, roles as document kinds declared with PART (kind.project plus eight kind.part kinds, with library kept as IMPORT), four resolution-stage error.project identifiers with a widened error.version.mismatch, and correction of the unregistered-KIND acceptance defect. Entry identity by content, entry-only IMPORT/EXTENSION/PART, project source order, exact versions, per-unit localization, namespace completeness and all-or-nothing admission are derived from 00_RELEASE/01, 01_FOUNDATION/03 and 05_SEMANTICS/02 and stated in block_schemas#/project_contract."
+    },
+    {
+      "id": "host_surface_boundary",
+      "status": "closed",
+      "summary": "The owner authorized completion of the bare-language specification. Retain WORKSPACE solely as an explicit language path-base/access declaration and retain abstract standard-library effect contracts. UI, workspace/project applications, provider/agent products and every executable language implementation remain outside Core completion. No host implementation is a required normative artifact. Core 0.3.0 keeps that boundary: the project model is language, declared by explicit source, while project managers, directory conventions and host manifests remain outside Core and cannot make a document a project."
+    },
+    {
+      "id": "normative_alignment",
+      "status": "closed",
+      "summary": "Registries, EBNF, lexical/type/semantic/library prose, examples and the 830-entry requirements catalog plus 74 descriptive decision witnesses agree under fresh focused checks. Cross-surface parity and explicit reviewed-rule checks are enforced by validate_language_contracts.py. Core 0.3.0 adds 02_LEXICAL/13, the localization surface and locale profile schema registries, the localization stage with nine error identifiers and their catalog entries, and localization fixtures, and aligns every affected normative surface; the meaning of LCL Core 0.1.0 is unchanged. Core 0.3.0 adds 05_SEMANTICS/13, block_schemas#/project_contract, the PART block, nine document kinds, the project_part_kinds group, four error.project identifiers and project fixtures, and aligns every affected normative surface; the meaning of LCL Core 0.2.0 is unchanged."
+    },
+    {
+      "id": "independent_review",
+      "status": "pending",
+      "summary": "Core 0.1.0 basis: Fresh read-only lexical/forms, expression/library, and graph/check/lifecycle/OUTPUT reviews resolved every definite finding. Follow-up review confirmed processing-order alignment and detection of the multiline literal registry/prose contradiction. No outstanding semantic blocker was identified in these bounded reviews. Core 0.3.0: the independent technical review recorded in reports/tasks/FINAL-05_RESULT.md examined this package at identity 00daee8de1919c4945ef04ff65edb22164bd8046a493be08a87d5fa3b4c3e604 (216 files), the localization additions (02_LEXICAL/13, localization_surface_v0.3.0.json, locale_profile_schema_v0.3.0.json, the localization errors and the localization fixtures) included, and found no technical blocker. On 2026-09-25 the owner accepted that review for that identity, which closes this decision. Recording the closure changed only release metadata and the regenerated integrity files; every language-definition byte is a reviewed byte. Core 0.3.0: the project additions (05_SEMANTICS/13, block_schemas#/project_contract, the PART block, the kind.project and kind.part document kinds, the project_part_kinds group, the four error.project identifiers, the widened error.version.mismatch and the project fixtures) have not been independently reviewed. This decision stays pending until an independent review of the Core 0.3.0 package is recorded and accepted."
+    },
+    {
+      "id": "static_validation",
+      "status": "closed",
+      "summary": "Core 0.1.0 basis: Fresh focused filesystem, text, structured, grammar, registry and catalog checks pass; 514 language-contract checks have no violations. Fourteen representative isolated static contract mutations are detected, 15 bounded source fixtures match, and six supplementary source-hygiene probes match. These checks do not execute LCL; final integrity and release validation follow closure. For Core 0.3.0, validate_localization.py re-derives the localization surface, checks the locale profile schema and fixture profiles, rejects invalid-profile mutations, and evaluates every localization source fixture; fresh gate results are recorded outside the package. For Core 0.3.0, validate_projects.py checks the project contract structure, evaluates the 26 project fixtures with a bounded static reading and six negative controls, and validate_language_contracts.py checks the project contract mirror; fresh gate results are recorded outside the package."
+    }
+  ],
+  "release_gate_permitted": false
+}

@@ -1,0 +1,60 @@
+LCL CORE 0.3.0 RELEASE CANDIDATE
+FIELD SIGNATURE REGISTRY STATUS
+NORMATIVE
+
+The candidate legal-parent, block-occurrence, required/optional status, minimum
+and maximum cardinality, accepted value-kind expression, default, and conditional
+requirement records are stored in:
+
+    10_REGISTRIES/field_signatures_v0.3.0.json
+
+Its 339 fields use 70 distinct value-kind expressions. Every expression resolves
+as either one exact name in value_kind_registry or one instance of a template in
+value_kind_templates. The template metagrammar is closed and is used only inside
+the JSON field-signature registry; it is not LCL source syntax:
+
+    VALUE_KIND := NAMED_KIND
+                | exact_string(JSON_STRING)
+                | integer[SIGNED_INTEGER..SIGNED_INTEGER]
+                | qualified_identifier(DOMAIN)
+                | reference(TARGET_SET)
+                | reference_or_list(TARGET_SET)
+                | reference_or_list_or_nested(BLOCK)
+                | reference_or_nested(BLOCK)
+                | nested_block(BLOCK)
+    TARGET_SET := TARGET | TARGET "|" TARGET_SET
+    TARGET     := BLOCK | REFERENCE_DOMAIN
+
+JSON_STRING is one JSON string literal. An integer range is inclusive and its
+minimum cannot exceed its maximum. DOMAIN resolves through the exact source and
+JSON Pointer in qualified_identifier_domains and, when defined_kind is present,
+also admits an ID whose DEFINE.KIND is that exact registered kind. BLOCK is one
+registered block name.
+REFERENCE_DOMAIN resolves through reference_domains in the semantic-meta-type
+registry. Target unions contain no duplicates. Whitespace, unknown heads,
+unknown domains, unknown blocks, unknown reference domains, and malformed or
+extra arguments are invalid registry contracts; their meaning is never inferred
+from spelling. A reference_list uses the source LIST form and therefore may be
+empty unless a containing field's conditional requirements say otherwise.
+
+Named aliases and composites are closed in value_kind_registry. In particular,
+EXAMPLE.CONTENT uses the existing value_or_object_expression contract rather than
+the redundant prose-only string_multiline_string_or_data_value shorthand;
+DEFINE.EXAMPLE uses reference_or_nested rather than a reversed duplicate template;
+and each repeated PROPERTY occurrence contains one property_path rather than a
+second list cardinality.
+
+Parent closure is bidirectional. A field that permits a nested BLOCK is legal only
+when that BLOCK declares the containing block as a parent. Conversely, each
+concrete parent named by a child block must contain a same-name nested field.
+Grammar pseudo-contexts such as top_level, IF, FOR_EACH, and ELSE must be admitted
+by the complete EBNF. The seven D-004 relationships remain reference/list-only.
+
+No field absent from a block signature is accepted. A null maximum means
+unbounded source repetition within the containing block; execution remains
+bounded by the separate execution rules. A declared default is applied only when
+the field is MISSING, never when it is NULL or UNKNOWN. Optional PRIORITY is a
+strict INTEGER and defaults to 0 when MISSING. It never inherits from an enclosing
+or referenced clause, and an explicitly declared value overrides the default. If
+a specific schema makes PRIORITY mandatory, omission produces
+error.field.required instead of applying the optional default.

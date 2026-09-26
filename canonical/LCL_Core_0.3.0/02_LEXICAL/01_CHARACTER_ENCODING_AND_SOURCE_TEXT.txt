@@ -1,0 +1,30 @@
+LCL CORE 0.3.0 RELEASE CANDIDATE
+CHARACTER ENCODING AND SOURCE TEXT
+NORMATIVE
+
+- Source encoding is UTF-8 without a byte-order mark.
+- U+000A LINE FEED is the only line terminator.
+- Every non-empty source ends with one LINE FEED.
+- U+0009 TAB, U+000D CARRIAGE RETURN, U+007F DELETE, C0/C1 controls other than the allowed
+  U+000A LINE FEED, surrogate code points,
+  and invalid UTF-8 are forbidden.
+- Outside STRING and MULTILINE_STRING literals, only ASCII letters, digits,
+  U+0020 SPACE, LINE FEED, and symbols in symbols_v0.3.0.json are legal, except
+  the locale directive and the repertoire letters of candidate words defined by
+  02_LEXICAL/13_LOCALIZED_SOURCE_AND_LOCALE_DIRECTIVE.txt and
+  locale_profile_schema_v0.3.0.json. No other character becomes legal.
+- Unicode scalar values are legal inside strings, subject to escape rules.
+  These character restrictions apply to raw source. A legal string escape may
+  produce a control scalar in the decoded STRING value.
+- UTF-8 decoding is atomic over the complete source unit. A unit that is not
+  valid UTF-8 is not decoded in whole or in part: no character, token, line,
+  locale directive or declaration, including the LCL block VERSION declaration,
+  exists for any purpose, and no prefix is decoded to recover one. The unit is
+  rejected with error.encoding.invalid at the first offending byte of the
+  original source. Because no VERSION is resolved from it, the unit is not a
+  document declaring VERSION "0.3.0" and keeps the default LCL Core 0.1.0
+  reading. Bytes that are readable before the first invalid byte establish no
+  version and bring no unit under 0.3.0 rules.
+- An implementation must not silently repair, normalize, re-indent, re-quote,
+  or otherwise rewrite source before validation.
+- A line cannot end in SPACE. A blank line contains only LINE FEED.

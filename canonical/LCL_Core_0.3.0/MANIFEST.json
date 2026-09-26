@@ -1,0 +1,1513 @@
+{
+  "package": "LCL Core 0.3.0 Project Feature Candidate",
+  "formal_version": "0.3.0",
+  "status": "project_feature_candidate",
+  "release_ready": false,
+  "package_scope": "bare_language_specification",
+  "out_of_scope_artifacts": [
+    "lexer",
+    "parser",
+    "interpreter",
+    "compiler",
+    "runtime",
+    "semantic_execution_engine",
+    "ui",
+    "ide",
+    "provider_integration",
+    "deployment_tooling"
+  ],
+  "package_root": "LCL_Core_0.3.0",
+  "generated_utc": "2026-09-26T10:42:01Z",
+  "package_file_count": 291,
+  "manifest_record_count": 288,
+  "checksum_record_count": 290,
+  "integrity_model": {
+    "algorithm": "SHA-256",
+    "path_basis": "package-root-relative POSIX paths",
+    "manifest_exclusions": [
+      {
+        "path": "MANIFEST.json",
+        "reason": "self-reference"
+      },
+      {
+        "path": "VALIDATION_REPORT.txt",
+        "reason": "generated after the manifest and binds the manifest hash"
+      },
+      {
+        "path": "SHA256SUMS.txt",
+        "reason": "generated after manifest and validation; checksum self-reference"
+      }
+    ],
+    "checksum_exclusions": [
+      {
+        "path": "SHA256SUMS.txt",
+        "reason": "self-reference"
+      }
+    ]
+  },
+  "component_counts": {
+    "keywords": 142,
+    "adopted_symbols": 21,
+    "excluded_exact_lexemes": 23,
+    "types": 21,
+    "blocks": 42,
+    "field_signature_blocks": 42,
+    "field_signatures": 339,
+    "operators": 19,
+    "functions": 11,
+    "operations": 39,
+    "statuses": 12,
+    "errors": 90,
+    "conformance_requirements": 830,
+    "concrete_source_fixtures": 15,
+    "localization_reserved_words": 142,
+    "localization_errors": 9,
+    "localization_fixture_profiles": 4,
+    "localization_source_fixtures": 31,
+    "project_part_kinds": 8,
+    "project_errors": 4,
+    "project_fixtures": 26
+  },
+  "files": [
+    {
+      "path": "00_RELEASE/00_CANONICAL_SOURCE_AND_PROVENANCE.txt",
+      "bytes": 3824,
+      "sha256": "4238206b21b954112b0e4c5a1a33926c358bdd293c718da4fa07311260fed85d"
+    },
+    {
+      "path": "00_RELEASE/01_RELEASE_STATUS_AND_BOUNDARY.txt",
+      "bytes": 4052,
+      "sha256": "3866233ad370b2d48570538a1519b9d5d391b947a227539a8424b2f9458ff041"
+    },
+    {
+      "path": "00_RELEASE/02_NORMATIVE_AUTHORITY_ORDER.txt",
+      "bytes": 778,
+      "sha256": "4601415b873518982e87e708fb6844b461085f0227290e4093189fc42313fa15"
+    },
+    {
+      "path": "00_RELEASE/03_COMPLETENESS_CRITERIA.txt",
+      "bytes": 4297,
+      "sha256": "57d7c94155cf50ceba92062de99b1343b8c53c5eb89b0cb7b1522d08f8c4ecf4"
+    },
+    {
+      "path": "00_RELEASE/04_CHANGE_CONTROL.txt",
+      "bytes": 1864,
+      "sha256": "45801fd615c90d01305cd8a5db4f89aaeea425b73d469cbbec93fa12b02e38db"
+    },
+    {
+      "path": "00_RELEASE/05_LANGUAGE_CLOSURE.json",
+      "bytes": 6847,
+      "sha256": "61f0361090a686c92404d0a257666bc5da9234bb4dbb05de4681756c01d708a7"
+    },
+    {
+      "path": "01_FOUNDATION/01_PURPOSE_AND_TERMINOLOGY.txt",
+      "bytes": 1364,
+      "sha256": "121e3f1c9974ad193beeb85c0a1dc781312ce19eb0be8b9ddf5294331a17ad80"
+    },
+    {
+      "path": "01_FOUNDATION/02_DESIGN_PRINCIPLES.txt",
+      "bytes": 918,
+      "sha256": "ae40954484f19ea88c5b53a92f642f3e7746eadb6b5ac9226e3c236937318c04"
+    },
+    {
+      "path": "01_FOUNDATION/03_NORMATIVE_PROCESSING_MODEL.txt",
+      "bytes": 5434,
+      "sha256": "cba44c9ac6290081082d5e49be16b7fd02a0dac55ce35b38524d2c0fddde4e42"
+    },
+    {
+      "path": "01_FOUNDATION/04_DOCUMENT_KINDS_AND_BOUNDARIES.txt",
+      "bytes": 1754,
+      "sha256": "d89326bb03e8c662bc782fcd9e2858fc04e30b4b93f150f5e2f162b4102ac232"
+    },
+    {
+      "path": "01_FOUNDATION/05_NORMATIVE_AND_NON_NORMATIVE_CONTENT.txt",
+      "bytes": 539,
+      "sha256": "1cb7ca53722e6505a6ddc39680f5582ed2d12820f003122b7fc79c096d6b9ddf"
+    },
+    {
+      "path": "02_LEXICAL/01_CHARACTER_ENCODING_AND_SOURCE_TEXT.txt",
+      "bytes": 1836,
+      "sha256": "d36e0c5ced325396d2136f2c2845c76dcd7eb2f7307e32f577a31144c889c62a"
+    },
+    {
+      "path": "02_LEXICAL/02_WHITESPACE_INDENTATION_AND_LINES.txt",
+      "bytes": 3802,
+      "sha256": "bb32541f0b208e88e8de36693ae2c1d8a945e33c0047fe15be7317864d9e4927"
+    },
+    {
+      "path": "02_LEXICAL/03_IDENTIFIERS_NAMESPACES_AND_RESERVED_NAMES.txt",
+      "bytes": 1956,
+      "sha256": "07cc57c64f3f613a959b018fc50dc84246655b7d19bb7d4794ad1332aa750552"
+    },
+    {
+      "path": "02_LEXICAL/04_RESERVED_WORDS.txt",
+      "bytes": 1677,
+      "sha256": "1829313f283426fe4db8572fce069f2635d917c151da5b10942dfbd90ac79ee4"
+    },
+    {
+      "path": "02_LEXICAL/05_KEYWORD_REFERENCE_A_TO_M.txt",
+      "bytes": 13821,
+      "sha256": "a29324378ba43c979ccc5c8b69c2e7be5fdd89cc13ae89afbf2261a7eb0f1c13"
+    },
+    {
+      "path": "02_LEXICAL/06_KEYWORD_REFERENCE_N_TO_Z.txt",
+      "bytes": 10952,
+      "sha256": "abc149026c8e474a92a75205969dfe8ebb7481de4c1deb5b2879d1a8f83d4370"
+    },
+    {
+      "path": "02_LEXICAL/07_LITERALS_AND_ESCAPE_SEQUENCES.txt",
+      "bytes": 2560,
+      "sha256": "26c19effc1c41202b1037e97a0e5967a13425c573adaadce7cb5ec6b7d0ce18f"
+    },
+    {
+      "path": "02_LEXICAL/08_LIST_OBJECT_AND_DATA_LEXICAL_FORM.txt",
+      "bytes": 933,
+      "sha256": "5a9de64a85afe224a98edb029db203f5f3cd608c81c28d283e9aaf74c44d630b"
+    },
+    {
+      "path": "02_LEXICAL/09_ADOPTED_SYMBOLS.txt",
+      "bytes": 1408,
+      "sha256": "683aa3c9acb9c2c0d18797c1ff3c7b512e9d192bf085719409b88d5c5bb70a12"
+    },
+    {
+      "path": "02_LEXICAL/10_EXCLUDED_SYMBOLS_AND_NOTATION.txt",
+      "bytes": 1042,
+      "sha256": "499dc5e5115635b8ebd6a1e6e899d0becefaf9225a7276af8fdaa31f52cbb3bc"
+    },
+    {
+      "path": "02_LEXICAL/11_AMBIGUOUS_WORDS_AND_REPLACEMENTS.txt",
+      "bytes": 1297,
+      "sha256": "e993019a6b21879f5942732e43a61310415b4cfac78867aeb491b2a0c8f1165f"
+    },
+    {
+      "path": "02_LEXICAL/12_COMMENT_DESCRIPTION_EXAMPLE_AND_DATA_BOUNDARIES.txt",
+      "bytes": 554,
+      "sha256": "3088cd7f2a2f19b1ea403e5232547ccacb5e327139603172b0e5b8e48e6e3693"
+    },
+    {
+      "path": "02_LEXICAL/13_LOCALIZED_SOURCE_AND_LOCALE_DIRECTIVE.txt",
+      "bytes": 5201,
+      "sha256": "cf5a90934fbcc8038def0f30a6f4e06ab15a8b20cff19f7fd30dfe6d24c145fa"
+    },
+    {
+      "path": "03_TYPES_AND_VALUES/01_TYPE_SYSTEM_RULES.txt",
+      "bytes": 2747,
+      "sha256": "01bbdb95783fc59065aeb9be6e92d1a9e5fa7a812ea561cd893e9a1d9a8867ac"
+    },
+    {
+      "path": "03_TYPES_AND_VALUES/02_BUILT_IN_TYPE_REFERENCE.txt",
+      "bytes": 2624,
+      "sha256": "a349d3fb5f8423c533d0cd42b1df15ede3a3589d9c7bfb63bf8f064e586d0bbf"
+    },
+    {
+      "path": "03_TYPES_AND_VALUES/03_COLLECTIONS_OBJECTS_ENUMS_AND_EQUALITY.txt",
+      "bytes": 4035,
+      "sha256": "c8df454c7ad3310562caf11ef95d93400612b0dd5d20d47b911152b721db7835"
+    },
+    {
+      "path": "03_TYPES_AND_VALUES/04_TYPED_CONSTRUCTORS_AND_REFERENCES.txt",
+      "bytes": 6129,
+      "sha256": "9acf9966765616df219164538f29e372aa71585e5c96bbe7be61bed78050e903"
+    },
+    {
+      "path": "03_TYPES_AND_VALUES/05_CUSTOM_TYPES_SCHEMAS_AND_DEFINITIONS.txt",
+      "bytes": 5800,
+      "sha256": "b08ec211a93ecb1023c8e0cdf8cd5845fd5d4ca16292e8a224a1d3a073a39c3b"
+    },
+    {
+      "path": "03_TYPES_AND_VALUES/06_NUMERIC_ARITHMETIC_COMPARISON_AND_ROUNDING.txt",
+      "bytes": 2722,
+      "sha256": "ced0b3753bfe4a9a6a90e6259d0b3a0490df7aaa28fe84b862763482d47fd338"
+    },
+    {
+      "path": "03_TYPES_AND_VALUES/07_FORMATS_ENCODINGS_UNITS_BOUNDS_AND_PATTERNS.txt",
+      "bytes": 6673,
+      "sha256": "c1497f67395a5baf1efbfdd5279f51eb9cdd93a524549c581510f8f64e474a76"
+    },
+    {
+      "path": "03_TYPES_AND_VALUES/08_BUILT_IN_FORMATS_ENCODINGS_AND_UNITS.txt",
+      "bytes": 2120,
+      "sha256": "ebbb0e70055929b28247fa7d9ccd0ed74ee3739c66c230d429ca8c0f98d65494"
+    },
+    {
+      "path": "03_TYPES_AND_VALUES/09_MISSING_UNKNOWN_NULL_AND_OPTIONALITY.txt",
+      "bytes": 2939,
+      "sha256": "c2b981f4aaeea06976986055ddb77cd44b38e0c4b16af1b8cd39f070c7699adc"
+    },
+    {
+      "path": "03_TYPES_AND_VALUES/10_COLLECTION_OBJECT_ENUM_AND_SCHEMA_FORMS.txt",
+      "bytes": 3991,
+      "sha256": "9ccc4227cd96e4dc162e0841efe313ffb502c3c2b70ab80a38c72edace74e67f"
+    },
+    {
+      "path": "04_GRAMMAR/01_DOCUMENT_FORM_AND_TOP_LEVEL_ORDER.txt",
+      "bytes": 902,
+      "sha256": "bbc96bf908031767639b7afa8663d313b985215e0ae88694084e543ded6243ae"
+    },
+    {
+      "path": "04_GRAMMAR/02_DECLARATIONS_BLOCKS_FIELDS_AND_NESTING.txt",
+      "bytes": 516,
+      "sha256": "cd703ab820d3742a6e6c89dc6d3e958834d6accc9c8ca9b76c0eb7d33a8539c8"
+    },
+    {
+      "path": "04_GRAMMAR/03_EXPRESSIONS_REFERENCES_PROPERTIES_AND_CALLS.txt",
+      "bytes": 1853,
+      "sha256": "c9a99915b56bc28f258f067cafff0284956d262d6b481a62575798b6345967cd"
+    },
+    {
+      "path": "04_GRAMMAR/04_CONDITIONS_BRANCHES_AND_BOUNDED_ITERATION.txt",
+      "bytes": 1292,
+      "sha256": "01aa9a198e661404255d29d6575bf68c6636c2980d323d8d8057d86df97e00c1"
+    },
+    {
+      "path": "04_GRAMMAR/05_IMPORT_EXTENSION_AND_REFERENCE_FORM.txt",
+      "bytes": 965,
+      "sha256": "8d0214c291c82210a9cdf8d348a4e958ce9599e7a7d58e4854ac746aa321ac7e"
+    },
+    {
+      "path": "04_GRAMMAR/06_TASK_ACTION_PHASE_SEQUENCE_AND_STEP_FORM.txt",
+      "bytes": 1324,
+      "sha256": "902c2e2afe77395dd8e149c0befde86385482ecbb0fe152b9a178adbb075e53c"
+    },
+    {
+      "path": "04_GRAMMAR/07_RULE_CHECK_OUTPUT_AND_COMPLETION_FORM.txt",
+      "bytes": 949,
+      "sha256": "9a4c284abfe3b5b4d27eba81276936b32263ebd43af3f786f5fd1fe0cf7f6796"
+    },
+    {
+      "path": "04_GRAMMAR/08_CORE_BLOCK_SCHEMAS_A.txt",
+      "bytes": 6789,
+      "sha256": "e92f7a2e0b560474e5c6be3a34c1fed5f04ced2aff26f415ecdfca396339a4d6"
+    },
+    {
+      "path": "04_GRAMMAR/09_CORE_BLOCK_SCHEMAS_B.txt",
+      "bytes": 7988,
+      "sha256": "58b10d8993e8f6856684c8db7774c3efa2b4de0fa5855998b62abb5f5fda3a3d"
+    },
+    {
+      "path": "04_GRAMMAR/10_COMPLETE_EBNF.ebnf",
+      "bytes": 8536,
+      "sha256": "acb588ce8e70fcb392e97721a78f4288264e7f7bfbb67ccaabb44f67e0b98d1e"
+    },
+    {
+      "path": "04_GRAMMAR/11_GRAMMAR_SEMANTIC_CONSTRAINTS.txt",
+      "bytes": 2300,
+      "sha256": "449925bd5d364cf9d00a20665d4dcfbd44930a2dc6e32fc278b0cbb7ff43a0c8"
+    },
+    {
+      "path": "04_GRAMMAR/12_VALUE_ITEM_PROPERTY_SCHEMA_AND_OBJECT_BLOCKS.txt",
+      "bytes": 947,
+      "sha256": "eb535026e9b0ccdc7c5a4c6098d044e3257cc784172702de53fe8a5235e13af2"
+    },
+    {
+      "path": "04_GRAMMAR/13_EXACT_FIELD_SIGNATURES.txt",
+      "bytes": 3350,
+      "sha256": "03a77e0291f15eb22885dd06758b87d98b444efa89c6f6d8c471db4dff7a6793"
+    },
+    {
+      "path": "05_SEMANTICS/01_DECLARATION_RESOLUTION_REACHABILITY_AND_EXECUTION_GRAPH.txt",
+      "bytes": 5500,
+      "sha256": "c2b542e1c037b818f316c5f3b92f22c19f82993e9d80fae68a4fb1074f8879bf"
+    },
+    {
+      "path": "05_SEMANTICS/02_SCOPE_TARGET_WORKSPACE_AND_SOURCE.txt",
+      "bytes": 1034,
+      "sha256": "35fd4256871796c9cd016e4e5388cf8f5996f79539301005217b7b7942534db4"
+    },
+    {
+      "path": "05_SEMANTICS/03_REQUIRE_ALLOW_FORBID_PREFER_PRESERVE_AND_ACTION_AUTHORIZATION.txt",
+      "bytes": 794,
+      "sha256": "00d56903adee4f5b5baca0ae09c9a7869abc47ae345b2783a05606d0fdc26839"
+    },
+    {
+      "path": "05_SEMANTICS/04_AUTHORITY_PRIORITY_OVERRIDE_AND_CONFLICT_RESOLUTION.txt",
+      "bytes": 1255,
+      "sha256": "78985055bc33eafaf0458ea378e110b27a77a644e2be730aab6c3e304d06162b"
+    },
+    {
+      "path": "05_SEMANTICS/05_INPUT_DATA_OUTPUT_RESULT_AND_FORMAT.txt",
+      "bytes": 10065,
+      "sha256": "97d39f4b2cfde05dc9b10ed312148e7affce85a334d119df691d07c928236b58"
+    },
+    {
+      "path": "05_SEMANTICS/06_MISSING_UNKNOWN_NULL_DEFAULT_ASSUME_AND_HANDLER_RESOLUTION.txt",
+      "bytes": 10342,
+      "sha256": "64f709100f8192acff9bc10c4f9f1ff4dd247d019df1660e7181c5a7a395b826"
+    },
+    {
+      "path": "05_SEMANTICS/07_CONTEXT_MEMORY_AND_STATE.txt",
+      "bytes": 659,
+      "sha256": "8f6fc5eb141b17f7706abe970a0dbed1bbbf815f462b971500f988d2a647dca8"
+    },
+    {
+      "path": "05_SEMANTICS/08_PHASE_SEQUENCE_STEP_BRANCH_LOOP_RETRY_AND_CONCURRENCY.txt",
+      "bytes": 3934,
+      "sha256": "14aab3da7399ef376b776a43bd3144595649d6cb8f1abc57abd92c428d69db70"
+    },
+    {
+      "path": "05_SEMANTICS/09_VALIDATION_EXECUTION_FAILURE_AND_TERMINATION.txt",
+      "bytes": 8166,
+      "sha256": "fa813cf78634ab21ae1f6ae10ece6b8edb6fec2f60f296cd2507095266590aba"
+    },
+    {
+      "path": "05_SEMANTICS/10_VERIFY_TEST_EVIDENCE_SUCCESS_FAILURE_AND_STATUS.txt",
+      "bytes": 7470,
+      "sha256": "93caa0a460c5600230b20de5cb18b04be780c5e7aa5fe94e73464fc2707b63fe"
+    },
+    {
+      "path": "05_SEMANTICS/11_DETERMINISM_EQUIVALENCE_AND_INTERPRETER_VARIATION.txt",
+      "bytes": 11368,
+      "sha256": "99d05a5f1bd651b03547ad57f8d6b95ec01f1903f48e77e31c3f62c0d55c4dae"
+    },
+    {
+      "path": "05_SEMANTICS/12_OPERATOR_FUNCTION_AND_SPECIAL_VALUE_SEMANTICS.txt",
+      "bytes": 9358,
+      "sha256": "434eda4520820c6b6d0a6bc59c5257a23865f4f49126a72711efddaeef48c939"
+    },
+    {
+      "path": "05_SEMANTICS/13_PROJECTS_PARTS_AND_PROJECT_ADMISSION.txt",
+      "bytes": 9915,
+      "sha256": "d9965ecb07dacc1d746608572cdcaf7d0c01eaf0a9df0acd7e83f4845f61ce4a"
+    },
+    {
+      "path": "06_STANDARD_LIBRARY/01_READ_ONLY_AND_ANALYTICAL_OPERATIONS.txt",
+      "bytes": 13435,
+      "sha256": "5e22438cba26d043617760fcc6f28984668b7f091437acae001844c4da185ad6"
+    },
+    {
+      "path": "06_STANDARD_LIBRARY/02_MUTATING_AND_EXTERNAL_OPERATIONS.txt",
+      "bytes": 18672,
+      "sha256": "6ec52813ed2e27c35cfb1d37bfee70e45dbdde7d36183beaed2f84ad5e0f12c1"
+    },
+    {
+      "path": "06_STANDARD_LIBRARY/03_CONTROL_OPERATIONS.txt",
+      "bytes": 9794,
+      "sha256": "de655a05da9a3d78e730687bcbce4e86cffbc88c6b3f0928a4e1ef89690e3ea6"
+    },
+    {
+      "path": "06_STANDARD_LIBRARY/04_BUILT_IN_FUNCTIONS.txt",
+      "bytes": 3399,
+      "sha256": "e8e177c5c5614135e63f54d289d7f37f0c85e49f0b2628b7dc5c71d0278a76df"
+    },
+    {
+      "path": "06_STANDARD_LIBRARY/05_CORE_STATUS_IDENTIFIERS.txt",
+      "bytes": 2828,
+      "sha256": "298182d91ee08fc71dbb68fcc6371334da34415cb02e9d00b0c4b3cd9987d6df"
+    },
+    {
+      "path": "06_STANDARD_LIBRARY/06_CORE_ERROR_IDENTIFIERS_PART_1.txt",
+      "bytes": 6145,
+      "sha256": "f7d47531ea06f14649b9438263c251d7097ef941552d7826d1e8682aac6b4b3e"
+    },
+    {
+      "path": "06_STANDARD_LIBRARY/07_CORE_ERROR_IDENTIFIERS_PART_2.txt",
+      "bytes": 8613,
+      "sha256": "f4635ec57c26eed3bdd318ff9f60279ba9f177aa7f05da32363bb8bc713cbde4"
+    },
+    {
+      "path": "06_STANDARD_LIBRARY/08_BUILT_IN_IDENTIFIER_GROUPS.txt",
+      "bytes": 1128,
+      "sha256": "fd0d79daa5f8ce9cd1aa96cb21c39df6d6a9c5490ebd466ec93bf55d5c9744d3"
+    },
+    {
+      "path": "06_STANDARD_LIBRARY/09_BUILT_IN_RESOLUTION_RULES.txt",
+      "bytes": 415,
+      "sha256": "b12c0aa34376d5f275d4c881f71b264eb50b3253088880f8671ca65eb3a172d4"
+    },
+    {
+      "path": "06_STANDARD_LIBRARY/10_CORE_OPERATION_PARAMETER_RULES.txt",
+      "bytes": 24234,
+      "sha256": "fe3c5fa69d347bd54b7d74c54b98070f0971d5b19e881bf95ba1da6ffe759b07"
+    },
+    {
+      "path": "07_VERSIONING_AND_EXTENSIONS/01_LANGUAGE_AND_SPECIFICATION_VERSIONING.txt",
+      "bytes": 1140,
+      "sha256": "4570054addaf64661535a930c513a405d1553a0183ac49aa93562dfbd90bc807"
+    },
+    {
+      "path": "07_VERSIONING_AND_EXTENSIONS/02_IMPORT_VERSION_CHECKSUM_AND_NAMESPACE.txt",
+      "bytes": 2009,
+      "sha256": "c494ba19a2d214b08c78d3e4e4cc00d5815bc1dc34f8c714fba1695593f87345"
+    },
+    {
+      "path": "07_VERSIONING_AND_EXTENSIONS/03_EXTENSION_CONTRACT.txt",
+      "bytes": 2525,
+      "sha256": "bdcee8e9ad1c0760381e3ee8ca033112893382c5bf036e40eb47982d78b2aa5d"
+    },
+    {
+      "path": "07_VERSIONING_AND_EXTENSIONS/04_CONFORMANCE_LEVELS.txt",
+      "bytes": 713,
+      "sha256": "8e709aa8b0e37de8c13b79f741d3eddb7c53fdbd829fb2ddb602be68fd9e8f45"
+    },
+    {
+      "path": "07_VERSIONING_AND_EXTENSIONS/05_FORWARD_COMPATIBILITY_AND_UNKNOWN_FEATURES.txt",
+      "bytes": 480,
+      "sha256": "a31252911c7fd6316bff3a9d3985bd198a19b99ce427f198ef36119708f83d29"
+    },
+    {
+      "path": "07_VERSIONING_AND_EXTENSIONS/06_NORMATIVE_SOURCE_PRECEDENCE.txt",
+      "bytes": 901,
+      "sha256": "65e352e6a80b56d6e228559116fee76e1471916084b04054dcf1cb5d6de1a1dd"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/01_WRONG_KEYWORD_CASE.invalid.lcl",
+      "bytes": 26,
+      "sha256": "dc30fd2a30d1da7b7350cec290f0d4516ff4dc009adc271e485b2eff2a6e7764"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/01_WRONG_KEYWORD_CASE.invalid.lcl.expected.txt",
+      "bytes": 113,
+      "sha256": "48da94d08a261eb8bd7b366158ce30942c1f4bf8a4bc84a2dc9cdadde62aee03"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/02_TAB_INDENTATION.invalid.lcl",
+      "bytes": 23,
+      "sha256": "26c9c523ba92a66c82b1b55de9c6b57bedfe96da417f6a604dc252c12d600ee3"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/02_TAB_INDENTATION.invalid.lcl.expected.txt",
+      "bytes": 111,
+      "sha256": "1b72812c2596815a22894d4da13f16456faac14117ca196a798b64f3dafd8649"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/03_BARE_EQUALS.invalid.lcl",
+      "bytes": 27,
+      "sha256": "55ed9841fecb8f7dd26619f5119078c7bbe860b441a1f2ed7199a08f65065514"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/03_BARE_EQUALS.invalid.lcl.expected.txt",
+      "bytes": 115,
+      "sha256": "d1c146089a9cc71189e6f7036d273250b62ed0050cc2db7886035b94976df558"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/04_UNKNOWN_MODAL.invalid.lcl",
+      "bytes": 155,
+      "sha256": "9d937e891de5565bcae7d51b8fb6581ad64dcfdf92e84fc4b64fabab0223fa83"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/04_UNKNOWN_MODAL.invalid.lcl.expected.txt",
+      "bytes": 116,
+      "sha256": "ac8573ea75e04759cceb3eb4739f5505aa05f37347002fe1fd4776f2233988ea"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/05_DUPLICATE_ID.invalid.lcl",
+      "bytes": 243,
+      "sha256": "709d46fdb2ae339a97c13510609c690567b7d5b7204639d3c775882a48e805f2"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/05_DUPLICATE_ID.invalid.lcl.expected.txt",
+      "bytes": 113,
+      "sha256": "046ffe582ea10ccbc536bbfa136d75e4eb6c968469ef4e1a4befbb2f8dd1fb2f"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/06_UNRESOLVED_REFERENCE.invalid.lcl",
+      "bytes": 175,
+      "sha256": "f784de21ec18484f88b5421392dc898e523586e8093631bb7cf17675804db66c"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/06_UNRESOLVED_REFERENCE.invalid.lcl.expected.txt",
+      "bytes": 121,
+      "sha256": "b1366c605cf9cfb9df0d0d837657128cd3caac0b817c45ffa647029d12d8517f"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/07_TYPE_MISMATCH.invalid.lcl",
+      "bytes": 193,
+      "sha256": "8242397fccd329ba5cc65ee6841d80d9384efb8c2057177a927ff54447c24a10"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/07_TYPE_MISMATCH.invalid.lcl.expected.txt",
+      "bytes": 114,
+      "sha256": "80b68c630da4d84a823f2d4abe10e147a90e885ddecb76e6769465519a803bff"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/08_HARD_CONFLICT.invalid.lcl",
+      "bytes": 321,
+      "sha256": "ad770b4182a07a9e1b6a5f0efe589b90ca4e3d3c9d3a5d3d4c4e01628bc9502c"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/08_HARD_CONFLICT.invalid.lcl.expected.txt",
+      "bytes": 114,
+      "sha256": "802637c20d3484bd1de1f431c29324533a885775fb2adf74779ed0eb6edb7f1b"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/09_UNBOUNDED_WHILE.invalid.lcl",
+      "bytes": 218,
+      "sha256": "89538fd5dd9fc1e6247f8a21a4f0dd1588d4bd276e1c6211e86be6a8d57ff483"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/09_UNBOUNDED_WHILE.invalid.lcl.expected.txt",
+      "bytes": 116,
+      "sha256": "ac8573ea75e04759cceb3eb4739f5505aa05f37347002fe1fd4776f2233988ea"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/10_CONTEXT_WITHOUT_SCOPE.invalid.lcl",
+      "bytes": 215,
+      "sha256": "4cd4dffa0ae4eaf2fef5ec042964d154b4af5294165ac2ef07bb46d76647e3c3"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/10_CONTEXT_WITHOUT_SCOPE.invalid.lcl.expected.txt",
+      "bytes": 115,
+      "sha256": "ea6298878411745d0d0712c85d9845866ad5e4111431a3462d869a960aa3df97"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/11_DUPLICATE_FIELD.invalid.lcl",
+      "bytes": 154,
+      "sha256": "1e440dcb3411b66bca6d15edca30cd662b4d6a8a951cff6f2a5db07e59b074f8"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/11_DUPLICATE_FIELD.invalid.lcl.expected.txt",
+      "bytes": 116,
+      "sha256": "53c75b217f9a266d3305483450f257162d8d710de0b385567b42be4d05fe6a58"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/12_FLOATING_VERSION.invalid.lcl",
+      "bytes": 137,
+      "sha256": "fa6365129d6ceb158aed4f0c36dffd7429cdd360ec56b07f1f05d319e7dc3d49"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/12_FLOATING_VERSION.invalid.lcl.expected.txt",
+      "bytes": 120,
+      "sha256": "3e6132775b1f9525b599ed60799951921104c1df9a2c569079bdc9f8b8229e4f"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/13_PERCENT_SYMBOL.invalid.lcl",
+      "bytes": 188,
+      "sha256": "26eaca77139a3f8b85a16a2a394ddf1fc39d1353f19b67b63310e86789e317e2"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/13_PERCENT_SYMBOL.invalid.lcl.expected.txt",
+      "bytes": 115,
+      "sha256": "d1c146089a9cc71189e6f7036d273250b62ed0050cc2db7886035b94976df558"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/14_SINGLE_QUOTED_STRING.invalid.lcl",
+      "bytes": 130,
+      "sha256": "5ed7b1105dd4647c1766e849b60a2b287288d13076b7422aa031bbdbb56d68d0"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/14_SINGLE_QUOTED_STRING.invalid.lcl.expected.txt",
+      "bytes": 115,
+      "sha256": "d1c146089a9cc71189e6f7036d273250b62ed0050cc2db7886035b94976df558"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/15_MISSING_TASK_STRUCTURE.invalid.lcl",
+      "bytes": 931,
+      "sha256": "42ff49f09ed968560888e85549e91760946596b5fcc699c88e962f8c57097eb8"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/15_MISSING_TASK_STRUCTURE.invalid.lcl.expected.txt",
+      "bytes": 192,
+      "sha256": "58f7697e48bf979f2bd7228f01f63df028d1582b7a7fbf7a8451a64bbde4c710"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/16_ITEM_COLLECTION.invalid.lcl",
+      "bytes": 245,
+      "sha256": "78ea61c71ed3916358c8ae1f5d2a6200684db6df7e81fa2571057bd0c1fd532a"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/16_ITEM_COLLECTION.invalid.lcl.expected.txt",
+      "bytes": 147,
+      "sha256": "3996c7388d501dff956207d27a1d7fdf7e75becfb961728c742c606850351c46"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/17_REGEX_FLAGS.invalid.lcl",
+      "bytes": 237,
+      "sha256": "252d3cff23c21e9cd381a7ebd8fa0861e7c77e4f2c7d1db674f6d3d89f3e27a9"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/17_REGEX_FLAGS.invalid.lcl.expected.txt",
+      "bytes": 148,
+      "sha256": "74b07ca829b5fc838d06bab4367672bdd7c61ad1641aef3cb83e74ffbe8d869b"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/18_NON_TERMINATING_DIVISION.invalid.lcl",
+      "bytes": 255,
+      "sha256": "5b31a6e952bf0d14c8eab905aa182af4a2cb3af4d86d2956cb7f1acd4bc39025"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/18_NON_TERMINATING_DIVISION.invalid.lcl.expected.txt",
+      "bytes": 179,
+      "sha256": "b645554804cdb472150621e0cdd7a38127fa5e0272964c59a3d0a1c04ff6f36c"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/19_DIVISION_BY_ZERO.invalid.lcl",
+      "bytes": 253,
+      "sha256": "bf8fc874074e0afea41d88f304d170719c470845c168519253cfa298c2acc4e3"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/19_DIVISION_BY_ZERO.invalid.lcl.expected.txt",
+      "bytes": 189,
+      "sha256": "9e5a48b4c926d1159ba0153740ebbcc52a86b2d4cd5c9706ba1a305d8a693ae7"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/20_UNORDERED_SET_DIRECT_ITERATION.invalid.lcl",
+      "bytes": 954,
+      "sha256": "ffd8223509e48f223317085ae26cf2b92e58883de7a01fa0706f2c57673ad730"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/20_UNORDERED_SET_DIRECT_ITERATION.invalid.lcl.expected.txt",
+      "bytes": 254,
+      "sha256": "29729b07d895640e6ea5e084368831c5822993f24b327dde60875dc5bd7eef68"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/21_SORT_STABLE_PARAMETER.invalid.lcl",
+      "bytes": 990,
+      "sha256": "e97bf1e404635a30661be8b23163ed502fc7ec8ed5c6ac29c4384c7056af93e8"
+    },
+    {
+      "path": "08_EXAMPLES/INVALID/21_SORT_STABLE_PARAMETER.invalid.lcl.expected.txt",
+      "bytes": 248,
+      "sha256": "291763b7449d220675ea8b28920fd43c711dd0d4266cec1696e25aacf289b07e"
+    },
+    {
+      "path": "08_EXAMPLES/VALID/01_MINIMAL_TASK.lcl",
+      "bytes": 955,
+      "sha256": "f94e7b51df092c264fedf6cc7a71eb28de63bde1ddc77a28243b0b252f206080"
+    },
+    {
+      "path": "08_EXAMPLES/VALID/02_IMPORT_LIBRARY.lcl",
+      "bytes": 340,
+      "sha256": "39579f9309e833b85ef600aaf589255c40e148da7a72bd868e9d0ac2eb7c20e0"
+    },
+    {
+      "path": "08_EXAMPLES/VALID/03_IMPORTING_TASK.lcl",
+      "bytes": 1212,
+      "sha256": "8015fe45e677917c471750faa5f0a0c5db511b213e6793722f8dd4285220e197"
+    },
+    {
+      "path": "08_EXAMPLES/VALID/04_AUTOMATED_CODING_TASK.lcl",
+      "bytes": 2670,
+      "sha256": "301a83211ce9a35b32fdf28cc521f48e8cd3f4d4a7e5aaa8bb320f042b24e973"
+    },
+    {
+      "path": "08_EXAMPLES/VALID/05_CONDITION_AND_ITERATION.lcl",
+      "bytes": 928,
+      "sha256": "f98a93612c8b6f0a18b9659d366ac1fd695412c8b639c4a8913b9d4cb5cf2c42"
+    },
+    {
+      "path": "08_EXAMPLES/VALID/06_EXPLICIT_CONTEXT_MEMORY_AND_STATE.lcl",
+      "bytes": 1463,
+      "sha256": "66b8955d495f8f16e6a58a84126f03aba261190208378241d886b17e3da5bd05"
+    },
+    {
+      "path": "08_EXAMPLES/VALID/07_DOMAIN_EXTENSION_OPERATION.lcl",
+      "bytes": 2374,
+      "sha256": "667f7395fa5990dfd810c50f9a68b49439627f51fa80855a5c5069da3767a6df"
+    },
+    {
+      "path": "08_EXAMPLES/VALID/08_AUTHORITY_OVERRIDE_HANDLER_AND_RETRY.lcl",
+      "bytes": 1790,
+      "sha256": "c39ceaac38b435fbedc3e3d41c61e9b1e96da0e908268e2b9bc2c6aed8f7d6d0"
+    },
+    {
+      "path": "08_EXAMPLES/VALID/09_EXPLICIT_ASSUMPTION_AND_EVIDENCE.lcl",
+      "bytes": 1275,
+      "sha256": "1089c5e294241923d9725ae56ccd5ceed13c69fb471dd53ca0bcaa496d1decd6"
+    },
+    {
+      "path": "08_EXAMPLES/VALID/10_ACCEPTED_CORE_PROFILES.lcl",
+      "bytes": 1072,
+      "sha256": "7aa34734a7195c9a216fc2fe5b95f39322be9c63868f11a221ee10c2a3587736"
+    },
+    {
+      "path": "08_EXAMPLES/VALID/11_EXACT_DIVISION_AND_ROUNDING.lcl",
+      "bytes": 733,
+      "sha256": "4265b8661949bc3a3907603d8add237c30d245578c2afa24ef39b15ecd7f44c6"
+    },
+    {
+      "path": "08_EXAMPLES/VALID/12_SET_SORTING.lcl",
+      "bytes": 1802,
+      "sha256": "c31f75e2e5da5bdb2f8d0537e118af8400bd73618349d7a9532a205e6f4dca2c"
+    },
+    {
+      "path": "08_EXAMPLES/VALID/13_TYPES_AND_REFERENCE_VALUES.lcl",
+      "bytes": 1178,
+      "sha256": "573497c85971cc22dda761210267b9ab101bf07be3b6832472fa84675cb98b0c"
+    },
+    {
+      "path": "09_CONFORMANCE/01_CONFORMANCE_REQUIREMENTS.txt",
+      "bytes": 5673,
+      "sha256": "fc1a712d84b4b062ffe070803d68727264a6f69361a14e0b546f04317f25bf30"
+    },
+    {
+      "path": "09_CONFORMANCE/CASES/core_conformance_cases_v0.3.0.json",
+      "bytes": 311953,
+      "sha256": "ac9b396f70400b36642c3fa3143199415dee4e095158702fac4c080694ebca2a"
+    },
+    {
+      "path": "09_CONFORMANCE/CASES/language_decision_cases_v0.3.0.json",
+      "bytes": 19215,
+      "sha256": "779c690e51fd02613885e77dac1784a63a8dcb5d13ced8d29e7572528051b60c"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/expected_results.json",
+      "bytes": 7792,
+      "sha256": "761505854fee97bd0296846e7786f6c4b613d2b290d738ab36b227add93a5154"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/profiles/lv-LV.json",
+      "bytes": 3395,
+      "sha256": "f177230abd6c0f473469ac69ad85f195313c94484dfd11a515a5ddbfe77f825f"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/profiles/nl-NL.json",
+      "bytes": 3299,
+      "sha256": "dabc626034efe7cc8c394fbff41247e853d0bff56183a176e32b3562adee8f19"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/profiles/ru-RU.json",
+      "bytes": 4261,
+      "sha256": "d29c5de78275d57d62546156fae7fcee24e95f4455e6be8b81cc508cfb685002"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/profiles/zh-CN.json",
+      "bytes": 3264,
+      "sha256": "c1f3ca2b69d3dee60e1928a1dbbee47b023f8ca4a8cd61beb5a7d6fd78e118d9"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/ambiguous_mixed_lv_nl.lcl",
+      "bytes": 218,
+      "sha256": "722b52f952d2ea3a826365e913511d437355654763f24bc0727c415d098176b2"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/auto_lv.lcl",
+      "bytes": 214,
+      "sha256": "2a8eb4bc9e23b220e3826c89df4f8b255a02fe473ab19f061c96f923bb5bd8df"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/auto_nl.lcl",
+      "bytes": 212,
+      "sha256": "cb6eca5f15987f052099d76859b8412adf572570cb2b7d35504997b2dab56cdd"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/auto_ru.lcl",
+      "bytes": 257,
+      "sha256": "ea3ddce9c6e9f0f461c2b738af766d146d5d0869549258febd65836f3e3008b5"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/auto_zh.lcl",
+      "bytes": 208,
+      "sha256": "296892885fd09db3d04289380b6c3bf918299089c2c877ba1b4c56e1316c8c2c"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/canonical_en.lcl",
+      "bytes": 204,
+      "sha256": "85fc1799fcf98b054077e1f34f35938483ee874f233ee6c8e7694cf007d8a320"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/canonical_unknown_word_without_profiles.lcl",
+      "bytes": 206,
+      "sha256": "2bc80c4506d6f9cfd79382b0b798ad29d5253c073446797c33db5c90fbbaf7b1"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/canonical_with_foreign_string.lcl",
+      "bytes": 220,
+      "sha256": "414f66cc4d39a1c0fbdbbd7b41aacc891376a692ce4c6d492a844924a6018de1"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/confusable_mixed_script_word.lcl",
+      "bytes": 270,
+      "sha256": "76027e6003d38ff14636242dbdf62b1de37e926383dd58a233b393019472cdc1"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/confusable_skeleton_word.lcl",
+      "bytes": 273,
+      "sha256": "55f6c316aa5d5c7575ec80c4b153b4ad91ee8729160c5eb606cbe210371cf875"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/detection_failed_unknown_word.lcl",
+      "bytes": 208,
+      "sha256": "84368c630f5317dae9ae50d07e83cd55c530a65227ab06d60df00ff75e5ecd45"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/directive_malformed_spacing.lcl",
+      "bytes": 229,
+      "sha256": "f473b870ec236c996eadc74dd04b31ba4658522116a4d86c5e7293e7b2153195"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/directive_repeated.lcl",
+      "bytes": 242,
+      "sha256": "94f8efefe4dcaef01cc3583f6a7970b84ebdb01129cb0ccad442d6bbcd4f2d50"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/directive_second_line.lcl",
+      "bytes": 228,
+      "sha256": "4a9c6bee57c8ebc75e21e8528bdb30b088662a82187ee4156372e320026cb002"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/explicit_conflicts_with_pin.lcl",
+      "bytes": 226,
+      "sha256": "a5c982f6a1f7150864be4a02fcdecca198c6bc4b0f267a4552069d6c1d5bb91d"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/explicit_lv.lcl",
+      "bytes": 228,
+      "sha256": "0ee6c4373b747e8b2267c294937cdd737cfb372ed67f4433fa6c37263834229f"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/explicit_nl.lcl",
+      "bytes": 226,
+      "sha256": "a5c982f6a1f7150864be4a02fcdecca198c6bc4b0f267a4552069d6c1d5bb91d"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/explicit_ru.lcl",
+      "bytes": 271,
+      "sha256": "edeb79c21c25a242ab558643e4650cd7bc689b20ff93229de6b8a4bb9315e92f"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/explicit_tag_case_insensitive.lcl",
+      "bytes": 228,
+      "sha256": "888aa1d819fab138ac9bc5819b2f180b9d037ee1a51bf536797b50ac4d15dc36"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/explicit_zh.lcl",
+      "bytes": 222,
+      "sha256": "a597d3912bcd9b06457e00002e974dc5428d8f09aaa139f5fefe6404e72da503"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/locale_tag_malformed.lcl",
+      "bytes": 228,
+      "sha256": "8ee0fde1e6159a08fc7414c7ff74a69e93e279b4047143985bd94772540fbdf8"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/mixed_canonical_word_auto.lcl",
+      "bytes": 214,
+      "sha256": "247835cf7c5a6ec51e05d7aa81cec24c3b7f4482fe1120fb2f0840807219b4d3"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/mixed_canonical_word_explicit.lcl",
+      "bytes": 228,
+      "sha256": "193b6a65925eaee8fa2005cdab81f1e4f4752709374d9b34c6bb357b4a076af1"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/multibyte_offset_unknown_word.lcl",
+      "bytes": 230,
+      "sha256": "02dc552684bf2b2e83c034bcd8691c18d1d341a70f63586816df5e60b8c6b1c2"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/pinned_identity_drift.lcl",
+      "bytes": 214,
+      "sha256": "2a8eb4bc9e23b220e3826c89df4f8b255a02fe473ab19f061c96f923bb5bd8df"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/pinned_matching_identity.lcl",
+      "bytes": 214,
+      "sha256": "2a8eb4bc9e23b220e3826c89df4f8b255a02fe473ab19f061c96f923bb5bd8df"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/strings_in_other_languages_auto.lcl",
+      "bytes": 230,
+      "sha256": "b13ad7f136b678744ce23637129077e8a14585a58a900a13ba6c7b92d0bfde58"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/strings_in_other_languages_explicit.lcl",
+      "bytes": 244,
+      "sha256": "208426dda8a2e66d64dff2f7862ea52df1cc95480d9b2e432f81528c1ec57122"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/unavailable_explicit_locale.lcl",
+      "bytes": 228,
+      "sha256": "440d7cbd747d55d52e3d0b4a8f1d50c5004e49fe926de71b8ef597770191b55f"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/unavailable_resolver.lcl",
+      "bytes": 214,
+      "sha256": "2a8eb4bc9e23b220e3826c89df4f8b255a02fe473ab19f061c96f923bb5bd8df"
+    },
+    {
+      "path": "09_CONFORMANCE/LOCALIZATION_FIXTURES/sources/unknown_word_under_profile.lcl",
+      "bytes": 235,
+      "sha256": "dc6cf87f66c781aea1365c2c516d56b57dcb00b63e34345f3b53c1e06b6ed779"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/duplicate_id_across_parts/main.lcl",
+      "bytes": 354,
+      "sha256": "ff46117282eaff3775919d9c6935e5d38378a62b8927dc91271fc4a9bc8aae15"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/duplicate_id_across_parts/output.lcl",
+      "bytes": 210,
+      "sha256": "6c74ed2b13bf15314a4c469efdb76559be28e81a81ccdd6c2d3ce3f4b2ac1e9a"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/duplicate_id_across_parts/task.lcl",
+      "bytes": 890,
+      "sha256": "2a49742789f36489909aa6781e834a300fb76f3ed4ab7520141bfd5820aafcaf"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/entry_without_execute/main.lcl",
+      "bytes": 223,
+      "sha256": "79d24c56b7af5c730e3a094a863fa2fa05f78225d7776fc0da39e721814e9604"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/entry_without_execute/task.lcl",
+      "bytes": 890,
+      "sha256": "2a49742789f36489909aa6781e834a300fb76f3ed4ab7520141bfd5820aafcaf"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/expected_results.json",
+      "bytes": 10855,
+      "sha256": "4b7bc20873f14194e64fe4b265de6154a029b63b5957236a8ce681c70bc66273"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/import_cycle/lib_a.lcl",
+      "bytes": 234,
+      "sha256": "8d5fa0fb343513c249b53144d4bea6c1869ef795e4287e613e1b6a67eb019993"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/import_cycle/lib_b.lcl",
+      "bytes": 234,
+      "sha256": "886ef9aa769180542343a8517f4b29aeba7c2475f8d42d73cc806ddcb7c31de5"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/import_cycle/main.lcl",
+      "bytes": 353,
+      "sha256": "ec0692d7e6ab9905d4fed05985e5ebe29f445d1c3a4f739701dde65eae48c209"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/import_cycle/task.lcl",
+      "bytes": 890,
+      "sha256": "2a49742789f36489909aa6781e834a300fb76f3ed4ab7520141bfd5820aafcaf"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/invalid_utf8_part/description.lcl",
+      "bytes": 165,
+      "sha256": "ac49ed4d4349e37db329fc0c7f8ffd5c35093726f0a1a03f991520f341e9d74b"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/invalid_utf8_part/main.lcl",
+      "bytes": 356,
+      "sha256": "1aeb817d22fdfcc97480f0213806dd6defd7c92815583ec6931217f9c813282b"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/invalid_utf8_part/task.lcl",
+      "bytes": 890,
+      "sha256": "2a49742789f36489909aa6781e834a300fb76f3ed4ab7520141bfd5820aafcaf"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/malformed_part/main.lcl",
+      "bytes": 258,
+      "sha256": "0c2aefa5fbcb35ef29e2bd6b123f418a2f7d6c467e84dc99607f364c8b71158c"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/malformed_part/task.lcl",
+      "bytes": 919,
+      "sha256": "52c7e33e2265beaff666ae74fe2c17101d29148bfa628739aeaba2321c329208"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/missing_required_part/main.lcl",
+      "bytes": 359,
+      "sha256": "42c08032e9772a3233541a46eace135225d4ba97b1032debd1600bc40cc4ea8b"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/missing_required_part/task.lcl",
+      "bytes": 890,
+      "sha256": "2a49742789f36489909aa6781e834a300fb76f3ed4ab7520141bfd5820aafcaf"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/nested_project/inner.lcl",
+      "bytes": 176,
+      "sha256": "319cfb2ce8d30b1b311e4c51815d160e7eb685979532587c19380031b7d9024e"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/nested_project/main.lcl",
+      "bytes": 339,
+      "sha256": "9f6a5ab0b9242e562991d627998902016db5a957fa20bcdf2d7d1a97fbcfe7a3"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/nested_project/task.lcl",
+      "bytes": 890,
+      "sha256": "2a49742789f36489909aa6781e834a300fb76f3ed4ab7520141bfd5820aafcaf"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_as_root/task.lcl",
+      "bytes": 890,
+      "sha256": "2a49742789f36489909aa6781e834a300fb76f3ed4ab7520141bfd5820aafcaf"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_duplicate/main.lcl",
+      "bytes": 340,
+      "sha256": "4f8905d3d7d97375b18315631eb7f6bd2093e71481df6d072dd36395521cd245"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_duplicate/task.lcl",
+      "bytes": 890,
+      "sha256": "2a49742789f36489909aa6781e834a300fb76f3ed4ab7520141bfd5820aafcaf"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_imported/main.lcl",
+      "bytes": 360,
+      "sha256": "aed085af12859d87addf40e701ba05db1dfe527d5d86f203824da347b1037f91"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_imported/rules.lcl",
+      "bytes": 203,
+      "sha256": "ec5dfaae59f1d49e2b3a34d79ea59fe0f481539547324132993764f89367c3f4"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_imported/task.lcl",
+      "bytes": 890,
+      "sha256": "2a49742789f36489909aa6781e834a300fb76f3ed4ab7520141bfd5820aafcaf"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_kind_mismatch/description.lcl",
+      "bytes": 209,
+      "sha256": "c4e3c6a0ca87a8880aa53b7c14c231c09b4ea61eb732fc053631cca206acfe18"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_kind_mismatch/main.lcl",
+      "bytes": 350,
+      "sha256": "bc812f4c6f2c4eeb8149ea6fd41362aaeae5c0fa83aaeb07849068903a272e77"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_kind_mismatch/task.lcl",
+      "bytes": 890,
+      "sha256": "2a49742789f36489909aa6781e834a300fb76f3ed4ab7520141bfd5820aafcaf"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_lcl_version/main.lcl",
+      "bytes": 260,
+      "sha256": "8eda2c47928f7b77263ac28520a8a608d0d750107ce69fe08bc230d20f5c310f"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_lcl_version/task.lcl",
+      "bytes": 890,
+      "sha256": "2991b5cf46efdc30637cc65d96e6e5a1fe74f01b3de5670528a80b57e29d7772"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_specification_version/main.lcl",
+      "bytes": 270,
+      "sha256": "2c4b4e3a94105b61d0476642b93ca503e43c9d6e3715426eee939a9ccc55e3bc"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_specification_version/task.lcl",
+      "bytes": 890,
+      "sha256": "21078c22db4b24c502bf56af13f2f53f8a32e711fc61a813d2231f8133ec6469"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_standalone_kind/library.lcl",
+      "bytes": 204,
+      "sha256": "0da1118e40dbc0847e2e291895afcf18cfe9844ce12839adeff328fa3b941d20"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_standalone_kind/main.lcl",
+      "bytes": 349,
+      "sha256": "ded1138e9cfa547f7c4ef9538aa7696c7a94fdb6afa3dadf34c3b494fe602aa2"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_standalone_kind/task.lcl",
+      "bytes": 890,
+      "sha256": "2a49742789f36489909aa6781e834a300fb76f3ed4ab7520141bfd5820aafcaf"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_with_execute/main.lcl",
+      "bytes": 261,
+      "sha256": "2bc13093900136c2c9f6c5b88f77d05c705f79dadd460ff4fe04caca6e552740"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_with_execute/task.lcl",
+      "bytes": 932,
+      "sha256": "7989debecfe1e93b1b9d9e435f0b7a0f8c8f5a546ed666d33c7c470a4488571a"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_with_import/main.lcl",
+      "bytes": 342,
+      "sha256": "8df2bb052791baab809cc061752382c7987bddb33ff75f057f5dc63ce8e77313"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_with_import/rules.lcl",
+      "bytes": 234,
+      "sha256": "60c01b5e38013d144cdb79ff03b1bbc7bd4e38747cd4596a678ef2924ba54c0b"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_with_import/shared.lcl",
+      "bytes": 202,
+      "sha256": "d8af69612e952a5dcd862caa7515b01cd993cae0c93c2c0f2dacea8d9ce1916d"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/part_with_import/task.lcl",
+      "bytes": 890,
+      "sha256": "2a49742789f36489909aa6781e834a300fb76f3ed4ab7520141bfd5820aafcaf"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/reference_cycle_across_parts/defs_a.lcl",
+      "bytes": 219,
+      "sha256": "d9f44b02516da7acf105d0924cd96a2ede15f6aa60854e2867a197468b639bd9"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/reference_cycle_across_parts/defs_b.lcl",
+      "bytes": 219,
+      "sha256": "d038101de8f345b0860b3075931c924fcc3dba279dea05ed29382f9b5e58cb01"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/reference_cycle_across_parts/main.lcl",
+      "bytes": 450,
+      "sha256": "ee8c5aa4e0dec0675e7031ef4d9afcb114fe21cc8c1dfbb1532b8350802cb14c"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/reference_cycle_across_parts/task.lcl",
+      "bytes": 890,
+      "sha256": "2a49742789f36489909aa6781e834a300fb76f3ed4ab7520141bfd5820aafcaf"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/role_violation/main.lcl",
+      "bytes": 340,
+      "sha256": "eac9f6d558af4e1aed8fc13cf89187a2944fc7f4418fef26c396e5f12b7c0f19"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/role_violation/rules.lcl",
+      "bytes": 218,
+      "sha256": "a33a975d503349b29eab153a4e9539d0d0b61fac5f9985ae725952e2bd10dd91"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/role_violation/task.lcl",
+      "bytes": 890,
+      "sha256": "2a49742789f36489909aa6781e834a300fb76f3ed4ab7520141bfd5820aafcaf"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/unknown_document_kind/main.lcl",
+      "bytes": 265,
+      "sha256": "4e36cff62cd326164b0e01487f78b8c69ca96c8403b78d59ddd7a048475ae3af"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/unknown_document_kind/task.lcl",
+      "bytes": 891,
+      "sha256": "04c54b25f48f2020cbb46b93c40460400033c2f2d594cb5f6fa4524cc482722c"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/unknown_part_kind/main.lcl",
+      "bytes": 262,
+      "sha256": "d23085be19960fac44980a45052717c9ddae28391e809a9120da6b79c4e4d39e"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/unknown_part_kind/task.lcl",
+      "bytes": 890,
+      "sha256": "2a49742789f36489909aa6781e834a300fb76f3ed4ab7520141bfd5820aafcaf"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/unresolved_cross_file_reference/main.lcl",
+      "bytes": 275,
+      "sha256": "4a741625686fa612b8a180e82276181c0cc421f080c2b9bb2959b14aaa4f74ff"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/unresolved_cross_file_reference/task.lcl",
+      "bytes": 892,
+      "sha256": "e2ed168a7a3ffa8ad54d6fa9aa800e33e515d472aad0a7cefe7efcaff6871f7c"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/valid_all_roles/checks.lcl",
+      "bytes": 259,
+      "sha256": "05c6158984a92da29577fbdef2965d68b3793ddad94666021c4791e7a8ba98a1"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/valid_all_roles/context.lcl",
+      "bytes": 258,
+      "sha256": "0592d0838093dcd95562b30b6c3e744da2ff155257db8c445d888a9866f5f420"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/valid_all_roles/data.lcl",
+      "bytes": 195,
+      "sha256": "8700af0b774693318821665914c2b028015f65206efc57469ed24b1d6dbc605f"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/valid_all_roles/definitions.lcl",
+      "bytes": 215,
+      "sha256": "f25427f23e3783ab6b038d32b74bab691b08dd4faa98ec2d39f68248bcf3290f"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/valid_all_roles/description.lcl",
+      "bytes": 221,
+      "sha256": "770e0abeb4cd850fe5e25ede3afe52185710fb2699ebfcf78bf928fa927b8f6f"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/valid_all_roles/main.lcl",
+      "bytes": 880,
+      "sha256": "74ef4d55cfd4f4591226fad9892dd3b82e89dcea4da827fefb331e013bf8a601"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/valid_all_roles/output.lcl",
+      "bytes": 210,
+      "sha256": "6c74ed2b13bf15314a4c469efdb76559be28e81a81ccdd6c2d3ce3f4b2ac1e9a"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/valid_all_roles/rules.lcl",
+      "bytes": 273,
+      "sha256": "fd1fdaae137a0aba08bbdbacba4d92bdad5d227dcd499eef11740b24b24d9d71"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/valid_all_roles/task/build.lcl",
+      "bytes": 614,
+      "sha256": "3c2e3ef493daa7589ee3d039b413c46b84a950f5c3a5d49771fe9779b1b73a69"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/valid_localized_part/main.lcl",
+      "bytes": 258,
+      "sha256": "5c3de38ff2b8053d1f23551ea87896b8948d41cc281259115a350024a14872c6"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/valid_localized_part/task.lcl",
+      "bytes": 964,
+      "sha256": "a0224665ced9e276e0c0250f8394ab0e6d4441297217245879df7c05c38240ee"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/valid_minimal/main.lcl",
+      "bytes": 259,
+      "sha256": "c76a0b937201479a991101755c80e26f30a349d10dd68d04f982babb01601532"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/valid_minimal/task.lcl",
+      "bytes": 890,
+      "sha256": "2a49742789f36489909aa6781e834a300fb76f3ed4ab7520141bfd5820aafcaf"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/valid_optional_absent/main.lcl",
+      "bytes": 378,
+      "sha256": "d25fffb07263eaa6db4328448e8648fea34f6cb7df104d4167e23cb730c83174"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/valid_optional_absent/task.lcl",
+      "bytes": 890,
+      "sha256": "2a49742789f36489909aa6781e834a300fb76f3ed4ab7520141bfd5820aafcaf"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/valid_optional_present/description.lcl",
+      "bytes": 209,
+      "sha256": "c4e3c6a0ca87a8880aa53b7c14c231c09b4ea61eb732fc053631cca206acfe18"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/valid_optional_present/main.lcl",
+      "bytes": 379,
+      "sha256": "63303b9a4a7094038a628ee476db844cda41e5f1e13d11585fba3ddb4f5728c1"
+    },
+    {
+      "path": "09_CONFORMANCE/PROJECT_FIXTURES/valid_optional_present/task.lcl",
+      "bytes": 890,
+      "sha256": "2a49742789f36489909aa6781e834a300fb76f3ed4ab7520141bfd5820aafcaf"
+    },
+    {
+      "path": "09_CONFORMANCE/SOURCE_FIXTURES/expected_results.json",
+      "bytes": 786,
+      "sha256": "7714140f7bcdf704ecd71bcf0514445d39c3b3f14dda3ea7ab3177c6a91c7a9c"
+    },
+    {
+      "path": "09_CONFORMANCE/SOURCE_FIXTURES/invalid_bom.lcl",
+      "bytes": 139,
+      "sha256": "2acb4c9fd725f7f80f8a3e8716fdde5f14aeeeeab25d379c30fe03d939684d9d"
+    },
+    {
+      "path": "09_CONFORMANCE/SOURCE_FIXTURES/invalid_control.lcl",
+      "bytes": 137,
+      "sha256": "0fee80af6a6cbdb3940e1324f41059565bd60c0ddc947628185f36a0f2be8925"
+    },
+    {
+      "path": "09_CONFORMANCE/SOURCE_FIXTURES/invalid_crlf.lcl",
+      "bytes": 144,
+      "sha256": "14a01e29bbae00d92cdbd52d5a6d10f388371f2c1604ac54b94fc2866d828a27"
+    },
+    {
+      "path": "09_CONFORMANCE/SOURCE_FIXTURES/invalid_hash.lcl",
+      "bytes": 146,
+      "sha256": "efb3d82072d83b9891a3cf612ed64b10017af8fd5d5023acd102e97e89681ec4"
+    },
+    {
+      "path": "09_CONFORMANCE/SOURCE_FIXTURES/invalid_indent_jump.lcl",
+      "bytes": 140,
+      "sha256": "1d72212a8c1fd22ab10a6d0c0b6d7f099b65cb584ea4e376c0de36bc6245f5be"
+    },
+    {
+      "path": "09_CONFORMANCE/SOURCE_FIXTURES/invalid_indent_width.lcl",
+      "bytes": 134,
+      "sha256": "3c6eaacf5cdb611c7242ccc6e41fc2c61374c11966547693d4e293cfcf39c605"
+    },
+    {
+      "path": "09_CONFORMANCE/SOURCE_FIXTURES/invalid_no_final_lf.lcl",
+      "bytes": 135,
+      "sha256": "8e5f75057a98b65fb4557541a5d969ba4dc3cf7db4464f0d7f9b2ec3e6cf7211"
+    },
+    {
+      "path": "09_CONFORMANCE/SOURCE_FIXTURES/invalid_semicolon.lcl",
+      "bytes": 137,
+      "sha256": "000a7c8db74539e11c6c7b8144375591c0b83893d224b473fa28db6cb779ff74"
+    },
+    {
+      "path": "09_CONFORMANCE/SOURCE_FIXTURES/invalid_single_quote.lcl",
+      "bytes": 136,
+      "sha256": "602408df1f2cff60fe0accd38b12a5c6c9c3ed4fb3b1d6958a42a9e002f82da1"
+    },
+    {
+      "path": "09_CONFORMANCE/SOURCE_FIXTURES/invalid_tab.lcl",
+      "bytes": 133,
+      "sha256": "5b8709d42d52d8db23e327694dbc41153f25b13976e00483fabcf286fe99a1e4"
+    },
+    {
+      "path": "09_CONFORMANCE/SOURCE_FIXTURES/invalid_trailing_space.lcl",
+      "bytes": 137,
+      "sha256": "85c18a31cd416bfc5d383408829d2ec9665587f513a3bb88978d1f5ed16fa952"
+    },
+    {
+      "path": "09_CONFORMANCE/SOURCE_FIXTURES/invalid_typographic_quote.lcl",
+      "bytes": 140,
+      "sha256": "da2b3d65d3e4f6fde4ca2986dd6348746db2c949d1af9a3fe330ec295916982e"
+    },
+    {
+      "path": "09_CONFORMANCE/SOURCE_FIXTURES/invalid_unclosed_string.lcl",
+      "bytes": 135,
+      "sha256": "3db093c45275af6c67a2c0654a690f05212c89c6da364892427198bf99c51d26"
+    },
+    {
+      "path": "09_CONFORMANCE/SOURCE_FIXTURES/valid_minimum.lcl",
+      "bytes": 145,
+      "sha256": "912c9a8e502a44cb794afa39eb014919dcbc88dbdc8b039d24236572a4eb123c"
+    },
+    {
+      "path": "09_CONFORMANCE/SOURCE_FIXTURES/valid_unicode_string.lcl",
+      "bytes": 152,
+      "sha256": "3c4067f096228420e470265fab83d097644f421d10646774429a09d870dc1124"
+    },
+    {
+      "path": "09_CONFORMANCE/TOOLS/generate_integrity.py",
+      "bytes": 8783,
+      "sha256": "7b4a27ff3ffedebea3b926ef95ac650a0fdcda6cabc3cc87a7ba137761374fe6"
+    },
+    {
+      "path": "09_CONFORMANCE/TOOLS/validate_ebnf.py",
+      "bytes": 10147,
+      "sha256": "337ca2140aaf5d97efb4ebbcff07e8fc5c421880daca502bc0c63615a5fc3228"
+    },
+    {
+      "path": "09_CONFORMANCE/TOOLS/validate_language_contracts.py",
+      "bytes": 21104,
+      "sha256": "ba50947a952291495ce0c186154c0246b86c05cc6702094f00ff7d124ad76ed0"
+    },
+    {
+      "path": "09_CONFORMANCE/TOOLS/validate_localization.py",
+      "bytes": 35679,
+      "sha256": "89984625edc44b68dd0a614a7673770dee366030ba5c005e83a3ded1870089af"
+    },
+    {
+      "path": "09_CONFORMANCE/TOOLS/validate_projects.py",
+      "bytes": 29171,
+      "sha256": "79b58a9600f659446bc6374f6322cf123c33e27510a8c8b8eaf5ef3b1fab6c43"
+    },
+    {
+      "path": "09_CONFORMANCE/TOOLS/validate_release.py",
+      "bytes": 386245,
+      "sha256": "702f5048d0cf52af3a399829015b00da1b1971f5d11061b3335d758cdd27db5b"
+    },
+    {
+      "path": "09_CONFORMANCE/TOOLS/validate_source_fixtures.py",
+      "bytes": 7730,
+      "sha256": "dd9d8ba15a5cfeb036d45c6cc770b206df864db026a613c4a0ae153fe2be3a35"
+    },
+    {
+      "path": "10_REGISTRIES/ambiguous_replacements_v0.3.0.json",
+      "bytes": 1152,
+      "sha256": "9adcc6a958535c1c2b0c005ed0a38d46c06abb1a357274f4dbd0ef3c2af3722d"
+    },
+    {
+      "path": "10_REGISTRIES/block_schemas_v0.3.0.json",
+      "bytes": 35152,
+      "sha256": "11a5e5f52ef793344f9f069791318f47aa102de324744a1bb7d195786b037cb6"
+    },
+    {
+      "path": "10_REGISTRIES/built_in_groups_and_results_v0.3.0.json",
+      "bytes": 28272,
+      "sha256": "9bd66166d5f2c4399317c83724db7d485ce3582454d19afd8787a8a5d0be552d"
+    },
+    {
+      "path": "10_REGISTRIES/field_signatures_v0.3.0.json",
+      "bytes": 97771,
+      "sha256": "24d856693fd9a0e1c4183817b90b9a7a091af646d9d9da101033316e0bf7bb2f"
+    },
+    {
+      "path": "10_REGISTRIES/formats_encodings_units_v0.3.0.json",
+      "bytes": 3734,
+      "sha256": "d7ff36e2d51d93b1e48f01bef3b810cee4bb48a465b4f2af44259e30e110dd9f"
+    },
+    {
+      "path": "10_REGISTRIES/keywords_v0.3.0.json",
+      "bytes": 34280,
+      "sha256": "fe019401986a22b44dd9675571db97a4fb54a4c1c353568d1f25d01da241c79e"
+    },
+    {
+      "path": "10_REGISTRIES/locale_profile_schema_v0.3.0.json",
+      "bytes": 12988,
+      "sha256": "b058d0ce09eef195a606d14a09b5791f9726a029dbd41e2747b0d568bc16519d"
+    },
+    {
+      "path": "10_REGISTRIES/localization_surface_v0.3.0.json",
+      "bytes": 42070,
+      "sha256": "37b9fb9ff24173119744c84e8245195faa65eae0f21b92da137f7648db4b73b9"
+    },
+    {
+      "path": "10_REGISTRIES/operations_v0.3.0.json",
+      "bytes": 119015,
+      "sha256": "0dcdab9859a8b8bf61ba85004d088e7f8402c3c44efd79d996d2bf1116c45b2f"
+    },
+    {
+      "path": "10_REGISTRIES/operators_and_functions_v0.3.0.json",
+      "bytes": 30426,
+      "sha256": "83c7bc1a94ca5bad1245cd833def8ee5a7cd015089392e860a96c07467c27694"
+    },
+    {
+      "path": "10_REGISTRIES/semantic_meta_types_v0.3.0.json",
+      "bytes": 1416,
+      "sha256": "eb68b4e32f15ac16e04cc9cec8102fb183565d62bd8ad6967798d6afa9f97cfe"
+    },
+    {
+      "path": "10_REGISTRIES/statuses_and_errors_v0.3.0.json",
+      "bytes": 68417,
+      "sha256": "9a700deb237e48fc150aba7a96b6eb51324b8e92a91a6621d303d41d94f0d537"
+    },
+    {
+      "path": "10_REGISTRIES/symbols_v0.3.0.json",
+      "bytes": 3105,
+      "sha256": "c59d03834499ada95c7a7c9e974820fb86007826f965759fa5bf1fdd5cb672b1"
+    },
+    {
+      "path": "10_REGISTRIES/types_v0.3.0.json",
+      "bytes": 22763,
+      "sha256": "4783cf479b0729e4ef6cffcb344357f36c667678c77942c120bf6d59d6d53d2a"
+    },
+    {
+      "path": "11_RESEARCH_BASIS/01_DOCUMENTATION_BASIS.txt",
+      "bytes": 564,
+      "sha256": "0e24a8dad4763e5e4b2e029de9972e4d9599995dd7c5406c6435e244096cd8ef"
+    },
+    {
+      "path": "11_RESEARCH_BASIS/02_FROZEN_DESIGN_DECISIONS.txt",
+      "bytes": 1072,
+      "sha256": "cdc31ab571e93ee84c0b9c91096d5485c1b419d6064e0fc9697ff27214b8f090"
+    },
+    {
+      "path": "11_RESEARCH_BASIS/03_INTENTIONALLY_EXCLUDED_FROM_CORE.txt",
+      "bytes": 578,
+      "sha256": "a6b10c06789f59f800c24c4d85aadf039938b6e360425fab69da09f744c96163"
+    },
+    {
+      "path": "11_RESEARCH_BASIS/04_RELATION_TO_EXISTING_LANGUAGES.txt",
+      "bytes": 598,
+      "sha256": "7b0b4d09e4cd6313ede4cd7c4ce813fee4337b666e88001fbbf02f27421dd56f"
+    },
+    {
+      "path": "CHANGELOG.txt",
+      "bytes": 16127,
+      "sha256": "263e2b6322be129ed87de9e12503cadab53ca11a374ccc0699ec084207b72cf3"
+    },
+    {
+      "path": "INDEX.txt",
+      "bytes": 13855,
+      "sha256": "d0f0631a4dfdb71bad2f3613da19b9d801a36a4bf7cedfad863d92112622e895"
+    },
+    {
+      "path": "README.txt",
+      "bytes": 4818,
+      "sha256": "d8dcb1f2145a53ef3c4e56ef38868b54fc97407efa5dd85a9bd291b9874c06ac"
+    },
+    {
+      "path": "VERSION.txt",
+      "bytes": 973,
+      "sha256": "eafa1bc2c199d719a3cd58824131a1f6efc605e276940cb0d64996f6efc1077e"
+    }
+  ]
+}

@@ -1,0 +1,85 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Collections, Objects, Enums, and Equality
+LANGUAGE VERSION: 0.3.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+LIST equality requires equal element type, length, order, and recursively equal
+members. SET is intrinsically unordered: source or insertion order has no semantic
+meaning, equal source members collapse under strict equality, and SET equality
+requires the same element type and the same unique members. OBJECT equality
+requires equal schema/field set and recursively equal values; field source order
+does not affect equality. ENUM values compare by exact enum-domain identity and
+member identifier; the same member spelling in different domains is unequal.
+Transparent type aliases preserve the original value type, domain, and schema.
+
+STRING equality is code-point exact. Numeric equality allows INTEGER-to-DECIMAL
+promotion only. DATE equality uses the same Gregorian date. TIME and DATETIME
+equality use the same offset-normalized chronological value, and DURATION equality
+uses the same exact normalized elapsed-time magnitude. Thus equal canonical order
+keys within one declared ordered type are strict-equal values and collapse as SET
+duplicates before ordering. MEASURE equality requires the same exact UNIT and
+equal exact numeric magnitude; different units yield FALSE, without conversion
+or a unit error. Ordered MEASURE comparison and the same-unit arithmetic
+overloads still require identical UNIT identifiers. REFERENCE equality compares
+resolved declaration identity.
+
+Equality accepts any two material values and the permitted special sentinels.
+Different material static types compare FALSE, except for the exact
+INTEGER-to-DECIMAL comparison above. In particular NULL is equal only to NULL,
+and LIST[INTEGER] and LIST[DECIMAL] are unequal despite equal numeric members.
+Inequality is the Boolean inverse of equality. Sentinel equality follows
+09_MISSING_UNKNOWN_NULL_AND_OPTIONALITY.txt, never an unknown comparison result.
+
+The operands first follow types_v0.3.0.json#/reference_context_contract.
+REF(input.a) == REF(input.b) therefore compares their bound values. When those
+values are stored references, their referent identities are compared after one
+read; neither referent is read again. References to non-value declarations also
+retain identity. A loop-local reference identity includes its iteration binding.
+
+CONSTRUCTED MATERIAL IDENTITIES
+
+Authority: 10_REGISTRIES/types_v0.3.0.json#/material_identity_contract
+
+SCOPE
+Equality identities for valid constructed values; invalid constructors never
+produce values. Resource alias resolution for effects or containment is
+independent of value equality.
+
+URI
+Exact decoded constructor STRING; no scheme/host case folding,
+percent-decoding, or resource-equivalence normalization.
+
+GLOB
+Core pattern profile version and exact decoded pattern STRING.
+
+REGEX
+Core pattern profile version, exact decoded pattern STRING, and canonical flags
+STRING; omitted flags equal empty flags. Equal accepted languages alone do not
+make patterns equal.
+
+PATH
+Exact address-form identity: absolute form uses its exact decoded absolute
+STRING; WORKSPACE form uses the resolved workspace declaration identity and
+exact decoded relative STRING; import-relative form uses importing source-unit
+identity and exact decoded relative STRING; part-relative form uses the project
+entry's source-unit identity and exact decoded relative STRING. Different forms
+are unequal.
+Dot-segment, link, and resource equivalence do not alter this identity;
+containment must still be validated on the resolved target.
+
+BOOLEAN
+Equal exactly when both are TRUE or both are FALSE.
+
+BYTES
+Equal exactly when their nonnegative integer counts are equal; BYTES is not
+binary content.
+
+PERCENTAGE
+Equal exactly when their exact numeric magnitudes are equal.
+
+OTHER TYPES
+STRING, INTEGER, DECIMAL, MEASURE, DATE, TIME, DATETIME, DURATION, NULL,
+REFERENCE, ENUM, LIST, SET, and OBJECT retain their explicitly defined equality
+rules; none consults ambient resource state.

@@ -1,0 +1,58 @@
+LEARNED COMPUTING LANGUAGE (LCL)
+TITLE: Document Kinds and Boundaries
+LANGUAGE VERSION: 0.3.0
+STATUS: NORMATIVE
+DATE: 2026-08-30
+
+
+kind.task
+    Executable specification with exactly one EXECUTE root.
+
+kind.library
+    Importable definitions and rules; no EXECUTE.
+
+kind.extension
+    Versioned definitions only; cannot contain executable tasks/rules.
+
+kind.data
+    Typed data/definitions only.
+
+kind.test
+    Executable conformance/test document with exactly one EXECUTE root.
+
+kind.project
+    Project entry: declares the project's parts with PART, its IMPORT and
+    EXTENSION sources, and exactly one EXECUTE root.
+
+kind.part.task
+    Project part for executable work: every kind.task top-level block except
+    IMPORT, EXTENSION and EXECUTE.
+
+kind.part.description
+    Project part for non-normative description: COMMENT and EXAMPLE only.
+
+kind.part.rules
+    Project part for rules: SCOPE, ALLOW, FORBID, REQUIRE, PREFER, PRESERVE
+    and OVERRIDE.
+
+kind.part.context
+    Project part for supporting context: WORKSPACE, CONTEXT, MEMORY and STATE.
+
+kind.part.data
+    Project part for values: DATA, INPUT and ASSUME.
+
+kind.part.output
+    Project part for declared outputs: OUTPUT.
+
+kind.part.checks
+    Project part for checks and completion: VALIDATE, VERIFY, TEST, EVIDENCE,
+    SUCCESS and FAILURE.
+
+kind.part.definitions
+    Project part for definitions: DEFINE.
+
+Every document starts with LCL then SPECIFICATION. Top-level block legality is
+closed by 10_REGISTRIES/block_schemas_v0.3.0.json. Every project part kind also
+admits COMMENT and EXAMPLE. A project part is legal only as a part of the
+evaluation root's project, and a kind.project document only as the evaluation
+root; see 05_SEMANTICS/13_PROJECTS_PARTS_AND_PROJECT_ADMISSION.txt.

@@ -1,0 +1,16 @@
+LCL:
+    VERSION: "0.3.0"
+
+SPECIFICATION:
+    ID: fixture.checks
+    NAME: "Checks"
+    VERSION: "1.0.0"
+    KIND: kind.part.checks
+
+VERIFY:
+    ID: verify.value
+    ASSERT: REF(output.value) == 8
+
+SUCCESS:
+    ID: success.double
+    ALL: [REF(verify.value)]

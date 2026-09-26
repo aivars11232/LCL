@@ -1,0 +1,89 @@
+LCL CORE 0.3.0 RELEASE CANDIDATE
+CONFORMANCE REQUIREMENTS
+NORMATIVE
+
+The catalog CASES/core_conformance_cases_v0.3.0.json is a requirements index. It
+contains 830 descriptive normative requirements covering keywords, symbols,
+types, blocks, field signatures, operators, pure functions, core operations,
+statuses, errors, diagnostic selection, failure lifecycle, enum groups, result
+schemas, reserved namespaces, the registry contract type notation, and the
+project model. Its
+presence, shape, and count are structural evidence only; catalog entries without
+concrete input and an implementation result are not executed conformance cases.
+The index includes positive and negative DETERMINISTIC assertion requirements,
+the error.determinism.mismatch contract, all operation-axis vocabularies, and one
+axis-resolution requirement for each of the 39 core operations. Its nine
+result-schema entries cover exact common and schema-specific cardinality,
+execution/domain separation, closure, failure/effect truth, UNKNOWN legality,
+and OUTPUT projection/binding requirements. Its DIAGNOSTIC-POLICY-0796 and
+FAILURE-LIFECYCLE-0797 entries cover the complete 90-error selection metadata
+and the producer-relative phase, evidence, indeterminate-state, and retry-safety
+contracts. Entries ERROR-CONTRACT-0800 through ERROR-CONTRACT-0808 cover the
+nine localization-stage errors added by Core 0.2.0. Entries 0809 through 0830
+cover the PART keyword and block, the project_part_kinds group, the four
+error.project identifiers, and one PROJECT-MODEL requirement for each key of
+10_REGISTRIES/block_schemas_v0.3.0.json#/project_contract, added by Core 0.3.0.
+
+TOOLS/validate_source_fixtures.py executes the concrete SOURCE_FIXTURES lexical
+and document-kind expectations. TOOLS/validate_ebnf.py validates static grammar
+structure. The static_example_contracts gate in TOOLS/validate_release.py checks
+the 13 valid examples for bounded source hygiene, closes all 21 invalid
+expectation pairs against the error/status/phase registries, and pins seven
+focused primary diagnostics together with their exact example bytes. These
+checks do not parse or execute the examples. None of the tools is a type
+checker, evaluator, or executor.
+
+TOOLS/validate_localization.py re-derives
+10_REGISTRIES/localization_surface_v0.3.0.json from the other registries,
+checks 10_REGISTRIES/locale_profile_schema_v0.3.0.json, validates the fixture
+locale profiles in LOCALIZATION_FIXTURES/profiles, rejects deterministic
+invalid-profile mutations, and evaluates the pre-grammar localization stage for
+every source in LOCALIZATION_FIXTURES/sources against expected_results.json.
+The lv-LV, nl-NL, ru-RU and zh-CN fixture profiles map only the reserved words
+used by their test programs. They prove the localization mechanism, not
+translation quality or complete language coverage. The tool performs no
+grammar, resolution, typing, or execution.
+
+TOOLS/validate_projects.py checks the registry structure of the project
+contract and evaluates every project in PROJECT_FIXTURES against
+expected_results.json with a bounded static reading of top-level blocks,
+single-line fields and REF identifiers. Each rejecting fixture plants exactly one
+defect and names its single expected diagnostic with its source file and
+original byte offset; six negative controls plant one defect in a copy of an
+accepted project. The tool follows only the paths that PART and IMPORT
+declarations name and never enumerates a project directory to find parts. It
+is not a lexer, parser, resolver, type checker or executor, and it does not
+prove engine behavior.
+
+CASES/language_decision_cases_v0.3.0.json adds descriptive witnesses for source
+types and aliases, reference/value contexts, positional calls, zero-based indexes,
+keyword case, expression demand, empty collections, quantifiers, reductions,
+calculation fragments, comparison and grouping shapes, retry budgets, diagnostic
+aliases, continuation, fallback, lifecycle endpoints, frozen pattern syntax, and
+projects.
+These witnesses state expected language results; they have not been executed.
+Their own case_count records their current inventory independently of the
+830-entry registry coverage index.
+
+TOOLS/validate_language_contracts.py checks agreement between grammar, registry
+fields, block prose, lifecycle metadata, expression truth tables, and descriptive
+witness coverage. Representative mutations of those contracts must fail this
+check. This is static specification evidence, not an executable LCL evaluator.
+The release gate also requires every decision in
+00_RELEASE/05_LANGUAGE_CLOSURE.json to be closed, explicit current release status,
+and fresh integrity. Historical release assertions cannot satisfy that gate.
+
+A source-conforming implementation must pass localization, lexical, grammar,
+block, and field cases. A semantics-conforming implementation must additionally
+pass type, operator, function, operation, status, error, and execution cases. A
+claimed result must state implementation version, host capabilities, exact
+failed case IDs, and evidence. Unsupported core behavior is failure, not silent
+inference. No semantic-conformance claim is permitted while the required
+implementation or concrete executable cases are absent.
+
+A parser, interpreter, compiler, runtime, semantic engine, and executable case
+runner are outside the bare-language package scope. Their absence is not a
+bare-language completeness or release blocker and must be reported by the static
+release validator as OUT_OF_SCOPE or NOT_APPLICABLE, never as PASS. This does not
+weaken the separate evidence required from any implementation that claims one of
+the conformance levels above.

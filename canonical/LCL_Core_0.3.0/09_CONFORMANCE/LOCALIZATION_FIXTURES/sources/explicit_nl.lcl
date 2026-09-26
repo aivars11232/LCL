@@ -1,0 +1,14 @@
+@locale nl-NL
+LCL:
+    VERSIE: "0.3.0"
+
+SPECIFICATIE:
+    ID: fixture.localized_minimum
+    NAAM: "Localized minimum"
+    VERSIE: "1.0.0"
+    SOORT: kind.data
+
+GEGEVENS:
+    ID: data.count
+    TYPE: GEHEEL_GETAL
+    WAARDE: 3

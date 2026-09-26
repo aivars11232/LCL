@@ -1,0 +1,15 @@
+LCL:
+    VERSION: "0.3.0"
+
+SPECIFICATION:
+    ID: fixture.context
+    NAME: "Context"
+    VERSION: "1.0.0"
+    KIND: kind.part.context
+
+CONTEXT:
+    ID: context.audience
+    TYPE: OBJECT
+    SCOPE: REF(scope.task)
+    VALUE:
+        reading_level: "general"

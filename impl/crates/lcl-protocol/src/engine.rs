@@ -49,9 +49,9 @@ use lcl_completion::{Completion, Contracts as CompletionContracts, Publication, 
 use lcl_diagnostics::Stage;
 use lcl_lexer::{Lexicon, Position, Span, TokenKind};
 use lcl_localization::{
-    localization_decides, read_profile_file, Contract, CoverageDetector, LocaleDetector,
-    LocaleProfileResolver, LocaleTag, Localization, MemoryResolver, Pin, LANGUAGE_VERSION,
-    MAX_PROFILE_FILES,
+    localization_decides, read_profile_file, validate_profile, Contract, CoverageDetector,
+    LocaleDetector, LocaleProfileResolver, LocaleTag, Localization, MemoryResolver, Pin, Profile,
+    LANGUAGE_VERSION, MAX_PROFILE_FILES,
 };
 use lcl_parser::syntax::Expr;
 use lcl_parser::{Grammar, Parser};
@@ -297,6 +297,30 @@ impl Engine {
     /// stage.
     pub fn localization_contract(&self) -> Option<&Contract> {
         self.localization.as_ref().map(|l| &l.contract)
+    }
+
+    /// The block and field vocabulary this engine parses with.
+    pub fn grammar(&self) -> &Grammar {
+        &self.grammar
+    }
+
+    /// The validated profile this engine's localization stage would select for
+    /// `locale`: the same resolver and the same validation a `@locale`
+    /// directive gets. An engine without that stage has no profile to give.
+    pub fn locale_profile(&self, locale: &LocaleTag) -> Result<Profile, String> {
+        let Some(l) = &self.localization else {
+            return Err(format!(
+                "this engine has no localization stage, so it has no profile for {}",
+                locale.as_str()
+            ));
+        };
+        let bytes = l
+            .resolver
+            .resolve(locale)
+            .map_err(|e| format!("the locale profile for {} is unavailable: {}", locale.as_str(), e.0))?
+            .ok_or_else(|| format!("there is no locale profile for {}", locale.as_str()))?;
+        validate_profile(&l.contract, &bytes, Some(locale))
+            .map_err(|e| format!("the locale profile for {}: {} ({})", locale.as_str(), e.detail, e.id))
     }
 
     /// Localize (when this engine applies the localization stage), lex and

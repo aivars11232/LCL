@@ -38,6 +38,7 @@ set -eu
 bin=@BIN@
 spec=@SPEC@
 localized_spec=@LOCALIZED_SPEC@
+project_spec=@PROJECT_SPEC@
 default_project=@DEFAULT_PROJECT@
 
 state=${XDG_STATE_HOME:-$HOME/.local/state}/lcl
@@ -104,6 +105,13 @@ if [ -n "$localized_spec" ]; then
         fail "The LCL 0.2.0 specification package is missing from $localized_spec. Reinstall LCL."
     fi
     set -- --localized-spec "$localized_spec" "$@"
+fi
+
+if [ -n "$project_spec" ]; then
+    if [ ! -d "$project_spec" ]; then
+        fail "The LCL 0.3.0 specification package is missing from $project_spec. Reinstall LCL."
+    fi
+    set -- --project-spec "$project_spec" "$@"
 fi
 
 # Not exec: the exit status is wanted, so that a workspace which refuses to

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="lcl-token" content="{{TOKEN}}">
+<title>LCL Users Manual</title>
+<link rel="stylesheet" href="manual.css{{Q}}">
+</head>
+<body>
+<header id="bar">
+  <button id="toc-toggle" type="button" aria-label="Contents" aria-expanded="false">☰</button>
+  <strong class="title">Users Manual</strong>
+  <span id="version" class="version"></span>
+  <nav class="history">
+    <button id="back" type="button" aria-label="Back">←</button>
+    <button id="forward" type="button" aria-label="Forward">→</button>
+  </nav>
+  <input id="search" type="search" placeholder="Search the manual" aria-label="Search the manual">
+</header>
+<div id="layout">
+  <nav id="toc" aria-label="Contents"></nav>
+  <main id="content" tabindex="-1"><p class="empty">Loading…</p></main>
+</div>
+<script src="manual.js{{Q}}"></script>
+</body>
+</html>

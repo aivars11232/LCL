@@ -67,6 +67,7 @@ fn start(home: &Home) -> Pc {
         specs: Specs {
             core: repository().join("canonical/LCL_Core_0.1.0"),
             localized: Some(repository().join("canonical/LCL_Core_0.2.0")),
+            project: Some(repository().join("canonical/LCL_Core_0.3.0")),
         },
         listen: Some("127.0.0.1".into()),
         port: Some(0),
@@ -305,6 +306,79 @@ fn reconnect(pc: &Pc, device: &Device) -> (Client, Json) {
     let mut client = connect(pc, device, &pc.fingerprint).expect("TLS to the pinned PC");
     let answer = client.hello("\"intent\":\"connect\"");
     (client, answer)
+}
+
+/// Core 0.3 Task 03: a phone creates files by role with the PC's own
+/// scaffold, reads project readiness from the PC's engine, and a save from a
+/// revision the desktop has since replaced is refused.
+#[test]
+fn core03_roles_scaffolds_readiness_and_a_desktop_newer_revision() {
+    let home = Home::new("core03");
+    std::fs::create_dir_all(home.workspace()).unwrap();
+    let pc = start(&home);
+    let (mut client, _) = pair(&home, &pc, &device(), "core03");
+    let project = project(&mut client);
+    let p = format!("\"project\":\"{project}\"");
+
+    let (status, roles) = client.request("roles", &p);
+    assert_eq!(status, 200, "{roles:?}");
+    assert_eq!(roles.get("available").and_then(Json::as_bool), Some(true));
+    let listed: Vec<String> = roles
+        .get("roles")
+        .and_then(Json::as_array)
+        .unwrap()
+        .iter()
+        .map(|r| s(r, "role"))
+        .collect();
+    assert!(
+        listed.contains(&"kind.part.rules".to_string()),
+        "{listed:?}"
+    );
+
+    let (status, scaffold) = client.request(
+        "scaffold",
+        &format!("{p},\"role\":\"kind.part.rules\",\"path\":\"rules.lcl\",\"mode\":\"guided\""),
+    );
+    assert_eq!(status, 200, "{scaffold:?}");
+    let (status, created) = client.request(
+        "create",
+        &format!("{p},\"name\":\"rules\",\"role\":\"kind.part.rules\",\"mode\":\"guided\""),
+    );
+    assert_eq!(status, 200, "{created:?}");
+    assert_eq!(
+        std::fs::read_to_string(home.workspace().join("rules.lcl")).unwrap(),
+        s(&scaffold, "text"),
+        "the file is the PC's scaffold"
+    );
+
+    // Readiness of a project whose required part is missing.
+    let entry = std::fs::read_to_string(repository().join(
+        "canonical/LCL_Core_0.3.0/09_CONFORMANCE/PROJECT_FIXTURES/missing_required_part/main.lcl",
+    ))
+    .unwrap();
+    std::fs::write(home.workspace().join("main.lcl"), entry).unwrap();
+    let (status, report) = client.request("project", &format!("{p},\"entry\":\"main.lcl\""));
+    assert_eq!(status, 200, "{report:?}");
+    let record = report.get("project").expect("a project record");
+    assert_eq!(record.get("complete").and_then(Json::as_bool), Some(false));
+    assert_eq!(s(record, "admission"), "rejected");
+
+    // The desktop saves a newer revision; the phone's stale save is refused.
+    let (_, opened) = client.request("open", &format!("{p},\"document\":\"rules.lcl\""));
+    let base = s(&opened, "digest");
+    std::fs::write(home.workspace().join("rules.lcl"), "desktop\n").unwrap();
+    let (status, conflict) = client.request(
+        "save",
+        &format!(
+            "{p},\"document\":\"rules.lcl\",\"base\":\"{base}\",\"text\":{}",
+            json_string("phone\n")
+        ),
+    );
+    assert_eq!(status, 409, "{conflict:?}");
+    assert_eq!(
+        std::fs::read_to_string(home.workspace().join("rules.lcl")).unwrap(),
+        "desktop\n"
+    );
 }
 
 fn project(client: &mut Client) -> String {

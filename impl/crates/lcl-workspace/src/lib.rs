@@ -35,10 +35,12 @@
 //! travels beside them, and the frontend maps bytes to screen positions with an
 //! index it builds once per document rather than by counting characters itself.
 
+pub mod authoring;
 pub mod document;
 pub mod execution;
 pub mod http;
 pub mod intelligence;
+pub mod manual;
 pub mod masters;
 pub mod project;
 pub mod remote;

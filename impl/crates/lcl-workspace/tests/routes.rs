@@ -62,7 +62,11 @@ fn saving_writes_the_exact_bytes_and_reading_them_back_agrees() {
     let reply = send(
         running.address,
         "PUT",
-        &format!("/api/document?t={}&id={name}", running.token),
+        &format!(
+            "/api/document?t={}&id={name}&base={}",
+            running.token,
+            lcl_spec::sha256::hex_digest(&std::fs::read(scratch.join(name)).expect("read"))
+        ),
         &[],
         edited.as_bytes(),
     );
@@ -85,7 +89,11 @@ fn a_save_that_would_break_the_encoding_rule_is_refused_with_the_reason() {
     let reply = send(
         running.address,
         "PUT",
-        &format!("/api/document?t={}&id={name}", running.token),
+        &format!(
+            "/api/document?t={}&id={name}&base={}",
+            running.token,
+            lcl_spec::sha256::hex_digest(&before)
+        ),
         &[],
         crlf.as_bytes(),
     );
@@ -544,7 +552,11 @@ fn saving_writes_the_exact_name_it_was_given() {
     let reply = send(
         running.address,
         "PUT",
-        &format!("/api/document?id={name}&t={}", running.token),
+        &format!(
+            "/api/document?id={name}&t={}&base={}",
+            running.token,
+            lcl_spec::sha256::hex_digest(&std::fs::read(scratch.join(name)).expect("read"))
+        ),
         &[],
         edited.as_bytes(),
     );
@@ -563,7 +575,11 @@ fn saving_writes_the_exact_name_it_was_given() {
     let reply = send(
         running.address,
         "PUT",
-        &format!("/api/document?id={text_name}&t={}", running.token),
+        &format!(
+            "/api/document?id={text_name}&t={}&base={}",
+            running.token,
+            lcl_spec::sha256::hex_digest(edited.as_bytes())
+        ),
         &[],
         edited.as_bytes(),
     );

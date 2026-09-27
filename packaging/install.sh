@@ -10,6 +10,8 @@
 #   ~/.local/share/lcl/LCL_Core_0.1.0   the specification package they load
 #   ~/.local/share/lcl/LCL_Core_0.2.0   the localized-language package, when
 #                                       the payload carries one
+#   ~/.local/share/lcl/LCL_Core_0.3.0   the multi-file project package, when
+#                                       the payload carries one
 #   ~/.local/share/applications         the desktop entry
 #   ~/.local/share/mime/packages        the .lcl media type
 #   ~/.local/share/icons/hicolor/...    the application and document icons
@@ -86,6 +88,16 @@ if [ -d "$here/share/LCL_Core_0.2.0" ]; then
     echo "installed $localized"
 fi
 
+# A 0.3.0 payload also carries the Core 0.3.0 package, for multi-file projects
+# and file roles. The launcher then passes it as --project-spec.
+projects=
+if [ -d "$here/share/LCL_Core_0.3.0" ]; then
+    projects=$data/lcl/LCL_Core_0.3.0
+    rm -rf "$projects"
+    cp -r "$here/share/LCL_Core_0.3.0" "$projects"
+    echo "installed $projects"
+fi
+
 # The launcher the desktop entry runs. It carries the installed binary, the
 # installed specification package and the default project directory as absolute
 # paths, so a menu launch needs no environment at all. Each is written as one
@@ -93,6 +105,7 @@ fi
 substitute '@BIN@' "$(shell_quote "$bin/lcl-workspace")" < "$here/share/lcl-workspace-launch.in" \
     | substitute '@SPEC@' "$(shell_quote "$data/lcl/LCL_Core_0.1.0")" \
     | substitute '@LOCALIZED_SPEC@' "$(shell_quote "$localized")" \
+    | substitute '@PROJECT_SPEC@' "$(shell_quote "$projects")" \
     | substitute '@DEFAULT_PROJECT@' "$(shell_quote "$data/lcl/workspace")" \
     > "$bin/lcl-workspace-launch"
 chmod 0755 "$bin/lcl-workspace-launch"
@@ -157,6 +170,11 @@ echo
 if [ -n "$localized" ]; then
     echo "Localized (LCL 0.2.0) documents also need the 0.2.0 package:"
     echo "    export LCL_LOCALIZED_SPEC=$localized"
+    echo
+fi
+if [ -n "$projects" ]; then
+    echo "Multi-file projects (LCL 0.3.0) also need the 0.3.0 package:"
+    echo "    export LCL_PROJECT_SPEC=$projects"
     echo
 fi
 case ":$PATH:" in

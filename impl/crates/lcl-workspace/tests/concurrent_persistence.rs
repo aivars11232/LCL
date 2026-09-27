@@ -5,7 +5,7 @@ mod common;
 use common::Scratch;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Barrier;
 use std::time::{Duration, Instant};
@@ -14,6 +14,7 @@ struct Server {
     child: Child,
     address: SocketAddr,
     token: String,
+    root: PathBuf,
 }
 
 impl Server {
@@ -42,6 +43,7 @@ impl Server {
             child,
             address: "127.0.0.1:0".parse().unwrap(),
             token: String::new(),
+            root: root.to_path_buf(),
         };
         let started = Instant::now();
         loop {
@@ -80,8 +82,19 @@ impl Server {
         stream
             .set_write_timeout(Some(Duration::from_secs(3)))
             .unwrap();
+        // A save names the revision it edited (A14): here, whatever the file
+        // holds when the save is prepared.
+        let base = match method {
+            "PUT" => format!(
+                "&base={}",
+                lcl_spec::sha256::hex_digest(
+                    &std::fs::read(self.root.join(id)).unwrap_or_default()
+                )
+            ),
+            _ => String::new(),
+        };
         write!(stream,
-            "{method} /api/document?id={id}&t={} HTTP/1.1\r\nHost: {}\r\nOrigin: http://{}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            "{method} /api/document?id={id}&t={}{base} HTTP/1.1\r\nHost: {}\r\nOrigin: http://{}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
             self.token, self.address, self.address, body.len()).unwrap();
         stream.write_all(&body[..body.len() - 1]).unwrap();
         stream.flush().unwrap();
@@ -283,11 +296,15 @@ fn overlapping_saves_preserve_whole_payloads_and_the_legacy_name() {
                 );
             }
             409 => {
+                // Both saves name the same base revision, so the one that
+                // publishes second is refused either as overtaken in flight or,
+                // when the first had already published, as a stale revision.
                 assert!(
                     reply
                         .body
-                        .contains("classic.lcl was saved again while this write was in flight"),
-                    "a refused save must name the supersession: {reply:?}"
+                        .contains("classic.lcl was saved again while this write was in flight")
+                        || reply.body.contains("\"conflict\": true"),
+                    "a refused save must name the supersession or the conflict: {reply:?}"
                 );
                 assert_eq!(
                     observed, *accepted[0].1,

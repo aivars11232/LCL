@@ -12,6 +12,13 @@ fun secret(property: String, variable: String): String? =
 
 val releaseStore = secret("lclReleaseStoreFile", "LCL_RELEASE_STORE_FILE")
 
+val manualAssets: File = layout.buildDirectory.dir("generated/manual-assets").get().asFile
+val syncManual by tasks.registering(Sync::class) {
+    from(rootProject.file("../users_manual")) { include("*.md", "MANIFEST.json") }
+    from(rootProject.file("../impl/crates/lcl-workspace/assets/manual")) { include("manual.html", "manual.js", "manual.css") }
+    into(manualAssets.resolve("manual"))
+}
+
 android {
     namespace = "io.lcl.workspace"
     compileSdk = 37
@@ -68,6 +75,17 @@ android {
         abortOnError = true
         checkDependencies = false
     }
+
+    // The Users Manual snapshot and the viewer the desktop workspace serves,
+    // copied from the repository at build time: one source for both.
+    sourceSets.getByName("main").assets.srcDir(manualAssets)
+}
+
+tasks.named("preBuild") { dependsOn(syncManual) }
+
+tasks.withType<Test>().configureEach {
+    dependsOn(syncManual)
+    systemProperty("lcl.manualAssets", manualAssets.resolve("manual").path)
 }
 
 dependencies {

@@ -202,6 +202,7 @@ version = "0.1.0"
 dependencies = [
  "lcl-capabilities",
  "lcl-lexer",
+ "lcl-parser",
  "lcl-project",
  "lcl-protocol",
  "lcl-resolver",

@@ -1,0 +1,100 @@
+{
+  "format": 1,
+  "manual": "LCL Users Manual",
+  "version": "0.3.0",
+  "digest": "fa189d307a342f12ede0db1ec02810b570d6ab111624f815b2e3cfa89fcd4dd3",
+  "files": [
+    {
+      "name": "01_What_Is_LCL.md",
+      "sha256": "8c40a6a21bdc724bd526f52116d4c00c5baa784586ac22d3bec90b6e22a02563"
+    },
+    {
+      "name": "02_Installing_and_Running.md",
+      "sha256": "9868dd502ff24483ee2851976edfa33b0848f7bb314da6677479cd898c06d490"
+    },
+    {
+      "name": "03_Your_First_Program.md",
+      "sha256": "e92a35e16047cef20118eef9683e53ae893eabc20b53c3a2e08c7303f5a64347"
+    },
+    {
+      "name": "04_How_LCL_Text_Is_Written.md",
+      "sha256": "07f0bde620a5f2cfe18d9e798e60ff5b838283fb3280c85c94e51cb484f607a7"
+    },
+    {
+      "name": "05_Values_and_Types.md",
+      "sha256": "954bf8ac42ef789258024476df9076c0f4d26ce9c31e3a45ec2d82281b34d2c9"
+    },
+    {
+      "name": "06_Expressions_and_Operators.md",
+      "sha256": "cc64e583945b2f03ff65ad5308f5e177d4eed7dc0540f9c84c96366cc4ddd50c"
+    },
+    {
+      "name": "07_Documents_Declarations_and_References.md",
+      "sha256": "c42cfc52b1c368153854564934bc738a666a816d69d82288da9c0efe339a335a"
+    },
+    {
+      "name": "08_Inputs_Outputs_and_Actions.md",
+      "sha256": "50993b6d25c9a3ea609d3f1cf731faf769aa8ce4f93c5a4796e8b8b2e03eff79"
+    },
+    {
+      "name": "09_Checking_Results.md",
+      "sha256": "086bc72407b7896daf38fc90d8f6412521912255c6101d939c2e7c2b62e5df96"
+    },
+    {
+      "name": "10_Steps_Branches_and_Loops.md",
+      "sha256": "3b53afc5757639fe74f4a340c360b16ea3b94e7b18c4716e473dd045e32b7786"
+    },
+    {
+      "name": "11_Files_Workspaces_and_Permissions.md",
+      "sha256": "e438bdcae24caa88aa3e0e1ac1920a42d0a0bf81e0ce6ee64524def10752ab1c"
+    },
+    {
+      "name": "12_Rules_Authority_and_Conflicts.md",
+      "sha256": "cdc0575f3f32794d51010b870956b66c7a8937c3e8a300bdd6be87282afa5a16"
+    },
+    {
+      "name": "13_Missing_Values_Errors_and_Recovery.md",
+      "sha256": "178de9091c951f01fdfee3cd6352d38069b5cd66e4feb2202d58198aa4796e0e"
+    },
+    {
+      "name": "14_Projects_and_Imports.md",
+      "sha256": "b85aa97c0438ec56d086733acf2851607781f7e15497c94c3e38b11d9174a7ef"
+    },
+    {
+      "name": "15_Reading_Error_Messages.md",
+      "sha256": "8c2f7638f5bb73730556c6c4168c3f9cf4966f75f847ccd779f38718e1c1fe6f"
+    },
+    {
+      "name": "16_Capstone_Project.md",
+      "sha256": "9c9370909d1954e5e1b1cbbeb42b251a2ef88443f69993cfd41aa69454f68ce1"
+    },
+    {
+      "name": "17_Tools_Reference.md",
+      "sha256": "abca280835f20b181c0e5af8098aaec770815144acd72d7294839448f3bc63e9"
+    },
+    {
+      "name": "18_Starting_Files_From_Templates.md",
+      "sha256": "912b765e26cf22b5980e210f84378daeafd362cbe6cafc9be87f05a922dbf30e"
+    },
+    {
+      "name": "19_Your_First_Multi_File_Project.md",
+      "sha256": "24c7356c015646816960812f2fcc3b0e5331010c262509996fe31c154669579a"
+    },
+    {
+      "name": "Appendix_A_Keyword_Reference.md",
+      "sha256": "f90539518d56f3544dce3604ec8b74fdbca6fb194c83296c39685035a3b8ce1a"
+    },
+    {
+      "name": "Appendix_B_Operation_Reference.md",
+      "sha256": "bc0f87f8d9a101d6b93b7367658f6fb005a9035e6cdc151d57ab9ad48a7acb63"
+    },
+    {
+      "name": "Appendix_C_Glossary.md",
+      "sha256": "10b6c882df0a3c42561c1d3d84048052420e77f4ad20a3b7b200e4526a37941c"
+    },
+    {
+      "name": "README.md",
+      "sha256": "294888e6cdf6d9671bf13325f08d7f771a29798dc100eae584bae44c2a8b183a"
+    }
+  ]
+}

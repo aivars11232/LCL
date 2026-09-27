@@ -140,6 +140,7 @@ browser.
 | `--document <PATH>` | open one document; its project is found as for `lcl` |
 | `--spec <PATH>` | the specification package (else `LCL_SPEC`, else the project file) |
 | `--localized-spec <PATH>`, `--profile <FILE>` | for localized documents |
+| `--project-spec <PATH>` | the Core 0.3.0 package, for multi-file projects and file roles (else `LCL_PROJECT_SPEC`, else the project file's `project_spec`); the desktop launcher passes the installed one |
 | `--default-project <PATH>` | the folder to open when neither `PROJECT` nor `--document` is given: the default workspace chosen in Settings if that folder exists, otherwise `PATH` (the desktop launcher passes its built-in folder here) |
 | `--create` | create a project here before opening it |
 | `--port <PORT>` | use this port instead of a random one |

@@ -13,9 +13,12 @@
 //! carries an LCL diagnostic, a span, a status or a stage, because those are
 //! engine truth and travel in a report.
 
+use crate::authoring;
 use crate::execution::{Answer, Breaks, Runs, Session, WatchedHost, WatchedOperations};
 use crate::http::{Request, Response};
 use crate::intelligence;
+use crate::manual;
+use crate::masters::Masters;
 use crate::project::Workspace;
 use crate::remote;
 use crate::server::{Outcome as RouteOutcome, Route};
@@ -155,6 +158,40 @@ impl Routes {
             ("PUT", "/api/document") => self.save_document(request),
             ("POST", "/api/document") => self.create_document(request),
             ("DELETE", "/api/document") => self.delete_document(request),
+            ("GET", "/api/roles") => authoring::roles(&self.workspace, &self.masters()),
+            ("POST", "/api/slots") => authoring::slots(&self.workspace, request),
+            ("GET", "/api/scaffold") => {
+                authoring::preview_file(&self.workspace, &self.masters(), request)
+            }
+            ("GET", "/api/project/plan") => {
+                authoring::preview_project(&self.workspace, &self.masters(), request)
+            }
+            ("POST", "/api/project") => {
+                authoring::create_project(&self.workspace, &self.masters(), request)
+            }
+            ("GET", "/api/project/status") => authoring::project_status(&self.workspace, request),
+            ("GET", "/api/masters") => authoring::list_masters(&self.workspace, &self.masters()),
+            ("GET", "/api/master") => authoring::read_master(&self.masters(), request),
+            ("GET", "/api/master/starter") => authoring::master_starter(&self.workspace, request),
+            ("PUT", "/api/master") => {
+                authoring::save_master(&self.workspace, &self.masters(), request)
+            }
+            ("DELETE", "/api/master") => authoring::delete_master(&self.masters(), request),
+            ("PUT", "/api/masters/default") => {
+                authoring::set_default(&self.workspace, &self.masters(), request)
+            }
+            ("GET", "/api/convert/plan") => authoring::preview_conversion(&self.workspace, request),
+            ("POST", "/api/convert") => authoring::convert(&self.workspace, request),
+            ("GET", "/manual") | ("GET", "/manual/") => {
+                let token = request
+                    .header("x-lcl-token")
+                    .or_else(|| request.param("t"))
+                    .unwrap_or_default();
+                manual::page(token)
+            }
+            ("GET", "/manual/manual.js") => Response::javascript(manual::VIEWER_JS),
+            ("GET", "/manual/manual.css") => Response::css(manual::VIEWER_CSS),
+            ("GET", "/manual/snapshot") => manual::snapshot(),
 
             ("GET", "/api/settings") => self.read_settings(),
             ("PUT", "/api/settings") => self.save_settings(request),
@@ -248,12 +285,36 @@ impl Routes {
                                         None => Node::Null,
                                     },
                                 )
+                                .with("kind", self.kind_of(e))
                                 .into()
                         })),
                     )
                     .pretty(),
             ),
             Err(e) => Response::error(400, &e.to_string()),
+        }
+    }
+
+    /// The `SPECIFICATION` `KIND` a listed document declares, as its engine
+    /// parses it: the role of a project part, `kind.project` for an entry.
+    /// `null` for a folder, an unreadable or unparsable file, or one over
+    /// 1 MiB, which the tree does not read.
+    fn kind_of(&self, entry: &crate::project::Entry) -> Node {
+        if entry.directory || entry.bytes.map_or(true, |n| n > 1 << 20) {
+            return Node::Null;
+        }
+        match self.workspace.read(&entry.id) {
+            Ok(document) => authoring::declared_kind(&self.workspace, &entry.id, &document.text)
+                .map_or(Node::Null, Node::string),
+            Err(_) => Node::Null,
+        }
+    }
+
+    /// Where this person's Master templates live: beside the settings file.
+    fn masters(&self) -> Masters {
+        match self.settings_file.as_ref().and_then(|file| file.parent()) {
+            Some(dir) => Masters::new(dir.join("masters")),
+            None => Masters::none(),
         }
     }
 
@@ -273,19 +334,32 @@ impl Routes {
         }
     }
 
-    /// Save one document. The body is the exact bytes to write.
+    /// Save one document. The body is the exact bytes to write, and `base` is
+    /// the SHA-256 of the revision the edit started from.
     ///
-    /// A refusal here is the encoding rule refusing, and the reply says which
-    /// rule and why. The file is not touched.
+    /// A save that does not name its revision is refused (428): a stale
+    /// buffer must never replace a newer phone or external edit. When the
+    /// file no longer holds `base` nothing is written and the reply is 409
+    /// with `conflict: true` and what the disk holds now — `digest` and
+    /// `exists` — so the person can choose, explicitly, to reload the disk
+    /// version or to keep theirs by saving again over that exact revision.
+    /// Nothing is ever merged. A refusal by the encoding rule is 422 and says
+    /// which rule and why. The file is not touched in any refusal.
     fn save_document(&self, request: &Request) -> Response {
         let Some(id) = request.param("id") else {
             return Response::error(400, "a document id is required");
+        };
+        let Some(base) = request.param("base").filter(|b| !b.is_empty()) else {
+            return Response::error(
+                428,
+                "a save must name the revision it edited (base): nothing was written",
+            );
         };
         let text = match request.text() {
             Ok(text) => text,
             Err(e) => return Response::error(422, &e.to_string()),
         };
-        match self.workspace.save(id, text) {
+        match self.workspace.save_expecting(id, text, base) {
             Ok(document) => Response::json(
                 Object::new()
                     .with("id", Node::string(&document.id))
@@ -306,6 +380,30 @@ impl Routes {
                 Response::error(
                     409,
                     &format!("{id} was saved again while this write was in flight"),
+                )
+            }
+            Err(crate::WorkspaceError::Document(
+                crate::DocumentError::Changed(_) | crate::DocumentError::NotFound(_),
+            )) => {
+                let now = self.workspace.read(id).ok();
+                Response::json_status(
+                    409,
+                    Object::new()
+                        .with(
+                            "error",
+                            Node::string(format!(
+                                "{id} changed on disk since this revision was loaded; nothing was written"
+                            )),
+                        )
+                        .with("conflict", Node::Bool(true))
+                        .with("id", Node::string(id))
+                        .with("exists", Node::Bool(now.is_some()))
+                        .with(
+                            "digest",
+                            now.as_ref()
+                                .map_or(Node::Null, |d| Node::string(&d.digest)),
+                        )
+                        .pretty(),
                 )
             }
             Err(e) => Response::error(422, &e.to_string()),
@@ -339,9 +437,27 @@ impl Routes {
         if self.workspace.exists(&id) {
             return Response::error(409, &format!("{id} already exists"));
         }
-        let text = match request.text() {
-            Ok(text) => text,
-            Err(e) => return Response::error(422, &e.to_string()),
+        // With a role, the text is the role's scaffold or Master for exactly
+        // this name, and a body would be a second, conflicting answer.
+        let scaffolded;
+        let text = match request.param("role") {
+            Some(_) => {
+                if !request.body.is_empty() {
+                    return Response::error(
+                        400,
+                        "a file created by role takes its text from the scaffold; send no body",
+                    );
+                }
+                scaffolded = match authoring::file(&self.workspace, &self.masters(), request, &id) {
+                    Ok(planned) => planned.scaffold.text,
+                    Err(refusal) => return refusal,
+                };
+                scaffolded.as_str()
+            }
+            None => match request.text() {
+                Ok(text) => text,
+                Err(e) => return Response::error(422, &e.to_string()),
+            },
         };
         match self.workspace.create_document(&id, text) {
             Ok(document) => Response::json(

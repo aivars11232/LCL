@@ -347,8 +347,8 @@ pub fn write(root: &Path, relative: &str, text: &str) -> Result<Document, Docume
 /// program. What the critical section excludes is writers in *this process*:
 /// no other save or deletion from it can land between the comparison and the
 /// rename. Another process that replaces the file in the instant between the
-/// comparison and the rename — the desktop workspace, whose own saves carry no
-/// precondition, or any editor — is not excluded, and its bytes are replaced.
+/// comparison and the rename — another LCL process saving the same file, or
+/// any editor — is not excluded, and its bytes are replaced.
 /// That instant is the time it takes to read and hash the file, not the time
 /// the writer had the document open. Closing it would need a lock every writer
 /// honours, and other programs honour none; nothing here claims to.

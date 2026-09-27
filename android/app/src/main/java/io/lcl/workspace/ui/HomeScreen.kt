@@ -2,6 +2,7 @@ package io.lcl.workspace.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -57,6 +58,7 @@ fun HomeScreen(
     onOpenWorkspace: () -> Unit,
     onSettings: () -> Unit,
     onAbout: () -> Unit,
+    onManual: () -> Unit,
 ) {
     var forgetting by remember { mutableStateOf<PcRecord?>(null) }
     val pcs by container.connection.records.collectAsState()
@@ -65,7 +67,10 @@ fun HomeScreen(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("LCL", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("LCL", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            ManualIcon(onManual)
+        }
         Text(
             "Your PC's LCL on this screen. The PC keeps the projects, runs the engine and decides every " +
                 "effect; this device edits, checks and asks.",

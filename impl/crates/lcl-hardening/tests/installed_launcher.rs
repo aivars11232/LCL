@@ -892,6 +892,67 @@ fn a_0_2_0_installation_checks_both_languages_and_uninstalls_only_its_own() {
     );
 }
 
+/// Core 0.3 (Task 03): an installed 0.3.0 payload launches from the menu with
+/// the Core 0.3.0 package, so the workspace offers file roles, and serves the
+/// packaged Users Manual; uninstall takes the package and leaves projects.
+#[test]
+fn a_0_3_0_installation_launches_with_projects_and_the_manual_and_uninstalls_only_its_own() {
+    let home = Home::new("projects-lifecycle");
+    let payload = stage_payload(&home);
+    for version in ["0.2.0", "0.3.0"] {
+        copy_tree(
+            &repository().join(format!("canonical/LCL_Core_{version}")),
+            &payload.join(format!("share/LCL_Core_{version}")),
+        );
+    }
+    run_installer(&payload, &home);
+    let projects = home.join(".local/share/lcl/LCL_Core_0.3.0");
+    assert!(
+        projects.join("SHA256SUMS.txt").is_file(),
+        "the 0.3.0 package was not installed"
+    );
+    let launcher = std::fs::read_to_string(home.join(".local/bin/lcl-workspace-launch"))
+        .expect("the launcher is installed");
+    assert!(
+        launcher.contains(&projects.display().to_string()),
+        "{launcher}"
+    );
+
+    let launched = launch(&home, None);
+    let url = await_url(&launched);
+    let (status, roles) = get(&url, "/api/roles");
+    assert_eq!(status, 200, "{roles}");
+    assert!(
+        roles.contains("\"available\": true") && roles.contains("kind.part.rules"),
+        "{roles}"
+    );
+    let (status, manual) = get(&url, "/manual/snapshot");
+    assert_eq!(status, 200);
+    assert!(manual.contains("19_Your_First_Multi_File_Project.md"));
+    drop(launched);
+
+    let kept = home.join(".local/share/lcl/workspace/shop/main.lcl");
+    std::fs::create_dir_all(kept.parent().expect("a parent")).expect("writable");
+    std::fs::write(&kept, "LCL:\n").expect("writable");
+    let output = Command::new(payload.join("uninstall.sh"))
+        .env_clear()
+        .env("HOME", &home)
+        .env("PATH", "/usr/bin:/bin")
+        .current_dir(std::env::temp_dir())
+        .output()
+        .expect("the uninstaller runs");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !projects.exists(),
+        "the 0.3.0 package survived the uninstall"
+    );
+    assert!(kept.is_file(), "uninstall removed the operator's project");
+}
+
 #[test]
 fn the_launcher_needs_no_spec_in_the_environment() {
     // The environment every launch above ran in had no LCL_SPEC, which is the

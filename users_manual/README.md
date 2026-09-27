@@ -53,6 +53,7 @@ tool, and you can repeat that check yourself (see
 | [16. Capstone project](16_Capstone_Project.md) | Building a complete, checked program from a plain-English request |
 | [17. Tools reference](17_Tools_Reference.md) | Every `lcl` command and option, exit codes, `lcl-workspace` |
 | [18. Starting files from roles and templates](18_Starting_Files_From_Templates.md) | File roles, slots, Minimal and Guided starts, Master templates (Core 0.3.0 candidate) |
+| [19. Your first multi-file project](19_Your_First_Multi_File_Project.md) | New Project, filling Description, Rules and Task, readiness, Check, Validate, Run; the Users Manual window and tab; save conflicts; converting a document; Templates (Core 0.3.0 candidate) |
 | [Appendix A. Keywords](Appendix_A_Keyword_Reference.md) | All 141 reserved words, grouped by purpose |
 | [Appendix B. Operations](Appendix_B_Operation_Reference.md) | Every built-in `core.*` operation and what it needs |
 | [Appendix C. Glossary](Appendix_C_Glossary.md) | The terms used in this manual |

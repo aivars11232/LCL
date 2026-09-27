@@ -262,7 +262,10 @@ workspace's routes do; `body` is the route's JSON.
 | `open` | `project`, `document` | `GET /api/document`; the document is then watched for changes |
 | `close` | `project`, `document` | stops watching it |
 | `save` | `project`, `document`, `base`, `text` | writes only if the file on disk still has digest `base`; otherwise `409` with the PC's current `text` and `digest`, and nothing written |
-| `create` | `project`, `name`, `text` | `POST /api/document` |
+| `create` | `project`, `name`, and either `text` or `role` (with optional `mode`, `master`, `source`) | `POST /api/document`; with `role` the PC writes that role's scaffold or Master and no text is sent |
+| `roles` | `project` | `GET /api/roles`: the file roles of the PC's Core 0.3.0 engine |
+| `scaffold` | `project`, `role`, `path` (optional `mode`, `master`, `source`) | `GET /api/scaffold`: a new file's exact text and marks, written nowhere |
+| `project` | `project`, `entry` | `GET /api/project/status`: the engine's `validate` report for the entry on disk; its `project` member is the readiness record |
 | `delete` | `project`, `document`, `digest` | `DELETE /api/document`, only if unchanged |
 | `tokens`, `check`, `validate`, `inspect` | `project`, `document`, `text` | the matching workspace route, over the text sent |
 | `run` | `project`, `document`, `text`, `grants` {read, write, program, host}, `inputs`, `break_operations` | `POST /api/run` with a pause before every effect, always — a `break_effects` field is ignored; the run's events follow as events |

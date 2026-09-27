@@ -1,6 +1,7 @@
 package io.lcl.workspace
 
 import io.lcl.workspace.connection.ConnectionManager
+import io.lcl.workspace.connection.IdentityConflictException
 import io.lcl.workspace.connection.ConnectionState
 import io.lcl.workspace.connection.PAIRING_POLL_MS
 import io.lcl.workspace.connection.PendingPairing
@@ -287,6 +288,62 @@ class ConnectionManagerTest {
         assertNotEquals(first, second)
         assertTrue(first in identities.deleted)
         assertEquals(setOf(second), identities.keys.keys)
+    }
+
+    // ------------------------------------------ identity collision (A13)
+
+    private val impostor = FakePc(pcId = "pc1", name = "Test PC", fingerprint = "c".repeat(64), reachable = setOf("192.168.1.66:47300"))
+
+    @Test
+    fun a13_the_same_pc_id_and_fingerprint_pairs_again_normally() = runTest {
+        val manager = paired()
+        val first = store.get("pc1")!!.keyAlias
+        val second = manager.pair(pc.link(clock), "Pixel").getOrThrow()
+        runCurrent()
+        assertNotEquals(first, second.keyAlias)
+        assertEquals(pc.fingerprint, store.get("pc1")!!.fingerprint)
+    }
+
+    @Test
+    fun a13_the_same_pc_id_with_another_fingerprint_is_refused_before_anything_changes() = runTest {
+        val manager = manager(Lan(pc, impostor))
+        manager.pair(pc.link(clock), "Pixel").getOrThrow()
+        runCurrent()
+        val before = store.get("pc1")!!
+        val keys = identities.keys.keys.toSet()
+        val result = manager.pair(impostor.link(clock), "Pixel")
+        runCurrent()
+        assertTrue(result.exceptionOrNull().toString(), result.exceptionOrNull() is IdentityConflictException)
+        assertTrue(result.exceptionOrNull()!!.message!!.contains("Forget"))
+        assertEquals("the record was replaced", before, store.get("pc1"))
+        assertEquals("a key was made or deleted", keys, identities.keys.keys.toSet())
+        assertTrue("the old key was deleted", before.keyAlias !in identities.deleted)
+        assertEquals("the other fingerprint was contacted", 0, impostor.attempts)
+        assertTrue(impostor.hellos.isEmpty())
+        // The old pairing keeps working and reconnects to the old PC.
+        assertEquals("pc1", manager.connected.pc.pcId)
+        assertEquals(pc.fingerprint, manager.connected.pc.fingerprint)
+        dropAndWait()
+        assertTrue(manager.state.value is ConnectionState.Connected)
+        assertEquals(pc.sessions.last(), manager.connected.session)
+        assertEquals(0, impostor.attempts)
+    }
+
+    @Test
+    fun a13_another_pc_with_its_own_id_is_unaffected_by_a_refused_collision() = runTest {
+        val laptop = FakePc(pcId = "pc2", name = "Laptop", fingerprint = "b".repeat(64), reachable = setOf("192.168.1.30:47300"))
+        val manager = manager(Lan(pc, impostor, laptop))
+        manager.pair(pc.link(clock), "Pixel").getOrThrow()
+        runCurrent()
+        assertTrue(manager.pair(impostor.link(clock), "Pixel").isFailure)
+        manager.pair(laptop.link(clock), "Pixel").getOrThrow()
+        runCurrent()
+        assertEquals(setOf("pc1", "pc2"), manager.pcs().map { it.pcId }.toSet())
+        assertEquals(pc.fingerprint, store.get("pc1")!!.fingerprint)
+        assertEquals(laptop.fingerprint, store.get("pc2")!!.fingerprint)
+        manager.connect("pc1")
+        runCurrent()
+        assertEquals(pc.sessions.last(), manager.connected.session)
     }
 
     // ------------------------------------------------ pairing again (A12)

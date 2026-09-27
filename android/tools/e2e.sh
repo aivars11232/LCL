@@ -25,6 +25,7 @@ adb="${ANDROID_HOME:?set ANDROID_HOME}/platform-tools/adb"
 remote=${LCL_REMOTE:-$repo/remote/target/debug/lcl-remote}
 spec=${LCL_SPEC:-$repo/canonical/LCL_Core_0.1.0}
 localized=${LCL_LOCALIZED_SPEC:-$repo/canonical/LCL_Core_0.2.0}
+projects=${LCL_PROJECT_SPEC:-$repo/canonical/LCL_Core_0.3.0}
 port=${E2E_PORT:-47310}
 address=${E2E_ADDRESS:-10.0.2.2:$port}
 work=${E2E_DIR:-$(mktemp -d -t lcl-e2e.XXXXXX)}
@@ -52,7 +53,7 @@ check() {
 absent() { ! grep -q "$1" "$2"; }
 
 serve() {
-    "$remote" serve --spec "$spec" --localized-spec "$localized" --port "$port" >>"$out/serve.log" 2>&1 &
+    "$remote" serve --spec "$spec" --localized-spec "$localized" --project-spec "$projects" --port "$port" >>"$out/serve.log" 2>&1 &
     echo $! >"$work/serve.pid"
     for _ in $(seq 100); do
         "$remote" status --json | grep -q '"running": true' && return 0
@@ -182,6 +183,22 @@ log "installed; app data cleared"
 # refused, never shown or sent repaired; a UTF-8 one is shown exactly.
 phase LocalDocumentScreenTest#a_file_that_is_not_utf8_is_refused_and_never_shown_or_sent
 phase LocalDocumentScreenTest#a_utf8_file_is_shown_exactly_and_can_be_checked
+# The Users Manual tab, with no PC at all: offline, and exactly the snapshot
+# the desktop workspace serves (the digest its manifest names).
+manual_digest=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["digest"])' "$repo/users_manual/MANIFEST.json")
+phase ManualTabTest#the_manual_opens_offline_is_the_packaged_snapshot_and_survives_recreation -e digest "$manual_digest"
+check "the APK packages the manual the desktop serves (digest $manual_digest)" python3 - "$android/app/build/outputs/apk/debug/app-debug.apk" "$manual_digest" <<'PYM'
+import hashlib, sys, zipfile
+apk, expected = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(apk) as z:
+    names = sorted((n for n in z.namelist() if n.startswith("assets/manual/") and n.endswith(".md") and n.count("/") == 2),
+                   key=lambda n: n.encode())
+    whole = hashlib.sha256()
+    for n in names:
+        data = z.read(n); name = n.split("/")[-1]
+        whole.update(name.encode() + b"\0" + str(len(data)).encode() + b"\0" + data)
+assert whole.hexdigest() == expected, (whole.hexdigest(), expected, len(names))
+PYM
 # What other apps can hand the app: never a pairing code, whether as a link a
 # camera app or a browser opens, as shared text, or sent to the app by name;
 # .lcl and .lcl.txt documents still open it, and a plain .txt file does not.
@@ -234,6 +251,24 @@ zxing=$(find "${GRADLE_USER_HOME:-$HOME/.gradle}/caches" -name 'core-3.5.4.jar' 
 python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["svg"], end="")' "$out/pair.json" >"$out/pair.svg"
 check "the pairing QR code reads back as exactly the pairing text" \
     test "$("$java" -cp "$zxing" "$android/tools/QrDecode.java" "$out/pair.svg")" = "$link"
+
+# Core 0.3 (Task 03): a file by role, readiness, Manual tab and A13. A project
+# whose required part is missing, for the readiness check.
+mkdir -p "$project/proj"
+cp "$repo/canonical/LCL_Core_0.3.0/09_CONFORMANCE/PROJECT_FIXTURES/missing_required_part/main.lcl" "$project/proj/main.lcl"
+"$remote" pair --address "$address" --json >"$out/pair-core03.json"
+"$remote" devices --json >"$out/devices-before-core03.json"
+phase p12_core03_roles_manual_readiness_and_identity_conflict -e link "'$(payload "$out/pair-core03.json")'"
+check "the phone's Rules file is the PC's scaffold" grep -q 'KIND: kind.part.rules' "$project/house_rules.lcl"
+check "the unsaved phone edit stayed on the phone" absent 'KEPT' "$project/house_rules.lcl"
+"$remote" devices --json >"$out/devices-after-core03.json"
+check "the refused identity changed nothing the PC trusts" python3 - "$out/devices-before-core03.json" "$out/devices-after-core03.json" <<'PYD'
+import json, sys
+trust = lambda path: sorted((d["id"], d["fingerprint"], d["revoked_at"]) for d in json.load(open(path))["devices"])
+assert trust(sys.argv[1]) == trust(sys.argv[2]), (trust(sys.argv[1]), trust(sys.argv[2]))
+PYD
+"$remote" pending --json >"$out/pending-core03.json"
+check "the refused identity asked the PC for nothing" python3 -c 'import json,sys; assert [r for r in json.load(open(sys.argv[1]))["requests"] if r.get("status") == "pending"] == []' "$out/pending-core03.json"
 
 # An update, as a person installs one: a newer build signed with the same key,
 # installed over the paired app. Phase 2 then proves the pairing and the key
@@ -363,7 +398,7 @@ last = [c for c in state["candidates"] if c["challenge"] == challenges[3]["id"]]
 assert [c["status"] for c in last] == ["denied"], last
 PY4
 "$remote" pending --json >"$out/pending-final.json"
-check "no pairing request is left waiting" python3 -c 'import json,sys; assert json.load(open(sys.argv[1]))["requests"] == []' "$out/pending-final.json"
+check "no pairing request is left waiting" python3 -c 'import json,sys; assert [r for r in json.load(open(sys.argv[1]))["requests"] if r.get("status") == "pending"] == []' "$out/pending-final.json"
 
 # 11. The same PC paired again while it still trusts this phone (A12). Android
 # Keystore makes a new key, so the PC sees a second certificate; once the PC
@@ -407,7 +442,7 @@ assert devices[old]["revoked_at"] and devices[new]["revoked_at"], (devices[old],
 assert not [d for d in devices.values() if not d["revoked_at"]], devices
 PY7
 "$remote" pending --json >"$out/pending-after-a12.json"
-check "no pairing request is left waiting after pairing again" python3 -c 'import json,sys; assert json.load(open(sys.argv[1]))["requests"] == []' "$out/pending-after-a12.json"
+check "no pairing request is left waiting after pairing again" python3 -c 'import json,sys; assert [r for r in json.load(open(sys.argv[1]))["requests"] if r.get("status") == "pending"] == []' "$out/pending-after-a12.json"
 
 no_lcl_failures
 "$adb" shell settings put global hide_error_dialogs 0

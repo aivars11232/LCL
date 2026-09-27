@@ -43,6 +43,8 @@ pub struct Project {
 pub struct Specs {
     pub core: PathBuf,
     pub localized: Option<PathBuf>,
+    /// The Core 0.3.0 package, for 0.3.0 documents and multi-file projects.
+    pub project: Option<PathBuf>,
 }
 
 impl Specs {
@@ -52,6 +54,7 @@ impl Specs {
         paths: &Paths,
         explicit: Option<PathBuf>,
         explicit_localized: Option<PathBuf>,
+        explicit_project: Option<PathBuf>,
     ) -> Result<Specs, String> {
         let from_env = |name: &str| {
             std::env::var_os(name)
@@ -69,7 +72,14 @@ impl Specs {
         let localized = explicit_localized
             .or_else(|| from_env("LCL_LOCALIZED_SPEC"))
             .or_else(|| installed("0.2.0"));
-        Ok(Specs { core, localized })
+        let project = explicit_project
+            .or_else(|| from_env("LCL_PROJECT_SPEC"))
+            .or_else(|| installed("0.3.0"));
+        Ok(Specs {
+            core,
+            localized,
+            project,
+        })
     }
 }
 
@@ -178,10 +188,12 @@ impl Projects {
         if let Some(routes) = open.get(&project.id) {
             return Ok(Some((project, Arc::clone(routes))));
         }
-        let workspace = Workspace::open_with(
+        let workspace = Workspace::open_with_specs(
             &project.root,
             &self.specs.core,
             self.specs.localized.clone(),
+            self.specs.project.clone(),
+            &[],
         )
         .map_err(|e| e.to_string())?;
         let routes = Arc::new(

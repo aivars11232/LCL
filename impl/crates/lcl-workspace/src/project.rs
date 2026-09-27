@@ -82,6 +82,9 @@ pub struct Workspace {
     spec_root: PathBuf,
     /// The Core 0.2.0 package, when this workspace judges localized documents.
     localized_spec_root: Option<PathBuf>,
+    /// The Core 0.3.0 package, when this workspace judges 0.3.0 documents and
+    /// projects.
+    project_spec_root: Option<PathBuf>,
     /// The document the frontend should open on load, when the workspace was
     /// launched for one. A file association supplies it; an ordinary launch
     /// does not.
@@ -128,6 +131,23 @@ impl Workspace {
         localized: Option<PathBuf>,
         profiles: &[PathBuf],
     ) -> Result<Workspace, WorkspaceError> {
+        Workspace::open_with_specs(root, spec, localized, None, profiles)
+    }
+
+    /// [`Workspace::open_with_profiles`], with the Core 0.3.0 package too.
+    ///
+    /// `project` names the Core 0.3.0 package. Without it the manifest's
+    /// `project_spec` applies, and without either a document declaring 0.3.0
+    /// is judged by Core 0.1.0 and refused as an unsupported version — the
+    /// command line's rule. The 0.3.0 engine's locale profiles are the same
+    /// files the 0.2.0 engine's are.
+    pub fn open_with_specs(
+        root: impl AsRef<Path>,
+        spec: impl AsRef<Path>,
+        localized: Option<PathBuf>,
+        project_spec: Option<PathBuf>,
+        profiles: &[PathBuf],
+    ) -> Result<Workspace, WorkspaceError> {
         let root = root.as_ref();
         let project = match Project::open(root) {
             Ok(project) => project,
@@ -153,7 +173,10 @@ impl Workspace {
             }
             // A profile file is used only by the localization stage; without
             // a localized package it would be silently ignored.
-            None if !profiles.is_empty() => {
+            None if !profiles.is_empty()
+                && project_spec.is_none()
+                && project.project_spec_path().is_none() =>
+            {
                 return Err(WorkspaceError::Spec(
                     "a locale profile file needs a localized specification package: pass \
                      --localized-spec <path>, set LCL_LOCALIZED_SPEC, or declare \
@@ -163,13 +186,27 @@ impl Workspace {
             }
             None => None,
         };
-        let engines =
+        let mut engines =
             Engines::new(core, localized).map_err(|e| WorkspaceError::Spec(e.to_string()))?;
+        let project_spec_root = project_spec.or_else(|| project.project_spec_path());
+        if let Some(project_root) = &project_spec_root {
+            let mut files = project
+                .profile_files()
+                .map_err(|e| WorkspaceError::Spec(format!("the locale profile directory: {e}")))?;
+            files.extend(profiles.iter().cloned());
+            let engine = Engine::open_project(project_root, &files).map_err(|e| {
+                WorkspaceError::Spec(format!("the Core 0.3.0 specification package: {e}"))
+            })?;
+            engines = engines
+                .with_project(engine)
+                .map_err(|e| WorkspaceError::Spec(e.to_string()))?;
+        }
         Ok(Workspace {
             project,
             engines,
             spec_root,
             localized_spec_root,
+            project_spec_root,
             open_document: None,
         })
     }
@@ -203,6 +240,17 @@ impl Workspace {
     pub fn locate_localized_spec(explicit: Option<PathBuf>) -> Option<PathBuf> {
         explicit.or_else(|| {
             std::env::var_os("LCL_LOCALIZED_SPEC")
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from)
+        })
+    }
+
+    /// The Core 0.3.0 package a launch names: the caller's explicit choice,
+    /// then a non-empty `LCL_PROJECT_SPEC`. `None` leaves the choice to the
+    /// manifest's `project_spec`, in [`Workspace::open_with_specs`].
+    pub fn locate_project_spec(explicit: Option<PathBuf>) -> Option<PathBuf> {
+        explicit.or_else(|| {
+            std::env::var_os("LCL_PROJECT_SPEC")
                 .filter(|value| !value.is_empty())
                 .map(PathBuf::from)
         })
@@ -291,6 +339,16 @@ impl Workspace {
     }
 
     /// Where the Core 0.2.0 package is, when this workspace uses one.
+    pub fn project_spec_root(&self) -> Option<&Path> {
+        self.project_spec_root.as_deref()
+    }
+
+    /// The Core 0.3.0 engine, which owns project roles and scaffolds, when
+    /// this workspace has one.
+    pub fn project_engine(&self) -> Option<&Engine> {
+        self.engines.project()
+    }
+
     pub fn localized_spec_root(&self) -> Option<&Path> {
         self.localized_spec_root.as_deref()
     }

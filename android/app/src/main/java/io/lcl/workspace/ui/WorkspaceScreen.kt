@@ -40,6 +40,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -58,6 +60,8 @@ import io.lcl.workspace.remote.obj
 import io.lcl.workspace.remote.str
 import io.lcl.workspace.workspace.LclNames
 import io.lcl.workspace.workspace.OpenDocument
+import io.lcl.workspace.workspace.Readiness
+import io.lcl.workspace.workspace.RoleInfo
 import io.lcl.workspace.workspace.RunGrants
 import io.lcl.workspace.workspace.RunState
 import io.lcl.workspace.workspace.WorkspaceController
@@ -67,10 +71,18 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 @Composable
-fun WorkspaceScreen(container: AppContainer, connection: ConnectionState, settings: AppSettings, onHome: () -> Unit) {
+fun WorkspaceScreen(
+    container: AppContainer,
+    connection: ConnectionState,
+    settings: AppSettings,
+    onHome: () -> Unit,
+    onManual: () -> Unit,
+    // Held by the caller, so undo history and selections outlive a visit to
+    // the Manual tab.
+    editors: MutableMap<String, EditorState>,
+) {
     val controller = container.workspace
     val ui by controller.ui.collectAsState()
-    val editors = remember { mutableMapOf<String, EditorState>() }
     var showFiles by remember { mutableStateOf(ui.active == null) }
     val connected = connection is ConnectionState.Connected
 
@@ -78,12 +90,12 @@ fun WorkspaceScreen(container: AppContainer, connection: ConnectionState, settin
         val wide = maxWidth >= 840.dp
         if (wide) {
             Row(Modifier.fillMaxSize()) {
-                FilesPane(controller, ui, connected, onHome, onOpened = {}, modifier = Modifier.width(300.dp).fillMaxHeight())
+                FilesPane(controller, ui, connected, onHome, onManual, onOpened = {}, modifier = Modifier.width(300.dp).fillMaxHeight())
                 Box(Modifier.width(1.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant))
                 EditorPane(controller, ui, editors, settings, connected, onFiles = null, modifier = Modifier.weight(1f))
             }
         } else if (showFiles || ui.activeDocument == null) {
-            FilesPane(controller, ui, connected, onHome, onOpened = { showFiles = false }, modifier = Modifier.fillMaxSize())
+            FilesPane(controller, ui, connected, onHome, onManual, onOpened = { showFiles = false }, modifier = Modifier.fillMaxSize())
         } else {
             BackHandler { showFiles = true }
             EditorPane(controller, ui, editors, settings, connected, onFiles = { showFiles = true }, modifier = Modifier.fillMaxSize())
@@ -98,6 +110,7 @@ private fun FilesPane(
     ui: WorkspaceUi,
     connected: Boolean,
     onHome: () -> Unit,
+    onManual: () -> Unit,
     onOpened: () -> Unit,
     modifier: Modifier,
 ) {
@@ -122,6 +135,7 @@ private fun FilesPane(
             }
             TextButton(onClick = { scope.launch { controller.refreshTree() } }, enabled = connected) { Text("Refresh") }
             TextButton(onClick = { creating = true }, enabled = connected && ui.project != null, modifier = Modifier.testTag("new_document")) { Text("New") }
+            ManualIcon(onManual)
         }
         ui.project?.let {
             Text(it.root, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -151,29 +165,136 @@ private fun FilesPane(
                         if (entry.directory) "$name/" else name,
                         color = if (entry.directory) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface,
                         fontWeight = if (open != null) FontWeight.SemiBold else null,
+                        modifier = Modifier.weight(1f),
                     )
+                    // The role the file declares, as the PC's engine read it.
+                    entry.kind?.let { kind ->
+                        Text(
+                            WorkspaceController.roleLabel(kind),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (kind == "kind.project") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            modifier = Modifier.padding(horizontal = 6.dp).testTag("role:${entry.id}"),
+                        )
+                    }
+                    if (entry.kind == "kind.project") {
+                        TextButton(
+                            onClick = { controller.readiness(entry.id) },
+                            enabled = connected,
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                            modifier = Modifier.testTag("readiness:${entry.id}"),
+                        ) { Text("Readiness") }
+                    }
                 }
             }
         }
     }
-    if (creating) NewDocumentDialog(ui.defaultEnding, onCreate = { controller.create(it); creating = false; onOpened() }, onDismiss = { creating = false })
+    if (creating) {
+        NewDocumentDialog(
+            ui.defaultEnding,
+            ui.roles,
+            onCreate = { name, role, mode -> controller.create(name, role, mode); creating = false; onOpened() },
+            onDismiss = { creating = false },
+        )
+    }
+    ui.readiness?.let { readiness ->
+        ReadinessDialog(readiness, onOpen = { unit -> controller.dismissReadiness(); controller.open(unit); onOpened() }, onDismiss = controller::dismissReadiness)
+    }
+}
+
+/** The small help affordance: it switches to the Manual tab. */
+@Composable
+fun ManualIcon(onManual: () -> Unit) {
+    TextButton(
+        onClick = onManual,
+        modifier = Modifier.testTag("manual_icon").semantics { contentDescription = "Users Manual" },
+    ) { Text("?", fontWeight = FontWeight.Bold) }
 }
 
 @Composable
-private fun NewDocumentDialog(ending: String, onCreate: (String) -> Unit, onDismiss: () -> Unit) {
+private fun NewDocumentDialog(
+    ending: String,
+    roles: List<RoleInfo>,
+    onCreate: (String, String?, String) -> Unit,
+    onDismiss: () -> Unit,
+) {
     var name by remember { mutableStateOf("untitled$ending") }
+    // null: a blank LCL file; otherwise a role the PC's engine defines.
+    var role by remember { mutableStateOf<String?>(null) }
+    var guided by remember { mutableStateOf(true) }
+    var picking by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("New document") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text("A path inside the project. A name without an ending is created as $ending, the PC's default. Type .lcl or .lcl.txt yourself to choose either; the ending you type is kept.")
                 OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, modifier = Modifier.testTag("new_name"))
                 Text("Will be created as ${LclNames.defaultName(name, ending)}", style = MaterialTheme.typography.bodySmall)
+                if (roles.isNotEmpty()) {
+                    Box {
+                        OutlinedButton(onClick = { picking = true }, modifier = Modifier.testTag("new_role")) {
+                            Text("Kind: " + (roles.firstOrNull { it.role == role }?.label ?: "Blank LCL file"))
+                        }
+                        DropdownMenu(expanded = picking, onDismissRequest = { picking = false }) {
+                            DropdownMenuItem(text = { Text("Blank LCL file") }, onClick = { role = null; picking = false })
+                            roles.forEach { r ->
+                                DropdownMenuItem(
+                                    text = { Text(r.label) },
+                                    onClick = { role = r.role; picking = false },
+                                    modifier = Modifier.testTag("role_choice:${r.role}"),
+                                )
+                            }
+                        }
+                    }
+                    if (role != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            FilterChip(selected = guided, onClick = { guided = true }, label = { Text("Guided") }, modifier = Modifier.padding(end = 6.dp))
+                            FilterChip(selected = !guided, onClick = { guided = false }, label = { Text("Minimal") })
+                        }
+                        Text(
+                            "The PC writes this kind's starting text (its scaffold, or your default template on the PC). Fill the empty fields, then Check.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
             }
         },
-        confirmButton = { TextButton(onClick = { if (name.isNotBlank()) onCreate(name) }, Modifier.testTag("create")) { Text("Create") } },
+        confirmButton = {
+            TextButton(onClick = { if (name.isNotBlank()) onCreate(name, role, if (guided) "guided" else "minimal") }, Modifier.testTag("create")) { Text("Create") }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** A project's readiness, exactly as the PC's engine reported it. */
+@Composable
+private fun ReadinessDialog(readiness: Readiness, onOpen: (String) -> Unit, onDismiss: () -> Unit) {
+    val colors = LocalLclColors.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("${readiness.entry} — ${readiness.status}", modifier = Modifier.testTag("readiness_status")) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (readiness.status != "ready") Text("Run is refused by the PC until the project is ready.", style = MaterialTheme.typography.bodySmall)
+                readiness.files.forEach { file ->
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .then(if (file.unit != null) Modifier.clickable { onOpen(file.unit) } else Modifier)
+                            .padding(vertical = 4.dp)
+                            .testTag("readiness_file:${file.path}"),
+                    ) {
+                        Text(file.path, Modifier.weight(1f), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            file.status,
+                            color = when (file.status) { "ready" -> colors.good; "omitted" -> colors.symbol; else -> colors.bad },
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+                readiness.diagnostics.take(20).forEach { Text(it, color = colors.bad, style = MaterialTheme.typography.bodySmall) }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
     )
 }
 

@@ -70,8 +70,10 @@
 #
 #   LCL_RELEASE_OUT=<dir>   where to write. Defaults to
 #                           releases/candidates/<name>-<short source id>.
-#   LCL_RELEASE_VERSION=<v> the language release the candidate is for: 0.1.0
-#                           or 0.2.0. Defaults to the product version in
+#   LCL_RELEASE_VERSION=<v> the language release the candidate is for: 0.1.0,
+#                           0.2.0 or 0.3.0. A 0.3.0 candidate bundles all three
+#                           packages; the Core 0.3.0 one judges 0.3.0 documents
+#                           and multi-file projects. Defaults to the product version in
 #                           impl/Cargo.toml. A 0.2.0 candidate bundles the
 #                           Core 0.1.0 package and the Core 0.2.0 package, whose
 #                           localized documents the tools judge alongside 0.1.0
@@ -384,7 +386,13 @@ case "$release" in
         [ -f "$snapshot/canonical/LCL_Core_0.2.0/VERSION.txt" ] ||
             refuse "a 0.2.0 candidate needs canonical/LCL_Core_0.2.0 in the captured source"
         ;;
-    *) refuse "LCL_RELEASE_VERSION must be 0.1.0 or 0.2.0, not $release" ;;
+    0.3.0)
+        for needed in 0.2.0 0.3.0; do
+            [ -f "$snapshot/canonical/LCL_Core_$needed/VERSION.txt" ] ||
+                refuse "a 0.3.0 candidate needs canonical/LCL_Core_$needed in the captured source"
+        done
+        ;;
+    *) refuse "LCL_RELEASE_VERSION must be 0.1.0, 0.2.0 or 0.3.0, not $release" ;;
 esac
 name=lcl-$release-linux-x86_64
 
@@ -415,8 +423,11 @@ install -m 0755 "$build/release/lcl-workspace" "$payload/bin/lcl-workspace"
 # The engine refuses to load a package that is not the approved release, so the
 # package travels with the binaries rather than being looked for at run time.
 cp -r "$snapshot/canonical/LCL_Core_0.1.0" "$payload/share/LCL_Core_0.1.0"
-if [ "$release" = 0.2.0 ]; then
+if [ "$release" = 0.2.0 ] || [ "$release" = 0.3.0 ]; then
     cp -r "$snapshot/canonical/LCL_Core_0.2.0" "$payload/share/LCL_Core_0.2.0"
+fi
+if [ "$release" = 0.3.0 ]; then
+    cp -r "$snapshot/canonical/LCL_Core_0.3.0" "$payload/share/LCL_Core_0.3.0"
 fi
 
 cp "$snapshot/packaging/install.sh" "$snapshot/packaging/uninstall.sh" "$payload/"
@@ -483,6 +494,12 @@ if [ "$release" = 0.2.0 ]; then
     versions=$(LCL_LOCALIZED_SPEC= "$payload/bin/lcl" version \
         --localized-spec "$payload/share/LCL_Core_0.2.0") ||
         refuse "the built lcl could not report its versions"
+elif [ "$release" = 0.3.0 ]; then
+    carried="0.1.0 0.2.0 0.3.0"
+    versions=$(LCL_LOCALIZED_SPEC= LCL_PROJECT_SPEC= "$payload/bin/lcl" version \
+        --localized-spec "$payload/share/LCL_Core_0.2.0" \
+        --project-spec "$payload/share/LCL_Core_0.3.0") ||
+        refuse "the built lcl could not report its versions"
 else
     versions=$(LCL_LOCALIZED_SPEC= "$payload/bin/lcl" version) ||
         refuse "the built lcl could not report its versions"
@@ -497,7 +514,7 @@ fi
 # The Core 0.2.0 package's identity, as the built tool's own 0.2.0 engine
 # reports it for the package's canonical-English fixture.
 localized_identity=
-if [ "$release" = 0.2.0 ]; then
+if [ "$release" = 0.2.0 ] || [ "$release" = 0.3.0 ]; then
     localized_identity=$("$payload/bin/lcl" check --machine \
         --spec "$payload/share/LCL_Core_0.1.0" \
         --localized-spec "$payload/share/LCL_Core_0.2.0" \

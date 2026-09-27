@@ -663,14 +663,47 @@ impl Session {
                     let body = need(param("text"), "the text")?;
                     self.save(routes, project, &doc, &base, &body)
                 }
+                "roles" => call("GET", "/api/roles", &[], ""),
+                // The exact starting text of a file of one role, written
+                // nowhere: the PC's scaffold or Master, never a phone's copy.
+                "scaffold" => {
+                    let mut query = vec![
+                        ("role", need(param("role"), "a role")?),
+                        ("path", need(param("path"), "a path")?),
+                    ];
+                    for key in ["mode", "master", "source"] {
+                        if let Some(value) = param(key) {
+                            query.push((key, value.to_string()));
+                        }
+                    }
+                    call("GET", "/api/scaffold", &query, "")
+                }
+                // Project readiness: the engine's validate report for the
+                // entry as it is on the PC's disk.
+                "project" => call(
+                    "GET",
+                    "/api/project/status",
+                    &[("entry", need(param("entry"), "an entry")?)],
+                    "",
+                ),
                 "create" => {
                     let name = need(param("name"), "a name")?;
-                    let (status, reply) = call(
-                        "POST",
-                        "/api/document",
-                        &[("id", name)],
-                        &need(param("text"), "the text")?,
-                    );
+                    // With a role, the PC writes the role's scaffold or Master
+                    // and the phone sends no text.
+                    let mut query = vec![("id", name)];
+                    let body = match param("role") {
+                        Some(role) => {
+                            query.push(("role", role.to_string()));
+                            for key in ["mode", "master", "source"] {
+                                if let Some(value) = param(key) {
+                                    query.push((key, value.to_string()));
+                                }
+                            }
+                            String::new()
+                        }
+                        None => need(param("text"), "the text")?,
+                    };
+                    let (status, reply) = call("POST", "/api/document", &query, &body);
                     if status == 200 {
                         if let Ok(created) = lcl_spec::json::parse(&reply) {
                             if let (Some(doc), Some(digest)) = (

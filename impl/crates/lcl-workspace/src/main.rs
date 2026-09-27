@@ -34,6 +34,11 @@ OPTIONS:
                         The canonical LCL Core 0.2.0 package, for localized
                         documents. Falls back to LCL_LOCALIZED_SPEC, then to
                         \"localized_spec\" in lcl.project.json.
+    --project-spec <PATH>
+                        The canonical LCL Core 0.3.0 package, for 0.3.0
+                        documents and multi-file projects. Falls back to
+                        LCL_PROJECT_SPEC, then to \"project_spec\" in
+                        lcl.project.json.
     --profile <FILE>    A locale profile <locale>.json for localized documents,
                         after the project's \"profiles\" directory. Repeatable;
                         a later file for the same locale replaces an earlier one.
@@ -74,6 +79,7 @@ fn run(argv: &[String]) -> Result<(), String> {
     let mut document: Option<PathBuf> = None;
     let mut spec: Option<PathBuf> = None;
     let mut localized_spec: Option<PathBuf> = None;
+    let mut project_spec: Option<PathBuf> = None;
     let mut profiles: Vec<PathBuf> = Vec::new();
     let mut default_project: Option<PathBuf> = None;
     let mut port: u16 = 0;
@@ -98,6 +104,7 @@ fn run(argv: &[String]) -> Result<(), String> {
             "--document" => document = Some(PathBuf::from(value("--document")?)),
             "--spec" => spec = Some(PathBuf::from(value("--spec")?)),
             "--localized-spec" => localized_spec = Some(PathBuf::from(value("--localized-spec")?)),
+            "--project-spec" => project_spec = Some(PathBuf::from(value("--project-spec")?)),
             "--profile" => profiles.push(PathBuf::from(value("--profile")?)),
             "--default-project" => {
                 default_project = Some(PathBuf::from(value("--default-project")?))
@@ -162,9 +169,11 @@ fn run(argv: &[String]) -> Result<(), String> {
         Workspace::create(&root, &spec).map_err(|e| e.to_string())?;
     }
     let localized_spec = Workspace::locate_localized_spec(localized_spec);
-    let workspace = Workspace::open_with_profiles(&root, &spec, localized_spec, &profiles)
-        .map_err(|e| e.to_string())?
-        .with_open_document(open_document);
+    let project_spec = Workspace::locate_project_spec(project_spec);
+    let workspace =
+        Workspace::open_with_specs(&root, &spec, localized_spec, project_spec, &profiles)
+            .map_err(|e| e.to_string())?
+            .with_open_document(open_document);
 
     let server = Server::bind_to(port)
         .map_err(|e| format!("could not bind loopback: {e}"))?
@@ -178,6 +187,9 @@ fn run(argv: &[String]) -> Result<(), String> {
     println!("  spec     {}", workspace.spec_root().display());
     if let Some(localized) = workspace.localized_spec_root() {
         println!("  localized {}", localized.display());
+    }
+    if let Some(project) = workspace.project_spec_root() {
+        println!("  projects {}", project.display());
     }
     println!("  open     {url}");
     if let Some(notice) = &notice {

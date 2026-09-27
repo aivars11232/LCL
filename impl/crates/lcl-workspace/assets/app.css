@@ -422,3 +422,38 @@ button.danger:hover:not(:disabled) { filter: brightness(1.1); color: var(--accen
 .remote-request .remote-verification { font-size: 1.25em; font-weight: 700; letter-spacing: 0.05em; }
 .remote-confirm { flex-basis: 100%; display: grid; gap: 4px; justify-items: start; padding: 8px; border: 1px solid currentColor; border-radius: 6px; }
 .remote-confirm p { margin: 0; }
+
+/* Core 0.3: roles, readiness, scaffolds and templates */
+.tree li .role { margin-left: 6px; font-size: 10.5px; color: var(--ink-faint); border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; }
+.tree li .role.entry { color: var(--accent); border-color: var(--accent); }
+#readiness-panel { border-top: 1px solid var(--line); }
+#readiness { padding: 4px 8px 8px; font-size: 12px; }
+.readiness-state { font-weight: 600; margin: 2px 0 4px; }
+.readiness-state.ready { color: var(--good); }
+.readiness-state.incomplete, .readiness-state.invalid { color: var(--bad); }
+.readiness-state.loading, .readiness-state.running { color: var(--warn); }
+.readiness-files, .readiness-diagnostics { list-style: none; margin: 0; padding: 0; }
+.readiness-files li { display: flex; gap: 6px; padding: 2px 0; cursor: default; }
+.readiness-files li[tabindex] { cursor: pointer; }
+.readiness-files .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.readiness-files .role { color: var(--ink-faint); }
+.readiness-files li.ready .state { color: var(--good); }
+.readiness-files li.invalid .state, .readiness-files li.missing .state, .readiness-files li.duplicate .state { color: var(--bad); }
+.readiness-files li.omitted .state { color: var(--ink-faint); }
+.readiness-diagnostics li { color: var(--bad); padding: 1px 0; cursor: pointer; }
+.scaffold-preview { max-height: 260px; overflow: auto; font-size: 12px; margin: 4px 0; }
+.scaffold-preview .mark.required_slot { color: var(--bad); }
+.scaffold-preview .mark.optional_slot { color: var(--warn); }
+.scaffold-preview .mark.guidance { color: var(--ink-faint); }
+.scaffold-preview .mark.generated_id { color: var(--accent); }
+.plan details { margin: 4px 0; }
+.templates-defaults { display: grid; grid-template-columns: max-content 1fr; gap: 4px 8px; align-items: center; margin: 6px 0 10px; }
+ul.templates { list-style: none; padding: 0; }
+ul.templates li { display: flex; gap: 6px; align-items: center; padding: 3px 0; flex-wrap: wrap; }
+ul.templates li .name { flex: 1; }
+ul.templates li .role { color: var(--ink-faint); }
+.template-json { width: 100%; min-height: 320px; font-family: var(--mono, monospace); font-size: 12px; }
+.gutter .ln.slot-required_slot { color: var(--bad); font-weight: 700; background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.gutter .ln.slot-optional_slot { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.gutter .ln.slot-guidance { font-style: italic; }
+.gutter .ln.slot-generated_id { color: var(--accent); }

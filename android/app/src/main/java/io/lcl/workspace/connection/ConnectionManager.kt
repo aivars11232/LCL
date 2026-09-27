@@ -248,10 +248,26 @@ class ConnectionManager(
      * record returned says so, and a replacement is never reported finished
      * before it is.
      */
+    /**
+     * The refusal for a pairing code whose PC id is already paired under a
+     * different certificate fingerprint, or null when there is none.
+     */
+    private fun identityConflict(link: PairingLink): IdentityConflictException? {
+        val known = store.get(link.pcId) ?: return null
+        if (constantTimeEquals(known.fingerprint, link.fingerprint)) return null
+        return IdentityConflictException(known.name)
+    }
+
     suspend fun pair(link: PairingLink, deviceName: String, onPending: (PendingPairing) -> Unit = {}): Result<PcRecord> {
         if (link.isExpired(now())) {
             return Result.failure(RemoteException("This QR code has expired. Show a new one on the PC."))
         }
+        // A13: the certificate fingerprint is the PC's identity, and the PC id
+        // is only this app's name for a record. A code for a known PC id with
+        // another fingerprint is a different PC — or someone posing as the
+        // known one — and never replaces the record: no key is made, the old
+        // key is kept and still used, and nothing is asked of the new address.
+        identityConflict(link)?.let { return Result.failure(it) }
         val alias = "$KEY_PREFIX${link.pcId}-${UUID.randomUUID()}"
         val identity = runCatching { identities.create(alias, "LCL Android") }.getOrElse {
             return Result.failure(RemoteException("This device could not make a key: ${it.message}"))
@@ -302,6 +318,12 @@ class ConnectionManager(
                             waiting = true
                         }
                         is Opened.Accepted -> {
+                            // Checked again at the moment of saving: a record
+                            // for this PC id may have been made meanwhile.
+                            identityConflict(link)?.let { conflict ->
+                                runCatching { opened.session.close() }
+                                return failed(conflict.message ?: "")
+                            }
                             val device = opened.paired?.obj("device")
                             val pcInfo = opened.session.welcome.obj("pc")
                             val previous = store.get(link.pcId)
@@ -564,3 +586,15 @@ class ConnectionManager(
         return Outcome.Unreachable(reason)
     }
 }
+
+/**
+ * A pairing code for a PC id this device already trusts, under a different
+ * certificate fingerprint (A13). Nothing is replaced; see [ConnectionManager.pair].
+ */
+class IdentityConflictException(knownName: String) : java.io.IOException(
+    "Identity conflict: this QR code names the PC paired here as \"$knownName\", but that PC " +
+        "now proves a different identity (another certificate). It may be a different computer, " +
+        "or someone posing as it, so nothing was changed: the pairing with \"$knownName\" stays as " +
+        "it is and keeps working. If that PC was reinstalled or reset on purpose, Forget it on " +
+        "the PCs screen first, then pair again.",
+)

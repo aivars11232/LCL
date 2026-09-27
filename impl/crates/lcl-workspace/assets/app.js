@@ -44,7 +44,10 @@ async function api(method, path, params, body) {
   try { parsed = text ? JSON.parse(text) : null; } catch (_) { parsed = null; }
   if (!reply.ok) {
     const detail = (parsed && parsed.error) || text || reply.statusText;
-    throw new Error(detail);
+    const error = new Error(detail);
+    error.status = reply.status;
+    error.reply = parsed;
+    throw error;
   }
   return parsed;
 }
@@ -187,6 +190,10 @@ const state = {
    * default file type and the default workspace. The server keeps them in the
    * user's configuration directory; see `loadFileSettings`. */
   files: { available: false, default_extension: ".lcl", default_workspace: null },
+  /* The file roles this workspace's Core 0.3.0 engine defines; see loadRoles. */
+  roles: { available: false, roles: [], modes: [] },
+  /* The project whose readiness the sidebar shows; see refreshReadiness. */
+  readiness: { entry: null, status: null, report: null, generation: 0 },
 };
 
 /* How a document came to be open, which is a different question from whether
@@ -226,6 +233,10 @@ function Doc(id, text, digest, lifecycle = "opened") {
     marks: { squiggles: [], refs: [] },
     breakpoints: new Set(),
     stepAt: null,
+    /* The engine's marks for a file of a project role: its empty slots, its
+     * guidance and its generated IDs (see refreshSlots). Editor metadata only;
+     * the text itself is never changed by them. */
+    slots: [],
   };
 }
 
@@ -282,7 +293,7 @@ const emptyState = $("#empty-state");
 
 /* Every control that acts on the open document. With no document they are
  * disabled together, by `syncDocumentUI`, and by nothing else. */
-const DOCUMENT_ACTIONS = ["#act-check", "#act-inspect", "#act-run", "#act-save", "#act-reload"];
+const DOCUMENT_ACTIONS = ["#act-check", "#act-validate", "#act-inspect", "#act-run", "#act-save", "#act-reload"];
 
 function toast(message, kind = "") {
   const node = el("div", `toast ${kind}`, message);
@@ -363,6 +374,11 @@ function renderTree() {
       if (dirty(doc)) item.append(el("span", "dot", "●"));
     }
     item.append(document.createTextNode(name));
+    if (entry.kind) {
+      const role = el("span", `role${entry.kind === "kind.project" ? " entry" : ""}`, roleLabel(entry.kind));
+      role.title = `This file declares SPECIFICATION KIND ${entry.kind}`;
+      item.append(role);
+    }
     item.title = entry.id;
     if (entry.id === state.active) item.classList.add("open");
     if (!entry.directory) {
@@ -417,7 +433,12 @@ function openMenu(id, x, y, returnTo) {
   const menu = el("div", "context-menu");
   menu.setAttribute("role", "menu");
   menu.setAttribute("aria-label", id);
-  for (const [label, act] of [["Open", () => openDocument(id)], ["Delete…", () => deleteDocument(id)]]) {
+  const actions = [["Open", () => openDocument(id)], ["Delete…", () => deleteDocument(id)]];
+  const listed = state.entries.find((e) => e.id === id);
+  if (listed && listed.kind === "kind.task" && state.roles.available) {
+    actions.splice(1, 0, ["Convert to multi-file project…", () => convertDocument(id)]);
+  }
+  for (const [label, act] of actions) {
     const item = el("button", "", label);
     item.setAttribute("role", "menuitem");
     item.onclick = () => { closeMenu(); act(); };
@@ -517,6 +538,8 @@ async function openDocument(id, { focusByte, created } = {}) {
   await refreshTokens();
   if (focusByte !== undefined) revealByte(focusByte);
   code.focus();
+  refreshReadiness();
+  refreshSlots(doc, doc.revision).then(() => { if (current() === doc) render(); });
 }
 
 /* Take one document out of the editor: its tab and its buffer. When it was
@@ -624,9 +647,19 @@ async function save(doc = current()) {
   const pending = doc.saveTail.then(async () => {
     // Discard can close a document while its next save is still queued.
     if (state.docs.get(doc.id) !== doc) return false;
+    /* A save queued behind a conflict waits for the person's choice rather
+     * than raising the same conflict again. */
+    if (doc.conflict) {
+      toast(`Not saved. ${doc.id} changed on disk; choose Reload or Keep mine first.`, "warn");
+      return false;
+    }
     let reply, persisted;
     try {
-      reply = await api("PUT", "/api/document", { id: doc.id }, submitted);
+      /* The revision this edit started from: the digest the last load or the
+       * last acknowledged save gave. A queued save runs after the one before
+       * it was acknowledged, so it bases itself on that save, never on a
+       * digest its own queue already replaced. */
+      reply = await api("PUT", "/api/document", { id: doc.id, base: doc.digest }, submitted);
       if (!reply || reply.id !== doc.id || typeof reply.digest !== "string" ||
           typeof reply.final_line_feed_added !== "boolean") {
         throw new Error("The server did not acknowledge this document's save.");
@@ -636,6 +669,11 @@ async function save(doc = current()) {
         throw new Error("The server did not acknowledge the submitted content length.");
       }
     } catch (e) {
+      if (e.status === 409 && e.reply && e.reply.conflict) {
+        doc.conflict = { digest: e.reply.digest, exists: e.reply.exists };
+        showConflict(doc);
+        return false;
+      }
       toast(`Not saved. ${e.message}`, "bad");
       return false;
     }
@@ -659,6 +697,7 @@ async function save(doc = current()) {
     // A refresh failure cannot turn an acknowledged write into a failed save.
     try {
       await loadTree();
+      refreshReadiness();
       if (current() === doc) await refreshTokens();
     } catch (e) {
       toast(`Saved ${doc.id}; could not refresh the project. ${e.message}`, "warn");
@@ -708,8 +747,22 @@ async function reload() {
   await go();
 }
 
-async function newDocument() {
+/* New document: blank, or a file of one role.
+ *
+ * A role's text is the engine's scaffold or a Master (see Settings →
+ * Templates), chosen and written by the server; this dialog only shows the
+ * exact text first. Nothing is created until Create is pressed. */
+function newDocument() {
   const ending = state.files.default_extension;
+  /* The roles were read at start; the Masters are read while the dialog is
+   * already open, and fill in its choices when they arrive. */
+  const kinds = [["", "Blank LCL file"]].concat(state.roles.roles.map((r) => [r.role, r.label]));
+  let masters = [];
+  let mastersArrived = () => {};
+  api("GET", "/api/masters").then((reply) => {
+    masters = reply.masters || [];
+    mastersArrived();
+  }, () => { /* no Masters: the canonical scaffolds remain */ });
   modal("New document", (body) => {
     body.append(el("p", "",
       `A path inside the project. A name without an ending is created as ${ending}, ` +
@@ -718,26 +771,97 @@ async function newDocument() {
     const input = el("input", "field");
     input.id = "new-path";
     input.value = `untitled${ending}`;
-    body.append(input);
+    const kindLabel = el("label", "", "Kind of file");
+    kindLabel.htmlFor = "new-kind";
+    const kind = el("select", "field");
+    kind.id = "new-kind";
+    for (const [value, label] of kinds) {
+      const option = el("option", "", label);
+      option.value = value;
+      kind.append(option);
+    }
+    const fromLabel = el("label", "", "Start from");
+    fromLabel.htmlFor = "new-from";
+    const from = el("select", "field");
+    from.id = "new-from";
+    const preview = el("pre", "scaffold-preview");
+    preview.id = "new-preview";
+    const note = el("p", "note");
+    const refill = () => {
+      from.replaceChildren();
+      const role = kind.value;
+      from.disabled = !role;
+      if (!role) return;
+      const options = [
+        ["default:guided", "Default (Guided)"], ["default:minimal", "Default (Minimal)"],
+        ["canonical:guided", "Canonical scaffold — Guided"], ["canonical:minimal", "Canonical scaffold — Minimal"],
+      ].concat(masters.filter((m) => m.role === role && m.valid).map((m) => [`master:${m.id}`, `Master: ${m.name}`]));
+      for (const [value, label] of options) {
+        const option = el("option", "", label);
+        option.value = value;
+        from.append(option);
+      }
+    };
+    let shown = 0;
+    const show = async () => {
+      const mine = ++shown;
+      preview.replaceChildren();
+      note.textContent = "";
+      if (!kind.value) {
+        note.textContent = "A blank file holds only the LCL and SPECIFICATION headers.";
+        return;
+      }
+      const name = input.value.trim() || "untitled";
+      const path = /\.lcl(\.txt)?$/.test(name) ? name : name + ending;
+      try {
+        const scaffold = await api("GET", "/api/scaffold",
+          { path, role: kind.value, ...selectionParams(kind.value, from.value) });
+        if (mine !== shown) return;
+        showScaffold(preview, scaffold);
+        note.textContent = "Exactly this text will be written. Marked lines: ! required slot, " +
+          "? optional slot, # guidance, ⚙ generated identifier.";
+      } catch (e) {
+        if (mine === shown) note.textContent = `No preview: ${e.message}`;
+      }
+    };
+    mastersArrived = () => {
+      if (!$("#new-from") || $("#new-from") !== from) return;
+      const chosen = from.value;
+      refill();
+      if ([...from.children].some((o) => o.value === chosen)) from.value = chosen;
+    };
+    kind.onchange = () => { refill(); show(); };
+    from.onchange = show;
+    input.oninput = () => { clearTimeout(input.timer); input.timer = setTimeout(show, 250); };
+    body.append(input, kindLabel, kind, fromLabel, from, note, preview);
+    refill();
+    show();
   }, [
     ["Cancel", "", (close) => close()],
     ["Create", "primary", async (close) => {
       const id = $("#new-path").value.trim();
+      const role = $("#new-kind").value;
+      const from = $("#new-from").value;
       close();
       if (!id) return;
       try {
-        /* A new document starts as the smallest thing the grammar accepts.
-         * 04_GRAMMAR/01: "Every document starts with LCL then SPECIFICATION."
-         * The values are placeholders; the engine judges them like any other. */
-        const seed =
-          'LCL:\n    VERSION: "0.1.0"\n\n' +
-          'SPECIFICATION:\n    ID: example.new\n    NAME: "New document"\n' +
-          '    VERSION: "1.0.0"\n    KIND: kind.task\n    DOMAIN: "general"\n';
+        let created;
+        if (role) {
+          created = await api("POST", "/api/document", { id, role, ...selectionParams(role, from) });
+        } else {
+          /* A blank document is the smallest thing the grammar accepts.
+           * 04_GRAMMAR/01: "Every document starts with LCL then SPECIFICATION."
+           * The values are placeholders; the engine judges them like any other. */
+          const seed =
+            'LCL:\n    VERSION: "0.1.0"\n\n' +
+            'SPECIFICATION:\n    ID: example.new\n    NAME: "New document"\n' +
+            '    VERSION: "1.0.0"\n    KIND: kind.task\n    DOMAIN: "general"\n';
+          created = await api("POST", "/api/document", { id }, seed);
+        }
         /* Creating is its own route: it applies the .lcl default and
          * refuses to overwrite. Saving stays exact, so an open document is
          * never renamed under the person editing it. The server decides the
          * final name, and the reply says what it chose. */
-        const created = await api("POST", "/api/document", { id }, seed);
         await loadTree();
         await openDocument(created.id, { created: created.digest });
         toast(
@@ -976,6 +1100,14 @@ function openSettings() {
         "These cannot be saved: this workspace has no configuration folder (HOME or " +
         "XDG_CONFIG_HOME is not set)."));
     }
+    form.append(el("h3", "", "Templates"));
+    form.append(el("p", "note",
+      "Master templates: your own starting text for each kind of file and for new projects."));
+    const templates = el("button", "", "Templates…");
+    templates.type = "button";
+    templates.id = "open-templates";
+    templates.onclick = () => openTemplates();
+    form.append(templates);
     androidDevices(form);
     body.append(form);
   }, [
@@ -1308,7 +1440,9 @@ function render() {
   }
   paintTokens(doc);
   renderGutter(doc);
-  $("#doc-state").textContent = dirty(doc) ? "modified" : "saved";
+  const required = (doc.slots || []).filter((m) => m.kind === "required_slot").length;
+  $("#doc-state").textContent = (dirty(doc) ? "modified" : "saved") +
+    (required ? ` · ${required} required slot${required === 1 ? "" : "s"} to fill` : "");
   updateCursor();
   syncScroll();
 }
@@ -1336,14 +1470,37 @@ function syncDocumentUI(doc) {
   }
 }
 
+/* The slot marks of the current text, from the engine, for a file whose tree
+ * entry declares a project part role. Anything else has none. */
+async function refreshSlots(doc, revision) {
+  const listed = state.entries.find((e) => e.id === doc.id);
+  if (!listed || !listed.kind || !listed.kind.startsWith("kind.part.")) { doc.slots = []; return; }
+  try {
+    const reply = await api("POST", "/api/slots", { id: doc.id }, doc.text);
+    if (doc.revision === revision) doc.slots = reply.marks || [];
+  } catch (_) {
+    doc.slots = [];
+  }
+}
+
+const SLOT_TITLES = {
+  required_slot: "Required slot: fill this in",
+  optional_slot: "Optional slot: fill it in or delete the line",
+  guidance: "Guidance for filling this file in",
+  generated_id: "Generated identifier",
+};
+
 function renderGutter(doc) {
   const lines = doc.text.split("\n").length;
   const marks = diagnosticLines(doc);
+  const slots = new Map((doc.slots || []).map((m) => [m.line, m.kind]));
   const frag = document.createDocumentFragment();
   for (let n = 1; n <= lines; n++) {
     const line = el("span", "ln", String(n));
     const mark = marks.get(n);
     if (mark) line.classList.add(`has-${mark}`);
+    const slot = slots.get(n);
+    if (slot) { line.classList.add(`slot-${slot}`); line.title = SLOT_TITLES[slot] || slot; }
     if (doc.breakpoints.has(n)) line.classList.add("has-break");
     if (doc.stepAt === n) line.classList.add("at-step");
     line.onclick = () => toggleBreakpoint(doc, n);
@@ -1590,6 +1747,7 @@ async function runAnalysis() {
     /* Kept separately from the report: a run replaces `report`, and stepping
      * needs the plan to turn an invocation's node index into a span. */
     if (report.structure) doc.plan = report.structure.plan;
+    await refreshSlots(doc, revision);
     if (current() !== doc) return;
     renderDiagnostics(doc);
     renderStructure(doc);
@@ -1848,6 +2006,7 @@ async function startRun() {
   doc.stepAt = null;
   showView("execution");
   renderExecution();
+  renderReadiness();
   follow(state.run);
 }
 
@@ -1906,6 +2065,7 @@ function follow(run) {
     run.paused = null;
     source.close();
     renderExecution();
+    renderReadiness();
     if (run.report && run.report.completion) showView("completion");
   });
   source.onerror = () => {
@@ -2385,26 +2545,42 @@ code.addEventListener("click", (e) => {
   if (e.ctrlKey || e.metaKey) { e.preventDefault(); goToDefinition(); }
 });
 
-$("#act-check").onclick = async () => {
+/* Check (steps 1 to 5) or Validate (steps 1 to 9) over the buffer. A
+ * validated project entry's report is also the project's readiness. */
+async function engineCommand(route) {
   const doc = current();
   if (!doc) return;
   const revision = doc.revision;
   const generation = issue(doc, "analysis");
-  const report = await api("POST", "/api/check", { id: doc.id }, doc.text);
+  let report;
+  try {
+    report = await api("POST", route, { id: doc.id }, doc.text);
+  } catch (e) {
+    toast(`Not checked. ${e.message}`, "bad");
+    return;
+  }
   if (!accepts(doc, revision, "analysis", generation)) return;
   doc.report = report;
   doc.navigation = null;
   markReport(doc);
+  if (route === "/api/validate" && report.project && report.project.entry === doc.id) {
+    showReadiness(doc.id, report);
+  }
   if (current() !== doc) return;
   renderDiagnostics(doc); renderStructure(doc); render();
   showView("diagnostics");
-};
+}
+$("#act-check").onclick = () => engineCommand("/api/check");
+$("#act-validate").onclick = () => engineCommand("/api/validate");
 $("#act-inspect").onclick = async () => { await runAnalysis(); showView("structure"); };
 $("#act-run").onclick = startRun;
 $("#act-save").onclick = () => save();
 $("#act-reload").onclick = reload;
 $("#act-new").onclick = newDocument;
+$("#act-new-project").onclick = newProject;
 $("#act-settings").onclick = openSettings;
+$("#act-manual").onclick = openManual;
+$("#readiness-refresh").onclick = () => refreshReadiness();
 
 function showView(name) {
   for (const t of document.querySelectorAll(".tabstrip .tab")) {
@@ -2433,6 +2609,564 @@ function scheduleAnalysis() {
   analysisTimer = setTimeout(() => runAnalysis(), 320);
 }
 
+/* ------------------------------------------------- Core 0.3 projects */
+
+/* What a person reads for a role: the last segment of its canonical kind,
+ * capitalised, as the server's own label is. Presentation only. */
+function roleLabel(kind) {
+  const last = String(kind).split(".").pop();
+  return last.charAt(0).toUpperCase() + last.slice(1);
+}
+
+/* The roles the Core 0.3.0 engine defines, and whether it is here at all. */
+async function loadRoles() {
+  try {
+    state.roles = await api("GET", "/api/roles");
+  } catch (_) {
+    state.roles = { available: false, roles: [], modes: [] };
+  }
+  $("#act-new-project").disabled = !state.roles.available;
+}
+
+/* "default:guided", "canonical:minimal" or "master:<id>" as request params. */
+function selectionParams(role, choice) {
+  const [source, value] = String(choice || "default:guided").split(/:(.*)/s);
+  if (source === "master") return { master: value };
+  return { source, mode: value };
+}
+
+/* A scaffold's exact text, each marked line tagged with what it is. The
+ * marks are the engine's editor metadata; nothing here reads the text. */
+function showScaffold(pre, scaffold) {
+  const marks = new Map();
+  for (const mark of scaffold.marks || []) marks.set(mark.line, mark.kind);
+  const symbol = { required_slot: "!", optional_slot: "?", guidance: "#", generated_id: "⚙" };
+  const lines = scaffold.text.replace(/\n$/, "").split("\n");
+  lines.forEach((line, i) => {
+    const kind = marks.get(i + 1);
+    const row = el("span", kind ? `mark ${kind}` : "", `${kind ? symbol[kind] : " "} ${line}\n`);
+    if (kind) row.title = kind.replace("_", " ");
+    pre.append(row);
+  });
+}
+
+/* ------------------------------------------------------ save conflict */
+
+/* A save was refused because the file changed on disk after this revision
+ * was loaded — on the phone, in another window or in another program. The
+ * person chooses; nothing is merged and nothing is overwritten unasked. */
+function showConflict(doc) {
+  const where = doc.conflict.exists ? "changed on disk" : "deleted from disk";
+  modal("Changed on disk", (body) => {
+    body.append(el("p", "",
+      `${doc.id} was ${where} after you loaded it — by LCL for Android, another window ` +
+      "or another program. Your edits were not saved, and nothing was merged."));
+    body.append(el("p", "note",
+      "Reload disk version replaces your edits with what is on disk. Keep mine writes " +
+      "your version over it, after one more confirmation."));
+  }, [
+    ["Cancel", "", (close) => close()],
+    ["Reload disk version", "", async (close) => {
+      close();
+      await resolveConflict(doc, "reload");
+    }],
+    ["Keep mine…", "primary", (close) => {
+      close();
+      modal("Overwrite the disk version?", (body) => {
+        body.append(el("p", "",
+          `The version of ${doc.id} on disk will be replaced by yours. The other ` +
+          "change is lost unless it was saved elsewhere."));
+      }, [
+        ["Cancel", "", (c) => c()],
+        ["Overwrite with mine", "primary", async (c) => {
+          c();
+          await resolveConflict(doc, "keep");
+        }],
+      ]);
+    }],
+  ]);
+}
+
+async function resolveConflict(doc, choice) {
+  if (state.docs.get(doc.id) !== doc || !doc.conflict) return;
+  const seen = doc.conflict;
+  if (choice === "reload") {
+    try {
+      const reply = await api("GET", "/api/document", { id: doc.id });
+      doc.conflict = null;
+      doc.saved = reply.text;
+      doc.digest = reply.digest;
+      replaceText(doc, reply.text);
+      if (current() === doc) code.value = doc.text;
+      renderTabs(); renderTree(); render();
+      await refreshTokens();
+      toast(`Reloaded ${doc.id} from disk.`);
+    } catch (e) {
+      toast(`Not reloaded. ${e.message}`, "bad");
+    }
+    return;
+  }
+  /* Keep mine: a save over exactly the revision the conflict reported. If the
+   * file moved again since, that is a new conflict, reported the same way. */
+  doc.conflict = null;
+  if (seen.exists) {
+    doc.digest = seen.digest;
+    await save(doc);
+    return;
+  }
+  try {
+    const created = await api("POST", "/api/document", { id: doc.id }, doc.text);
+    doc.digest = created.digest;
+    doc.saved = doc.text;
+    doc.lifecycle = "saved";
+    renderTabs(); await loadTree(); render();
+    toast(`Saved ${doc.id} again.`, "good");
+  } catch (e) {
+    toast(`Not saved. ${e.message}`, "bad");
+  }
+}
+
+/* ------------------------------------------------------- users manual */
+
+/* The Users Manual opens in its own window, beside the editor: this page,
+ * its documents and its unsaved edits stay exactly as they are. The manual
+ * is packaged into the workspace, so it needs no network. */
+function openManual() {
+  const url = new URL("/manual/", location.origin);
+  url.searchParams.set("t", TOKEN);
+  const opened = window.open(url.toString(), "lcl-users-manual", "popup=yes,width=1000,height=820");
+  if (opened) opened.focus();
+  else toast("The browser blocked the Users Manual window. Allow pop-ups for this page and try again.", "warn");
+}
+
+/* -------------------------------------------------------- new project */
+
+/* New Project: a folder, the Core version, a scaffold or project Master, an
+ * exact preview of every file, and only then Create. The server recomputes
+ * the plan and refuses it if it is not the one previewed. */
+async function newProject() {
+  await loadRoles();
+  if (!state.roles.available) {
+    toast("Core 0.3.0 is not available in this workspace, and multi-file projects need it.", "warn");
+    return;
+  }
+  let masters = [];
+  try { masters = (await api("GET", "/api/masters")).masters || []; } catch (_) { masters = []; }
+  let plan = null;
+  modal("New project", (body) => {
+    body.append(el("p", "",
+      `A folder inside ${state.session.root}. Its files are listed below before anything ` +
+      "is written."));
+    const nameLabel = el("label", "", "Folder");
+    nameLabel.htmlFor = "project-folder";
+    const name = el("input", "field");
+    name.id = "project-folder";
+    name.value = "new_project";
+    const coreLabel = el("label", "", "LCL Core version");
+    coreLabel.htmlFor = "project-core";
+    const core = el("select", "field");
+    core.id = "project-core";
+    const only = el("option", "", `LCL Core ${state.roles.core}`);
+    only.value = state.roles.core;
+    core.append(only);
+    const fromLabel = el("label", "", "Start from");
+    fromLabel.htmlFor = "project-from";
+    const from = el("select", "field");
+    from.id = "project-from";
+    for (const [value, label] of [
+      ["default:guided", "Default (Guided)"], ["default:minimal", "Default (Minimal)"],
+      ["canonical:guided", "Canonical — Guided"], ["canonical:minimal", "Canonical — Minimal"],
+    ].concat(masters.filter((m) => m.role === "kind.project" && m.valid)
+      .map((m) => [`master:${m.id}`, `Master: ${m.name}`]))) {
+      const option = el("option", "", label);
+      option.value = value;
+      from.append(option);
+    }
+    const files = el("div", "plan");
+    files.id = "project-plan";
+    let asked = 0;
+    const show = async () => {
+      const mine = ++asked;
+      plan = null;
+      $("#project-create").disabled = true;
+      files.replaceChildren(el("p", "note", "Preparing the preview…"));
+      try {
+        const reply = await api("GET", "/api/project/plan",
+          { folder: name.value.trim(), ...selectionParams("kind.project", from.value) });
+        if (mine !== asked) return;
+        files.replaceChildren();
+        const occupied = reply.files.filter((f) => f.exists);
+        for (const file of reply.files) {
+          const box = el("details");
+          const origin = file.origin.kind === "master" ? `Master ${file.origin.master}` : `canonical, ${file.origin.mode}`;
+          box.append(el("summary", "", `${file.path} — ${file.label} (${origin})${file.exists ? " — already exists" : ""}`));
+          const pre = el("pre", "scaffold-preview");
+          showScaffold(pre, file);
+          box.append(pre);
+          files.append(box);
+        }
+        if (occupied.length) {
+          files.append(el("p", "note warning", "Some of these files already exist, so nothing can be created here."));
+          return;
+        }
+        plan = reply;
+        $("#project-create").disabled = false;
+      } catch (e) {
+        if (mine === asked) files.replaceChildren(el("p", "note warning", e.message));
+      }
+    };
+    name.oninput = () => { clearTimeout(name.timer); name.timer = setTimeout(show, 250); };
+    from.onchange = show;
+    body.append(nameLabel, name, coreLabel, core, fromLabel, from, files);
+    setTimeout(show, 0);
+  }, [
+    ["Cancel", "", (close) => close()],
+    ["Create", "primary", async (close) => {
+      if (!plan) return;
+      const chosen = plan;
+      close();
+      try {
+        await api("POST", "/api/project", {
+          folder: chosen.folder,
+          ...selectionParams("kind.project", $("#project-from") ? $("#project-from").value : ""),
+          plan_digest: chosen.plan_digest,
+        });
+        await loadTree();
+        await openDocument(chosen.entry);
+        toast(`Created ${chosen.files.length} files in ${chosen.folder || "the project folder"}.`, "good");
+      } catch (e) {
+        toast(`Not created. ${e.message}`, "bad");
+      }
+    }],
+  ]);
+  const create = [...$("#modal-actions").querySelectorAll("button")].pop();
+  create.id = "project-create";
+  create.disabled = true;
+}
+
+/* ---------------------------------------------------------- readiness */
+
+/* Project readiness is the engine's: `validate` over the entry, with every
+ * part read from disk. Which project is shown is never guessed: the open
+ * document when it is an entry (it declares kind.project), else the entry
+ * last shown when it lists the open document as a part. */
+function entryFor(id) {
+  const listed = state.entries.find((e) => e.id === id);
+  if (listed && listed.kind === "kind.project") return id;
+  const shown = state.readiness;
+  if (shown.entry && shown.report && shown.report.project &&
+      shown.report.project.parts.some((p) => p.unit === id)) return shown.entry;
+  return null;
+}
+
+async function refreshReadiness() {
+  const doc = current();
+  const entry = doc ? entryFor(doc.id) : state.readiness.entry;
+  if (!entry) { renderReadiness(); return; }
+  const generation = ++state.readiness.generation;
+  state.readiness.entry = entry;
+  state.readiness.status = "loading";
+  renderReadiness();
+  const open = state.docs.get(entry);
+  try {
+    const report = open
+      ? await api("POST", "/api/validate", { id: entry }, open.text)
+      : await api("GET", "/api/project/status", { entry });
+    if (generation !== state.readiness.generation) return;
+    showReadiness(entry, report);
+  } catch (e) {
+    if (generation !== state.readiness.generation) return;
+    state.readiness.status = "invalid";
+    state.readiness.report = null;
+    state.readiness.problem = e.message;
+    renderReadiness();
+  }
+}
+
+function showReadiness(entry, report) {
+  const project = report.project;
+  state.readiness.entry = entry;
+  state.readiness.report = report;
+  state.readiness.problem = null;
+  state.readiness.status = !project ? "invalid"
+    : project.admission === "admitted" ? "ready"
+    : !project.complete ? "incomplete" : "invalid";
+  renderReadiness();
+}
+
+function readinessStatus() {
+  const r = state.readiness;
+  if (state.run && !state.run.finished && state.run.document === r.entry) return "running";
+  return r.status;
+}
+
+function renderReadiness() {
+  const box = $("#readiness");
+  box.replaceChildren();
+  const r = state.readiness;
+  const doc = current();
+  const shown = doc && entryFor(doc.id);
+  box.hidden = !shown;
+  if (!shown) return;
+  const status = readinessStatus();
+  const head = el("div", `readiness-state ${status}`, `${r.entry} — ${status}`);
+  head.id = "readiness-state";
+  box.append(head);
+  if (r.problem) box.append(el("p", "note warning", r.problem));
+  const project = r.report && r.report.project;
+  if (!project) return;
+  const list = el("ul", "readiness-files");
+  const row = (label, status, unit, role, required) => {
+    const li = el("li", `file ${status}`);
+    li.append(el("span", "name", label), el("span", "state", status));
+    if (role) li.append(el("span", "role", `${roleLabel(role)}${required === false ? ", optional" : ""}`));
+    if (unit) { li.tabIndex = 0; li.onclick = () => openDocument(unit); li.onkeydown = (e) => { if (e.key === "Enter") openDocument(unit); }; }
+    list.append(li);
+  };
+  row(project.entry, project.entry_status, project.entry, "kind.project");
+  for (const part of project.parts) {
+    row(part.unit || part.source, part.status, part.unit && state.entries.some((e) => e.id === part.unit) ? part.unit : null,
+      part.kind, part.required);
+  }
+  box.append(list);
+  const diagnostics = (r.report.diagnostics || []);
+  if (diagnostics.length) {
+    const d = el("ul", "readiness-diagnostics");
+    for (const item of diagnostics.slice(0, 20)) {
+      const li = el("li", "", `${item.id} — ${item.source}:${item.position ? item.position.line : "?"}`);
+      li.title = item.meaning || "";
+      if (state.entries.some((e) => e.id === item.source)) {
+        li.tabIndex = 0;
+        li.onclick = () => openDocument(item.source, { focusByte: item.span.start });
+      }
+      d.append(li);
+    }
+    box.append(d);
+  }
+  /* The engine refuses to run a project that is not admitted; the button
+   * says so first. */
+  if (doc && doc.id === r.entry) {
+    $("#act-run").disabled = status !== "ready" && status !== "running";
+    $("#act-run").title = status === "ready" ? "Steps 1 to 13." : "The project is not ready: see Project readiness.";
+  }
+}
+
+/* ---------------------------------------------------------- templates */
+
+/* Settings → Templates. The server stores Masters and the engine validates
+ * them; this dialog lists them and edits their JSON. A Master is copied into a
+ * file when the file is created, so nothing here changes an existing file. */
+async function openTemplates() {
+  let listing, roles;
+  try {
+    [listing, roles] = await Promise.all([api("GET", "/api/masters"), api("GET", "/api/roles")]);
+  } catch (e) {
+    toast(`Templates could not be read. ${e.message}`, "bad");
+    return;
+  }
+  const all = roles.available ? [roles.project].concat(roles.roles) : [];
+  modal("Templates", (body) => {
+    if (!listing.available) {
+      body.append(el("p", "note warning", "Templates need a configuration folder (HOME or XDG_CONFIG_HOME)."));
+      return;
+    }
+    body.append(el("p", "note",
+      `Stored in ${listing.location}. A default is used for new files of its kind unless ` +
+      "another template is chosen; Canonical uses the scaffold the LCL Core defines."));
+    if (listing.defaults_problem) body.append(el("p", "note warning", listing.defaults_problem));
+    const table = el("div", "templates-defaults");
+    for (const role of all) {
+      const label = el("label", "", `${role.label} default`);
+      const pick = el("select", "field");
+      pick.id = `default-${role.role}`;
+      label.htmlFor = pick.id;
+      const canonical = el("option", "", "Canonical scaffold");
+      canonical.value = "";
+      pick.append(canonical);
+      for (const m of listing.masters.filter((m) => m.role === role.role && m.valid)) {
+        const option = el("option", "", m.name);
+        option.value = m.id;
+        pick.append(option);
+      }
+      pick.value = (listing.defaults || {})[role.role] || "";
+      pick.onchange = async () => {
+        try {
+          await api("PUT", "/api/masters/default", { role: role.role, id: pick.value });
+          toast(pick.value ? `New ${role.label} files now start from ${pick.value}.` : `New ${role.label} files now start from the canonical scaffold.`, "good");
+        } catch (e) {
+          toast(`Default not changed. ${e.message}`, "bad");
+          openTemplates();
+        }
+      };
+      table.append(label, pick);
+    }
+    body.append(table);
+    const list = el("ul", "templates");
+    for (const m of listing.masters) {
+      const li = el("li", m.valid ? "" : "invalid");
+      li.append(el("span", "name", `${m.name || m.id} (${m.id})`),
+        el("span", "role", m.role ? roleLabel(m.role) : "unreadable"));
+      if (!m.valid) li.append(el("span", "note warning", m.problem || "invalid"));
+      for (const [label, act] of [
+        ["Edit", () => editTemplate(m.id, "replace")],
+        ["Duplicate", () => editTemplate(m.id, "duplicate")],
+        ["Delete", () => deleteTemplate(m.id)],
+      ]) {
+        const b = el("button", "", label);
+        b.type = "button";
+        b.onclick = act;
+        li.append(b);
+      }
+      list.append(li);
+    }
+    if (!listing.masters.length) list.append(el("li", "note", "No templates yet."));
+    body.append(list);
+    const newLabel = el("label", "", "New template for");
+    const newRole = el("select", "field");
+    newRole.id = "template-new-role";
+    newLabel.htmlFor = newRole.id;
+    for (const role of all) {
+      const option = el("option", "", role.label);
+      option.value = role.role;
+      newRole.append(option);
+    }
+    const create = el("button", "", "New template…");
+    create.type = "button";
+    create.onclick = () => editTemplate(null, "create", newRole.value);
+    body.append(newLabel, newRole, create);
+  }, [["Close", "primary", (close) => close()]]);
+}
+
+/* The editor for one Master's JSON. "create" starts from the canonical
+ * scaffold of `role`; "duplicate" from a copy under a new id. */
+async function editTemplate(id, how, role) {
+  let json;
+  try {
+    if (how === "create") json = (await api("GET", "/api/master/starter", { role, mode: "guided" })).json;
+    else json = (await api("GET", "/api/master", { id })).json;
+  } catch (e) {
+    toast(`Template could not be read. ${e.message}`, "bad");
+    return;
+  }
+  if (how === "duplicate") {
+    try {
+      const copy = JSON.parse(json);
+      copy.id = `${copy.id}-copy`;
+      copy.name = `${copy.name} (copy)`;
+      json = JSON.stringify(copy, null, 2);
+    } catch (_) { /* an unreadable Master is shown as it is, to be fixed */ }
+  }
+  modal(how === "replace" ? `Edit template ${id}` : "New template", (body) => {
+    body.append(el("p", "note",
+      "The template's file. It is checked by the LCL engine when you save, and a template " +
+      "that is not valid is not saved. Files already made from it do not change."));
+    const area = el("textarea", "field template-json");
+    area.id = "template-json";
+    area.spellcheck = false;
+    area.value = json;
+    body.append(area);
+  }, [
+    ["Cancel", "", (close) => { close(); openTemplates(); }],
+    ["Save", "primary", async (close) => {
+      const text = $("#template-json").value;
+      try {
+        await api("PUT", "/api/master", how === "replace" ? { replace: id } : { create: "1" }, text);
+        close();
+        toast("Template saved.", "good");
+        openTemplates();
+      } catch (e) {
+        toast(`Not saved. ${e.message}`, "bad");
+      }
+    }],
+  ]);
+}
+
+function deleteTemplate(id) {
+  modal(`Delete template ${id}?`, (body) => {
+    body.append(el("p", "", "Files already made from it are not changed. A default naming it goes back to the canonical scaffold."));
+  }, [
+    ["Cancel", "", (close) => { close(); openTemplates(); }],
+    ["Delete", "danger", async (close) => {
+      close();
+      try {
+        await api("DELETE", "/api/master", { id });
+        toast(`Deleted template ${id}.`, "good");
+      } catch (e) {
+        toast(`Not deleted. ${e.message}`, "bad");
+      }
+      openTemplates();
+    }],
+  ]);
+}
+
+/* ------------------------------------------------------------ convert */
+
+/* Convert a standalone kind.task document into a project in a new folder: an
+ * entry holding its IMPORT, EXTENSION and EXECUTE blocks and one task part
+ * holding the rest, byte for byte. The server offers it only when the result
+ * is admitted; the original is never changed. */
+function convertDocument(id) {
+  let plan = null;
+  const stem = id.split("/").pop().replace(/\.lcl(\.txt)?$/, "");
+  const parent = id.includes("/") ? id.slice(0, id.lastIndexOf("/") + 1) : "";
+  modal("Convert to multi-file project", (body) => {
+    body.append(el("p", "",
+      `${id} stays exactly as it is. The project is written to a new folder, and only ` +
+      "after you have seen every file."));
+    const label = el("label", "", "New folder");
+    label.htmlFor = "convert-folder";
+    const folder = el("input", "field");
+    folder.id = "convert-folder";
+    folder.value = `${parent}${stem}_project`;
+    const out = el("div", "plan");
+    let asked = 0;
+    const show = async () => {
+      const mine = ++asked;
+      plan = null;
+      $("#convert-create").disabled = true;
+      out.replaceChildren(el("p", "note", "Preparing the preview…"));
+      try {
+        const reply = await api("GET", "/api/convert/plan", { id, folder: folder.value.trim() });
+        if (mine !== asked) return;
+        out.replaceChildren();
+        for (const file of reply.files) {
+          const box = el("details");
+          box.open = true;
+          box.append(el("summary", "", file.path));
+          box.append(el("pre", "scaffold-preview", file.text));
+          out.append(box);
+        }
+        plan = reply;
+        $("#convert-create").disabled = false;
+      } catch (e) {
+        if (mine === asked) out.replaceChildren(el("p", "note warning", e.message));
+      }
+    };
+    folder.oninput = () => { clearTimeout(folder.timer); folder.timer = setTimeout(show, 250); };
+    body.append(label, folder, out);
+    setTimeout(show, 0);
+  }, [
+    ["Cancel", "", (close) => close()],
+    ["Create project", "primary", async (close) => {
+      if (!plan) return;
+      const chosen = plan;
+      const folder = $("#convert-folder").value.trim();
+      close();
+      try {
+        await api("POST", "/api/convert", { id, folder, plan_digest: chosen.plan_digest });
+        await loadTree();
+        await openDocument(chosen.entry);
+        toast(`Created ${chosen.entry}. ${id} is unchanged.`, "good");
+      } catch (e) {
+        toast(`Not converted. ${e.message}`, "bad");
+      }
+    }],
+  ]);
+  const create = [...$("#modal-actions").querySelectorAll("button")].pop();
+  create.id = "convert-create";
+  create.disabled = true;
+}
+
 /* ----------------------------------------------------------------- boot */
 
 (async function boot() {
@@ -2446,6 +3180,7 @@ function scheduleAnalysis() {
     /* How this launch chose its folder, when that is worth saying — such as
      * a chosen default workspace that no longer exists. */
     if (state.session.notice) toast(state.session.notice, "warn");
+    await loadRoles();
     await loadTree();
     /* What to show first, most specific wins. A document this launch was
      * opened for -- a desktop file association passes one -- then the

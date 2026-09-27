@@ -198,6 +198,10 @@ async function harness(options) {
         headers: { ...init.headers, Origin: origin, "X-LCL-Token": token },
         signal: AbortSignal.timeout(4000),
       });
+    } else if (url.pathname === "/api/roles") {
+      reply = jsonReply({ available: false, roles: [], modes: [] });
+    } else if (url.pathname === "/api/masters") {
+      reply = jsonReply({ available: false, masters: [] });
     } else if (url.pathname === "/api/session") {
       reply = jsonReply({ root: "/fixture", spec: {
         formal_version: "0.1.0", authority: "authoritative", identity_digest: "fixture", root: "/spec",
@@ -294,7 +298,15 @@ async function harness(options) {
         units: [],
       });
     } else if (url.pathname === "/api/document" && method === "PUT") {
-      if (init.body.includes("\r")) reply = jsonReply({ error: "carriage return refused" }, 422);
+      // A save names the revision it edited (A14); the server's contract.
+      const base = url.searchParams.get("base");
+      if (!base) reply = jsonReply({ error: "a save must name the revision it edited (base): nothing was written" }, 428);
+      else if (!stored.has(id) || hash(stored.get(id)) !== base) {
+        reply = jsonReply({
+          error: `${id} changed on disk since this revision was loaded; nothing was written`,
+          conflict: true, id, exists: stored.has(id), digest: stored.has(id) ? hash(stored.get(id)) : null,
+        }, 409);
+      } else if (init.body.includes("\r")) reply = jsonReply({ error: "carriage return refused" }, 422);
       else {
         const added = init.body.length > 0 && !init.body.endsWith("\n");
         const text = init.body + (added ? "\n" : "");
@@ -389,7 +401,11 @@ async function harness(options) {
           .map(kind => `${node.textContent}:${kind}`));
     },
     async add(id, text = "saved\n") {
-      const reply = await request(new URL(`/api/document?id=${encodeURIComponent(id)}`, origin), { method: "PUT", body: text });
+      const target = `/api/document?id=${encodeURIComponent(id)}`;
+      const existing = await request(new URL(target, origin), {});
+      const reply = existing.ok
+        ? await request(new URL(`${target}&base=${(await existing.json()).digest}`, origin), { method: "PUT", body: text })
+        : await request(new URL(target, origin), { method: "POST", body: text });
       assert(reply.ok, await reply.text());
       await bounded(run(`openDocument(${JSON.stringify(id)})`), "open document");
       puts.length = 0;
@@ -1552,6 +1568,66 @@ const cases = [
     await bounded(h.run(`$("#act-check").onclick()`), "check answered");
     await settle();
     assert.equal(h.outcome("in-order.lcl.txt"), "accepted");
+  }],
+  // A14: every desktop save names the revision it edited.
+  ["A14: a stale save is refused, writes nothing and asks Reload or Keep mine", async h => {
+    await h.add("conflict.lcl", "one\n");
+    h.edit("mine\n");
+    await h.writeBehind("conflict.lcl", "theirs\n");
+    assert.equal(await bounded(h.run("save()"), "save answered"), false);
+    assert.equal(await h.persisted("conflict.lcl"), "theirs\n", "a stale save wrote");
+    assert(h.modalOpen(), "no conflict dialog");
+    assert.equal(h.modalTitle(), "Changed on disk");
+    assert.equal(h.doc("conflict.lcl").text, "mine\n", "the edits must be kept");
+    // Cancel keeps everything as it is, and a later save still refuses.
+    h.choose("Cancel");
+    assert.equal(await bounded(h.run("save()"), "queued save"), false);
+    assert.equal(await h.persisted("conflict.lcl"), "theirs\n");
+  }],
+  ["A14: Keep mine overwrites only after a second, explicit confirmation", async h => {
+    await h.add("keep.lcl", "one\n");
+    h.edit("mine\n");
+    await h.writeBehind("keep.lcl", "theirs\n");
+    await bounded(h.run("save()"), "save answered");
+    h.choose("Keep mine…");
+    assert.equal(h.modalTitle(), "Overwrite the disk version?");
+    assert.equal(await h.persisted("keep.lcl"), "theirs\n", "nothing is written before the confirmation");
+    await bounded(h.choose("Overwrite with mine"), "overwrite");
+    await until(async () => (await h.persisted("keep.lcl")) === "mine\n", "the deliberate overwrite");
+    await until(() => !h.doc("keep.lcl").dirty, "saved state");
+  }],
+  ["A14: Reload disk version restores the current revision", async h => {
+    await h.add("reload.lcl", "one\n");
+    h.edit("mine\n");
+    await h.writeBehind("reload.lcl", "theirs\n");
+    await bounded(h.run("save()"), "save answered");
+    await bounded(h.choose("Reload disk version"), "reload");
+    await until(() => h.doc("reload.lcl").text === "theirs\n", "the disk version in the editor");
+    assert(!h.doc("reload.lcl").dirty);
+    // The next save bases itself on the reloaded revision and succeeds.
+    h.edit("after\n");
+    assert.equal(await bounded(h.run("save()"), "save"), true);
+    assert.equal(await h.persisted("reload.lcl"), "after\n");
+  }],
+  ["A14: sequential saves chain on each acknowledged revision", async h => {
+    await h.add("chain.lcl", "one\n");
+    for (const text of ["two\n", "three\n", "four\n"]) {
+      h.edit(text);
+      assert.equal(await bounded(h.run("save()"), "save"), true, text);
+    }
+    assert.equal(await h.persisted("chain.lcl"), "four\n");
+    assert(!h.modalOpen());
+  }],
+  ["A14: two saves in flight keep the newest intent and never conflict with their own write", async h => {
+    await h.add("burst.lcl", "one\n");
+    h.edit("two\n");
+    h.run("globalThis.__first = save()");
+    h.edit("three\n");
+    h.run("globalThis.__second = save()");
+    assert.equal(await bounded(h.run("globalThis.__first"), "first save"), true);
+    assert.equal(await bounded(h.run("globalThis.__second"), "second save"), true);
+    assert.equal(await h.persisted("burst.lcl"), "three\n");
+    assert(!h.modalOpen(), "a save conflicted with its own queue");
   }],
 ];
 

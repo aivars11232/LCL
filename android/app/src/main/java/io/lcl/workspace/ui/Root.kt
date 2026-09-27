@@ -9,9 +9,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -23,6 +26,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,9 +35,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.lcl.workspace.AppContainer
 import io.lcl.workspace.connection.ConnectionState
+import io.lcl.workspace.editor.EditorState
 import io.lcl.workspace.workspace.LclNames
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
+
+/** The app's two top-level tabs. */
+enum class Tab { Workspace, Manual }
 
 sealed interface Screen {
     data object Home : Screen
@@ -52,6 +60,12 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
         mutableStateOf<Screen>(if (container.pcs.activeId() != null) Screen.Workspace else Screen.Home)
     }
     val snackbar = remember { SnackbarHostState() }
+    // The two top-level tabs. Switching never touches the connection or the
+    // open documents, which live in the app's container; the editors' undo
+    // history and selections are held here, above both tabs.
+    var tab by rememberSaveable { mutableStateOf(Tab.Workspace) }
+    val editors = remember { mutableMapOf<String, EditorState>() }
+    val openManual = { tab = Tab.Manual }
     val intent by incoming.collectAsState()
 
     LaunchedEffect(intent) {
@@ -78,8 +92,10 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
                 Column(Modifier.fillMaxSize()) {
                     ConnectionBanner(connection, onReconnect = container.connection::reconnectNow, onOpenPcs = { screen = Screen.Home })
                     val back = { screen = if (container.pcs.activeId() != null && screen != Screen.Workspace) Screen.Workspace else Screen.Home }
-                    BackHandler(enabled = screen != Screen.Home && screen != Screen.Workspace) { back() }
-                    when (val current = screen) {
+                    BackHandler(enabled = tab == Tab.Manual) { tab = Tab.Workspace }
+                    BackHandler(enabled = tab == Tab.Workspace && screen != Screen.Home && screen != Screen.Workspace) { back() }
+                    Box(Modifier.weight(1f)) {
+                    if (tab == Tab.Manual) ManualScreen() else when (val current = screen) {
                         Screen.Home -> HomeScreen(
                             container = container,
                             state = connection,
@@ -87,6 +103,7 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
                             onOpenWorkspace = { screen = Screen.Workspace },
                             onSettings = { screen = Screen.Settings },
                             onAbout = { screen = Screen.About },
+                            onManual = openManual,
                         )
                         Screen.Pair -> PairScreen(
                             container = container,
@@ -98,10 +115,29 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
                             connection = connection,
                             settings = settings,
                             onHome = { screen = Screen.Home },
+                            onManual = openManual,
+                            editors = editors,
                         )
                         Screen.Settings -> SettingsScreen(settings, container::updateSettings, back)
                         Screen.About -> AboutScreen(container, connection, back)
                         is Screen.LocalDocument -> LocalDocumentScreen(container, current.uri, settings, back)
+                    }
+                    }
+                    NavigationBar(Modifier.height(64.dp)) {
+                        NavigationBarItem(
+                            selected = tab == Tab.Workspace,
+                            onClick = { tab = Tab.Workspace },
+                            icon = { Text("▤") },
+                            label = { Text("Workspace") },
+                            modifier = Modifier.testTag("tab_workspace"),
+                        )
+                        NavigationBarItem(
+                            selected = tab == Tab.Manual,
+                            onClick = { tab = Tab.Manual },
+                            icon = { Text("?") },
+                            label = { Text("Manual") },
+                            modifier = Modifier.testTag("tab_manual"),
+                        )
                     }
                 }
                 SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(16.dp))

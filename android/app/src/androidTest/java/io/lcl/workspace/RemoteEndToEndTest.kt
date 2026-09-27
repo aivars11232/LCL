@@ -288,6 +288,68 @@ class RemoteEndToEndTest {
         assertEquals("status.succeeded", status)
     }
 
+    /**
+     * Core 0.3 (Task 03), while paired and connected: a Rules file created by
+     * role holds the PC's scaffold; unsaved text survives a visit to the Manual
+     * tab; project readiness is the PC engine's; and a pairing code for this
+     * PC id with another certificate fingerprint is refused before anything
+     * changes (A13).
+     */
+    @Test
+    fun p12_core03_roles_manual_readiness_and_identity_conflict() {
+        waitForLabel("Connected")
+        if (!exists("new_document") && exists("files")) rule.onNodeWithTag("files").performClick()
+        waitFor("new_document")
+        rule.onNodeWithTag("new_document").performClick()
+        rule.onNodeWithTag("new_name").performTextClearance()
+        rule.onNodeWithTag("new_name").performTextInput("house_rules")
+        rule.onNodeWithTag("new_role").performClick()
+        rule.onNodeWithTag("role_choice:kind.part.rules").performClick()
+        rule.onNodeWithTag("create").performClick()
+        waitFor("source")
+        rule.waitUntil("the PC's Rules scaffold is open", 20_000) { source().contains("KIND: kind.part.rules") }
+        shot("p12_01_rules_scaffold")
+
+        // Unsaved text, a visit to the Manual tab, and back: nothing is lost.
+        val scaffold = source()
+        rule.onNodeWithTag("source").performTextInputSelection(TextRange(scaffold.length))
+        rule.onNodeWithTag("source").performTextInput("KEPT")
+        rule.waitUntil("the edit is shown", 5_000) { source().endsWith("KEPT") }
+        rule.onNodeWithTag("tab_manual").performClick()
+        rule.waitUntil("the manual", 30_000) { runCatching { textOf("manual_status") }.getOrDefault("").contains("offline") }
+        shot("p12_02_manual_tab")
+        rule.onNodeWithTag("tab_workspace").performClick()
+        waitFor("source")
+        assertTrue("the unsaved edit was lost", source().endsWith("KEPT"))
+        assertTrue(textOf("doc_state"), textOf("doc_state").startsWith("Unsaved"))
+        assertEquals("Connected", label())
+
+        // The tree shows the role the file declares; readiness is the engine's.
+        rule.onNodeWithTag("files").performClick()
+        waitFor("role:house_rules.lcl")
+        assertEquals("Rules", textOf("role:house_rules.lcl"))
+        waitFor("readiness:proj/main.lcl")
+        rule.onNodeWithTag("readiness:proj/main.lcl").performClick()
+        rule.waitUntil("the readiness", 20_000) { exists("readiness_status") }
+        assertTrue(textOf("readiness_status"), textOf("readiness_status").endsWith("incomplete"))
+        shot("p12_03_readiness")
+        rule.onNode(hasText("Close")).performClick()
+
+        // A13: same PC id, another fingerprint — refused, nothing replaced.
+        val pcs = pairedPcs()
+        val keys = deviceKeys()
+        val forged = arg("link").replace(Regex("fp=[0-9a-f]{64}"), "fp=" + "0".repeat(64))
+        pairWith(forged)
+        rule.onNodeWithTag("pair_button").performScrollTo().performClick()
+        waitFor("pair_problem")
+        assertTrue(textOf("pair_problem"), textOf("pair_problem").startsWith("Identity conflict"))
+        assertEquals("the pairing record changed", pcs, pairedPcs())
+        assertEquals("a key was made or deleted", keys, deviceKeys())
+        shot("p12_04_identity_conflict")
+        assertEquals("Connected", label())
+        ready("A13_REFUSED")
+    }
+
     private fun openSettings() {
         goHome()
         rule.onNodeWithTag("home_settings").performScrollTo().performClick()

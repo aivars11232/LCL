@@ -24,6 +24,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -41,6 +42,7 @@ class WorkspaceControllerTest {
     private val network = FakeNetwork()
     /** The project's files on the PC. */
     private val files = linkedMapOf("a.lcl" to "LCL:\n", "notes.lcl.txt" to "LCL:\n")
+    private val kinds = mutableMapOf<String, String>()
     private var diagnostics: List<JsonObject> = emptyList()
     /** Holds analysis answers until released: the PC is slow. */
     private var gate: CompletableDeferred<Unit>? = null
@@ -63,7 +65,31 @@ class WorkspaceControllerTest {
         )
         "about" -> reply(200, "service" to "lcl-remote test")
         "settings" -> reply(200, "default_extension" to ".lcl")
-        "tree" -> reply(200, "entries" to JsonArray(files.keys.map { buildJsonObject { put("id", it); put("directory", false) } }))
+        "tree" -> reply(200, "entries" to JsonArray(files.keys.map { buildJsonObject { put("id", it); put("directory", false); kinds[it]?.let { k -> put("kind", k) } } }))
+        "roles" -> reply(
+            200,
+            "available" to true,
+            "roles" to JsonArray(listOf("kind.part.rules" to "Rules", "kind.part.task" to "Task").map { (r, l) -> buildJsonObject { put("role", r); put("label", l) } }),
+        )
+        "create" -> {
+            val name = f.str("name")!!.let { if (it.endsWith(".lcl")) it else "$it.lcl" }
+            val text = f.str("role")?.let { "PC scaffold for $it (${f.str("mode")})\n" } ?: f.str("text")!!
+            files[name] = text
+            f.str("role")?.let { kinds[name] = it }
+            reply(200, "id" to name, "requested" to f.str("name"), "digest" to digest(text))
+        }
+        "project" -> reply(
+            200,
+            "outcome" to "outcome.rejected",
+            "diagnostics" to JsonArray(listOf(buildJsonObject { put("id", "error.project.part_missing"); put("source", "main.lcl"); put("position", buildJsonObject { put("line", 12) }) })),
+            "project" to buildJsonObject {
+                put("entry", "main.lcl"); put("entry_status", "invalid"); put("complete", false); put("admission", "rejected")
+                put("parts", JsonArray(listOf(
+                    buildJsonObject { put("source", "task.lcl"); put("unit", JsonNull); put("kind", "kind.part.task"); put("required", true); put("status", "missing") },
+                    buildJsonObject { put("source", "rules.lcl"); put("unit", "rules.lcl"); put("kind", "kind.part.rules"); put("required", true); put("status", "ready") },
+                )))
+            },
+        )
         "open" -> files[f.str("document")]?.let { reply(200, "id" to f.str("document"), "text" to it, "digest" to digest(it)) }
             ?: reply(404, "error" to "no such document")
         "save" -> save(f)
@@ -133,6 +159,44 @@ class WorkspaceControllerTest {
         assertEquals(listOf("a.lcl", "notes.lcl.txt"), ui.tree.map { it.id })
         assertEquals("lcl-remote test", ui.about!!.str("service"))
         assertEquals(".lcl", ui.defaultEnding)
+    }
+
+    @Test
+    fun new_by_role_asks_the_pc_for_its_scaffold_and_sends_no_text() = runTest {
+        val (_, workspace) = connected()
+        assertEquals(listOf("kind.part.rules", "kind.part.task"), workspace.ui.value.roles.map { it.role })
+        workspace.create("house", "kind.part.rules", "minimal")
+        runCurrent()
+        val sent = last("create")
+        assertEquals("kind.part.rules", sent.str("role"))
+        assertEquals("minimal", sent.str("mode"))
+        assertEquals("a file made by role carries no text from the phone", null, sent["text"])
+        assertEquals("PC scaffold for kind.part.rules (minimal)\n", files["house.lcl"])
+        assertEquals("kind.part.rules", workspace.ui.value.tree.single { it.id == "house.lcl" }.kind)
+        // Blank stays available.
+        workspace.create("blank")
+        runCurrent()
+        assertEquals(null, last("create").str("role"))
+    }
+
+    @Test
+    fun readiness_is_the_pc_engines_record() = runTest {
+        val (_, workspace) = connected()
+        workspace.readiness("main.lcl")
+        runCurrent()
+        assertEquals("main.lcl", last("project").str("entry"))
+        val readiness = workspace.ui.value.readiness!!
+        assertEquals("incomplete", readiness.status)
+        assertEquals(listOf("main.lcl" to "invalid", "task.lcl" to "missing", "rules.lcl" to "ready"), readiness.files.map { it.path to it.status })
+        assertEquals(null, readiness.files[1].unit)
+        assertEquals(listOf("error.project.part_missing — main.lcl:12"), readiness.diagnostics)
+        workspace.dismissReadiness()
+        assertEquals(null, workspace.ui.value.readiness)
+        val admitted = WorkspaceController.readinessOf("m.lcl", buildJsonObject {
+            put("project", buildJsonObject { put("entry", "m.lcl"); put("entry_status", "ready"); put("complete", true); put("admission", "admitted"); put("parts", JsonArray(emptyList())) })
+        })
+        assertEquals("ready", admitted.status)
+        assertEquals("invalid", WorkspaceController.readinessOf("x.lcl", JsonObject(emptyMap())).status)
     }
 
     @Test

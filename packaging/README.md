@@ -174,8 +174,11 @@ promised to be bit-for-bit identical; the source they were built from is.
 Core 0.2.0 package: `install.sh` installs both, the desktop launcher passes the
 0.2.0 package as `--localized-spec`, and the provenance records both package
 identities. Without the variable the release version is the product version in
-`impl/Cargo.toml`, and a 0.1.0 candidate is built exactly as before. No other
-value is accepted.
+`impl/Cargo.toml`, and a 0.1.0 candidate is built exactly as before.
+`LCL_RELEASE_VERSION=0.3.0` builds `lcl-0.3.0-linux-x86_64`, which also bundles
+the Core 0.3.0 package (multi-file projects and file roles): `install.sh`
+installs it, and the desktop launcher passes it as `--project-spec`. No other
+value is accepted. Building a candidate is a release task of its own.
 
 `lcl version` names Core 0.2.0 only when a Core 0.2.0 package is named to it,
 by `--localized-spec` or `LCL_LOCALIZED_SPEC`, and that package opens. The

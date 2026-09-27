@@ -14,6 +14,7 @@ path = "src/main.rs"
 lcl-protocol = { path = "../lcl-protocol" }
 lcl-project = { path = "../lcl-project" }
 lcl-resolver = { path = "../lcl-resolver" }
+lcl-parser = { path = "../lcl-parser" }
 lcl-runtime = { path = "../lcl-runtime" }
 lcl-stdlib = { path = "../lcl-stdlib" }
 lcl-capabilities = { path = "../lcl-capabilities" }

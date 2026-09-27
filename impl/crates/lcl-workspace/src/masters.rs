@@ -82,11 +82,30 @@ pub struct Planned {
 #[derive(Debug, Clone)]
 pub struct Masters {
     dir: PathBuf,
+    /// False when this process has no configuration directory: there are no
+    /// Masters, no defaults, and nothing can be stored.
+    available: bool,
 }
 
 impl Masters {
     pub fn new(dir: impl Into<PathBuf>) -> Masters {
-        Masters { dir: dir.into() }
+        Masters {
+            dir: dir.into(),
+            available: true,
+        }
+    }
+
+    /// No Masters at all: every file starts from the canonical scaffold, and
+    /// storing a Master is refused.
+    pub fn none() -> Masters {
+        Masters {
+            dir: PathBuf::new(),
+            available: false,
+        }
+    }
+
+    pub fn is_available(&self) -> bool {
+        self.available
     }
 
     pub fn dir(&self) -> &Path {
@@ -94,6 +113,9 @@ impl Masters {
     }
 
     fn path(&self, id: &str) -> Result<PathBuf, String> {
+        if !self.available {
+            return Err("Master templates need a configuration directory".to_string());
+        }
         scaffold::check_id(id).map_err(|e| e.0)?;
         Ok(self.dir.join(format!("{id}.json")))
     }
@@ -101,6 +123,9 @@ impl Masters {
     /// The ids of every stored Master, in ascending order. A missing directory
     /// holds none.
     pub fn ids(&self) -> Result<Vec<String>, String> {
+        if !self.available {
+            return Ok(Vec::new());
+        }
         let entries = match std::fs::read_dir(&self.dir) {
             Ok(entries) => entries,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -132,6 +157,13 @@ impl Masters {
             return Err(format!("{} declares the id {}", path.display(), master.id));
         }
         Ok(master)
+    }
+
+    /// One Master's file exactly as stored, for editing.
+    pub fn raw(&self, id: &str) -> Result<String, String> {
+        let path = self.path(id)?;
+        std::fs::read_to_string(&path)
+            .map_err(|e| format!("Master {id} could not be read from {}: {e}", path.display()))
     }
 
     fn lookup(&self) -> impl Fn(&str) -> Result<Master, ScaffoldError> + '_ {
@@ -171,6 +203,9 @@ impl Masters {
 
     /// The default Master of each role. A missing file names none.
     pub fn defaults(&self) -> Result<BTreeMap<String, String>, String> {
+        if !self.available {
+            return Ok(BTreeMap::new());
+        }
         let path = self.dir.join(DEFAULTS_FILE);
         let text = match std::fs::read_to_string(&path) {
             Ok(text) => text,
@@ -322,6 +357,41 @@ impl Masters {
         }
         Ok(files)
     }
+}
+
+/// The file of a new Master for `role`, starting from the canonical scaffold
+/// in `mode` (for `kind.project`, the canonical project plan). It is valid as
+/// it stands; the id and name are meant to be changed.
+pub fn starter(engine: &Engine, role: &str, mode: Mode) -> Result<String, String> {
+    let stem = role.rsplit('.').next().unwrap_or("file");
+    let label = crate::authoring::label(role);
+    let object = Object::new()
+        .with("format", Node::u64(1))
+        .with("id", Node::string(format!("my-{stem}")))
+        .with("name", Node::string(format!("My {label}")))
+        .with("core", Node::string(engine.spec().formal_version()))
+        .with("role", Node::string(role));
+    let object = if role == PROJECT_KIND {
+        let plan = Plan::canonical(mode);
+        object
+            .with("mode", Node::string(plan.mode.as_str()))
+            .with("entry", Node::string(&plan.entry))
+            .with(
+                "parts",
+                Node::array(plan.parts.iter().map(|part| {
+                    Object::new()
+                        .with("path", Node::string(&part.path))
+                        .with("role", Node::string(&part.role))
+                        .with("required", Node::Bool(part.required))
+                        .into()
+                })),
+            )
+    } else {
+        let scaffold =
+            scaffold::part(engine, role, mode, &format!("{stem}.lcl"), None).map_err(|e| e.0)?;
+        object.with("text", Node::string(&scaffold.text))
+    };
+    Ok(object.pretty())
 }
 
 /// Create every planned file under `root`, or none of them. Every path is

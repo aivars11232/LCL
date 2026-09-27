@@ -22,6 +22,7 @@ code the desktop workspace uses.
 | Revoke device | — | `revoked` event | Done on the PC; the phone shows *Not trusted*. |
 | Keep-alive | ✅ | `ping` | Every 20 s. |
 | PC identity and versions | ✅ | `about` | Shown in About. |
+| A QR code for a paired PC id with another fingerprint (A13) | ✅ | — | Refused on the phone before any key is made or any address is asked: the existing pairing, its key and its connection stay as they are. Changing a PC's identity needs Forget first. |
 
 ## Projects and documents
 
@@ -39,6 +40,10 @@ code the desktop workspace uses.
 | Reload | ✅ | `open` | `GET /api/document` |
 | Changes made on the PC | ✅ | `document_changed` event | the service watches open documents |
 | New document (`test` → `test.lcl`, explicit endings kept) | ✅ | `create` | `POST /api/document` |
+| New document of a role (Task, Description, Rules, Context, Data, Output, Checks, Definitions; Guided or Minimal) | ✅ | `roles`, then `create` with `role` and `mode` | `GET /api/roles`; `POST /api/document` with `role`: the PC writes its own scaffold, or the role's default Master on the PC. The app holds no scaffold. |
+| A file's role in the tree | ✅ | `tree` (`kind`) | the `SPECIFICATION KIND` the PC's engine reads in the file, never guessed from the name |
+| Project readiness (per file: ready, invalid, missing, omitted, duplicate) | ✅ | `project` | `GET /api/project/status`: the engine's `validate` report for the entry on disk. Run is refused by the PC until the project is admitted. |
+| A new file's exact starting text, without creating it | — (protocol) | `scaffold` | `GET /api/scaffold` |
 | Delete a document | ⏳ | `delete` with `digest` | `DELETE /api/document` — in the protocol, not yet in the app's UI |
 | Rename, move, new folder | ⏳ | — | not in the protocol yet |
 | Open a `.lcl` / `.lcl.txt` file from another app | ✅ | `check` / `inspect` | read-only view, judged on the PC; strict UTF-8, at most 4 MB — anything else is refused and nothing is sent |
@@ -105,3 +110,11 @@ These are not operations the PC offers, whatever a device sends:
 - following, approving, denying or cancelling a run another device started;
 - a run whose effects happen without a pause the device answered;
 - anything before the device has proved it holds a paired key.
+
+## Users Manual
+
+| Feature | App | Notes |
+|---|---|---|
+| Manual tab (Workspace · Manual) | ✅ | The Users Manual packaged in the app, read with the same viewer the desktop workspace uses: contents, search, back and forward. Works with no PC; read-only. |
+| ? button on the home and file screens | ✅ | Switches to the Manual tab. Open files, unsaved text and the connection are kept. |
+| Same manual as the desktop | ✅ | The app packages `users_manual/*.md` and `MANIFEST.json` at build time; its version and digest are shown on the tab and tested against the manifest. |

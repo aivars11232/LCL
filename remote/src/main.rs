@@ -16,7 +16,7 @@ const USAGE: &str = "\
 lcl-remote — the PC side of LCL for Android
 
 USAGE:
-    lcl-remote serve [--spec PATH] [--localized-spec PATH] [--listen ADDR]
+    lcl-remote serve [--spec PATH] [--localized-spec PATH] [--project-spec PATH] [--listen ADDR]
                      [--port PORT] [--no-discovery]
         Run the service paired devices connect to. It listens on
         0.0.0.0:47300 by default and serves nothing to a device that has not
@@ -151,6 +151,7 @@ fn serve(paths: Paths, rest: &[String]) -> Result<(), String> {
         &paths,
         value(rest, "--spec")?.map(PathBuf::from),
         value(rest, "--localized-spec")?.map(PathBuf::from),
+        value(rest, "--project-spec")?.map(PathBuf::from),
     )?;
     let port = value(rest, "--port")?
         .map(|p| {
@@ -438,6 +439,7 @@ fn projects(paths: &Paths, rest: &[String], json: bool) -> Result<(), String> {
             let specs = Specs {
                 core: PathBuf::new(),
                 localized: None,
+                project: None,
             };
             let list = Projects::new(specs, paths).list(paths, &config);
             if json {

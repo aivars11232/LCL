@@ -28,7 +28,20 @@ import kotlinx.serialization.json.put
 
 data class ProjectInfo(val id: String, val name: String, val root: String, val isDefault: Boolean)
 
-data class TreeEntry(val id: String, val directory: Boolean)
+/** One listed file or folder, and the SPECIFICATION KIND the PC's engine read in the file. */
+data class TreeEntry(val id: String, val directory: Boolean, val kind: String? = null)
+
+/** A file role the PC's Core 0.3.0 engine defines. */
+data class RoleInfo(val role: String, val label: String)
+
+/** One file of a project, as the PC's engine judged it. */
+data class ReadinessFile(val path: String, val unit: String?, val role: String, val required: Boolean, val status: String)
+
+/**
+ * A project's readiness: the PC engine's `validate` of the entry on disk.
+ * [status] is `ready` only when the engine admitted the project.
+ */
+data class Readiness(val entry: String, val status: String, val files: List<ReadinessFile>, val diagnostics: List<String>)
 
 data class RunEvent(val name: String, val data: JsonObject)
 
@@ -72,6 +85,10 @@ data class WorkspaceUi(
     /** The PC's default ending for new documents. */
     val defaultEnding: String = LclNames.SUFFIX,
     val busy: Boolean = false,
+    /** The file roles the PC offers for New; empty when the PC has no Core 0.3.0. */
+    val roles: List<RoleInfo> = emptyList(),
+    /** The last project readiness asked for, shown until dismissed. */
+    val readiness: Readiness? = null,
 ) {
     val activeDocument: OpenDocument? get() = documents.firstOrNull { key(it) == active }
 
@@ -227,10 +244,36 @@ class WorkspaceController(
         if (!reply.ok) return say(reply.error ?: "The project could not be listed.")
         val entries = reply.obj.arr("entries")?.mapNotNull { element ->
             val e = element as? JsonObject ?: return@mapNotNull null
-            TreeEntry(e.str("id") ?: return@mapNotNull null, e.bool("directory") == true)
+            TreeEntry(e.str("id") ?: return@mapNotNull null, e.bool("directory") == true, e.str("kind"))
         } ?: emptyList()
         _ui.update { it.copy(tree = entries) }
+        loadRoles()
     }
+
+    /** The roles New can create, from the PC's engine. */
+    private suspend fun loadRoles() {
+        val project = _ui.value.project ?: return
+        val reply = ask("roles", fields(project.id)) ?: return
+        val roles = if (reply.ok && reply.obj.bool("available") == true) {
+            reply.obj.arr("roles")?.mapNotNull { element ->
+                val r = element as? JsonObject ?: return@mapNotNull null
+                RoleInfo(r.str("role") ?: return@mapNotNull null, r.str("label") ?: "")
+            } ?: emptyList()
+        } else emptyList()
+        _ui.update { it.copy(roles = roles) }
+    }
+
+    /** Ask the PC's engine whether the project [entry] names is ready to run. */
+    fun readiness(entry: String) {
+        val project = _ui.value.project ?: return
+        scope.launch {
+            val reply = ask("project", fields(project.id, "entry" to entry)) ?: return@launch
+            if (!reply.ok) return@launch say(reply.error ?: "Readiness could not be read.")
+            _ui.update { it.copy(readiness = readinessOf(entry, reply.obj)) }
+        }
+    }
+
+    fun dismissReadiness() = _ui.update { it.copy(readiness = null) }
 
     // --------------------------------------------------------------- documents
 
@@ -371,12 +414,22 @@ class WorkspaceController(
         current(key)?.let { doc -> replaceDocument(doc) { it.keepMine() } }
     }
 
-    fun create(name: String) {
+    /**
+     * Create [name]: blank, or — with [role] — a file of that role, whose text
+     * the PC writes from its own scaffold (or the role's default Master) in
+     * [mode]. The app never holds a copy of a scaffold.
+     */
+    fun create(name: String, role: String? = null, mode: String = "guided") {
         val project = _ui.value.project ?: return
         scope.launch {
-            val seed = "LCL:\n    VERSION: \"0.1.0\"\n\nSPECIFICATION:\n    ID: example.new\n    NAME: \"New document\"\n" +
-                "    VERSION: \"1.0.0\"\n    KIND: kind.task\n    DOMAIN: \"general\"\n"
-            val reply = ask("create", fields(project.id, "name" to name, "text" to seed)) ?: return@launch
+            val request = if (role != null) {
+                fields(project.id, "name" to name, "role" to role, "mode" to mode)
+            } else {
+                val seed = "LCL:\n    VERSION: \"0.1.0\"\n\nSPECIFICATION:\n    ID: example.new\n    NAME: \"New document\"\n" +
+                    "    VERSION: \"1.0.0\"\n    KIND: kind.task\n    DOMAIN: \"general\"\n"
+                fields(project.id, "name" to name, "text" to seed)
+            }
+            val reply = ask("create", request) ?: return@launch
             if (!reply.ok) return@launch say(reply.error ?: "Not created.")
             refreshTree()
             reply.obj.str("id")?.let(::open)
@@ -493,6 +546,38 @@ class WorkspaceController(
                     d.obj("position")?.long("line")?.toInt(),
                 )
             } ?: emptyList()
+
+        /** A readiness from the PC's `validate` report for [entry]. */
+        fun readinessOf(entry: String, report: JsonObject): Readiness {
+            val project = report.obj("project")
+            val diagnostics = report.arr("diagnostics")?.mapNotNull { element ->
+                val d = element as? JsonObject ?: return@mapNotNull null
+                val line = d.obj("position")?.long("line")
+                "${d.str("id") ?: "?"} — ${d.str("source") ?: "?"}${line?.let { ":$it" } ?: ""}"
+            } ?: emptyList()
+            if (project == null) return Readiness(entry, "invalid", emptyList(), diagnostics)
+            val files = listOf(
+                ReadinessFile(project.str("entry") ?: entry, project.str("entry"), "kind.project", true, project.str("entry_status") ?: "invalid"),
+            ) + (project.arr("parts")?.mapNotNull { element ->
+                val part = element as? JsonObject ?: return@mapNotNull null
+                ReadinessFile(
+                    part.str("unit") ?: part.str("source") ?: "?",
+                    part.str("unit"),
+                    part.str("kind") ?: "",
+                    part.bool("required") != false,
+                    part.str("status") ?: "invalid",
+                )
+            } ?: emptyList())
+            val status = when {
+                project.str("admission") == "admitted" -> "ready"
+                project.bool("complete") == false -> "incomplete"
+                else -> "invalid"
+            }
+            return Readiness(entry, status, files, diagnostics)
+        }
+
+        /** What a person reads for a role: the last segment of its kind, capitalised. */
+        fun roleLabel(kind: String): String = kind.substringAfterLast('.').replaceFirstChar { it.uppercase() }
 
         fun grantsFrom(text: String): List<String> = text.lines().map(String::trim).filter(String::isNotEmpty)
 

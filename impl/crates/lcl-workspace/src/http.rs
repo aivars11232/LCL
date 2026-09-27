@@ -347,6 +347,15 @@ impl Response {
         }
     }
 
+    /// A JSON reply with a status other than 200, for a refusal that carries
+    /// more than a sentence: a save conflict names what the disk holds now.
+    pub fn json_status(status: u16, body: String) -> Response {
+        Response {
+            status,
+            ..Response::json(body)
+        }
+    }
+
     pub fn html(body: &str) -> Response {
         Response {
             status: 200,
@@ -436,6 +445,7 @@ fn reason(status: u16) -> &'static str {
         409 => "Conflict",
         413 => "Payload Too Large",
         422 => "Unprocessable Content",
+        428 => "Precondition Required",
         500 => "Internal Server Error",
         _ => "Unknown",
     }

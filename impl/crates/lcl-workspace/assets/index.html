@@ -19,21 +19,31 @@
     </div>
     <div class="actions">
       <button id="act-check" class="run" title="Steps 1 to 5. No effect can occur." disabled>Check</button>
+      <button id="act-validate" class="run" title="Steps 1 to 9: everything a run checks before any effect. No effect can occur." disabled>Validate</button>
       <button id="act-inspect" class="run" title="Steps 1 to 9, reported structurally. No effect can occur." disabled>Inspect</button>
       <button id="act-run" class="run primary" title="Steps 1 to 13." disabled>Run</button>
       <button id="act-save" title="Write this document to disk." disabled>Save</button>
       <button id="act-reload" title="Discard edits and re-read from disk." disabled>Reload</button>
     </div>
     <div class="spec" id="spec-identity" title="The specification package every result here was produced against."></div>
+    <button id="act-manual" class="icon" title="Users Manual" aria-label="Users Manual">?</button>
     <button id="act-settings" class="icon" title="Settings" aria-label="Settings">⚙</button>
   </header>
 
   <nav id="sidebar">
     <div class="panel-head">
       <span>Project</span>
-      <button id="act-new" class="icon" title="New document">+</button>
+      <button id="act-new-project" class="icon" title="New project" aria-label="New project" disabled>⊞</button>
+      <button id="act-new" class="icon" title="New document" aria-label="New document">+</button>
     </div>
     <ul id="tree" class="tree"></ul>
+    <section id="readiness-panel" aria-label="Project readiness">
+      <div class="panel-head">
+        <span>Project readiness</span>
+        <button id="readiness-refresh" class="icon" title="Validate the project again" aria-label="Refresh project readiness">↻</button>
+      </div>
+      <div id="readiness" hidden></div>
+    </section>
   </nav>
 
   <main id="editor-pane">

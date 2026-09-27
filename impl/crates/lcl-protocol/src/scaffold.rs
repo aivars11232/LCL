@@ -45,7 +45,8 @@
 //! ([`Plan`]); the project entry is always generated from that plan.
 
 use crate::engine::Engine;
-use lcl_localization::{LocaleTag, Profile};
+pub use lcl_localization::LocaleTag;
+use lcl_localization::Profile;
 use lcl_parser::{FieldSignature, FormSet, Grammar};
 use lcl_resolver::{ResolvedUnit, SourceId, SourceUnit};
 use lcl_spec::json::Json;
@@ -238,7 +239,11 @@ fn guided_sections(role: &str) -> Option<&'static [Section]> {
             },
             Section {
                 block: "FORBID",
-                fields: &[("ID", Fill::Id), ("OPERATION", REQUIRED), ("TARGET", REQUIRED)],
+                fields: &[
+                    ("ID", Fill::Id),
+                    ("OPERATION", REQUIRED),
+                    ("TARGET", REQUIRED),
+                ],
             },
         ],
         "kind.part.context" => &[Section {
@@ -283,10 +288,14 @@ fn guided_sections(role: &str) -> Option<&'static [Section]> {
     Some(sections)
 }
 
+/// One Guided section, for the parity tests: the block, and each field with
+/// the slot kind it gets, or `None` when its value is generated.
+pub type SectionShape = (&'static str, Vec<(&'static str, Option<MarkKind>)>);
+
 /// The blocks and fields a Guided scaffold of `role` adds, for the parity
 /// tests: `(block, [(field, kind)])`, where `kind` is `None` for a field whose
 /// value is generated.
-pub fn guided_shape(role: &str) -> Option<Vec<(&'static str, Vec<(&'static str, Option<MarkKind>)>)>> {
+pub fn guided_shape(role: &str) -> Option<Vec<SectionShape>> {
     guided_sections(role).map(|sections| {
         sections
             .iter()
@@ -308,6 +317,8 @@ pub fn guided_shape(role: &str) -> Option<Vec<(&'static str, Vec<(&'static str, 
 /// Builds a scaffold's text line by line and records its marks.
 struct Writer<'a> {
     profile: Option<&'a Profile>,
+    locale: String,
+    missing: BTreeSet<String>,
     text: String,
     lines: usize,
     blocks: usize,
@@ -319,6 +330,8 @@ impl<'a> Writer<'a> {
     fn new(locale: Option<&LocaleTag>, profile: Option<&'a Profile>) -> Writer<'a> {
         let mut writer = Writer {
             profile,
+            locale: locale.map(|l| l.as_str().to_string()).unwrap_or_default(),
+            missing: BTreeSet::new(),
             text: String::new(),
             lines: 0,
             blocks: 0,
@@ -332,8 +345,20 @@ impl<'a> Writer<'a> {
         writer
     }
 
-    /// A reserved word in the scaffold's spelling.
-    fn word(&self, canonical: &str) -> String {
+    /// A reserved word of the source, in the scaffold's spelling. A word the
+    /// locale profile cannot spell is recorded, and [`Writer::finish`] refuses
+    /// the scaffold: one file cannot mix spellings (`error.localization.mixed`).
+    fn word(&mut self, canonical: &str) -> String {
+        if let Some(profile) = self.profile {
+            if profile.preferred(canonical).is_none() {
+                self.missing.insert(canonical.to_string());
+            }
+        }
+        render(self.profile, canonical)
+    }
+
+    /// A reserved word quoted inside a string, where any spelling is text.
+    fn label(&self, canonical: &str) -> String {
         render(self.profile, canonical)
     }
 
@@ -371,11 +396,20 @@ impl<'a> Writer<'a> {
         }
     }
 
-    fn finish(self) -> Scaffold {
-        Scaffold {
+    fn finish(self) -> Result<Scaffold, ScaffoldError> {
+        if !self.missing.is_empty() {
+            let missing: Vec<&str> = self.missing.iter().map(String::as_str).collect();
+            return refuse(format!(
+                "the {} locale profile has no spelling for {}, which this scaffold needs, \
+                 and one file cannot mix spellings",
+                self.locale,
+                missing.join(", ")
+            ));
+        }
+        Ok(Scaffold {
             text: self.text,
             marks: self.marks,
-        }
+        })
     }
 }
 
@@ -418,7 +452,7 @@ fn guidance(w: &mut Writer, grammar: &Grammar, kind: &str) {
         .document_kind_blocks(kind)
         .into_iter()
         .flatten()
-        .map(|block| w.word(block))
+        .map(|block| w.label(block))
         .collect();
     let what = match kind.strip_prefix("kind.part.") {
         Some(role) => format!("the {role} part of a project"),
@@ -427,8 +461,8 @@ fn guidance(w: &mut Writer, grammar: &Grammar, kind: &str) {
     let versions = if kind == PROJECT_KIND {
         format!(
             " Every part declares the {} {} this entry declares.",
-            w.word("SPECIFICATION"),
-            w.word("VERSION")
+            w.label("SPECIFICATION"),
+            w.label("VERSION")
         )
     } else {
         String::new()
@@ -501,16 +535,21 @@ pub fn part(
         w.open(section.block);
         for (field, fill) in section.fields {
             match fill {
-                Fill::Id => w.field(field, Some(&format!("{own}.{stem}")), Some(MarkKind::GeneratedId)),
+                Fill::Id => w.field(
+                    field,
+                    Some(&format!("{own}.{stem}")),
+                    Some(MarkKind::GeneratedId),
+                ),
                 Fill::Slot(kind) => w.field(field, None, Some(*kind)),
                 Fill::Ref(target) => {
-                    let value = format!("{}({}.{stem})", w.word("REF"), target.to_ascii_lowercase());
+                    let value =
+                        format!("{}({}.{stem})", w.word("REF"), target.to_ascii_lowercase());
                     w.field(field, Some(&value), Some(MarkKind::GeneratedId));
                 }
             }
         }
     }
-    Ok(w.finish())
+    w.finish()
 }
 
 /// One file a project plan creates besides its entry.
@@ -564,7 +603,7 @@ impl Plan {
 
 /// A plan path: relative, `/`-separated segments of ASCII letters, digits,
 /// `_`, `-` and `.`, no segment starting with `.`, and an LCL ending.
-fn check_path(path: &str) -> Result<(), ScaffoldError> {
+pub fn check_path(path: &str) -> Result<(), ScaffoldError> {
     let segment_ok = |segment: &str| {
         !segment.is_empty()
             && !segment.starts_with('.')
@@ -625,12 +664,22 @@ pub fn check_plan(engine: &Engine, plan: &Plan) -> Result<(), ScaffoldError> {
 /// The canonical entry of a planned project: one `PART` per planned part, in
 /// plan order, and the `EXECUTE` every project entry requires, whose
 /// `REFERENCE` is a slot.
-pub fn entry(engine: &Engine, plan: &Plan, locale: Option<&LocaleTag>) -> Result<Scaffold, ScaffoldError> {
+pub fn entry(
+    engine: &Engine,
+    plan: &Plan,
+    locale: Option<&LocaleTag>,
+) -> Result<Scaffold, ScaffoldError> {
     check_plan(engine, plan)?;
     let stem = stem(&plan.entry)?;
     let profile = profile(engine, locale)?;
     let mut w = Writer::new(locale, profile.as_ref());
-    header(&mut w, engine.spec().formal_version(), PROJECT_KIND, &stem, plan.mode);
+    header(
+        &mut w,
+        engine.spec().formal_version(),
+        PROJECT_KIND,
+        &stem,
+        plan.mode,
+    );
     if plan.mode == Mode::Guided {
         guidance(&mut w, engine.grammar(), PROJECT_KIND);
     }
@@ -651,7 +700,7 @@ pub fn entry(engine: &Engine, plan: &Plan, locale: Option<&LocaleTag>) -> Result
     }
     w.open("EXECUTE");
     w.field("REFERENCE", None, Some(MarkKind::RequiredSlot));
-    Ok(w.finish())
+    w.finish()
 }
 
 /// What a Master holds.
@@ -681,7 +730,9 @@ pub struct Master {
 pub fn check_id(id: &str) -> Result<(), ScaffoldError> {
     let mut chars = id.chars();
     let ok = id.len() <= 64
-        && chars.next().is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && chars
+            .next()
+            .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-');
     if ok {
         Ok(())
@@ -723,14 +774,23 @@ pub fn parse_master(json_text: &str) -> Result<Master, ScaffoldError> {
     };
     let role = string_member(&json, "role")?.to_string();
     let allowed: &[&str] = if role == PROJECT_KIND {
-        &["format", "id", "name", "core", "role", "mode", "entry", "parts"]
+        &[
+            "format", "id", "name", "core", "role", "mode", "entry", "parts",
+        ]
     } else {
         &["format", "id", "name", "core", "role", "text"]
     };
-    if let Some((key, _)) = members.iter().find(|(key, _)| !allowed.contains(&key.as_str())) {
+    if let Some((key, _)) = members
+        .iter()
+        .find(|(key, _)| !allowed.contains(&key.as_str()))
+    {
         return refuse(format!(
             "{key:?} is not a key of a {} Master",
-            if role == PROJECT_KIND { "project" } else { "role" }
+            if role == PROJECT_KIND {
+                "project"
+            } else {
+                "role"
+            }
         ));
     }
     match json.get("format").map(|f| f.as_u64()) {
@@ -752,7 +812,9 @@ pub fn parse_master(json_text: &str) -> Result<Master, ScaffoldError> {
     let content = if role == PROJECT_KIND {
         let mode = string_member(&json, "mode")?;
         let Some(mode) = Mode::parse(mode) else {
-            return refuse(format!("{mode:?} is not a mode: use \"minimal\" or \"guided\""));
+            return refuse(format!(
+                "{mode:?} is not a mode: use \"minimal\" or \"guided\""
+            ));
         };
         let entry = string_member(&json, "entry")?.to_string();
         let Some(items) = json.get("parts").and_then(Json::as_array) else {
@@ -771,9 +833,9 @@ pub fn parse_master(json_text: &str) -> Result<Master, ScaffoldError> {
             }
             let required = match item.get("required") {
                 None => true,
-                Some(value) => value
-                    .as_bool()
-                    .ok_or_else(|| ScaffoldError("a part's \"required\" is true or false".into()))?,
+                Some(value) => value.as_bool().ok_or_else(|| {
+                    ScaffoldError("a part's \"required\" is true or false".into())
+                })?,
             };
             let master = match item.get("master") {
                 None => None,
@@ -895,7 +957,7 @@ fn find_slots(text: &str) -> Result<Vec<Slot>, ScaffoldError> {
             block = Some(word);
             continue;
         }
-        if word.is_empty() || word.contains(|c: char| c == ' ' || c == ':' || c == '"') {
+        if word.is_empty() || word.contains([' ', ':', '"']) {
             continue;
         }
         let nested = lines[i + 1..]
@@ -927,8 +989,13 @@ fn find_slots(text: &str) -> Result<Vec<Slot>, ScaffoldError> {
 
 /// A value of `sig`'s form, used only to stage a text whose slots are empty.
 /// It is never written anywhere. A closed-domain field gets the domain's first
-/// member; other fields get the first form they accept, in a fixed order.
-fn probe(grammar: &Grammar, sig: &FieldSignature, word: &dyn Fn(&str) -> String) -> Option<String> {
+/// member; other fields get the first form they accept, in a fixed order,
+/// among the forms whose reserved words `word` can spell.
+fn probe(
+    grammar: &Grammar,
+    sig: &FieldSignature,
+    word: &dyn Fn(&str) -> Option<String>,
+) -> Option<String> {
     if let Some(domain) = sig
         .value_kind
         .strip_prefix("qualified_identifier(")
@@ -942,20 +1009,29 @@ fn probe(grammar: &Grammar, sig: &FieldSignature, word: &dyn Fn(&str) -> String)
         }
     }
     let choices = [
-        (FormSet::STRING, "\"0.0.0\"".to_string()),
-        (FormSet::INTEGER, "0".to_string()),
+        (FormSet::STRING, Some("\"0.0.0\"".to_string())),
+        (FormSet::INTEGER, Some("0".to_string())),
         (FormSet::BOOLEAN, word("TRUE")),
-        (FormSet::QUALIFIED_IDENTIFIER, "probe.value".to_string()),
-        (FormSet::SIMPLE_IDENTIFIER, "probe".to_string()),
-        (FormSet::REFERENCE, format!("{}(probe.value)", word("REF"))),
-        (FormSet::REFERENCE_LIST, format!("[{}(probe.value)]", word("REF"))),
+        (
+            FormSet::QUALIFIED_IDENTIFIER,
+            Some("probe.value".to_string()),
+        ),
+        (FormSet::SIMPLE_IDENTIFIER, Some("probe".to_string())),
+        (
+            FormSet::REFERENCE,
+            word("REF").map(|r| format!("{r}(probe.value)")),
+        ),
+        (
+            FormSet::REFERENCE_LIST,
+            word("REF").map(|r| format!("[{r}(probe.value)]")),
+        ),
         (FormSet::TYPE_EXPRESSION, word("STRING")),
         (FormSet::EXPRESSION, word("TRUE")),
     ];
     choices
         .into_iter()
-        .find(|(form, _)| sig.forms.contains(*form))
-        .map(|(_, text)| text)
+        .find(|(form, text)| sig.forms.contains(*form) && text.is_some())
+        .and_then(|(_, text)| text)
 }
 
 fn stage(engine: &Engine, text: &str) -> ResolvedUnit {
@@ -976,13 +1052,25 @@ fn line_of(text: &str, offset: usize) -> usize {
 /// The first diagnostic of a staged unit, as `line N: id`.
 fn first_defect(unit: &ResolvedUnit) -> Option<String> {
     if let Some(d) = unit.localization().and_then(|l| l.diagnostics.first()) {
-        return Some(format!("line {}: {}", line_of(unit.source(), d.offset), d.id));
+        return Some(format!(
+            "line {}: {}",
+            line_of(unit.source(), d.offset),
+            d.id
+        ));
     }
     if let Some(d) = unit.lexed().diagnostics().first() {
-        return Some(format!("line {}: {}", d.position.line, d.id.as_registry_str()));
+        return Some(format!(
+            "line {}: {}",
+            d.position.line,
+            d.id.as_registry_str()
+        ));
     }
     if let Some(d) = unit.parsed().and_then(|p| p.diagnostics().first()) {
-        return Some(format!("line {}: {}", d.position.line, d.id.as_registry_str()));
+        return Some(format!(
+            "line {}: {}",
+            d.position.line,
+            d.id.as_registry_str()
+        ));
     }
     if let Some(failure) = unit.stage_failure() {
         return Some(format!("{failure:?}"));
@@ -1011,6 +1099,39 @@ pub fn check_text(engine: &Engine, role: &str, text: &str) -> Result<Vec<Mark>, 
         return refuse("the text must end with a line feed");
     }
     let raw = stage(engine, text);
+    let profile = raw.localization().and_then(|l| l.profile.as_ref());
+    let canonical = |word: &str| {
+        profile
+            .and_then(|p| p.canonical(word))
+            .unwrap_or(word)
+            .to_string()
+    };
+    let spell = |word: &str| match profile {
+        Some(p) => p.preferred(word).map(str::to_string),
+        None => Some(word.to_string()),
+    };
+    let grammar = engine.grammar();
+    // Name every slot's field first. An unknown word is a localization defect
+    // too, and the precise report is this one.
+    let slots = find_slots(text)?;
+    let mut named = Vec::with_capacity(slots.len());
+    for slot in &slots {
+        let block = canonical(&slot.block);
+        let field = canonical(&slot.field);
+        let at = slot.line + 1;
+        if (block == "LCL" && field == "VERSION") || (block == "SPECIFICATION" && field == "KIND") {
+            return refuse(format!(
+                "line {at}: {block} {field} is fixed and cannot be a slot"
+            ));
+        }
+        let Some(sig) = grammar
+            .schema(&block)
+            .and_then(|schema| schema.field(&field))
+        else {
+            return refuse(format!("line {at}: {field} is not a field of {block}"));
+        };
+        named.push((slot.line, at, block, field, sig));
+    }
     if let Some(d) = raw.localization().and_then(|l| l.diagnostics.first()) {
         return refuse(format!("line {}: {}", line_of(text, d.offset), d.id));
     }
@@ -1019,9 +1140,12 @@ pub fn check_text(engine: &Engine, role: &str, text: &str) -> Result<Vec<Mark>, 
         .iter()
         .find(|d| d.id.as_registry_str() != "error.indentation.empty_block")
     {
-        return refuse(format!("line {}: {}", d.position.line, d.id.as_registry_str()));
+        return refuse(format!(
+            "line {}: {}",
+            d.position.line,
+            d.id.as_registry_str()
+        ));
     }
-    let slots = find_slots(text)?;
     if slots.len() != lexical.len() {
         return refuse(format!(
             "the text has {} empty declarations but {} slots: a slot is a field line of a \
@@ -1030,33 +1154,16 @@ pub fn check_text(engine: &Engine, role: &str, text: &str) -> Result<Vec<Mark>, 
             slots.len()
         ));
     }
-    let profile = raw.localization().and_then(|l| l.profile.as_ref());
-    let canonical = |word: &str| {
-        profile
-            .and_then(|p| p.canonical(word))
-            .unwrap_or(word)
-            .to_string()
-    };
-    let spell = |word: &str| render(profile, word);
-    let grammar = engine.grammar();
     let mut lines: Vec<String> = text.split('\n').map(str::to_string).collect();
-    let mut marks = Vec::with_capacity(slots.len());
-    for slot in &slots {
-        let block = canonical(&slot.block);
-        let field = canonical(&slot.field);
-        let at = slot.line + 1;
-        if (block == "LCL" && field == "VERSION") || (block == "SPECIFICATION" && field == "KIND") {
-            return refuse(format!("line {at}: {block} {field} is fixed and cannot be a slot"));
-        }
-        let Some(sig) = grammar.schema(&block).and_then(|schema| schema.field(&field)) else {
-            return refuse(format!("line {at}: {field} is not a field of {block}"));
-        };
+    let mut marks = Vec::with_capacity(named.len());
+    for (line, at, block, field, sig) in named {
         let Some(value) = probe(grammar, sig, &spell) else {
             return refuse(format!(
-                "line {at}: {block} {field} holds nested lines, so it cannot be a slot"
+                "line {at}: {block} {field} holds nested lines, or no form its locale can spell, \
+                 so it cannot be a slot"
             ));
         };
-        lines[slot.line] = format!("{} {value}", lines[slot.line]);
+        lines[line] = format!("{} {value}", lines[line]);
         marks.push(Mark {
             kind: if sig.required {
                 MarkKind::RequiredSlot
@@ -1076,13 +1183,10 @@ pub fn check_text(engine: &Engine, role: &str, text: &str) -> Result<Vec<Mark>, 
         return refuse("the text did not parse");
     };
     let value = |block: &str, field: &str| {
-        document
-            .block(block)
-            .and_then(|b| b.field(field))
-            .map(|f| {
-                let span = f.body.span();
-                filled.source()[span.start..span.end].trim().to_string()
-            })
+        document.block(block).and_then(|b| b.field(field)).map(|f| {
+            let span = f.body.span();
+            filled.source()[span.start..span.end].trim().to_string()
+        })
     };
     let version = engine.spec().formal_version();
     if value("LCL", "VERSION") != Some(format!("\"{version}\"")) {

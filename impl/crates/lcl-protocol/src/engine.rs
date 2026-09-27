@@ -317,10 +317,22 @@ impl Engine {
         let bytes = l
             .resolver
             .resolve(locale)
-            .map_err(|e| format!("the locale profile for {} is unavailable: {}", locale.as_str(), e.0))?
+            .map_err(|e| {
+                format!(
+                    "the locale profile for {} is unavailable: {}",
+                    locale.as_str(),
+                    e.0
+                )
+            })?
             .ok_or_else(|| format!("there is no locale profile for {}", locale.as_str()))?;
-        validate_profile(&l.contract, &bytes, Some(locale))
-            .map_err(|e| format!("the locale profile for {}: {} ({})", locale.as_str(), e.detail, e.id))
+        validate_profile(&l.contract, &bytes, Some(locale)).map_err(|e| {
+            format!(
+                "the locale profile for {}: {} ({})",
+                locale.as_str(),
+                e.detail,
+                e.id
+            )
+        })
     }
 
     /// Localize (when this engine applies the localization stage), lex and

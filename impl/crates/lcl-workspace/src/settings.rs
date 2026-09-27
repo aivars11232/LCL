@@ -207,13 +207,24 @@ pub fn store(path: &Path, settings: &Settings) -> Result<(), String> {
     if ending(settings.default_extension).is_none() {
         return Err("the default file type must be .lcl or .lcl.txt".to_string());
     }
+    write_atomically(path, to_json(settings).as_bytes())
+}
+
+/// Write `bytes` to `path` atomically, creating its directory if needed: a
+/// temporary file in the same directory is written, synced and renamed over
+/// `path`, so a crash leaves the previous file whole rather than half a file.
+pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let directory = path
         .parent()
         .ok_or_else(|| format!("{} has no directory", path.display()))?;
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("{} has no file name", path.display()))?;
     std::fs::create_dir_all(directory)
         .map_err(|e| format!("{} could not be created: {e}", directory.display()))?;
     let temporary = directory.join(format!(
-        ".{FILE_NAME}.{}-{}.tmp",
+        ".{name}.{}-{}.tmp",
         std::process::id(),
         NEXT_TEMPORARY.fetch_add(1, Ordering::Relaxed)
     ));
@@ -222,7 +233,7 @@ pub fn store(path: &Path, settings: &Settings) -> Result<(), String> {
         .create_new(true)
         .open(&temporary)
         .and_then(|mut file| {
-            file.write_all(to_json(settings).as_bytes())?;
+            file.write_all(bytes)?;
             file.sync_all()
         });
     if let Err(error) = written {

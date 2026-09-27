@@ -39,6 +39,7 @@ pub mod document;
 pub mod execution;
 pub mod http;
 pub mod intelligence;
+pub mod masters;
 pub mod project;
 pub mod remote;
 pub mod routes;

@@ -42,6 +42,7 @@ pub mod host;
 pub mod inputs;
 pub mod json;
 pub mod record;
+pub mod scaffold;
 
 pub use engine::{Engine, EngineError, Engines};
 pub use host::{surface, Granted};

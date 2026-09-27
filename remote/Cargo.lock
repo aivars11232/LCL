@@ -120,6 +120,7 @@ dependencies = [
  "lcl-lexer",
  "lcl-localization",
  "lcl-parser",
+ "lcl-project",
  "lcl-resolver",
  "lcl-runtime",
  "lcl-semantics",

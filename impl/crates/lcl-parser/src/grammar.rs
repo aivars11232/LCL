@@ -25,6 +25,12 @@
 //!
 //! So a form violation here is `error.field.type`; an argument violation
 //! belongs to M3 resolution or M4 static checking and is not attempted.
+//!
+//! One exception is exact: [`ENFORCED_DOMAINS`]. `document_kind` and the Core
+//! 0.3.0 `part_kind` are closed static domains whose members the registry
+//! lists outright, and the grammar stage already reads `SPECIFICATION.KIND` to
+//! decide top-level legality, so a value outside them is `error.field.type`
+//! here (owner decision, 2026-09-26).
 
 use crate::diagnostic::GrammarError;
 use lcl_spec::json::Json;
@@ -211,6 +217,10 @@ fn named_kind_forms(name: &str) -> Option<FormSet> {
         | "ordered_value"
         | "duration"
         | "path"
+        // Core 0.3.0: "One PATH constructor call with exactly one relative
+        // STRING argument". An expression shape; the exact call form is a
+        // syntactic check in `schema` (`part_source_path`).
+        | "part_source_path"
         | "regex_or_glob"
         | "nonnegative_numeric_or_measure"
         | "side_effect_declaration"
@@ -241,6 +251,24 @@ fn template_form(accepted: &str) -> Option<FormSet> {
         _ => return None,
     })
 }
+
+/// The closed identifier domains whose membership the grammar stage enforces.
+///
+/// `06_STANDARD_LIBRARY/09`: "Identifiers under reserved namespaces resolve
+/// only to this core registry", and an unknown one fails; the catalog requires
+/// the document_kinds group to be enforced as a complete closed identifier
+/// contract (`ENUM-GROUPS-0754`). Canon names no dedicated diagnostic;
+/// `error.field.type`, "a field value does not match its exact value kind", is
+/// the one registered identifier whose meaning covers a value outside its
+/// `qualified_identifier(DOMAIN)` kind.
+///
+/// Before 2026-09-26 no domain was enforced and an unregistered
+/// `SPECIFICATION.KIND` was silently accepted. The owner decided that day to
+/// enforce `document_kind` in every Core version and the Core 0.3.0 `part_kind`
+/// (`PART.KIND`), and to report, not yet enforce, the same gap in the other
+/// closed domains (format, mode, encoding, definition kinds and the aliased
+/// domains). Both enforced domains are static: no `DEFINE` can add a member.
+pub const ENFORCED_DOMAINS: &[&str] = &["document_kind", "part_kind"];
 
 /// One field's exact signature.
 #[derive(Debug, Clone)]
@@ -418,6 +446,9 @@ pub struct Grammar {
     schemas: BTreeMap<String, BlockSchema>,
     /// `document_kind_blocks`: legal top-level blocks per `SPECIFICATION.KIND`.
     document_kind_blocks: BTreeMap<String, BTreeSet<String>>,
+    /// The members of each closed identifier domain in [`ENFORCED_DOMAINS`]
+    /// that this package declares, read through `qualified_identifier_domains`.
+    closed_domains: BTreeMap<String, BTreeSet<String>>,
     errors: BTreeMap<GrammarError, RegisteredGrammarError>,
     supersedes: BTreeMap<GrammarError, BTreeSet<GrammarError>>,
 }
@@ -518,6 +549,16 @@ impl Grammar {
             document_kind_blocks.insert(kind.clone(), set);
         }
 
+        let closed_domains = Self::closed_domains(spec, field_signatures)?;
+        if let Some(kinds) = closed_domains.get("document_kind") {
+            let legal: BTreeSet<String> = document_kind_blocks.keys().cloned().collect();
+            if *kinds != legal {
+                return Err(GrammarLoadError::Malformed(
+                    "the document_kind domain and document_kind_blocks name different kinds".into(),
+                ));
+            }
+        }
+
         let (errors, supersedes) = Self::errors(spec)?;
         let callables = Self::load_callables(spec)?;
 
@@ -526,9 +567,93 @@ impl Grammar {
             callables,
             schemas,
             document_kind_blocks,
+            closed_domains,
             errors,
             supersedes,
         })
+    }
+
+    /// Read the members of every [`ENFORCED_DOMAINS`] entry the package's
+    /// `qualified_identifier_domains` declares, through its exact registry,
+    /// JSON Pointer and selection. A domain that also admits `DEFINE`
+    /// declarations (`defined_kind`) needs resolution and is refused here.
+    fn closed_domains(
+        spec: &SpecPackage,
+        field_signatures: &Json,
+    ) -> Result<BTreeMap<String, BTreeSet<String>>, GrammarLoadError> {
+        let malformed = |what: String| GrammarLoadError::Malformed(what);
+        let domains = field_signatures
+            .get("qualified_identifier_domains")
+            .and_then(Json::as_object)
+            .ok_or_else(|| {
+                malformed("field_signatures.qualified_identifier_domains missing".into())
+            })?;
+        let mut out = BTreeMap::new();
+        for name in ENFORCED_DOMAINS {
+            let Some((_, contract)) = domains.iter().find(|(k, _)| k == name) else {
+                continue;
+            };
+            if contract.get("defined_kind").is_some() {
+                return Err(malformed(format!("the {name} domain admits definitions")));
+            }
+            let source = contract
+                .get("source")
+                .and_then(Json::as_str)
+                .ok_or_else(|| malformed(format!("the {name} domain names no source")))?;
+            let suffix = format!("_v{}.json", spec.formal_version());
+            let registry_name = source
+                .strip_prefix("10_REGISTRIES/")
+                .and_then(|file| file.strip_suffix(suffix.as_str()))
+                .ok_or_else(|| {
+                    malformed(format!(
+                        "the {name} domain source {source} is not a registry"
+                    ))
+                })?;
+            let mut node =
+                spec.registry(registry_name)
+                    .ok_or(GrammarLoadError::MissingRegistry(
+                        "qualified identifier domain source",
+                    ))?;
+            let pointer = contract
+                .get("pointer")
+                .and_then(Json::as_str)
+                .ok_or_else(|| malformed(format!("the {name} domain names no pointer")))?;
+            for key in pointer.split('/').skip(1) {
+                node = node.get(key).ok_or_else(|| {
+                    malformed(format!(
+                        "the {name} domain pointer {pointer} does not resolve"
+                    ))
+                })?;
+            }
+            let members: BTreeSet<String> = match contract.get("selection").and_then(Json::as_str) {
+                Some("array_values") => node
+                    .as_array()
+                    .ok_or_else(|| malformed(format!("the {name} domain is not an array")))?
+                    .iter()
+                    .map(|member| {
+                        member.as_str().map(str::to_string).ok_or_else(|| {
+                            malformed(format!("the {name} domain has a non-string member"))
+                        })
+                    })
+                    .collect::<Result<_, _>>()?,
+                Some("object_keys") => node
+                    .as_object()
+                    .ok_or_else(|| malformed(format!("the {name} domain is not an object")))?
+                    .iter()
+                    .map(|(key, _)| key.clone())
+                    .collect(),
+                other => {
+                    return Err(malformed(format!(
+                        "the {name} domain selection {other:?} is unsupported"
+                    )))
+                }
+            };
+            if members.is_empty() {
+                return Err(malformed(format!("the {name} domain is empty")));
+            }
+            out.insert((*name).to_string(), members);
+        }
+        Ok(out)
     }
 
     fn template_forms(
@@ -901,6 +1026,13 @@ impl Grammar {
 
     pub fn document_kinds(&self) -> impl Iterator<Item = &str> {
         self.document_kind_blocks.keys().map(String::as_str)
+    }
+
+    /// The members of one enforced closed identifier domain, when this package
+    /// declares it: `document_kind` in every version, `part_kind` from Core
+    /// 0.3.0. See [`ENFORCED_DOMAINS`].
+    pub fn closed_domain_members(&self, domain: &str) -> Option<&BTreeSet<String>> {
+        self.closed_domains.get(domain)
     }
 
     pub fn error(&self, id: GrammarError) -> &RegisteredGrammarError {

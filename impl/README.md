@@ -1,12 +1,15 @@
-# LCL implementation — milestones M0 (foundation), M1 (lexer), M2 (parser), M3 (resolver), M4 (checker), M5 (semantic preflight), M6 (runtime), M7 (capabilities and standard library), M8 (completion and executable conformance), M9 (CLI, projects and the engine protocol), M10 (the workspace, inspector and debugger), M11 (hardening, the application ladder and release) and LCL-FEATURE-04 (the Core 0.2.0 localization stage)
+# LCL implementation — milestones M0 (foundation), M1 (lexer), M2 (parser), M3 (resolver), M4 (checker), M5 (semantic preflight), M6 (runtime), M7 (capabilities and standard library), M8 (completion and executable conformance), M9 (CLI, projects and the engine protocol), M10 (the workspace, inspector and debugger), M11 (hardening, the application ladder and release), LCL-FEATURE-04 (the Core 0.2.0 localization stage) and Core 0.3 Task 01 (multi-file projects)
 
 This directory is a **consumer** of the canonical specification at
 `../canonical/LCL_Core_0.1.0` and, when one is named, of the Core 0.2.0
 localization candidate at `../canonical/LCL_Core_0.2.0`, whose engine judges
-documents that declare 0.2.0 or are localized. Core 0.2.0 is unreleased; the
-owner accepted its independent review on 2026-09-25. This directory is part of
-neither package, is not listed in their `MANIFEST.json` or `SHA256SUMS.txt`,
-and never writes to `canonical/`.
+documents that declare 0.2.0 or are localized, and of the Core 0.3.0 project
+candidate at `../canonical/LCL_Core_0.3.0`, whose engine judges documents that
+declare 0.3.0, multi-file projects among them. Core 0.2.0 is unreleased; the
+owner accepted its independent review on 2026-09-25. Core 0.3.0 is unreleased
+and its independent review is pending. This directory is part of none of the
+packages, is not listed in their `MANIFEST.json` or `SHA256SUMS.txt`, and never
+writes to `canonical/`.
 
 Building this does not change the release's status. The `complete_example_parse_matrix`
 and `semantic_case_execution` gates remain `OUT_OF_SCOPE` for LCL Core 0.1.0, because the
@@ -20,22 +23,22 @@ evidence and is never a claim about the release.
 
 | Crate | Milestone | Role |
 | --- | --- | --- |
-| `lcl-spec` | M0 | Specification authority loader. Verifies package integrity against `MANIFEST.json` and `SHA256SUMS.txt`, checks an **external trust anchor**, pins the formal version, loads the 12 closed registries and 2 catalogs as data. |
+| `lcl-spec` | M0 | Specification authority loader. Verifies package integrity against `MANIFEST.json` and `SHA256SUMS.txt`, checks an **external trust anchor**, pins the formal version, loads the closed registries (12 in Core 0.1.0, 14 from Core 0.2.0) and 2 catalogs as data. Core 0.1.0 is the default anchor; the 0.2.0 and 0.3.0 anchors are selected explicitly. |
 | `lcl-diagnostics` | M0 | Diagnostics skeleton. The 7 normative stages, 12 statuses and 77 errors, loaded and closure-checked. |
 | `lcl-conformance` | M0 + M8 | The descriptive index **and** the executable case runner. Indexes the 799 descriptive requirements and 66 decision witnesses, and separately carries concrete sources through every implemented stage, comparing observed against expected. An indexed requirement and an executed case are different types with different evidence standards, and the report counts them in separate columns with no total. |
-| `lcl-localization` | LCL-FEATURE-04 | The Core 0.2.0 localization stage. Before any word of a document is interpreted: the `@locale` directive, locale profile validation, provider-neutral locale selection and localized word classification, read from the 0.2.0 package's registries. The lexer maps the selected profile's spellings to canonical reserved words; nothing here parses, resolves or executes. |
+| `lcl-localization` | LCL-FEATURE-04 | The Core 0.2.0 localization stage, which Core 0.3.0 keeps; each contract accepts only its own version's profiles. Before any word of a document is interpreted: the `@locale` directive, locale profile validation, provider-neutral locale selection and localized word classification, read from the 0.2.0 package's registries. The lexer maps the selected profile's spellings to canonical reserved words; nothing here parses, resolves or executes. |
 | `lcl-lexer` | M1 | Deterministic, non-executing lexer. Source bytes in; tokens with exact byte spans or stable-ordered registered lexical diagnostics out, including every contextual `error.keyword.case` position and the closed literal profiles of constructor arguments. |
-| `lcl-parser` | M2 | Deterministic, non-executing parser. M1 tokens in; a source-faithful syntax tree with exact byte spans or registered grammar-and-schema diagnostics out. |
-| `lcl-resolver` | M3 | Deterministic, non-executing resolver. Parsed units plus an explicit source provider in; version, import, extension, namespace, ID and `REF` bindings and the structural candidate graph, or registered resolution diagnostics, out. |
+| `lcl-parser` | M2 | Deterministic, non-executing parser. M1 tokens in; a source-faithful syntax tree with exact byte spans or registered grammar-and-schema diagnostics out. A `SPECIFICATION.KIND` or `PART.KIND` outside its closed registered domain is `error.field.type` in every Core version. |
+| `lcl-resolver` | M3 | Deterministic, non-executing resolver. Parsed units plus an explicit source provider in; version, import, extension, namespace, ID and `REF` bindings and the structural candidate graph, or registered resolution diagnostics, out. For a Core 0.3.0 `kind.project` root it loads the parts its `PART` blocks name, in `PART` order, into one shared namespace. |
 | `lcl-checker` | M4 | Deterministic, non-executing static and type checker. A resolved program graph in; every declaration's type, every expression's static contract and the value obligations left to the demanding layer, or registered `static_or_expression` diagnostics, out. |
 | `lcl-semantics` | M5 | Deterministic, no-effect semantic preflight. A statically checked program plus explicit invocation data in; an authorized, dependency-resolved, prevalidated and ordered execution plan, or registered pre-effect diagnostics, out. |
 | `lcl-completion` | M8 | Canonical processing steps 11 to 13. An accepted execution in; post-execution `VERIFY` and `TEST` against what was actually observed, resolved `EVIDENCE`, a `SUCCESS`/`FAILURE` decision, exactly one terminal invocation status and the declared outputs, or registered `verification_or_completion` diagnostics, out. It performs no effect of its own. |
 | `lcl-runtime` | M6 | Deterministic evaluator and runtime. An accepted execution plan plus an explicit host capability boundary in; canonical execution events, invocation results, state and diagnostics out. Every external effect leaves the language through `Host`; the runtime core performs no filesystem, process, network, provider or clock access. |
 | `lcl-capabilities` | M7 | The host effect boundary. Implementation profiles, address classes, capability grants and resource bounds, with the real filesystem, process and network adapters. Host policy and primitive adapters only: it holds no language semantics and no LCL value model. |
 | `lcl-stdlib` | M7 | The executable Core operation surface. The closed 39-row operation surface and the 11 built-in functions, mapped to pure logic or to bounded, authorized capability requests. It decides language meaning; the host decides only what happened. |
-| `lcl-protocol` | M9 | The stable headless engine surface. One assembled engine that carries source through every canonical stage in order and stops where the requested command says, and one machine-readable record of what happened, with a JSON projection. `Engines` pairs the Core 0.1.0 engine with the Core 0.2.0 engine, when that package is named, and chooses the one engine that judges each document. It resolves nothing, checks nothing and classifies nothing: every identifier, stage, status, span and value is copied from the layer that decided it. |
-| `lcl-project` | M9 | Projects and documents. An explicit project root, a filesystem source provider that can answer only for a source a document named, root-relative source identity that does not depend on where the project lives, and the content-addressed cache and lock file that make a multi-document project reproducible. A manifest may name a Core 0.2.0 package (`localized_spec`) and a locale profile directory (`profiles`), and a localized unit's locale and profile identity are pinned in `lcl-lock/2`. |
-| `lcl-cli` | M9 | The `lcl` binary. `check`, `validate`, `run`, `inspect`, `package` and `syntax` over the same engine any other consumer uses, with a closed exit-code table, human rendering and `--machine` JSON. `--localized-spec` (or `LCL_LOCALIZED_SPEC`) names a Core 0.2.0 package, `--profile` adds a locale profile file, and `version` names Core 0.2.0 only when that package is named and opens. It grants the host nothing unless a flag says so. |
+| `lcl-protocol` | M9 | The stable headless engine surface. One assembled engine that carries source through every canonical stage in order and stops where the requested command says, and one machine-readable record of what happened, with a JSON projection. `Engines` holds the Core 0.1.0 engine and, when their packages are named, the Core 0.2.0 and 0.3.0 engines, and chooses the one engine that judges each document. A Core 0.3.0 project's report carries a `project` record. It resolves nothing, checks nothing and classifies nothing: every identifier, stage, status, span and value is copied from the layer that decided it. |
+| `lcl-project` | M9 | Projects and documents. An explicit project root, a filesystem source provider that can answer only for a source a document named, root-relative source identity that does not depend on where the project lives, and the content-addressed cache and lock file that make a multi-document project reproducible. A manifest may name a Core 0.2.0 package (`localized_spec`), a Core 0.3.0 package (`project_spec`) and a locale profile directory (`profiles`), and a localized unit's locale and profile identity are pinned in `lcl-lock/2`. |
+| `lcl-cli` | M9 | The `lcl` binary. `check`, `validate`, `run`, `inspect`, `package` and `syntax` over the same engine any other consumer uses, with a closed exit-code table, human rendering and `--machine` JSON. `--localized-spec` (or `LCL_LOCALIZED_SPEC`) names a Core 0.2.0 package, `--project-spec` (or `LCL_PROJECT_SPEC`) a Core 0.3.0 package, `--profile` adds a locale profile file, and `version` names Core 0.2.0 only when that package is named and opens. It grants the host nothing unless a flag says so. |
 | `lcl-hardening` | M11 | The release gate. A deterministic seeded generator, mutation and adversarial corpora, the cross-layer invariants every stage must hold under hostile input, the performance and repeatability measurements, the product-level security matrix, the staged application ladder and the packaging smoke test. It defines no language rule and nothing depends on it: it drives the same public surfaces a user drives. |
 | `lcl-workspace` | M10 | The editor, project shell, live diagnostics, execution inspection and debugger. A loopback HTTP server on `std::net` serving a hand-written browser frontend, over the same engine the CLI uses. It holds no language rule of its own, and the page does not even highlight: token spans come from the real lexer. `--localized-spec` and `--profile` name the Core 0.2.0 package and locale profile files as the CLI's options do. |
 
@@ -1124,3 +1127,69 @@ cargo test --offline -p lcl-hardening --test applications
 
 Every generated case is a pure function of a seed, so a failure is reproducible
 from the number the failure message prints and no corpus is stored.
+
+## Core 0.3 Task 01 — multi-file projects
+
+`canonical/LCL_Core_0.3.0` (`05_SEMANTICS/13`, and
+`block_schemas_v0.3.0.json#/project_contract`) lets one specification be split
+over several files. The entry declares `KIND: kind.project` and lists its parts
+with `PART` blocks: `ID`, `SOURCE: PATH("relative")`, `KIND: kind.part.*` and an
+optional `REQUIRED`, which defaults to `TRUE`. Each part declares that same part
+kind. Nothing is discovered: a file that no `PART` names is never read.
+
+### Where each rule lives
+
+- `lcl-parser`: `PART`'s shape and the `part_source_path` form, the closed
+  `document_kind` and `part_kind` domains, and each kind's permitted top-level
+  blocks (its role), all read from the registries.
+- `lcl-resolver` (`project.rs`): parts load in `PART` order, resolved from the
+  entry's directory. It also owns the four project errors
+  `error.project.part_missing`, `part_kind`, `part_duplicate` and `placement`,
+  and each part's version checks. The shared namespace is resolved only once it
+  is complete. Project source order (the entry, then parts in `PART` order, then
+  imports) orders diagnostics and every tie-break.
+- `lcl-semantics` and `lcl-completion`: every part is a root document, with
+  local authority, no import ceiling, and project-wide check selection.
+- `lcl-checker`: a one-STRING relative `PATH` is legal as `PART.SOURCE`.
+- `lcl-protocol`: the 0.3.0 engine and the `project` record. `lcl-cli` and
+  `lcl-project` only name the package.
+
+### The project record
+
+`project` is present only for a Core 0.3.0 project. It has these fields:
+
+- `entry` and `entry_status`.
+- `order`: the loaded units, in project source order.
+- `parts`: one row per `PART`, with `id`, `source`, `source_span`, `unit`,
+  `kind`, `required`, `state` and `status`.
+- `complete`.
+- `admission`.
+
+`admission` is `admitted` only when steps 1 to 9 completed for the whole
+project. Otherwise it is `rejected`, or `not_evaluated` when the command stopped
+earlier. Only an admitted project reaches an effect.
+
+`status` is one of `ready`, `invalid`, `missing`, `omitted` or `duplicate`. It
+says which file each reported diagnostic lies in, for the per-file readiness
+view of the Core 0.3 usage contract. A missing or duplicate part is reported at
+its `PART SOURCE` but belongs to the part's own row. `status` never admits
+anything by itself. Declarations, references and `IMPORT` dependencies are in
+`navigation` and `structure`, as for any document.
+
+```bash
+lcl validate --spec canonical/LCL_Core_0.1.0 --project-spec canonical/LCL_Core_0.3.0 main.lcl
+LCL_SPEC=canonical/LCL_Core_0.1.0 LCL_PROJECT_SPEC=canonical/LCL_Core_0.3.0 \
+    lcl run --allow-write /tmp/out main.lcl
+```
+
+The Core 0.1.0 package is still required. Standalone 0.1.0 and 0.2.0 documents
+are judged byte for byte the same whether or not 0.3.0 is named. The one
+deliberate change to them is the owner's decision of 2026-09-26: an
+unregistered `SPECIFICATION.KIND`, which every version used to accept, is now
+`error.field.type`.
+
+A locale profile names exactly one `lcl_version`. A 0.2.0 profile therefore
+localizes only 0.2.0 documents, and a 0.3.0 profile only 0.3.0 documents.
+Supplying the other version's profile is `error.localization.profile_invalid`,
+never a silent fallback. The workspace and the Android companion are not
+project-aware yet; that is Core 0.3 Task 03.

@@ -224,7 +224,6 @@ pub(crate) fn run(engine: &mut Engine) -> Checks {
 
 /// Every post-execution check this invocation selects.
 fn select(engine: &Engine) -> Vec<Selected> {
-    let root = engine.root_source();
     let prerequisites = prerequisite_ids(engine);
     let test_root = explicit_test_root(engine);
     let material_targets = activated_material_targets(engine);
@@ -258,8 +257,9 @@ fn select(engine: &Engine) -> Vec<Selected> {
 
         // "Select ... declarations in the EXECUTE root source document. ...
         // Unrelated imported checks never run merely because their document was
-        // imported."
-        let in_root = declaration.source == root;
+        // imported." In a Core 0.3.0 project "the entry and every obtained part
+        // together are that document".
+        let in_root = engine.resolved.is_root_document(&declaration.source);
         let is_prerequisite = prerequisites.contains(&id);
         if !in_root && !is_prerequisite {
             continue;
@@ -391,7 +391,6 @@ fn activated_material_targets(engine: &Engine) -> BTreeSet<String> {
 /// root SUCCESS."
 fn prerequisite_ids(engine: &Engine) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
-    let root = engine.root_source();
 
     // The root SUCCESS, reached through the root declaration's SUCCESS field
     // rather than by scanning every SUCCESS in the document: an unreferenced
@@ -401,8 +400,8 @@ fn prerequisite_ids(engine: &Engine) -> BTreeSet<String> {
     }
 
     for (index, declaration) in engine.resolved.declarations().all().iter().enumerate() {
-        let interesting =
-            declaration.source == root && matches!(declaration.block.as_str(), "VERIFY" | "TEST");
+        let interesting = engine.resolved.is_root_document(&declaration.source)
+            && matches!(declaration.block.as_str(), "VERIFY" | "TEST");
         if !interesting {
             continue;
         }
@@ -469,10 +468,12 @@ fn order_by_prerequisites(engine: &mut Engine, selected: Vec<Selected>) -> Optio
     }
 
     // The stable tie-break order: source unit, then source declaration order.
+    // A Core 0.3.0 project orders units in project source order.
     let mut pending: Vec<&Selected> = selected.iter().collect();
     pending.sort_by(|a, b| {
-        a.source
-            .cmp(&b.source)
+        engine
+            .resolved
+            .compare_sources(&a.source, &b.source)
             .then(a.span.start.cmp(&b.span.start))
     });
 

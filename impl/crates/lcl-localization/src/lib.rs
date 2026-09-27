@@ -12,7 +12,9 @@
 //! reads the repertoires, confusable skeletons, reserved words, localizable
 //! words, display domains and provider classes out of the authoritative 0.2.0
 //! package. The diagnostic identifiers in [`ids`] are checked against the
-//! statuses registry at load, so a registry change fails closed.
+//! statuses registry at load, so a registry change fails closed. Core 0.3.0
+//! keeps the same contract under its own 0.3.0 registry names; a contract read
+//! from a 0.3.0 package accepts only profiles naming `lcl_version` 0.3.0.
 //!
 //! ## Scope
 //!
@@ -35,8 +37,13 @@ use std::fmt;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-/// The language version whose localization contract this crate implements.
+/// The language version that introduced the localization contract.
 pub const LANGUAGE_VERSION: &str = "0.2.0";
+
+/// Every language version whose package carries the localization contract:
+/// Core 0.2.0 introduced it and Core 0.3.0 keeps it unchanged. A contract is
+/// always read from one package and is bound to that package's version.
+pub const LANGUAGE_VERSIONS: [&str; 2] = ["0.2.0", "0.3.0"];
 
 /// `locale_profile_schema_v0.2.0.json#/profile_format`.
 pub const PROFILE_FORMAT: &str = "lcl-locale-profile/1";
@@ -116,7 +123,8 @@ impl fmt::Display for ContractError {
             }
             ContractError::WrongVersion(v) => write!(
                 f,
-                "the localization contract is defined for LCL {LANGUAGE_VERSION}, not {v:?}"
+                "the localization contract is defined for LCL {}, not {v:?}",
+                LANGUAGE_VERSIONS.join(" and ")
             ),
             ContractError::MissingRegistry(name) => write!(f, "registry {name} is absent"),
             ContractError::Malformed(what) => write!(f, "malformed localization contract: {what}"),
@@ -140,6 +148,8 @@ pub struct ErrorMetadata {
 /// The localization contract of one authoritative LCL 0.2.0 package.
 #[derive(Debug, Clone)]
 pub struct Contract {
+    /// The formal version of the package this contract was read from.
+    language_version: &'static str,
     error_metadata: BTreeMap<String, ErrorMetadata>,
     reserved: BTreeSet<String>,
     localizable: BTreeSet<String>,
@@ -151,16 +161,20 @@ pub struct Contract {
 }
 
 impl Contract {
-    /// Read the contract from an authoritative 0.2.0 package.
+    /// Read the contract from an authoritative 0.2.0 or 0.3.0 package.
     pub fn load(spec: &SpecPackage) -> Result<Self, ContractError> {
         if !spec.is_authoritative() {
             return Err(ContractError::NotAuthoritative);
         }
-        if spec.formal_version() != LANGUAGE_VERSION {
+        let Some(language_version) = LANGUAGE_VERSIONS
+            .iter()
+            .copied()
+            .find(|version| *version == spec.formal_version())
+        else {
             return Err(ContractError::WrongVersion(
                 spec.formal_version().to_string(),
             ));
-        }
+        };
         let registry = |name: &'static str| {
             spec.registry(name)
                 .ok_or(ContractError::MissingRegistry(name))
@@ -359,6 +373,7 @@ impl Contract {
         }
 
         let mut contract = Contract {
+            language_version,
             error_metadata,
             reserved,
             localizable,
@@ -374,6 +389,12 @@ impl Contract {
             .map(|word| (contract.skeleton(word), word.clone()))
             .collect();
         Ok(contract)
+    }
+
+    /// The formal version of the package this contract was read from, which a
+    /// locale profile must name exactly.
+    pub fn language_version(&self) -> &'static str {
+        self.language_version
     }
 
     /// Registered metadata of a diagnostic this stage selects.
@@ -663,7 +684,7 @@ pub fn validate_profile(
     if field("format").as_str() != Some(PROFILE_FORMAT) {
         return Err(invalid("unknown profile format".into()));
     }
-    if field("lcl_version").as_str() != Some(LANGUAGE_VERSION) {
+    if field("lcl_version").as_str() != Some(contract.language_version()) {
         return Err(invalid("incompatible LCL version".into()));
     }
     let written = field("locale").as_str().ok_or_else(|| ProfileError {
@@ -1220,7 +1241,7 @@ pub fn localize(
             profile_identity: Some(profile.identity.clone()),
             detector_identity: None,
             candidate_locales: Vec::new(),
-            lcl_version: LANGUAGE_VERSION,
+            lcl_version: contract.language_version,
         };
         (record, Some(profile))
     } else if let Some(pin) = pin {
@@ -1242,7 +1263,7 @@ pub fn localize(
             profile_identity: Some(profile.identity.clone()),
             detector_identity: None,
             candidate_locales: Vec::new(),
-            lcl_version: LANGUAGE_VERSION,
+            lcl_version: contract.language_version,
         };
         (record, Some(profile))
     } else if non_canonical.is_empty() {
@@ -1252,7 +1273,7 @@ pub fn localize(
             profile_identity: None,
             detector_identity: None,
             candidate_locales: Vec::new(),
-            lcl_version: LANGUAGE_VERSION,
+            lcl_version: contract.language_version,
         };
         (record, None)
     } else {
@@ -1312,7 +1333,7 @@ pub fn localize(
             profile_identity: Some(profile.identity.clone()),
             detector_identity: Some(detector.identity().to_string()),
             candidate_locales: candidates_locales,
-            lcl_version: LANGUAGE_VERSION,
+            lcl_version: contract.language_version,
         };
         (record, Some(profile))
     };

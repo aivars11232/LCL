@@ -181,9 +181,17 @@ impl FileProvider {
                 self.root.display()
             ))
         })?;
-        let canonical = folded
-            .canonicalize()
-            .map_err(|source| LoadError::new(format!("{path:?} is not readable: {source}")))?;
+        // Nothing existing at the resolved path is the one failure a Core 0.3.0
+        // optional part may be omitted for; every other failure is not
+        // absence.
+        let canonical = folded.canonicalize().map_err(|source| {
+            let message = format!("{path:?} is not readable: {source}");
+            if source.kind() == std::io::ErrorKind::NotFound {
+                LoadError::absent(message)
+            } else {
+                LoadError::new(message)
+            }
+        })?;
         if !lcl_capabilities::contains(&self.root, &canonical) {
             return Err(LoadError::new(format!(
                 "{path:?} resolves outside the project root {}",

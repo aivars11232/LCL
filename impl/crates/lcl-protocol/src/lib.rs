@@ -50,6 +50,6 @@ pub use json::{Node, Object};
 pub use record::{
     CheckRecord, Command, CompletionRecord, DeclarationRecord, DiagnosticRecord, EventRecord,
     EvidenceRecord, ExecutionRecord, ImportRecord, InputRecord, InvocationRecord, NavigationRecord,
-    Outcome, OutputRecord, PlanRecord, Reached, ReferenceRecord, Report, SourceRecord, SpecRecord,
-    StructureRecord, VerdictRecord, PROTOCOL,
+    Outcome, OutputRecord, PlanRecord, ProjectPartRecord, ProjectRecord, Reached, ReferenceRecord,
+    Report, SourceRecord, SpecRecord, StructureRecord, VerdictRecord, PROTOCOL,
 };

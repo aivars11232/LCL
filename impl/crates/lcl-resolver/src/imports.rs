@@ -215,6 +215,22 @@ fn declared_lcl_version(resolved: &Resolved, unit: &SourceId) -> Option<(String,
     field::string(block, "VERSION")
 }
 
+/// The declared `SPECIFICATION` `KIND` of one unit, with the span of its value.
+pub(crate) fn declared_kind(resolved: &Resolved, unit: &SourceId) -> Option<(String, Span)> {
+    let document = resolved.units.get(unit).and_then(|u| u.document())?;
+    field::identifier(document.block("SPECIFICATION")?, "KIND")
+}
+
+/// The declared `SPECIFICATION` `VERSION` of one unit, with the span of its
+/// value.
+pub(crate) fn declared_specification_version(
+    resolved: &Resolved,
+    unit: &SourceId,
+) -> Option<(String, Span)> {
+    let document = resolved.units.get(unit).and_then(|u| u.document())?;
+    field::string(document.block("SPECIFICATION")?, "VERSION")
+}
+
 /// The declared `SPECIFICATION` `VERSION` and `KIND` of one unit.
 fn declared_specification(
     resolved: &Resolved,
@@ -232,21 +248,29 @@ fn declared_specification(
     )
 }
 
-/// Load every explicitly referenced source unit, depth first in declaration
-/// order, enforcing namespace validity, checksums and acyclicity.
-pub(crate) fn resolve_sources(
+/// The root's own language version, checked before anything is loaded on its
+/// behalf: 07/05, "An interpreter validates only exact supported language
+/// versions." Nothing may be loaded for a root this returns false for.
+pub(crate) fn root_version_supported(
+    resolver: &Resolver<'_>,
+    resolved: &mut Resolved,
+    raw: &mut Vec<Diagnostic>,
+) -> bool {
+    let root = resolved.root.clone();
+    check_lcl_version(resolver, resolved, raw, &root)
+}
+
+/// Load every source unit the root explicitly imports, depth first in
+/// declaration order, enforcing namespace validity, checksums and acyclicity.
+/// In a Core 0.3.0 project this runs after the parts are loaded, so imported
+/// units follow the parts in project source order.
+pub(crate) fn expand_root(
     resolver: &Resolver<'_>,
     provider: &dyn SourceProvider,
     resolved: &mut Resolved,
     raw: &mut Vec<Diagnostic>,
 ) {
     let root = resolved.root.clone();
-    // The root's own language version is checked before anything is loaded on
-    // its behalf: 07/05, "An interpreter validates only exact supported
-    // language versions."
-    if !check_lcl_version(resolver, resolved, raw, &root) {
-        return;
-    }
     let root_path = UnitPath::root(root.clone());
     let mut chain = vec![root];
     expand(resolver, provider, resolved, raw, &root_path, &mut chain);
@@ -254,7 +278,7 @@ pub(crate) fn resolve_sources(
 
 /// `error.version.unsupported`, and whether the unit may take part in
 /// resolution at all.
-fn check_lcl_version(
+pub(crate) fn check_lcl_version(
     resolver: &Resolver<'_>,
     resolved: &mut Resolved,
     raw: &mut Vec<Diagnostic>,
@@ -423,6 +447,34 @@ fn expand(
             continue;
         }
 
+        // Core 0.3.0: "a PART and an IMPORT or EXTENSION of that project, that
+        // resolve to the same source unit use error.project.part_duplicate at
+        // the later SOURCE value in project source order." Parts precede
+        // imports in that order, so the IMPORT is the later one.
+        if resolved.project.as_ref().is_some_and(|project| {
+            project
+                .parts
+                .iter()
+                .any(|p| p.unit.as_ref() == Some(loaded.id()))
+        }) {
+            emitter.emit(
+                raw,
+                ResolutionError::ProjectPartDuplicate,
+                &path.unit,
+                spec.source_span,
+                &format!("part-duplicate:{}", loaded.id()),
+                format!(
+                    "{} is a part of this project and cannot also be an {}",
+                    loaded.id(),
+                    spec.kind.block()
+                ),
+            );
+            record.outcome = ImportOutcome::NotRequested;
+            register_namespace(resolved, path, &namespace, &record, None);
+            resolved.imports.push(record);
+            continue;
+        }
+
         // 07/02: "URI requires CHECKSUM. Checksum form is
         // algorithm:lowercase_hex; Core 0.1.0 recognizes only sha256."
         if let Some((declared, span)) = &spec.checksum {
@@ -455,6 +507,37 @@ fn expand(
             resolved.order.push(loaded_id.clone());
             resolved.units.insert(loaded_id.clone(), staged);
             check_lcl_version(resolver, resolved, raw, &loaded_id);
+        }
+
+        // Core 0.3.0: a kind.project document or a project part is legal only
+        // as the evaluation root or a part of its project. As an IMPORT or
+        // EXTENSION source it is misplaced; it then behaves as an import that
+        // did not load, so no reference into it is inferred and nothing it
+        // imports is expanded.
+        if resolved
+            .units
+            .get(&loaded_id)
+            .is_some_and(crate::ResolvedUnit::is_usable)
+        {
+            if let Some((kind, kind_span)) = declared_kind(resolved, &loaded_id) {
+                if crate::project::misplaced_import(resolver.rules(), &kind) {
+                    Emitter::new(resolver.rules(), &resolved.units).emit(
+                        raw,
+                        ResolutionError::ProjectPlacement,
+                        &loaded_id,
+                        kind_span,
+                        "misplaced-import",
+                        format!(
+                            "{loaded_id} is a {kind} document and cannot be an {} source",
+                            spec.kind.block()
+                        ),
+                    );
+                    record.outcome = ImportOutcome::Loaded(loaded_id.clone());
+                    register_namespace(resolved, path, &namespace, &record, None);
+                    resolved.imports.push(record);
+                    continue;
+                }
+            }
         }
 
         record.outcome = ImportOutcome::Loaded(loaded_id.clone());
@@ -520,10 +603,15 @@ fn checksum_matches(declared: &str, loaded: &SourceUnit) -> bool {
 
 /// Contracts that need the declaration index: import versions, the extension
 /// contract, and namespace ownership against local declarations.
+///
+/// `namespace_complete` is false only for a Core 0.3.0 project whose namespace
+/// is incomplete: then no declaration index exists, and no prefix collision may
+/// be inferred from it (`block_schemas#/project_contract/namespace`).
 pub(crate) fn check_contracts(
     resolver: &Resolver<'_>,
     resolved: &mut Resolved,
     raw: &mut Vec<Diagnostic>,
+    namespace_complete: bool,
 ) {
     let records = resolved.imports.clone();
     for record in &records {
@@ -538,6 +626,13 @@ pub(crate) fn check_contracts(
             continue;
         }
         let (version, kind) = declared_specification(resolved, &loaded);
+        // A misplaced import behaves as one that did not load.
+        if kind
+            .as_deref()
+            .is_some_and(|k| crate::project::misplaced_import(resolver.rules(), k))
+        {
+            continue;
+        }
         let emitter = Emitter::new(resolver.rules(), &resolved.units);
 
         // 07/02: "IMPORT VERSION must equal imported SPECIFICATION.VERSION."
@@ -564,7 +659,9 @@ pub(crate) fn check_contracts(
         }
     }
 
-    check_prefix_ownership(resolver, resolved, raw);
+    if namespace_complete {
+        check_prefix_ownership(resolver, resolved, raw);
+    }
 }
 
 fn check_extension(
@@ -628,7 +725,12 @@ fn check_prefix_ownership(
     let emitter = Emitter::new(resolver.rules(), &resolved.units);
     for decl in resolved.declarations.all() {
         let first = decl.id.first_segment();
-        let key = (decl.source.clone(), first.to_string());
+        // A project part is owned by the entry's namespaces: the project shares
+        // one namespace, and only the entry declares IMPORT and EXTENSION.
+        let key = (
+            resolved.namespace_scope(&decl.source).clone(),
+            first.to_string(),
+        );
         let Some(owner) = resolved.namespaces.get(&key) else {
             continue;
         };

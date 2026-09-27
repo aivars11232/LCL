@@ -583,6 +583,18 @@ fn form_field(g: &Grammar, block: &str, name: &str, form: &str) -> Result<String
     };
     Ok(format!("{name}: {value}\n"))
 }
+/// The registered members of the closed domain a field's value kind names.
+fn closed_domain<'g>(
+    g: &'g Grammar,
+    block: &str,
+    name: &str,
+) -> Option<&'g std::collections::BTreeSet<String>> {
+    let kind = &g.schema(block)?.field(name)?.value_kind;
+    let domain = kind
+        .strip_prefix("qualified_identifier(")?
+        .strip_suffix(')')?;
+    g.closed_domain_members(domain)
+}
 fn field_form_cases(spec: &SpecPackage) -> Result<Vec<SourceCase>, String> {
     let grammar = Grammar::load(spec).map_err(|e| e.to_string())?;
     let inventory = crate::obligations::Obligations::load(spec)?;
@@ -599,12 +611,29 @@ fn field_form_cases(spec: &SpecPackage) -> Result<Vec<SourceCase>, String> {
                 continue;
             };
             let mut fields = field_context(&grammar, block, name)?;
-            put(&mut fields, name, form_field(&grammar, block, name, form)?);
+            let mut value = form_field(&grammar, block, name, form)?;
+            let mut expectation = Expectation::SourcePass(Reached::Grammar);
+            // Owner decision 4 (2026-09-26): a closed domain admits only its
+            // registered members. The qualified form is shown with one; no
+            // member has the simple form, so that form is rejected.
+            if let Some(members) = closed_domain(&grammar, block, name) {
+                match form {
+                    "qualified" => {
+                        let member = members.iter().next().ok_or("empty closed domain")?;
+                        value = format!("{name}: {member}\n");
+                    }
+                    "simple" if members.iter().all(|m| m.contains('.')) => {
+                        expectation = Expectation::Rejects("error.field.type".into());
+                    }
+                    _ => {}
+                }
+            }
+            put(&mut fields, name, value);
             cases.push(SourceCase {
                 id: id.clone(),
                 authority: row.authority.clone(),
                 bytes: document(&grammar, block, &fields, parent)?.into_bytes(),
-                expectation: Expectation::SourcePass(Reached::Grammar),
+                expectation,
             });
         }
     }

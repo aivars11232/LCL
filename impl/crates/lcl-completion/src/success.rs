@@ -301,14 +301,16 @@ fn select_failure(
     _checks: &Checks,
     _success: Option<&SuccessOutcome>,
 ) -> Option<SelectedFailure> {
-    let root = engine.root_source();
+    // "Select ... FAILURE declarations in the EXECUTE root source document";
+    // in a Core 0.3.0 project that is the entry and every obtained part, and
+    // the declaration index is already in project source order.
     let candidates: Vec<usize> = engine
         .resolved
         .declarations()
         .all()
         .iter()
         .enumerate()
-        .filter(|(_, d)| d.block == "FAILURE" && d.source == root)
+        .filter(|(_, d)| d.block == "FAILURE" && engine.resolved.is_root_document(&d.source))
         .map(|(index, _)| index)
         .collect();
 

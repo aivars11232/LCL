@@ -43,15 +43,42 @@ fn mirrored_error_set_equals_the_registry_resolution_stage() {
         .into_iter()
         .map(|e| e.id.clone())
         .collect();
+    // Core 0.1.0 registers no project error; those four belong to Core 0.3.0.
     let mirrored: BTreeSet<String> = ResolutionError::ALL
         .iter()
+        .filter(|e| !e.is_project())
         .map(|e| e.as_registry_str().to_string())
         .collect();
     assert_eq!(
         mirrored, registered,
-        "the mirrored enum must be exactly the registry's resolution-stage set"
+        "the mirrored core set must be exactly the registry's resolution-stage set"
     );
     assert_eq!(registered.len(), 14);
+}
+
+/// Core 0.3.0 registers the core set and the four project errors: the whole
+/// mirrored enum.
+#[test]
+fn the_whole_mirrored_enum_is_the_0_3_0_resolution_stage() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../canonical/LCL_Core_0.3.0")
+        .canonicalize()
+        .expect("the 0.3.0 package is present");
+    let spec =
+        lcl_spec::SpecPackage::open_with_anchor(root, &lcl_spec::anchor::APPROVED_PACKAGE_0_3_0)
+            .expect("the approved 0.3.0 package opens");
+    let registry = DiagnosticRegistry::load(&spec).expect("diagnostics load");
+    let registered: BTreeSet<String> = registry
+        .errors_by_stage(Stage::Resolution)
+        .into_iter()
+        .map(|e| e.id.clone())
+        .collect();
+    let mirrored: BTreeSet<String> = ResolutionError::ALL
+        .iter()
+        .map(|e| e.as_registry_str().to_string())
+        .collect();
+    assert_eq!(mirrored, registered);
+    assert_eq!(registered.len(), 18);
 }
 
 #[test]
@@ -74,14 +101,21 @@ fn deferred_identifiers_are_named_with_their_owner() {
     let emitted: BTreeSet<&str> = ResolutionError::emitted()
         .map(|e| e.as_registry_str())
         .collect();
-    assert_eq!(emitted.len(), 12);
+    assert_eq!(
+        emitted.len(),
+        16,
+        "12 core and the 4 Core 0.3.0 project errors"
+    );
+    assert!(ResolutionError::PROJECT
+        .iter()
+        .all(|e| emitted.contains(e.as_registry_str())));
     assert!(emitted.is_disjoint(&deferred));
 }
 
 #[test]
 fn error_metadata_is_copied_verbatim_from_the_registry() {
     let registry = DiagnosticRegistry::load(spec()).expect("diagnostics load");
-    for id in ResolutionError::ALL {
+    for id in ResolutionError::ALL.into_iter().filter(|e| !e.is_project()) {
         let def = registry
             .error(id.as_registry_str())
             .expect("registered identifier");
@@ -108,7 +142,7 @@ fn specificity_ranks_match_the_selection_contract() {
         errors,
         &["diagnostic_selection", "specificity_rank", "overrides"],
     );
-    for id in ResolutionError::ALL {
+    for id in ResolutionError::ALL.into_iter().filter(|e| !e.is_project()) {
         let expected = overrides
             .iter()
             .find(|(k, _)| k == id.as_registry_str())

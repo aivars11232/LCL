@@ -94,6 +94,25 @@ pub const APPROVED_PACKAGE_0_2_0: TrustAnchor = TrustAnchor {
     identity_digest: "061a79c92c76ed7bb05968adde24b016cae3b30666b8fb289c6ab968907e8b3f",
 };
 
+/// The LCL Core 0.3.0 package: the multi-file project feature, an unreleased
+/// candidate whose independent review is pending.
+///
+/// Corresponds to `canonical/LCL_Core_0.3.0` as created on 2026-09-26 under the
+/// Core 0.3 Task 01 (the multi-file project model) and committed as `1b55445`.
+/// Its `MANIFEST.json` has SHA-256
+/// `cdac90a6a1d871909f23604ec02d49860b0b2393badcbeed2e59dfe386905e53`. It
+/// declares no active language completion status and does not permit the
+/// release gate.
+///
+/// It is not the default. A caller selects it explicitly through
+/// [`crate::SpecPackage::open_with_anchor`].
+pub const APPROVED_PACKAGE_0_3_0: TrustAnchor = TrustAnchor {
+    label: "LCL Core 0.3.0 Project Feature Candidate (2026-09-26)",
+    formal_version: "0.3.0",
+    package_file_count: 291,
+    identity_digest: "bf66e36902dbef480db75772494d384847220959d76088dbe102b8ebff04aa12",
+};
+
 /// Accumulates a package identity digest from `(path, content-hash)` pairs.
 ///
 /// Callers must supply entries in ascending path order; [`IdentityBuilder::finish`]

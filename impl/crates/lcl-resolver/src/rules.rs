@@ -197,6 +197,12 @@ pub struct Rules {
     graph_delegating_operations: BTreeSet<String>,
     definition_kinds: BTreeSet<String>,
     document_kinds: BTreeSet<String>,
+    /// Core 0.3.0 `enum_groups.project_part_kinds`; empty for a package
+    /// without projects.
+    project_part_kinds: BTreeSet<String>,
+    /// True when the package registers the four `error.project` identifiers,
+    /// `kind.project` and the project part kinds: Core 0.3.0.
+    supports_projects: bool,
     reference_domains: BTreeMap<String, BTreeSet<String>>,
     /// `(block, field)` -> slot, for every field that receives a reference.
     reference_slots: BTreeMap<(String, String), ReferenceSlot>,
@@ -297,6 +303,10 @@ impl Rules {
         })?;
         let definition_kinds = string_set(enum_groups, "definition_kinds")?;
         let document_kinds = string_set(enum_groups, "document_kinds")?;
+        let project_part_kinds = match enum_groups.get("project_part_kinds") {
+            Some(_) => string_set(enum_groups, "project_part_kinds")?,
+            None => BTreeSet::new(),
+        };
 
         // Alias domains: the closed member sets a DEFINE kind.error / kind.event
         // / kind.status BASE may terminate in. `03_TYPES_AND_VALUES/05`: "BASE
@@ -375,7 +385,8 @@ impl Rules {
                 RulesLoadError::Malformed("document_kind_blocks has no kind.extension".into())
             })?;
 
-        // Diagnostic metadata for the fourteen registered resolution errors.
+        // Diagnostic metadata for the registered resolution errors: fourteen,
+        // and four more error.project identifiers in Core 0.3.0.
         let registry = DiagnosticRegistry::load(spec).map_err(RulesLoadError::Diagnostics)?;
         let registered: BTreeMap<&str, &lcl_diagnostics::ErrorDef> = registry
             .errors_by_stage(Stage::Resolution)
@@ -383,10 +394,31 @@ impl Rules {
             .map(|e| (e.id.as_str(), e))
             .collect();
 
-        let mirrored: BTreeSet<&str> = ResolutionError::ALL
+        // The four Core 0.3.0 project identifiers are mirrored only when the
+        // package registers them, and then all four together with
+        // kind.project and the part kinds: a partial project vocabulary fails
+        // closed below as a set mismatch or a malformed registry.
+        let supports_projects = ResolutionError::PROJECT
             .iter()
-            .map(|e| e.as_registry_str())
+            .any(|e| registered.contains_key(e.as_registry_str()));
+        let expected: Vec<ResolutionError> = ResolutionError::ALL
+            .into_iter()
+            .filter(|e| supports_projects || !e.is_project())
             .collect();
+        if supports_projects
+            != (document_kinds.contains("kind.project") && !project_part_kinds.is_empty())
+        {
+            return Err(RulesLoadError::Malformed(
+                "the project diagnostics, kind.project and project_part_kinds must be registered together"
+                    .into(),
+            ));
+        }
+        if !project_part_kinds.is_subset(&document_kinds) {
+            return Err(RulesLoadError::Malformed(
+                "every project part kind must be a document kind".into(),
+            ));
+        }
+        let mirrored: BTreeSet<&str> = expected.iter().map(|e| e.as_registry_str()).collect();
         let registered_ids: BTreeSet<&str> = registered.keys().copied().collect();
         if mirrored != registered_ids {
             return Err(RulesLoadError::ResolutionErrorSetMismatch {
@@ -423,7 +455,7 @@ impl Rules {
 
         let mut errors = BTreeMap::new();
         let mut supersedes = BTreeMap::new();
-        for id in ResolutionError::ALL {
+        for id in expected.iter().copied() {
             let key = id.as_registry_str();
             let def = registered.get(key).ok_or_else(|| {
                 RulesLoadError::Malformed(format!("{key} vanished from registry"))
@@ -464,6 +496,8 @@ impl Rules {
             graph_delegating_operations,
             definition_kinds,
             document_kinds,
+            project_part_kinds,
+            supports_projects,
             reference_domains,
             reference_slots,
             operation_slots,
@@ -519,6 +553,16 @@ impl Rules {
 
     pub fn is_document_kind(&self, kind: &str) -> bool {
         self.document_kinds.contains(kind)
+    }
+
+    /// True when the package defines Core 0.3.0 projects.
+    pub fn supports_projects(&self) -> bool {
+        self.supports_projects
+    }
+
+    /// True for a Core 0.3.0 project part kind (a `kind.part` role).
+    pub fn is_project_part_kind(&self, kind: &str) -> bool {
+        self.project_part_kinds.contains(kind)
     }
 
     pub fn reference_domain(&self, name: &str) -> Option<&BTreeSet<String>> {

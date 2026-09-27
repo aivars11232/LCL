@@ -148,19 +148,40 @@ pub struct SourceRequest {
 
 /// Why a provider could not supply a requested source.
 ///
-/// Every variant maps to `error.import.not_found` — "IMPORT or EXTENSION source
-/// cannot be resolved" — with the message retained as non-normative detail. A
-/// provider reports failure; it never decides a language outcome.
+/// Every failure of an import maps to `error.import.not_found` — "IMPORT or
+/// EXTENSION source cannot be resolved" — with the message retained as
+/// non-normative detail. A provider reports failure; it never decides a
+/// language outcome.
+///
+/// [`LoadError::absent`] is the one distinction a provider may make: the host
+/// reports that no source exists at the resolved reference. Core 0.3.0 omits an
+/// optional project part only on that report; any other failure, such as an
+/// unreadable file or a path outside the host's boundary, is not absence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadError {
     message: String,
+    absent: bool,
 }
 
 impl LoadError {
     pub fn new(message: impl Into<String>) -> Self {
         LoadError {
             message: message.into(),
+            absent: false,
         }
+    }
+
+    /// No source exists at the resolved reference.
+    pub fn absent(message: impl Into<String>) -> Self {
+        LoadError {
+            message: message.into(),
+            absent: true,
+        }
+    }
+
+    /// True when the host reported that no source exists.
+    pub fn is_absent(&self) -> bool {
+        self.absent
     }
 
     pub fn message(&self) -> &str {
@@ -288,7 +309,7 @@ impl SourceProvider for MemoryProvider {
         };
         match self.units.get(&key) {
             Some(bytes) => Ok(SourceUnit::new(SourceId::new(key), bytes.clone())),
-            None => Err(LoadError::new(format!(
+            None => Err(LoadError::absent(format!(
                 "no source unit is registered under {key:?}"
             ))),
         }

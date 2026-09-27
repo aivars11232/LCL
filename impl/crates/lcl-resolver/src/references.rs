@@ -646,12 +646,14 @@ impl Binder<'_, '_> {
     }
 
     /// True when the identifier's first segment names a namespace of this unit
-    /// whose source did not load.
+    /// whose source did not load. A Core 0.3.0 project part sees the entry's
+    /// namespaces, because the project shares one namespace.
     fn namespace_failed(&self, text: &str) -> bool {
         let first = text.split('.').next().unwrap_or(text);
+        let scope = self.resolved.namespace_scope(&self.path.unit);
         self.resolved
             .namespaces
-            .get(&(self.path.unit.clone(), first.to_string()))
+            .get(&(scope.clone(), first.to_string()))
             .is_some_and(|owner| owner.unit.is_none())
     }
 }

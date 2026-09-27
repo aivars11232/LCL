@@ -21,12 +21,15 @@
 //!   written twice;
 //! * `error.field.cardinality` — an occurrence count outside the signature;
 //! * `error.field.type` — a value whose *shape* is not one the value kind
-//!   accepts;
+//!   accepts, a value outside an enforced closed identifier domain
+//!   ([`crate::grammar::ENFORCED_DOMAINS`]), or a Core 0.3.0 `PART.SOURCE` that
+//!   is not one PATH call with one relative STRING;
 //! * `error.block.conditional_requirement` — a structurally decidable
 //!   conditional requirement that is unsatisfied.
 //!
-//! Nothing here resolves a reference, reads a registry domain, or types a
-//! value: see `grammar` for the exact split and its canonical evidence.
+//! Nothing here resolves a reference or types a value, and only the enforced
+//! closed domains are read: see `grammar` for the exact split and its
+//! canonical evidence.
 
 use crate::diagnostic::GrammarError;
 use crate::grammar::{BlockSchema, FieldSignature, FormSet, Grammar};
@@ -199,8 +202,9 @@ impl<'a> SchemaChecker<'a, '_> {
         let Some(kind) = kind else {
             return;
         };
-        // An unregistered kind is a value-domain question owned by resolution,
-        // so no top-level legality is asserted against it here.
+        // An unregistered kind is error.field.type at the KIND value, emitted
+        // by the closed-domain check in `value`; no top-level legality is
+        // asserted against a kind that does not exist.
         let Some(legal) = self.grammar.document_kind_blocks(kind).cloned() else {
             return;
         };
@@ -252,10 +256,18 @@ impl<'a> SchemaChecker<'a, '_> {
         }
 
         // "kind.task and kind.test require exactly one EXECUTE." —
-        // 04_GRAMMAR/01, echoed by EXECUTE's own conditional requirement.
+        // 04_GRAMMAR/01, echoed by EXECUTE's own conditional requirement; Core
+        // 0.3.0 adds kind.project, a kind no earlier package registers.
         // `location_rule`: an omitted required top-level block uses the
         // end-of-file offset.
-        if matches!(kind, Some("kind.task") | Some("kind.test")) && !counts.contains_key("EXECUTE")
+        if matches!(
+            kind,
+            Some("kind.task") | Some("kind.test") | Some("kind.project")
+        ) && self
+            .grammar
+            .document_kind_blocks(kind.unwrap_or_default())
+            .is_some()
+            && !counts.contains_key("EXECUTE")
         {
             let kind = kind.unwrap_or_default().to_string();
             let locus = Span::empty(self.lexed.source_len());
@@ -535,6 +547,45 @@ impl<'a> SchemaChecker<'a, '_> {
             return;
         }
 
+        // An enforced closed identifier domain: the value must be a member.
+        if let Some(domain) = sig
+            .value_kind
+            .strip_prefix("qualified_identifier(")
+            .and_then(|rest| rest.strip_suffix(')'))
+        {
+            if let (Some(members), Body::Inline(Value::Expression(Expr::Identifier(id)))) =
+                (self.grammar.closed_domain_members(domain), &field.body)
+            {
+                if !members.contains(&id.text) {
+                    let owner = schema.name.clone();
+                    let name = sig.name.clone();
+                    let text = id.text.clone();
+                    self.emit(
+                        GrammarError::FieldType,
+                        id.span,
+                        "closed_domain",
+                        format!(
+                            "`{text}` is not a registered {domain}, as `{owner}.{name}` requires"
+                        ),
+                    );
+                    return;
+                }
+            }
+        }
+
+        // Core 0.3.0 `part_source_path`: exactly `PATH("relative")`.
+        if sig.value_kind == "part_source_path" && !is_relative_path_call(&field.body) {
+            let owner = schema.name.clone();
+            let name = sig.name.clone();
+            self.emit(
+                GrammarError::FieldType,
+                field.body.span(),
+                "part_source_path",
+                format!("`{owner}.{name}` is one PATH call with one relative STRING"),
+            );
+            return;
+        }
+
         // A nested body under a field whose kind names a child block is that
         // block: validate it as one, so the whole tree is judged.
         if let (Some(nested), Some(child)) = (field.body.as_nested(), sig.nested_block.as_deref()) {
@@ -733,6 +784,24 @@ fn document_kind(doc: &Document) -> Option<String> {
 /// Every inline value satisfies `EXPRESSION`, so a value kind that accepts it
 /// imposes no shape at all; the specific bits are added only when the source
 /// actually spells that form.
+/// `PATH("...")` with one STRING argument that is not absolute: the only
+/// `part_source_path` form. The relative STRING resolves from the project
+/// entry, so an absolute path, the WORKSPACE form and a REF are all refused.
+fn is_relative_path_call(body: &Body) -> bool {
+    let Body::Inline(Value::Expression(Expr::Call(call))) = body else {
+        return false;
+    };
+    match call.arguments.as_slice() {
+        [Expr::Literal(literal)] => {
+            call.callable.text == "PATH"
+                && literal.kind == LiteralKind::String
+                && !literal.text.is_empty()
+                && !literal.text.starts_with('/')
+        }
+        _ => false,
+    }
+}
+
 fn observed_forms(body: &Body) -> FormSet {
     let value = match body {
         Body::Nested(_) => return FormSet::NESTED,

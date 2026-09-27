@@ -71,6 +71,7 @@ pub mod diagnostic;
 mod field;
 pub mod graph;
 pub mod imports;
+pub mod project;
 pub mod references;
 pub mod rules;
 pub mod source;
@@ -79,6 +80,7 @@ pub use declarations::{Declaration, DeclarationIndex, FullId};
 pub use diagnostic::{Cause, Diagnostic, ResolutionError, DEFERRED};
 pub use graph::{CandidateGraph, GraphNode, NodeKind};
 pub use imports::{ImportKind, ImportOutcome, ImportRecord, NamespaceOwner, UnitPath};
+pub use project::{PartState, Project, ProjectPart};
 pub use references::{Binding, BindingTarget};
 pub use rules::{RefTarget, ReferenceSlot, Rules, RulesLoadError};
 pub use source::{
@@ -195,16 +197,34 @@ impl<'a> Resolver<'a> {
             bindings: Vec::new(),
             graph: CandidateGraph::default(),
             diagnostics: Vec::new(),
+            project: None,
         };
 
         let mut raw = Vec::new();
-        imports::resolve_sources(self, provider, &mut resolved, &mut raw);
-        declarations::index(self, &mut resolved, &mut raw);
-        imports::check_contracts(self, &mut resolved, &mut raw);
-        references::bind(self, &mut resolved, &mut raw);
-        graph::build(self, &mut resolved, &mut raw);
+        if imports::root_version_supported(self, &mut resolved, &mut raw) {
+            // Core 0.3.0: a project part cannot be the root, and a project
+            // entry's parts load in PART source order before any import.
+            project::check_root(self, &resolved, &mut raw);
+            project::load_parts(self, provider, &mut resolved, &mut raw);
+            imports::expand_root(self, provider, &mut resolved, &mut raw);
+        }
+        // "The project namespace is resolved only when it is complete ...
+        // Otherwise no REF of the project is resolved, and no error.id.duplicate
+        // or error.reference.unresolved is inferred from the incomplete
+        // namespace." Outside a project the namespace is always complete.
+        let namespace_complete = resolved.project.as_ref().map_or(true, |p| p.complete);
+        if namespace_complete {
+            declarations::index(self, &mut resolved, &mut raw);
+        }
+        imports::check_contracts(self, &mut resolved, &mut raw, namespace_complete);
+        if namespace_complete {
+            references::bind(self, &mut resolved, &mut raw);
+            graph::build(self, &mut resolved, &mut raw);
+        }
 
-        resolved.diagnostics = diagnostic::select(raw, self.rules.supersedes());
+        let project_rank = resolved.project.as_ref().map(|_| resolved.unit_ranks());
+        resolved.diagnostics =
+            diagnostic::select(raw, self.rules.supersedes(), project_rank.as_ref());
         Ok(resolved)
     }
 
@@ -478,7 +498,8 @@ pub struct Resolved {
     /// Every unit reached by every exact import path, in deterministic
     /// depth-first declaration order. The root is always first.
     pub(crate) paths: Vec<UnitPath>,
-    /// Units in the deterministic order they were loaded: the root, then each
+    /// Units in the deterministic order they were loaded: the root, then (in a
+    /// Core 0.3.0 project) each obtained part in PART source order, then each
     /// import in source-declaration order, depth first.
     pub(crate) order: Vec<SourceId>,
     pub(crate) units: BTreeMap<SourceId, ResolvedUnit>,
@@ -489,9 +510,63 @@ pub struct Resolved {
     pub(crate) bindings: Vec<Binding>,
     pub(crate) graph: CandidateGraph,
     pub(crate) diagnostics: Vec<Diagnostic>,
+    /// The Core 0.3.0 project, when the root is a `kind.project` entry.
+    pub(crate) project: Option<Project>,
 }
 
 impl Resolved {
+    /// The Core 0.3.0 project this evaluation resolved, when its root is a
+    /// `kind.project` entry.
+    pub fn project(&self) -> Option<&Project> {
+        self.project.as_ref()
+    }
+
+    /// True for a unit whose declarations are the EXECUTE root source document:
+    /// the root itself and, in a Core 0.3.0 project, every loaded part. "For
+    /// check selection, the entry and every obtained part together are the
+    /// EXECUTE root source document", and every such unit is local
+    /// specification with no import ceiling.
+    pub fn is_root_document(&self, unit: &SourceId) -> bool {
+        unit == &self.root || self.project.as_ref().is_some_and(|p| p.contains(unit))
+    }
+
+    /// The unit whose namespaces a unit sees: the entry for a project part,
+    /// which shares the one project namespace, and the unit itself otherwise.
+    pub fn namespace_scope<'a>(&'a self, unit: &'a SourceId) -> &'a SourceId {
+        if unit != &self.root && self.project.as_ref().is_some_and(|p| p.contains(unit)) {
+            &self.root
+        } else {
+            unit
+        }
+    }
+
+    /// Order two source units for a source-order tie-break across units. A
+    /// Core 0.3.0 project compares them in project source order: the entry,
+    /// each part in PART source order, then imported units. Any other
+    /// evaluation keeps the identity order it always used.
+    pub fn compare_sources(&self, a: &SourceId, b: &SourceId) -> std::cmp::Ordering {
+        if self.project.is_none() {
+            return a.cmp(b);
+        }
+        let rank = |unit: &SourceId| {
+            self.order
+                .iter()
+                .position(|u| u == unit)
+                .unwrap_or(usize::MAX)
+        };
+        rank(a).cmp(&rank(b)).then(a.cmp(b))
+    }
+
+    /// Each loaded unit's position in load order, which in a project is
+    /// project source order.
+    pub(crate) fn unit_ranks(&self) -> BTreeMap<SourceId, usize> {
+        self.order
+            .iter()
+            .enumerate()
+            .map(|(rank, unit)| (unit.clone(), rank))
+            .collect()
+    }
+
     /// The root unit's identity.
     pub fn root(&self) -> &SourceId {
         &self.root

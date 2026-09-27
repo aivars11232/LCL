@@ -104,7 +104,10 @@ fn run(argv: &[String]) -> Result<i32, Failure> {
             let localized = localized_spec_root(&common, None)
                 .map(|root| open_localized(&root, &common.profiles))
                 .transpose()?;
-            if localized.is_none() {
+            let projects = project_spec_root(&common, None)
+                .map(|root| open_project_engine(&root, &common.profiles))
+                .transpose()?;
+            if localized.is_none() && projects.is_none() {
                 refuse_inactive_profiles(&common)?;
             }
             println!("lcl {}", env!("CARGO_PKG_VERSION"));
@@ -112,6 +115,9 @@ fn run(argv: &[String]) -> Result<i32, Failure> {
             println!("language 0.1.0");
             if localized.is_some() {
                 println!("language 0.2.0");
+            }
+            if projects.is_some() {
+                println!("language 0.3.0");
             }
             Ok(exit::SUCCESS)
         }
@@ -172,6 +178,23 @@ fn localized_spec_root(common: &Common, project: Option<&Project>) -> Option<Pat
     project.and_then(Project::localized_spec_path)
 }
 
+/// Where the canonical LCL Core 0.3.0 package is, when one is named.
+///
+/// The same explicit order again: `--project-spec`, then `LCL_PROJECT_SPEC`,
+/// then the manifest's `project_spec`. Naming none is not an error: a document
+/// declaring 0.3.0 is then refused as an unsupported version.
+fn project_spec_root(common: &Common, project: Option<&Project>) -> Option<PathBuf> {
+    if let Some(path) = &common.project_spec {
+        return Some(path.clone());
+    }
+    if let Some(value) = std::env::var_os("LCL_PROJECT_SPEC") {
+        if !value.is_empty() {
+            return Some(PathBuf::from(value));
+        }
+    }
+    project.and_then(Project::project_spec_path)
+}
+
 /// The engines a command judges documents with.
 ///
 /// Core 0.1.0 always, and the Core 0.2.0 engine with its localization stage
@@ -182,10 +205,12 @@ fn localized_spec_root(common: &Common, project: Option<&Project>) -> Option<Pat
 fn engines(common: &Common, project: Option<&Project>) -> Result<Engines, Failure> {
     let failed = |e: &dyn std::fmt::Display| Failure::environment(e.to_string());
     let core = Engine::open(spec_root(common, project)?).map_err(|e| failed(&e))?;
-    let Some(root) = localized_spec_root(common, project) else {
+    let localized_root = localized_spec_root(common, project);
+    let project_root = project_spec_root(common, project);
+    if localized_root.is_none() && project_root.is_none() {
         refuse_inactive_profiles(common)?;
         return Engines::new(core, None).map_err(|e| failed(&e));
-    };
+    }
     let mut files = match project {
         Some(project) => project
             .profile_files()
@@ -193,39 +218,66 @@ fn engines(common: &Common, project: Option<&Project>) -> Result<Engines, Failur
         None => Vec::new(),
     };
     files.extend(common.profiles.iter().cloned());
-    let mut localized = open_localized(&root, &files)?;
-    if common.locked {
-        if let Some(lock) = project.and_then(|p| Lock::read(p.lock_path()).ok()) {
-            let pins: BTreeMap<SourceId, Pin> = lock
-                .locales
-                .iter()
-                .filter_map(|(unit, pinned)| {
-                    Some((
-                        SourceId::new(unit.clone()),
-                        Pin {
-                            locale: LocaleTag::parse(&pinned.locale).ok()?,
-                            identity: pinned.profile_identity.clone(),
-                        },
-                    ))
-                })
-                .collect();
-            localized = localized.with_locale_pins(pins);
+    let pins: Option<BTreeMap<SourceId, Pin>> = if common.locked {
+        project
+            .and_then(|p| Lock::read(p.lock_path()).ok())
+            .map(|lock| {
+                lock.locales
+                    .iter()
+                    .filter_map(|(unit, pinned)| {
+                        Some((
+                            SourceId::new(unit.clone()),
+                            Pin {
+                                locale: LocaleTag::parse(&pinned.locale).ok()?,
+                                identity: pinned.profile_identity.clone(),
+                            },
+                        ))
+                    })
+                    .collect()
+            })
+    } else {
+        None
+    };
+    let pinned = |engine: Engine| match &pins {
+        Some(pins) => engine.with_locale_pins(pins.clone()),
+        None => engine,
+    };
+    let localized = localized_root
+        .map(|root| open_localized(&root, &files).map(pinned))
+        .transpose()?;
+    let engines = Engines::new(core, localized).map_err(|e| failed(&e))?;
+    match project_root {
+        Some(root) => {
+            let projects = pinned(open_project_engine(&root, &files)?);
+            engines.with_project(projects).map_err(|e| failed(&e))
         }
+        None => Ok(engines),
     }
-    Engines::new(core, Some(localized)).map_err(|e| failed(&e))
 }
 
-/// A `--profile` is used only by the Core 0.2.0 localization stage. Without a
-/// localized package it would be silently ignored, so it is refused.
+/// A `--profile` is used only by a localization stage, Core 0.2.0's or Core
+/// 0.3.0's. Without either package it would be silently ignored, so it is
+/// refused.
 fn refuse_inactive_profiles(common: &Common) -> Result<(), Failure> {
     if common.profiles.is_empty() {
         return Ok(());
     }
     Err(Failure::usage(
         "--profile needs a localized specification package: pass \
-         --localized-spec <path>, set LCL_LOCALIZED_SPEC, or declare \
-         \"localized_spec\" in lcl.project.json",
+         --localized-spec <path> or --project-spec <path>, set \
+         LCL_LOCALIZED_SPEC or LCL_PROJECT_SPEC, or declare \"localized_spec\" \
+         or \"project_spec\" in lcl.project.json",
     ))
+}
+
+/// Open the Core 0.3.0 package at `root` with its localization stage.
+fn open_project_engine(root: &Path, profiles: &[PathBuf]) -> Result<Engine, Failure> {
+    Engine::open_project(root, profiles).map_err(|e| {
+        Failure::environment(format!(
+            "the Core 0.3.0 specification package {}: {e}",
+            root.display()
+        ))
+    })
 }
 
 /// Open the Core 0.2.0 package at `root` with its localization stage.

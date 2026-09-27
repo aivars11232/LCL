@@ -80,9 +80,10 @@ impl Stage {
         Stage::VerificationOrCompletion,
     ];
 
-    /// The closed stage order a package of `formal_version` declares.
+    /// The closed stage order a package of `formal_version` declares. Core
+    /// 0.2.0 added the localization stage and Core 0.3.0 keeps it.
     pub fn order_for(formal_version: &str) -> &'static [Stage] {
-        if formal_version == "0.2.0" {
+        if matches!(formal_version, "0.2.0" | "0.3.0") {
             &Stage::ORDER
         } else {
             &Stage::ORDER_0_1_0
@@ -439,6 +440,7 @@ mod tests {
         assert!(Stage::Localization.precedes(Stage::Lexical));
         assert_eq!(Stage::order_for("0.1.0"), Stage::ORDER_0_1_0);
         assert_eq!(Stage::order_for("0.2.0"), Stage::ORDER);
+        assert_eq!(Stage::order_for("0.3.0"), Stage::ORDER);
         assert!(Stage::Lexical.precedes(Stage::Execution));
         assert!(!Stage::Execution.precedes(Stage::Lexical));
         assert!(!Stage::Validation.precedes(Stage::Validation));

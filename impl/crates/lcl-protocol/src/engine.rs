@@ -39,8 +39,8 @@ use crate::inputs::{Inputs, Supplied};
 use crate::record::{
     CheckRecord, Command, CompletionRecord, DeclarationRecord, DiagnosticRecord, EventRecord,
     EvidenceRecord, ExecutionRecord, ImportRecord, InputRecord, InvocationRecord, LocaleRecord,
-    NavigationRecord, Outcome, OutputRecord, PlanRecord, Reached, ReferenceRecord, Report,
-    SourceRecord, SpecRecord, StructureRecord, VerdictRecord,
+    NavigationRecord, Outcome, OutputRecord, PlanRecord, ProjectPartRecord, ProjectRecord, Reached,
+    ReferenceRecord, Report, SourceRecord, SpecRecord, StructureRecord, VerdictRecord,
 };
 use lcl_checker::{
     Checked, Checker, Contracts as StaticContracts, EarlierStageDefect, Outcome as CheckOutcome,
@@ -63,7 +63,7 @@ use lcl_runtime::{Contracts as RuntimeContracts, Execution, Host, Operations, Ru
 use lcl_semantics::{
     Contracts as PreflightContracts, Invocation, Outcome as PreflightOutcome, Planned, Preflight,
 };
-use lcl_spec::anchor::APPROVED_PACKAGE_0_2_0;
+use lcl_spec::anchor::{TrustAnchor, APPROVED_PACKAGE_0_2_0, APPROVED_PACKAGE_0_3_0};
 use lcl_spec::{SpecError, SpecPackage};
 use lcl_stdlib::{Stdlib, StdlibError};
 use std::collections::BTreeMap;
@@ -213,8 +213,26 @@ impl Engine {
         root: impl AsRef<Path>,
         profile_files: &[PathBuf],
     ) -> Result<Engine, EngineError> {
-        let spec = SpecPackage::open_with_anchor(root, &APPROVED_PACKAGE_0_2_0)
-            .map_err(EngineError::Package)?;
+        Engine::open_with_localization(root, &APPROVED_PACKAGE_0_2_0, profile_files)
+    }
+
+    /// Open the approved Core 0.3.0 package at `root`, the multi-file project
+    /// feature, with its localization stage over the locale profiles in
+    /// `profile_files` exactly as [`Engine::open_localized`] does. A profile
+    /// for this engine names `lcl_version` 0.3.0.
+    pub fn open_project(
+        root: impl AsRef<Path>,
+        profile_files: &[PathBuf],
+    ) -> Result<Engine, EngineError> {
+        Engine::open_with_localization(root, &APPROVED_PACKAGE_0_3_0, profile_files)
+    }
+
+    fn open_with_localization(
+        root: impl AsRef<Path>,
+        anchor: &'static TrustAnchor,
+        profile_files: &[PathBuf],
+    ) -> Result<Engine, EngineError> {
+        let spec = SpecPackage::open_with_anchor(root, anchor).map_err(EngineError::Package)?;
         if profile_files.len() > MAX_PROFILE_FILES {
             return Err(EngineError::Contracts {
                 layer: "localization",
@@ -511,8 +529,34 @@ impl Engine {
         }
     }
 
-    /// The one staged walk every command uses.
+    /// The one staged walk every command uses, with a Core 0.3.0 project's
+    /// admission read off the walk's own verdict.
     fn request(
+        &self,
+        command: Command,
+        unit: &SourceUnit,
+        provider: &dyn SourceProvider,
+        inputs: &Inputs,
+        effects: Option<(&mut dyn Operations, &mut dyn Host)>,
+        admit: Option<&mut dyn FnMut(&Report) -> bool>,
+    ) -> Report {
+        let mut report = self.walk(command, unit, provider, inputs, effects, admit);
+        let outcome = report.outcome;
+        if let Some(project) = &mut report.project {
+            if project.admission.is_empty() {
+                project.admission = match outcome {
+                    Outcome::Rejected => "rejected",
+                    Outcome::Accepted | Outcome::Refused => "not_evaluated",
+                }
+                .to_string();
+            }
+            settle_files(project, &report.diagnostics);
+        }
+        report
+    }
+
+    /// The staged walk itself.
+    fn walk(
         &self,
         command: Command,
         unit: &SourceUnit,
@@ -538,6 +582,7 @@ impl Engine {
             navigation: None,
             execution: None,
             completion: None,
+            project: None,
         };
 
         // Steps 1 to 4. The resolver drives the lexer and parser itself, so a
@@ -585,6 +630,9 @@ impl Engine {
             })
             .collect();
 
+        // Core 0.3.0: the project the root declares, as resolution found it.
+        report.project = resolved.project().map(project_record);
+
         // The caller's admission check, if it installed one. This is the first
         // moment the loaded source has an identity to judge, and it is before
         // every later step, so a refusal here precedes any effect rather than
@@ -597,10 +645,16 @@ impl Engine {
 
         // Steps 1 to 3 for every loaded unit, including imported ones that
         // failed an earlier stage while the root did not.
-        let early: Vec<DiagnosticRecord> = resolved
+        let mut early: Vec<DiagnosticRecord> = resolved
             .units()
             .flat_map(|u| unit_diagnostics(u, self.localization.as_ref()))
             .collect();
+        // A Core 0.3.0 project orders diagnostics by stage, then units in
+        // project source order, which is the resolver's load order. A stable
+        // sort by stage keeps each unit's own stable order and the unit order.
+        if resolved.project().is_some() {
+            early.sort_by_key(|d| d.stage);
+        }
         if !early.is_empty() {
             report.reached = early
                 .iter()
@@ -784,6 +838,13 @@ impl Engine {
         if planned.outcome() != PreflightOutcome::Planned {
             mark_primary(&mut report.diagnostics);
             return report;
+        }
+
+        // Steps 1 to 9 completed for the whole program with no unhandled
+        // diagnostic: a Core 0.3.0 project is admitted here, and only here, and
+        // no effect of it began earlier.
+        if let Some(project) = &mut report.project {
+            project.admission = "admitted".to_string();
         }
 
         if command != Command::Run {
@@ -988,7 +1049,12 @@ impl Engine {
 pub struct Engines {
     core: Engine,
     localized: Option<Engine>,
+    /// The Core 0.3.0 engine, when one is attached with [`Engines::with_project`].
+    project: Option<Engine>,
 }
+
+/// The language version whose documents the Core 0.3.0 engine judges.
+pub const PROJECT_VERSION: &str = "0.3.0";
 
 impl Engines {
     /// `core` must not apply the localization stage; `localized`, when given,
@@ -1011,7 +1077,28 @@ impl Engines {
                 "the localized engine must apply the localization stage",
             ));
         }
-        Ok(Engines { core, localized })
+        Ok(Engines {
+            core,
+            localized,
+            project: None,
+        })
+    }
+
+    /// Attach the Core 0.3.0 engine, which must be the approved Core 0.3.0
+    /// package with its localization stage ([`Engine::open_project`]).
+    pub fn with_project(mut self, project: Engine) -> Result<Engines, EngineError> {
+        if project.localization_contract().is_none()
+            || project.spec().formal_version() != PROJECT_VERSION
+        {
+            return Err(EngineError::Contracts {
+                layer: "dispatch",
+                detail:
+                    "the project engine must be the Core 0.3.0 engine with its localization stage"
+                        .to_string(),
+            });
+        }
+        self.project = Some(project);
+        Ok(self)
     }
 
     pub fn core(&self) -> &Engine {
@@ -1022,21 +1109,32 @@ impl Engines {
         self.localized.as_ref()
     }
 
+    /// The Core 0.3.0 engine, when one is attached.
+    pub fn project(&self) -> Option<&Engine> {
+        self.project.as_ref()
+    }
+
     /// The engine that judges `unit`.
     ///
     /// * When the Core 0.1.0 reading lexes, the declared `LCL` `VERSION`
-    ///   decides: exactly `0.2.0` is the 0.2.0 engine's, anything else stays
-    ///   with Core 0.1.0.
-    /// * Otherwise the localized reading decides. A rejected localization is
-    ///   the 0.2.0 engine's exactly when it decides the result (D9). An
-    ///   accepted reading is the 0.2.0 engine's only when it declares exactly
-    ///   `0.2.0`; a selected profile never establishes that authority.
+    ///   decides: exactly `0.2.0` is the 0.2.0 engine's, exactly `0.3.0` the
+    ///   0.3.0 engine's, and anything else, or a version whose engine is not
+    ///   present, stays with Core 0.1.0.
+    /// * Otherwise the localized reading decides. The 0.3.0 engine takes a
+    ///   unit only when its own localized reading is accepted and declares
+    ///   exactly `0.3.0`. Every other unit is routed exactly as without a 0.3.0
+    ///   engine: a rejected localization is the 0.2.0 engine's exactly when it
+    ///   decides the result (D9), and an accepted reading is the 0.2.0
+    ///   engine's only when it declares exactly `0.2.0`; a selected profile
+    ///   never establishes that authority. Only when no 0.2.0 engine is
+    ///   present does a rejected 0.3.0 localization that decides the result
+    ///   go to the 0.3.0 engine.
     ///   A reading the lexical stage rejected declares the `VERSION` of a
     ///   header line that precedes its first lexical defect.
     pub fn engine_for(&self, unit: &SourceUnit) -> &Engine {
-        let Some(localized) = &self.localized else {
+        if self.localized.is_none() && self.project.is_none() {
             return &self.core;
-        };
+        }
         let declared = |staged: &ResolvedUnit| {
             staged
                 .document()
@@ -1045,12 +1143,29 @@ impl Engines {
         };
         let canonical = self.core.stage(unit);
         if canonical.lexed().primary().is_none() {
-            return if declared(&canonical).as_deref() == Some(LANGUAGE_VERSION) {
-                localized
-            } else {
-                &self.core
+            return match declared(&canonical).as_deref() {
+                Some(LANGUAGE_VERSION) => self.localized.as_ref().unwrap_or(&self.core),
+                Some(PROJECT_VERSION) => self.project.as_ref().unwrap_or(&self.core),
+                _ => &self.core,
             };
         }
+        if let Some(project) = &self.project {
+            let staged = project.stage(unit);
+            if let Some(outcome) = staged.localization() {
+                if outcome.is_accepted() && declared(&staged).as_deref() == Some(PROJECT_VERSION) {
+                    return project;
+                }
+                if self.localized.is_none()
+                    && !outcome.is_accepted()
+                    && localization_decides(outcome, unit.bytes())
+                {
+                    return project;
+                }
+            }
+        }
+        let Some(localized) = &self.localized else {
+            return &self.core;
+        };
         let staged = localized.stage(unit);
         let Some(outcome) = staged.localization() else {
             return &self.core;
@@ -1244,6 +1359,61 @@ fn mark_primary(diagnostics: &mut [DiagnosticRecord]) {
     if let Some(first) = diagnostics.first_mut() {
         first.primary = true;
     }
+}
+
+/// The report record of a Core 0.3.0 project, copied from the resolver. Its
+/// admission is set once the walk's verdict is known.
+fn project_record(project: &lcl_resolver::Project) -> ProjectRecord {
+    ProjectRecord {
+        entry: project.entry.to_string(),
+        order: project.units().map(SourceId::to_string).collect(),
+        parts: project
+            .parts
+            .iter()
+            .map(|part| ProjectPartRecord {
+                id: part.id.clone(),
+                source: part.source.clone(),
+                source_span: part.source_span,
+                unit: part.unit.as_ref().map(SourceId::to_string),
+                kind: part.kind.clone(),
+                required: part.required,
+                state: part.state.as_str().to_string(),
+                status: String::new(),
+            })
+            .collect(),
+        entry_status: String::new(),
+        complete: project.complete,
+        admission: String::new(),
+    }
+}
+
+/// Each project file's status from the report's final diagnostics.
+///
+/// This decides no project rule. It only says in which file each reported
+/// diagnostic lies, so that a consumer can show the files that block the
+/// project without judging LCL itself. A missing or duplicate part is reported
+/// at its PART SOURCE in the entry, and that diagnostic belongs to the part's
+/// own row, not to the entry: the entry is `invalid` only for a diagnostic
+/// elsewhere in it.
+fn settle_files(project: &mut ProjectRecord, diagnostics: &[DiagnosticRecord]) {
+    let clean = |unit: &str| !diagnostics.iter().any(|d| d.source == unit);
+    for part in &mut project.parts {
+        part.status = match (part.state.as_str(), &part.unit) {
+            ("loaded", Some(unit)) if clean(unit) => "ready",
+            ("loaded" | "rejected", _) => "invalid",
+            (state, _) => state,
+        }
+        .to_string();
+    }
+    let owned_by_part = |d: &DiagnosticRecord| {
+        project.parts.iter().any(|part| {
+            matches!(part.state.as_str(), "missing" | "duplicate") && d.span == part.source_span
+        })
+    };
+    let entry_invalid = diagnostics
+        .iter()
+        .any(|d| d.source == project.entry && !owned_by_part(d));
+    project.entry_status = if entry_invalid { "invalid" } else { "ready" }.to_string();
 }
 
 /// A record for a failure that carries an identifier but no locus.

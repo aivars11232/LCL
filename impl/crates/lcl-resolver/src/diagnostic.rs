@@ -5,6 +5,9 @@
 //! identifiers at `stage: resolution`. [`ResolutionError`] mirrors all
 //! fourteen so the set can be checked against the registry rather than trusted,
 //! exactly as `lcl_lexer::LexicalError` and `lcl_parser::GrammarError` are.
+//! Core 0.3.0 registers four more, the `error.project` identifiers
+//! ([`ResolutionError::PROJECT`]); a package registers all four or none, and
+//! [`crate::Rules::load`] checks the registered set against exactly that.
 //!
 //! Two of the fourteen are **not emitted by this milestone**. They are listed in
 //! [`DEFERRED`] with the layer that owns them, and no code path constructs them:
@@ -60,6 +63,18 @@ pub enum ResolutionError {
     /// An override is unresolved, circular, or lets lower authority defeat
     /// higher authority. **Deferred**: see [`DEFERRED`].
     OverrideInvalid,
+    /// Core 0.3.0: two PART declarations, or a PART and an IMPORT or
+    /// EXTENSION, of one project resolve to the same source unit.
+    ProjectPartDuplicate,
+    /// Core 0.3.0: a project part does not declare SPECIFICATION KIND equal to
+    /// the project part kind its PART declares.
+    ProjectPartKind,
+    /// Core 0.3.0: the source of a required project part, or of an optional
+    /// part whose source is not absent, cannot be obtained.
+    ProjectPartMissing,
+    /// Core 0.3.0: a kind.project document occurs other than as the evaluation
+    /// root, or a project part other than as a part of the root's project.
+    ProjectPlacement,
     /// A prohibited dependency cycle.
     ReferenceCycle,
     /// A reference resolves to a declaration kind illegal in that field.
@@ -73,8 +88,8 @@ pub enum ResolutionError {
 }
 
 impl ResolutionError {
-    /// Every registered resolution identifier, in registry order.
-    pub const ALL: [ResolutionError; 14] = [
+    /// Every resolution identifier this build mirrors, in registry order.
+    pub const ALL: [ResolutionError; 18] = [
         ResolutionError::ConflictHard,
         ResolutionError::ExtensionInvalid,
         ResolutionError::IdDuplicate,
@@ -84,12 +99,30 @@ impl ResolutionError {
         ResolutionError::NamespaceInvalid,
         ResolutionError::OperationUndefined,
         ResolutionError::OverrideInvalid,
+        ResolutionError::ProjectPartDuplicate,
+        ResolutionError::ProjectPartKind,
+        ResolutionError::ProjectPartMissing,
+        ResolutionError::ProjectPlacement,
         ResolutionError::ReferenceCycle,
         ResolutionError::ReferenceKind,
         ResolutionError::ReferenceUnresolved,
         ResolutionError::VersionMismatch,
         ResolutionError::VersionUnsupported,
     ];
+
+    /// The four Core 0.3.0 project identifiers. A package registers all of
+    /// them or none: Core 0.1.0 and 0.2.0 register none.
+    pub const PROJECT: [ResolutionError; 4] = [
+        ResolutionError::ProjectPartDuplicate,
+        ResolutionError::ProjectPartKind,
+        ResolutionError::ProjectPartMissing,
+        ResolutionError::ProjectPlacement,
+    ];
+
+    /// True for a Core 0.3.0 project identifier.
+    pub fn is_project(self) -> bool {
+        ResolutionError::PROJECT.contains(&self)
+    }
 
     pub fn as_registry_str(self) -> &'static str {
         match self {
@@ -102,6 +135,10 @@ impl ResolutionError {
             ResolutionError::NamespaceInvalid => "error.namespace.invalid",
             ResolutionError::OperationUndefined => "error.operation.undefined",
             ResolutionError::OverrideInvalid => "error.override.invalid",
+            ResolutionError::ProjectPartDuplicate => "error.project.part_duplicate",
+            ResolutionError::ProjectPartKind => "error.project.part_kind",
+            ResolutionError::ProjectPartMissing => "error.project.part_missing",
+            ResolutionError::ProjectPlacement => "error.project.placement",
             ResolutionError::ReferenceCycle => "error.reference.cycle",
             ResolutionError::ReferenceKind => "error.reference.kind",
             ResolutionError::ReferenceUnresolved => "error.reference.unresolved",
@@ -224,9 +261,16 @@ impl fmt::Display for Diagnostic {
 /// specificity descending, then identifier". A single-unit stage could ignore
 /// the first key; this one cannot, so units sort by identity first and the
 /// result is independent of the order in which units were loaded.
+///
+/// A Core 0.3.0 project evaluation supplies `project_rank`: "a project
+/// evaluation compares source units in project source order before byte
+/// offsets" (`block_schemas#/project_contract/order`), so a file's name never
+/// decides which diagnostic is primary. Every other evaluation keeps the
+/// identity order.
 pub(crate) fn select(
     mut raw: Vec<Diagnostic>,
     supersedes: &BTreeMap<ResolutionError, BTreeSet<ResolutionError>>,
+    project_rank: Option<&BTreeMap<SourceId, usize>>,
 ) -> Vec<Diagnostic> {
     type Key = (ResolutionError, SourceId, Span, Cause);
 
@@ -250,9 +294,15 @@ pub(crate) fn select(
     raw.retain(|d| seen.insert((d.id, d.source.clone(), d.span, d.cause.clone())));
 
     // 3. `stable_order`.
+    let unit_order = |a: &SourceId, b: &SourceId| match project_rank {
+        Some(rank) => {
+            let of = |s: &SourceId| rank.get(s).copied().unwrap_or(usize::MAX);
+            of(a).cmp(&of(b)).then(a.cmp(b))
+        }
+        None => a.cmp(b),
+    };
     raw.sort_by(|a, b| {
-        a.source
-            .cmp(&b.source)
+        unit_order(&a.source, &b.source)
             .then(a.span.start.cmp(&b.span.start))
             .then(b.specificity_rank.cmp(&a.specificity_rank))
             .then(a.id.cmp(&b.id))

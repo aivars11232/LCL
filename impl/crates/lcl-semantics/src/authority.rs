@@ -295,9 +295,12 @@ pub(crate) fn establish(engine: &mut Engine) {
         // "Imported declarations cannot exceed the lower of their source
         // authority and IMPORT authority."
         let import_ceiling = ceilings.get(&source).copied().flatten();
+        // Core 0.3.0: "Every project unit is local specification ... and no
+        // import ceiling applies to a project part", so a part is ceiling-free
+        // exactly like the root.
         let ceiling = match import_ceiling {
             Some(limit) => Some(limit.min(source_authority)),
-            None if source != *engine.resolved.root() => Some(source_authority),
+            None if !engine.resolved.is_root_document(&source) => Some(source_authority),
             None => None,
         };
         let authority = match ceiling {

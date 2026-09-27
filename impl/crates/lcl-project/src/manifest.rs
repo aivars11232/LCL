@@ -44,6 +44,7 @@ const KNOWN_KEYS: &[&str] = &[
     "cache",
     "lock",
     "localized_spec",
+    "project_spec",
     "profiles",
 ];
 
@@ -84,6 +85,9 @@ pub struct Manifest {
     /// Where the canonical LCL Core 0.2.0 package, whose localization stage
     /// judges localized documents, is, as written.
     pub localized_spec: Option<String>,
+    /// Where the canonical LCL Core 0.3.0 package, whose engine judges 0.3.0
+    /// documents and projects, is, as written.
+    pub project_spec: Option<String>,
     /// The directory of `<locale>.json` locale profiles, as written.
     pub profiles: Option<String>,
 }
@@ -158,6 +162,7 @@ impl Manifest {
             cache: text_field("cache")?,
             lock: text_field("lock")?,
             localized_spec: text_field("localized_spec")?,
+            project_spec: text_field("project_spec")?,
             profiles: text_field("profiles")?,
         })
     }

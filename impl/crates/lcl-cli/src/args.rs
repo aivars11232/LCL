@@ -68,6 +68,10 @@ pub struct Common {
     /// The canonical LCL Core 0.2.0 package root, whose localization stage
     /// judges localized documents. Absent: every document is Core 0.1.0's.
     pub localized_spec: Option<PathBuf>,
+    /// The canonical LCL Core 0.3.0 package root, whose engine judges
+    /// documents declaring 0.3.0, projects included. Absent: a 0.3.0 document
+    /// is refused as an unsupported version.
+    pub project_spec: Option<PathBuf>,
     /// Locale profile files, in the order given.
     pub profiles: Vec<PathBuf>,
     /// The project root.
@@ -265,6 +269,13 @@ fn split(argv: &[String]) -> Result<(Vec<String>, Common), UsageError> {
                 }
                 common.localized_spec = Some(PathBuf::from(path));
             }
+            "--project-spec" => {
+                let path = value("--project-spec")?;
+                if common.project_spec.is_some() {
+                    return Err(UsageError::new("--project-spec was given more than once"));
+                }
+                common.project_spec = Some(PathBuf::from(path));
+            }
             "--profile" => common.profiles.push(PathBuf::from(value("--profile")?)),
             "--project" => {
                 let path = value("--project")?;
@@ -361,6 +372,10 @@ pub fn usage() -> String {
         (
             "--localized-spec <path>",
             "the canonical LCL Core 0.2.0 package, for localized documents",
+        ),
+        (
+            "--project-spec <path>",
+            "the canonical LCL Core 0.3.0 package, for 0.3.0 documents and projects",
         ),
         (
             "--profile <file>",

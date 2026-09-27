@@ -237,6 +237,94 @@ impl SpecRecord {
     }
 }
 
+/// A Core 0.3.0 project: the entry, its declared parts and whether the whole
+/// specification was admitted (`05_SEMANTICS/13`).
+///
+/// Every field is copied from the resolver's own project record and the
+/// report's own verdict; nothing here decides a project rule.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectRecord {
+    /// The entry unit: the evaluation root.
+    pub entry: String,
+    /// The entry's own file status, as [`ProjectPartRecord::status`] gives
+    /// it for a part: `ready` or `invalid`.
+    pub entry_status: String,
+    /// The units in the project namespace, in project source order: the entry,
+    /// then each loaded part in PART source order.
+    pub order: Vec<String>,
+    /// Every PART declaration, in PART source order.
+    pub parts: Vec<ProjectPartRecord>,
+    /// Every required part obtained and every obtained part admitted by the
+    /// part rules: the project namespace was resolved.
+    pub complete: bool,
+    /// `05_SEMANTICS/13`: "A project is admitted exactly when processing
+    /// steps 1 through 9 complete for the whole project with no unhandled
+    /// diagnostic." `admitted` is set at the moment the preflight (step 9)
+    /// plans the program; `rejected` when a diagnostic rejected it before
+    /// that; `not_evaluated` when the command stopped before step 9 without
+    /// one. Only an admitted project may reach an effect.
+    pub admission: String,
+}
+
+impl ProjectRecord {
+    fn to_json(&self) -> Node {
+        Object::new()
+            .with("entry", Node::string(&self.entry))
+            .with("entry_status", Node::string(&self.entry_status))
+            .with("order", Node::array(self.order.iter().map(Node::string)))
+            .with(
+                "parts",
+                Node::array(self.parts.iter().map(ProjectPartRecord::to_json)),
+            )
+            .with("complete", Node::Bool(self.complete))
+            .with("admission", Node::string(&self.admission))
+            .into()
+    }
+}
+
+/// One PART declaration and what became of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectPartRecord {
+    /// The PART's own ID.
+    pub id: String,
+    /// The relative path its SOURCE names, as written.
+    pub source: String,
+    /// The SOURCE value in the entry, where a missing or duplicate part is
+    /// reported.
+    pub source_span: Span,
+    /// The unit it resolved to, when it was obtained.
+    pub unit: Option<String>,
+    /// The part kind: the part's role.
+    pub kind: String,
+    pub required: bool,
+    /// `loaded`, `omitted`, `missing`, `rejected` or `duplicate`.
+    pub state: String,
+    /// Where the reported diagnostics leave this file, for a per-file view of
+    /// the project (the Core 0.3 usage contract's project readiness):
+    /// `ready` when the part was obtained and no reported diagnostic lies in
+    /// it; `invalid` when one does or the part rules rejected it; `missing`,
+    /// `omitted` or `duplicate` as its `state` says. `05_SEMANTICS/13` admits
+    /// or rejects only the whole project, so `ready` never admits anything by
+    /// itself and says nothing of checks a rejected evaluation did not reach:
+    /// only [`ProjectRecord::admission`] does.
+    pub status: String,
+}
+
+impl ProjectPartRecord {
+    fn to_json(&self) -> Node {
+        Object::new()
+            .with("id", Node::string(&self.id))
+            .with("source", Node::string(&self.source))
+            .with("source_span", span_json(self.source_span))
+            .with("unit", self.unit.as_ref().map_or(Node::Null, Node::string))
+            .with("kind", Node::string(&self.kind))
+            .with("required", Node::Bool(self.required))
+            .with("state", Node::string(&self.state))
+            .with("status", Node::string(&self.status))
+            .into()
+    }
+}
+
 /// One source unit the engine actually loaded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceRecord {
@@ -1046,6 +1134,9 @@ pub struct Report {
     pub execution: Option<ExecutionRecord>,
     /// Present for `run`, once execution finished.
     pub completion: Option<CompletionRecord>,
+    /// Present when the root is a Core 0.3.0 `kind.project` entry that
+    /// resolution reached.
+    pub project: Option<ProjectRecord>,
 }
 
 impl Report {
@@ -1100,6 +1191,7 @@ impl Report {
                 "completion",
                 self.completion.as_ref().map(CompletionRecord::to_json),
             )
+            .with_some("project", self.project.as_ref().map(ProjectRecord::to_json))
             .into()
     }
 }

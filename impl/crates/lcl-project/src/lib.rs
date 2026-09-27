@@ -234,6 +234,11 @@ impl Project {
             .map(|p| self.resolve(p))
     }
 
+    /// The declared Core 0.3.0 package path, resolved against the root.
+    pub fn project_spec_path(&self) -> Option<PathBuf> {
+        self.manifest.project_spec.as_ref().map(|p| self.resolve(p))
+    }
+
     /// The declared locale profile directory, resolved against the root.
     pub fn profiles_path(&self) -> Option<PathBuf> {
         self.manifest.profiles.as_ref().map(|p| self.resolve(p))

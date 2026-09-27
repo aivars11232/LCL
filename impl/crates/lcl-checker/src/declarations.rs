@@ -610,10 +610,13 @@ fn field_of(
     }
 
     let expected = receiving_contract(check, block, &key, &kind, declared);
+    // `03_TYPES_AND_VALUES/04`: a one-STRING relative PATH is legal as
+    // IMPORT.SOURCE or EXTENSION.SOURCE and, in Core 0.3.0, as PART.SOURCE,
+    // the one field whose registered value kind is `part_source_path`.
     let relative_path = matches!(
         (block, key.as_str()),
         ("IMPORT", "SOURCE") | ("EXTENSION", "SOURCE")
-    );
+    ) || kind == "part_source_path";
     let previous = check.relative_path_allowed;
     check.relative_path_allowed = relative_path;
 

@@ -89,7 +89,7 @@ fn project_from_masters(name: &str) -> (Masters, PathBuf) {
         .unwrap();
     let root = base.join("project");
     let files = store
-        .project(engine(), Selection::Master("web"), None)
+        .project(engine(), Selection::Master("web"), None, ".lcl")
         .unwrap();
     masters::create(&root, &files).unwrap();
     (store, root)
@@ -271,10 +271,10 @@ fn same_master_produces_deterministic_starting_bytes() {
         .save(engine(), &project_master("web", "build"))
         .unwrap();
     let first = store
-        .project(engine(), Selection::Master("web"), None)
+        .project(engine(), Selection::Master("web"), None, ".lcl")
         .unwrap();
     let second = store
-        .project(engine(), Selection::Master("web"), None)
+        .project(engine(), Selection::Master("web"), None, ".lcl")
         .unwrap();
     assert_eq!(first, second);
     masters::create(&base.join("one"), &first).unwrap();
@@ -288,12 +288,26 @@ fn project_preview_is_exactly_what_is_created() {
     let store = Masters::new(base.join("masters"));
     let root = base.join("new");
     let preview = store
-        .project(engine(), Selection::Canonical(Mode::Guided), None)
+        .project(engine(), Selection::Canonical(Mode::Guided), None, ".lcl")
         .unwrap();
     let paths: Vec<&str> = preview.iter().map(|file| file.path.as_str()).collect();
     assert_eq!(
         paths,
-        ["main.lcl", "description.lcl", "rules.lcl", "task.lcl"]
+        [
+            "main.lcl",
+            "description/description.lcl",
+            "context/context.lcl",
+            "definitions/definitions.lcl",
+            "rules/rules.lcl",
+            "contracts/contracts.lcl",
+            "bindings/bindings.lcl",
+            "usage/usage.lcl",
+            "stop_conditions/stop_conditions.lcl",
+            "tasks/task_001.lcl",
+            "checks/checks.lcl",
+            "data/data.lcl",
+            "output/output.lcl",
+        ]
     );
     assert!(
         !root.exists() && !store.dir().exists(),
@@ -318,16 +332,16 @@ fn project_creation_is_all_or_nothing_and_never_overwrites() {
     let base = scratch("atomic");
     let store = Masters::new(base.join("masters"));
     let preview = store
-        .project(engine(), Selection::Canonical(Mode::Guided), None)
+        .project(engine(), Selection::Canonical(Mode::Guided), None, ".lcl")
         .unwrap();
     let existing = base.join("existing");
-    std::fs::create_dir_all(&existing).unwrap();
-    std::fs::write(existing.join("rules.lcl"), "mine\n").unwrap();
+    std::fs::create_dir_all(existing.join("rules")).unwrap();
+    std::fs::write(existing.join("rules/rules.lcl"), "mine\n").unwrap();
     let error = masters::create(&existing, &preview).unwrap_err();
-    assert!(error.contains("rules.lcl already exists"), "{error}");
+    assert!(error.contains("rules/rules.lcl already exists"), "{error}");
     assert_eq!(tree(&existing).len(), 1);
     assert_eq!(
-        std::fs::read_to_string(existing.join("rules.lcl")).unwrap(),
+        std::fs::read_to_string(existing.join("rules/rules.lcl")).unwrap(),
         "mine\n"
     );
     let blocked = base.join("blocked");
@@ -337,6 +351,7 @@ fn project_creation_is_all_or_nothing_and_never_overwrites() {
     files.push(Planned {
         path: "task/later.lcl".to_string(),
         role: "kind.part.task".to_string(),
+        doc_type: "kind.part.task".to_string(),
         origin: Origin::Canonical(Mode::Minimal),
         scaffold: scaffold::part(engine(), "kind.part.task", Mode::Minimal, "later.lcl", None)
             .unwrap(),
@@ -392,4 +407,63 @@ fn invalid_master_is_never_stored_or_made_default() {
     assert!(store
         .set_default(engine(), "kind.part.task", Some("mine"))
         .is_err());
+}
+
+/// A Master for a narrower type is that type's default alone: a new
+/// Contracts file starts from it, a new Rules file does not, and the file it
+/// made is a copy that later edits of the Master never touch.
+#[test]
+fn a_type_default_applies_to_that_type_only() {
+    let base = scratch("typed");
+    let store = Masters::new(base.join("masters"));
+    let automatic = Selection::Automatic(Mode::Guided);
+    let canonical = store
+        .file(engine(), "contracts", automatic, "contracts.lcl", None)
+        .unwrap();
+    assert_eq!(canonical.role, "kind.part.rules");
+    assert_eq!(canonical.doc_type, "contracts");
+    let text = canonical
+        .scaffold
+        .text
+        .replace("    ASSERT:\n", "    ASSERT: TRUE\n");
+    let json = |text: &str| {
+        format!(
+            "{{\"format\": 1, \"id\": \"deal\", \"name\": \"Deal\", \"core\": \"0.3.0\", \
+             \"role\": \"kind.part.rules\", \"type\": \"contracts\", \"text\": {}}}",
+            lcl_protocol::json::Node::string(text).compact()
+        )
+    };
+    store.save(engine(), &json(&text)).unwrap();
+    store
+        .set_default(engine(), "contracts", Some("deal"))
+        .unwrap();
+    let error = store
+        .set_default(engine(), "kind.part.rules", Some("deal"))
+        .unwrap_err();
+    assert!(
+        error.contains("is for contracts, not kind.part.rules"),
+        "{error}"
+    );
+    let made = store
+        .file(engine(), "contracts", automatic, "contracts.lcl", None)
+        .unwrap();
+    assert_eq!(made.scaffold.text, text);
+    assert_eq!(made.origin, Origin::Master("deal".to_string()));
+    let rules = store
+        .file(engine(), "kind.part.rules", automatic, "rules.lcl", None)
+        .unwrap();
+    assert_eq!(rules.origin, Origin::Canonical(Mode::Guided));
+    let root = base.join("project");
+    masters::create(&root, std::slice::from_ref(&made)).unwrap();
+    let edited = text.replace("ASSERT: TRUE", "ASSERT: FALSE");
+    store.save(engine(), &json(&edited)).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(root.join("contracts.lcl")).unwrap(),
+        text,
+        "a file made from a Master is never rewritten when the Master changes"
+    );
+    let later = store
+        .file(engine(), "contracts", automatic, "contracts.lcl", None)
+        .unwrap();
+    assert_eq!(later.scaffold.text, edited);
 }

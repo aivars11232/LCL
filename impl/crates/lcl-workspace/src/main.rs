@@ -11,7 +11,7 @@
 //! other behaviour explicitly.
 
 use lcl_workspace::{Routes, Server, Workspace};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -163,6 +163,28 @@ fn run(argv: &[String]) -> Result<(), String> {
             (root, None)
         }
     };
+    // New Project and Settings can open the projects folder in this window;
+    // that folder's packages are located exactly as this launch locates its
+    // own, from the same arguments.
+    let reopen: lcl_workspace::routes::Reopen = {
+        let (spec, localized_spec, project_spec, profiles) = (
+            spec.clone(),
+            localized_spec.clone(),
+            project_spec.clone(),
+            profiles.clone(),
+        );
+        Box::new(move |folder: &Path| {
+            let spec = Workspace::locate_spec(folder, spec.clone()).map_err(|e| e.to_string())?;
+            Workspace::open_with_specs(
+                folder,
+                &spec,
+                Workspace::locate_localized_spec(localized_spec.clone()),
+                Workspace::locate_project_spec(project_spec.clone()),
+                &profiles,
+            )
+            .map_err(|e| e.to_string())
+        })
+    };
     let spec = Workspace::locate_spec(&root, spec).map_err(|e| e.to_string())?;
 
     if create {
@@ -205,7 +227,8 @@ fn run(argv: &[String]) -> Result<(), String> {
     let routes = Routes::new(Arc::new(workspace))
         .with_settings_file(settings_file)
         .with_builtin_default(default_project)
-        .with_notice(notice);
+        .with_notice(notice)
+        .with_reopen(reopen);
     server
         .serve(Arc::new(routes))
         .map_err(|e| format!("the server stopped: {e}"))

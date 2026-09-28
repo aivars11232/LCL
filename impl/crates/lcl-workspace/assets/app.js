@@ -357,6 +357,21 @@ async function loadTree() {
   renderTree();
 }
 
+/* The open documents holding anything not yet kept on disk: edits, a save
+ * still on its way, or a new file nobody has saved. */
+function unsavedDocuments() {
+  return [...state.docs.values()].filter((d) => dirty(d) || d.pendingSaves || d.lifecycle === "created");
+}
+
+/* After the server opened another folder in this window: every tab named a
+ * document of the folder before, so all of them close (the caller made sure
+ * none was unsaved), and the header and tree show the folder now open. */
+async function showOpenedFolder() {
+  for (const doc of [...state.docs.values()]) dropDocument(doc);
+  await loadSession();
+  await loadTree();
+}
+
 function renderTree() {
   const list = $("#tree");
   list.replaceChildren();
@@ -799,7 +814,7 @@ function newDocument() {
       const options = [
         ["default:guided", "Default (Guided)"], ["default:minimal", "Default (Minimal)"],
         ["canonical:guided", "Canonical scaffold — Guided"], ["canonical:minimal", "Canonical scaffold — Minimal"],
-      ].concat(masters.filter((m) => m.role === role && m.valid).map((m) => [`master:${m.id}`, `Master: ${m.name}`]));
+      ].concat(masters.filter((m) => (m.type || m.role) === role && m.valid).map((m) => [`master:${m.id}`, `Master: ${m.name}`]));
       for (const [value, label] of options) {
         const option = el("option", "", label);
         option.value = value;
@@ -976,7 +991,7 @@ async function loadFileSettings() {
  * that button, which names the exact path, is pressed. */
 async function describeFolder(path, status) {
   if (!path) {
-    status.replaceChildren(el("span", "", "Empty: launches open the built-in folder" +
+    status.replaceChildren(el("span", "", "Empty: new projects go in, and launches open, the built-in folder" +
       (state.files.builtin_default_workspace ? ` ${state.files.builtin_default_workspace}.` : ".")));
     return true;
   }
@@ -996,6 +1011,11 @@ async function describeFolder(path, status) {
     status.replaceChildren(el("span", "bad", `${path} is a file, not a folder.`));
     return false;
   }
+  if (folder.directory && folder.writable === false) {
+    status.replaceChildren(el("span", "bad",
+      `${path} is a folder, but new projects cannot be written to it.`));
+    return false;
+  }
   if (!folder.exists) {
     const create = el("button", "", "Create this folder");
     create.type = "button";
@@ -1011,7 +1031,7 @@ async function describeFolder(path, status) {
     status.replaceChildren(el("span", "bad", `${path} does not exist. `), create);
     return false;
   }
-  status.replaceChildren(el("span", "good", `${path} is a folder.`));
+  status.replaceChildren(el("span", "good", `${path} is a folder new projects can be created in.`));
   return true;
 }
 
@@ -1072,7 +1092,7 @@ function openSettings() {
     type.value = files.default_extension;
     form.append(typeLabel, type);
 
-    const whereLabel = el("label", "", "Default workspace location");
+    const whereLabel = el("label", "", "Projects folder");
     whereLabel.htmlFor = "setting-workspace";
     const whereRow = el("div", "path-field");
     const where = el("input");
@@ -1085,22 +1105,49 @@ function openSettings() {
       : "Empty: the built-in folder";
     const check = el("button", "", "Check");
     check.type = "button";
-    whereRow.append(where, check);
+    const openHere = el("button", "", "Open folder");
+    openHere.type = "button";
+    openHere.id = "setting-workspace-open";
+    whereRow.append(where, check, openHere);
     form.append(whereLabel, whereRow);
     const status = el("p", "note folder-status");
     status.id = "setting-workspace-status";
     check.onclick = () => describeFolder(where.value.trim(), status);
+    /* Shows the saved Projects folder in this window, in place of the folder
+     * shown now; every tab closes, so none may hold unsaved work. */
+    openHere.onclick = async () => {
+      if (where.value.trim() !== (files.default_workspace || "")) {
+        status.replaceChildren(el("span", "bad", "Save first: Open folder opens the saved Projects folder."));
+        return;
+      }
+      if (unsavedDocuments().length) {
+        status.replaceChildren(el("span", "bad",
+          "Save or close the open documents first: this window will show the Projects folder instead."));
+        return;
+      }
+      try {
+        await api("POST", "/api/projects/open");
+      } catch (e) {
+        status.replaceChildren(el("span", "bad", e.message));
+        return;
+      }
+      closeModal();
+      await showOpenedFolder();
+      toast(`This window now shows ${state.session.root}.`, "good");
+    };
     if (files.default_workspace && files.default_workspace_exists === false) {
       status.append(el("span", "bad",
-        "This folder does not exist now, so a launch opens the built-in folder instead."));
+        "This folder does not exist now: New Project refuses to create projects until it does, " +
+        "and a launch opens the built-in folder instead."));
     }
     form.append(status);
     form.append(el("p", "note",
-      `Current workspace: ${files.current_workspace || (state.session && state.session.root) || ""}. ` +
-      "The default workspace is what LCL Workspace opens the next time it starts from the " +
-      "desktop menu; a folder or document opened explicitly still wins. Leave it empty for " +
-      "the built-in folder. The default file type applies only to new documents named " +
-      "without an ending."));
+      `This window shows ${files.current_workspace || (state.session && state.session.root) || ""}. ` +
+      "New Project creates every new project in the Projects folder, each in a folder of its " +
+      "own, and LCL Workspace opens the Projects folder when it starts from the desktop menu; " +
+      "a folder or document opened explicitly still wins. Leave it empty for the built-in " +
+      "folder. The default file type is the ending of a new document named without one and " +
+      "of every file a new project starts with."));
     if (files.problem) form.append(el("p", "note warning", files.problem));
     if (!files.available) {
       type.disabled = where.disabled = check.disabled = true;
@@ -1168,7 +1215,8 @@ function openSettings() {
       applySettings(next);
       if (!saveSettings(next)) toast("Settings apply now but could not be stored in this browser.", "warn");
       if (files.available && whereChanged) {
-        toast("Default workspace updated. It will be used next time LCL Workspace is launched.", "good");
+        toast("Projects folder updated. New projects are created there, and LCL Workspace opens it " +
+          "the next time it starts from the menu.", "good");
       }
       if (files.available && typeChanged) {
         toast(`New documents named without an ending are now created as ${wanted.default_extension}.`, "good");
@@ -2763,13 +2811,15 @@ async function newProject() {
   let plan = null;
   modal("New project", (body) => {
     body.append(el("p", "",
-      `A folder inside ${state.session.root}. Its files are listed below before anything ` +
-      "is written."));
-    const nameLabel = el("label", "", "Folder");
-    nameLabel.htmlFor = "project-folder";
+      "A new folder named after the project, in the Projects folder chosen in Settings. " +
+      "Its files are listed below before anything is written."));
+    const nameLabel = el("label", "", "Project name");
+    nameLabel.htmlFor = "project-name";
     const name = el("input", "field");
-    name.id = "project-folder";
-    name.value = "new_project";
+    name.id = "project-name";
+    name.value = "New_Project";
+    const where = el("p", "note");
+    where.id = "project-where";
     const coreLabel = el("label", "", "LCL Core version");
     coreLabel.htmlFor = "project-core";
     const core = el("select", "field");
@@ -2798,24 +2848,37 @@ async function newProject() {
       plan = null;
       $("#project-create").disabled = true;
       files.replaceChildren(el("p", "note", "Preparing the preview…"));
+      where.replaceChildren();
       try {
         const reply = await api("GET", "/api/project/plan",
-          { folder: name.value.trim(), ...selectionParams("kind.project", from.value) });
+          { name: name.value.trim(), ...selectionParams("kind.project", from.value) });
         if (mine !== asked) return;
         files.replaceChildren();
-        const occupied = reply.files.filter((f) => f.exists);
+        where.append(el("span", "", `Will be created as ${reply.path}`));
         for (const file of reply.files) {
           const box = el("details");
           const origin = file.origin.kind === "master" ? `Master ${file.origin.master}` : `canonical, ${file.origin.mode}`;
-          box.append(el("summary", "", `${file.path} — ${file.label} (${origin})${file.exists ? " — already exists" : ""}`));
+          box.append(el("summary", "", `${file.path} — ${file.label} (${origin})`));
           const pre = el("pre", "scaffold-preview");
           showScaffold(pre, file);
           box.append(pre);
           files.append(box);
         }
-        if (occupied.length) {
-          files.append(el("p", "note warning", "Some of these files already exist, so nothing can be created here."));
+        if (reply.exists) {
+          where.replaceChildren(el("span", "bad",
+            `${reply.path} already exists. An existing project is never written into: choose another name.`));
           return;
+        }
+        if (reply.opens_projects_folder) {
+          const unsaved = unsavedDocuments();
+          if (unsaved.length) {
+            where.append(el("span", "bad",
+              `. This window will show the Projects folder ${reply.projects} instead of ` +
+              `${state.session.root}: save or close ${unsaved.map((d) => d.id).join(", ")} first.`));
+            return;
+          }
+          where.append(el("span", "",
+            `. This window will then show the Projects folder ${reply.projects}.`));
         }
         plan = reply;
         $("#project-create").disabled = false;
@@ -2825,7 +2888,7 @@ async function newProject() {
     };
     name.oninput = () => { clearTimeout(name.timer); name.timer = setTimeout(show, 250); };
     from.onchange = show;
-    body.append(nameLabel, name, coreLabel, core, fromLabel, from, files);
+    body.append(nameLabel, name, where, coreLabel, core, fromLabel, from, files);
     setTimeout(show, 0);
   }, [
     ["Cancel", "", (close) => close()],
@@ -2833,18 +2896,26 @@ async function newProject() {
       if (!plan) return;
       const chosen = plan;
       close();
+      let made;
       try {
-        await api("POST", "/api/project", {
-          folder: chosen.folder,
+        made = await api("POST", "/api/project", {
+          name: chosen.name,
           ...selectionParams("kind.project", $("#project-from") ? $("#project-from").value : ""),
           plan_digest: chosen.plan_digest,
         });
-        await loadTree();
-        await openDocument(chosen.entry);
-        toast(`Created ${chosen.files.length} files in ${chosen.folder || "the project folder"}.`, "good");
       } catch (e) {
         toast(`Not created. ${e.message}`, "bad");
+        return;
       }
+      try {
+        if (chosen.opens_projects_folder) await showOpenedFolder();
+        else await loadTree();
+        await openDocument(made.entry);
+      } catch (e) {
+        toast(`Created ${made.path}, but it could not be shown. ${e.message}`, "warn");
+        return;
+      }
+      toast(`Created project ${made.name}: ${made.files.length} files in ${made.path}.`, "good");
     }],
   ]);
   const create = [...$("#modal-actions").querySelectorAll("button")].pop();
@@ -2991,7 +3062,7 @@ async function openTemplates() {
       const canonical = el("option", "", "Canonical scaffold");
       canonical.value = "";
       pick.append(canonical);
-      for (const m of listing.masters.filter((m) => m.role === role.role && m.valid)) {
+      for (const m of listing.masters.filter((m) => (m.type || m.role) === role.role && m.valid)) {
         const option = el("option", "", m.name);
         option.value = m.id;
         pick.append(option);
@@ -3013,7 +3084,7 @@ async function openTemplates() {
     for (const m of listing.masters) {
       const li = el("li", m.valid ? "" : "invalid");
       li.append(el("span", "name", `${m.name || m.id} (${m.id})`),
-        el("span", "role", m.role ? roleLabel(m.role) : "unreadable"));
+        el("span", "role", m.role ? (m.label || roleLabel(m.role)) : "unreadable"));
       if (!m.valid) li.append(el("span", "note warning", m.problem || "invalid"));
       for (const [label, act] of [
         ["Edit", () => editTemplate(m.id, "replace")],

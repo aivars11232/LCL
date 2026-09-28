@@ -160,6 +160,124 @@ pub fn roles(engine: &Engine) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// A kind of document a person can start in a project: one of the part roles,
+/// or a narrower document of one role with Guided sections of its own. This is
+/// authoring, not canon: a file declares its role as `SPECIFICATION KIND`, and
+/// nothing in the file records the type it was started as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DocumentType {
+    /// The role itself for a role's own type; a lowercase name otherwise.
+    pub id: &'static str,
+    /// What a person reads.
+    pub label: &'static str,
+    /// The part role its files declare.
+    pub role: &'static str,
+    /// The folder and file stem the canonical project gives its file.
+    pub folder: &'static str,
+    pub stem: &'static str,
+    /// For a type narrower than its role, what its Guided guidance adds.
+    purpose: Option<&'static str>,
+}
+
+const fn own(role: &'static str, label: &'static str, folder: &'static str) -> DocumentType {
+    DocumentType {
+        id: role,
+        label,
+        role,
+        folder,
+        stem: folder,
+        purpose: None,
+    }
+}
+
+const fn narrower(
+    id: &'static str,
+    label: &'static str,
+    role: &'static str,
+    purpose: &'static str,
+) -> DocumentType {
+    DocumentType {
+        id,
+        label,
+        role,
+        folder: id,
+        stem: id,
+        purpose: Some(purpose),
+    }
+}
+
+/// Every document type, in the order a canonical project lists its parts. A
+/// project's source order is its `PART` order, so this is also the order in
+/// which a reader of a canonical project reads its files.
+pub const DOCUMENT_TYPES: &[DocumentType] = &[
+    own("kind.part.description", "Description", "description"),
+    own("kind.part.context", "Context", "context"),
+    own("kind.part.definitions", "Definitions", "definitions"),
+    own("kind.part.rules", "Rules", "rules"),
+    narrower(
+        "contracts",
+        "Contracts",
+        "kind.part.rules",
+        "It states what the result must guarantee and what it must keep unchanged.",
+    ),
+    narrower(
+        "bindings",
+        "Bindings",
+        "kind.part.definitions",
+        "It binds names to the fixed values the other parts refer to.",
+    ),
+    narrower(
+        "usage",
+        "Usage",
+        "kind.part.description",
+        "It explains how the project is used, with examples.",
+    ),
+    narrower(
+        "stop_conditions",
+        "Stop Conditions",
+        "kind.part.checks",
+        "It states when work must stop: each condition, and the status work ends in when \
+         the condition holds.",
+    ),
+    DocumentType {
+        stem: "task_001",
+        ..own("kind.part.task", "Task", "tasks")
+    },
+    own("kind.part.checks", "Checks", "checks"),
+    own("kind.part.data", "Data", "data"),
+    own("kind.part.output", "Output", "output"),
+];
+
+/// The document types of this engine's roles, in [`DOCUMENT_TYPES`] order.
+/// Empty for a Core version without projects.
+pub fn document_types(engine: &Engine) -> Vec<&'static DocumentType> {
+    let roles = roles(engine);
+    DOCUMENT_TYPES
+        .iter()
+        .filter(|t| roles.iter().any(|r| r == t.role))
+        .collect()
+}
+
+/// The document type `id` names: a role, for the role's own type, or the id of
+/// a narrower type.
+pub fn document_type(engine: &Engine, id: &str) -> Result<&'static DocumentType, ScaffoldError> {
+    let types = document_types(engine);
+    if let Some(found) = types.iter().find(|t| t.id == id) {
+        return Ok(found);
+    }
+    if types.is_empty() {
+        return refuse(format!(
+            "LCL {} has no project file roles",
+            engine.spec().formal_version()
+        ));
+    }
+    let ids: Vec<&str> = types.iter().map(|t| t.id).collect();
+    refuse(format!(
+        "{id} is not a project file role or document type; the types are {}",
+        ids.join(", ")
+    ))
+}
+
 fn require_role(engine: &Engine, role: &str) -> Result<(), ScaffoldError> {
     let roles = roles(engine);
     if roles.iter().any(|r| r == role) {
@@ -186,6 +304,8 @@ enum Fill {
     Slot(MarkKind),
     /// `REF(<block>.<stem>)` to the named block of the same scaffold.
     Ref(&'static str),
+    /// This value, written as it is.
+    Fixed(&'static str),
 }
 
 const REQUIRED: Fill = Fill::Slot(MarkKind::RequiredSlot);
@@ -197,14 +317,14 @@ struct Section {
     fields: &'static [(&'static str, Fill)],
 }
 
-/// The common sections Guided mode adds for a role. This is presentation, not
+/// The common sections Guided mode adds for a document type. This is presentation, not
 /// canon: a slot marked required here may be a field the schema lists as
 /// optional when the block's conditional requirement needs one of a choice
 /// (`GOAL` needs `ASSERT` or `RESULT`). The parity tests prove every block legal
 /// for its role, every field registered for its block, every required field
 /// present, and the whole scaffold accepted by the engine once filled.
-fn guided_sections(role: &str) -> Option<&'static [Section]> {
-    let sections: &'static [Section] = match role {
+fn guided_sections(doc_type: &str) -> Option<&'static [Section]> {
+    let sections: &'static [Section] = match doc_type {
         "kind.part.task" => &[
             Section {
                 block: "GOAL",
@@ -283,20 +403,71 @@ fn guided_sections(role: &str) -> Option<&'static [Section]> {
             block: "DEFINE",
             fields: &[("ID", Fill::Id), ("KIND", REQUIRED), ("MEANING", OPTIONAL)],
         }],
+        "contracts" => &[
+            Section {
+                block: "REQUIRE",
+                fields: &[
+                    ("ID", Fill::Id),
+                    ("ASSERT", REQUIRED),
+                    ("DESCRIPTION", OPTIONAL),
+                ],
+            },
+            Section {
+                block: "PRESERVE",
+                fields: &[
+                    ("ID", Fill::Id),
+                    ("TARGET", REQUIRED),
+                    ("DESCRIPTION", OPTIONAL),
+                ],
+            },
+        ],
+        "bindings" => &[Section {
+            block: "DEFINE",
+            fields: &[
+                ("ID", Fill::Id),
+                ("KIND", Fill::Fixed("kind.constant")),
+                ("TYPE", REQUIRED),
+                ("VALUE", REQUIRED),
+                ("MEANING", OPTIONAL),
+            ],
+        }],
+        "usage" => &[
+            Section {
+                block: "COMMENT",
+                fields: &[("CONTENT", REQUIRED)],
+            },
+            Section {
+                block: "EXAMPLE",
+                fields: &[
+                    ("ID", Fill::Id),
+                    ("CONTENT", REQUIRED),
+                    ("EXPECTED", OPTIONAL),
+                ],
+            },
+        ],
+        "stop_conditions" => &[Section {
+            block: "FAILURE",
+            fields: &[
+                ("ID", Fill::Id),
+                ("WHEN", REQUIRED),
+                ("STATUS", REQUIRED),
+                ("ERROR", OPTIONAL),
+            ],
+        }],
         _ => return None,
     };
     Some(sections)
 }
 
 /// One Guided section, for the parity tests: the block, and each field with
-/// the slot kind it gets, or `None` when its value is generated.
+/// the slot kind it gets, or `None` when its value is generated or fixed.
 pub type SectionShape = (&'static str, Vec<(&'static str, Option<MarkKind>)>);
 
-/// The blocks and fields a Guided scaffold of `role` adds, for the parity
-/// tests: `(block, [(field, kind)])`, where `kind` is `None` for a field whose
-/// value is generated.
-pub fn guided_shape(role: &str) -> Option<Vec<SectionShape>> {
-    guided_sections(role).map(|sections| {
+/// The blocks and fields a Guided scaffold of document type `doc_type` adds,
+/// for the parity tests: `(block, [(field, kind)])`, where `kind` is `None` for
+/// a field whose value is generated or fixed.
+pub fn guided_shape(doc_type: &str) -> Option<Vec<SectionShape>> {
+    guided_sections(doc_type).map(|sections| {
         sections
             .iter()
             .map(|section| {
@@ -305,7 +476,7 @@ pub fn guided_shape(role: &str) -> Option<Vec<SectionShape>> {
                     .iter()
                     .map(|(field, fill)| match fill {
                         Fill::Slot(kind) => (*field, Some(*kind)),
-                        Fill::Id | Fill::Ref(_) => (*field, None),
+                        Fill::Id | Fill::Ref(_) | Fill::Fixed(_) => (*field, None),
                     })
                     .collect();
                 (section.block, fields)
@@ -446,21 +617,28 @@ fn header(w: &mut Writer, version: &str, kind: &str, stem: &str, mode: Mode) {
 }
 
 /// The Guided `COMMENT`: what the file is, the blocks the canon allows in it,
-/// and how slots work.
-fn guidance(w: &mut Writer, grammar: &Grammar, kind: &str) {
+/// and how slots work. `doc` is the document type of a part.
+fn guidance(w: &mut Writer, grammar: &Grammar, kind: &str, doc: Option<&DocumentType>) {
     let blocks: Vec<String> = grammar
         .document_kind_blocks(kind)
         .into_iter()
         .flatten()
         .map(|block| w.label(block))
         .collect();
-    let what = match kind.strip_prefix("kind.part.") {
-        Some(role) => format!("the {role} part of a project"),
-        None => "the entry of a project".to_string(),
+    let narrower = doc.and_then(|d| d.purpose.map(|purpose| (d.label, purpose)));
+    let what = match (narrower, kind.strip_prefix("kind.part.")) {
+        (Some((label, purpose)), _) => format!(
+            "the {} part of a project, which declares {kind}. {}",
+            label.to_lowercase(),
+            purpose.trim_end_matches('.')
+        ),
+        (None, Some(role)) => format!("the {role} part of a project"),
+        (None, None) => "the entry of a project".to_string(),
     };
     let versions = if kind == PROJECT_KIND {
         format!(
-            " Every part declares the {} {} this entry declares.",
+            " Every part declares the {} {} this entry declares. The parts are read in \
+             the order they are listed here.",
             w.label("SPECIFICATION"),
             w.label("VERSION")
         )
@@ -506,29 +684,36 @@ fn is_segment(text: &str) -> bool {
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
-/// The canonical scaffold of one project file of `role`, for the file at
-/// `path`, in `locale`'s spelling when one is given.
+/// The canonical scaffold of one project file of document type `doc_type` (a
+/// role, or a narrower type of [`DOCUMENT_TYPES`]), for the file at `path`, in
+/// `locale`'s spelling when one is given.
 pub fn part(
     engine: &Engine,
-    role: &str,
+    doc_type: &str,
     mode: Mode,
     path: &str,
     locale: Option<&LocaleTag>,
 ) -> Result<Scaffold, ScaffoldError> {
-    require_role(engine, role)?;
+    let doc = document_type(engine, doc_type)?;
     let stem = stem(path)?;
     let sections = match mode {
         Mode::Minimal => &[][..],
-        Mode::Guided => match guided_sections(role) {
+        Mode::Guided => match guided_sections(doc.id) {
             Some(sections) => sections,
-            None => return refuse(format!("there is no Guided scaffold for {role}")),
+            None => return refuse(format!("there is no Guided scaffold for {doc_type}")),
         },
     };
     let profile = profile(engine, locale)?;
     let mut w = Writer::new(locale, profile.as_ref());
-    header(&mut w, engine.spec().formal_version(), role, &stem, mode);
+    header(
+        &mut w,
+        engine.spec().formal_version(),
+        doc.role,
+        &stem,
+        mode,
+    );
     if mode == Mode::Guided {
-        guidance(&mut w, engine.grammar(), role);
+        guidance(&mut w, engine.grammar(), doc.role, Some(doc));
     }
     for section in sections {
         let own = section.block.to_ascii_lowercase();
@@ -541,6 +726,7 @@ pub fn part(
                     Some(MarkKind::GeneratedId),
                 ),
                 Fill::Slot(kind) => w.field(field, None, Some(*kind)),
+                Fill::Fixed(value) => w.field(field, Some(value), None),
                 Fill::Ref(target) => {
                     let value =
                         format!("{}({}.{stem})", w.word("REF"), target.to_ascii_lowercase());
@@ -558,6 +744,8 @@ pub struct PlannedPart {
     /// Relative to the project folder, `/`-separated.
     pub path: String,
     pub role: String,
+    /// The file's document type: `role` itself, or a narrower type of it.
+    pub doc_type: String,
     /// `PART REQUIRED`; the file is created either way.
     pub required: bool,
     /// The role Master this file starts from, when one is named.
@@ -575,27 +763,25 @@ pub struct Plan {
 }
 
 impl Plan {
-    /// The project a person gets when no project Master is chosen: in Minimal
-    /// mode one task part, which the entry's required `EXECUTE` needs to name
-    /// anything; in Guided mode a description, rules and a task.
-    pub fn canonical(mode: Mode) -> Plan {
-        let part = |path: &str, role: &str| PlannedPart {
-            path: path.to_string(),
-            role: role.to_string(),
-            required: true,
-            master: None,
-        };
-        let parts = match mode {
-            Mode::Minimal => vec![part("task.lcl", "kind.part.task")],
-            Mode::Guided => vec![
-                part("description.lcl", "kind.part.description"),
-                part("rules.lcl", "kind.part.rules"),
-                part("task.lcl", "kind.part.task"),
-            ],
-        };
+    /// The project a person gets when no project Master is chosen: one file of
+    /// every document type, each in its own folder, listed in
+    /// [`DOCUMENT_TYPES`] order, which is the order they are read in, and the
+    /// entry `main` beside the folders. Every file name ends with `ending`,
+    /// `.lcl` or `.lcl.txt`.
+    pub fn canonical(mode: Mode, ending: &str) -> Plan {
+        let parts = DOCUMENT_TYPES
+            .iter()
+            .map(|t| PlannedPart {
+                path: format!("{}/{}{ending}", t.folder, t.stem),
+                role: t.role.to_string(),
+                doc_type: t.id.to_string(),
+                required: true,
+                master: None,
+            })
+            .collect();
         Plan {
             mode,
-            entry: "main.lcl".to_string(),
+            entry: format!("main{ending}"),
             parts,
         }
     }
@@ -628,8 +814,8 @@ pub fn check_path(path: &str) -> Result<(), ScaffoldError> {
 
 /// Check that a plan can be created: every path is a plain relative document
 /// path, no two files share a path or a stem (their generated IDs would
-/// collide), every role is a project file role and every Master name is a
-/// Master identifier.
+/// collide), every role is a project file role, every document type is a type
+/// of its part's role and every Master name is a Master identifier.
 pub fn check_plan(engine: &Engine, plan: &Plan) -> Result<(), ScaffoldError> {
     check_path(&plan.entry)?;
     if plan.entry.contains('/') {
@@ -644,6 +830,13 @@ pub fn check_plan(engine: &Engine, plan: &Plan) -> Result<(), ScaffoldError> {
     for part in &plan.parts {
         check_path(&part.path)?;
         require_role(engine, &part.role)?;
+        let doc = document_type(engine, &part.doc_type)?;
+        if doc.role != part.role {
+            return refuse(format!(
+                "{}: a {} file is a {} part, not {}",
+                part.path, doc.label, doc.role, part.role
+            ));
+        }
         if !paths.insert(part.path.clone()) {
             return refuse(format!("the plan names {} twice", part.path));
         }
@@ -681,7 +874,7 @@ pub fn entry(
         plan.mode,
     );
     if plan.mode == Mode::Guided {
-        guidance(&mut w, engine.grammar(), PROJECT_KIND);
+        guidance(&mut w, engine.grammar(), PROJECT_KIND, None);
     }
     for part in &plan.parts {
         w.open("PART");
@@ -723,6 +916,9 @@ pub struct Master {
     pub core: String,
     /// A project file role, or `kind.project` for a project Master.
     pub role: String,
+    /// The document type a role Master makes: its role unless the Master
+    /// names a narrower type with `"type"`. `kind.project` for a project Master.
+    pub doc_type: String,
     pub content: Content,
 }
 
@@ -753,14 +949,18 @@ fn string_member<'j>(object: &'j Json, key: &str) -> Result<&'j str, ScaffoldErr
     }
 }
 
-/// Read one Master file. Every key is required except a part's `required`
-/// (default `true`) and `master`; an unknown key, a wrong type or another
-/// format version is refused. The Master's Core version, role and content are
-/// checked against an engine by [`check_master`].
+/// Read one Master file. Every key is required except `type` (default: the
+/// role) and a part's `type`, `required` (default `true`) and `master`; an
+/// unknown key, a wrong type or another format version is refused. The
+/// Master's Core version, role, type and content are checked against an
+/// engine by [`check_master`].
 ///
 /// ```text
 /// {"format": 1, "id": "my-task", "name": "My task", "core": "0.3.0",
 ///  "role": "kind.part.task", "text": "LCL:\n    VERSION: \"0.3.0\"\n..."}
+///
+/// {"format": 1, "id": "my-contracts", "name": "My contracts", "core": "0.3.0",
+///  "role": "kind.part.rules", "type": "contracts", "text": "..."}
 ///
 /// {"format": 1, "id": "web", "name": "Web project", "core": "0.3.0",
 ///  "role": "kind.project", "mode": "guided", "entry": "main.lcl",
@@ -778,7 +978,7 @@ pub fn parse_master(json_text: &str) -> Result<Master, ScaffoldError> {
             "format", "id", "name", "core", "role", "mode", "entry", "parts",
         ]
     } else {
-        &["format", "id", "name", "core", "role", "text"]
+        &["format", "id", "name", "core", "role", "type", "text"]
     };
     if let Some((key, _)) = members
         .iter()
@@ -809,6 +1009,10 @@ pub fn parse_master(json_text: &str) -> Result<Master, ScaffoldError> {
         return refuse("a Master name is 1 to 200 characters without control characters");
     }
     let core = string_member(&json, "core")?.to_string();
+    let doc_type = match json.get("type") {
+        None => role.clone(),
+        Some(_) => string_member(&json, "type")?.to_string(),
+    };
     let content = if role == PROJECT_KIND {
         let mode = string_member(&json, "mode")?;
         let Some(mode) = Mode::parse(mode) else {
@@ -825,10 +1029,9 @@ pub fn parse_master(json_text: &str) -> Result<Master, ScaffoldError> {
             let Some(fields) = item.as_object() else {
                 return refuse("each project Master part is an object");
             };
-            if let Some((key, _)) = fields
-                .iter()
-                .find(|(key, _)| !["path", "role", "required", "master"].contains(&key.as_str()))
-            {
+            if let Some((key, _)) = fields.iter().find(|(key, _)| {
+                !["path", "role", "type", "required", "master"].contains(&key.as_str())
+            }) {
                 return refuse(format!("{key:?} is not a key of a project Master part"));
             }
             let required = match item.get("required") {
@@ -846,9 +1049,15 @@ pub fn parse_master(json_text: &str) -> Result<Master, ScaffoldError> {
                         .to_string(),
                 ),
             };
+            let role = string_member(item, "role")?.to_string();
+            let doc_type = match item.get("type") {
+                None => role.clone(),
+                Some(_) => string_member(item, "type")?.to_string(),
+            };
             parts.push(PlannedPart {
                 path: string_member(item, "path")?.to_string(),
-                role: string_member(item, "role")?.to_string(),
+                role,
+                doc_type,
                 required,
                 master,
             });
@@ -862,15 +1071,17 @@ pub fn parse_master(json_text: &str) -> Result<Master, ScaffoldError> {
         name,
         core,
         role,
+        doc_type,
         content,
     })
 }
 
 /// Check a Master against `engine`: it targets exactly this engine's Core
 /// version, its role is a project file role (or `kind.project` for a project
-/// Master), a role Master's text passes [`check_text`], and a project Master's
-/// plan passes [`check_plan`] with every named part Master found by `lookup`,
-/// a role Master of that part's role, and itself valid.
+/// Master) and its type a type of that role, a role Master's text passes
+/// [`check_text`], and a project Master's plan passes [`check_plan`] with every
+/// named part Master found by `lookup`, a role Master of that part's type, and
+/// itself valid.
 pub fn check_master(
     engine: &Engine,
     master: &Master,
@@ -887,6 +1098,13 @@ pub fn check_master(
     match &master.content {
         Content::Text(text) => {
             require_role(engine, &master.role)?;
+            let doc = document_type(engine, &master.doc_type)?;
+            if doc.role != master.role {
+                return refuse(format!(
+                    "Master {}: a {} Master is for {}, not {}",
+                    master.id, doc.label, doc.role, master.role
+                ));
+            }
             check_text(engine, &master.role, text)
                 .map_err(|e| ScaffoldError(format!("Master {}: {e}", master.id)))
         }
@@ -898,10 +1116,10 @@ pub fn check_master(
                 if !matches!(named.content, Content::Text(_)) {
                     return refuse(format!("{}: Master {id} is a project Master", part.path));
                 }
-                if named.role != part.role {
+                if named.role != part.role || named.doc_type != part.doc_type {
                     return refuse(format!(
                         "{}: Master {id} is for {}, not {}",
-                        part.path, named.role, part.role
+                        part.path, named.doc_type, part.doc_type
                     ));
                 }
                 check_master(engine, &named, lookup)?;

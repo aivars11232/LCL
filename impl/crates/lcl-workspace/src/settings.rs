@@ -246,6 +246,23 @@ pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> 
     })
 }
 
+/// Whether new files can be created in `folder` now, found by creating one
+/// uniquely named empty file there and removing it again. Permission bits
+/// alone do not say: ACLs and read-only mounts decide too.
+pub fn writable(folder: &Path) -> Result<(), String> {
+    let probe = folder.join(format!(
+        ".lcl-write-check.{}-{}.tmp",
+        std::process::id(),
+        NEXT_TEMPORARY.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&probe)
+        .map_err(|e| e.to_string())?;
+    std::fs::remove_file(&probe).map_err(|e| e.to_string())
+}
+
 /// Which folder a launch that named no project opens, and anything the person
 /// should be told about that choice.
 ///

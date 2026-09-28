@@ -3,8 +3,9 @@
 
 use lcl_protocol::json::Node;
 use lcl_protocol::scaffold::{
-    check_master, check_plan, check_text, entry, guided_shape, parse_master, part, roles,
-    LocaleTag, Mark, MarkKind, Master, Mode, Plan, PlannedPart, Scaffold, ScaffoldError,
+    check_master, check_plan, check_text, document_type, document_types, entry, guided_shape,
+    parse_master, part, roles, LocaleTag, Mark, MarkKind, Master, Mode, Plan, PlannedPart,
+    Scaffold, ScaffoldError,
 };
 use lcl_protocol::Engine;
 use std::collections::BTreeSet;
@@ -220,8 +221,17 @@ fn scaffolds_match_the_canonical_role_contract() {
         .collect();
     assert_eq!(kinds.len(), 8);
     assert_eq!(roles(engine()).into_iter().collect::<BTreeSet<_>>(), kinds);
+    // Every role has its own type, and every narrower type is a type of a role.
+    let types = document_types(engine());
+    assert_eq!(types.len(), 12);
     for role in &kinds {
-        let shape = guided_shape(role).unwrap_or_else(|| panic!("no Guided scaffold for {role}"));
+        assert_eq!(document_type(engine(), role).unwrap().role, role);
+    }
+    let mut texts = BTreeSet::new();
+    for t in types {
+        let role = &t.role.to_string();
+        assert!(kinds.contains(role), "{} is a type of {role}", t.id);
+        let shape = guided_shape(t.id).unwrap_or_else(|| panic!("no Guided scaffold for {}", t.id));
         let legal = grammar.document_kind_blocks(role).unwrap();
         for (block, fields) in shape {
             assert!(legal.contains(block), "{block} is not legal in {role}");
@@ -243,8 +253,15 @@ fn scaffolds_match_the_canonical_role_contract() {
             }
         }
         for mode in MODES {
-            assert_valid(role, &part(engine(), role, mode, "file.lcl", None).unwrap());
+            assert_valid(role, &part(engine(), t.id, mode, "file.lcl", None).unwrap());
         }
+        // No two types start from the same Guided text.
+        let guided = part(engine(), t.id, Mode::Guided, "file.lcl", None).unwrap();
+        assert!(
+            texts.insert(guided.text),
+            "{} repeats another type's text",
+            t.id
+        );
     }
     let refused = part(engine(), "kind.task", Mode::Guided, "x.lcl", None).unwrap_err();
     assert!(refused.0.contains("not a project file role"), "{refused}");
@@ -252,10 +269,15 @@ fn scaffolds_match_the_canonical_role_contract() {
 
 #[test]
 fn project_entry_lists_planned_parts_in_order() {
-    let mut plan = Plan::canonical(Mode::Minimal);
+    let mut plan = Plan {
+        mode: Mode::Minimal,
+        entry: "main.lcl".to_string(),
+        parts: vec![planned("task.lcl", "kind.part.task")],
+    };
     plan.parts.push(PlannedPart {
         path: "notes/context.lcl".to_string(),
         role: "kind.part.context".to_string(),
+        doc_type: "kind.part.context".to_string(),
         required: false,
         master: None,
     });
@@ -268,11 +290,61 @@ fn project_entry_lists_planned_parts_in_order() {
          KIND: kind.part.context\n    REQUIRED: FALSE\n\nEXECUTE:\n    REFERENCE:\n"
     );
     assert_valid("kind.project", &s);
-    let guided = entry(engine(), &Plan::canonical(Mode::Guided), None).unwrap();
+    let guided = entry(engine(), &Plan::canonical(Mode::Guided, ".lcl"), None).unwrap();
     assert!(guided
         .text
         .contains("Every part declares the SPECIFICATION VERSION this entry declares."));
+    assert!(guided
+        .text
+        .contains("The parts are read in the order they are listed here."));
     assert_valid("kind.project", &guided);
+}
+
+/// A new project has one file of every document type, each in its own
+/// folder, and its entry lists them in the read order: description, context,
+/// definitions, rules, contracts, bindings, usage, stop conditions, task,
+/// checks, data, output. Every name takes the chosen ending.
+#[test]
+fn canonical_project_has_every_type_in_read_order() {
+    for ending in [".lcl", ".lcl.txt"] {
+        for mode in MODES {
+            let plan = Plan::canonical(mode, ending);
+            assert_eq!(plan.entry, format!("main{ending}"));
+            let paths: Vec<String> = plan.parts.iter().map(|p| p.path.clone()).collect();
+            let wanted: Vec<String> = [
+                "description/description",
+                "context/context",
+                "definitions/definitions",
+                "rules/rules",
+                "contracts/contracts",
+                "bindings/bindings",
+                "usage/usage",
+                "stop_conditions/stop_conditions",
+                "tasks/task_001",
+                "checks/checks",
+                "data/data",
+                "output/output",
+            ]
+            .iter()
+            .map(|p| format!("{p}{ending}"))
+            .collect();
+            assert_eq!(paths, wanted);
+            check_plan(engine(), &plan).expect("the canonical plan is valid");
+            let text = entry(engine(), &plan, None).unwrap().text;
+            let mut at = 0;
+            for path in &wanted {
+                let found = text[at..]
+                    .find(&format!("SOURCE: PATH(\"{path}\")"))
+                    .unwrap_or_else(|| panic!("{path} is listed after the one before it"));
+                at += found + 1;
+            }
+            for part_plan in &plan.parts {
+                let file =
+                    part(engine(), &part_plan.doc_type, mode, &part_plan.path, None).unwrap();
+                assert_valid(&part_plan.role, &file);
+            }
+        }
+    }
 }
 
 #[test]
@@ -288,7 +360,7 @@ fn same_request_produces_deterministic_bytes() {
         }
     }
     for mode in MODES {
-        let plan = Plan::canonical(mode);
+        let plan = Plan::canonical(mode, ".lcl.txt");
         assert_eq!(entry(engine(), &plan, None), entry(&other, &plan, None));
     }
 }
@@ -310,19 +382,20 @@ fn localized_project_scaffolds_remain_valid() {
         };
     for locale in LOCALES {
         let directive = format!("@locale {locale}\n");
-        for role in roles(engine()) {
-            let minimal = part(engine(), &role, Mode::Minimal, "x.lcl", Some(&tag(locale)))
-                .unwrap_or_else(|e| panic!("{locale} {role}: {e}"));
+        for t in document_types(engine()) {
+            let role = t.role;
+            let minimal = part(engine(), t.id, Mode::Minimal, "x.lcl", Some(&tag(locale)))
+                .unwrap_or_else(|e| panic!("{locale} {}: {e}", t.id));
             assert!(minimal.text.starts_with(&directive), "{}", minimal.text);
             assert!(!minimal.text.contains("SPECIFICATION"), "{}", minimal.text);
-            assert_valid(&role, &minimal);
-            let guided = part(engine(), &role, Mode::Guided, "x.lcl", Some(&tag(locale)));
+            assert_valid(role, &minimal);
+            let guided = part(engine(), t.id, Mode::Guided, "x.lcl", Some(&tag(locale)));
             if let Some(guided) = refused_as_unspellable(guided, locale) {
-                assert_valid(&role, &guided);
+                assert_valid(role, &guided);
             }
         }
         for mode in MODES {
-            let project = entry(engine(), &Plan::canonical(mode), Some(&tag(locale)));
+            let project = entry(engine(), &Plan::canonical(mode, ".lcl"), Some(&tag(locale)));
             if let Some(project) = refused_as_unspellable(project, locale) {
                 assert_valid("kind.project", &project);
             }
@@ -455,6 +528,7 @@ fn planned(path: &str, role: &str) -> PlannedPart {
     PlannedPart {
         path: path.to_string(),
         role: role.to_string(),
+        doc_type: role.to_string(),
         required: true,
         master: None,
     }
@@ -463,18 +537,26 @@ fn planned(path: &str, role: &str) -> PlannedPart {
 #[test]
 fn invalid_project_file_plan_is_rejected() {
     let with = |change: &dyn Fn(&mut Plan)| {
-        let mut plan = Plan::canonical(Mode::Guided);
+        let mut plan = Plan::canonical(Mode::Guided, ".lcl");
         change(&mut plan);
         plan
     };
     let cases = [
         (
-            with(&|p| p.parts.push(planned("rules.lcl", "kind.part.rules"))),
-            "names rules.lcl twice",
+            with(&|p| p.parts.push(planned("rules/rules.lcl", "kind.part.rules"))),
+            "names rules/rules.lcl twice",
         ),
         (
-            with(&|p| p.parts.push(planned("more/task.lcl", "kind.part.task"))),
+            with(&|p| p.parts.push(planned("more/rules.lcl", "kind.part.rules"))),
             "would collide",
+        ),
+        (
+            with(&|p| p.parts[0].doc_type = "contracts".to_string()),
+            "a Contracts file is a kind.part.rules part, not kind.part.description",
+        ),
+        (
+            with(&|p| p.parts[0].doc_type = "notes".to_string()),
+            "not a project file role or document type",
         ),
         (
             with(&|p| p.entry = "app/main.lcl".to_string()),
@@ -514,7 +596,8 @@ fn invalid_project_file_plan_is_rejected() {
         assert!(error.0.contains(needle), "wanted {needle:?}, got {error}");
     }
     for mode in MODES {
-        check_plan(engine(), &Plan::canonical(mode)).expect("the canonical plans are valid");
+        check_plan(engine(), &Plan::canonical(mode, ".lcl"))
+            .expect("the canonical plans are valid");
     }
 }
 
@@ -557,4 +640,44 @@ fn project_master_names_only_valid_role_masters() {
         .contains("not a key of a project Master part"));
     let mode = project.replace("\"guided\"", "\"verbose\"");
     assert!(parse_master(&mode).unwrap_err().0.contains("is not a mode"));
+}
+
+/// A Master of a narrower type names it with "type"; it is checked against
+/// its role, and a project part of that type takes only a Master of that type.
+#[test]
+fn typed_masters_are_kept_to_their_type() {
+    let contracts = part(engine(), "contracts", Mode::Guided, "contracts.lcl", None)
+        .unwrap()
+        .text;
+    let typed = |role: &str, doc_type: &str| {
+        role_master("0.3.0", role, &contracts).replacen(
+            "\"text\"",
+            &format!("\"type\": \"{doc_type}\", \"text\""),
+            1,
+        )
+    };
+    let master = parse_master(&typed("kind.part.rules", "contracts")).unwrap();
+    assert_eq!(master.doc_type, "contracts");
+    check_master(engine(), &master, &no_masters).expect("a valid Contracts Master");
+    let untyped = parse_master(&role_master("0.3.0", "kind.part.rules", &contracts)).unwrap();
+    assert_eq!(untyped.doc_type, "kind.part.rules");
+    refused(
+        &typed("kind.part.checks", "contracts"),
+        "a Contracts Master is for kind.part.rules, not kind.part.checks",
+    );
+    refused(
+        &typed("kind.part.rules", "notes"),
+        "not a project file role or document type",
+    );
+    let project = "{\"format\": 1, \"id\": \"web\", \"name\": \"Web\", \"core\": \"0.3.0\", \
+                   \"role\": \"kind.project\", \"mode\": \"guided\", \"entry\": \"main.lcl\", \
+                   \"parts\": [{\"path\": \"contracts.lcl\", \"role\": \"kind.part.rules\", \
+                   \"type\": \"contracts\", \"master\": \"mine\"}]}";
+    let plan = parse_master(project).unwrap();
+    check_master(engine(), &plan, &|_| Ok(master.clone())).expect("a Contracts part Master");
+    let error = check_master(engine(), &plan, &|_| Ok(untyped.clone())).unwrap_err();
+    assert!(
+        error.0.contains("is for kind.part.rules, not contracts"),
+        "{error}"
+    );
 }

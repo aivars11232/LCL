@@ -18,15 +18,15 @@ use crate::execution::{Answer, Breaks, Runs, Session, WatchedHost, WatchedOperat
 use crate::http::{Request, Response};
 use crate::intelligence;
 use crate::manual;
-use crate::masters::Masters;
+use crate::masters::{self, Masters};
 use crate::project::Workspace;
 use crate::remote;
 use crate::server::{Outcome as RouteOutcome, Route};
 use crate::settings;
 use lcl_protocol::json::{Node, Object};
 use lcl_protocol::{Command, Granted, Inputs, Report};
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
 
 /// The frontend, compiled in.
 ///
@@ -46,17 +46,25 @@ const APP_JS: &str = include_str!("../assets/app.js");
 const BRAND_MARK_PNG: &[u8] = include_bytes!("../assets/brand/lcl-mark.png");
 const BRAND_ICON_PNG: &[u8] = include_bytes!("../assets/brand/lcl-icon-32.png");
 
+/// Opens another folder exactly as this process's launch opened its own: the
+/// same specification packages and locale profiles, located the same way.
+pub type Reopen = Box<dyn Fn(&Path) -> Result<Workspace, String> + Send + Sync>;
+
 /// Everything the routes need, shared across connection threads.
 pub struct Routes {
-    workspace: Arc<Workspace>,
+    /// The folder this window shows. It changes only when New Project or
+    /// Settings opens the projects folder here ([`Routes::with_reopen`]).
+    workspace: RwLock<Arc<Workspace>>,
     runs: Runs,
     /// The user's settings file, when this process knows where one lives.
     settings_file: Option<PathBuf>,
     /// The launcher's built-in default workspace, when a launcher named one.
     builtin_default: Option<PathBuf>,
     /// Something the person should be told about how this launch chose its
-    /// project, such as a chosen default workspace that no longer exists.
-    notice: Option<String>,
+    /// project, such as a chosen default workspace that no longer exists. It
+    /// is cleared when another folder is opened.
+    notice: RwLock<Option<String>>,
+    reopen: Option<Reopen>,
 }
 
 impl Routes {
@@ -64,12 +72,21 @@ impl Routes {
     /// default and none can be saved. [`Routes::with_settings_file`] names one.
     pub fn new(workspace: Arc<Workspace>) -> Routes {
         Routes {
-            workspace,
+            workspace: RwLock::new(workspace),
             runs: Runs::new(),
             settings_file: None,
             builtin_default: None,
-            notice: None,
+            notice: RwLock::new(None),
+            reopen: None,
         }
+    }
+
+    /// Let this window open the projects folder in place of its own folder.
+    /// Without this, the folder never changes, and a new project must be
+    /// created where the window already shows it.
+    pub fn with_reopen(mut self, reopen: Reopen) -> Routes {
+        self.reopen = Some(reopen);
+        self
     }
 
     /// Read and write the workspace settings at `file`.
@@ -86,12 +103,14 @@ impl Routes {
 
     /// Something to tell the person when the page loads.
     pub fn with_notice(mut self, notice: Option<String>) -> Routes {
-        self.notice = notice;
+        self.notice = RwLock::new(notice);
         self
     }
 
-    pub fn workspace(&self) -> &Workspace {
-        &self.workspace
+    /// The workspace this window shows now. A caller keeps the one it got for
+    /// the whole of one request, so a request never mixes two folders.
+    pub fn workspace(&self) -> Arc<Workspace> {
+        Arc::clone(&self.workspace.read().unwrap_or_else(|e| e.into_inner()))
     }
 
     /// One run's events from `from` onward, and whether the run has finished,
@@ -129,6 +148,7 @@ impl Route for Routes {
 
 impl Routes {
     fn reply(&self, request: &Request) -> Response {
+        let workspace = self.workspace();
         match (request.method.as_str(), request.path.as_str()) {
             ("GET", "/") => {
                 // The page is stamped with the session token, because the
@@ -152,36 +172,45 @@ impl Routes {
             ("GET", "/brand/lcl-mark.png") => Response::png(BRAND_MARK_PNG),
             ("GET", "/brand/lcl-icon-32.png") => Response::png(BRAND_ICON_PNG),
 
-            ("GET", "/api/session") => self.session(),
-            ("GET", "/api/documents") => self.documents(),
-            ("GET", "/api/document") => self.read_document(request),
-            ("PUT", "/api/document") => self.save_document(request),
-            ("POST", "/api/document") => self.create_document(request),
-            ("DELETE", "/api/document") => self.delete_document(request),
-            ("GET", "/api/roles") => authoring::roles(&self.workspace, &self.masters()),
-            ("POST", "/api/slots") => authoring::slots(&self.workspace, request),
+            ("GET", "/api/session") => self.session(&workspace),
+            ("GET", "/api/documents") => self.documents(&workspace),
+            ("GET", "/api/document") => self.read_document(&workspace, request),
+            ("PUT", "/api/document") => self.save_document(&workspace, request),
+            ("POST", "/api/document") => self.create_document(&workspace, request),
+            ("DELETE", "/api/document") => self.delete_document(&workspace, request),
+            ("GET", "/api/roles") => authoring::roles(&workspace, &self.masters()),
+            ("POST", "/api/slots") => authoring::slots(&workspace, request),
             ("GET", "/api/scaffold") => {
-                authoring::preview_file(&self.workspace, &self.masters(), request)
+                authoring::preview_file(&workspace, &self.masters(), request)
+            }
+            // `name=` makes a new project in the projects folder; `folder=`
+            // fills a folder of this workspace, as it always has.
+            ("GET", "/api/project/plan") if request.param("name").is_some() => {
+                self.preview_named_project(&workspace, request)
             }
             ("GET", "/api/project/plan") => {
-                authoring::preview_project(&self.workspace, &self.masters(), request)
+                authoring::preview_project(&workspace, &self.masters(), request, self.ending())
+            }
+            ("POST", "/api/project") if request.param("name").is_some() => {
+                self.create_named_project(&workspace, request)
             }
             ("POST", "/api/project") => {
-                authoring::create_project(&self.workspace, &self.masters(), request)
+                authoring::create_project(&workspace, &self.masters(), request, self.ending())
             }
-            ("GET", "/api/project/status") => authoring::project_status(&self.workspace, request),
-            ("GET", "/api/masters") => authoring::list_masters(&self.workspace, &self.masters()),
+            ("POST", "/api/projects/open") => self.open_projects_folder(),
+            ("GET", "/api/project/status") => authoring::project_status(&workspace, request),
+            ("GET", "/api/masters") => authoring::list_masters(&workspace, &self.masters()),
             ("GET", "/api/master") => authoring::read_master(&self.masters(), request),
-            ("GET", "/api/master/starter") => authoring::master_starter(&self.workspace, request),
-            ("PUT", "/api/master") => {
-                authoring::save_master(&self.workspace, &self.masters(), request)
+            ("GET", "/api/master/starter") => {
+                authoring::master_starter(&workspace, request, self.ending())
             }
+            ("PUT", "/api/master") => authoring::save_master(&workspace, &self.masters(), request),
             ("DELETE", "/api/master") => authoring::delete_master(&self.masters(), request),
             ("PUT", "/api/masters/default") => {
-                authoring::set_default(&self.workspace, &self.masters(), request)
+                authoring::set_default(&workspace, &self.masters(), request)
             }
-            ("GET", "/api/convert/plan") => authoring::preview_conversion(&self.workspace, request),
-            ("POST", "/api/convert") => authoring::convert(&self.workspace, request),
+            ("GET", "/api/convert/plan") => authoring::preview_conversion(&workspace, request),
+            ("POST", "/api/convert") => authoring::convert(&workspace, request),
             ("GET", "/manual") | ("GET", "/manual/") => {
                 let token = request
                     .header("x-lcl-token")
@@ -221,14 +250,16 @@ impl Routes {
     }
 
     /// What this workspace is, for a frontend that just loaded.
-    fn session(&self) -> Response {
-        let spec = self.workspace.engine().spec_record();
+    fn session(&self, workspace: &Workspace) -> Response {
+        let spec = workspace.engine().spec_record();
+        let notice = self
+            .notice
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         let body = Object::new()
             .with("protocol", Node::string(lcl_protocol::PROTOCOL))
-            .with(
-                "root",
-                Node::string(self.workspace.root().display().to_string()),
-            )
+            .with("root", Node::string(workspace.root().display().to_string()))
             .with(
                 "spec",
                 Object::new()
@@ -242,7 +273,7 @@ impl Routes {
             // documents with it. `spec` stays the Core 0.1.0 package.
             .with_some(
                 "localized_spec",
-                self.workspace.engines().localized().map(|engine| {
+                workspace.engines().localized().map(|engine| {
                     let spec = engine.spec_record();
                     Object::new()
                         .with("root", Node::string(&spec.root))
@@ -252,24 +283,24 @@ impl Routes {
                         .into()
                 }),
             )
-            .with("entry", Node::optional(self.workspace.entry()))
+            .with("entry", Node::optional(workspace.entry()))
             // The document this workspace was launched for, when a file
             // association supplied one. Separate from `entry`, which is the
             // manifest's declared starting document and belongs to the project
             // rather than to this launch.
             .with(
                 "open",
-                Node::optional(self.workspace.open_document().map(str::to_string)),
+                Node::optional(workspace.open_document().map(str::to_string)),
             )
             // How this launch chose its project, when there is something to say.
-            .with("notice", Node::optional(self.notice.clone()))
+            .with("notice", Node::optional(notice))
             .pretty();
         Response::json(body)
     }
 
     /// Every `.lcl` document in the project.
-    fn documents(&self) -> Response {
-        match self.workspace.documents() {
+    fn documents(&self, workspace: &Workspace) -> Response {
+        match workspace.documents() {
             Ok(entries) => Response::json(
                 Object::new()
                     .with(
@@ -285,7 +316,7 @@ impl Routes {
                                         None => Node::Null,
                                     },
                                 )
-                                .with("kind", self.kind_of(e))
+                                .with("kind", Self::kind_of(workspace, e))
                                 .into()
                         })),
                     )
@@ -299,12 +330,12 @@ impl Routes {
     /// parses it: the role of a project part, `kind.project` for an entry.
     /// `null` for a folder, an unreadable or unparsable file, or one over
     /// 1 MiB, which the tree does not read.
-    fn kind_of(&self, entry: &crate::project::Entry) -> Node {
+    fn kind_of(workspace: &Workspace, entry: &crate::project::Entry) -> Node {
         if entry.directory || entry.bytes.map_or(true, |n| n > 1 << 20) {
             return Node::Null;
         }
-        match self.workspace.read(&entry.id) {
-            Ok(document) => authoring::declared_kind(&self.workspace, &entry.id, &document.text)
+        match workspace.read(&entry.id) {
+            Ok(document) => authoring::declared_kind(workspace, &entry.id, &document.text)
                 .map_or(Node::Null, Node::string),
             Err(_) => Node::Null,
         }
@@ -318,11 +349,11 @@ impl Routes {
         }
     }
 
-    fn read_document(&self, request: &Request) -> Response {
+    fn read_document(&self, workspace: &Workspace, request: &Request) -> Response {
         let Some(id) = request.param("id") else {
             return Response::error(400, "a document id is required");
         };
-        match self.workspace.read(id) {
+        match workspace.read(id) {
             Ok(document) => Response::json(
                 Object::new()
                     .with("id", Node::string(&document.id))
@@ -345,7 +376,7 @@ impl Routes {
     /// version or to keep theirs by saving again over that exact revision.
     /// Nothing is ever merged. A refusal by the encoding rule is 422 and says
     /// which rule and why. The file is not touched in any refusal.
-    fn save_document(&self, request: &Request) -> Response {
+    fn save_document(&self, workspace: &Workspace, request: &Request) -> Response {
         let Some(id) = request.param("id") else {
             return Response::error(400, "a document id is required");
         };
@@ -359,7 +390,7 @@ impl Routes {
             Ok(text) => text,
             Err(e) => return Response::error(422, &e.to_string()),
         };
-        match self.workspace.save_expecting(id, text, base) {
+        match workspace.save_expecting(id, text, base) {
             Ok(document) => Response::json(
                 Object::new()
                     .with("id", Node::string(&document.id))
@@ -385,7 +416,7 @@ impl Routes {
             Err(crate::WorkspaceError::Document(
                 crate::DocumentError::Changed(_) | crate::DocumentError::NotFound(_),
             )) => {
-                let now = self.workspace.read(id).ok();
+                let now = workspace.read(id).ok();
                 Response::json_status(
                     409,
                     Object::new()
@@ -421,7 +452,7 @@ impl Routes {
     ///
     /// An existing file is never overwritten. Creation that silently replaced
     /// a document would be a data-loss path reachable by typing a name.
-    fn create_document(&self, request: &Request) -> Response {
+    fn create_document(&self, workspace: &Workspace, request: &Request) -> Response {
         let Some(requested) = request.param("id") else {
             return Response::error(400, "a document id is required");
         };
@@ -434,7 +465,7 @@ impl Routes {
         }
         // Preserve the early response, but do not use this observation as a
         // reservation: create_document below is the atomic authority.
-        if self.workspace.exists(&id) {
+        if workspace.exists(&id) {
             return Response::error(409, &format!("{id} already exists"));
         }
         // With a role, the text is the role's scaffold or Master for exactly
@@ -448,7 +479,7 @@ impl Routes {
                         "a file created by role takes its text from the scaffold; send no body",
                     );
                 }
-                scaffolded = match authoring::file(&self.workspace, &self.masters(), request, &id) {
+                scaffolded = match authoring::file(workspace, &self.masters(), request, &id) {
                     Ok(planned) => planned.scaffold.text,
                     Err(refusal) => return refusal,
                 };
@@ -483,7 +514,7 @@ impl Routes {
                 Err(e) => return Response::error(422, &e.to_string()),
             },
         };
-        match self.workspace.create_document(&id, text) {
+        match workspace.create_document(&id, text) {
             Ok(document) => Response::json(
                 Object::new()
                     .with("id", Node::string(&document.id))
@@ -508,7 +539,7 @@ impl Routes {
     /// left alone and reported. See [`crate::document::delete`] for what else
     /// is refused — anything but a regular `.lcl` or `.lcl.txt` file inside
     /// the project.
-    fn delete_document(&self, request: &Request) -> Response {
+    fn delete_document(&self, workspace: &Workspace, request: &Request) -> Response {
         use crate::DocumentError as D;
         let Some(id) = request.param("id") else {
             return Response::error(400, "a document id is required");
@@ -519,7 +550,7 @@ impl Routes {
                 "a digest is required: a deletion removes only the content that was confirmed",
             );
         };
-        match self.workspace.delete(id, digest) {
+        match workspace.delete(id, digest) {
             Ok(()) => Response::json(
                 Object::new()
                     .with("id", Node::string(id))
@@ -581,7 +612,7 @@ impl Routes {
             )
             .with(
                 "current_workspace",
-                Node::string(self.workspace.root().display().to_string()),
+                Node::string(self.workspace().root().display().to_string()),
             )
             .pretty()
     }
@@ -680,15 +711,186 @@ impl Routes {
                 created = true;
             }
         }
+        let directory = absolute && path.is_dir();
         Response::json(
             Object::new()
                 .with("path", Node::string(raw))
                 .with("absolute", Node::Bool(absolute))
                 .with("exists", Node::Bool(absolute && path.exists()))
-                .with("directory", Node::Bool(absolute && path.is_dir()))
+                .with("directory", Node::Bool(directory))
+                // Whether a project can be created in it now, found by doing
+                // it: permission bits alone do not say (ACLs, read-only
+                // mounts).
+                .with(
+                    "writable",
+                    Node::Bool(directory && settings::writable(&path).is_ok()),
+                )
                 .with("created", Node::Bool(created))
                 .pretty(),
         )
+    }
+
+    /// The configured default file type: the ending of a new document named
+    /// without one, and of every file a canonical new project starts with.
+    fn ending(&self) -> &'static str {
+        self.settings().settings.default_extension
+    }
+
+    /// Where New Project creates projects: the Projects folder chosen in
+    /// Settings, which must be a folder that exists and can be written — a
+    /// chosen folder is never silently replaced by another — or, when none is
+    /// chosen, the launcher's built-in default workspace, or this window's
+    /// folder when no launcher named one. A settings file that cannot be read
+    /// does not say which folder was chosen, so it is an error here too.
+    fn projects_folder(&self, workspace: &Workspace) -> Result<PathBuf, String> {
+        let loaded = self.settings();
+        if let Some(problem) = loaded.problem {
+            return Err(format!(
+                "{problem} New Project creates projects in the Projects folder those settings \
+                 name, so it waits until they are saved again in Settings."
+            ));
+        }
+        match loaded.settings.default_workspace {
+            Some(chosen) => {
+                if !chosen.is_dir() {
+                    return Err(format!(
+                        "The Projects folder {} does not exist or is not a folder. Choose \
+                         another one in Settings, or create it there; nothing was created.",
+                        chosen.display()
+                    ));
+                }
+                settings::writable(&chosen).map_err(|e| {
+                    format!(
+                        "The Projects folder {} cannot be written to ({e}). Choose another \
+                         one in Settings; nothing was created.",
+                        chosen.display()
+                    )
+                })?;
+                Ok(chosen)
+            }
+            None => Ok(self
+                .builtin_default
+                .clone()
+                .unwrap_or_else(|| workspace.root().to_path_buf())),
+        }
+    }
+
+    /// `GET /api/project/plan?name=`: New Project's exact files, where they
+    /// will go, and whether that folder is already taken. Written nowhere.
+    fn preview_named_project(&self, workspace: &Workspace, request: &Request) -> Response {
+        let projects = match self.projects_folder(workspace) {
+            Ok(projects) => projects,
+            Err(detail) => return Response::error(409, &detail),
+        };
+        match authoring::named_project(
+            workspace,
+            &self.masters(),
+            request,
+            &projects,
+            self.ending(),
+        ) {
+            Ok(plan) => Response::json(authoring::named_plan_json(
+                &plan,
+                &projects,
+                workspace.root(),
+            )),
+            Err(refusal) => refusal,
+        }
+    }
+
+    /// `POST /api/project?name=&plan_digest=`: create the previewed project in
+    /// its own new folder, all files or none. A folder of that name that
+    /// already exists is never written into. When the new project is outside
+    /// the folder this window shows, the window opens the projects folder, so
+    /// the project is in the tree the moment it exists.
+    fn create_named_project(&self, workspace: &Workspace, request: &Request) -> Response {
+        let projects = match self.projects_folder(workspace) {
+            Ok(projects) => projects,
+            Err(detail) => return Response::error(409, &detail),
+        };
+        let plan = match authoring::named_project(
+            workspace,
+            &self.masters(),
+            request,
+            &projects,
+            self.ending(),
+        ) {
+            Ok(plan) => plan,
+            Err(refusal) => return refusal,
+        };
+        if let Err(refusal) = authoring::previewed(request, &plan.digest) {
+            return refusal;
+        }
+        if std::fs::symlink_metadata(&plan.dir).is_ok() {
+            return Response::error(
+                409,
+                &format!(
+                    "a project named {} already exists at {}; nothing was created or changed",
+                    plan.name,
+                    plan.dir.display()
+                ),
+            );
+        }
+        let opens = authoring::inside(&plan.dir, workspace.root()).is_none();
+        if opens && self.reopen.is_none() {
+            return Response::error(
+                409,
+                &format!(
+                    "{} is outside this workspace, and this window cannot open another folder; \
+                     nothing was created",
+                    plan.dir.display()
+                ),
+            );
+        }
+        if let Err(detail) = masters::create(&plan.dir, &plan.files) {
+            return Response::error(409, &detail);
+        }
+        if opens {
+            if let Err(detail) = self.open_folder(&projects) {
+                return Response::error(
+                    500,
+                    &format!(
+                        "The project was created in {}, but this window could not open {}: \
+                         {detail}",
+                        plan.dir.display(),
+                        projects.display()
+                    ),
+                );
+            }
+        }
+        Response::json(authoring::named_plan_json(
+            &plan,
+            &projects,
+            self.workspace().root(),
+        ))
+    }
+
+    /// `POST /api/projects/open`: show the projects folder in this window.
+    fn open_projects_folder(&self) -> Response {
+        let workspace = self.workspace();
+        let projects = match self.projects_folder(&workspace) {
+            Ok(projects) => projects,
+            Err(detail) => return Response::error(409, &detail),
+        };
+        if self.reopen.is_none() {
+            return Response::error(409, "this window cannot open another folder");
+        }
+        match self.open_folder(&projects) {
+            Ok(()) => self.session(&self.workspace()),
+            Err(detail) => Response::error(500, &detail),
+        }
+    }
+
+    /// Show `folder` in this window from now on, opened as this launch opened
+    /// its own. Runs already started keep the workspace they started in.
+    fn open_folder(&self, folder: &Path) -> Result<(), String> {
+        let Some(reopen) = &self.reopen else {
+            return Err("this window cannot open another folder".to_string());
+        };
+        let next = Arc::new(reopen(folder)?);
+        *self.workspace.write().unwrap_or_else(|e| e.into_inner()) = next;
+        *self.notice.write().unwrap_or_else(|e| e.into_inner()) = None;
+        Ok(())
     }
 
     /// Token spans for one buffer, produced by the real lexer.
@@ -700,8 +902,9 @@ impl Routes {
         // The id names the document the buffer is, so a localized document is
         // lexed by the engine that judges it.
         let unit = intelligence::unit_of(request.param("id").unwrap_or("buffer.lcl"), text);
+        let workspace = self.workspace();
         Response::json(intelligence::tokens_json(
-            self.workspace.engine_for(&unit),
+            workspace.engine_for(&unit),
             &unit,
         ))
     }
@@ -726,13 +929,10 @@ impl Routes {
 
     /// One engine request over a buffer, through the project's own provider.
     pub fn report(&self, id: &str, text: &str, command: Command) -> Result<Report, String> {
-        let provider = self
-            .workspace
-            .project()
-            .provider()
-            .map_err(|e| e.to_string())?;
+        let workspace = self.workspace();
+        let provider = workspace.project().provider().map_err(|e| e.to_string())?;
         let unit = intelligence::unit_of(id, text);
-        let engine = self.workspace.engine_for(&unit);
+        let engine = workspace.engine_for(&unit);
         Ok(match command {
             Command::Check => engine.check(&unit, &provider),
             Command::Inspect => engine.inspect(&unit, &provider, &Inputs::new()),
@@ -777,7 +977,7 @@ impl Routes {
         };
 
         let session = self.runs.open(breaks);
-        let workspace = Arc::clone(&self.workspace);
+        let workspace = self.workspace();
         let document = id.to_string();
         let thread_session = Arc::clone(&session);
 

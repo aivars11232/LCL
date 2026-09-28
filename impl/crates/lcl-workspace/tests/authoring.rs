@@ -11,15 +11,21 @@ use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-const ROLES: [&str; 8] = [
-    "kind.part.checks",
-    "kind.part.context",
-    "kind.part.data",
-    "kind.part.definitions",
-    "kind.part.description",
-    "kind.part.output",
-    "kind.part.rules",
-    "kind.part.task",
+/// Every document type New Document offers, in the read order, and the role
+/// a file of that type declares.
+const TYPES: [(&str, &str); 12] = [
+    ("kind.part.description", "kind.part.description"),
+    ("kind.part.context", "kind.part.context"),
+    ("kind.part.definitions", "kind.part.definitions"),
+    ("kind.part.rules", "kind.part.rules"),
+    ("contracts", "kind.part.rules"),
+    ("bindings", "kind.part.definitions"),
+    ("usage", "kind.part.description"),
+    ("stop_conditions", "kind.part.checks"),
+    ("kind.part.task", "kind.part.task"),
+    ("kind.part.checks", "kind.part.checks"),
+    ("kind.part.data", "kind.part.data"),
+    ("kind.part.output", "kind.part.output"),
 ];
 
 fn project_spec() -> PathBuf {
@@ -211,11 +217,13 @@ fn every_role_creates_its_own_scaffold_and_the_file_is_the_preview() {
         .iter()
         .map(|r| text(r, "role"))
         .collect();
-    assert_eq!(listed, ROLES);
+    assert_eq!(listed, TYPES.map(|(id, _)| id));
 
     let mut texts = std::collections::BTreeSet::new();
-    for role in ROLES {
-        let stem = role.rsplit('.').next().unwrap();
+    let mut declared = std::collections::BTreeMap::new();
+    for (doc_type, kind) in TYPES {
+        let role = doc_type;
+        let stem = doc_type.rsplit('.').next().unwrap();
         for mode in ["minimal", "guided"] {
             let path = format!("{stem}_{mode}.lcl");
             let preview = json(&request(
@@ -224,8 +232,9 @@ fn every_role_creates_its_own_scaffold_and_the_file_is_the_preview() {
                 &format!("/api/scaffold?role={role}&mode={mode}&path={path}"),
                 "",
             ));
-            assert_eq!(text(&preview, "role"), role);
-            assert!(text(&preview, "text").contains(&format!("KIND: {role}")));
+            assert_eq!(text(&preview, "role"), kind);
+            assert_eq!(text(&preview, "type"), doc_type);
+            assert!(text(&preview, "text").contains(&format!("KIND: {kind}")));
             let reply = request(
                 &running,
                 "POST",
@@ -240,20 +249,20 @@ fn every_role_creates_its_own_scaffold_and_the_file_is_the_preview() {
             let written = std::fs::read_to_string(project.join(&path)).unwrap();
             assert_eq!(written, text(&preview, "text"), "{role} {mode}");
             texts.insert(written);
+            declared.insert(path, kind);
         }
     }
     assert_eq!(
         texts.len(),
-        ROLES.len() * 2,
-        "every role and mode has its own text"
+        TYPES.len() * 2,
+        "every type and mode has its own text"
     );
 
     // The tree says what each file declares, never what its name suggests.
     let tree = json(&request(&running, "GET", "/api/documents", ""));
     for entry in tree.get("entries").and_then(Json::as_array).unwrap() {
         let id = text(entry, "id");
-        let stem = id.split('_').next().unwrap();
-        assert_eq!(text(entry, "kind"), format!("kind.part.{stem}"), "{id}");
+        assert_eq!(text(entry, "kind"), declared[id], "{id}");
     }
 
     // A role with a body, and an unknown role, are refused and write nothing.

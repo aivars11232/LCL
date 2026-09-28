@@ -1153,8 +1153,8 @@ const uiCases = [
     await bounded(h.choose("Save"), "saved");
     assert.equal(h.modalOpen(), false);
     assert.equal(h.run("state.files.default_workspace"), missing);
-    assert(h.toasts().some(t => t.includes("Default workspace updated")), h.toasts().join(" | "));
-    assert(h.toasts().some(t => t.includes("next time LCL Workspace is launched")));
+    assert(h.toasts().some(t => t.includes("Projects folder updated")), h.toasts().join(" | "));
+    assert(h.toasts().some(t => t.includes("New projects are created there")));
 
     await h.run("loadFileSettings()");
     assert.equal(h.run("state.files.default_workspace"), missing, "the server did not keep it");

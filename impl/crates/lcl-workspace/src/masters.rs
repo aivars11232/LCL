@@ -9,16 +9,18 @@
 //! `$XDG_CONFIG_HOME/lcl/masters/`, or `$HOME/.config/lcl/masters/`, beside
 //! the workspace settings file: one `<id>.json` per Master, in the format
 //! [`lcl_protocol::scaffold::parse_master`] reads, and `defaults.json` naming
-//! the default Master of each role:
+//! the default Master of each document type. A role's own type is named by the
+//! role, so a defaults file written before narrower types existed means what
+//! it always meant:
 //!
 //! ```text
-//! {"format": 1, "defaults": {"kind.part.task": "my-task"}}
+//! {"format": 1, "defaults": {"kind.part.task": "my-task", "contracts": "my-contracts"}}
 //! ```
 //!
 //! ## Which text a new file gets
 //!
-//! An explicitly selected Master first, then the default Master for the role,
-//! then the canonical scaffold. A selected or default Master that is missing
+//! An explicitly selected Master first, then the default Master for the
+//! document type, then the canonical scaffold. A selected or default Master that is missing
 //! or invalid is an error, never a silent fall back to the canonical scaffold.
 //!
 //! ## Copies, never links
@@ -38,7 +40,7 @@ use lcl_protocol::Engine;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// The file naming the default Master of each role.
+/// The file naming the default Master of each document type.
 pub const DEFAULTS_FILE: &str = "defaults.json";
 
 /// The `defaults.json` format this build reads and writes.
@@ -56,8 +58,8 @@ pub enum Selection<'a> {
     Master(&'a str),
     /// The canonical scaffold in this mode, whatever the defaults say.
     Canonical(Mode),
-    /// The role's default Master, or the canonical scaffold in this mode when
-    /// the role has none.
+    /// The document type's default Master, or the canonical scaffold in this
+    /// mode when the type has none.
     Automatic(Mode),
 }
 
@@ -74,6 +76,8 @@ pub struct Planned {
     /// Relative to the project folder, `/`-separated.
     pub path: String,
     pub role: String,
+    /// The document type: `role` itself, or a narrower type of it.
+    pub doc_type: String,
     pub origin: Origin,
     pub scaffold: Scaffold,
 }
@@ -201,7 +205,7 @@ impl Masters {
         Ok(())
     }
 
-    /// The default Master of each role. A missing file names none.
+    /// The default Master of each document type. A missing file names none.
     pub fn defaults(&self) -> Result<BTreeMap<String, String>, String> {
         if !self.available {
             return Ok(BTreeMap::new());
@@ -250,55 +254,70 @@ impl Masters {
         settings::write_atomically(&self.dir.join(DEFAULTS_FILE), json.as_bytes())
     }
 
-    /// Make `id` the default Master of `role`, or with `None` clear the role's
-    /// default. A Master becomes a default only when it is valid now and is for
-    /// exactly that role.
-    pub fn set_default(&self, engine: &Engine, role: &str, id: Option<&str>) -> Result<(), String> {
+    /// Make `id` the default Master of `doc_type`, or with `None` clear the
+    /// type's default. A Master becomes a default only when it is valid now and
+    /// is for exactly that document type.
+    pub fn set_default(
+        &self,
+        engine: &Engine,
+        doc_type: &str,
+        id: Option<&str>,
+    ) -> Result<(), String> {
         let mut defaults = self.defaults()?;
         match id {
             Some(id) => {
                 let master = self.read(id)?;
-                if master.role != role {
-                    return Err(format!("Master {id} is for {}, not {role}", master.role));
+                if master.doc_type != doc_type {
+                    return Err(format!(
+                        "Master {id} is for {}, not {doc_type}",
+                        master.doc_type
+                    ));
                 }
                 self.check(engine, &master)?;
-                defaults.insert(role.to_string(), id.to_string());
+                defaults.insert(doc_type.to_string(), id.to_string());
             }
             None => {
-                defaults.remove(role);
+                defaults.remove(doc_type);
             }
         }
         self.store_defaults(&defaults)
     }
 
-    /// The Master `selection` names for `role`, or `None` for the canonical
-    /// scaffold in the returned mode.
-    fn choose(&self, role: &str, selection: Selection) -> Result<Result<Master, Mode>, String> {
+    /// The Master `selection` names for `doc_type`, or `None` for the
+    /// canonical scaffold in the returned mode.
+    fn choose(&self, doc_type: &str, selection: Selection) -> Result<Result<Master, Mode>, String> {
         let id = match selection {
             Selection::Master(id) => id.to_string(),
             Selection::Canonical(mode) => return Ok(Err(mode)),
-            Selection::Automatic(mode) => match self.defaults()?.remove(role) {
+            Selection::Automatic(mode) => match self.defaults()?.remove(doc_type) {
                 Some(id) => id,
                 None => return Ok(Err(mode)),
             },
         };
         let master = self.read(&id)?;
-        if master.role != role {
-            return Err(format!("Master {id} is for {}, not {role}", master.role));
+        if master.doc_type != doc_type {
+            return Err(format!(
+                "Master {id} is for {}, not {doc_type}",
+                master.doc_type
+            ));
         }
         Ok(Ok(master))
     }
 
-    /// The exact text a new file of `role` at `path` starts with.
+    /// The exact text a new file of document type `doc_type` at `path` starts
+    /// with.
     pub fn file(
         &self,
         engine: &Engine,
-        role: &str,
+        doc_type: &str,
         selection: Selection,
         path: &str,
         locale: Option<&LocaleTag>,
     ) -> Result<Planned, String> {
-        let (origin, scaffold) = match self.choose(role, selection)? {
+        let role = scaffold::document_type(engine, doc_type)
+            .map_err(|e| e.0)?
+            .role;
+        let (origin, scaffold) = match self.choose(doc_type, selection)? {
             Ok(master) => {
                 let marks =
                     scaffold::check_master(engine, &master, &self.lookup()).map_err(|e| e.0)?;
@@ -309,12 +328,13 @@ impl Masters {
             }
             Err(mode) => (
                 Origin::Canonical(mode),
-                scaffold::part(engine, role, mode, path, locale).map_err(|e| e.0)?,
+                scaffold::part(engine, doc_type, mode, path, locale).map_err(|e| e.0)?,
             ),
         };
         Ok(Planned {
             path: path.to_string(),
             role: role.to_string(),
+            doc_type: doc_type.to_string(),
             origin,
             scaffold,
         })
@@ -322,12 +342,15 @@ impl Masters {
 
     /// Every file a new project starts with, in plan order and exactly as it
     /// will be written: the entry first, then each part, whose text comes from
-    /// the Master the plan names or else by the usual priority.
+    /// the Master the plan names or else by the usual priority. Without a
+    /// project Master the plan is the canonical one, its names ending with
+    /// `ending`.
     pub fn project(
         &self,
         engine: &Engine,
         selection: Selection,
         locale: Option<&LocaleTag>,
+        ending: &str,
     ) -> Result<Vec<Planned>, String> {
         let plan = match self.choose(PROJECT_KIND, selection)? {
             Ok(master) => {
@@ -339,12 +362,13 @@ impl Masters {
                     }
                 }
             }
-            Err(mode) => Plan::canonical(mode),
+            Err(mode) => Plan::canonical(mode, ending),
         };
         let entry = scaffold::entry(engine, &plan, locale).map_err(|e| e.0)?;
         let mut files = vec![Planned {
             path: plan.entry.clone(),
             role: PROJECT_KIND.to_string(),
+            doc_type: PROJECT_KIND.to_string(),
             origin: Origin::Canonical(plan.mode),
             scaffold: entry,
         }];
@@ -353,42 +377,62 @@ impl Masters {
                 Some(id) => Selection::Master(id),
                 None => Selection::Automatic(plan.mode),
             };
-            files.push(self.file(engine, &part.role, selection, &part.path, locale)?);
+            files.push(self.file(engine, &part.doc_type, selection, &part.path, locale)?);
         }
         Ok(files)
     }
 }
 
-/// The file of a new Master for `role`, starting from the canonical scaffold
-/// in `mode` (for `kind.project`, the canonical project plan). It is valid as
-/// it stands; the id and name are meant to be changed.
-pub fn starter(engine: &Engine, role: &str, mode: Mode) -> Result<String, String> {
-    let stem = role.rsplit('.').next().unwrap_or("file");
-    let label = crate::authoring::label(role);
+/// The file of a new Master for document type `doc_type`, starting from the
+/// canonical scaffold in `mode` (for `kind.project`, the canonical project
+/// plan, its names ending with `ending`). It is valid as it stands; the id and
+/// name are meant to be changed.
+pub fn starter(
+    engine: &Engine,
+    doc_type: &str,
+    mode: Mode,
+    ending: &str,
+) -> Result<String, String> {
+    let (role, label) = if doc_type == PROJECT_KIND {
+        (PROJECT_KIND, crate::authoring::label(PROJECT_KIND))
+    } else {
+        let t = scaffold::document_type(engine, doc_type).map_err(|e| e.0)?;
+        (t.role, t.label.to_string())
+    };
+    let stem = doc_type.rsplit('.').next().unwrap_or("file");
     let object = Object::new()
         .with("format", Node::u64(1))
         .with("id", Node::string(format!("my-{stem}")))
         .with("name", Node::string(format!("My {label}")))
         .with("core", Node::string(engine.spec().formal_version()))
         .with("role", Node::string(role));
+    let object = if doc_type != role {
+        object.with("type", Node::string(doc_type))
+    } else {
+        object
+    };
     let object = if role == PROJECT_KIND {
-        let plan = Plan::canonical(mode);
+        let plan = Plan::canonical(mode, ending);
         object
             .with("mode", Node::string(plan.mode.as_str()))
             .with("entry", Node::string(&plan.entry))
             .with(
                 "parts",
                 Node::array(plan.parts.iter().map(|part| {
-                    Object::new()
+                    let object = Object::new()
                         .with("path", Node::string(&part.path))
-                        .with("role", Node::string(&part.role))
-                        .with("required", Node::Bool(part.required))
-                        .into()
+                        .with("role", Node::string(&part.role));
+                    let object = if part.doc_type != part.role {
+                        object.with("type", Node::string(&part.doc_type))
+                    } else {
+                        object
+                    };
+                    object.with("required", Node::Bool(part.required)).into()
                 })),
             )
     } else {
-        let scaffold =
-            scaffold::part(engine, role, mode, &format!("{stem}.lcl"), None).map_err(|e| e.0)?;
+        let scaffold = scaffold::part(engine, doc_type, mode, &format!("{stem}.lcl"), None)
+            .map_err(|e| e.0)?;
         object.with("text", Node::string(&scaffold.text))
     };
     Ok(object.pretty())

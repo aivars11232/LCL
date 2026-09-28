@@ -17,6 +17,7 @@ use lcl_protocol::json::{Node, Object};
 use lcl_protocol::scaffold::{self, Mode, PROJECT_KIND};
 use lcl_protocol::{Engine, Inputs};
 use lcl_resolver::MemoryProvider;
+use std::path::{Path, PathBuf};
 
 /// The Core 0.3.0 engine, or the refusal that says how to provide it.
 pub fn engine(workspace: &Workspace) -> Result<&Engine, Response> {
@@ -87,10 +88,15 @@ fn planned_json(file: &Planned, path: &str) -> Node {
             .with("kind", Node::string("master"))
             .with("master", Node::string(id)),
     };
+    let shown = scaffold::DOCUMENT_TYPES
+        .iter()
+        .find(|t| t.id == file.doc_type)
+        .map_or_else(|| label(&file.role), |t| t.label.to_string());
     Object::new()
         .with("path", Node::string(path))
         .with("role", Node::string(&file.role))
-        .with("label", Node::string(label(&file.role)))
+        .with("type", Node::string(&file.doc_type))
+        .with("label", Node::string(shown))
         .with("origin", origin.into())
         .with("text", Node::string(&file.scaffold.text))
         .with(
@@ -144,13 +150,17 @@ pub fn roles(workspace: &Workspace, masters: &Masters) -> Response {
         );
     };
     let defaults = masters.defaults().unwrap_or_default();
-    let role = |role: &str| -> Node {
+    // `role` is what a request names to start a file of this type: a role's
+    // own type is named by the role, so a caller that knows only roles keeps
+    // working; `kind` is the role the file declares.
+    let entry = |id: &str, label: &str, kind: &str| -> Node {
         Object::new()
-            .with("role", Node::string(role))
-            .with("label", Node::string(label(role)))
+            .with("role", Node::string(id))
+            .with("label", Node::string(label))
+            .with("kind", Node::string(kind))
             .with(
                 "default_master",
-                defaults.get(role).map_or(Node::Null, Node::string),
+                defaults.get(id).map_or(Node::Null, Node::string),
             )
             .into()
     };
@@ -160,9 +170,16 @@ pub fn roles(workspace: &Workspace, masters: &Masters) -> Response {
             .with("core", Node::string(engine.spec().formal_version()))
             .with(
                 "roles",
-                Node::array(scaffold::roles(engine).iter().map(|r| role(r))),
+                Node::array(
+                    scaffold::document_types(engine)
+                        .iter()
+                        .map(|t| entry(t.id, t.label, t.role)),
+                ),
             )
-            .with("project", role(PROJECT_KIND))
+            .with(
+                "project",
+                entry(PROJECT_KIND, &label(PROJECT_KIND), PROJECT_KIND),
+            )
             .with(
                 "modes",
                 Node::array([Mode::Minimal, Mode::Guided].map(|m| Node::string(m.as_str()))),
@@ -232,12 +249,13 @@ fn project_files(
     workspace: &Workspace,
     masters: &Masters,
     request: &Request,
+    ending: &str,
 ) -> Result<(String, Vec<Planned>, String), Response> {
     let engine = engine(workspace)?;
     let folder = folder(workspace, request)?;
     let selection = selection(request)?;
     let files = masters
-        .project(engine, selection, None)
+        .project(engine, selection, None, ending)
         .map_err(|e| Response::error(422, &e))?;
     for file in &files {
         let path = prefixed(&folder, &file.path);
@@ -266,9 +284,15 @@ fn plan_digest(folder: &str, files: &[Planned]) -> String {
 }
 
 /// `GET /api/project/plan?folder=`: the exact files New Project would
-/// create, written nowhere.
-pub fn preview_project(workspace: &Workspace, masters: &Masters, request: &Request) -> Response {
-    match project_files(workspace, masters, request) {
+/// create, written nowhere. `ending` is the configured default file type,
+/// which the canonical plan's names take.
+pub fn preview_project(
+    workspace: &Workspace,
+    masters: &Masters,
+    request: &Request,
+    ending: &str,
+) -> Response {
+    match project_files(workspace, masters, request, ending) {
         Ok((folder, files, digest)) => {
             Response::json(plan_json_rooted(workspace, &folder, &files, &digest))
         }
@@ -303,31 +327,149 @@ fn plan_json_rooted(
 /// `POST /api/project?folder=&plan_digest=`: create exactly the previewed
 /// files, all or none. A plan that no longer has the previewed digest — a
 /// Master or default changed in between — is refused and nothing is written.
-pub fn create_project(workspace: &Workspace, masters: &Masters, request: &Request) -> Response {
-    let (folder, files, digest) = match project_files(workspace, masters, request) {
+pub fn create_project(
+    workspace: &Workspace,
+    masters: &Masters,
+    request: &Request,
+    ending: &str,
+) -> Response {
+    let (folder, files, digest) = match project_files(workspace, masters, request, ending) {
         Ok(planned) => planned,
         Err(refusal) => return refusal,
     };
-    match request.param("plan_digest") {
-        Some(previewed) if previewed == digest => {}
-        Some(_) => {
-            return Response::error(
-                409,
-                "the project plan changed since it was previewed; nothing was created",
-            )
-        }
-        None => {
-            return Response::error(
-                428,
-                "a project is created only from a preview: pass its plan_digest",
-            )
-        }
+    if let Err(refusal) = previewed(request, &digest) {
+        return refusal;
     }
     let root = workspace.root().join(&folder);
     match masters::create(&root, &files) {
         Ok(()) => Response::json(plan_json_rooted(workspace, &folder, &files, &digest)),
         Err(detail) => Response::error(409, &detail),
     }
+}
+
+/// That a creation names the digest of the plan it was previewed as, and the
+/// plan still has it: 428 without one, 409 when it changed in between.
+pub fn previewed(request: &Request, digest: &str) -> Result<(), Response> {
+    match request.param("plan_digest") {
+        Some(previewed) if previewed == digest => Ok(()),
+        Some(_) => Err(Response::error(
+            409,
+            "the project plan changed since it was previewed; nothing was created",
+        )),
+        None => Err(Response::error(
+            428,
+            "a project is created only from a preview: pass its plan_digest",
+        )),
+    }
+}
+
+/// A new project named by `name=`: its own new folder in the projects folder.
+pub struct NamedProject {
+    pub name: String,
+    /// `<projects folder>/<name>`.
+    pub dir: PathBuf,
+    /// Relative to `dir`, in plan order, the entry first.
+    pub files: Vec<Planned>,
+    /// Binds a creation to this preview: the absolute folder and every file.
+    pub digest: String,
+}
+
+/// A project name: one folder name of ASCII letters, digits, `_`, `-` and
+/// `.`, not starting with `.`, so the project can only be created directly
+/// inside the projects folder.
+fn project_name(request: &Request) -> Result<String, Response> {
+    let name = request.param("name").unwrap_or("");
+    if name.is_empty() {
+        return Err(Response::error(400, "a project name is required"));
+    }
+    if name.contains('/') || scaffold::check_path(&format!("{name}/probe.lcl")).is_err() {
+        return Err(Response::error(
+            400,
+            &format!(
+                "{name:?} cannot be a project name: use letters, digits, '_', '-' and '.', \
+                 not starting with '.', and no '/'"
+            ),
+        ));
+    }
+    Ok(name.to_string())
+}
+
+/// The files a new project called `name=` starts with, in the folder of that
+/// name inside `projects`. Nothing is checked on disk here: whether the
+/// folder is free is for the caller to say and to insist on.
+pub fn named_project(
+    workspace: &Workspace,
+    masters: &Masters,
+    request: &Request,
+    projects: &Path,
+    ending: &str,
+) -> Result<NamedProject, Response> {
+    let engine = engine(workspace)?;
+    let name = project_name(request)?;
+    let selection = selection(request)?;
+    let files = masters
+        .project(engine, selection, None, ending)
+        .map_err(|e| Response::error(422, &e))?;
+    let dir = projects.join(&name);
+    let digest = plan_digest(&dir.display().to_string(), &files);
+    Ok(NamedProject {
+        name,
+        dir,
+        files,
+        digest,
+    })
+}
+
+/// `dir`, relative to `root` with `/` separators, when it is inside `root`.
+pub fn inside(dir: &Path, root: &Path) -> Option<String> {
+    let real = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let dir = match (dir.parent(), dir.file_name()) {
+        // The project folder may not exist yet; the projects folder does.
+        (Some(parent), Some(name)) => real(parent).join(name),
+        _ => real(dir),
+    };
+    let relative = dir.strip_prefix(real(root)).ok()?;
+    let parts: Vec<String> = relative
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().to_string())
+        .collect();
+    (!parts.is_empty()).then(|| parts.join("/"))
+}
+
+/// A named project as the page shows it: where it goes, whether that folder
+/// is already taken, whether creating it opens the projects folder in this
+/// window (it does when the project would otherwise be outside what the
+/// window shows), and its files. `folder` and `entry` are ids in the window
+/// as it will be after the creation.
+pub fn named_plan_json(plan: &NamedProject, projects: &Path, root: &Path) -> String {
+    let (folder, opens) = match inside(&plan.dir, root) {
+        Some(folder) => (folder, false),
+        None => (plan.name.clone(), true),
+    };
+    Object::new()
+        .with("name", Node::string(&plan.name))
+        .with("projects", Node::string(projects.display().to_string()))
+        .with("path", Node::string(plan.dir.display().to_string()))
+        .with(
+            "exists",
+            Node::Bool(std::fs::symlink_metadata(&plan.dir).is_ok()),
+        )
+        .with("opens_projects_folder", Node::Bool(opens))
+        .with("folder", Node::string(&folder))
+        .with(
+            "entry",
+            Node::string(prefixed(&folder, &plan.files[0].path)),
+        )
+        .with("plan_digest", Node::string(&plan.digest))
+        .with(
+            "files",
+            Node::array(
+                plan.files
+                    .iter()
+                    .map(|f| planned_json(f, &prefixed(&folder, &f.path))),
+            ),
+        )
+        .pretty()
 }
 
 // ---------------------------------------------------------------------------
@@ -342,7 +484,7 @@ fn unavailable() -> Response {
 }
 
 /// `GET /api/masters`: every stored Master, whether it is valid now, and the
-/// default of each role.
+/// default of each document type.
 pub fn list_masters(workspace: &Workspace, masters: &Masters) -> Response {
     if !masters.is_available() {
         return Response::json(
@@ -366,10 +508,15 @@ pub fn list_masters(workspace: &Workspace, masters: &Masters) -> Response {
                     Some(engine) => masters.check(engine, &master).err(),
                     None => Some("Core 0.3.0 is not available in this workspace".to_string()),
                 };
+                let shown = scaffold::DOCUMENT_TYPES
+                    .iter()
+                    .find(|t| t.id == master.doc_type)
+                    .map_or_else(|| label(&master.role), |t| t.label.to_string());
                 item = item
                     .with("name", Node::string(&master.name))
                     .with("role", Node::string(&master.role))
-                    .with("label", Node::string(label(&master.role)))
+                    .with("type", Node::string(&master.doc_type))
+                    .with("label", Node::string(shown))
                     .with("core", Node::string(&master.core))
                     .with("valid", Node::Bool(problem.is_none()))
                     .with("problem", problem.map_or(Node::Null, |p| Node::string(&p)));
@@ -426,8 +573,9 @@ pub fn read_master(masters: &Masters, request: &Request) -> Response {
 }
 
 /// `GET /api/master/starter?role=&mode=`: the text of a new Master for
-/// `role`, starting from the canonical scaffold. Written nowhere.
-pub fn master_starter(workspace: &Workspace, request: &Request) -> Response {
+/// document type `role`, starting from the canonical scaffold (a project
+/// Master's names end with `ending`). Written nowhere.
+pub fn master_starter(workspace: &Workspace, request: &Request, ending: &str) -> Response {
     let engine = match engine(workspace) {
         Ok(engine) => engine,
         Err(refusal) => return refusal,
@@ -440,7 +588,7 @@ pub fn master_starter(workspace: &Workspace, request: &Request) -> Response {
         Some(Some(mode)) => mode,
         Some(None) => return Response::error(400, "mode is minimal or guided"),
     };
-    match masters::starter(engine, role, mode) {
+    match masters::starter(engine, role, mode, ending) {
         Ok(json) => Response::json(Object::new().with("json", Node::string(&json)).pretty()),
         Err(detail) => Response::error(422, &detail),
     }

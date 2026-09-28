@@ -9,9 +9,9 @@
 * which LCL version a template works with.
 
 > **Tool note.** This chapter describes LCL Core 0.3.0, which is still a
-> candidate, not the released Core 0.1.0 the rest of this manual teaches. The
-> reference tools make these starting structures today; the workspace menus
-> that offer them arrive in a later update.
+> candidate, not the released Core 0.1.0 the rest of this manual teaches. In
+> LCL Workspace, **New document**, **New project** and **Settings →
+> Templates** make these starting structures; Chapter 19 walks through them.
 
 ## 18.1 Files have roles
 

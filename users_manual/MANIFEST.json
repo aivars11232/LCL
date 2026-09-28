@@ -2,7 +2,7 @@
   "format": 1,
   "manual": "LCL Users Manual",
   "version": "0.3.0",
-  "digest": "92a2a803fee1ac5b371c936f7a3df94d074b4a190842f9c6e7b54a87c4bcea74",
+  "digest": "485e38b34821b174cabff6551acd764e3cdbea8271c785fb3d1bb79feb8cb5a3",
   "files": [
     {
       "name": "01_What_Is_LCL.md",
@@ -74,11 +74,15 @@
     },
     {
       "name": "18_Starting_Files_From_Templates.md",
-      "sha256": "ac95cd520890ac48d443bb0616432d2133fbf112a1f7f43cdbd7e291a56d2a06"
+      "sha256": "334ba6ffc2fc1c50da6d1d757cc25b77914b11edb5c85fc07efa12d6c42b2b50"
     },
     {
       "name": "19_Your_First_Multi_File_Project.md",
       "sha256": "ee8c45bb045bd6c82a96306dda2784e9f3f71d2d60fcc1bf531b43e8ac15c1a6"
+    },
+    {
+      "name": "20_Updating_LCL.md",
+      "sha256": "094fb68704697d0c97d00e7045ab47d8428f247759fc517f78894197d281c986"
     },
     {
       "name": "Appendix_A_Keyword_Reference.md",
@@ -94,7 +98,7 @@
     },
     {
       "name": "README.md",
-      "sha256": "294888e6cdf6d9671bf13325f08d7f771a29798dc100eae584bae44c2a8b183a"
+      "sha256": "814c9058369d02281fe2252c21b328ae5044f8319839e494d1c734dab9d66eb7"
     }
   ]
 }

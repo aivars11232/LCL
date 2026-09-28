@@ -15,6 +15,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -105,7 +106,18 @@ fun PairScreen(container: AppContainer, onPaired: () -> Unit, onBack: () -> Unit
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Pair a PC", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        // Always there and always enabled: leaving while an attempt runs
+        // cancels it first, exactly as the system Back does.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(
+                onClick = {
+                    if (working) pairing.cancel() else pairing.reset()
+                    onBack()
+                },
+                modifier = Modifier.testTag("pair_back"),
+            ) { Text("Back") }
+            Text("Pair a PC", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        }
         val pending = (state as? PairingState.Pending)?.pending
         val incomplete = (state as? PairingState.RetirementIncomplete)?.record
         val problem = formProblem ?: (state as? PairingState.Failed)?.message
@@ -210,13 +222,6 @@ fun PairScreen(container: AppContainer, onPaired: () -> Unit, onBack: () -> Unit
                 Button(onClick = { pair(link) }, enabled = !working && link.isNotBlank(), modifier = Modifier.testTag("pair_button")) {
                     Text("Pair")
                 }
-                OutlinedButton(
-                    onClick = {
-                        pairing.reset()
-                        onBack()
-                    },
-                    enabled = !working,
-                ) { Text("Back") }
                 if (working) CircularProgressIndicator(Modifier.padding(start = 8.dp).testTag("pair_working"))
             }
             if (state is PairingState.Finishing) {

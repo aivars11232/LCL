@@ -99,9 +99,10 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
             Box(Modifier.fillMaxSize().safeDrawingPadding()) {
                 Column(Modifier.fillMaxSize()) {
                     ConnectionBanner(connection, onReconnect = container.connection::reconnectNow, onOpenPcs = { screen = Screen.Home })
-                    val back = { screen = if (container.pcs.activeId() != null && screen != Screen.Workspace) Screen.Workspace else Screen.Home }
+                    val back: () -> Unit = { backFrom(screen, container.pcs.activeId() != null)?.let { screen = it } }
                     BackHandler(enabled = tab == Tab.Manual) { tab = Tab.Workspace }
-                    BackHandler(enabled = tab == Tab.Workspace && screen != Screen.Home && screen != Screen.Workspace) { back() }
+                    // Only the dashboard lets system Back leave the app.
+                    BackHandler(enabled = tab == Tab.Workspace && screen != Screen.Home) { back() }
                     Box(Modifier.weight(1f)) {
                     if (tab == Tab.Manual) ManualScreen() else when (val current = screen) {
                         Screen.Home -> HomeScreen(
@@ -154,6 +155,21 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
     }
 }
 
+/**
+ * Where Back leads from [screen], the system's and a screen's own: `null` on
+ * the dashboard (Home), the one screen Back leaves the app from. Pairing is
+ * reached from the dashboard and returns there; the workspace returns there
+ * too, so a person who connected is never one Back away from closing the
+ * app. Settings, About and a document another app opened return to the
+ * workspace while a PC is in use, and to the dashboard otherwise.
+ */
+fun backFrom(screen: Screen, pcInUse: Boolean): Screen? = when (screen) {
+    Screen.Home -> null
+    Screen.Pair, Screen.Workspace -> Screen.Home
+    Screen.Settings, Screen.About, is Screen.LocalDocument ->
+        if (pcInUse) Screen.Workspace else Screen.Home
+}
+
 /** One line of text for where the connection stands. */
 fun describe(state: ConnectionState): String = when (state) {
     ConnectionState.NoPc -> "No PC paired"
@@ -193,7 +209,7 @@ fun ConnectionBanner(state: ConnectionState, onReconnect: () -> Unit, onOpenPcs:
             is ConnectionState.Reconnecting, is ConnectionState.Disconnected, is ConnectionState.Offline ->
                 TextButton(onClick = onReconnect) { Text("Reconnect") }
             is ConnectionState.Revoked, is ConnectionState.NotPaired, ConnectionState.NoPc ->
-                TextButton(onClick = onOpenPcs) { Text("PCs") }
+                TextButton(onClick = onOpenPcs) { Text("Home") }
             else -> Unit
         }
     }

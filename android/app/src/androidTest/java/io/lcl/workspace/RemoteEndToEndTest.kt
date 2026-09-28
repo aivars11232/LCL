@@ -384,6 +384,49 @@ class RemoteEndToEndTest {
         ready("P13_DONE")
     }
 
+    /**
+     * Navigation around pairing (tests K and L of the workspace correction):
+     * Pair a PC comes back to the dashboard with its own Back and with the
+     * system Back, and once connected, the workspace's system Back is the
+     * dashboard, never the end of the app. Nothing is paired or changed.
+     */
+    @Test
+    fun p14_back_from_pairing_and_from_the_connected_workspace_is_the_dashboard() {
+        waitForLabel("Connected")
+        val pcsBefore = pairedPcs()
+        goHome()
+        rule.onNodeWithTag("pair_new").performScrollTo().performClick()
+        waitFor("pair_back")
+        shot("p14_01_pair")
+        rule.onNodeWithTag("pair_back").performClick()
+        waitFor("pair_new")
+        assertFalse("the Back button left the Pair screen open", exists("pair_link"))
+
+        rule.onNodeWithTag("pair_new").performScrollTo().performClick()
+        waitFor("pair_link")
+        systemBack()
+        waitFor("pair_new")
+        assertFalse("the system Back left the Pair screen open", exists("pair_link"))
+
+        rule.onNodeWithTag("open_workspace").performScrollTo().performClick()
+        rule.waitUntil("the workspace", 30_000) { exists("home") || exists("files") }
+        if (exists("files")) rule.onNodeWithTag("files").performClick()
+        waitFor("home")
+        shot("p14_02_connected_workspace")
+        systemBack()
+        waitFor("pair_new")
+        assertFalse("Back closed the app", rule.activity.isFinishing)
+        shot("p14_03_dashboard_after_back")
+        assertEquals("navigation changed the pairing", pcsBefore, pairedPcs())
+        waitForLabel("Connected")
+    }
+
+    /** The system Back, as the gesture or the key delivers it. */
+    private fun systemBack() {
+        rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+        rule.waitForIdle()
+    }
+
     private fun openSettings() {
         goHome()
         rule.onNodeWithTag("home_settings").performScrollTo().performClick()

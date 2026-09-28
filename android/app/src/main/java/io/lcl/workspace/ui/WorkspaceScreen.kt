@@ -123,7 +123,7 @@ private fun FilesPane(
     val scope = rememberCoroutineScope()
     Column(modifier.padding(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onHome, Modifier.testTag("home")) { Text("PCs") }
+            TextButton(onClick = onHome, Modifier.testTag("home")) { Text("Home") }
             Box(Modifier.weight(1f)) {
                 TextButton(onClick = { picking = true }, enabled = ui.projects.size > 1) {
                     Text(ui.project?.name ?: "No project", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)

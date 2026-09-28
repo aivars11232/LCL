@@ -462,6 +462,16 @@ wait "$waiting"
 "$remote" devices --json >"$out/devices-after-p13.json"
 check "the pairing approved while the Manual was open is the one trusted device" python3 -c 'import json,sys; assert len([d for d in json.load(open(sys.argv[1]))["devices"] if not d["revoked_at"]]) == 1' "$out/devices-after-p13.json"
 
+# 13. The workspace correction (K, L): Back from Pair a PC, and from the
+# connected workspace, is the dashboard; the pairing is not touched.
+phase p14_back_from_pairing_and_from_the_connected_workspace_is_the_dashboard
+"$remote" devices --json >"$out/devices-after-p14.json"
+check "navigating changed nothing the PC trusts" python3 - "$out/devices-after-p13.json" "$out/devices-after-p14.json" <<'PYN'
+import json, sys
+trust = lambda path: sorted((d["id"], d["fingerprint"], d["revoked_at"]) for d in json.load(open(path))["devices"])
+assert trust(sys.argv[1]) == trust(sys.argv[2]), (trust(sys.argv[1]), trust(sys.argv[2]))
+PYN
+
 no_lcl_failures
 "$adb" shell settings put global hide_error_dialogs 0
 log "all phases passed; results in $out"

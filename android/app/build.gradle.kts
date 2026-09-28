@@ -13,9 +13,16 @@ fun secret(property: String, variable: String): String? =
 val releaseStore = secret("lclReleaseStoreFile", "LCL_RELEASE_STORE_FILE")
 
 // The update signing keys the app trusts: update/trusted_keys.txt, the same
-// list the PC updater is built with. Only public keys are there.
-fun keyLines(text: String) = text.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.joinToString("\\n")
-val trustedUpdateKeys = keyLines(rootProject.file("../update/trusted_keys.txt").readText())
+// list the PC updater is built with. Only public keys are there. Update System
+// V1 has exactly one production key: none means updates are not configured,
+// and a list with more than one is refused here, in every build.
+fun keyList(text: String) = text.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
+fun keyLines(text: String) = keyList(text).joinToString("\\n")
+val productionUpdateKeys = keyList(rootProject.file("../update/trusted_keys.txt").readText())
+check(productionUpdateKeys.size <= 1) {
+    "update/trusted_keys.txt lists ${productionUpdateKeys.size} production update keys; Update System V1 has exactly one"
+}
+val trustedUpdateKeys = productionUpdateKeys.joinToString("\\n")
 // A debug build may name a local test release server and test keys, for the
 // end-to-end update test; a release build never has either.
 val updateTestEndpoint = providers.gradleProperty("lclUpdateTestEndpoint").orNull ?: ""

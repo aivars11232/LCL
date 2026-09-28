@@ -10,6 +10,8 @@
 //!   lcl-update verify [--json] MANIFEST SIGNATURE
 //!                                         check a manifest against the trusted keys;
 //!                                         with --json, what the verified manifest says
+//!   lcl-update published                  the source's latest stable release, verified,
+//!                                         as JSON; for the release builder
 //!
 //! Exit status: 0 when the action completed, 1 when it was refused or failed
 //! (the state says why), 2 for a usage error.
@@ -21,7 +23,8 @@ use lcl_update::{apply, stage, trust};
 use std::process::ExitCode;
 
 const USAGE: &str = "usage: lcl-update version | source | status [--json] | check [--json] | \
-download [--json] | apply [--wait-pid PID] [--relaunch] | verify [--json] MANIFEST SIGNATURE";
+download [--json] | apply [--wait-pid PID] [--relaunch] | verify [--json] MANIFEST SIGNATURE | \
+published";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -65,6 +68,7 @@ fn main() -> ExitCode {
                 })
             })
         }
+        Some("published") => with_context(published),
         Some("verify") => match args[1..]
             .iter()
             .filter(|a| *a != "--json")
@@ -162,6 +166,48 @@ fn source() -> ExitCode {
         }
         ExitCode::SUCCESS
     })
+}
+
+/// The latest stable release of the pinned source, verified as a check
+/// verifies it: `{"release": null}` when there is none. The release builder
+/// takes release history from this. An unreadable listing, a release without a
+/// verified manifest of its own, or a build that trusts no key fails.
+fn published(ctx: &Context) -> ExitCode {
+    let release = match ctx.source.latest() {
+        Ok(Some(release)) => release,
+        Ok(None) => {
+            let answer = Object::new()
+                .raw("release", "null".to_string())
+                .str("source", &ctx.source.describe())
+                .finish();
+            println!("{answer}");
+            return ExitCode::SUCCESS;
+        }
+        Err(failure) => {
+            eprintln!("lcl-update: {}: {failure}", ctx.source.describe());
+            return ExitCode::FAILURE;
+        }
+    };
+    match check::fetch_verified(ctx, &release) {
+        Ok(check::Verified {
+            bytes, manifest, ..
+        }) => {
+            let digest = ring::digest::digest(&ring::digest::SHA256, &bytes);
+            let answer = Object::new()
+                .str("release", &release.tag)
+                .str("product_version", &manifest.product_version.to_string())
+                .str("source_commit", &manifest.source_commit)
+                .str("manifest_sha256", &trust::hex(digest.as_ref()))
+                .str("source", &ctx.source.describe())
+                .finish();
+            println!("{answer}");
+            ExitCode::SUCCESS
+        }
+        Err((_, why)) => {
+            eprintln!("lcl-update: {why}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 fn verify(manifest: &str, signature: &str, json: bool) -> ExitCode {

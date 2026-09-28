@@ -245,8 +245,12 @@ committed, bundled or copied into a build.
 signing key, and it is never replaced. Listing a second key beside it would not
 make a replacement safe: LCL checks only the latest stable release, so a PC or
 a phone that skipped the release introducing a new key could never verify a
-release signed with it, and would stop updating. Replacing the key is a
-separate feature that is not designed yet. Until it exists, keep the private
+release signed with it, and would stop updating. The updater, the Android
+build and the release builder all refuse an `update/trusted_keys.txt` that
+lists more than one key; with none, updates are simply not configured. Test
+keys are added only by test builds (`LCL_UPDATE_TEST_KEYS`, `lclUpdateTestKeys`)
+and never count as production keys. Replacing the key is a separate feature
+that is not designed yet. Until it exists, keep the private
 key and an offline backup of it safe: without it no further update can be
 published, and every installation would have to be updated by hand to a build
 that trusts another key. A key a manifest names is never trusted unless the
@@ -280,9 +284,25 @@ trusted by the release tooling, then parsed by the updater's strict parser,
 before its version or Android signer is trusted. An unsigned history file is
 refused, including during a dry run.
 
+A signature proves only that some release was once signed, not that it is the
+last one. So the builder also asks the pinned official repository
+(`aivars11232/LCL`, through `lcl-update published`) for its latest stable
+release, ignoring drafts and pre-releases, and verifies that release's own
+manifest and signature as an installed LCL would. The manifest supplied must
+be that release's manifest byte for byte: the same release tag, product
+version and source commit, and the same SHA-256. That source commit must also
+be in the history of the commit being released. An older validly signed
+manifest, a release with another tag, a release whose manifest does not verify,
+no stable release at all, or a repository that cannot be reached is refused.
+Download the two files from the latest release itself, for example
+`gh release download v0.4.0 -R aivars11232/LCL -p 'update-manifest.*'`.
+
 The first update release names `LCL_PREVIOUS_MANIFEST=none`, leaves
 `LCL_PREVIOUS_MANIFEST_SIGNATURE` unset, and supplies the APK
-certificate's SHA-256 in `LCL_ANDROID_SIGNER_SHA256`. The builder writes, to
+certificate's SHA-256 in `LCL_ANDROID_SIGNER_SHA256`. Bootstrap is only for
+that first release: it is refused once the official repository has any stable
+release (drafts and pre-releases do not count), and when the repository's
+release state cannot be read. The builder writes, to
 the new directory only: `update-manifest.json`, `update-manifest.sig`,
 `lcl-<version>-linux-x86_64.tar.gz` and `.sha256`,
 `lcl-android-<version>-<code>.apk` and `.sha256`, both provenance records and

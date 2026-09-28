@@ -17,7 +17,10 @@
 #   LCL_UPDATE_KEY_ID=<id>            its id in update/trusted_keys.txt
 #   LCL_ANDROID_VERSION_CODE=<n>      the APK's versionCode
 #   LCL_PREVIOUS_MANIFEST=<file>      the last published update-manifest.json,
-#                                     or "none" for the first update release
+#                                     exactly as the official repository's latest
+#                                     stable release carries it; or "none" for
+#                                     the first update release, allowed only
+#                                     while that repository has no stable release
 #   LCL_PREVIOUS_MANIFEST_SIGNATURE=<file> its detached signature; required
 #                                     unless bootstrapping with "none"
 #   LCL_ANDROID_SIGNER_SHA256=<hex>   the APK signing certificate expected;
@@ -37,7 +40,10 @@
 # It refuses when an artifact is missing, the product versions disagree, the
 # versionCode does not advance, the APK is unsigned or signed by another key,
 # the manifest cannot be signed or verified, a digest does not describe the
-# artifact written, the source is not the commit the provenance names, or the
+# artifact written, the source is not the commit the provenance names, the
+# previous manifest is not the official repository's latest stable release (or
+# "none" while one exists), update/trusted_keys.txt does not list exactly one
+# production key, or the
 # specification packages are not the approved ones (the built lcl refuses
 # those, and build_release.sh with it).
 set -eu
@@ -89,6 +95,14 @@ for crate in update remote; do
         refuse "$crate/Cargo.toml does not carry product version $version"
 done
 
+# Update System V1: exactly one production update key, kept. More than one is
+# never released; a real release needs the one (a rehearsal may have none).
+production_keys=$(grep -c -v -E '^[[:space:]]*(#|$)' "$root/update/trusted_keys.txt") || true
+[ "$production_keys" -le 1 ] ||
+    refuse "update/trusted_keys.txt lists $production_keys production update keys; Update System V1 has exactly one"
+[ -n "$dry" ] || [ "$production_keys" -eq 1 ] ||
+    refuse "update/trusted_keys.txt lists no production update key; a release needs exactly one"
+
 # All work stays on the destination filesystem. Only a complete verified
 # artifact directory is renamed into place; a failure retains private evidence.
 work=$(mktemp -d "$(dirname "$out")/.lcl-update-build.XXXXXX")
@@ -118,11 +132,23 @@ fi
 verifier=$work/verifier/debug/lcl-update
 unset LCL_UPDATE_TEST_KEYS LCL_UPDATE_TEST_ENDPOINT
 
+# Release history is the official repository's: its latest stable release
+# (drafts and pre-releases never count), read from the pinned source and
+# verified with this checkout's keys, as an installed LCL would read it.
+"$verifier" published > "$work/published.json" ||
+    refuse "the official repository's latest stable release could not be read and verified"
+
 # The last release: authenticate BEFORE parsing or trusting any history.
 signer_wanted=${LCL_ANDROID_SIGNER_SHA256:-}
 if [ "$LCL_PREVIOUS_MANIFEST" = none ]; then
     [ -n "$signer_wanted" ] || refuse "the first update release needs LCL_ANDROID_SIGNER_SHA256"
     [ -z "${LCL_PREVIOUS_MANIFEST_SIGNATURE:-}" ] || refuse "bootstrap has no previous signature"
+    python3 - "$work/published.json" <<'PY' ||
+import json, sys
+sys.exit(json.load(open(sys.argv[1]))["release"] is not None)
+PY
+        refuse "LCL_PREVIOUS_MANIFEST=none is only for the first update release, and the official repository already has a stable release"
+    history="none (the official repository had no stable release)"
 else
     [ -n "${LCL_PREVIOUS_MANIFEST_SIGNATURE:-}" ] || refuse "LCL_PREVIOUS_MANIFEST_SIGNATURE is required"
     "$verifier" verify --json "$LCL_PREVIOUS_MANIFEST" "$LCL_PREVIOUS_MANIFEST_SIGNATURE" \
@@ -130,10 +156,31 @@ else
     previous=$(python3 - "$work/previous-verified.json" <<'PY'
 import json, sys
 m = json.load(open(sys.argv[1]))
-print(m["product_version"], m["android"]["version_code"], m["android"]["signer_sha256"])
+print(m["product_version"], m["android"]["version_code"], m["android"]["signer_sha256"], m["source_commit"])
 PY
 ) || refuse "cannot read $LCL_PREVIOUS_MANIFEST"
     set -- $previous
+    # The manifest supplied must be the latest published release's own, byte
+    # for byte, not merely some older release signed with the same key.
+    history=$(python3 - "$work/previous-verified.json" "$work/published.json" "$LCL_PREVIOUS_MANIFEST" <<'PY'
+import hashlib, json, sys
+previous, published = (json.load(open(path)) for path in sys.argv[1:3])
+if published["release"] is None:
+    sys.exit("the official repository has no stable release to follow")
+with open(sys.argv[3], "rb") as stream:
+    digest = hashlib.sha256(stream.read()).hexdigest()
+for what, supplied, latest in (
+        ("release tag", previous["release_tag"], published["release"]),
+        ("product version", previous["product_version"], published["product_version"]),
+        ("source commit", previous["source_commit"], published["source_commit"]),
+        ("manifest sha256", digest, published["manifest_sha256"])):
+    if supplied != latest:
+        sys.exit(f"the previous manifest's {what} {supplied} is not the latest stable release's {latest}")
+print(f'{published["release"]} (manifest sha256 {digest})')
+PY
+) || refuse "LCL_PREVIOUS_MANIFEST is not the official repository's latest stable update release"
+    git -C "$root" merge-base --is-ancestor "$4" "$commit" 2>/dev/null ||
+        refuse "the previous release's source commit $4 is not in this checkout's history"
     python3 - "$1" "$version" <<'PY' || refuse "product version $version is not newer than the previous release $1"
 import sys
 def key(v):
@@ -268,6 +315,7 @@ PY
     echo "apk signer sha256: $signer"
     echo "update key id:     $LCL_UPDATE_KEY_ID (public key sha256 $(printf '%s' "$spki" | sha256sum | cut -d' ' -f1))"
     echo "minimum supported: $minimum"
+    echo "previous release:  $history"
     echo
     echo "artifacts:"
     ( cd "$artifacts" && sha256sum "$pc_name" "$apk_name" update-manifest.json update-manifest.sig )

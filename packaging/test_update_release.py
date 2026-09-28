@@ -3,14 +3,18 @@
 
 Run with python3 -B packaging/test_update_release.py. Test keys and artifacts
 exist only in a TemporaryDirectory, outside the repository. Cargo stays offline.
+Release history comes from a local server answering as GitHub would, through
+the updater's own test-build endpoint; nothing reaches the network.
 """
 import copy
+import http.server
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
 
 REPO = Path(__file__).resolve().parent.parent
@@ -25,6 +29,25 @@ def script(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('#!/bin/sh\nset -eu\n' + text)
     path.chmod(0o755)
+
+
+class Releases(http.server.BaseHTTPRequestHandler):
+    """The official repository's releases, as the test sets them."""
+    routes = {}
+
+    def do_GET(self):
+        body = self.routes.get(self.path)
+        if body is None:
+            self.send_response(404)
+            body = b''
+        else:
+            self.send_response(200)
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
 
 
 class ReleaseTest(unittest.TestCase):
@@ -59,7 +82,7 @@ publish = false
         (cls.root / 'update/trusted_keys.txt').write_text('lcl-update-1 ' + public.hex() + '\n')
         # Updating only the test snapshot's package version updates its lockfile;
         # all external crate versions still come from the copied production lock.
-        run('cargo', 'build', '--offline', '--manifest-path', str(p),
+        run('cargo', 'build', '--offline', '--manifest-path', str(p), '--features', 'test-endpoint',
             '--target-dir', str(cls.base / 'target'), '--bin', 'lcl-update', '-j', '2')
         cls.verifier = cls.base / 'target/debug/lcl-update'
         (cls.root / 'packaging').mkdir()
@@ -86,10 +109,13 @@ echo "package: name='io.lcl.workspace' versionCode='5' versionName='0.3.0'"
 echo "minSdkVersion:'29'"
 ''')
         cls.bin = cls.base / 'bin'
+        # The builder clears LCL_UPDATE_TEST_ENDPOINT; the fake build's
+        # verifier names the local release server itself.
         script(cls.bin / 'cargo', '''
 while [ "$1" != --target-dir ]; do shift; done
 mkdir -p "$2/debug"
-cp "$TEST_VERIFIER" "$2/debug/lcl-update"
+printf '#!/bin/sh\\nLCL_UPDATE_TEST_ENDPOINT=%s exec %s "$@"\\n' "$TEST_ENDPOINT" "$TEST_VERIFIER" > "$2/debug/lcl-update"
+chmod +x "$2/debug/lcl-update"
 ''')
         script(cls.bin / 'openssl', '''
 if [ "${TEST_FAIL:-}" = signing ] && [ "$1" = dgst ]; then exit 34; fi
@@ -109,6 +135,12 @@ exec /usr/bin/sha256sum "$@"
         run('git', '-C', str(cls.root), '-c', 'user.name=Test', '-c',
             'user.email=test@example.invalid', 'commit', '-qm', 'fixture')
         cls.template = json.loads((REPO / 'update/manifest_vectors/valid.json').read_text())
+        cls.template['source_commit'] = run('git', '-C', str(cls.root), 'rev-parse', 'HEAD').decode().strip()
+        cls.server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Releases)
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+        cls.addClassCleanup(cls.server.server_close)
+        cls.addClassCleanup(cls.server.shutdown)
+        cls.endpoint = 'http://127.0.0.1:%d' % cls.server.server_address[1]
 
     def setUp(self):
         self.case = Path(tempfile.mkdtemp(dir=self.base))
@@ -124,15 +156,38 @@ exec /usr/bin/sha256sum "$@"
                         LCL_UPDATE_SIGNING_KEY=str(self.key), LCL_UPDATE_KEY_ID='lcl-update-1',
                         LCL_ANDROID_VERSION_CODE='5', LCL_PREVIOUS_MANIFEST=str(self.manifest),
                         LCL_PREVIOUS_MANIFEST_SIGNATURE=str(self.signature),
-                        LCL_RELEASE_NOTES_FILE=str(self.notes))
+                        LCL_RELEASE_NOTES_FILE=str(self.notes), TEST_ENDPOINT=self.endpoint)
         self.env.pop('LCL_UPDATE_DRY_RUN', None)
         self.env.pop('LCL_ANDROID_SIGNER_SHA256', None)
         self.sign(self.template)
+        self.publish()
 
     def sign(self, manifest):
         self.manifest.write_text(json.dumps(manifest) if isinstance(manifest, dict) else manifest)
         run('openssl', 'dgst', '-sha256', '-sign', str(self.key), '-out',
             str(self.signature), str(self.manifest))
+
+    def publish(self, tag=None, manifest=None, signature=None, draft=False, prerelease=False):
+        """Make the official repository's latest release the one supplied (by default)."""
+        manifest = self.manifest.read_bytes() if manifest is None else manifest
+        signature = self.signature.read_bytes() if signature is None else signature
+        tag = tag or json.loads(manifest)['release_tag']
+        pc = json.loads(manifest)['pc']
+        assets = [{'name': 'update-manifest.json', 'size': len(manifest)},
+                  {'name': 'update-manifest.sig', 'size': len(signature)},
+                  {'name': pc['artifact_name'], 'size': pc['size']}]
+        Releases.routes = {
+            '/api/releases/latest': json.dumps({'tag_name': tag, 'draft': draft,
+                                                'prerelease': prerelease, 'assets': assets}).encode(),
+            f'/download/{tag}/update-manifest.json': manifest,
+            f'/download/{tag}/update-manifest.sig': signature,
+        }
+
+    def bootstrap(self):
+        self.env['LCL_UPDATE_DRY_RUN'] = '1'
+        self.env['LCL_PREVIOUS_MANIFEST'] = 'none'
+        self.env.pop('LCL_PREVIOUS_MANIFEST_SIGNATURE')
+        self.env['LCL_ANDROID_SIGNER_SHA256'] = self.env['TEST_SIGNER']
 
     def build(self, success=False):
         result = subprocess.run([str(self.root / 'packaging/build_update_release.sh')],
@@ -152,13 +207,72 @@ exec /usr/bin/sha256sum "$@"
     def test_authenticated_history_and_complete_publication(self):
         self.build(success=True)
         self.assertNotIn('SHA256SUMS', (self.out / 'SHA256SUMS').read_text())
+        self.assertIn('previous release:  v0.2.0 (manifest sha256',
+                      (self.out / 'lcl-0.3.0-UPDATE-PROVENANCE.txt').read_text())
 
-    def test_bootstrap_is_explicit(self):
+    def test_bootstrap_only_while_no_stable_release_exists(self):
+        # No release, or only a draft or a pre-release: the first release.
+        for state in ('none', 'draft', 'prerelease'):
+            with self.subTest(state=state):
+                self.setUp()
+                self.bootstrap()
+                if state == 'none': Releases.routes = {}
+                else: self.publish(draft=state == 'draft', prerelease=state == 'prerelease')
+                self.build(success=True)
+                self.assertIn('previous release:  none',
+                              (self.out / 'lcl-0.3.0-UPDATE-PROVENANCE.txt').read_text())
+        # A stable release exists, or its state cannot be read: refused.
+        unreadable = 'could not be read and verified'
+        for state, why in (('published', 'only for the first update release'),
+                           ('unavailable', unreadable), ('unverifiable', unreadable)):
+            with self.subTest(state=state):
+                self.setUp()
+                self.bootstrap()
+                if state == 'unavailable': self.env['TEST_ENDPOINT'] = 'http://127.0.0.1:1'
+                if state == 'unverifiable': self.publish(signature=b'wrong')
+                self.assertIn(why, self.build())
+
+    def test_history_must_be_the_latest_stable_release(self):
+        older = copy.deepcopy(self.template)
+        older.update(product_version='0.1.5', release_tag='v0.1.5')
+        older['pc']['artifact_name'] = 'lcl-0.1.5-linux-x86_64.tar.gz'
+        older['android'].update(version_name='0.1.5', version_code=3,
+                                artifact_name='lcl-android-0.1.5-3.apk')
+        not_latest = 'not the official repository\'s latest stable update release'
+        unreadable = 'could not be read and verified'
+        for defect, why in (('older', not_latest), ('nothing-published', not_latest),
+                            ('draft', not_latest), ('prerelease', not_latest),
+                            ('wrong-tag', 'carries the manifest of'),
+                            ('published-signature', unreadable),
+                            ('other-repository', "not in this checkout's history"),
+                            ('unavailable', unreadable)):
+            with self.subTest(defect=defect):
+                self.setUp()
+                if defect == 'older':
+                    # The newer v0.2.0 is published; an older signed manifest is supplied.
+                    self.sign(older)
+                if defect == 'nothing-published': Releases.routes = {}
+                if defect in ('draft', 'prerelease'):
+                    self.publish(draft=defect == 'draft', prerelease=defect == 'prerelease')
+                if defect == 'wrong-tag': self.publish(tag='v0.2.1')
+                if defect == 'published-signature': self.publish(signature=b'wrong')
+                if defect == 'other-repository':
+                    foreign = copy.deepcopy(self.template)
+                    foreign['source_commit'] = 'f' * 40
+                    self.sign(foreign)
+                    self.publish()
+                if defect == 'unavailable': self.env['TEST_ENDPOINT'] = 'http://127.0.0.1:1'
+                self.assertIn(why, self.build())
+
+    def test_more_than_one_production_key_is_refused(self):
+        keys = self.root / 'update/trusted_keys.txt'
+        listed = keys.read_text()
+        self.addCleanup(keys.write_text, listed)
+        other = run('openssl', 'ecparam', '-name', 'prime256v1', '-genkey', '-noout')
+        public = run('openssl', 'pkey', '-pubout', '-outform', 'DER', input=other)
+        keys.write_text(listed + 'lcl-update-2 ' + public.hex() + '\n')
         self.env['LCL_UPDATE_DRY_RUN'] = '1'
-        self.env['LCL_PREVIOUS_MANIFEST'] = 'none'
-        self.env.pop('LCL_PREVIOUS_MANIFEST_SIGNATURE')
-        self.env['LCL_ANDROID_SIGNER_SHA256'] = self.env['TEST_SIGNER']
-        self.build(success=True)
+        self.assertIn('2 production update keys', self.build())
 
     def test_history_refusals(self):
         for defect in ('modified', 'wrong-signature', 'unknown-key', 'wrong-product',

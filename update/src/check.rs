@@ -4,7 +4,7 @@
 
 use crate::http::Failure;
 use crate::manifest::{self, Manifest};
-use crate::source::{Source, MANIFEST_ASSET, SIGNATURE_ASSET};
+use crate::source::{Release, Source, MANIFEST_ASSET, SIGNATURE_ASSET};
 use crate::state::{self, Available, Paths, State};
 use crate::trust::{self, TrustedKey};
 use crate::version::Version;
@@ -92,6 +92,57 @@ pub fn kind(failure: &Failure) -> &'static str {
     }
 }
 
+/// A release's manifest, verified, with the bytes and signature it came as.
+pub struct Verified {
+    pub bytes: Vec<u8>,
+    pub signature: Vec<u8>,
+    pub manifest: Manifest,
+}
+
+/// The manifest and signature of `release`, fetched from that release and
+/// verified: the signature before anything in the manifest is read, then that
+/// the manifest is this release's own and that the release holds the PC
+/// artifact it names. On failure, the kind to report and why.
+pub fn fetch_verified(
+    ctx: &Context,
+    release: &Release,
+) -> Result<Verified, (&'static str, String)> {
+    let fetch = |name: &str, limit: u64| {
+        if release.asset(name).is_none() {
+            return Err(("invalid", format!("release {} has no {name}", release.tag)));
+        }
+        ctx.source
+            .fetch(release, name, limit, &mut |_, _| {})
+            .map_err(|f| (kind(&f), f.to_string()))
+    };
+    let bytes = fetch(MANIFEST_ASSET, manifest::MAX_MANIFEST)?;
+    let signature = fetch(SIGNATURE_ASSET, 1024)?;
+    let manifest = verify(&bytes, &signature, &ctx.keys).map_err(|why| ("verification", why))?;
+    if manifest.release_tag != release.tag {
+        return Err((
+            "verification",
+            format!(
+                "release {} carries the manifest of {}",
+                release.tag, manifest.release_tag
+            ),
+        ));
+    }
+    match release.asset(&manifest.pc.artifact_name) {
+        Some(asset) if asset.size == manifest.pc.size => Ok(Verified {
+            bytes,
+            signature,
+            manifest,
+        }),
+        _ => Err((
+            "invalid",
+            format!(
+                "release {} does not hold the PC artifact its manifest names",
+                release.tag
+            ),
+        )),
+    }
+}
+
 /// Check now, and return the state to record.
 pub fn check(ctx: &Context) -> State {
     let mut state = state::load(&ctx.paths);
@@ -125,45 +176,14 @@ pub fn check(ctx: &Context) -> State {
         Err(failure) => return state.failed("invalid", failure.to_string()),
     };
     state.last_success_at = Some(now);
-    let fetch = |name: &str, limit: u64| {
-        if release.asset(name).is_none() {
-            return Err(("invalid", format!("release {} has no {name}", release.tag)));
-        }
-        ctx.source
-            .fetch(&release, name, limit, &mut |_, _| {})
-            .map_err(|f| (kind(&f), f.to_string()))
-    };
-    let fetched = fetch(MANIFEST_ASSET, manifest::MAX_MANIFEST)
-        .and_then(|bytes| Ok((bytes, fetch(SIGNATURE_ASSET, 1024)?)));
-    let (bytes, signature) = match fetched {
-        Ok(pair) => pair,
+    let Verified {
+        bytes,
+        signature,
+        manifest,
+    } = match fetch_verified(ctx, &release) {
+        Ok(verified) => verified,
         Err((kind, message)) => return state.failed(kind, message),
     };
-    let manifest = match verify(&bytes, &signature, &ctx.keys) {
-        Ok(manifest) => manifest,
-        Err(why) => return state.failed("verification", why),
-    };
-    if manifest.release_tag != release.tag {
-        return state.failed(
-            "verification",
-            format!(
-                "release {} carries the manifest of {}",
-                release.tag, manifest.release_tag
-            ),
-        );
-    }
-    match release.asset(&manifest.pc.artifact_name) {
-        Some(asset) if asset.size == manifest.pc.size => {}
-        _ => {
-            return state.failed(
-                "invalid",
-                format!(
-                    "release {} does not hold the PC artifact its manifest names",
-                    release.tag
-                ),
-            )
-        }
-    }
     match applicable(&manifest, &ctx.installed) {
         Ok(false) => {
             state.state = "up_to_date".to_string();

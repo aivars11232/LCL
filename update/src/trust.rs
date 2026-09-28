@@ -5,7 +5,12 @@
 //! each trusted key before anything in the manifest is read, so no field of an
 //! unverified manifest — the key id it names included — is ever believed, and
 //! a key a manifest brings along is never trusted. Only a test build may add
-//! keys, from `LCL_UPDATE_TEST_KEYS`.
+//! keys, from `LCL_UPDATE_TEST_KEYS`; they are test keys beside the list, never
+//! production keys.
+//!
+//! Update System V1 has exactly one production update signing key, kept for
+//! good. A list with none leaves updates not configured; a list with more than
+//! one is refused, so no build trusts a second production key.
 
 use ring::signature::{UnparsedPublicKey, ECDSA_P256_SHA256_ASN1};
 
@@ -81,10 +86,23 @@ pub fn parse_keys(text: &str) -> Result<Vec<TrustedKey>, String> {
     Ok(keys)
 }
 
+/// The production keys a key list names: none (updates not configured yet)
+/// or exactly one. More than one is refused.
+pub fn production_keys(text: &str) -> Result<Vec<TrustedKey>, String> {
+    let keys = parse_keys(text)?;
+    if keys.len() > 1 {
+        return Err(format!(
+            "update/trusted_keys.txt lists {} production update keys; Update System V1 has exactly one",
+            keys.len()
+        ));
+    }
+    Ok(keys)
+}
+
 /// The keys this build trusts.
 pub fn trusted_keys() -> Result<Vec<TrustedKey>, String> {
     #[allow(unused_mut)]
-    let mut keys = parse_keys(KEYS_FILE)?;
+    let mut keys = production_keys(KEYS_FILE)?;
     #[cfg(feature = "test-endpoint")]
     if let Some(path) = std::env::var_os("LCL_UPDATE_TEST_KEYS") {
         let text = std::fs::read_to_string(&path)
@@ -227,6 +245,38 @@ pub(crate) mod tests {
         ] {
             assert!(parse_keys(&bad).is_err(), "{bad}");
         }
-        parse_keys(KEYS_FILE).expect("the compiled-in key list is well formed");
+        production_keys(KEYS_FILE)
+            .expect("the compiled-in key list is well formed and names at most one key");
+    }
+
+    #[test]
+    fn a_production_list_names_no_key_or_exactly_one() {
+        let first = TestSigner::new("lcl-update-1");
+        let second = TestSigner::new("lcl-update-2");
+        let manifest = b"{\"format\": 1}";
+        let none = production_keys("# no key yet\n").unwrap();
+        assert_eq!(
+            verify(manifest, &first.sign(manifest), &none).unwrap_err(),
+            NOT_CONFIGURED
+        );
+        let one = production_keys(&first.line()).unwrap();
+        assert_eq!(
+            verify(manifest, &first.sign(manifest), &one).unwrap(),
+            "lcl-update-1"
+        );
+        let two = production_keys(&format!("{}{}", first.line(), second.line())).unwrap_err();
+        assert!(two.contains("2 production update keys"), "{two}");
+    }
+
+    #[cfg(not(feature = "test-endpoint"))]
+    #[test]
+    fn only_a_test_build_adds_test_keys() {
+        let path = std::env::temp_dir().join(format!("lcl-test-keys-{}", std::process::id()));
+        std::fs::write(&path, TestSigner::new("test").line()).unwrap();
+        std::env::set_var("LCL_UPDATE_TEST_KEYS", &path);
+        let keys = trusted_keys();
+        std::env::remove_var("LCL_UPDATE_TEST_KEYS");
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(keys.unwrap(), production_keys(KEYS_FILE).unwrap());
     }
 }

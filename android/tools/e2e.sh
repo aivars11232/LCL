@@ -258,7 +258,8 @@ mkdir -p "$project/proj"
 cp "$repo/canonical/LCL_Core_0.3.0/09_CONFORMANCE/PROJECT_FIXTURES/missing_required_part/main.lcl" "$project/proj/main.lcl"
 "$remote" pair --address "$address" --json >"$out/pair-core03.json"
 "$remote" devices --json >"$out/devices-before-core03.json"
-phase p12_core03_roles_manual_readiness_and_identity_conflict -e link "'$(payload "$out/pair-core03.json")'"
+core03=$(payload "$out/pair-core03.json")
+phase p12_core03_roles_manual_readiness_and_identity_conflict -e link "'$core03'"
 check "the phone's Rules file is the PC's scaffold" grep -q 'KIND: kind.part.rules' "$project/house_rules.lcl"
 check "the unsaved phone edit stayed on the phone" absent 'KEPT' "$project/house_rules.lcl"
 "$remote" devices --json >"$out/devices-after-core03.json"
@@ -384,18 +385,25 @@ devices = json.load(open(sys.argv[1]))["devices"]
 assert len(devices) == 3, devices
 assert sum(1 for d in devices if not d["revoked_at"]) == 1, devices
 PY5
-check "codes that paired are spent, the denied one is not, and no code is stored" python3 - "$XDG_STATE_HOME/lcl/remote/pairing.json" "$link" "$again" "$scanned" "$denied" <<'PY4'
-import json, re, sys
+check "codes that paired are spent, the denied one is not, the refused identity's never reached the PC, and no code is stored" python3 - "$XDG_STATE_HOME/lcl/remote/pairing.json" "$link" "$again" "$scanned" "$denied" "$core03" <<'PY4'
+import hashlib, json, re, sys
 stored = open(sys.argv[1]).read()
-codes = [re.search(r"[|&]c=([^&]+)", t).group(1) for t in sys.argv[2:]]
-assert not any(code in stored for code in codes), "a one-time code is stored in plain text"
+link, again, scanned, denied, refused = [re.search(r"[|&]c=([^&]+)", t).group(1) for t in sys.argv[2:]]
+assert not any(code in stored for code in (link, again, scanned, denied, refused)), "a one-time code is stored in plain text"
 state = json.loads(stored)
-challenges = sorted(state["challenges"], key=lambda c: c["created"])
-assert len(challenges) == 4, challenges
-assert all(c["consumed_at"] for c in challenges[:3]), challenges
-assert challenges[3]["consumed_at"] is None, challenges[3]
-last = [c for c in state["candidates"] if c["challenge"] == challenges[3]["id"]]
-assert [c["status"] for c in last] == ["denied"], last
+assert len(state["challenges"]) == 5, state["challenges"]
+# The PC keeps each code's SHA-256, never the code.
+by = {c["hash"]: c for c in state["challenges"]}
+challenge = lambda code: by[hashlib.sha256(code.encode()).hexdigest()]
+requests = lambda code: [c["status"] for c in state["candidates"] if c["challenge"] == challenge(code)["id"]]
+for code in (link, again, scanned):
+    assert challenge(code)["consumed_at"], challenge(code)
+for code in (denied, refused):
+    assert challenge(code)["consumed_at"] is None, challenge(code)
+assert requests(denied) == ["denied"], requests(denied)
+# A13: the phone refused this code (its PC id is paired under another
+# fingerprint) before asking anything, so the PC saw no request for it.
+assert requests(refused) == [], requests(refused)
 PY4
 "$remote" pending --json >"$out/pending-final.json"
 check "no pairing request is left waiting" python3 -c 'import json,sys; assert [r for r in json.load(open(sys.argv[1]))["requests"] if r.get("status") == "pending"] == []' "$out/pending-final.json"

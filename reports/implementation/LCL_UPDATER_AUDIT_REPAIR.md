@@ -2,10 +2,27 @@
 
 STATUS: IMPLEMENTATION_READY_FOR_INDEPENDENT_REVIEW
 
-Starting HEAD and final HEAD: `b9f7fa20a151243d9ef7215b016328a27286e90d`.
-The repair remains uncommitted. No staging, commit, push, release publication,
-production installation or canonical-package change was performed. Git closure
-remains with the owner, per the established workflow.
+## Source states
+
+TESTED SOURCE STATE: the repair as an uncommitted working tree on top of
+`b9f7fa20a151243d9ef7215b016328a27286e90d` (HEAD when the repair started and
+when it was tested). Every result under *Fresh verification* was produced from
+that tree. The SHA-256 of each of its 1,617 files is in
+`/mnt/F/.lcl-updater-repair-20260928/evidence/final-source.json`.
+
+COMMITTED REPAIR STATE: `d1151c160ac7fcc1917652ccc02c80f2622d69d7`
+("LCL update (Astra take over) repair"), committed and pushed to `origin/main`
+after those tests, as a single commit. On 2026-09-28 the final updater audit
+cleanup compared the 1,617 recorded hashes with that commit's tree: all are
+byte-identical. Its only other files are `releases/` (56 files, unchanged since
+b9f7fa2) and this report. The tests were not rerun on d1151c1 itself. The
+evidence applies to it because the bytes are identical, not because of a
+rerun.
+
+This correction changes only how the report describes repository state; the
+test evidence below is unchanged from when it was recorded. No release
+publication, production installation or canonical-package change was
+performed.
 
 ## Findings and repairs
 
@@ -17,7 +34,7 @@ remains with the owner, per the established workflow.
 | Key rotation claim | Documentation now requires retaining one production V1 update key. Skipped-release-safe rotation is not implemented or claimed; unknown keys remain refused. |
 | PC/Android parity | Shared 40-vector contract covers strict UTF-8/JSON, exact keys, integer bounds, SemVer, digests, artifact sizes and SDK bounds. Architecture syntax and updater-version bounds are shared; host architecture/protocol applicability remains an explicit PC-only check. |
 | Offline reconstruction | `CLEAN_MACHINE_OFFLINE_REBUILD = NO`. Existing source reconstruction is Git-independent, but Rust/C toolchains and Cargo registry metadata/crate sources for the locked remote/updater dependencies must already exist. Android also requires JDK, SDK/build tools and Gradle dependencies. README and generated provenance now state the external-cache requirement. No vendor tree was added. |
-| VS Code correction | Restored exactly the pre-b9f7fa2 settings bytes; removed only the unrelated Claude Ctrl+Enter preference. Ready for its own correcting commit. |
+| VS Code correction | Restored exactly the pre-b9f7fa2 settings bytes; removed only the unrelated Claude Ctrl+Enter preference. Proposed as its own commit at test time; it was committed inside d1151c1 with the rest of the repair. |
 | XDG handling | Relative/empty XDG paths fall back under absolute HOME in updater, installer, uninstaller and launcher. Existing locations are preserved. The updater has no configuration-path field; it does not read or relocate XDG_CONFIG_HOME. Android is unaffected by XDG. |
 | Installer durability | Files and containing directories are synced. Existing package directories use atomic exchange when GNU mv/filesystem support it; deterministic interrupted-exchange and fallback tests pass. The compatibility fallback retains the two-rename interruption gap. The whole installation is not a single atomic transaction. |
 | Android download memory | APK bytes stream into app-private cache while hashing; interrupted, oversized or mismatched downloads are removed. Bounded-copy and controller tests pass; real emulator installation preserves pairing. |
@@ -91,6 +108,8 @@ and removed APK digest are in the evidence directory.
 
 FINAL VERDICT: IMPLEMENTATION_READY_FOR_INDEPENDENT_REVIEW.
 Production updates are not operational until real update trust and Android
-release-signing continuity are established. Nothing has been committed or
-synced; proposed Git split is the VS Code correction separately from the
-updater repair, tests, documentation and this report.
+release-signing continuity are established. At test time nothing had been
+committed or synced, and a split was proposed: the VS Code correction
+separately from the updater repair, tests, documentation and this report. The
+repair was later committed and pushed as the single commit d1151c1 (see
+*Source states*).

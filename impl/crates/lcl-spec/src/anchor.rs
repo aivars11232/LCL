@@ -98,11 +98,17 @@ pub const APPROVED_PACKAGE_0_2_0: TrustAnchor = TrustAnchor {
 /// candidate whose independent review is pending.
 ///
 /// Corresponds to `canonical/LCL_Core_0.3.0` as created on 2026-09-26 under the
-/// Core 0.3 Task 01 (the multi-file project model) and committed as `1b55445`.
-/// Its `MANIFEST.json` has SHA-256
-/// `cdac90a6a1d871909f23604ec02d49860b0b2393badcbeed2e59dfe386905e53`. It
+/// Core 0.3 Task 01 (the multi-file project model), committed as `1b55445`,
+/// with the candidate correction of 2026-09-28 (C03-AUDIT-01): the
+/// `independent_review` summary of `00_RELEASE/05_LANGUAGE_CLOSURE.json` now
+/// separates the inherited Core 0.2.0 review from the unreviewed Core 0.3.0
+/// additions, recorded in `CHANGELOG.txt`, with integrity regenerated. Its
+/// `MANIFEST.json` has SHA-256
+/// `64b9071dcb086f872df3a68013c59de27fcda4e85339e231b847ec5e40db128a`. It
 /// declares no active language completion status and does not permit the
-/// release gate.
+/// release gate. The identity it replaces,
+/// `bf66e36902dbef480db75772494d384847220959d76088dbe102b8ebff04aa12`, opens
+/// no more.
 ///
 /// It is not the default. A caller selects it explicitly through
 /// [`crate::SpecPackage::open_with_anchor`].
@@ -110,7 +116,7 @@ pub const APPROVED_PACKAGE_0_3_0: TrustAnchor = TrustAnchor {
     label: "LCL Core 0.3.0 Project Feature Candidate (2026-09-26)",
     formal_version: "0.3.0",
     package_file_count: 291,
-    identity_digest: "bf66e36902dbef480db75772494d384847220959d76088dbe102b8ebff04aa12",
+    identity_digest: "7c8d46931933fa28c212a84e6405ef4b3ad99cebf07831bb835deac96a701aff",
 };
 
 /// Accumulates a package identity digest from `(path, content-hash)` pairs.

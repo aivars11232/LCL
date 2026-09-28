@@ -17,7 +17,7 @@
     "deployment_tooling"
   ],
   "package_root": "LCL_Core_0.3.0",
-  "generated_utc": "2026-09-26T10:42:01Z",
+  "generated_utc": "2026-09-28T05:46:29Z",
   "package_file_count": 291,
   "manifest_record_count": 288,
   "checksum_record_count": 290,
@@ -96,8 +96,8 @@
     },
     {
       "path": "00_RELEASE/05_LANGUAGE_CLOSURE.json",
-      "bytes": 6847,
-      "sha256": "61f0361090a686c92404d0a257666bc5da9234bb4dbb05de4681756c01d708a7"
+      "bytes": 7100,
+      "sha256": "94c744a9a2d3aa58dfd24c832952544f8c746faaea58b94be7f180d431ad3290"
     },
     {
       "path": "01_FOUNDATION/01_PURPOSE_AND_TERMINOLOGY.txt",
@@ -1491,8 +1491,8 @@
     },
     {
       "path": "CHANGELOG.txt",
-      "bytes": 16127,
-      "sha256": "263e2b6322be129ed87de9e12503cadab53ca11a374ccc0699ec084207b72cf3"
+      "bytes": 16842,
+      "sha256": "1309e0adf5dc382c04f1e77d4478c5835496bb5b193f2abfbd613e808eeb778e"
     },
     {
       "path": "INDEX.txt",

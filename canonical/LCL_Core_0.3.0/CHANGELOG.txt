@@ -43,6 +43,16 @@ LCL CORE CHANGELOG
 - Marked the independent review of the Core 0.3.0 additions pending. The
   package is an UNRELEASED_CANDIDATE, declares no active language completion
   status, and no archive exists.
+- Candidate correction (C03-AUDIT-01, 2026-09-28): the independent_review
+  summary in 00_RELEASE/05_LANGUAGE_CLOSURE.json now separates the inherited
+  Core 0.2.0 basis - FINAL-05 examined the Core 0.2.0 package at identity
+  00daee8de1919c4945ef04ff65edb22164bd8046a493be08a87d5fa3b4c3e604 (216
+  files), the owner accepted it on 2026-09-25, and the accepted Core 0.2.0
+  identity is 061a79c92c76ed7bb05968adde24b016cae3b30666b8fb289c6ab968907e8b3f
+  - from the Core 0.3.0 additions, which have not yet received a final
+  accepted independent review. The relabelled text had said that review
+  examined this package. The decision stays pending and
+  release_gate_permitted stays false; no normative text changed.
 
 0.2.0 BARE-SPECIFICATION-COMPLETE CANDIDATE - INDEPENDENT REVIEW CLOSURE
 

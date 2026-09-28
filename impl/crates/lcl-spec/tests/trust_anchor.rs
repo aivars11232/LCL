@@ -8,7 +8,7 @@
 //! All mutation happens on throwaway copies under Cargo's `CARGO_TARGET_TMPDIR`. The
 //! canonical release is never written to.
 
-use lcl_spec::anchor::APPROVED_PACKAGE_0_2_0;
+use lcl_spec::anchor::{APPROVED_PACKAGE_0_2_0, APPROVED_PACKAGE_0_3_0};
 use lcl_spec::{Authority, SpecError, SpecPackage, TrustAnchor, APPROVED_PACKAGE};
 use std::path::{Path, PathBuf};
 
@@ -309,6 +309,86 @@ fn self_consistent_0_2_0_forgeries_are_rejected() {
         }
         std::fs::remove_dir_all(&dir).ok();
     }
+}
+
+fn canonical_0_3_0_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../canonical/LCL_Core_0.3.0")
+        .canonicalize()
+        .expect("canonical package must be present")
+}
+
+/// The Core 0.3.0 candidate identity before the C03-AUDIT-01 correction.
+static RETIRED_0_3_0_ANCHOR: TrustAnchor = TrustAnchor {
+    label: "retired Core 0.3.0 candidate (before C03-AUDIT-01)",
+    formal_version: "0.3.0",
+    package_file_count: 291,
+    identity_digest: "bf66e36902dbef480db75772494d384847220959d76088dbe102b8ebff04aa12",
+};
+
+/// C03-AUDIT-01: the corrected Core 0.3.0 package opens under its new anchor;
+/// the identity it replaced opens no more; and a package that restores the
+/// retired review claim — altered *and* internally consistent — is refused.
+#[test]
+fn the_corrected_0_3_0_package_alone_opens_under_its_anchor() {
+    let genuine = SpecPackage::open_with_anchor(canonical_0_3_0_root(), &APPROVED_PACKAGE_0_3_0)
+        .expect("the corrected 0.3.0 package opens under its anchor");
+    assert!(genuine.is_authoritative());
+    assert_eq!(
+        genuine.identity_digest(),
+        APPROVED_PACKAGE_0_3_0.identity_digest
+    );
+    assert_ne!(
+        APPROVED_PACKAGE_0_3_0.identity_digest,
+        RETIRED_0_3_0_ANCHOR.identity_digest
+    );
+
+    // The retired identity is not this package's, so its anchor refuses it.
+    match SpecPackage::open_with_anchor(canonical_0_3_0_root(), &RETIRED_0_3_0_ANCHOR) {
+        Err(SpecError::TrustAnchorMismatch {
+            expected, actual, ..
+        }) => {
+            assert_eq!(expected, RETIRED_0_3_0_ANCHOR.identity_digest);
+            assert_eq!(actual, APPROVED_PACKAGE_0_3_0.identity_digest);
+        }
+        other => panic!("the retired identity still opens the package: {other:?}"),
+    }
+
+    // Restoring the historically wrong claim, and fixing the package's own
+    // records to match, still does not pass the external anchor.
+    let victim_rel = "00_RELEASE/05_LANGUAGE_CLOSURE.json";
+    let dir = scratch("forgery-0.3.0-closure");
+    let pkg_dir = dir.join("LCL_Core_0.3.0");
+    copy_tree(&canonical_0_3_0_root(), &pkg_dir);
+    let victim = pkg_dir.join(victim_rel);
+    let old_hash = hash_file(&victim);
+    let text = std::fs::read_to_string(&victim).unwrap();
+    let from = "examined the Core 0.2.0 package, not this one,";
+    assert_eq!(text.matches(from).count(), 1, "fixture assumption: {from}");
+    // Same length: the manifest records sizes as well as hashes.
+    let to = format!("{:<width$}", "examined this package,", width = from.len());
+    std::fs::write(&victim, text.replacen(from, &to, 1)).unwrap();
+    regenerate_internal_metadata(&pkg_dir, victim_rel, &old_hash);
+    let unverified = SpecPackage::open_unverified(&pkg_dir).expect("forgery loads");
+    assert!(
+        unverified.integrity().is_verified(),
+        "forgery should be internally consistent, defects: {:#?}",
+        unverified.integrity().defects
+    );
+    match SpecPackage::open_with_anchor(&pkg_dir, &APPROVED_PACKAGE_0_3_0) {
+        Err(SpecError::TrustAnchorMismatch {
+            expected,
+            actual,
+            internally_consistent,
+            ..
+        }) => {
+            assert_eq!(expected, APPROVED_PACKAGE_0_3_0.identity_digest);
+            assert_ne!(actual, APPROVED_PACKAGE_0_3_0.identity_digest);
+            assert!(internally_consistent);
+        }
+        other => panic!("the forgery was not rejected by the anchor: {other:?}"),
+    }
+    std::fs::remove_dir_all(&dir).ok();
 }
 
 /// The integrity summary must not use the word "VERIFIED", which would imply

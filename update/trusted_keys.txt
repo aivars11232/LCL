@@ -17,5 +17,6 @@
 # verify a release signed with it. Replacing the key is a separate feature that
 # is not designed yet.
 #
-# No production key is listed yet. Until the owner creates the offline update
-# signing key and adds its public half here, every build refuses every update.
+# The production key is lcl-update-1, created 2026-09-28. Its private half is
+# kept offline, outside the repository; only its public half is listed here.
+lcl-update-1 3059301306072a8648ce3d020106082a8648ce3d030107034200040cfb2b395cec0025bfb33e43ddd7ab34ec2b1b8c7a680186a524a6e54a46a450027b435c486becf9488d4356f466e4298572f0f0afe90c11417bb83b282c72f7

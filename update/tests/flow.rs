@@ -697,3 +697,227 @@ fn a_failed_installation_is_rolled_back_and_a_stopped_service_stays_stopped() {
         assert!(!home.cache().join("rollback").exists());
     }
 }
+
+/// Stand-ins for `mv` and `sync` in `dir` that log every call to
+/// `dir/calls.log` and then run the real command; `mv_first` runs before the
+/// real `mv`, with its arguments. The PATH that puts them first.
+fn logging_tools(dir: &Path, mv_first: &str) -> std::ffi::OsString {
+    let real = |name: &str| {
+        let out = Command::new("sh")
+            .args(["-c", &format!("command -v {name}")])
+            .output()
+            .unwrap();
+        String::from_utf8(out.stdout).unwrap().trim().to_string()
+    };
+    let log = dir.join("calls.log");
+    write(
+        &dir.join("mv"),
+        &format!(
+            "#!/bin/sh\necho \"mv $*\" >> '{log}'\n{mv_first}\nexec '{mv}' \"$@\"\n",
+            log = log.display(),
+            mv = real("mv"),
+        ),
+        0o755,
+    );
+    write(
+        &dir.join("sync"),
+        &format!(
+            "#!/bin/sh\necho \"sync $*\" >> '{log}'\nexec '{sync}' \"$@\"\n",
+            log = log.display(),
+            sync = real("sync"),
+        ),
+        0o755,
+    );
+    format!("{}:{}", dir.display(), std::env::var("PATH").unwrap()).into()
+}
+
+/// Install `version` into `home` with `path` as PATH; whether it succeeded.
+fn install(home: &Home, version: &str, path: Option<&std::ffi::OsStr>) -> bool {
+    let top = payload(
+        &home.root.join(format!("payload-{version}")),
+        version,
+        None,
+        Flaw::None,
+    );
+    // Through sh: executing a file just written races, in a test process
+    // that forks on other threads, with ETXTBSY.
+    let mut command = home.command(Path::new("sh"));
+    command.arg(top.join("install.sh"));
+    if let Some(path) = path {
+        command.env("PATH", path);
+    }
+    command
+        .current_dir(&top)
+        .stdout(std::process::Stdio::null())
+        .status()
+        .unwrap()
+        .success()
+}
+
+fn package_dir_entries(home: &Home) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(home.root.join(".local/share/lcl"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn a_package_directory_is_exchanged_in_one_step_and_every_rename_is_flushed() {
+    let home = Home::new("exchange");
+    assert!(install(&home, "0.1.0", None));
+    let tools = home.root.join("tools");
+    let path = logging_tools(&tools, "");
+    assert!(install(&home, "0.2.0", Some(&path)));
+
+    let package = home.root.join(".local/share/lcl/LCL_Core_0.1.0");
+    assert_eq!(
+        std::fs::read_to_string(package.join("VERSION.txt")).unwrap(),
+        "0.2.0\n"
+    );
+    assert_eq!(package_dir_entries(&home), ["LCL_Core_0.1.0"]);
+    let calls = std::fs::read_to_string(tools.join("calls.log")).unwrap();
+    let lines: Vec<&str> = calls.lines().collect();
+    let pkg = package.display().to_string();
+    let exchanged = lines
+        .iter()
+        .position(|l| l.starts_with("mv --exchange -T ") && l.ends_with(&format!(" {pkg}")))
+        .unwrap_or_else(|| panic!("no exchange:\n{calls}"));
+    // The installed package was never renamed aside, so its name was never
+    // missing; the rename was flushed; so was the copy before it.
+    assert!(
+        !lines.iter().any(|l| l.starts_with(&format!("mv {pkg} "))),
+        "{calls}"
+    );
+    let parent = format!("sync -- {}", package.parent().unwrap().display());
+    assert!(lines[exchanged..].contains(&parent.as_str()), "{calls}");
+    assert!(
+        lines[..exchanged]
+            .iter()
+            .any(|l| l.starts_with("sync -- ") && l.contains("LCL_Core_0.1.0.new.")),
+        "{calls}"
+    );
+    // Every file published beside the package is flushed, then renamed, and
+    // the rename flushed.
+    let launcher = home.bin().join("lcl-workspace-launch");
+    let renamed = lines
+        .iter()
+        .position(|l| l.starts_with("mv -f ") && l.ends_with(&format!(" {}", launcher.display())))
+        .unwrap_or_else(|| panic!("{calls}"));
+    assert!(lines[renamed - 1].starts_with("sync -- "), "{calls}");
+    assert_eq!(
+        lines[renamed + 1],
+        format!("sync -- {}", home.bin().display()),
+        "{calls}"
+    );
+}
+
+#[test]
+fn an_install_stopped_right_after_the_exchange_leaves_a_complete_package() {
+    let home = Home::new("exchange-crash");
+    assert!(install(&home, "0.1.0", None));
+    let tools = home.root.join("tools");
+    // Power lost, as far as the installer can tell, the moment the exchange
+    // is done: nothing after it runs.
+    let path = logging_tools(
+        &tools,
+        &format!(
+            "case \"$1\" in --exchange) '{mv}' \"$@\"; kill -9 $PPID; exit 0 ;; esac",
+            mv = String::from_utf8(
+                Command::new("sh")
+                    .args(["-c", "command -v mv"])
+                    .output()
+                    .unwrap()
+                    .stdout
+            )
+            .unwrap()
+            .trim()
+        ),
+    );
+    assert!(!install(&home, "0.2.0", Some(&path)));
+    let package = home.root.join(".local/share/lcl/LCL_Core_0.1.0");
+    assert_eq!(
+        std::fs::read_to_string(package.join("VERSION.txt")).unwrap(),
+        "0.2.0\n"
+    );
+    // Running the install again finishes the job.
+    assert!(install(&home, "0.2.0", None));
+    assert_eq!(
+        std::fs::read_to_string(package.join("VERSION.txt")).unwrap(),
+        "0.2.0\n"
+    );
+}
+
+#[test]
+fn without_an_exchanging_mv_the_package_is_still_replaced_and_flushed() {
+    let home = Home::new("no-exchange");
+    assert!(install(&home, "0.1.0", None));
+    let tools = home.root.join("tools");
+    let path = logging_tools(
+        &tools,
+        "case \"$1\" in --exchange) echo \"mv: unrecognized option '--exchange'\" >&2; exit 1 ;; esac",
+    );
+    assert!(install(&home, "0.2.0", Some(&path)));
+    let package = home.root.join(".local/share/lcl/LCL_Core_0.1.0");
+    assert_eq!(
+        std::fs::read_to_string(package.join("VERSION.txt")).unwrap(),
+        "0.2.0\n"
+    );
+    assert_eq!(package_dir_entries(&home), ["LCL_Core_0.1.0"]);
+    let calls = std::fs::read_to_string(tools.join("calls.log")).unwrap();
+    let pkg = package.display().to_string();
+    let aside = calls
+        .lines()
+        .position(|l| l.starts_with(&format!("mv {pkg} {pkg}.old.")))
+        .unwrap_or_else(|| panic!("{calls}"));
+    let lines: Vec<&str> = calls.lines().collect();
+    assert!(
+        lines[aside + 1].starts_with(&format!("mv {pkg}.new.")),
+        "{calls}"
+    );
+    assert_eq!(
+        lines[aside + 2],
+        format!("sync -- {}", package.parent().unwrap().display()),
+        "{calls}"
+    );
+}
+
+#[test]
+fn relative_or_empty_xdg_locations_are_ignored_by_the_installer() {
+    let home = Home::new("xdg");
+    let top = payload(&home.root.join("payload"), "0.1.0", None, Flaw::None);
+    let elsewhere = home.root.join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let run = |args: &[&str], home_var: &Path| {
+        home.command(Path::new("sh"))
+            .arg(top.join("install.sh"))
+            .env("HOME", home_var)
+            .env("XDG_BIN_HOME", "relative/bin")
+            .env("XDG_DATA_HOME", "")
+            .args(args)
+            .current_dir(&elsewhere)
+            .output()
+            .unwrap()
+    };
+    let listed = run(&["--list"], &home.root);
+    assert!(listed.status.success());
+    let listed = String::from_utf8(listed.stdout).unwrap();
+    assert!(!listed.is_empty());
+    for line in listed.lines() {
+        assert!(
+            line.starts_with(&format!("{}/.local/", home.root.display())),
+            "{line}"
+        );
+    }
+    assert!(run(&[], &home.root).status.success());
+    assert!(home.bin().join("lcl").is_file());
+    assert!(home.root.join(".local/share/lcl/LCL_Core_0.1.0").is_dir());
+    assert_eq!(std::fs::read_dir(&elsewhere).unwrap().count(), 0);
+    // HOME itself must be absolute.
+    let refused = run(&["--list"], Path::new("relative-home"));
+    assert!(!refused.status.success());
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("HOME is not set to an absolute path")
+    );
+}

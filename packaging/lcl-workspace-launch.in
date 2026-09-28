@@ -43,7 +43,12 @@ localized_spec=@LOCALIZED_SPEC@
 project_spec=@PROJECT_SPEC@
 default_project=@DEFAULT_PROJECT@
 
-state=${XDG_STATE_HOME:-$HOME/.local/state}/lcl
+# XDG_STATE_HOME counts only when it names an absolute path; a relative or
+# empty one is ignored for the default under HOME.
+case "${XDG_STATE_HOME:-}" in
+    /*) state=$XDG_STATE_HOME/lcl ;;
+    *) state=$HOME/.local/state/lcl ;;
+esac
 log=$state/launch.log
 mkdir -p "$state"
 

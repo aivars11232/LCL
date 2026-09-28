@@ -4,15 +4,18 @@
 #
 # Both the PC updater (lcl-update) and LCL for Android read this file when they
 # are built, so one release is judged by one list everywhere. Only public keys
-# belong here; the private keys live offline, outside the repository.
+# belong here; the private key lives offline, outside the repository.
 #
 # A key id is 1 to 64 of a-z, 0-9 and "-". A manifest names the key that signed
 # it, and a key that is not listed here is never trusted, whatever a manifest
 # says.
 #
-# Rotation: list the next key here beside the current one and release that
-# build, signed with the current key. Releases after that may be signed with
-# the next key. Remove the old key only in a later release.
+# One key, kept: Update System V1 has exactly one production update signing
+# key and never replaces it. Listing a next key here beside it would not make a
+# replacement safe, because LCL checks only the latest stable release: a PC or
+# phone that skipped the release that introduced the next key could never
+# verify a release signed with it. Replacing the key is a separate feature that
+# is not designed yet.
 #
 # No production key is listed yet. Until the owner creates the offline update
 # signing key and adds its public half here, every build refuses every update.

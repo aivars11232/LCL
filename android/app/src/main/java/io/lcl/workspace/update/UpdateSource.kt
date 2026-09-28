@@ -2,6 +2,8 @@ package io.lcl.workspace.update
 
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -10,8 +12,41 @@ interface ReleaseSource {
     /** The latest published stable release, or null when there is none. */
     fun latest(): Release?
 
-    /** Asset [name] of [release], at most [limit] bytes; [progress] sees (done, total). */
-    fun fetch(release: Release, name: String, limit: Long, progress: (Long, Long) -> Unit = { _, _ -> }): ByteArray
+    /**
+     * Asset [name] of [release], written to [into] as it arrives, at most
+     * [limit] bytes; [progress] sees (done, total).
+     */
+    fun fetch(release: Release, name: String, limit: Long, into: OutputStream, progress: (Long, Long) -> Unit = { _, _ -> })
+}
+
+/** A small asset — a manifest, a signature — in memory. */
+fun ReleaseSource.fetchBytes(release: Release, name: String, limit: Long): ByteArray =
+    ByteArrayOutputStream().also { fetch(release, name, limit, it) }.toByteArray()
+
+/**
+ * Copy [input] to [into], one buffer at a time: never more than [limit] bytes,
+ * refused as soon as it would pass [limit] or as soon as the server announces
+ * more ([length], -1 when it does not say), and a download that stops early or
+ * comes up short of [length] is an error. The number of bytes copied.
+ */
+fun copyBounded(input: InputStream, into: OutputStream, length: Long, limit: Long, progress: (Long, Long) -> Unit = { _, _ -> }): Long {
+    if (length > limit) throw UpdateRefused("invalid", "$length bytes is more than the $limit expected")
+    val buffer = ByteArray(64 * 1024)
+    var done = 0L
+    while (true) {
+        val n = try {
+            input.read(buffer)
+        } catch (e: IOException) {
+            throw UpdateRefused("download", "the download stopped: ${e.message}")
+        }
+        if (n < 0) break
+        if (done + n > limit) throw UpdateRefused("invalid", "more than the $limit bytes expected")
+        into.write(buffer, 0, n)
+        done += n
+        progress(done, if (length > 0) length else limit)
+    }
+    if (length >= 0 && done != length) throw UpdateRefused("download", "the download was cut short")
+    return done
 }
 
 /**
@@ -36,22 +71,23 @@ class GitHubReleases(testEndpoint: String = "") : ReleaseSource {
     }
 
     override fun latest(): Release? {
-        val body = try {
-            get("$api/releases/latest", "application/vnd.github+json", 1L shl 20) { _, _ -> }
+        val body = ByteArrayOutputStream()
+        try {
+            get("$api/releases/latest", "application/vnd.github+json", 1L shl 20, body) { _, _ -> }
         } catch (e: NotFound) {
             return null
         }
-        return parseRelease(body.toString(Charsets.UTF_8))
+        return parseRelease(body.toString(Charsets.UTF_8.name()))
     }
 
-    override fun fetch(release: Release, name: String, limit: Long, progress: (Long, Long) -> Unit): ByteArray {
+    override fun fetch(release: Release, name: String, limit: Long, into: OutputStream, progress: (Long, Long) -> Unit) {
         if (name !in release.assets) throw UpdateRefused("invalid", "release ${release.tag} has no $name")
-        return get("$download/${release.tag}/$name", "application/octet-stream", limit, progress)
+        get("$download/${release.tag}/$name", "application/octet-stream", limit, into, progress)
     }
 
     private class NotFound : IOException()
 
-    private fun get(url: String, accept: String, limit: Long, progress: (Long, Long) -> Unit): ByteArray {
+    private fun get(url: String, accept: String, limit: Long, into: OutputStream, progress: (Long, Long) -> Unit) {
         var target = URL(url)
         repeat(6) {
             val connection = target.openConnection() as HttpURLConnection
@@ -68,25 +104,8 @@ class GitHubReleases(testEndpoint: String = "") : ReleaseSource {
                 }
                 when (status) {
                     200 -> {
-                        val length = connection.contentLengthLong
-                        if (length > limit) throw UpdateRefused("invalid", "$length bytes is more than the $limit expected")
-                        val out = ByteArrayOutputStream()
-                        val buffer = ByteArray(64 * 1024)
-                        connection.inputStream.use { input ->
-                            while (true) {
-                                val n = try {
-                                    input.read(buffer)
-                                } catch (e: IOException) {
-                                    throw UpdateRefused("download", "the download stopped: ${e.message}")
-                                }
-                                if (n < 0) break
-                                out.write(buffer, 0, n)
-                                if (out.size() > limit) throw UpdateRefused("invalid", "more than the $limit bytes expected")
-                                progress(out.size().toLong(), if (length > 0) length else limit)
-                            }
-                        }
-                        if (length >= 0 && out.size().toLong() != length) throw UpdateRefused("download", "the download was cut short")
-                        return out.toByteArray()
+                        connection.inputStream.use { copyBounded(it, into, connection.contentLengthLong, limit, progress) }
+                        return
                     }
                     301, 302, 303, 307, 308 -> {
                         val next = URL(target, connection.getHeaderField("Location") ?: throw UpdateRefused("invalid", "a redirect without a location"))

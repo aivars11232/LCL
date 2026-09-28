@@ -9,12 +9,40 @@ use crate::check::{self, Context};
 use crate::manifest::Manifest;
 use crate::state::{self, State};
 use crate::trust;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
+
+/// The most a program run here may print on either output; more is refused
+/// rather than held. A release payload's full listing is under 200 KB.
+const MAX_OUTPUT: u64 = 16 * 1024 * 1024;
+
+/// Read `pipe` to its end on a thread of its own, so the program writing it
+/// never waits on a full pipe: its bytes, at most `MAX_OUTPUT` + 1 of them.
+/// Past that the pipe is closed, and the program's next write to it fails.
+fn drain<R: Read + Send + 'static>(pipe: R) -> mpsc::Receiver<io::Result<Vec<u8>>> {
+    let (sender, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let read = pipe
+            .take(MAX_OUTPUT + 1)
+            .read_to_end(&mut bytes)
+            .map(|_| bytes);
+        let _ = sender.send(read);
+    });
+    receiver
+}
 
 /// Run `program` with `args`, at most `limit` long; its exit status and
 /// standard output.
+///
+/// Both outputs are read while the program runs. A pipe holds only so much
+/// (64 KiB on Linux), and a program that fills one waits for it to be read:
+/// forever, if nothing reads until the program has exited. A program still
+/// running at the limit is killed and reaped, and outputs that something it
+/// started keeps open are not waited for past the limit either.
 pub(crate) fn run(
     program: &Path,
     args: &[&str],
@@ -31,29 +59,45 @@ pub(crate) fn run(
     if let Some(dir) = dir {
         command.current_dir(dir);
     }
+    let deadline = Instant::now() + limit;
     let mut child = command
         .spawn()
         .map_err(|e| format!("{}: {e}", program.display()))?;
-    let started = Instant::now();
-    loop {
+    let stdout = child.stdout.take().map(drain);
+    let stderr = child.stderr.take().map(drain);
+    let too_slow = || {
+        format!(
+            "{} did not finish in {}s",
+            program.display(),
+            limit.as_secs()
+        )
+    };
+    let status = loop {
         if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
-            let output = child.wait_with_output().map_err(|e| e.to_string())?;
-            return Ok((
-                status.success(),
-                String::from_utf8_lossy(&output.stdout).into_owned(),
-            ));
+            break status;
         }
-        if started.elapsed() > limit {
+        if Instant::now() >= deadline {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(format!(
-                "{} did not finish in {}s",
-                program.display(),
-                limit.as_secs()
-            ));
+            return Err(too_slow());
         }
         std::thread::sleep(Duration::from_millis(20));
-    }
+    };
+    let collect = |output: Option<mpsc::Receiver<io::Result<Vec<u8>>>>| {
+        let output = output.ok_or_else(|| format!("{}: no output pipe", program.display()))?;
+        match output.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            Ok(Ok(bytes)) if bytes.len() as u64 <= MAX_OUTPUT => Ok(bytes),
+            Ok(Ok(_)) => Err(format!(
+                "{} printed more than {MAX_OUTPUT} bytes",
+                program.display()
+            )),
+            Ok(Err(e)) => Err(format!("{}: {e}", program.display())),
+            Err(_) => Err(too_slow()),
+        }
+    };
+    let out = collect(stdout)?;
+    collect(stderr)?;
+    Ok((status.success(), String::from_utf8_lossy(&out).into_owned()))
 }
 
 /// The SHA-256 of `bytes`, by `ring`.
@@ -309,6 +353,95 @@ mod tests {
         ] {
             assert!(!safe_member(bad, top), "{bad}");
         }
+    }
+
+    fn sh(script: &str, limit: u64) -> Result<(bool, String), String> {
+        run(
+            Path::new("/bin/sh"),
+            &["-c", script],
+            None,
+            Duration::from_secs(limit),
+        )
+    }
+
+    #[test]
+    fn output_larger_than_a_pipe_is_read_while_the_program_runs() {
+        // Far more than a pipe holds, on both outputs at once.
+        let started = Instant::now();
+        let (ok, out) = sh(
+            "head -c 3000000 /dev/zero | tr '\\0' x; head -c 3000000 /dev/zero >&2",
+            20,
+        )
+        .expect("the program finishes");
+        assert!(ok);
+        assert_eq!(out.len(), 3_000_000);
+        assert!(out.bytes().all(|b| b == b'x'));
+        assert!(started.elapsed() < Duration::from_secs(15));
+    }
+
+    #[test]
+    fn output_past_the_bound_is_refused_rather_than_held() {
+        let why = sh(&format!("head -c {} /dev/zero", MAX_OUTPUT + 10), 60).unwrap_err();
+        assert!(why.contains("printed more than"), "{why}");
+        let why = sh(&format!("head -c {} /dev/zero >&2", MAX_OUTPUT + 10), 60).unwrap_err();
+        assert!(why.contains("printed more than"), "{why}");
+    }
+
+    #[test]
+    fn a_program_past_its_limit_is_killed_and_the_run_ends_on_time() {
+        let started = Instant::now();
+        let why = sh("sleep 5", 1).unwrap_err();
+        assert!(why.contains("did not finish in 1s"), "{why}");
+        assert!(started.elapsed() < Duration::from_secs(4));
+        // A program that has exited while something it started still holds
+        // its output open is not waited for past the limit either.
+        let started = Instant::now();
+        let why = sh("sleep 5 & echo started", 1).unwrap_err();
+        assert!(why.contains("did not finish in 1s"), "{why}");
+        assert!(started.elapsed() < Duration::from_secs(4));
+    }
+
+    #[test]
+    fn a_payload_with_a_release_sized_listing_unpacks() {
+        // A real payload lists about 1600 members, 174 KB with -tvzf: well
+        // past what a pipe holds. This one lists 3000.
+        let scratch =
+            std::env::temp_dir().join(format!("lcl-update-listing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        let top = "lcl-9.9.9-linux-x86_64";
+        for n in 0..3000 {
+            let dir = scratch.join("src").join(top).join(format!(
+                "share/LCL_Core_0.1.0/registries/group-{:02}",
+                n % 40
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join(format!("entry-{n:05}.json")), b"{}").unwrap();
+        }
+        let archive = scratch.join("payload.tar.gz");
+        let status = Command::new("tar")
+            .args(["-czf", archive.to_str().unwrap(), "-C"])
+            .arg(scratch.join("src"))
+            .arg(top)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let listing = run(
+            Path::new("tar"),
+            &["-tvzf", archive.to_str().unwrap()],
+            None,
+            Duration::from_secs(60),
+        )
+        .unwrap()
+        .1;
+        assert!(listing.len() > 256 * 1024, "{}", listing.len());
+
+        let started = Instant::now();
+        let payload = extract(&archive, &scratch.join("into")).expect("the payload unpacks");
+        assert!(started.elapsed() < Duration::from_secs(60));
+        assert!(payload
+            .join("share/LCL_Core_0.1.0/registries/group-39/entry-02999.json")
+            .is_file());
+        std::fs::remove_dir_all(&scratch).unwrap();
     }
 
     #[test]

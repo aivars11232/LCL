@@ -7,7 +7,9 @@
 //!   lcl-update download [--json]          fetch, verify and stage the update found
 //!   lcl-update apply [--wait-pid PID] [--relaunch]
 //!                                         install the staged update, with rollback
-//!   lcl-update verify MANIFEST SIGNATURE  check a manifest against the trusted keys
+//!   lcl-update verify [--json] MANIFEST SIGNATURE
+//!                                         check a manifest against the trusted keys;
+//!                                         with --json, what the verified manifest says
 //!
 //! Exit status: 0 when the action completed, 1 when it was refused or failed
 //! (the state says why), 2 for a usage error.
@@ -19,7 +21,7 @@ use lcl_update::{apply, stage, trust};
 use std::process::ExitCode;
 
 const USAGE: &str = "usage: lcl-update version | source | status [--json] | check [--json] | \
-download [--json] | apply [--wait-pid PID] [--relaunch] | verify MANIFEST SIGNATURE";
+download [--json] | apply [--wait-pid PID] [--relaunch] | verify [--json] MANIFEST SIGNATURE";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -63,7 +65,14 @@ fn main() -> ExitCode {
                 })
             })
         }
-        Some("verify") if args.len() == 3 => verify(&args[1], &args[2]),
+        Some("verify") => match args[1..]
+            .iter()
+            .filter(|a| *a != "--json")
+            .collect::<Vec<_>>()[..]
+        {
+            [manifest, signature] => verify(manifest, signature, json),
+            _ => usage(),
+        },
         _ => usage(),
     }
 }
@@ -155,7 +164,7 @@ fn source() -> ExitCode {
     })
 }
 
-fn verify(manifest: &str, signature: &str) -> ExitCode {
+fn verify(manifest: &str, signature: &str, json: bool) -> ExitCode {
     let read = |path: &str| std::fs::read(path).map_err(|e| format!("{path}: {e}"));
     let result = trust::trusted_keys().and_then(|keys| {
         let bytes = read(manifest)?;
@@ -163,6 +172,25 @@ fn verify(manifest: &str, signature: &str) -> ExitCode {
         Ok(manifest)
     });
     match result {
+        Ok(manifest) if json => {
+            // Only what a verified manifest says: the release builder believes
+            // the previous release through this and nothing else.
+            let android = Object::new()
+                .str("application_id", &manifest.android.application_id)
+                .str("version_name", &manifest.android.version_name)
+                .num("version_code", manifest.android.version_code)
+                .str("signer_sha256", &manifest.android.signer_sha256)
+                .finish();
+            let answer = Object::new()
+                .str("product_version", &manifest.product_version.to_string())
+                .str("release_tag", &manifest.release_tag)
+                .str("source_commit", &manifest.source_commit)
+                .str("signing_key_id", &manifest.signing_key_id)
+                .raw("android", android)
+                .finish();
+            println!("{answer}");
+            ExitCode::SUCCESS
+        }
         Ok(manifest) => {
             println!(
                 "verified: LCL {} signed by {}",

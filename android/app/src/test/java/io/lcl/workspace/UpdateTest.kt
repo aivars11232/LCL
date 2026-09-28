@@ -13,6 +13,7 @@ import io.lcl.workspace.update.SemVer
 import io.lcl.workspace.update.TrustedKey
 import io.lcl.workspace.update.UpdateController
 import io.lcl.workspace.update.UpdateRefused
+import io.lcl.workspace.update.copyBounded
 import io.lcl.workspace.update.parseManifest
 import io.lcl.workspace.update.sha256
 import io.lcl.workspace.update.verifyManifest
@@ -24,7 +25,12 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import java.nio.file.Files
 import java.security.KeyPair
 import java.security.KeyPairGenerator
@@ -39,7 +45,8 @@ class UpdateTest {
     private fun keys(vararg pairs: Pair<String, KeyPair>) = TrustedKey.parse(pairs.joinToString("\n") { (id, pair) -> "$id ${hex(pair.public.encoded)}" })
 
     private val signerCert = "c".repeat(64)
-    private val apk = ByteArray(1000) { it.toByte() }
+    // Larger than one download buffer, so it arrives in several pieces.
+    private val apk = ByteArray(200_000) { (it * 7).toByte() }
 
     private fun manifest(version: String, code: Long, apkBytes: ByteArray = apk, keyId: String = "test-key", appId: String = "io.lcl.workspace") = """
         {"format": 1, "product": "lcl", "channel": "stable", "product_version": "$version", "release_tag": "v$version",
@@ -57,7 +64,10 @@ class UpdateTest {
         val ordered = listOf("0.9.0", "0.10.0", "1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-beta.2", "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0", "1.10.0")
         ordered.zipWithNext().forEach { (a, b) -> assertTrue("$a < $b", SemVer.parse(a) < SemVer.parse(b)) }
         assertEquals(SemVer.parse("1.2.3"), SemVer.parse("1.2.3"))
-        for (bad in listOf("1.2", "01.2.3", "1.2.3+b", "v1.2.3", "1.2.3-", "1.2.3-01")) {
+        // The PC's limits: unsigned 64-bit numbers.
+        assertTrue(SemVer.parse("18446744073709551615.0.0") > SemVer.parse("9223372036854775808.0.0"))
+        assertTrue(SemVer.parse("1.0.0-18446744073709551615") < SemVer.parse("1.0.0-a"))
+        for (bad in listOf("1.2", "01.2.3", "1.2.3+b", "v1.2.3", "1.2.3-", "1.2.3-01", "18446744073709551616.0.0", "1.0.0-18446744073709551616")) {
             assertThrows(UpdateRefused::class.java) { SemVer.parse(bad) }
         }
     }
@@ -72,8 +82,8 @@ class UpdateTest {
         assertEquals("0.2.0", m.productVersion.toString())
         assertEquals(5L, m.android.versionCode)
         assertEquals("Notes for 0.2.0", m.releaseNotes)
-        // Rotation: the next key works once the app already lists it; a key the
-        // manifest merely names never does.
+        // Any key the app lists verifies; a key the manifest merely names never
+        // does.
         val byNext = manifest("0.2.0", 5, keyId = "next-key")
         assertEquals("next-key", verifyManifest(byNext, sign(next, byNext), trusted).signingKeyId)
         fun refused(kind: String, block: () -> Unit) = assertEquals(kind, assertThrows(UpdateRefused::class.java) { block() }.kind)
@@ -102,6 +112,76 @@ class UpdateTest {
         }
     }
 
+    @Test
+    fun the_shared_manifest_vectors_are_accepted_or_refused_exactly_as_on_the_pc() {
+        var root = File(".").canonicalFile
+        while (!File(root, "update/manifest_vectors/expected.txt").isFile) {
+            root = root.parentFile ?: error("no update/manifest_vectors above ${File(".").canonicalPath}")
+        }
+        val vectors = File(root, "update/manifest_vectors")
+        val cases = File(vectors, "expected.txt").readLines().filter { it.isNotEmpty() && !it.startsWith("#") }.map { line ->
+            val fields = line.split(" ")
+            assertTrue(line, fields.size == 2 && fields[1] in setOf("ACCEPT", "REFUSE"))
+            fields[0] to (fields[1] == "ACCEPT")
+        }
+        assertEquals("every vector is listed exactly once", vectors.list()!!.filter { it != "expected.txt" }.sorted(), cases.map { it.first }.sorted())
+        assertTrue(cases.size >= 40)
+        for ((name, accept) in cases) {
+            val result = runCatching { parseManifest(File(vectors, name).readBytes()) }
+            assertEquals("$name: ${result.exceptionOrNull()}", accept, result.isSuccess)
+            if (!accept) assertTrue("$name: ${result.exceptionOrNull()}", result.exceptionOrNull() is UpdateRefused)
+        }
+        val largest = parseManifest(File(vectors, "overflowing-minimum-sdk.json").readBytes().toString(Charsets.UTF_8)
+            .replace("4294967325", "2147483647").toByteArray())
+        assertEquals(Int.MAX_VALUE, largest.android.minimumSdk)
+    }
+
+    @Test
+    fun a_download_is_copied_within_its_bounds_or_refused() {
+        fun refused(kind: String, block: () -> Unit) = assertEquals(kind, assertThrows(UpdateRefused::class.java) { block() }.kind)
+        val bytes = ByteArray(300_000) { it.toByte() }
+        val out = ByteArrayOutputStream()
+        val seen = mutableListOf<Long>()
+        assertEquals(300_000L, copyBounded(Dropping(bytes), out, 300_000, 300_000) { done, _ -> seen += done })
+        assertTrue(out.toByteArray().contentEquals(bytes))
+        assertTrue("it arrived in pieces", seen.size > 1)
+        // Interrupted part way.
+        refused("download") { copyBounded(Dropping(bytes, failAfter = 100_000), ByteArrayOutputStream(), 300_000, 300_000) }
+        // More than announced by the server, or more than the manifest allows:
+        // refused before anything past the limit is written.
+        refused("invalid") { copyBounded(Dropping(bytes), ByteArrayOutputStream(), 300_000, 299_999) }
+        val capped = ByteArrayOutputStream()
+        refused("invalid") { copyBounded(Dropping(bytes), capped, -1, 250_000) }
+        assertTrue(capped.size() <= 250_000)
+        // Shorter than announced.
+        refused("download") { copyBounded(Dropping(bytes.copyOf(299_000)), ByteArrayOutputStream(), 300_000, 300_000) }
+    }
+
+    @Test
+    fun an_apk_is_streamed_to_the_cache_and_nothing_is_left_when_it_fails() {
+        fun cached(s: Setup) = File(s.cache, "update").listFiles().orEmpty().toList()
+        fun failed(s: Setup, kind: String) {
+            s.controller.check()
+            s.controller.update()
+            assertEquals(Phase.Failed, s.controller.ui.value.phase)
+            assertEquals(kind, s.controller.ui.value.problem!!.first)
+            assertTrue("nothing was handed to Android", s.installer.installs.isEmpty())
+            assertEquals("nothing is left in the cache", emptyList<File>(), cached(s))
+        }
+        failed(Setup().apply { source.failAfter = apk.size / 2 }, "download")
+        failed(Setup(apkServed = apk.copyOf().also { it[apk.size - 1] = 1 }), "verification")
+        failed(Setup(apkServed = apk + ByteArray(10)), "invalid")
+
+        val s = Setup()
+        s.controller.check()
+        s.controller.update()
+        val staged = s.installer.installs.single()
+        assertTrue(staged.path.startsWith(s.cache.path))
+        assertTrue("the file is exactly the signed APK", staged.readBytes().contentEquals(apk))
+        assertEquals(listOf(staged), cached(s))
+        assertEquals(Phase.Installing, s.controller.ui.value.phase)
+    }
+
     private class Store : KeyValueStore {
         val values = mutableMapOf<String, String>()
         override fun get(key: String) = values[key]
@@ -110,13 +190,27 @@ class UpdateTest {
         }
     }
 
-    private class FakeSource(var release: Release?, val assets: Map<String, ByteArray>, var offline: Boolean = false) : ReleaseSource {
+    /** A stream of [bytes] that fails, as a dropped connection does, once [failAfter] of them are read. */
+    private class Dropping(bytes: ByteArray, private val failAfter: Int = Int.MAX_VALUE) : InputStream() {
+        private val inner = ByteArrayInputStream(bytes)
+        private var read = 0
+        override fun read(): Int {
+            if (read >= failAfter) throw IOException("connection reset")
+            return inner.read().also { if (it >= 0) read++ }
+        }
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            if (read >= failAfter) throw IOException("connection reset")
+            return inner.read(b, off, minOf(len, failAfter - read, 4096)).also { if (it > 0) read += it }
+        }
+    }
+
+    /** Serves assets through [copyBounded], as the real source does. */
+    private class FakeSource(var release: Release?, val assets: Map<String, ByteArray>, var offline: Boolean = false, var failAfter: Int = Int.MAX_VALUE) : ReleaseSource {
         override fun latest(): Release? = if (offline) throw Offline("no network") else release
-        override fun fetch(release: Release, name: String, limit: Long, progress: (Long, Long) -> Unit): ByteArray {
+        override fun fetch(release: Release, name: String, limit: Long, into: OutputStream, progress: (Long, Long) -> Unit) {
             if (offline) throw Offline("no network")
             val bytes = assets.getValue(name)
-            progress(bytes.size.toLong(), bytes.size.toLong())
-            return bytes
+            copyBounded(Dropping(bytes, failAfter), into, bytes.size.toLong(), limit, progress)
         }
     }
 
@@ -143,8 +237,9 @@ class UpdateTest {
         val installer = FakeInstaller()
         val store = Store()
         var now = 1_000_000L
+        val cache: File = Files.createTempDirectory("lcl-update-test").toFile()
         val controller = UpdateController(store, source, { keys("test-key" to pair) }, facts, installer,
-            Files.createTempDirectory("lcl-update-test").toFile(), TestScope(UnconfinedTestDispatcher()), UnconfinedTestDispatcher(), { now })
+            cache, TestScope(UnconfinedTestDispatcher()), UnconfinedTestDispatcher(), { now })
     }
 
     @Test
@@ -192,7 +287,7 @@ class UpdateTest {
             assertTrue("nothing was handed to Android", s.installer.installs.isEmpty())
         }
         refusedBeforeInstall(Setup(apkServed = apk.copyOf().also { it[0] = 99 }), "verification")
-        refusedBeforeInstall(Setup(apkServed = apk.copyOf(999)), "verification")
+        refusedBeforeInstall(Setup(apkServed = apk.copyOf(apk.size - 1)), "verification")
         refusedBeforeInstall(Setup(archive = ApkFacts("io.evil.app", "0.2.0", 5, setOf(signerCert))), "verification")
         refusedBeforeInstall(Setup(archive = ApkFacts("io.lcl.workspace", "0.2.0", 5, setOf("d".repeat(64)))), "verification")
         refusedBeforeInstall(Setup(archive = null), "verification")

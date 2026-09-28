@@ -581,6 +581,8 @@ rustc_program=${RUSTC:-rustc}
     echo "declared minimum: $(sed -n 's/^rust-version = "\(.*\)"$/\1/p' "$snapshot/impl/Cargo.toml" | head -1)"
     echo "lockfile sha256:  $(sha256sum < "$snapshot/impl/Cargo.lock" | cut -d' ' -f1)"
     echo "build flags:      --release --offline --locked"
+    echo "CLEAN_MACHINE_OFFLINE_REBUILD = NO"
+    echo "external inputs:  installed Rust/C toolchain and local Cargo registry metadata/sources"
     echo "build directory:  this run's own, not impl/target"
     echo "built on:         $(uname -srm)"
     echo

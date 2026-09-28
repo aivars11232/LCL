@@ -100,8 +100,9 @@ signed with the same key as the app you have. Anything that does not pass is
 refused, and nothing is installed.
 
 A signature from a key LCL does not already trust is refused, even if the
-manifest names that key. When the update key is ever replaced, a release that
-trusts both the old and the new key comes first, so updates keep working.
+manifest names that key. LCL has one update key and keeps it; if it were ever
+replaced, the LCL you have would refuse updates signed with the new key, and
+you would update it by hand once.
 
 ## 20.6 What an update never touches
 

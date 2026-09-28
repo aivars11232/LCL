@@ -7,6 +7,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 import java.security.KeyFactory
 import java.security.MessageDigest
 import java.security.Signature
@@ -24,12 +26,17 @@ import java.security.spec.X509EncodedKeySpec
  */
 class UpdateRefused(val kind: String, message: String) : Exception(message)
 
-/** An LCL product version, compared by Semantic Versioning 2.0.0 precedence. */
+/**
+ * An LCL product version, compared by Semantic Versioning 2.0.0 precedence,
+ * with the PC updater's limits: every number, and every numeric pre-release
+ * identifier, fits an unsigned 64-bit integer; build metadata is refused.
+ */
 class SemVer private constructor(
-    val major: Long,
-    val minor: Long,
-    val patch: Long,
-    private val pre: List<String>,
+    val major: ULong,
+    val minor: ULong,
+    val patch: ULong,
+    /** Each identifier a [ULong] (numeric) or a [String] (alphanumeric). */
+    private val pre: List<Any>,
 ) : Comparable<SemVer> {
     val isPrerelease get() = pre.isNotEmpty()
 
@@ -37,12 +44,11 @@ class SemVer private constructor(
         compareValuesBy(this, other, { it.major }, { it.minor }, { it.patch }).let { if (it != 0) return it }
         if (pre.isEmpty() || other.pre.isEmpty()) return other.pre.size.coerceAtMost(1) - pre.size.coerceAtMost(1)
         for ((a, b) in pre.zip(other.pre)) {
-            val (na, nb) = a.toLongOrNull() to b.toLongOrNull()
             val order = when {
-                na != null && nb != null -> na.compareTo(nb)
-                na != null -> -1
-                nb != null -> 1
-                else -> a.compareTo(b)
+                a is ULong && b is ULong -> a.compareTo(b)
+                a is ULong -> -1
+                b is ULong -> 1
+                else -> (a as String).compareTo(b as String)
             }
             if (order != 0) return order
         }
@@ -54,20 +60,23 @@ class SemVer private constructor(
     override fun toString() = "$major.$minor.$patch" + if (pre.isEmpty()) "" else "-" + pre.joinToString(".")
 
     companion object {
-        private val number = Regex("0|[1-9][0-9]{0,17}")
+        private val digits = Regex("[0-9]+")
         private val identifier = Regex("[0-9A-Za-z-]+")
 
         fun parse(text: String): SemVer {
             val bad = UpdateRefused("invalid", "\"$text\" is not a product version")
-            val core = text.substringBefore('-')
-            val pre = if ('-' in text) text.substringAfter('-').split('.') else emptyList()
-            val parts = core.split('.')
-            if (parts.size != 3 || parts.any { !number.matches(it) }) throw bad
-            for (id in pre) {
-                if (!identifier.matches(id)) throw bad
-                if (id.all(Char::isDigit) && id.length > 1 && id.startsWith('0')) throw bad
+            fun number(part: String): ULong {
+                if (!digits.matches(part) || (part.length > 1 && part.startsWith('0'))) throw bad
+                return part.toULongOrNull() ?: throw bad
             }
-            return SemVer(parts[0].toLong(), parts[1].toLong(), parts[2].toLong(), pre)
+            val core = text.substringBefore('-').split('.')
+            if (core.size != 3) throw bad
+            val pre = if ('-' in text) text.substringAfter('-').split('.') else emptyList()
+            val identifiers = pre.map { id ->
+                if (!identifier.matches(id)) throw bad
+                if (digits.matches(id)) number(id) else id
+            }
+            return SemVer(number(core[0]), number(core[1]), number(core[2]), identifiers)
         }
     }
 }
@@ -83,6 +92,14 @@ data class AndroidArtifact(
     val signerSha256: String,
 )
 
+data class PcArtifact(
+    val artifactName: String,
+    val size: Long,
+    val sha256: String,
+    val architecture: String,
+    val requiredUpdaterVersion: Long,
+)
+
 data class UpdateManifest(
     val productVersion: SemVer,
     val releaseTag: String,
@@ -90,69 +107,102 @@ data class UpdateManifest(
     val releaseNotes: String,
     val minimumSupportedVersion: SemVer,
     val signingKeyId: String,
-    val pcArtifactName: String,
+    val pc: PcArtifact,
     val android: AndroidArtifact,
 )
 
 const val APPLICATION_ID = "io.lcl.workspace"
 const val MAX_APK = 256L * 1024 * 1024
+const val MAX_PC_ARTIFACT = 512L * 1024 * 1024
 const val MAX_MANIFEST = 64L * 1024
 
+/** The largest value of a counted field: a version code, an API level, an updater protocol. */
+private const val MAX_WHOLE = Int.MAX_VALUE.toLong()
+private const val MAX_NOTES = 20_000
+
 private val hex64 = Regex("[0-9a-f]{64}")
+private val architecturePattern = Regex("[a-z0-9_-]{1,64}")
 
-fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+fun hex(bytes: ByteArray): String = bytes.joinToString("") { "%02x".format(it) }
 
-/** A manifest whose signature already verified: every key required, nothing else allowed. */
+fun sha256(bytes: ByteArray): String = hex(MessageDigest.getInstance("SHA-256").digest(bytes))
+
+/**
+ * A manifest whose signature already verified, read by the PC updater's rules
+ * (update/src/manifest.rs): strict UTF-8 and strict JSON, every key required
+ * and nothing else allowed, every value checked. Both read
+ * update/manifest_vectors/ in their tests and must agree on every case. The
+ * PC alone later refuses a PC artifact for another architecture or a newer
+ * updater protocol; neither concerns the phone.
+ */
 fun parseManifest(bytes: ByteArray): UpdateManifest {
     fun refuse(why: String): Nothing = throw UpdateRefused("verification", "the update manifest: $why")
     if (bytes.size > MAX_MANIFEST) refuse("too large")
-    val json = runCatching { Json.parseToJsonElement(bytes.toString(Charsets.UTF_8)) as JsonObject }.getOrNull() ?: refuse("not a JSON object")
-    fun exactly(obj: JsonObject, what: String, keys: Set<String>) {
-        if (obj.keys != keys) refuse("$what must have exactly ${keys.sorted()}")
+    val text = runCatching {
+        Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(bytes)).toString()
+    }.getOrElse { refuse("not UTF-8") }
+    val json = runCatching { StrictJson.parse(text) }.getOrElse { refuse("not JSON: ${it.message}") }
+    @Suppress("UNCHECKED_CAST")
+    fun Any.members(what: String, keys: Set<String>): Map<String, Any> {
+        val members = this as? Map<String, Any> ?: refuse("$what is not a JSON object")
+        if (members.keys != keys) refuse("$what must have exactly ${keys.sorted()}")
+        return members
     }
-    fun JsonObject.text(key: String): String = (get(key) as? JsonPrimitive)?.takeIf { it.isString }?.content ?: refuse("$key must be a string")
-    fun JsonObject.whole(key: String): Long = (get(key) as? JsonPrimitive)?.takeIf { !it.isString }?.longOrNull?.takeIf { it >= 0 } ?: refuse("$key must be a whole number")
-    fun JsonObject.obj(key: String): JsonObject = get(key) as? JsonObject ?: refuse("$key must be an object")
+    fun Map<String, Any>.text(key: String): String = get(key) as? String ?: refuse("$key must be a string")
+    // A whole number by value, as the PC reads one: 4 and 4.0 alike.
+    fun Map<String, Any>.whole(key: String): Long =
+        (get(key) as? Double)?.takeIf { it.isFinite() && it >= 0.0 && it == Math.floor(it) }?.toLong()
+            ?: refuse("$key must be a whole number")
+    fun Map<String, Any>.counted(key: String): Long = whole(key).takeIf { it in 1..MAX_WHOLE } ?: refuse("$key must be 1 to $MAX_WHOLE")
+    fun Map<String, Any>.digest(key: String): String = text(key).takeIf { hex64.matches(it) } ?: refuse("$key must be 64 lowercase hexadecimal digits")
 
-    exactly(json, "the manifest", setOf("format", "product", "channel", "product_version", "release_tag", "source_commit",
+    val top = json.members("the manifest", setOf("format", "product", "channel", "product_version", "release_tag", "source_commit",
         "published_at", "release_notes", "minimum_supported_version", "signing_key_id", "pc", "android"))
-    if (json.whole("format") != 1L) refuse("format ${json["format"]} is not 1")
-    if (json.text("product") != "lcl") refuse("not for LCL")
-    if (json.text("channel") != "stable") refuse("not for the stable channel")
-    val version = SemVer.parse(json.text("product_version"))
+    if (top.whole("format") != 1L) refuse("format ${top["format"]} is not 1")
+    if (top.text("product") != "lcl") refuse("not for LCL")
+    if (top.text("channel") != "stable") refuse("not for the stable channel")
+    val version = SemVer.parse(top.text("product_version"))
     if (version.isPrerelease) refuse("a pre-release is never offered on the stable channel")
-    val tag = json.text("release_tag")
+    val tag = top.text("release_tag")
     if (tag != "v$version") refuse("release tag $tag does not name $version")
-    if (!Regex("[0-9a-f]{40}").matches(json.text("source_commit"))) refuse("source_commit")
-    val published = json.text("published_at")
+    if (!Regex("[0-9a-f]{40}").matches(top.text("source_commit"))) refuse("source_commit")
+    val published = top.text("published_at")
     if (!Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z").matches(published)) refuse("published_at")
-    val notes = json.text("release_notes")
-    if (notes.length > 20_000) refuse("release notes too long")
-    val minimum = SemVer.parse(json.text("minimum_supported_version"))
+    val notes = top.text("release_notes")
+    if (notes.codePointCount(0, notes.length) > MAX_NOTES) refuse("release notes too long")
+    val minimum = SemVer.parse(top.text("minimum_supported_version"))
     if (minimum > version) refuse("minimum_supported_version is newer than the release")
+    val keyId = top.text("signing_key_id")
 
-    val pc = json.obj("pc")
-    exactly(pc, "pc", setOf("artifact_name", "size", "sha256", "architecture", "required_updater_version"))
-    if (pc.text("artifact_name") != "lcl-$version-linux-x86_64.tar.gz") refuse("pc.artifact_name")
-    val a = json.obj("android")
-    exactly(a, "android", setOf("artifact_name", "size", "sha256", "application_id", "version_name", "version_code", "minimum_sdk", "signer_sha256"))
+    val p = top.getValue("pc").members("pc", setOf("artifact_name", "size", "sha256", "architecture", "required_updater_version"))
+    val pc = PcArtifact(
+        artifactName = p.text("artifact_name"),
+        size = p.whole("size").takeIf { it in 1..MAX_PC_ARTIFACT } ?: refuse("pc.size"),
+        sha256 = p.digest("sha256"),
+        architecture = p.text("architecture").takeIf { architecturePattern.matches(it) } ?: refuse("pc.architecture"),
+        requiredUpdaterVersion = p.counted("required_updater_version"),
+    )
+    if (pc.artifactName != "lcl-$version-linux-x86_64.tar.gz") refuse("pc.artifact_name")
+
+    val a = top.getValue("android").members("android",
+        setOf("artifact_name", "size", "sha256", "application_id", "version_name", "version_code", "minimum_sdk", "signer_sha256"))
     val artifact = AndroidArtifact(
         artifactName = a.text("artifact_name"),
-        size = a.whole("size"),
-        sha256 = a.text("sha256"),
+        size = a.whole("size").takeIf { it in 1..MAX_APK } ?: refuse("android.size"),
+        sha256 = a.digest("sha256"),
         applicationId = a.text("application_id"),
         versionName = a.text("version_name"),
-        versionCode = a.whole("version_code"),
-        minimumSdk = a.whole("minimum_sdk").toInt(),
-        signerSha256 = a.text("signer_sha256"),
+        versionCode = a.counted("version_code"),
+        minimumSdk = a.counted("minimum_sdk").toInt(),
+        signerSha256 = a.digest("signer_sha256"),
     )
-    if (artifact.size !in 1..MAX_APK) refuse("android.size")
-    if (!hex64.matches(artifact.sha256) || !hex64.matches(artifact.signerSha256)) refuse("android digests")
     if (artifact.applicationId != APPLICATION_ID) refuse("android.application_id")
     if (artifact.versionName != version.toString()) refuse("android.version_name")
-    if (artifact.versionCode !in 1..Int.MAX_VALUE.toLong()) refuse("android.version_code")
     if (artifact.artifactName != "lcl-android-${artifact.versionName}-${artifact.versionCode}.apk") refuse("android.artifact_name")
-    return UpdateManifest(version, tag, published, notes, minimum, json.text("signing_key_id"), pc.text("artifact_name"), artifact)
+    return UpdateManifest(version, tag, published, notes, minimum, keyId, pc, artifact)
 }
 
 /** One trusted ECDSA P-256 update signing key. */
@@ -217,10 +267,13 @@ fun isNewer(manifest: UpdateManifest, installed: InstalledApp): Boolean {
     return true
 }
 
-/** The downloaded APK is exactly the signed one, is this app, is newer and is signed like the installed app. */
-fun checkApk(bytes: ByteArray, facts: ApkFacts?, manifest: UpdateManifest, installed: InstalledApp) {
+/**
+ * The downloaded APK, [size] bytes with SHA-256 [digest], is exactly the signed
+ * one, is this app, is newer and is signed like the installed app.
+ */
+fun checkApk(size: Long, digest: String, facts: ApkFacts?, manifest: UpdateManifest, installed: InstalledApp) {
     val a = manifest.android
-    if (bytes.size.toLong() != a.size || sha256(bytes) != a.sha256) {
+    if (size != a.size || digest != a.sha256) {
         throw UpdateRefused("verification", "the downloaded APK does not match the size and SHA-256 its manifest signed")
     }
     facts ?: throw UpdateRefused("verification", "the downloaded file is not an APK Android can read")

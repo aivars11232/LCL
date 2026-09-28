@@ -18,6 +18,8 @@
 #   LCL_ANDROID_VERSION_CODE=<n>      the APK's versionCode
 #   LCL_PREVIOUS_MANIFEST=<file>      the last published update-manifest.json,
 #                                     or "none" for the first update release
+#   LCL_PREVIOUS_MANIFEST_SIGNATURE=<file> its detached signature; required
+#                                     unless bootstrapping with "none"
 #   LCL_ANDROID_SIGNER_SHA256=<hex>   the APK signing certificate expected;
 #                                     required with LCL_PREVIOUS_MANIFEST=none,
 #                                     otherwise the previous release's
@@ -52,7 +54,7 @@ for name in LCL_UPDATE_OUT LCL_UPDATE_SIGNING_KEY LCL_UPDATE_KEY_ID LCL_ANDROID_
     eval "value=\${$name:-}"
     [ -n "$value" ] || refuse "$name is not set"
 done
-for tool in openssl python3 sha256sum git; do
+for tool in openssl python3 sha256sum git cargo; do
     command -v "$tool" >/dev/null 2>&1 || refuse "$tool is needed"
 done
 build_tools=$(ls -d "${ANDROID_HOME:?ANDROID_HOME is not set}"/build-tools/* 2>/dev/null | sort -V | tail -1)
@@ -61,10 +63,11 @@ build_tools=$(ls -d "${ANDROID_HOME:?ANDROID_HOME is not set}"/build-tools/* 2>/
 inside() {
     case "$(realpath -m "$1")/" in "$root"/*) return 0 ;; *) return 1 ;; esac
 }
-out=$LCL_UPDATE_OUT
+out=$(realpath -m "$LCL_UPDATE_OUT")
 key=$LCL_UPDATE_SIGNING_KEY
 inside "$out" && refuse "LCL_UPDATE_OUT must be outside the repository"
-[ -e "$out" ] && refuse "$out exists; name a new directory"
+[ ! -e "$out" ] && [ ! -L "$out" ] || refuse "$out exists; name a new directory"
+[ -d "$(dirname "$out")" ] || refuse "the output parent must already exist"
 inside "$key" && refuse "the update signing key must live outside the repository"
 [ -r "$key" ] || refuse "the update signing key $key cannot be read"
 case "$LCL_UPDATE_KEY_ID" in *[!a-z0-9-]*) refuse "LCL_UPDATE_KEY_ID must be a-z, 0-9 and -" ;; esac
@@ -86,12 +89,45 @@ for crate in update remote; do
         refuse "$crate/Cargo.toml does not carry product version $version"
 done
 
-# The last release: this one must be newer and signed by the same APK key.
+# All work stays on the destination filesystem. Only a complete verified
+# artifact directory is renamed into place; a failure retains private evidence.
+work=$(mktemp -d "$(dirname "$out")/.lcl-update-build.XXXXXX")
+finish() {
+    status=$?
+    if [ "$status" -eq 0 ]; then
+        rm -rf -- "$work"
+    else
+        echo "evidence kept in $work" >&2
+    fi
+    exit "$status"
+}
+trap finish EXIT
+artifacts=$work/artifacts
+mkdir "$artifacts"
+
+# Use the updater's signature check and strict parser as the release contract.
+# A dry run may add its test signing key for the NEW manifest only. Previous
+# release history always uses the keys compiled from this checkout.
+if [ -n "$dry" ]; then
+    cargo build --offline --locked --manifest-path "$root/update/Cargo.toml" \
+        --target-dir "$work/verifier" --features test-endpoint --bin lcl-update
+else
+    cargo build --offline --locked --manifest-path "$root/update/Cargo.toml" \
+        --target-dir "$work/verifier" --bin lcl-update
+fi
+verifier=$work/verifier/debug/lcl-update
+unset LCL_UPDATE_TEST_KEYS LCL_UPDATE_TEST_ENDPOINT
+
+# The last release: authenticate BEFORE parsing or trusting any history.
 signer_wanted=${LCL_ANDROID_SIGNER_SHA256:-}
 if [ "$LCL_PREVIOUS_MANIFEST" = none ]; then
     [ -n "$signer_wanted" ] || refuse "the first update release needs LCL_ANDROID_SIGNER_SHA256"
+    [ -z "${LCL_PREVIOUS_MANIFEST_SIGNATURE:-}" ] || refuse "bootstrap has no previous signature"
 else
-    previous=$(python3 - "$LCL_PREVIOUS_MANIFEST" <<'PY'
+    [ -n "${LCL_PREVIOUS_MANIFEST_SIGNATURE:-}" ] || refuse "LCL_PREVIOUS_MANIFEST_SIGNATURE is required"
+    "$verifier" verify --json "$LCL_PREVIOUS_MANIFEST" "$LCL_PREVIOUS_MANIFEST_SIGNATURE" \
+        > "$work/previous-verified.json" || refuse "previous manifest authentication or validation failed"
+    previous=$(python3 - "$work/previous-verified.json" <<'PY'
 import json, sys
 m = json.load(open(sys.argv[1]))
 print(m["product_version"], m["android"]["version_code"], m["android"]["signer_sha256"])
@@ -113,17 +149,13 @@ PY
     signer_wanted=$3
 fi
 
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
-mkdir -p "$out"
-
 # 1. The PC payload, through the release builder and all of its checks.
 LCL_RELEASE_VERSION=0.3.0 LCL_RELEASE_OUT="$work/pc" "$root/packaging/build_release.sh"
 pc_built="$work/pc/lcl-0.3.0-linux-x86_64.tar.gz"
 [ -f "$pc_built" ] || refuse "the release builder produced no PC payload"
 pc_name=lcl-$version-linux-x86_64.tar.gz
-cp "$pc_built" "$out/$pc_name"
-cp "$work/pc/lcl-0.3.0-PROVENANCE.txt" "$out/lcl-$version-pc-PROVENANCE.txt"
+cp "$pc_built" "$artifacts/$pc_name"
+cp "$work/pc/lcl-0.3.0-PROVENANCE.txt" "$artifacts/lcl-$version-pc-PROVENANCE.txt"
 
 # 2. The APK, signed with the release key the Android build reads.
 ( cd "$root/android" && ./gradlew --offline -q assembleRelease \
@@ -131,8 +163,8 @@ cp "$work/pc/lcl-0.3.0-PROVENANCE.txt" "$out/lcl-$version-pc-PROVENANCE.txt"
 apk_built="$root/android/app/build/outputs/apk/release/app-release.apk"
 [ -f "$apk_built" ] || refuse "the Android build produced no signed APK (is the release signing key set?)"
 apk_name=lcl-android-$version-$code.apk
-cp "$apk_built" "$out/$apk_name"
-"$build_tools/apksigner" verify --print-certs "$out/$apk_name" > "$work/apk-certs" 2>&1 ||
+cp "$apk_built" "$artifacts/$apk_name"
+"$build_tools/apksigner" verify --print-certs "$artifacts/$apk_name" > "$work/apk-certs" 2>&1 ||
     refuse "the APK is not signed"
 # One signing certificate, however this apksigner labels its schemes
 # ("Signer #1 ...", "V2 Signer: ...").
@@ -141,7 +173,7 @@ signer=$(sed -n 's/^.*certificate SHA-256 digest: \([0-9a-f]\{64\}\)$/\1/p' "$wo
     refuse "the APK must be signed by exactly one certificate"
 [ "$signer" = "$signer_wanted" ] ||
     refuse "the APK is signed by $signer, not by the release key $signer_wanted: phones could not update in place"
-"$build_tools/aapt2" dump badging "$out/$apk_name" > "$work/badging"
+"$build_tools/aapt2" dump badging "$artifacts/$apk_name" > "$work/badging"
 grep -q "^package: name='io.lcl.workspace' versionCode='$code' versionName='$version'" "$work/badging" ||
     refuse "the APK is not io.lcl.workspace $version ($code)"
 min_sdk=$(sed -n "s/^minSdkVersion:'\([0-9]*\)'/\1/p" "$work/badging")
@@ -150,8 +182,8 @@ min_sdk=$(sed -n "s/^minSdkVersion:'\([0-9]*\)'/\1/p" "$work/badging")
 size() { wc -c < "$1" | tr -d ' '; }
 digest() { sha256sum "$1" | cut -d' ' -f1; }
 python3 - "$work/manifest.json" "$version" "$commit" "$minimum" "$LCL_UPDATE_KEY_ID" \
-    "$LCL_RELEASE_NOTES_FILE" "$pc_name" "$(size "$out/$pc_name")" "$(digest "$out/$pc_name")" \
-    "$apk_name" "$(size "$out/$apk_name")" "$(digest "$out/$apk_name")" "$code" "$min_sdk" "$signer" <<'PY'
+    "$LCL_RELEASE_NOTES_FILE" "$pc_name" "$(size "$artifacts/$pc_name")" "$(digest "$artifacts/$pc_name")" \
+    "$apk_name" "$(size "$artifacts/$apk_name")" "$(digest "$artifacts/$apk_name")" "$code" "$min_sdk" "$signer" <<'PY'
 import json, sys, time
 (out, version, commit, minimum, key_id, notes, pc_name, pc_size, pc_sha,
  apk_name, apk_size, apk_sha, code, min_sdk, signer) = sys.argv[1:]
@@ -171,43 +203,54 @@ manifest = {
 }
 open(out, "w", encoding="utf-8").write(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
 PY
-cp "$work/manifest.json" "$out/update-manifest.json"
+cp "$work/manifest.json" "$artifacts/update-manifest.json"
 
 # 4. The signature, over exactly those bytes, checked three ways: against the
 #    key's own public half, against the key list the apps ship, and (in a real
 #    release) by the built updater itself.
-openssl dgst -sha256 -sign "$key" -out "$out/update-manifest.sig" "$out/update-manifest.json" ||
+openssl dgst -sha256 -sign "$key" -out "$artifacts/update-manifest.sig" "$artifacts/update-manifest.json" ||
     refuse "the manifest could not be signed"
 openssl pkey -in "$key" -pubout -out "$work/public.pem" 2>/dev/null ||
     refuse "the signing key is not a readable private key"
-openssl dgst -sha256 -verify "$work/public.pem" -signature "$out/update-manifest.sig" \
-    "$out/update-manifest.json" >/dev/null || refuse "the signature does not verify"
+openssl dgst -sha256 -verify "$work/public.pem" -signature "$artifacts/update-manifest.sig" \
+    "$artifacts/update-manifest.json" >/dev/null || refuse "the signature does not verify"
 spki=$(openssl pkey -pubin -in "$work/public.pem" -outform DER | od -An -v -tx1 | tr -d ' \n')
 listed=$(awk -v id="$LCL_UPDATE_KEY_ID" '$1 == id { print $2 }' "$root/update/trusted_keys.txt")
 if [ "$listed" != "$spki" ]; then
     [ -n "$dry" ] || refuse "key $LCL_UPDATE_KEY_ID is not in update/trusted_keys.txt as this key: the released apps would refuse this update"
 fi
+# Even rehearsals use the real strict parser. Only this new-manifest check
+# may use the rehearsal key; it never authenticates release history.
+if [ -n "$dry" ] && [ "$listed" != "$spki" ]; then
+    printf '%s %s\n' "$LCL_UPDATE_KEY_ID" "$spki" > "$work/test-public-key.txt"
+    LCL_UPDATE_TEST_KEYS="$work/test-public-key.txt" "$verifier" verify \
+        "$artifacts/update-manifest.json" "$artifacts/update-manifest.sig" || refuse "invalid rehearsal manifest"
+else
+    "$verifier" verify "$artifacts/update-manifest.json" "$artifacts/update-manifest.sig" || refuse "invalid manifest"
+fi
 if [ -z "$dry" ]; then
-    tar -xzf "$out/$pc_name" -C "$work" --wildcards '*/bin/lcl-update'
-    "$work"/lcl-*-linux-x86_64/bin/lcl-update verify "$out/update-manifest.json" "$out/update-manifest.sig" ||
+    tar -xzf "$artifacts/$pc_name" -C "$work" --wildcards '*/bin/lcl-update'
+    "$work"/lcl-*-linux-x86_64/bin/lcl-update verify "$artifacts/update-manifest.json" "$artifacts/update-manifest.sig" ||
         refuse "the released updater does not accept this manifest"
 fi
 
 # 5. The manifest describes exactly the files written: read it back, measure
 #    the files again.
-python3 - "$out" <<'PY' || refuse "the manifest does not describe the artifacts written"
+python3 - "$artifacts" <<'PY' || refuse "the manifest does not describe the artifacts written"
 import hashlib, json, os, sys
 out = sys.argv[1]
 m = json.load(open(os.path.join(out, "update-manifest.json")))
 for part in ("pc", "android"):
     a = m[part]
-    data = open(os.path.join(out, a["artifact_name"]), "rb").read()
-    assert len(data) == a["size"], part
-    assert hashlib.sha256(data).hexdigest() == a["sha256"], part
+    path = os.path.join(out, a["artifact_name"])
+    assert os.path.getsize(path) == a["size"], part
+    with open(path, "rb") as stream:
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    assert digest == a["sha256"], part
 PY
 
 # 6. Checksums and provenance.
-( cd "$out" && sha256sum "$pc_name" > "lcl-$version-linux-x86_64.sha256" &&
+( cd "$artifacts" && sha256sum "$pc_name" > "lcl-$version-linux-x86_64.sha256" &&
     sha256sum "$apk_name" > "lcl-android-$version-$code.sha256" )
 {
     if [ -n "$dry" ]; then
@@ -227,9 +270,39 @@ PY
     echo "minimum supported: $minimum"
     echo
     echo "artifacts:"
-    ( cd "$out" && sha256sum "$pc_name" "$apk_name" update-manifest.json update-manifest.sig )
-} > "$out/lcl-$version-UPDATE-PROVENANCE.txt"
-( cd "$out" && sha256sum -- * > SHA256SUMS )
+    ( cd "$artifacts" && sha256sum "$pc_name" "$apk_name" update-manifest.json update-manifest.sig )
+} > "$artifacts/lcl-$version-UPDATE-PROVENANCE.txt"
+# Create the aggregate outside the glob it covers (never hash itself).
+( cd "$artifacts" && sha256sum -- * ) > "$work/SHA256SUMS"
+mv "$work/SHA256SUMS" "$artifacts/SHA256SUMS"
+( cd "$artifacts" && sha256sum -c SHA256SUMS )
+
+# Publish one complete directory with Linux's no-replace rename. No copying
+# fallback: another writer's destination, or unsupported filesystems, refuse.
+python3 - "$artifacts" "$out" <<'PY_PUBLISH'
+import ctypes, os, sys
+source, destination = sys.argv[1:]
+for base, dirs, files in os.walk(source, topdown=False):
+    for name in files + ["."]:
+        fd = os.open(os.path.join(base, name), os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+libc = ctypes.CDLL(None, use_errno=True)
+rename = libc.renameat2
+rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+rename.restype = ctypes.c_int
+if rename(-100, os.fsencode(source), -100, os.fsencode(destination), 1):
+    error = ctypes.get_errno()
+    raise OSError(error, os.strerror(error), destination)
+for parent in (os.path.dirname(source), os.path.dirname(destination)):
+    fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+PY_PUBLISH
 
 echo "wrote $out"
 echo "Nothing was published. To publish, follow packaging/README.md, \"Publishing an update release\"."

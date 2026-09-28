@@ -10,6 +10,7 @@
 
 use crate::json::Object;
 use lcl_spec::json::Json;
+use std::ffi::OsString;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -30,21 +31,22 @@ pub struct Paths {
 impl Paths {
     /// The locations `install.sh` uses, from the same environment.
     pub fn from_env() -> Result<Paths, String> {
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .filter(|h| h.is_absolute())
-            .ok_or("HOME is not set to an absolute path")?;
-        let var = |name: &str, default: &str| {
-            std::env::var_os(name)
-                .map(PathBuf::from)
-                .filter(|p| !p.as_os_str().is_empty())
-                .unwrap_or_else(|| home.join(default))
-        };
+        Paths::from_vars(|name| std::env::var_os(name))
+    }
+
+    /// The locations from `var`. `HOME` must be absolute. An XDG variable
+    /// counts only when it names an absolute path: a relative or empty one is
+    /// ignored for its default under `HOME`, as the XDG Base Directory
+    /// Specification requires, and as `install.sh` reads them too.
+    pub fn from_vars(var: impl Fn(&str) -> Option<OsString>) -> Result<Paths, String> {
+        let absolute = |name: &str| var(name).map(PathBuf::from).filter(|p| p.is_absolute());
+        let home = absolute("HOME").ok_or("HOME is not set to an absolute path")?;
+        let base = |name: &str, default: &str| absolute(name).unwrap_or_else(|| home.join(default));
         Ok(Paths {
-            bin: var("XDG_BIN_HOME", ".local/bin"),
-            data: var("XDG_DATA_HOME", ".local/share"),
-            state: var("XDG_STATE_HOME", ".local/state").join("lcl/update"),
-            cache: var("XDG_CACHE_HOME", ".cache").join("lcl/update"),
+            bin: base("XDG_BIN_HOME", ".local/bin"),
+            data: base("XDG_DATA_HOME", ".local/share"),
+            state: base("XDG_STATE_HOME", ".local/state").join("lcl/update"),
+            cache: base("XDG_CACHE_HOME", ".cache").join("lcl/update"),
         })
     }
 
@@ -292,6 +294,53 @@ mod tests {
         assert!(state.check_due(100 + CHECK_INTERVAL_SECS));
         assert!(State::default().check_due(0));
         assert_eq!(State::from_json("{broken"), State::default());
+    }
+
+    #[test]
+    fn only_absolute_locations_count_and_the_rest_fall_back_under_home() {
+        let paths = |pairs: &[(&str, &str)]| {
+            let pairs: Vec<(String, OsString)> = pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), OsString::from(v)))
+                .collect();
+            Paths::from_vars(move |name| {
+                pairs
+                    .iter()
+                    .find(|(k, _)| k == name)
+                    .map(|(_, v)| v.clone())
+            })
+        };
+        let defaults = Paths {
+            bin: PathBuf::from("/home/u/.local/bin"),
+            data: PathBuf::from("/home/u/.local/share"),
+            state: PathBuf::from("/home/u/.local/state/lcl/update"),
+            cache: PathBuf::from("/home/u/.cache/lcl/update"),
+        };
+        assert_eq!(paths(&[("HOME", "/home/u")]), Ok(defaults.clone()));
+        let relative = [
+            ("HOME", "/home/u"),
+            ("XDG_BIN_HOME", "bin"),
+            ("XDG_DATA_HOME", "./share"),
+            ("XDG_STATE_HOME", "../state"),
+            ("XDG_CACHE_HOME", ""),
+        ];
+        assert_eq!(paths(&relative), Ok(defaults));
+        let absolute = paths(&[
+            ("HOME", "/home/u"),
+            ("XDG_BIN_HOME", "/opt/b"),
+            ("XDG_DATA_HOME", "/opt/d"),
+            ("XDG_STATE_HOME", "/opt/s"),
+            ("XDG_CACHE_HOME", "/opt/c"),
+        ])
+        .unwrap();
+        assert_eq!(absolute.bin, PathBuf::from("/opt/b"));
+        assert_eq!(absolute.data, PathBuf::from("/opt/d"));
+        assert_eq!(absolute.state, PathBuf::from("/opt/s/lcl/update"));
+        assert_eq!(absolute.cache, PathBuf::from("/opt/c/lcl/update"));
+        for home in [None, Some("home/u"), Some("")] {
+            let vars: Vec<(&str, &str)> = home.map(|h| ("HOME", h)).into_iter().collect();
+            assert!(paths(&vars).is_err(), "{home:?}");
+        }
     }
 
     #[test]

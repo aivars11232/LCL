@@ -167,6 +167,15 @@ cd <new directory> && LCL_RELEASE_OUT=<new output directory> packaging/build_rel
 its inventory names, before extracting anything. Rebuilt binaries are not
 promised to be bit-for-bit identical; the source they were built from is.
 
+`CLEAN_MACHINE_OFFLINE_REBUILD = NO`. Source reconstruction needs no Git
+history, but an offline build requires the Rust/C toolchain and the Cargo
+registry metadata and crate sources named by `remote/Cargo.lock` and
+`update/Cargo.lock` already in the local cache. These external dependencies
+are not bundled in the source archive. The engine workspace itself is std-only.
+Android additionally needs the JDK, Android SDK/build tools and cached Gradle
+distribution/plugins/dependencies. Provision these before going offline;
+`--offline --locked` neither downloads missing inputs nor changes their versions.
+
 ## Release version
 
 `LCL_RELEASE_VERSION=0.2.0 packaging/build_release.sh` builds a separate
@@ -232,11 +241,16 @@ build that lists the key can verify releases signed with it, so the first
 update-capable release is installed by hand. The private key is never printed,
 committed, bundled or copied into a build.
 
-**Rotating the key.** Create the next key offline, list it in
-`update/trusted_keys.txt` beside the current one, and publish that build,
-signed with the current key. Later releases may be signed with the next key.
-Remove the old key only in a release after that. A key a manifest names is
-never trusted unless the installed build already lists it.
+**One key, kept.** Update System V1 has exactly one production update
+signing key, and it is never replaced. Listing a second key beside it would not
+make a replacement safe: LCL checks only the latest stable release, so a PC or
+a phone that skipped the release introducing a new key could never verify a
+release signed with it, and would stop updating. Replacing the key is a
+separate feature that is not designed yet. Until it exists, keep the private
+key and an offline backup of it safe: without it no further update can be
+published, and every installation would have to be updated by hand to a build
+that trusts another key. A key a manifest names is never trusted unless the
+installed build already lists it.
 
 **The Android signing key.** Android installs an update only over an app
 signed with the same key. The release build takes that key from
@@ -254,13 +268,20 @@ LCL_UPDATE_SIGNING_KEY=/secure/offline/lcl-update-1.key \
 LCL_UPDATE_KEY_ID=lcl-update-1 \
 LCL_ANDROID_VERSION_CODE=4 \
 LCL_PREVIOUS_MANIFEST=/path/to/the/last/update-manifest.json \
+LCL_PREVIOUS_MANIFEST_SIGNATURE=/path/to/the/last/update-manifest.sig \
 LCL_RELEASE_NOTES_FILE=/path/to/notes.txt \
 LCL_RELEASE_STORE_FILE=/secure/lcl-release.jks LCL_RELEASE_STORE_PASSWORD=... \
 LCL_RELEASE_KEY_ALIAS=lcl LCL_RELEASE_KEY_PASSWORD=... \
 ANDROID_HOME=/path/to/sdk packaging/build_update_release.sh
 ```
 
-The first update release names `LCL_PREVIOUS_MANIFEST=none` and the APK
+The previous manifest's detached signature is verified against the keys already
+trusted by the release tooling, then parsed by the updater's strict parser,
+before its version or Android signer is trusted. An unsigned history file is
+refused, including during a dry run.
+
+The first update release names `LCL_PREVIOUS_MANIFEST=none`, leaves
+`LCL_PREVIOUS_MANIFEST_SIGNATURE` unset, and supplies the APK
 certificate's SHA-256 in `LCL_ANDROID_SIGNER_SHA256`. The builder writes, to
 the new directory only: `update-manifest.json`, `update-manifest.sig`,
 `lcl-<version>-linux-x86_64.tar.gz` and `.sha256`,
@@ -271,6 +292,13 @@ be signed or is not verified by the key list the release carries, a digest does
 not describe the file written, or the working tree is not exactly the commit
 recorded. `LCL_UPDATE_DRY_RUN=1` rehearses the whole build with test keys and
 marks every output *not for publication*.
+
+All artifacts are built and verified in a private temporary directory beside
+the destination. Only the complete set is published using Linux
+`renameat2(RENAME_NOREPLACE)`; an existing destination is never overwritten.
+The parent directory must exist. Unsupported no-replace rename is a refusal,
+not a copy fallback. Failures retain the temporary directory and print its
+location; failures before publication leave the final destination absent.
 
 **Publishing.** Create a GitHub Release whose tag is `v<version>` — neither a
 draft nor a pre-release — and attach every file of that directory, for example

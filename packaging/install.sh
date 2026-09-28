@@ -25,17 +25,27 @@
 # for, because the engine loads one exact approved package and "Ambient current
 # directory and implied nearby files do not exist in portable LCL".
 #
-# Every file is published atomically — written beside its final name, then
-# renamed over it — and a package directory is swapped in by rename, so a
-# running program keeps the file it started from and an interrupted install
-# never leaves half a file. `install.sh --list` prints every path an install
+# Every file is published atomically — written beside its final name, flushed
+# to disk, then renamed over it — and a package directory is swapped in by
+# rename (see publish_dir for exactly how), so a running program keeps the file
+# it started from and an interrupted install never leaves half a file. `install.sh --list` prints every path an install
 # writes and writes nothing; the updater copies exactly those aside first, so
 # a failed update can be rolled back.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
-bin=${XDG_BIN_HOME:-$HOME/.local/bin}
-data=${XDG_DATA_HOME:-$HOME/.local/share}
+# Where to install: XDG_BIN_HOME and XDG_DATA_HOME when they name absolute
+# paths. A relative or empty one is ignored for its default under HOME, as the
+# XDG Base Directory Specification requires; HOME itself must be absolute. The
+# updater reads the same variables the same way.
+case "${HOME:-}" in
+    /*) ;;
+    *) echo "$(basename "$0"): HOME is not set to an absolute path" >&2; exit 1 ;;
+esac
+bin=$HOME/.local/bin
+data=$HOME/.local/share
+case "${XDG_BIN_HOME:-}" in /*) bin=$XDG_BIN_HOME ;; esac
+case "${XDG_DATA_HOME:-}" in /*) data=$XDG_DATA_HOME ;; esac
 
 list=false
 case "${1:-}" in
@@ -48,8 +58,8 @@ if ! $list; then
     mkdir -p "$bin" "$data/lcl" "$data/applications" "$data/mime/packages"
 fi
 
-# Publish standard input as file $1 with mode $2: written beside it, renamed
-# over it. With --list, only name it.
+# Publish standard input as file $1 with mode $2: written beside it, flushed to
+# disk, renamed over it, and the rename flushed too. With --list, only name it.
 publish() {
     if $list; then
         echo "$1"
@@ -57,14 +67,21 @@ publish() {
         return 0
     fi
     new="$(dirname "$1")/.$(basename "$1").new.$$"
-    if cat >"$new" && chmod "$2" "$new" && mv -f "$new" "$1"; then
+    if cat >"$new" && chmod "$2" "$new" && sync -- "$new" && mv -f "$new" "$1" &&
+        sync -- "$(dirname "$1")"; then
         return 0
     fi
     rm -f "$new"
     return 1
 }
 
-# Publish directory $1 as directory $2: copied beside it, swapped in by rename.
+# Publish directory $1 as directory $2. The copy is flushed to disk first, then
+# takes the name in one step: exchanged with the installed directory where `mv
+# --exchange` can (GNU coreutils 9.5 or later, on a filesystem with
+# RENAME_EXCHANGE), so the name always holds a complete package, the old one or
+# the new one. Elsewhere the old directory is renamed aside and the copy renamed
+# in, and an install interrupted between those two renames leaves the name
+# missing until it is run again. Either way the rename is flushed too.
 publish_dir() {
     if $list; then
         echo "$2"
@@ -72,10 +89,18 @@ publish_dir() {
     fi
     rm -rf "$2.new.$$" "$2.old.$$"
     cp -r "$1" "$2.new.$$"
+    find "$2.new.$$" -exec sync -- {} +
+    if [ -e "$2" ] && mv --exchange -T "$2.new.$$" "$2" 2>/dev/null; then
+        # $2.new.$$ now holds the directory that was installed.
+        sync -- "$(dirname "$2")"
+        rm -rf "$2.new.$$"
+        return 0
+    fi
     if [ -e "$2" ]; then
         mv "$2" "$2.old.$$"
     fi
     mv "$2.new.$$" "$2"
+    sync -- "$(dirname "$2")"
     rm -rf "$2.old.$$"
 }
 

@@ -1,0 +1,52 @@
+# Update manifest vectors: the bytes a parser sees once the signature has
+# verified, and whether it must ACCEPT or REFUSE them. The PC updater
+# (update/tests/manifest_vectors.rs) and LCL for Android (UpdateTest.kt) read
+# every file here and must both reach the result listed; a file that is not
+# listed fails both. A line that follows a comment line explains an ACCEPT that
+# a platform refuses later, by a check that is not the manifest's.
+#
+# <file> <ACCEPT|REFUSE>
+valid.json ACCEPT
+invalid-utf8.json REFUSE
+unknown-field.json REFUSE
+missing-field.json REFUSE
+malformed-digest.json REFUSE
+oversized-pc-artifact.json REFUSE
+largest-pc-artifact.json ACCEPT
+oversized-apk.json REFUSE
+# well formed, for another PC: the PC updater refuses to install it (unsupported), a platform check
+wrong-architecture.json ACCEPT
+malformed-architecture.json REFUSE
+bad-updater-version.json REFUSE
+fractional-updater-version.json REFUSE
+# well formed, for a newer PC updater: the PC updater refuses to install it (unsupported), a platform check
+future-updater-version.json ACCEPT
+overflowing-minimum-sdk.json REFUSE
+zero-minimum-sdk.json REFUSE
+prerelease.json REFUSE
+build-metadata.json REFUSE
+malformed-version.json REFUSE
+largest-version-number.json ACCEPT
+overflowing-version-number.json REFUSE
+malformed-source-commit.json REFUSE
+wrong-application-id.json REFUSE
+wrong-product.json REFUSE
+wrong-channel.json REFUSE
+wrong-format.json REFUSE
+mismatched-release-tag.json REFUSE
+minimum-newer-than-release.json REFUSE
+version-code-too-large.json REFUSE
+negative-size.json REFUSE
+text-for-a-number.json REFUSE
+duplicate-key.json REFUSE
+leading-zero-number.json REFUSE
+plus-signed-number.json REFUSE
+# JSON numbers are read by value: 4.0 is the number 4
+whole-number-written-as-decimal.json ACCEPT
+bare-word-value.json REFUSE
+lone-surrogate.json REFUSE
+trailing-content.json REFUSE
+top-level-array.json REFUSE
+# 20000 characters, half of them outside the Basic Multilingual Plane
+astral-notes-at-limit.json ACCEPT
+notes-too-long.json REFUSE

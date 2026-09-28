@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.security.DigestOutputStream
+import java.security.MessageDigest
 
 /** What the phone knows about itself, and what Android says about an APK file. */
 interface PackageFacts {
@@ -111,7 +113,7 @@ class UpdateController(
         for (name in listOf(MANIFEST, SIGNATURE)) {
             if (name !in latest.assets) throw UpdateRefused("invalid", "release ${latest.tag} has no $name")
         }
-        val manifest = verifyManifest(source.fetch(latest, MANIFEST, MAX_MANIFEST), source.fetch(latest, SIGNATURE, 1024), trusted)
+        val manifest = verifyManifest(source.fetchBytes(latest, MANIFEST, MAX_MANIFEST), source.fetchBytes(latest, SIGNATURE, 1024), trusted)
         if (manifest.releaseTag != latest.tag) throw UpdateRefused("verification", "release ${latest.tag} carries the manifest of ${manifest.releaseTag}")
         if (latest.assets[manifest.android.artifactName] != manifest.android.size) {
             throw UpdateRefused("invalid", "release ${latest.tag} does not hold the APK its manifest names")
@@ -129,14 +131,19 @@ class UpdateController(
         scope.launch {
             try {
                 val file = withContext(io) {
-                    val bytes = source.fetch(latest, manifest.android.artifactName, manifest.android.size) { done, total ->
-                        set { it.copy(progress = done to total) }
-                    }
+                    // Streamed into the app's own cache and digested on the
+                    // way: the APK is never held in memory, and a download
+                    // that fails leaves nothing behind.
                     val dir = File(cacheDir, "update").apply { deleteRecursively(); mkdirs() }
                     val file = File(dir, manifest.android.artifactName)
-                    file.writeBytes(bytes)
                     try {
-                        checkApk(bytes, facts.archive(file), manifest, facts.installed())
+                        val digest = MessageDigest.getInstance("SHA-256")
+                        DigestOutputStream(file.outputStream().buffered(), digest).use { out ->
+                            source.fetch(latest, manifest.android.artifactName, manifest.android.size, out) { done, total ->
+                                set { it.copy(progress = done to total) }
+                            }
+                        }
+                        checkApk(file.length(), hex(digest.digest()), facts.archive(file), manifest, facts.installed())
                     } catch (e: Throwable) {
                         file.delete()
                         throw e

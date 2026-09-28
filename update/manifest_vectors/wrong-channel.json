@@ -1,0 +1,29 @@
+{
+  "format": 1,
+  "product": "lcl",
+  "channel": "beta",
+  "product_version": "0.2.0",
+  "release_tag": "v0.2.0",
+  "source_commit": "0123456789abcdef0123456789abcdef01234567",
+  "published_at": "2026-10-01T12:00:00Z",
+  "release_notes": "Faster checks.\nFixed a crash.",
+  "minimum_supported_version": "0.1.0",
+  "signing_key_id": "lcl-update-1",
+  "pc": {
+    "artifact_name": "lcl-0.2.0-linux-x86_64.tar.gz",
+    "size": 48213557,
+    "sha256": "5f0c2b4f0d6d4b6a8e1e3c7a9b2d4f6e8a0c2e4f6a8b0d2f4e6a8c0e2a4c6e8a",
+    "architecture": "x86_64-linux",
+    "required_updater_version": 1
+  },
+  "android": {
+    "artifact_name": "lcl-android-0.2.0-4.apk",
+    "size": 11618913,
+    "sha256": "9a8b7c6d5e4f30211203f4e5d6c7b8a99a8b7c6d5e4f30211203f4e5d6c7b8a9",
+    "application_id": "io.lcl.workspace",
+    "version_name": "0.2.0",
+    "version_code": 4,
+    "minimum_sdk": 29,
+    "signer_sha256": "f61bed841a0eb678e0ace3bb3cc479c931419035f8ffcada66742ff4917d1cc9"
+  }
+}

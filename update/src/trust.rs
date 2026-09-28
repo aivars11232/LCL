@@ -193,8 +193,8 @@ pub(crate) mod tests {
             verify(manifest, &current.sign(manifest), &keys).unwrap(),
             "current"
         );
-        // Rotation: a release signed with the next key verifies once the app
-        // already lists it.
+        // Every listed key verifies (a test build lists its test keys beside
+        // the build's own); a key that is not listed never does.
         assert_eq!(
             verify(manifest, &next.sign(manifest), &keys).unwrap(),
             "next"

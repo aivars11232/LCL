@@ -2,8 +2,18 @@
 # Remove everything install.sh installed, and nothing else.
 set -eu
 
-bin=${XDG_BIN_HOME:-$HOME/.local/bin}
-data=${XDG_DATA_HOME:-$HOME/.local/share}
+# Where to install: XDG_BIN_HOME and XDG_DATA_HOME when they name absolute
+# paths. A relative or empty one is ignored for its default under HOME, as the
+# XDG Base Directory Specification requires; HOME itself must be absolute. The
+# updater reads the same variables the same way.
+case "${HOME:-}" in
+    /*) ;;
+    *) echo "$(basename "$0"): HOME is not set to an absolute path" >&2; exit 1 ;;
+esac
+bin=$HOME/.local/bin
+data=$HOME/.local/share
+case "${XDG_BIN_HOME:-}" in /*) bin=$XDG_BIN_HOME ;; esac
+case "${XDG_DATA_HOME:-}" in /*) data=$XDG_DATA_HOME ;; esac
 
 for path in \
     "$bin/lcl" \

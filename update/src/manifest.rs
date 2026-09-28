@@ -8,6 +8,14 @@
 //! from the same official release by its name, and trusted only if its size
 //! and SHA-256 are the ones signed here.
 //!
+//! LCL for Android reads the same contract (`Updates.kt`), and both read
+//! `manifest_vectors/` in their tests and must agree on every case there.
+//! Numbers are read by value, as JSON defines them (`4.0` is the number 4);
+//! counted fields are 1 to 2147483647. Two refusals come later and are the
+//! PC's alone: a PC artifact for another architecture, and one that needs a
+//! newer updater protocol, are well-formed manifests that this updater will
+//! not install (`check::applicable`).
+//!
 //! ```text
 //! {
 //!   "format": 1,
@@ -47,6 +55,9 @@ pub const MAX_MANIFEST: u64 = 64 * 1024;
 pub const MAX_PC_ARTIFACT: u64 = 512 * 1024 * 1024;
 pub const MAX_APK: u64 = 256 * 1024 * 1024;
 const MAX_NOTES: usize = 20_000;
+/// The largest value of a counted field (a version code, an API level, an
+/// updater protocol): what Android holds in an `Int`.
+const MAX_WHOLE: u64 = i32::MAX as u64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Manifest {
@@ -247,6 +258,20 @@ pub fn parse(bytes: &[u8]) -> Result<Manifest, String> {
         architecture: text(pc_json, "pc", "architecture")?.to_string(),
         required_updater_version: number(pc_json, "pc", "required_updater_version")?,
     };
+    let architecture_ok = !pc.architecture.is_empty()
+        && pc.architecture.len() <= 64
+        && pc
+            .architecture
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-');
+    if !architecture_ok {
+        return Err("pc.architecture must be 1 to 64 of a-z, 0-9, _ and -".to_string());
+    }
+    if !(1..=MAX_WHOLE).contains(&pc.required_updater_version) {
+        return Err(format!(
+            "pc.required_updater_version must be 1 to {MAX_WHOLE}"
+        ));
+    }
     if pc.artifact_name != pc_artifact_name(&product_version) {
         return Err(format!(
             "pc.artifact_name must be {}, not {}",
@@ -286,8 +311,11 @@ pub fn parse(bytes: &[u8]) -> Result<Manifest, String> {
     if android.version_name != version_text {
         return Err("android.version_name must be the product version".to_string());
     }
-    if android.version_code == 0 || android.version_code > i32::MAX as u64 {
-        return Err("android.version_code must be 1 to 2147483647".to_string());
+    if !(1..=MAX_WHOLE).contains(&android.version_code) {
+        return Err(format!("android.version_code must be 1 to {MAX_WHOLE}"));
+    }
+    if !(1..=MAX_WHOLE).contains(&android.minimum_sdk) {
+        return Err(format!("android.minimum_sdk must be 1 to {MAX_WHOLE}"));
     }
     let wanted = android_artifact_name(&android.version_name, android.version_code);
     if android.artifact_name != wanted {

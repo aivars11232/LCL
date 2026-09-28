@@ -312,8 +312,8 @@ fn an_alias_cycle_is_rejected() {
 fn a_handler_fallback_cycle_is_rejected() {
     // Decision witness CLOSURE-028.
     let source = task(concat!(
-        "HANDLER:\n    ID: handler.a\n    EVENT: event.failure\n    OPERATION: core.stop\n    FALLBACK: REF(handler.b)\n\n",
-        "HANDLER:\n    ID: handler.b\n    EVENT: event.failure\n    OPERATION: core.stop\n    FALLBACK: REF(handler.a)\n\n",
+        "HANDLER:\n    ID: handler.a\n    EVENT: event.execution_error\n    OPERATION: core.stop\n    FALLBACK: REF(handler.b)\n\n",
+        "HANDLER:\n    ID: handler.b\n    EVENT: event.execution_error\n    OPERATION: core.stop\n    FALLBACK: REF(handler.a)\n\n",
         "GOAL:\n    ID: goal.g\n    ASSERT: TRUE\n\n",
         "ACTION:\n    ID: action.a\n    OPERATION: core.inspect\n\n",
         "VERIFY:\n    ID: verify.v\n    ASSERT: TRUE\n\n",

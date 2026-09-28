@@ -18,10 +18,14 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import io.lcl.workspace.connection.PairingState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,12 +36,8 @@ import androidx.compose.ui.unit.dp
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import io.lcl.workspace.AppContainer
-import io.lcl.workspace.connection.PendingPairing
-import io.lcl.workspace.data.PcRecord
 import io.lcl.workspace.remote.InvalidLink
 import io.lcl.workspace.remote.PairingLink
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
 
 /**
  * Pair with a PC from the one-time QR code it shows. Scanning or pasting only
@@ -49,50 +49,49 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun PairScreen(container: AppContainer, onPaired: () -> Unit, onBack: () -> Unit) {
-    var link by remember { mutableStateOf("") }
-    var deviceName by remember { mutableStateOf(Build.MODEL ?: "Android device") }
-    var working by remember { mutableStateOf(false) }
-    var waiting by remember { mutableStateOf<PendingPairing?>(null) }
-    var attempt by remember { mutableStateOf<Job?>(null) }
-    var problem by remember { mutableStateOf<String?>(null) }
-    // Paired again, but the PC may still trust the key this pairing replaced.
-    var unfinished by remember { mutableStateOf<PcRecord?>(null) }
-    val scope = rememberCoroutineScope()
+    var link by rememberSaveable { mutableStateOf("") }
+    var deviceName by rememberSaveable { mutableStateOf(Build.MODEL ?: "Android device") }
+    // A form problem (unreadable pairing text); an attempt's own outcome is
+    // the pairing state's.
+    var formProblem by remember { mutableStateOf<String?>(null) }
+    // The attempt lives in the app, not in this screen (C03-AUDIT-03): the
+    // Manual tab, or the activity being recreated, leaves it running and its
+    // state as it was. Only the person's Cancel, or Back, ends it.
+    val pairing = container.pairing
+    val state by pairing.state.collectAsState()
+    val working = state is PairingState.Requesting || state is PairingState.Pending || state is PairingState.Finishing
+
+    LaunchedEffect(state) {
+        if (state is PairingState.Paired) {
+            pairing.reset()
+            onPaired()
+        }
+    }
+    BackHandler(enabled = working) {
+        pairing.cancel()
+        onBack()
+    }
 
     fun pair(text: String) {
-        problem = null
+        formProblem = null
         val parsed = try {
             PairingLink.parse(text)
         } catch (e: InvalidLink) {
-            problem = e.message
+            formProblem = e.message
             return
         }
-        working = true
-        attempt = scope.launch {
-            try {
-                val result = container.connection.pair(parsed, deviceName.ifBlank { "Android device" }) { waiting = it }
-                result.onSuccess { if (it.retiring.isEmpty()) onPaired() else unfinished = it }
-                    .onFailure { problem = it.message ?: "Pairing failed." }
-            } finally {
-                working = false
-                waiting = null
-                attempt = null
-            }
-        }
+        pairing.start(parsed, deviceName.ifBlank { "Android device" })
     }
 
-    // Leaving the screen cancels the attempt too (the scope ends with it),
-    // and a cancelled attempt deletes its key and saves nothing.
-    fun cancel() {
-        attempt?.cancel()
-        problem = "Pairing cancelled. Nothing was paired."
-    }
+    // Cancelling deletes the attempt's key and saves nothing.
+    fun cancel() = pairing.cancel()
 
     // A scanned code, like pasted text, only fills the form in: no key is
     // made and no connection is tried until Pair is pressed.
     val scanner = rememberLauncherForActivityResult(ScanContract()) { result ->
         result.contents?.let {
-            problem = null
+            formProblem = null
+            pairing.reset()
             link = it.trim()
         }
     }
@@ -107,8 +106,9 @@ fun PairScreen(container: AppContainer, onPaired: () -> Unit, onBack: () -> Unit
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text("Pair a PC", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        val pending = waiting
-        val incomplete = unfinished
+        val pending = (state as? PairingState.Pending)?.pending
+        val incomplete = (state as? PairingState.RetirementIncomplete)?.record
+        val problem = formProblem ?: (state as? PairingState.Failed)?.message
         if (pending != null) {
             Card(Modifier.fillMaxWidth().testTag("pair_waiting")) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -143,7 +143,13 @@ fun PairScreen(container: AppContainer, onPaired: () -> Unit, onBack: () -> Unit
                     Text(retiringNotice(incomplete), color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("pair_retiring"))
                 }
             }
-            Button(onClick = onPaired, modifier = Modifier.testTag("pair_continue")) { Text("Continue") }
+            Button(
+                onClick = {
+                    pairing.reset()
+                    onPaired()
+                },
+                modifier = Modifier.testTag("pair_continue"),
+            ) { Text("Continue") }
         } else {
             Text(
                 "On the PC, run `lcl-remote pair`, or open Settings → Android devices in the LCL workspace, " +
@@ -204,8 +210,17 @@ fun PairScreen(container: AppContainer, onPaired: () -> Unit, onBack: () -> Unit
                 Button(onClick = { pair(link) }, enabled = !working && link.isNotBlank(), modifier = Modifier.testTag("pair_button")) {
                     Text("Pair")
                 }
-                OutlinedButton(onClick = onBack, enabled = !working) { Text("Back") }
-                if (working) CircularProgressIndicator(Modifier.padding(start = 8.dp))
+                OutlinedButton(
+                    onClick = {
+                        pairing.reset()
+                        onBack()
+                    },
+                    enabled = !working,
+                ) { Text("Back") }
+                if (working) CircularProgressIndicator(Modifier.padding(start = 8.dp).testTag("pair_working"))
+            }
+            if (state is PairingState.Finishing) {
+                Text("Approved on the PC. Finishing…", modifier = Modifier.testTag("pair_finishing"))
             }
         }
         problem?.let {

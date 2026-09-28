@@ -340,9 +340,19 @@ fn core03_roles_scaffolds_readiness_and_a_desktop_newer_revision() {
         &format!("{p},\"role\":\"kind.part.rules\",\"path\":\"rules.lcl\",\"mode\":\"guided\""),
     );
     assert_eq!(status, 200, "{scaffold:?}");
-    let (status, created) = client.request(
+    // Creating by role without the scaffold's digest creates nothing (428).
+    let (status, refused) = client.request(
         "create",
         &format!("{p},\"name\":\"rules\",\"role\":\"kind.part.rules\",\"mode\":\"guided\""),
+    );
+    assert_eq!(status, 428, "{refused:?}");
+    assert!(!home.workspace().join("rules.lcl").exists());
+    let (status, created) = client.request(
+        "create",
+        &format!(
+            "{p},\"name\":\"rules\",\"role\":\"kind.part.rules\",\"mode\":\"guided\",\"scaffold_digest\":\"{}\"",
+            s(&scaffold, "digest")
+        ),
     );
     assert_eq!(status, 200, "{created:?}");
     assert_eq!(

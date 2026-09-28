@@ -31,6 +31,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import io.lcl.workspace.workspace.ScaffoldPreview
+import kotlinx.coroutines.delay
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -192,7 +196,8 @@ private fun FilesPane(
         NewDocumentDialog(
             ui.defaultEnding,
             ui.roles,
-            onCreate = { name, role, mode -> controller.create(name, role, mode); creating = false; onOpened() },
+            preview = controller::previewScaffold,
+            onCreate = { name, role, mode, digest -> controller.create(name, role, mode, digest); creating = false; onOpened() },
             onDismiss = { creating = false },
         )
     }
@@ -214,7 +219,8 @@ fun ManualIcon(onManual: () -> Unit) {
 private fun NewDocumentDialog(
     ending: String,
     roles: List<RoleInfo>,
-    onCreate: (String, String?, String) -> Unit,
+    preview: suspend (String, String, String) -> ScaffoldPreview?,
+    onCreate: (String, String?, String, String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var name by remember { mutableStateOf("untitled$ending") }
@@ -222,6 +228,16 @@ private fun NewDocumentDialog(
     var role by remember { mutableStateOf<String?>(null) }
     var guided by remember { mutableStateOf(true) }
     var picking by remember { mutableStateOf(false) }
+    // The PC's exact starting text for the current name, role and mode.
+    var shown by remember { mutableStateOf<ScaffoldPreview?>(null) }
+    val mode = if (guided) "guided" else "minimal"
+    LaunchedEffect(name, role, mode) {
+        shown = null
+        val chosen = role ?: return@LaunchedEffect
+        if (name.isBlank()) return@LaunchedEffect
+        delay(250)
+        shown = preview(name, chosen, mode)
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("New document") },
@@ -252,15 +268,31 @@ private fun NewDocumentDialog(
                             FilterChip(selected = !guided, onClick = { guided = false }, label = { Text("Minimal") })
                         }
                         Text(
-                            "The PC writes this kind's starting text (its scaffold, or your default template on the PC). Fill the empty fields, then Check.",
+                            "The PC writes exactly this starting text (its scaffold, or your default template on the PC). Fill the empty fields, then Check.",
                             style = MaterialTheme.typography.bodySmall,
+                        )
+                        Text(
+                            shown?.text ?: "Asking the PC for the starting text…",
+                            fontFamily = FontFamily.Monospace,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 180.dp)
+                                .verticalScroll(rememberScrollState())
+                                .testTag("new_preview"),
                         )
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { if (name.isNotBlank()) onCreate(name, role, if (guided) "guided" else "minimal") }, Modifier.testTag("create")) { Text("Create") }
+            // A file of a role is created only from the preview on screen.
+            val ready = name.isNotBlank() && (role == null || shown?.let { it.role == role && it.mode == mode } == true)
+            TextButton(
+                onClick = { if (ready) onCreate(name, role, mode, shown?.digest) },
+                enabled = ready,
+                modifier = Modifier.testTag("create"),
+            ) { Text("Create") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

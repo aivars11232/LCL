@@ -26,11 +26,12 @@
 //! So a form violation here is `error.field.type`; an argument violation
 //! belongs to M3 resolution or M4 static checking and is not attempted.
 //!
-//! One exception is exact: [`ENFORCED_DOMAINS`]. `document_kind` and the Core
-//! 0.3.0 `part_kind` are closed static domains whose members the registry
-//! lists outright, and the grammar stage already reads `SPECIFICATION.KIND` to
-//! decide top-level legality, so a value outside them is `error.field.type`
-//! here (owner decision, 2026-09-26).
+//! One exception is exact: the `qualified_identifier(DOMAIN)` contracts
+//! ([`IdentifierDomain`]). A value outside a static domain, or in a reserved
+//! namespace without being a registered member, cannot match its value kind
+//! whatever the document declares, so it is `error.field.type` here. Whether
+//! any other identifier names a DEFINE of the domain's `defined_kind` is a
+//! resolution question, answered there.
 
 use crate::diagnostic::GrammarError;
 use lcl_spec::json::Json;
@@ -252,23 +253,34 @@ fn template_form(accepted: &str) -> Option<FormSet> {
     })
 }
 
-/// The closed identifier domains whose membership the grammar stage enforces.
+/// One `qualified_identifier(DOMAIN)` contract, read from
+/// `field_signatures#/qualified_identifier_domains` through its exact
+/// registry, JSON Pointer and selection.
 ///
-/// `06_STANDARD_LIBRARY/09`: "Identifiers under reserved namespaces resolve
-/// only to this core registry", and an unknown one fails; the catalog requires
-/// the document_kinds group to be enforced as a complete closed identifier
-/// contract (`ENUM-GROUPS-0754`). Canon names no dedicated diagnostic;
-/// `error.field.type`, "a field value does not match its exact value kind", is
-/// the one registered identifier whose meaning covers a value outside its
-/// `qualified_identifier(DOMAIN)` kind.
+/// `04_GRAMMAR/13`: "DOMAIN resolves through the exact source and JSON Pointer
+/// in qualified_identifier_domains and, when defined_kind is present, also
+/// admits an ID whose DEFINE.KIND is that exact registered kind." The catalog
+/// requires every such domain to be enforced (`ENUM-GROUPS-0754` … `0762`,
+/// `0814`). Canon names no dedicated diagnostic: `error.field.type`, "a field
+/// value does not match its exact value kind", covers a value the domain can
+/// never admit; an identifier that must name a DEFINE is resolved like an alias
+/// `BASE` (`07_VERSIONING_AND_EXTENSIONS/03`) by the resolution stage.
 ///
-/// Before 2026-09-26 no domain was enforced and an unregistered
-/// `SPECIFICATION.KIND` was silently accepted. The owner decided that day to
-/// enforce `document_kind` in every Core version and the Core 0.3.0 `part_kind`
-/// (`PART.KIND`), and to report, not yet enforce, the same gap in the other
-/// closed domains (format, mode, encoding, definition kinds and the aliased
-/// domains). Both enforced domains are static: no `DEFINE` can add a member.
-pub const ENFORCED_DOMAINS: &[&str] = &["document_kind", "part_kind"];
+/// Task 01 (2026-09-26) enforced `document_kind` and `part_kind` only, and
+/// reported the same gap in the other domains; C03-AUDIT-02 (2026-09-28)
+/// closes it for every domain, in every Core version, from the package's own
+/// contracts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdentifierDomain {
+    /// The registered members, after the contract's `where` and `exclude`.
+    pub members: BTreeSet<String>,
+    /// The DEFINE KIND whose declarations the domain also admits, if any.
+    pub defined_kind: Option<String>,
+    /// True when `where` or `exclude` narrowed the registered set, so an alias
+    /// is admitted only when its canonical core identifier is a member
+    /// ("Resolve the alias first, then apply where and exclude").
+    pub filtered: bool,
+}
 
 /// One field's exact signature.
 #[derive(Debug, Clone)]
@@ -446,9 +458,11 @@ pub struct Grammar {
     schemas: BTreeMap<String, BlockSchema>,
     /// `document_kind_blocks`: legal top-level blocks per `SPECIFICATION.KIND`.
     document_kind_blocks: BTreeMap<String, BTreeSet<String>>,
-    /// The members of each closed identifier domain in [`ENFORCED_DOMAINS`]
-    /// that this package declares, read through `qualified_identifier_domains`.
-    closed_domains: BTreeMap<String, BTreeSet<String>>,
+    /// Every `qualified_identifier(DOMAIN)` contract this package declares.
+    domains: BTreeMap<String, IdentifierDomain>,
+    /// `built_in_groups_and_results#/reserved_namespaces`: first segments no
+    /// user ID may take.
+    reserved_namespaces: BTreeSet<String>,
     errors: BTreeMap<GrammarError, RegisteredGrammarError>,
     supersedes: BTreeMap<GrammarError, BTreeSet<GrammarError>>,
 }
@@ -549,10 +563,10 @@ impl Grammar {
             document_kind_blocks.insert(kind.clone(), set);
         }
 
-        let closed_domains = Self::closed_domains(spec, field_signatures)?;
-        if let Some(kinds) = closed_domains.get("document_kind") {
+        let domains = Self::domains(spec, field_signatures)?;
+        if let Some(kinds) = domains.get("document_kind") {
             let legal: BTreeSet<String> = document_kind_blocks.keys().cloned().collect();
-            if *kinds != legal {
+            if kinds.members != legal {
                 return Err(GrammarLoadError::Malformed(
                     "the document_kind domain and document_kind_blocks name different kinds".into(),
                 ));
@@ -567,20 +581,39 @@ impl Grammar {
             callables,
             schemas,
             document_kind_blocks,
-            closed_domains,
+            domains,
+            reserved_namespaces: Self::reserved_namespaces(spec)?,
             errors,
             supersedes,
         })
     }
 
-    /// Read the members of every [`ENFORCED_DOMAINS`] entry the package's
-    /// `qualified_identifier_domains` declares, through its exact registry,
-    /// JSON Pointer and selection. A domain that also admits `DEFINE`
-    /// declarations (`defined_kind`) needs resolution and is refused here.
-    fn closed_domains(
+    /// `built_in_groups_and_results#/reserved_namespaces`.
+    fn reserved_namespaces(spec: &SpecPackage) -> Result<BTreeSet<String>, GrammarLoadError> {
+        let groups = spec.registry("built_in_groups_and_results").ok_or(
+            GrammarLoadError::MissingRegistry("built_in_groups_and_results"),
+        )?;
+        groups
+            .get("reserved_namespaces")
+            .and_then(Json::as_array)
+            .ok_or_else(|| GrammarLoadError::Malformed("reserved_namespaces missing".into()))?
+            .iter()
+            .map(|n| {
+                n.as_str().map(str::to_string).ok_or_else(|| {
+                    GrammarLoadError::Malformed("reserved_namespaces has a non-string".into())
+                })
+            })
+            .collect()
+    }
+
+    /// Read every domain the package's `qualified_identifier_domains`
+    /// declares, through its exact registry, JSON Pointer and selection:
+    /// `array_values`, `object_keys`, or `object_keys_where` with its `where`
+    /// equalities, then `exclude`.
+    fn domains(
         spec: &SpecPackage,
         field_signatures: &Json,
-    ) -> Result<BTreeMap<String, BTreeSet<String>>, GrammarLoadError> {
+    ) -> Result<BTreeMap<String, IdentifierDomain>, GrammarLoadError> {
         let malformed = |what: String| GrammarLoadError::Malformed(what);
         let domains = field_signatures
             .get("qualified_identifier_domains")
@@ -589,13 +622,7 @@ impl Grammar {
                 malformed("field_signatures.qualified_identifier_domains missing".into())
             })?;
         let mut out = BTreeMap::new();
-        for name in ENFORCED_DOMAINS {
-            let Some((_, contract)) = domains.iter().find(|(k, _)| k == name) else {
-                continue;
-            };
-            if contract.get("defined_kind").is_some() {
-                return Err(malformed(format!("the {name} domain admits definitions")));
-            }
+        for (name, contract) in domains {
             let source = contract
                 .get("source")
                 .and_then(Json::as_str)
@@ -642,16 +669,60 @@ impl Grammar {
                     .iter()
                     .map(|(key, _)| key.clone())
                     .collect(),
+                Some("object_keys_where") => {
+                    let conditions = contract
+                        .get("where")
+                        .and_then(Json::as_object)
+                        .ok_or_else(|| malformed(format!("the {name} domain has no where")))?;
+                    node.as_object()
+                        .ok_or_else(|| malformed(format!("the {name} domain is not an object")))?
+                        .iter()
+                        .filter(|(_, member)| {
+                            conditions
+                                .iter()
+                                .all(|(key, wanted)| member.get(key) == Some(wanted))
+                        })
+                        .map(|(key, _)| key.clone())
+                        .collect()
+                }
                 other => {
                     return Err(malformed(format!(
                         "the {name} domain selection {other:?} is unsupported"
                     )))
                 }
             };
+            let excluded: BTreeSet<String> = match contract.get("exclude") {
+                None => BTreeSet::new(),
+                Some(list) => list
+                    .as_array()
+                    .ok_or_else(|| malformed(format!("the {name} domain exclude is not a list")))?
+                    .iter()
+                    .map(|member| {
+                        member.as_str().map(str::to_string).ok_or_else(|| {
+                            malformed(format!("the {name} domain excludes a non-string"))
+                        })
+                    })
+                    .collect::<Result<_, _>>()?,
+            };
+            let filtered = contract.get("where").is_some() || !excluded.is_empty();
+            let members: BTreeSet<String> = members.difference(&excluded).cloned().collect();
             if members.is_empty() {
                 return Err(malformed(format!("the {name} domain is empty")));
             }
-            out.insert((*name).to_string(), members);
+            let defined_kind = match contract.get("defined_kind") {
+                None => None,
+                Some(kind) => Some(kind.as_str().map(str::to_string).ok_or_else(|| {
+                    malformed(format!("the {name} domain defined_kind is not a string"))
+                })?),
+            };
+            out.insert(
+                name.clone(),
+                IdentifierDomain {
+                    members,
+                    defined_kind,
+                    filtered,
+                },
+            );
         }
         Ok(out)
     }
@@ -1028,11 +1099,25 @@ impl Grammar {
         self.document_kind_blocks.keys().map(String::as_str)
     }
 
-    /// The members of one enforced closed identifier domain, when this package
+    /// The registered members of one identifier domain, when this package
     /// declares it: `document_kind` in every version, `part_kind` from Core
-    /// 0.3.0. See [`ENFORCED_DOMAINS`].
+    /// 0.3.0. For a domain with `defined_kind` these are the core members
+    /// only; see [`IdentifierDomain`].
     pub fn closed_domain_members(&self, domain: &str) -> Option<&BTreeSet<String>> {
-        self.closed_domains.get(domain)
+        self.domains.get(domain).map(|d| &d.members)
+    }
+
+    /// One `qualified_identifier(DOMAIN)` contract, when this package
+    /// declares it.
+    pub fn identifier_domain(&self, domain: &str) -> Option<&IdentifierDomain> {
+        self.domains.get(domain)
+    }
+
+    /// True when the identifier's first segment is a reserved namespace, so it
+    /// can name no user declaration.
+    pub fn is_reserved_namespace(&self, identifier: &str) -> bool {
+        let first = identifier.split('.').next().unwrap_or(identifier);
+        self.reserved_namespaces.contains(first)
     }
 
     pub fn error(&self, id: GrammarError) -> &RegisteredGrammarError {

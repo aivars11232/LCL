@@ -43,6 +43,9 @@ class WorkspaceControllerTest {
     /** The project's files on the PC. */
     private val files = linkedMapOf("a.lcl" to "LCL:\n", "notes.lcl.txt" to "LCL:\n")
     private val kinds = mutableMapOf<String, String>()
+    /** The fake PC's scaffold: its bytes depend on role, mode and the file name. */
+    private var templateEdition = 1
+    private fun scaffoldText(role: String, mode: String, path: String) = "PC scaffold $templateEdition for $role ($mode) at $path\n"
     private var diagnostics: List<JsonObject> = emptyList()
     /** Holds analysis answers until released: the PC is slow. */
     private var gate: CompletableDeferred<Unit>? = null
@@ -71,12 +74,25 @@ class WorkspaceControllerTest {
             "available" to true,
             "roles" to JsonArray(listOf("kind.part.rules" to "Rules", "kind.part.task" to "Task").map { (r, l) -> buildJsonObject { put("role", r); put("label", l) } }),
         )
+        "scaffold" -> {
+            val text = scaffoldText(f.str("role")!!, f.str("mode")!!, f.str("path")!!)
+            reply(200, "path" to f.str("path"), "role" to f.str("role"), "text" to text, "digest" to digest(text))
+        }
         "create" -> {
             val name = f.str("name")!!.let { if (it.endsWith(".lcl")) it else "$it.lcl" }
-            val text = f.str("role")?.let { "PC scaffold for $it (${f.str("mode")})\n" } ?: f.str("text")!!
-            files[name] = text
-            f.str("role")?.let { kinds[name] = it }
-            reply(200, "id" to name, "requested" to f.str("name"), "digest" to digest(text))
+            val role = f.str("role")
+            // As the PC does: a file of a role is created only from the
+            // scaffold the device previewed for exactly this name.
+            val text = if (role != null) scaffoldText(role, f.str("mode")!!, name) else f.str("text")!!
+            when {
+                role != null && f.str("scaffold_digest") == null -> reply(428, "error" to "created only from a preview")
+                role != null && f.str("scaffold_digest") != digest(text) -> reply(409, "error" to "the starting text changed since it was previewed")
+                else -> {
+                    files[name] = text
+                    role?.let { kinds[name] = it }
+                    reply(200, "id" to name, "requested" to f.str("name"), "digest" to digest(text))
+                }
+            }
         }
         "project" -> reply(
             200,
@@ -165,18 +181,45 @@ class WorkspaceControllerTest {
     fun new_by_role_asks_the_pc_for_its_scaffold_and_sends_no_text() = runTest {
         val (_, workspace) = connected()
         assertEquals(listOf("kind.part.rules", "kind.part.task"), workspace.ui.value.roles.map { it.role })
-        workspace.create("house", "kind.part.rules", "minimal")
+        // The preview is the PC's own text for exactly the name it will create.
+        var preview: io.lcl.workspace.workspace.ScaffoldPreview? = null
+        backgroundScope.launch { preview = workspace.previewScaffold("house", "kind.part.rules", "minimal") }
+        runCurrent()
+        assertEquals("house.lcl", last("scaffold").str("path"))
+        assertEquals("PC scaffold 1 for kind.part.rules (minimal) at house.lcl\n", preview!!.text)
+        workspace.create("house", "kind.part.rules", "minimal", preview!!.digest)
         runCurrent()
         val sent = last("create")
         assertEquals("kind.part.rules", sent.str("role"))
         assertEquals("minimal", sent.str("mode"))
+        assertEquals(preview!!.digest, sent.str("scaffold_digest"))
         assertEquals("a file made by role carries no text from the phone", null, sent["text"])
-        assertEquals("PC scaffold for kind.part.rules (minimal)\n", files["house.lcl"])
+        assertEquals(preview!!.text, files["house.lcl"])
         assertEquals("kind.part.rules", workspace.ui.value.tree.single { it.id == "house.lcl" }.kind)
-        // Blank stays available.
+        // Blank stays available and needs no preview.
         workspace.create("blank")
         runCurrent()
         assertEquals(null, last("create").str("role"))
+        assertTrue(files.containsKey("blank.lcl"))
+    }
+
+    @Test
+    fun a_role_file_is_not_created_when_the_pc_text_changed_since_the_preview() = runTest {
+        val (_, workspace) = connected()
+        var preview: io.lcl.workspace.workspace.ScaffoldPreview? = null
+        backgroundScope.launch { preview = workspace.previewScaffold("rules", "kind.part.rules", "guided") }
+        runCurrent()
+        // A template changes on the PC after the preview: nothing is created.
+        templateEdition = 2
+        workspace.create("rules", "kind.part.rules", "guided", preview!!.digest)
+        runCurrent()
+        assertFalse(files.containsKey("rules.lcl"))
+        assertTrue(said.last(), said.last().contains("changed since it was previewed"))
+        // Without a preview the PC refuses too.
+        workspace.create("rules", "kind.part.rules", "guided", null)
+        runCurrent()
+        assertFalse(files.containsKey("rules.lcl"))
+        assertEquals(null, last("create").str("scaffold_digest"))
     }
 
     @Test

@@ -21,15 +21,15 @@
 //!   written twice;
 //! * `error.field.cardinality` — an occurrence count outside the signature;
 //! * `error.field.type` — a value whose *shape* is not one the value kind
-//!   accepts, a value outside an enforced closed identifier domain
-//!   ([`crate::grammar::ENFORCED_DOMAINS`]), or a Core 0.3.0 `PART.SOURCE` that
-//!   is not one PATH call with one relative STRING;
+//!   accepts, a `qualified_identifier(DOMAIN)` value its domain can never
+//!   admit ([`crate::grammar::IdentifierDomain`]), or a Core 0.3.0
+//!   `PART.SOURCE` that is not one PATH call with one relative STRING;
 //! * `error.block.conditional_requirement` — a structurally decidable
 //!   conditional requirement that is unsatisfied.
 //!
-//! Nothing here resolves a reference or types a value, and only the enforced
-//! closed domains are read: see `grammar` for the exact split and its
-//! canonical evidence.
+//! Nothing here resolves a reference or types a value: an identifier that
+//! could name a DEFINE of a domain's `defined_kind` is left to resolution. See
+//! `grammar` for the exact split and its canonical evidence.
 
 use crate::diagnostic::GrammarError;
 use crate::grammar::{BlockSchema, FieldSignature, FormSet, Grammar};
@@ -547,27 +547,36 @@ impl<'a> SchemaChecker<'a, '_> {
             return;
         }
 
-        // An enforced closed identifier domain: the value must be a member.
-        if let Some(domain) = sig
+        // A `qualified_identifier(DOMAIN)` value: a registered member, or —
+        // only where the domain admits DEFINEs — an identifier outside the
+        // reserved namespaces, which resolution then checks. Anything else can
+        // never match the value kind.
+        if let Some(domain_name) = sig
             .value_kind
             .strip_prefix("qualified_identifier(")
             .and_then(|rest| rest.strip_suffix(')'))
         {
-            if let (Some(members), Body::Inline(Value::Expression(Expr::Identifier(id)))) =
-                (self.grammar.closed_domain_members(domain), &field.body)
+            if let (Some(domain), Body::Inline(Value::Expression(Expr::Identifier(id)))) =
+                (self.grammar.identifier_domain(domain_name), &field.body)
             {
-                if !members.contains(&id.text) {
+                let admitted = domain.members.contains(&id.text)
+                    || (domain.defined_kind.is_some()
+                        && !self.grammar.is_reserved_namespace(&id.text));
+                if !admitted {
                     let owner = schema.name.clone();
                     let name = sig.name.clone();
                     let text = id.text.clone();
-                    self.emit(
-                        GrammarError::FieldType,
-                        id.span,
-                        "closed_domain",
-                        format!(
-                            "`{text}` is not a registered {domain}, as `{owner}.{name}` requires"
+                    let detail = match &domain.defined_kind {
+                        None => format!(
+                            "`{text}` is not a registered {domain_name}, as `{owner}.{name}` requires"
                         ),
-                    );
+                        Some(kind) => format!(
+                            "`{text}` is not a registered {domain_name}, as `{owner}.{name}` \
+                             requires, and an identifier in a reserved namespace cannot name a \
+                             DEFINE of {kind}"
+                        ),
+                    };
+                    self.emit(GrammarError::FieldType, id.span, "closed_domain", detail);
                     return;
                 }
             }

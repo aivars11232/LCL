@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import io.lcl.workspace.connection.AndroidNetwork
 import io.lcl.workspace.connection.ConnectionManager
+import io.lcl.workspace.connection.PairingController
 import io.lcl.workspace.data.AppSettings
 import io.lcl.workspace.data.PcStore
 import io.lcl.workspace.data.PreferencesStore
@@ -51,6 +52,8 @@ class AppContainer(context: Context) {
         discover = { pcId -> withContext(Dispatchers.IO) { Discovery.find(pcId) } },
     )
     val workspace = WorkspaceController(connection, scope)
+    /** The pairing attempt, which outlives the Pair screen. */
+    val pairing = PairingController(connection, scope)
 
     fun updateSettings(settings: AppSettings) {
         settingsStore.save(settings)

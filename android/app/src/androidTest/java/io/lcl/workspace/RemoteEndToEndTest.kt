@@ -305,6 +305,11 @@ class RemoteEndToEndTest {
         rule.onNodeWithTag("new_name").performTextInput("house_rules")
         rule.onNodeWithTag("new_role").performClick()
         rule.onNodeWithTag("role_choice:kind.part.rules").performClick()
+        // Create is offered only once the PC's exact starting text is shown,
+        // and the PC creates the file only from that text (C03-AUDIT-04).
+        rule.waitUntil("the PC's preview", 20_000) {
+            runCatching { textOf("new_preview") }.getOrDefault("").contains("KIND: kind.part.rules")
+        }
         rule.onNodeWithTag("create").performClick()
         waitFor("source")
         rule.waitUntil("the PC's Rules scaffold is open", 20_000) { source().contains("KIND: kind.part.rules") }
@@ -348,6 +353,35 @@ class RemoteEndToEndTest {
         shot("p12_04_identity_conflict")
         assertEquals("Connected", label())
         ready("A13_REFUSED")
+    }
+
+    /**
+     * C03-AUDIT-03: pairing is not the Pair screen's. The phone asks, the
+     * person opens the Manual tab while the PC decides, the PC approves then,
+     * and the pairing completes; back on Workspace the PC is connected.
+     */
+    @Test
+    fun p13_pairing_continues_while_the_manual_is_open() {
+        waitFor("pair_new")
+        pairWith(arg("link"))
+        rule.onNodeWithTag("pair_button").performScrollTo().performClick()
+        waitFor("pair_verification")
+        val code = textOf("pair_verification")
+        rule.onNodeWithTag("tab_manual").performClick()
+        rule.waitUntil("the manual", 30_000) {
+            runCatching { textOf("manual_status") }.getOrDefault("").contains("offline")
+        }
+        shot("p13_01_manual_while_pending")
+        ready("PENDING_P13 $code")
+        rule.waitUntil("paired while the Manual was open", 120_000) {
+            pairedPcs()?.contains("\"pc_id\"") == true
+        }
+        assertTrue("the Manual tab is still shown", exists("manual_status"))
+        rule.onNodeWithTag("tab_workspace").performClick()
+        waitForLabel("Connected", 60_000)
+        assertEquals(1, deviceKeys().size)
+        shot("p13_02_connected")
+        ready("P13_DONE")
     }
 
     private fun openSettings() {

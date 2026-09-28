@@ -1,6 +1,8 @@
 package io.lcl.workspace
 
 import io.lcl.workspace.connection.ConnectionManager
+import io.lcl.workspace.connection.PairingState
+import io.lcl.workspace.connection.PairingController
 import io.lcl.workspace.connection.IdentityConflictException
 import io.lcl.workspace.connection.ConnectionState
 import io.lcl.workspace.connection.PAIRING_POLL_MS
@@ -288,6 +290,89 @@ class ConnectionManagerTest {
         assertNotEquals(first, second)
         assertTrue(first in identities.deleted)
         assertEquals(setOf(second), identities.keys.keys)
+    }
+
+    // ------------------------------------ pairing outlives its screen (C03-AUDIT-03)
+
+    @Test
+    fun c03_a_pending_pairing_survives_its_screen_and_completes_when_the_pc_approves() = runTest {
+        val manager = manager()
+        // The controller lives in the app's scope, not in a screen's.
+        val pairing = PairingController(manager, backgroundScope)
+        pc.decision = FakePc.Decision.WAIT
+        // One QR code (the fake PC mints a new code, and drops the old
+        // request, each time it shows one).
+        val link = pc.link(clock)
+        assertTrue(pairing.start(link, "Pixel"))
+        runCurrent()
+        val pending = pairing.state.value
+        assertTrue(pending.toString(), pending is PairingState.Pending)
+        val key = identities.keys.keys.single()
+        // The Pair screen leaves (the Manual tab opens): nothing happens to
+        // the attempt. A second Pair while it runs is refused, not doubled.
+        assertFalse(pairing.start(link, "Pixel"))
+        advanceTimeBy(PAIRING_POLL_MS * 3)
+        runCurrent()
+        assertEquals(pending.javaClass, pairing.state.value.javaClass)
+        assertTrue(pairing.active)
+        assertEquals(setOf(key), identities.keys.keys)
+        assertTrue("nothing is trusted while pending", store.all().isEmpty())
+        // The PC approves while the screen is away; coming back shows the result.
+        pc.approve(testIdentity().fingerprint)
+        advanceTimeBy(PAIRING_POLL_MS)
+        runCurrent()
+        val done = pairing.state.value
+        assertTrue(done.toString(), done is PairingState.Paired)
+        assertEquals(key, (done as PairingState.Paired).record.keyAlias)
+        assertEquals("pc1", store.activeId())
+        assertTrue(manager.state.value is ConnectionState.Connected)
+        pairing.reset()
+        assertEquals(PairingState.Idle, pairing.state.value)
+    }
+
+    @Test
+    fun c03_an_explicit_cancel_ends_the_attempt_deletes_its_key_and_trusts_nothing() = runTest {
+        val manager = manager()
+        val pairing = PairingController(manager, backgroundScope)
+        pc.decision = FakePc.Decision.WAIT
+        pairing.start(pc.link(clock), "Pixel")
+        runCurrent()
+        assertEquals(1, identities.keys.size)
+        pairing.cancel()
+        runCurrent()
+        assertTrue(pairing.state.value is PairingState.Failed)
+        assertFalse(pairing.active)
+        assertTrue(identities.keys.isEmpty())
+        assertTrue(store.all().isEmpty())
+        val asked = pc.attempts
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertEquals("a cancelled request kept asking", asked, pc.attempts)
+        // A later attempt starts cleanly; the PC approves it on the next ask.
+        pc.decision = FakePc.Decision.APPROVE
+        assertTrue(pairing.start(pc.link(clock), "Pixel"))
+        runCurrent()
+        advanceTimeBy(PAIRING_POLL_MS)
+        runCurrent()
+        assertTrue(pairing.state.value.toString(), pairing.state.value is PairingState.Paired)
+    }
+
+    @Test
+    fun c03_a_refused_or_conflicting_pairing_is_reported_as_failed_through_the_controller() = runTest {
+        val manager = manager(Lan(pc, impostor))
+        val pairing = PairingController(manager, backgroundScope)
+        pairing.start(pc.link(clock), "Pixel")
+        runCurrent()
+        advanceTimeBy(PAIRING_POLL_MS)
+        runCurrent()
+        assertTrue(pairing.state.value.toString(), pairing.state.value is PairingState.Paired)
+        pairing.reset()
+        // A13 unchanged: another fingerprint under the same PC id.
+        pairing.start(impostor.link(clock), "Pixel")
+        runCurrent()
+        val failed = pairing.state.value
+        assertTrue(failed.toString(), failed is PairingState.Failed && failed.message.startsWith("Identity conflict"))
+        assertEquals(0, impostor.attempts)
     }
 
     // ------------------------------------------ identity collision (A13)

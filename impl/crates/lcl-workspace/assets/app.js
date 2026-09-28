@@ -759,6 +759,10 @@ function newDocument() {
   const kinds = [["", "Blank LCL file"]].concat(state.roles.roles.map((r) => [r.role, r.label]));
   let masters = [];
   let mastersArrived = () => {};
+  /* The digest of the exact text shown in the preview. A file of a role is
+   * created only from that text: the server refuses (409) when the template,
+   * default or name changed since, and (428) when nothing was previewed. */
+  let previewed = null;
   api("GET", "/api/masters").then((reply) => {
     masters = reply.masters || [];
     mastersArrived();
@@ -805,6 +809,7 @@ function newDocument() {
     let shown = 0;
     const show = async () => {
       const mine = ++shown;
+      previewed = null;
       preview.replaceChildren();
       note.textContent = "";
       if (!kind.value) {
@@ -817,6 +822,7 @@ function newDocument() {
         const scaffold = await api("GET", "/api/scaffold",
           { path, role: kind.value, ...selectionParams(kind.value, from.value) });
         if (mine !== shown) return;
+        previewed = scaffold.digest;
         showScaffold(preview, scaffold);
         note.textContent = "Exactly this text will be written. Marked lines: ! required slot, " +
           "? optional slot, # guidance, ⚙ generated identifier.";
@@ -847,7 +853,9 @@ function newDocument() {
       try {
         let created;
         if (role) {
-          created = await api("POST", "/api/document", { id, role, ...selectionParams(role, from) });
+          if (!previewed) throw new Error("wait for the preview: a file of a role is created only from the text shown.");
+          created = await api("POST", "/api/document",
+            { id, role, ...selectionParams(role, from), scaffold_digest: previewed });
         } else {
           /* A blank document is the smallest thing the grammar accepts.
            * 04_GRAMMAR/01: "Every document starts with LCL then SPECIFICATION."

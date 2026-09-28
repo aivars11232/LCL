@@ -411,6 +411,24 @@ impl Binder<'_, '_> {
                 return;
             }
         }
+        // A `qualified_identifier(DOMAIN)` value is a bare identifier too.
+        if let Value::Expression(Expr::Identifier(ident)) = value {
+            let domain_name = self
+                .resolver
+                .grammar()
+                .schema(block)
+                .and_then(|s| s.field(field_key))
+                .and_then(|f| {
+                    f.value_kind
+                        .strip_prefix("qualified_identifier(")
+                        .and_then(|rest| rest.strip_suffix(')'))
+                        .map(str::to_string)
+                });
+            if let Some(domain_name) = domain_name {
+                self.domain_value(block, field_key, &domain_name, ident);
+                return;
+            }
+        }
         let slot = self
             .resolver
             .rules()
@@ -615,6 +633,132 @@ impl Binder<'_, '_> {
             target: BindingTarget::Declaration(index),
             resolved_id: Some(declaration.id.clone()),
         });
+    }
+
+    /// A `qualified_identifier(DOMAIN)` value that the grammar stage left to
+    /// resolution: in a domain with `defined_kind`, an identifier outside the
+    /// reserved namespaces that is not a registered member.
+    ///
+    /// `04_GRAMMAR/13`: such a domain "also admits an ID whose DEFINE.KIND is
+    /// that exact registered kind". The identifier names a DEFINE exactly as an
+    /// alias `BASE` does, so it resolves under the same contract
+    /// (`07_VERSIONING_AND_EXTENSIONS/03`): no declaration is
+    /// `error.reference.unresolved`, and a declaration of another kind is
+    /// `error.reference.kind`. A filtered domain (terminal non-success
+    /// statuses) says "Resolve the alias first, then apply where and exclude to
+    /// its canonical core status": an alias whose canonical identifier the
+    /// filter excludes resolves outside the field's domain, which is
+    /// `error.reference.kind` too. An alias chain that does not reach a core
+    /// identifier is already reported at its DEFINE.
+    fn domain_value(
+        &mut self,
+        block: &str,
+        field_key: &str,
+        domain_name: &str,
+        ident: &lcl_parser::syntax::Ident,
+    ) {
+        let grammar = self.resolver.grammar();
+        let Some(domain) = grammar.identifier_domain(domain_name) else {
+            return;
+        };
+        let Some(kind) = domain.defined_kind.clone() else {
+            return;
+        };
+        let text = ident.text.as_str();
+        if domain.members.contains(text) || grammar.is_reserved_namespace(text) {
+            return;
+        }
+        let qualified = self.path.qualify(text).qualified();
+        let Some(&index) = self.resolved.declarations.by_qualified(&qualified).first() else {
+            if !self.namespace_failed(text) {
+                self.emitter.emit(
+                    self.raw,
+                    ResolutionError::ReferenceUnresolved,
+                    &self.path.unit,
+                    ident.span,
+                    &format!("domain-unresolved:{qualified}"),
+                    format!(
+                        "`{text}` is neither a registered {domain_name} nor the ID of a DEFINE of \
+                         {kind}, as {block}.{field_key} requires"
+                    ),
+                );
+            }
+            return;
+        };
+        let declaration = self
+            .resolved
+            .declarations
+            .get(index)
+            .expect("index came from the index");
+        if declaration.block != "DEFINE" || declaration.definition_kind.as_deref() != Some(&kind) {
+            let what = match declaration.definition_kind.as_deref() {
+                Some(other) if declaration.block == "DEFINE" => format!("DEFINE of {other}"),
+                _ => declaration.block.clone(),
+            };
+            self.emitter.emit(
+                self.raw,
+                ResolutionError::ReferenceKind,
+                &self.path.unit,
+                ident.span,
+                &format!("domain-kind:{qualified}"),
+                format!(
+                    "`{text}` resolves to a {what}, but {block}.{field_key} accepts a registered \
+                     {domain_name} or a DEFINE of {kind}"
+                ),
+            );
+            return;
+        }
+        if domain.filtered {
+            if let Some(canonical) = self.canonical_alias(index, &kind) {
+                if !domain.members.contains(&canonical) {
+                    self.emitter.emit(
+                        self.raw,
+                        ResolutionError::ReferenceKind,
+                        &self.path.unit,
+                        ident.span,
+                        &format!("domain-filter:{qualified}"),
+                        format!(
+                            "`{text}` is an alias of `{canonical}`, which is not a \
+                             {domain_name}, as {block}.{field_key} requires"
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
+    /// The canonical core identifier a DEFINE alias of `kind` resolves to, or
+    /// `None` when its `BASE` chain does not reach one (reported at the DEFINE
+    /// by [`check_alias_chains`]).
+    fn canonical_alias(&self, index: usize, kind: &str) -> Option<String> {
+        let core = self.resolver.rules().alias_domain(kind)?;
+        let mut seen = BTreeSet::new();
+        let mut at = index;
+        loop {
+            if !seen.insert(at) {
+                return None;
+            }
+            let declaration = self.resolved.declarations.get(at)?;
+            if declaration.block != "DEFINE" || declaration.definition_kind.as_deref() != Some(kind)
+            {
+                return None;
+            }
+            let (base, _) = declaration.base_identifier.clone()?;
+            if core.contains(&base) {
+                return Some(base);
+            }
+            let prefixes = &declaration.id.namespace_path;
+            let qualified = if prefixes.is_empty() {
+                base
+            } else {
+                format!("{}.{base}", prefixes.join("."))
+            };
+            at = *self
+                .resolved
+                .declarations
+                .by_qualified(&qualified)
+                .first()?;
+        }
     }
 
     /// `operation_identifier`: "A core_operation_ids member or the identifier

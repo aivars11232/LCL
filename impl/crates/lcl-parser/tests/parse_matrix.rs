@@ -278,7 +278,18 @@ fn minimal_block(g: &Grammar, block: &str, indent: usize, depth: usize) -> Optio
             wrote = true;
             continue;
         }
-        let value = value_for(field.forms)?;
+        // A `qualified_identifier(DOMAIN)` field admits a registered member
+        // (C03-AUDIT-02); any other identifier would be a field-type error.
+        let member = field
+            .value_kind
+            .strip_prefix("qualified_identifier(")
+            .and_then(|rest| rest.strip_suffix(')'))
+            .and_then(|domain| g.identifier_domain(domain))
+            .and_then(|domain| domain.members.iter().next().cloned());
+        let value = match member {
+            Some(member) => member,
+            None => value_for(field.forms)?.to_string(),
+        };
         out.push_str(&format!("{inner}{}: {value}\n", field.name));
         wrote = true;
     }

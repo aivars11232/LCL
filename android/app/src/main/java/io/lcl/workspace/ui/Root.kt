@@ -57,7 +57,15 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
     val settings by container.settings.collectAsState()
     val connection by container.connection.state.collectAsState()
     var screen by remember {
-        mutableStateOf<Screen>(if (container.pcs.activeId() != null) Screen.Workspace else Screen.Home)
+        // A pairing still running (the activity was recreated mid-attempt)
+        // comes back on its own screen.
+        mutableStateOf<Screen>(
+            when {
+                container.pairing.active -> Screen.Pair
+                container.pcs.activeId() != null -> Screen.Workspace
+                else -> Screen.Home
+            },
+        )
     }
     val snackbar = remember { SnackbarHostState() }
     // The two top-level tabs. Switching never touches the connection or the

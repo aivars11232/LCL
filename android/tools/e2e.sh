@@ -452,6 +452,16 @@ PY7
 "$remote" pending --json >"$out/pending-after-a12.json"
 check "no pairing request is left waiting after pairing again" python3 -c 'import json,sys; assert [r for r in json.load(open(sys.argv[1]))["requests"] if r.get("status") == "pending"] == []' "$out/pending-after-a12.json"
 
+# 12. C03-AUDIT-03: a pairing continues while the Manual tab is open — the PC
+# approves while the phone shows the Manual, and the pairing completes.
+"$remote" pair --address "$address" --json >"$out/pair-manual.json"
+phase p13_pairing_continues_while_the_manual_is_open -e link "'$(payload "$out/pair-manual.json")'" &
+waiting=$!
+decide_on_pc approve PENDING_P13
+wait "$waiting"
+"$remote" devices --json >"$out/devices-after-p13.json"
+check "the pairing approved while the Manual was open is the one trusted device" python3 -c 'import json,sys; assert len([d for d in json.load(open(sys.argv[1]))["devices"] if not d["revoked_at"]]) == 1' "$out/devices-after-p13.json"
+
 no_lcl_failures
 "$adb" shell settings put global hide_error_dialogs 0
 log "all phases passed; results in $out"

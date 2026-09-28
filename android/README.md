@@ -73,7 +73,7 @@ ignored by Git.
 |---|---|
 | Application id | `io.lcl.workspace` |
 | minSdk / targetSdk / compileSdk | 29 / 36 / 37 |
-| UI | Kotlin, Jetpack Compose, Material 3 — no WebView anywhere |
+| UI | Kotlin, Jetpack Compose, Material 3. The app, its screens and the editor are native Compose. The one WebView is the offline Users Manual tab: it shows only the manual packaged in the app (`assets/manual/`, the same snapshot and viewer the desktop workspace serves), loads no network or remote content, refuses every navigation away from that page, and exposes to the page only the snapshot and the reader's position. It does no LCL parsing or running; the manual is documentation only. |
 | Networking | `javax.net.ssl` TLS 1.3 sockets (Conscrypt), no HTTP stack |
 | QR scanning | ZXing (`zxing-android-embedded`), camera permission asked on use |
 

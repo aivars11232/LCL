@@ -31,6 +31,13 @@ data class ProjectInfo(val id: String, val name: String, val root: String, val i
 /** One listed file or folder, and the SPECIFICATION KIND the PC's engine read in the file. */
 data class TreeEntry(val id: String, val directory: Boolean, val kind: String? = null)
 
+/**
+ * The exact starting text the PC would write for a new file of [role] named
+ * [path], and its SHA-256. Creation sends [digest] back, and the PC creates
+ * the file only if it would still write exactly this text.
+ */
+data class ScaffoldPreview(val path: String, val role: String, val mode: String, val text: String, val digest: String)
+
 /** A file role the PC's Core 0.3.0 engine defines. */
 data class RoleInfo(val role: String, val label: String)
 
@@ -415,15 +422,34 @@ class WorkspaceController(
     }
 
     /**
+     * The PC's starting text for a new file of [role] called [name] (named as
+     * the PC will name it), or null when the PC refuses; the reason is said.
+     */
+    suspend fun previewScaffold(name: String, role: String, mode: String): ScaffoldPreview? {
+        val project = _ui.value.project ?: return null
+        val path = LclNames.defaultName(name, _ui.value.defaultEnding)
+        val reply = ask("scaffold", fields(project.id, "role" to role, "path" to path, "mode" to mode)) ?: return null
+        if (!reply.ok) {
+            say(reply.error ?: "No preview.")
+            return null
+        }
+        val text = reply.obj.str("text") ?: return null
+        val digest = reply.obj.str("digest") ?: return null
+        return ScaffoldPreview(path, role, mode, text, digest)
+    }
+
+    /**
      * Create [name]: blank, or — with [role] — a file of that role, whose text
      * the PC writes from its own scaffold (or the role's default Master) in
-     * [mode]. The app never holds a copy of a scaffold.
+     * [mode]. The app never holds a copy of a scaffold: it sends only the
+     * digest of the preview the person saw ([scaffoldDigest]), and the PC
+     * creates nothing when its text has changed since.
      */
-    fun create(name: String, role: String? = null, mode: String = "guided") {
+    fun create(name: String, role: String? = null, mode: String = "guided", scaffoldDigest: String? = null) {
         val project = _ui.value.project ?: return
         scope.launch {
             val request = if (role != null) {
-                fields(project.id, "name" to name, "role" to role, "mode" to mode)
+                fields(project.id, "name" to name, "role" to role, "mode" to mode, "scaffold_digest" to scaffoldDigest)
             } else {
                 val seed = "LCL:\n    VERSION: \"0.1.0\"\n\nSPECIFICATION:\n    ID: example.new\n    NAME: \"New document\"\n" +
                     "    VERSION: \"1.0.0\"\n    KIND: kind.task\n    DOMAIN: \"general\"\n"

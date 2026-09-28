@@ -452,6 +452,30 @@ impl Routes {
                     Ok(planned) => planned.scaffold.text,
                     Err(refusal) => return refusal,
                 };
+                // Created only from the exact text the person previewed
+                // (`GET /api/scaffold` for this very name): a Master or
+                // default that changed in between, or another name, gives
+                // other bytes, and nothing is created (C03-AUDIT-04).
+                let digest = lcl_spec::sha256::hex_digest(scaffolded.as_bytes());
+                match request.param("scaffold_digest") {
+                    Some(previewed) if previewed == digest => {}
+                    Some(_) => {
+                        return Response::error(
+                            409,
+                            &format!(
+                                "the starting text of {id} changed since it was previewed (a \
+                                 template, a default or the name changed); nothing was created"
+                            ),
+                        )
+                    }
+                    None => {
+                        return Response::error(
+                            428,
+                            "a file created by role is created only from a preview: pass the \
+                             scaffold_digest GET /api/scaffold returned; nothing was created",
+                        )
+                    }
+                }
                 scaffolded.as_str()
             }
             None => match request.text() {

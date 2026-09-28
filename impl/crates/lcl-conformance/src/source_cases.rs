@@ -346,6 +346,17 @@ fn field_minimum(g: &Grammar, block: &str, name: &str) -> Result<String, String>
         .schema(block)
         .and_then(|s| s.field(name))
         .ok_or("missing field signature")?;
+    // A `qualified_identifier(DOMAIN)` field's smallest legal value is one of
+    // the domain's registered members: nothing else is admitted without a
+    // DEFINE (C03-AUDIT-02).
+    if let Some(domain) = identifier_domain(g, block, name) {
+        let member = domain
+            .members
+            .iter()
+            .next()
+            .ok_or("empty identifier domain")?;
+        return Ok(format!("{name}: {member}\n"));
+    }
     let candidates = [
         (FormSet::STRING, "\"0.1.0\""),
         (FormSet::INTEGER, "1"),
@@ -583,17 +594,17 @@ fn form_field(g: &Grammar, block: &str, name: &str, form: &str) -> Result<String
     };
     Ok(format!("{name}: {value}\n"))
 }
-/// The registered members of the closed domain a field's value kind names.
-fn closed_domain<'g>(
+/// The `qualified_identifier(DOMAIN)` contract a field's value kind names.
+fn identifier_domain<'g>(
     g: &'g Grammar,
     block: &str,
     name: &str,
-) -> Option<&'g std::collections::BTreeSet<String>> {
+) -> Option<&'g lcl_parser::grammar::IdentifierDomain> {
     let kind = &g.schema(block)?.field(name)?.value_kind;
     let domain = kind
         .strip_prefix("qualified_identifier(")?
         .strip_suffix(')')?;
-    g.closed_domain_members(domain)
+    g.identifier_domain(domain)
 }
 fn field_form_cases(spec: &SpecPackage) -> Result<Vec<SourceCase>, String> {
     let grammar = Grammar::load(spec).map_err(|e| e.to_string())?;
@@ -613,16 +624,22 @@ fn field_form_cases(spec: &SpecPackage) -> Result<Vec<SourceCase>, String> {
             let mut fields = field_context(&grammar, block, name)?;
             let mut value = form_field(&grammar, block, name, form)?;
             let mut expectation = Expectation::SourcePass(Reached::Grammar);
-            // Owner decision 4 (2026-09-26): a closed domain admits only its
-            // registered members. The qualified form is shown with one; no
-            // member has the simple form, so that form is rejected.
-            if let Some(members) = closed_domain(&grammar, block, name) {
+            // A `qualified_identifier(DOMAIN)` field (owner decision 4,
+            // 2026-09-26, generalized by C03-AUDIT-02): the qualified form is
+            // shown with a registered member. A static domain admits only its
+            // members, none of which has the simple form, so that form is
+            // rejected here; a domain with `defined_kind` may also name a
+            // one-segment DEFINE, which resolution decides.
+            if let Some(domain) = identifier_domain(&grammar, block, name) {
                 match form {
                     "qualified" => {
-                        let member = members.iter().next().ok_or("empty closed domain")?;
+                        let member = domain.members.iter().next().ok_or("empty domain")?;
                         value = format!("{name}: {member}\n");
                     }
-                    "simple" if members.iter().all(|m| m.contains('.')) => {
+                    "simple"
+                        if domain.defined_kind.is_none()
+                            && domain.members.iter().all(|m| m.contains('.')) =>
+                    {
                         expectation = Expectation::Rejects("error.field.type".into());
                     }
                     _ => {}

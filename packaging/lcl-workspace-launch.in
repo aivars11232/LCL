@@ -1,11 +1,13 @@
 #!/bin/sh
 # The installed desktop launcher for the LCL workspace.
 #
-# install.sh substitutes @BIN@, @SPEC@, @LOCALIZED_SPEC@ and @DEFAULT_PROJECT@
-# with absolute installed paths, each as one single-quoted shell word so that
-# no character of a path is read as shell syntax, and writes the result to
-# $XDG_BIN_HOME/lcl-workspace-launch. @LOCALIZED_SPEC@ is empty unless the
-# installed payload carried the Core 0.2.0 package.
+# install.sh substitutes @BIN@, @SPEC@, @LOCALIZED_SPEC@, @PROJECT_SPEC@ and
+# @DEFAULT_PROJECT@ with absolute installed paths, each as one single-quoted
+# shell word so that no character of a path is read as shell syntax, and writes
+# the result to $XDG_BIN_HOME/lcl-workspace-launch. @LOCALIZED_SPEC@ is empty
+# unless the installed payload carried the Core 0.2.0 package, and
+# @PROJECT_SPEC@ unless it carried the Core 0.3.0 package, which the workspace
+# then receives as --project-spec.
 # The desktop entry's Exec line names this script, not the binary.
 #
 # ## Why a script exists at all

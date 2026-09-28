@@ -42,7 +42,9 @@ systemctl --user enable --now lcl-remote
 
 or in a terminal: `lcl-remote serve`. It needs the specification packages the
 LCL installer put in `~/.local/share/lcl` (or `--spec`, `--localized-spec`,
-`LCL_SPEC`, `LCL_LOCALIZED_SPEC`).
+`--project-spec`, `LCL_SPEC`, `LCL_LOCALIZED_SPEC`, `LCL_PROJECT_SPEC`); the
+Core 0.3.0 package is what gives a phone file roles, scaffolds and project
+readiness.
 
 It listens on `0.0.0.0:47300` (TCP) for devices and answers discovery on UDP
 port 47301. A firewall must let the phone's network reach those ports.
@@ -57,7 +59,7 @@ builds it from this source tree. Building needs Rust 1.89 or newer.
 ## Commands
 
 ```
-lcl-remote serve [--spec PATH] [--localized-spec PATH] [--listen ADDR] [--port PORT] [--no-discovery]
+lcl-remote serve [--spec PATH] [--localized-spec PATH] [--project-spec PATH] [--listen ADDR] [--port PORT] [--no-discovery]
 lcl-remote pair [--address HOST:PORT]... [--minutes N] [--json]
 lcl-remote pending [--json]
 lcl-remote approve REQUEST-ID
@@ -262,7 +264,7 @@ workspace's routes do; `body` is the route's JSON.
 | `open` | `project`, `document` | `GET /api/document`; the document is then watched for changes |
 | `close` | `project`, `document` | stops watching it |
 | `save` | `project`, `document`, `base`, `text` | writes only if the file on disk still has digest `base`; otherwise `409` with the PC's current `text` and `digest`, and nothing written |
-| `create` | `project`, `name`, and either `text` or `role` (with optional `mode`, `master`, `source`) | `POST /api/document`; with `role` the PC writes that role's scaffold or Master and no text is sent |
+| `create` | `project`, `name`, and either `text` or `role` with `scaffold_digest` (and optional `mode`, `master`, `source`) | `POST /api/document`; with `role` the PC writes that role's scaffold or Master and no text is sent — only if it is still exactly the text `scaffold` returned for that name (`scaffold_digest`; 409 when it changed, 428 when missing) |
 | `roles` | `project` | `GET /api/roles`: the file roles of the PC's Core 0.3.0 engine |
 | `scaffold` | `project`, `role`, `path` (optional `mode`, `master`, `source`) | `GET /api/scaffold`: a new file's exact text and marks, written nowhere |
 | `project` | `project`, `entry` | `GET /api/project/status`: the engine's `validate` report for the entry on disk; its `project` member is the readiness record |

@@ -229,7 +229,10 @@ fn every_role_creates_its_own_scaffold_and_the_file_is_the_preview() {
             let reply = request(
                 &running,
                 "POST",
-                &format!("/api/document?id={stem}_{mode}&role={role}&mode={mode}&source=canonical"),
+                &format!(
+                    "/api/document?id={stem}_{mode}&role={role}&mode={mode}&source=canonical&scaffold_digest={}",
+                    text(&preview, "digest")
+                ),
                 "",
             );
             assert_eq!(reply.status, 200, "{role} {mode}: {}", reply.body);
@@ -277,7 +280,10 @@ fn slot_marks_are_the_engines_and_follow_the_text() {
     let reply = request(
         &running,
         "POST",
-        "/api/document?id=house&role=kind.part.rules&mode=minimal&source=canonical",
+        &format!(
+            "/api/document?id=house&role=kind.part.rules&mode=minimal&source=canonical&scaffold_digest={}",
+            preview_digest(&running, "role=kind.part.rules&mode=minimal&source=canonical&path=house.lcl")
+        ),
         "",
     );
     assert_eq!(reply.status, 200, "{}", reply.body);
@@ -333,6 +339,99 @@ fn slot_marks_are_the_engines_and_follow_the_text() {
         .and_then(Json::as_array)
         .unwrap()
         .is_empty());
+}
+
+/// The digest `GET /api/scaffold` returns for `query`: what a person saw.
+fn preview_digest(running: &Running, query: &str) -> String {
+    let preview = request(running, "GET", &format!("/api/scaffold?{query}"), "");
+    assert_eq!(preview.status, 200, "{}", preview.body);
+    text(&json(&preview), "digest").to_string()
+}
+
+/// C03-AUDIT-04: a file of a role is created only from the exact scaffold the
+/// person previewed; anything else creates nothing.
+#[test]
+fn a_role_file_is_created_only_from_the_scaffold_that_was_previewed() {
+    let (project, _config, running) = serve("scaffold-binding");
+    let create = |id: &str, extra: &str, digest: Option<&str>| {
+        let digest = digest.map_or(String::new(), |d| format!("&scaffold_digest={d}"));
+        request(
+            &running,
+            "POST",
+            &format!("/api/document?id={id}&role=kind.part.rules{extra}{digest}"),
+            "",
+        )
+    };
+
+    // Canonical preview, unchanged: created, and the file is the preview.
+    let canonical = preview_digest(&running, "role=kind.part.rules&mode=guided&path=a.lcl");
+    let reply = create("a", "&mode=guided", Some(&canonical));
+    assert_eq!(reply.status, 200, "{}", reply.body);
+    assert_eq!(
+        digest(&std::fs::read(project.join("a.lcl")).unwrap()),
+        canonical
+    );
+
+    // No preview: 428, nothing written.
+    let reply = create("b", "&mode=guided", None);
+    assert_eq!(reply.status, 428, "{}", reply.body);
+    assert!(!project.join("b.lcl").exists());
+
+    // Another name makes another scaffold: the old preview is refused.
+    let reply = create("c", "&mode=guided", Some(&canonical));
+    assert_eq!(reply.status, 409, "{}", reply.body);
+    assert!(!project.join("c.lcl").exists());
+
+    // A Master, previewed and unchanged: created.
+    let starter = json(&request(
+        &running,
+        "GET",
+        "/api/master/starter?role=kind.part.rules&mode=minimal",
+        "",
+    ));
+    let master = text(&starter, "json").replace("\"my-rules\"", "\"house\"");
+    assert_eq!(
+        request(&running, "PUT", "/api/master?create=1", &master).status,
+        200
+    );
+    let seen = preview_digest(&running, "role=kind.part.rules&master=house&path=d.lcl");
+    let reply = create("d", "&master=house", Some(&seen));
+    assert_eq!(reply.status, 200, "{}", reply.body);
+
+    // The Master edited between preview and Create: 409, nothing written.
+    let seen = preview_digest(&running, "role=kind.part.rules&master=house&path=e.lcl");
+    let edited = master
+        .replace("\"name\": \"My Rules\"", "\"name\": \"Edited\"")
+        .replace(
+            "KIND: kind.part.rules\\n",
+            "KIND: kind.part.rules\\nCOMMENT:\\n    CONTENT: \\\"edited\\\"\\n",
+        );
+    assert_ne!(edited, master, "the edit must change the Master's text");
+    let reply = request(&running, "PUT", "/api/master?replace=house", &edited);
+    assert_eq!(reply.status, 200, "{}", reply.body);
+    let reply = create("e", "&master=house", Some(&seen));
+    assert_eq!(reply.status, 409, "{}", reply.body);
+    assert!(!project.join("e.lcl").exists());
+
+    // The role's default changed between preview and Create: 409.
+    let seen = preview_digest(
+        &running,
+        "role=kind.part.rules&source=default&mode=guided&path=f.lcl",
+    );
+    let reply = request(
+        &running,
+        "PUT",
+        "/api/masters/default?role=kind.part.rules&id=house",
+        "",
+    );
+    assert_eq!(reply.status, 200, "{}", reply.body);
+    let reply = create("f", "&source=default&mode=guided", Some(&seen));
+    assert_eq!(reply.status, 409, "{}", reply.body);
+    assert!(!project.join("f.lcl").exists());
+
+    // A blank file needs no scaffold digest.
+    let reply = request(&running, "POST", "/api/document?id=g", "LCL:\n");
+    assert_eq!(reply.status, 200, "{}", reply.body);
 }
 
 // --------------------------------------------------------------- projects
@@ -525,7 +624,10 @@ fn masters_are_validated_copied_and_never_linked() {
     let reply = request(
         &running,
         "POST",
-        "/api/document?id=rules&role=kind.part.rules",
+        &format!(
+            "/api/document?id=rules&role=kind.part.rules&scaffold_digest={}",
+            preview_digest(&running, "role=kind.part.rules&path=rules.lcl")
+        ),
         "",
     );
     assert_eq!(reply.status, 200, "{}", reply.body);

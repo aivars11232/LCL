@@ -689,12 +689,14 @@ impl Session {
                 "create" => {
                     let name = need(param("name"), "a name")?;
                     // With a role, the PC writes the role's scaffold or Master
-                    // and the phone sends no text.
+                    // and the phone sends no text — only the digest of the
+                    // scaffold it obtained with `scaffold`, which the PC
+                    // requires to be the text it would write now.
                     let mut query = vec![("id", name)];
                     let body = match param("role") {
                         Some(role) => {
                             query.push(("role", role.to_string()));
-                            for key in ["mode", "master", "source"] {
+                            for key in ["mode", "master", "source", "scaffold_digest"] {
                                 if let Some(value) = param(key) {
                                     query.push((key, value.to_string()));
                                 }

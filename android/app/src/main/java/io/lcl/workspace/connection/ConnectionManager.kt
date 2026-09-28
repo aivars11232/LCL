@@ -258,7 +258,12 @@ class ConnectionManager(
         return IdentityConflictException(known.name)
     }
 
-    suspend fun pair(link: PairingLink, deviceName: String, onPending: (PendingPairing) -> Unit = {}): Result<PcRecord> {
+    suspend fun pair(
+        link: PairingLink,
+        deviceName: String,
+        onApproved: () -> Unit = {},
+        onPending: (PendingPairing) -> Unit = {},
+    ): Result<PcRecord> {
         if (link.isExpired(now())) {
             return Result.failure(RemoteException("This QR code has expired. Show a new one on the PC."))
         }
@@ -324,6 +329,7 @@ class ConnectionManager(
                                 runCatching { opened.session.close() }
                                 return failed(conflict.message ?: "")
                             }
+                            onApproved()
                             val device = opened.paired?.obj("device")
                             val pcInfo = opened.session.welcome.obj("pc")
                             val previous = store.get(link.pcId)

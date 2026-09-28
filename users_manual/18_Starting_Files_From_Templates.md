@@ -31,6 +31,14 @@ kind is the file's *role*. There are eight:
 | Checks | `kind.part.checks` | `VALIDATE`, `VERIFY`, `TEST`, `SUCCESS` and the like |
 | Definitions | `kind.part.definitions` | `DEFINE` declarations |
 
+**New document** also offers four narrower kinds. Each is a file of one of
+these roles with a starting structure of its own: *Contracts* (a Rules file:
+what the result must guarantee, `REQUIRE`, and keep unchanged, `PRESERVE`),
+*Bindings* (a Definitions file: named fixed values, `DEFINE` with
+`KIND: kind.constant`), *Usage* (a Description file: how the project is used,
+`COMMENT` and `EXAMPLE`) and *Stop Conditions* (a Checks file: when work must
+stop, `FAILURE` with `WHEN` and `STATUS`).
+
 A file of one role may only contain the blocks that role allows; the
 specification lists them, and a file that breaks the list is rejected. When
 you create a file by role, LCL starts it with the structure of that role
@@ -364,7 +372,10 @@ A Master is a small JSON file:
 * `id` names the file: lowercase letters, digits, `_` and `-`.
 * `name` is what you see in lists.
 * `core` is the one LCL version the Master is for.
-* `role` is one of the eight roles.
+* `role` is one of the eight roles. `type`, which may be left out, names a
+  narrower kind of that role: `contracts`, `bindings`, `usage` or
+  `stop_conditions`. Such a Master is offered, and can be the default, only
+  for that kind.
 * `text` is the new file's exact text. It may contain slots.
 
 Masters live in `~/.config/lcl/masters/` (or `$XDG_CONFIG_HOME/lcl/masters/`),

@@ -26,8 +26,12 @@ shown at the top.
 ## 19.2 New Project
 
 1. Click **⊞ New project** at the top of the Project panel.
-2. Type a **Folder** name, for example `shop`. The project is created in that
-   folder inside the Workspace's folder.
+2. Type a **Project name**, for example `Shop`: letters, digits, `_`, `-` and
+   `.`. The project is a new folder of that name in your **Projects folder**
+   (Settings, see Chapter 2), and the dialog shows its full path. A name that
+   is already taken is refused and the existing folder is not touched. If the
+   window shows another folder, creating the project opens the Projects
+   folder in it.
 3. **LCL Core version** shows 0.3.0, the version projects need.
 4. **Start from**: *Default (Guided)* is right for a first project. *Canonical*
    always uses LCL's own starting structure; a project Master of your own
@@ -36,9 +40,13 @@ shown at the top.
    text. Nothing has been written yet.
 6. Click **Create**. All the files are written, or none are.
 
-The Guided project has four files: `main.lcl` (the entry, which lists the
-other files as `PART`s), `description.lcl`, `rules.lcl` and `task.lcl`. The
-project opens on `main.lcl`, and the **Project readiness** panel under the
+A new project has one file of each kind, each in its own folder:
+`description/`, `context/`, `definitions/`, `rules/`, `contracts/`,
+`bindings/`, `usage/`, `stop_conditions/`, `tasks/` (`task_001`), `checks/`,
+`data/` and `output/`, with the entry `main.lcl` beside them. Every name ends
+with the default file type from Settings, so with `.lcl.txt` the entry is
+`main.lcl.txt`. The entry lists the files as `PART`s in that order, which is
+the order they are read in. The project opens on the entry, and the **Project readiness** panel under the
 file list shows every file of the project and whether it is ready.
 
 ## 19.3 Fill in Description, Rules and Task
@@ -47,17 +55,20 @@ Each new file is a structure with empty fields, called *slots*. A slot is a
 field with nothing after its colon, such as `NAME:`. The file cannot run
 until every slot is filled in — or, for an optional one, deleted.
 
-1. Open `description.lcl` and fill its slots: a `NAME` in quotes and the
+1. Open `description/description.lcl` and fill its slots: a `NAME` in quotes and the
    `VERSION`. Every file of one project declares the same `SPECIFICATION`
    `VERSION`, for example `"1.0.0"`.
-2. Open `rules.lcl` and fill its slots the same way, then write the rules the
+2. Open `rules/rules.lcl` and fill its slots the same way, then write the rules the
    task must follow (see [Chapter 12](12_Rules_Authority_and_Conflicts.md)).
-3. Open `task.lcl`, fill its header slots, and write the task itself: its
+3. Open `tasks/task_001.lcl`, fill its header slots, and write the task itself: its
    `TASK`, and the `ACTION`s, `OUTPUT`s and checks it needs (Chapters 3 to 10).
 4. Back in `main.lcl`, fill its header and the `EXECUTE` `REFERENCE`: the ID
    of the task to run, written `REF(task.something)`.
+5. Fill the slots of the other files the same way, or delete a slot that is
+   optional. A file the project does not need can be deleted together with
+   its `PART` in `main.lcl`.
 
-The files share one set of IDs, so `task.lcl` can name a rule or a value
+The files share one set of IDs, so `tasks/task_001.lcl` can name a rule or a value
 declared in another file with a plain `REF(...)`.
 
 ## 19.4 Check, fix, Validate, Run
@@ -81,8 +92,9 @@ straight from the PC.
 ## 19.5 More files by role
 
 The **+** button makes one new file. Under **Kind of file**, choose *Blank
-LCL file*, or a role — Task, Description, Rules, Context, Data, Output,
-Checks or Definitions — and under **Start from** the default, a canonical
+LCL file*, or one of the twelve kinds — Description, Context, Definitions,
+Rules, Contracts, Bindings, Usage, Stop Conditions, Task, Checks, Data or
+Output — and under **Start from** the default, a canonical
 structure or one of your Masters. The dialog shows the exact text first. To
 make the new file part of the project, add a `PART` for it to `main.lcl`.
 

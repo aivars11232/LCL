@@ -277,8 +277,9 @@ Using it:
   changes every time the workspace starts unless you give it a fixed `--port`
   (see Chapter 17), so otherwise a new start begins with their defaults.
   **Files** chooses the **default file type** for new documents and the
-  **default workspace location**: the folder that **LCL Workspace** opens
-  when you start it from the desktop menu. These two are kept for your
+  **Projects folder**: where **New project** creates every new project, each
+  in a folder of its own, and the folder that **LCL Workspace** opens when you
+  start it from the desktop menu; **Open folder** shows it in the open window. These two are kept for your
   computer, in `~/.config/lcl/workspace-settings.json`, so they apply to every
   launch. Type the folder's full path, starting with `/`. **Check** tells you
   whether it exists, and a missing folder is only created if you press

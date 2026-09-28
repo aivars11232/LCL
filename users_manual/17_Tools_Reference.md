@@ -141,7 +141,7 @@ browser.
 | `--spec <PATH>` | the specification package (else `LCL_SPEC`, else the project file) |
 | `--localized-spec <PATH>`, `--profile <FILE>` | for localized documents |
 | `--project-spec <PATH>` | the Core 0.3.0 package, for multi-file projects and file roles (else `LCL_PROJECT_SPEC`, else the project file's `project_spec`); the desktop launcher passes the installed one |
-| `--default-project <PATH>` | the folder to open when neither `PROJECT` nor `--document` is given: the default workspace chosen in Settings if that folder exists, otherwise `PATH` (the desktop launcher passes its built-in folder here) |
+| `--default-project <PATH>` | the folder to open when neither `PROJECT` nor `--document` is given: the Projects folder chosen in Settings if that folder exists, otherwise `PATH` (the desktop launcher passes its built-in folder here) |
 | `--create` | create a project here before opening it |
 | `--port <PORT>` | use this port instead of a random one |
 | `--open` | open the printed address in the browser |
@@ -165,7 +165,7 @@ The ⚙ **Settings** button sets two kinds of setting:
 | Setting | Where it is kept |
 |---|---|
 | theme, editor font size, line numbers | in your browser, per address. The address includes the port: a workspace started again with the same `--port` finds them, and one started on a random port (the default, and every menu launch) begins with the defaults |
-| default file type, default workspace location | for your computer, in `$XDG_CONFIG_HOME/lcl/workspace-settings.json`, which is `~/.config/lcl/workspace-settings.json` unless you set `XDG_CONFIG_HOME` |
+| default file type, Projects folder | for your computer, in `$XDG_CONFIG_HOME/lcl/workspace-settings.json`, which is `~/.config/lcl/workspace-settings.json` unless you set `XDG_CONFIG_HOME` |
 
 None of them is ever written into a document or a project file, and none
 changes what a document means or how it runs.
@@ -181,8 +181,8 @@ then **Approve device**) only if that code is the one the phone shows, and
 itself, not by the workspace; see `remote/README.md` in the source.
 
 After `install.sh`, the desktop menu has an **LCL Workspace** entry, and
-`.lcl` files can be opened with it. A menu launch opens the default workspace
-location chosen in Settings, or `~/.local/share/lcl/workspace` when none is
+`.lcl` files can be opened with it. A menu launch opens the Projects folder
+chosen in Settings, or `~/.local/share/lcl/workspace` when none is
 chosen or the chosen folder no longer exists. In that last case the page
 says why. Opening a document from your file manager, or starting
 `lcl-workspace` with a folder, always wins over the default. Menu launches

@@ -108,9 +108,16 @@ you would update it by hand once.
 
 * your projects and the files in them;
 * `~/.config/lcl` — your settings and your Master templates;
-* `~/.local/state/lcl` — the remote service's pairings, including this PC's
-  identity and the phones it trusts;
+* the remote service's pairing and identity records in `~/.local/state/lcl`
+  — this PC's identity and the phones it trusts. Updating does not change
+  them;
 * on the phone, the app's data: paired PCs, keys and settings.
+
+The updater does keep its own records, in `~/.local/state/lcl/update/`: what
+the last check found, the signed manifest of the update it found, its lock and
+its installation log. It writes there whenever LCL checks for or installs an
+update, so `~/.local/state/lcl` as a whole is not left untouched; only the
+pairing and identity records beside `update/` are.
 
 Uninstalling is a different operation (Chapter 2); an update never removes
 anything of yours.

@@ -421,6 +421,89 @@ class RemoteEndToEndTest {
         waitForLabel("Connected")
     }
 
+    /**
+     * Update System V1, first half: the installed app finds a newer release on
+     * the test release server, verifies its signed manifest and its APK, asks
+     * for permission to install apps, and hands the APK to Android, whose own
+     * confirmation then shows. The host confirms it; p16 runs on the result.
+     */
+    @Test
+    fun p15_an_update_is_found_verified_and_handed_to_android() {
+        waitForLabel("Connected")
+        ready("P15_PCS ${sha256(pairingIdentity())}")
+        ready("P15_KEYS ${deviceKeys().size}")
+        goHome()
+        rule.onNodeWithTag("home_updates").performScrollTo().performClick()
+        waitFor("update_check")
+        rule.onNodeWithTag("update_check").performClick()
+        updateWait("p15_not_found", "the update is found", 60_000) { textOf("update_state").contains("Update available") }
+        assertTrue(textOf("update_notes"), textOf("update_notes").contains("E2E release"))
+        shot("p15_01_update_available")
+        rule.onNodeWithTag("update_now").performClick()
+        updateWait("p15_not_verified", "the update is verified", 120_000) { exists("update_allow") }
+        shot("p15_02_verified_needs_permission")
+        ready("P15_NEEDS_PERMISSION")
+        rule.waitUntil("permission to install apps", 120_000) {
+            instrumentation.targetContext.packageManager.canRequestPackageInstalls()
+        }
+        // Back from the setting: the screen resumes the verified update.
+        back()
+        rule.onNodeWithTag("home_updates").performScrollTo().performClick()
+        // Android's confirmation is a window of its own over this app, so it is
+        // waited for through the app's update state, not this screen's text.
+        val updates = (instrumentation.targetContext.applicationContext as LclApplication).container.updates
+        updateWait("p15_no_confirmation", "Android's confirmation", 60_000) { updates.ui.value.waitingForConfirmation }
+        shot("p15_03_android_confirms")
+        ready("P15_CONFIRMING")
+    }
+
+    /**
+     * Update System V1, second half, on the updated app: it is 0.2.0 (3),
+     * installed in place — the same pairing, the same keys, connected again —
+     * and the release server now has nothing newer.
+     */
+    @Test
+    fun p16_the_update_installed_in_place_and_kept_the_pairing() {
+        val info = instrumentation.targetContext.packageManager.getPackageInfo(instrumentation.targetContext.packageName, 0)
+        assertEquals(3L, info.longVersionCode)
+        assertEquals("0.2.0", info.versionName)
+        assertEquals("the pairing records", arg("pcs"), sha256(pairingIdentity()))
+        assertEquals("this device's keys", arg("keys").toInt(), deviceKeys().size)
+        waitForLabel("Connected", 120_000)
+        goHome()
+        rule.onNodeWithTag("home_updates").performScrollTo().performClick()
+        waitFor("update_check")
+        rule.onNodeWithTag("update_check").performClick()
+        updateWait("p16_not_up_to_date", "up to date", 60_000) { textOf("update_state").contains("Up to date") }
+        shot("p16_01_up_to_date")
+    }
+
+    /** Wait on the Updates screen; on a timeout, record what it showed instead. */
+    private fun updateWait(name: String, what: String, timeout: Long, condition: () -> Boolean) {
+        try {
+            rule.waitUntil(what, timeout) { runCatching(condition).getOrDefault(false) }
+        } catch (e: Throwable) {
+            Log.i(TAG, "updates: ${runCatching { textOf("update_state") }.getOrDefault("?")} | ${runCatching { textOf("update_problem") }.getOrDefault("")}")
+            shot(name)
+            throw e
+        }
+    }
+
+    /**
+     * What each pairing is — the PC's id and fingerprint, this device's id,
+     * key alias, pairing time and retiring keys — without the bookkeeping
+     * every connection rewrites (last address, last connected).
+     */
+    private fun pairingIdentity(): String =
+        (kotlinx.serialization.json.Json.parseToJsonElement(pairedPcs() ?: "[]") as kotlinx.serialization.json.JsonArray)
+            .joinToString(";") { record ->
+                val fields = record as kotlinx.serialization.json.JsonObject
+                listOf("pc_id", "fingerprint", "device_id", "key_alias", "paired_at", "retiring").joinToString("|") { fields[it].toString() }
+            }
+
+    private fun sha256(text: String): String =
+        java.security.MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
+
     /** The system Back, as the gesture or the key delivers it. */
     private fun systemBack() {
         rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }

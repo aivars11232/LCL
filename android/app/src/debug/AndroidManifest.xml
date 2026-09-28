@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: the end-to-end update test serves a test release over
+     plain http from the emulator's host (10.0.2.2), and nothing else. A
+     release build has no such permission and no test server. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:networkSecurityConfig="@xml/lcl_debug_network" />
+</manifest>

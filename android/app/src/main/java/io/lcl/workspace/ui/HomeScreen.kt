@@ -58,8 +58,10 @@ fun HomeScreen(
     onOpenWorkspace: () -> Unit,
     onSettings: () -> Unit,
     onAbout: () -> Unit,
+    onUpdates: () -> Unit,
     onManual: () -> Unit,
 ) {
+    val update by container.updates.ui.collectAsState()
     var forgetting by remember { mutableStateOf<PcRecord?>(null) }
     val pcs by container.connection.records.collectAsState()
     val active = state.pcOrNull
@@ -122,6 +124,10 @@ fun HomeScreen(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = onSettings, Modifier.testTag("home_settings")) { Text("Settings") }
             OutlinedButton(onClick = onAbout, Modifier.testTag("home_about")) { Text("About") }
+            // An update waiting is shown here, and nowhere does it interrupt.
+            OutlinedButton(onClick = onUpdates, Modifier.testTag("home_updates")) {
+                Text(if (update.phase == io.lcl.workspace.update.Phase.Available) "Update available" else "Updates")
+            }
         }
         Spacer(Modifier.height(24.dp))
     }

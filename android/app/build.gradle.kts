@@ -12,6 +12,15 @@ fun secret(property: String, variable: String): String? =
 
 val releaseStore = secret("lclReleaseStoreFile", "LCL_RELEASE_STORE_FILE")
 
+// The update signing keys the app trusts: update/trusted_keys.txt, the same
+// list the PC updater is built with. Only public keys are there.
+fun keyLines(text: String) = text.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.joinToString("\\n")
+val trustedUpdateKeys = keyLines(rootProject.file("../update/trusted_keys.txt").readText())
+// A debug build may name a local test release server and test keys, for the
+// end-to-end update test; a release build never has either.
+val updateTestEndpoint = providers.gradleProperty("lclUpdateTestEndpoint").orNull ?: ""
+val updateTestKeys = providers.gradleProperty("lclUpdateTestKeys").orNull?.let { keyLines(file(it).readText()) } ?: ""
+
 val manualAssets: File = layout.buildDirectory.dir("generated/manual-assets").get().asFile
 val syncManual by tasks.registering(Sync::class) {
     from(rootProject.file("../users_manual")) { include("*.md", "MANIFEST.json") }
@@ -32,6 +41,7 @@ android {
         // tools/e2e.sh) set them without editing this file.
         versionCode = providers.gradleProperty("lclVersionCode").orNull?.toInt() ?: 1
         versionName = providers.gradleProperty("lclVersionName").orNull ?: "0.1.0"
+        buildConfigField("String", "UPDATE_TRUSTED_KEYS", "\"$trustedUpdateKeys\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -47,7 +57,13 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField("String", "UPDATE_TEST_ENDPOINT", "\"$updateTestEndpoint\"")
+            buildConfigField("String", "UPDATE_TEST_KEYS", "\"$updateTestKeys\"")
+        }
         release {
+            buildConfigField("String", "UPDATE_TEST_ENDPOINT", "\"\"")
+            buildConfigField("String", "UPDATE_TEST_KEYS", "\"\"")
             isMinifyEnabled = false
             if (releaseStore != null) signingConfig = signingConfigs.getByName("release")
         }

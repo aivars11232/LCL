@@ -8,6 +8,11 @@
     <!-- Scanning the pairing QR code. The scanner asks for it when used. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- Updating LCL in place: the verified APK is handed to Android's own
+         installer, which asks the person to confirm. Android grants this only
+         after the person allows LCL in "Install unknown apps". Nothing is
+         installed silently. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- allowBackup is off: a restored copy would hold pairing records whose
          keys stayed in the old phone's keystore. A new phone pairs afresh. -->
@@ -54,5 +59,10 @@
                 <data android:pathPattern=".*\\..*\\.lcl\\.txt" />
             </intent-filter>
         </activity>
+        <!-- The installer's answer about an update; only the installer's own
+             PendingIntent reaches it. -->
+        <receiver
+            android:name=".update.UpdateStatusReceiver"
+            android:exported="false" />
     </application>
 </manifest>

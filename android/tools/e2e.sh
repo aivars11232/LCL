@@ -70,6 +70,29 @@ stop_serve() {
 finish() {
     "$adb" pull /sdcard/Android/data/io.lcl.workspace/files/shots "$out/" >/dev/null 2>&1 || true
     stop_serve
+    kill "$(cat "$work/update-server.pid" 2>/dev/null)" 2>/dev/null || true
+}
+
+# Press a button of Android's own install confirmation, as a person would.
+confirm_install() {
+    local at
+    for _ in $(seq 60); do
+        "$adb" shell uiautomator dump /sdcard/lcl-ui.xml >/dev/null 2>&1 || true
+        at=$("$adb" shell cat /sdcard/lcl-ui.xml 2>/dev/null | python3 -c '
+import re, sys
+for node in re.findall(r"<node [^>]*>", sys.stdin.read()):
+    if re.search(r"text=\"(Update|UPDATE)\"", node) and "clickable=\"true\"" in node:
+        x1, y1, x2, y2 = map(int, re.search(r"bounds=\"\[(\d+),(\d+)\]\[(\d+),(\d+)\]\"", node).groups())
+        print((x1 + x2) // 2, (y1 + y2) // 2)
+        break
+')
+        if [ -n "$at" ]; then
+            "$adb" shell input tap $at
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
 }
 trap finish EXIT
 
@@ -171,8 +194,20 @@ log "work directory $work; service on port $port; device reaches it at $address"
 "$adb" wait-for-device
 wake
 
+# Update System V1: a throwaway update signing key, made for this run in its
+# own directory, and a local stand-in for GitHub Releases the emulator reaches
+# at 10.0.2.2. Every build of this run trusts that key and asks that server;
+# only debug builds can (a release build has neither).
+update_port=${E2E_UPDATE_PORT:-47320}
+update_root=$work/update-release
+mkdir -p "$update_root/api/releases" "$update_root/download/v0.2.0"
+openssl ecparam -name prime256v1 -genkey -noout -out "$work/update-test.key" 2>/dev/null
+printf 'e2e-test-key %s\n' "$(openssl pkey -in "$work/update-test.key" -pubout -outform DER | od -An -v -tx1 | tr -d ' \n')" \
+    >"$work/update-test-keys.txt"
+update_props="-PlclUpdateTestEndpoint=http://10.0.2.2:$update_port -PlclUpdateTestKeys=$work/update-test-keys.txt"
+
 log "building the app and its instrumented tests"
-(cd "$android" && ./gradlew --console=plain -q assembleDebug assembleDebugAndroidTest)
+(cd "$android" && ./gradlew --console=plain -q assembleDebug assembleDebugAndroidTest $update_props)
 # -d: an earlier run may have left the higher-versioned update build installed.
 "$adb" install -r -t -d "$android/app/build/outputs/apk/debug/app-debug.apk" >/dev/null
 "$adb" install -r -t -d "$android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk" >/dev/null
@@ -274,7 +309,7 @@ check "the refused identity asked the PC for nothing" python3 -c 'import json,sy
 # An update, as a person installs one: a newer build signed with the same key,
 # installed over the paired app. Phase 2 then proves the pairing and the key
 # survived it.
-(cd "$android" && ./gradlew --console=plain -q assembleDebug -PlclVersionCode=2 -PlclVersionName=0.1.0-update)
+(cd "$android" && ./gradlew --console=plain -q assembleDebug -PlclVersionCode=2 -PlclVersionName=0.1.0-update $update_props)
 "$adb" install -r "$android/app/build/outputs/apk/debug/app-debug.apk" >/dev/null
 check "a same-signed update (versionCode 2) installed over the paired app" \
     sh -c "'$adb' shell dumpsys package io.lcl.workspace | grep -q 'versionCode=2 '"
@@ -471,6 +506,74 @@ import json, sys
 trust = lambda path: sorted((d["id"], d["fingerprint"], d["revoked_at"]) for d in json.load(open(path))["devices"])
 assert trust(sys.argv[1]) == trust(sys.argv[2]), (trust(sys.argv[1]), trust(sys.argv[2]))
 PYN
+
+# 14. Update System V1, in place: version 0.2.0 (3), signed with the same
+# debug key as the installed app, is published on the local release server
+# with a manifest signed by this run's update key. The app finds it, verifies
+# it, and — once allowed to install apps — hands it to Android, whose own
+# confirmation is pressed here. The updated app keeps its pairing and keys.
+log "building the update: LCL 0.2.0 (3), same signing key"
+(cd "$android" && ./gradlew --console=plain -q assembleDebug -PlclVersionCode=3 -PlclVersionName=0.2.0 $update_props)
+build_tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+update_apk=$update_root/download/v0.2.0/lcl-android-0.2.0-3.apk
+cp "$android/app/build/outputs/apk/debug/app-debug.apk" "$update_apk"
+# One signing certificate, however this apksigner labels its schemes.
+update_signer=$("$build_tools/apksigner" verify --print-certs "$update_apk" |
+    sed -n 's/^.*certificate SHA-256 digest: \([0-9a-f]\{64\}\)$/\1/p' | sort -u)
+[ -n "$update_signer" ] && [ "$(printf '%s\n' "$update_signer" | wc -l)" -eq 1 ] ||
+    { log "FAIL: the update APK does not name exactly one signing certificate"; exit 1; }
+python3 - "$update_root" "$update_apk" "$update_signer" <<'PYUPDATE'
+import hashlib, json, os, sys
+root, apk, signer = sys.argv[1:]
+data = open(apk, "rb").read()
+manifest = {
+    "format": 1, "product": "lcl", "channel": "stable", "product_version": "0.2.0",
+    "release_tag": "v0.2.0", "source_commit": "0" * 40, "published_at": "2026-10-01T12:00:00Z",
+    "release_notes": "E2E release: the in-place update test.", "minimum_supported_version": "0.0.1",
+    "signing_key_id": "e2e-test-key",
+    "pc": {"artifact_name": "lcl-0.2.0-linux-x86_64.tar.gz", "size": 1, "sha256": "0" * 64,
+           "architecture": "x86_64-linux", "required_updater_version": 1},
+    "android": {"artifact_name": os.path.basename(apk), "size": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(), "application_id": "io.lcl.workspace",
+                "version_name": "0.2.0", "version_code": 3, "minimum_sdk": 29, "signer_sha256": signer},
+}
+open(os.path.join(root, "download/v0.2.0/update-manifest.json"), "w").write(json.dumps(manifest, indent=2) + "\n")
+PYUPDATE
+openssl dgst -sha256 -sign "$work/update-test.key" -out "$update_root/download/v0.2.0/update-manifest.sig" \
+    "$update_root/download/v0.2.0/update-manifest.json"
+python3 - "$update_root" <<'PYLISTING'
+import json, os, sys
+root = sys.argv[1]
+folder = os.path.join(root, "download/v0.2.0")
+assets = [{"name": n, "size": os.path.getsize(os.path.join(folder, n))} for n in sorted(os.listdir(folder))]
+listing = {"tag_name": "v0.2.0", "draft": False, "prerelease": False, "assets": assets}
+open(os.path.join(root, "api/releases/latest"), "w").write(json.dumps(listing) + "\n")
+PYLISTING
+python3 -m http.server "$update_port" --bind 127.0.0.1 --directory "$update_root" >>"$out/update-server.log" 2>&1 &
+echo $! >"$work/update-server.pid"
+"$adb" shell appops set io.lcl.workspace REQUEST_INSTALL_PACKAGES default
+phase p15_an_update_is_found_verified_and_handed_to_android &
+waiting=$!
+wait_log P15_NEEDS_PERMISSION 240
+log "phone: the update is verified and waits for permission to install apps; allowing it"
+"$adb" shell appops set io.lcl.workspace REQUEST_INSTALL_PACKAGES allow
+wait "$waiting"
+update_pcs=$(grep -o 'P15_PCS [0-9a-f]*' "$out"/*p15_*.log | tail -1 | cut -d' ' -f2)
+update_keys=$(grep -o 'P15_KEYS [0-9]*' "$out"/*p15_*.log | tail -1 | cut -d' ' -f2)
+check "Android's install confirmation was shown and pressed" confirm_install
+for _ in $(seq 120); do
+    "$adb" shell dumpsys package io.lcl.workspace | grep -q 'versionCode=3 ' && break
+    sleep 1
+done
+check "the app was updated in place to LCL 0.2.0 (3)" \
+    sh -c "'$adb' shell dumpsys package io.lcl.workspace | grep -q 'versionCode=3 '"
+phase p16_the_update_installed_in_place_and_kept_the_pairing -e pcs "$update_pcs" -e keys "$update_keys"
+"$remote" devices --json >"$out/devices-after-update.json"
+check "the update changed nothing the PC trusts" python3 - "$out/devices-after-p14.json" "$out/devices-after-update.json" <<'PYU'
+import json, sys
+trust = lambda path: sorted((d["id"], d["fingerprint"], d["revoked_at"]) for d in json.load(open(path))["devices"])
+assert trust(sys.argv[1]) == trust(sys.argv[2]), (trust(sys.argv[1]), trust(sys.argv[2]))
+PYU
 
 no_lcl_failures
 "$adb" shell settings put global hide_error_dialogs 0

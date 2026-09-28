@@ -49,6 +49,7 @@ sealed interface Screen {
     data object Workspace : Screen
     data object Settings : Screen
     data object About : Screen
+    data object Updates : Screen
     data class LocalDocument(val uri: Uri) : Screen
 }
 
@@ -112,6 +113,7 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
                             onOpenWorkspace = { screen = Screen.Workspace },
                             onSettings = { screen = Screen.Settings },
                             onAbout = { screen = Screen.About },
+                            onUpdates = { screen = Screen.Updates },
                             onManual = openManual,
                         )
                         Screen.Pair -> PairScreen(
@@ -129,6 +131,7 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
                         )
                         Screen.Settings -> SettingsScreen(settings, container::updateSettings, back)
                         Screen.About -> AboutScreen(container, connection, back)
+                        Screen.Updates -> UpdatesScreen(container, back)
                         is Screen.LocalDocument -> LocalDocumentScreen(container, current.uri, settings, back)
                     }
                     }
@@ -165,7 +168,7 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
  */
 fun backFrom(screen: Screen, pcInUse: Boolean): Screen? = when (screen) {
     Screen.Home -> null
-    Screen.Pair, Screen.Workspace -> Screen.Home
+    Screen.Pair, Screen.Workspace, Screen.Updates -> Screen.Home
     Screen.Settings, Screen.About, is Screen.LocalDocument ->
         if (pcInUse) Screen.Workspace else Screen.Home
 }

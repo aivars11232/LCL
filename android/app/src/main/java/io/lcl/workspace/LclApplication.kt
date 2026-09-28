@@ -12,6 +12,11 @@ import io.lcl.workspace.data.SettingsStore
 import io.lcl.workspace.remote.Discovery
 import io.lcl.workspace.remote.KeystoreIdentities
 import io.lcl.workspace.remote.TlsTransport
+import io.lcl.workspace.update.AndroidPackageFacts
+import io.lcl.workspace.update.GitHubReleases
+import io.lcl.workspace.update.PackageInstallerApk
+import io.lcl.workspace.update.TrustedKey
+import io.lcl.workspace.update.UpdateController
 import io.lcl.workspace.workspace.WorkspaceController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +35,8 @@ class LclApplication : Application() {
         // Pairing outlives the process: whenever the app starts, it goes back
         // to the PC it was working with, without a QR code.
         container.connection.start()
+        // An update check needs no PC, and runs only when a day has passed.
+        container.updates.checkWhenDue()
     }
 }
 
@@ -54,6 +61,17 @@ class AppContainer(context: Context) {
     val workspace = WorkspaceController(connection, scope)
     /** The pairing attempt, which outlives the Pair screen. */
     val pairing = PairingController(connection, scope)
+
+    /** Update System V1: the official releases, checked with the keys this build trusts. */
+    val updates = UpdateController(
+        store = store,
+        source = GitHubReleases(BuildConfig.UPDATE_TEST_ENDPOINT),
+        keys = { TrustedKey.parse(BuildConfig.UPDATE_TRUSTED_KEYS + "\n" + BuildConfig.UPDATE_TEST_KEYS) },
+        facts = AndroidPackageFacts(context),
+        installer = PackageInstallerApk(context),
+        cacheDir = context.cacheDir,
+        scope = scope,
+    )
 
     fun updateSettings(settings: AppSettings) {
         settingsStore.save(settings)

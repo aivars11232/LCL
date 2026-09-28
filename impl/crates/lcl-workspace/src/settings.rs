@@ -213,7 +213,22 @@ pub fn store(path: &Path, settings: &Settings) -> Result<(), String> {
 /// Write `bytes` to `path` atomically, creating its directory if needed: a
 /// temporary file in the same directory is written, synced and renamed over
 /// `path`, so a crash leaves the previous file whole rather than half a file.
+/// The directory is then synced too, because until its new entry is on disk a
+/// crash can still bring back the old file after the save was reported.
 pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    write_atomically_with(path, bytes, sync_directory)
+}
+
+/// Make the entries of `dir`, such as a completed rename, durable.
+pub(crate) fn sync_directory(dir: &Path) -> std::io::Result<()> {
+    std::fs::File::open(dir)?.sync_all()
+}
+
+fn write_atomically_with(
+    path: &Path,
+    bytes: &[u8],
+    sync_dir: impl FnOnce(&Path) -> std::io::Result<()>,
+) -> Result<(), String> {
     let directory = path
         .parent()
         .ok_or_else(|| format!("{} has no directory", path.display()))?;
@@ -243,6 +258,13 @@ pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> 
     std::fs::rename(&temporary, path).map_err(|error| {
         let _ = std::fs::remove_file(&temporary);
         format!("{} could not be replaced: {error}", path.display())
+    })?;
+    sync_dir(directory).map_err(|error| {
+        format!(
+            "{} was replaced, but its folder {} could not be synced to disk: {error}",
+            path.display(),
+            directory.display()
+        )
     })
 }
 
@@ -371,6 +393,33 @@ mod tests {
             ));
             assert_eq!(loaded.settings.default_extension, ".lcl", "{other}");
         }
+    }
+
+    #[test]
+    fn a_replacement_is_made_durable_by_syncing_its_folder_after_the_rename() {
+        let directory = std::env::temp_dir().join(format!(
+            "lcl-settings-sync-{}-{}",
+            std::process::id(),
+            NEXT_TEMPORARY.fetch_add(1, Ordering::Relaxed)
+        ));
+        let file = directory.join(FILE_NAME);
+        let mut synced = None;
+        write_atomically_with(&file, b"new\n", |dir| {
+            // Called with the file's own folder, once the rename is done.
+            synced = Some((dir.to_path_buf(), std::fs::read(&file)?));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(synced, Some((directory.clone(), b"new\n".to_vec())));
+        let error = write_atomically_with(&file, b"newer\n", |_| {
+            Err(std::io::Error::other("the disk went away"))
+        })
+        .unwrap_err();
+        assert!(error.contains("could not be synced"), "{error}");
+        assert_eq!(std::fs::read(&file).unwrap(), b"newer\n");
+        sync_directory(&directory).expect("a real folder syncs");
+        assert!(sync_directory(&directory.join("absent")).is_err());
+        std::fs::remove_dir_all(&directory).unwrap();
     }
 
     #[test]

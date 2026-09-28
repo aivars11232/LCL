@@ -47,6 +47,7 @@ pub mod remote;
 pub mod routes;
 pub mod server;
 pub mod settings;
+pub mod updates;
 
 pub use document::{Document, DocumentError};
 pub use project::{Entry, Workspace, WorkspaceError};

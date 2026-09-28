@@ -1,0 +1,40 @@
+# LCL's updater: finds a newer LCL product release, proves it is genuine and
+# installs it.
+#
+# A Cargo workspace of its own, on purpose, like remote/. The LCL toolchain in
+# `impl/` is built on `std` alone. Checking an update needs TLS and ECDSA, which
+# are not things to write by hand, so this crate takes audited implementations
+# (`rustls` on `ring`, and the system's trusted roots through
+# `rustls-native-certs`) and keeps them here, out of the engine's graph. It reads
+# JSON with the engine's own std-only parser and changes no engine crate.
+#
+# The version is the LCL product version, not a language version: the release
+# builder refuses a release whose binaries do not all report the same one.
+[package]
+name = "lcl-update"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+publish = false
+description = "Finds, verifies and installs newer LCL product releases for the user-local LCL installation."
+
+[[bin]]
+name = "lcl-update"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# Lets tests and development builds point the updater at a local test server
+# and trust test keys (LCL_UPDATE_TEST_ENDPOINT, LCL_UPDATE_TEST_KEYS). Never on
+# in a release: the release builder refuses a binary that reports it.
+test-endpoint = []
+
+[dependencies]
+lcl-spec = { path = "../impl/crates/lcl-spec" }
+ring = "0.17.14"
+rustls = { version = "0.23.42", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-native-certs = "0.8"
+
+[workspace]

@@ -72,6 +72,18 @@ if [ -n "${STUB_CARGO_FAIL:-}" ]; then echo "error: stub compile failure" >&2; e
 [ -n "${CARGO_TARGET_DIR:-}" ] || exit 97
 if [ -d "$CARGO_TARGET_DIR" ] && [ -n "$(ls -A "$CARGO_TARGET_DIR")" ]; then exit 98; fi
 mkdir -p "$CARGO_TARGET_DIR/release" || exit 96
+case "$PWD" in
+*/update)
+    { echo '#!/bin/sh'; echo 'case "$1" in'; echo 'version) echo "lcl-update 0.1.0" ;;'
+      echo 'source) echo "source: github.com/aivars11232/LCL releases (pinned)"; echo "build:  ${STUB_UPDATE_BUILD:-release}" ;;'
+      echo 'esac'; } > "$CARGO_TARGET_DIR/release/lcl-update"
+    chmod 0755 "$CARGO_TARGET_DIR/release/lcl-update"
+    exit 0 ;;
+*/remote)
+    { echo '#!/bin/sh'; echo 'echo remote'; } > "$CARGO_TARGET_DIR/release/lcl-remote"
+    chmod 0755 "$CARGO_TARGET_DIR/release/lcl-remote"
+    exit 0 ;;
+esac
 source=$(cat marker.rs) || exit 95
 {
     echo '#!/bin/sh'
@@ -157,6 +169,16 @@ fn origin(case: &Case) -> PathBuf {
             0o644,
         ),
         ("impl/Cargo.lock", "version = 3\n", 0o644),
+        (
+            "update/Cargo.toml",
+            "[package]\nversion = \"0.1.0\"\n",
+            0o644,
+        ),
+        (
+            "remote/Cargo.toml",
+            "[package]\nversion = \"0.1.0\"\n",
+            0o644,
+        ),
         ("impl/marker.rs", CAPTURED, 0o644),
         ("impl/target/release/lcl", "#!/bin/sh\necho stale\n", 0o755),
         ("impl/integration/linux/lcl.xml", "<mime-info/>\n", 0o644),
@@ -925,6 +947,49 @@ fn unsafe_archive_members_are_refused_and_nothing_is_extracted() {
         "control",
     )
     .succeeded();
+}
+
+/// Every binary of one release reports one product version, and the updater
+/// shipped is never a test build (one that accepts a local server and test
+/// keys). Either mistake refuses the candidate before anything is published.
+#[test]
+fn disagreeing_product_versions_or_a_test_updater_publish_nothing() {
+    for (label, env, needle) in [
+        ("version", None, "reports the same product version"),
+        (
+            "test-updater",
+            Some(("STUB_UPDATE_BUILD", "TEST")),
+            "is a test build",
+        ),
+    ] {
+        let case = Case::new(&format!("refused-{label}"));
+        let root = origin(&case);
+        if env.is_none() {
+            write(
+                &root.join("update/Cargo.toml"),
+                "[package]\nversion = \"0.2.0\"\n",
+                0o644,
+            );
+        }
+        let candidate = case.join("out/candidate");
+        let failed = build(
+            &case,
+            &root,
+            &candidate,
+            &env.into_iter().collect::<Vec<_>>(),
+            label,
+        );
+        assert!(!failed.output.status.success(), "{label}: reported success");
+        assert!(
+            failed.stderr().contains(needle),
+            "{label}: {}",
+            failed.stderr()
+        );
+        assert!(
+            candidate.symlink_metadata().is_err(),
+            "{label}: a candidate was published"
+        );
+    }
 }
 
 #[test]

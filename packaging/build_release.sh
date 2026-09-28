@@ -17,7 +17,9 @@
 # What it does not do: install anything, touch the canonical package, reach the
 # network, or write into releases/ itself. `--locked --offline` is not a
 # convenience; a release that resolved a dependency at build time would not be
-# the thing that was tested, and this workspace has no dependency to resolve.
+# the thing that was tested. The engine workspace has no dependency to resolve;
+# remote/ and update/ take theirs from the local Cargo cache, exactly as their
+# lockfiles name them, never from the network.
 #
 # ## Only the captured source is built
 #
@@ -379,6 +381,13 @@ verify_tree "$snapshot" "$inventory"
 
 version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$snapshot/impl/Cargo.toml" | head -1)
 [ -n "$version" ] || refuse "cannot read the product version from impl/Cargo.toml"
+# One product version: lcl, lcl-workspace, lcl-update and lcl-remote of one
+# release all report it, and the updater compares nothing else.
+for crate in update remote; do
+    crate_version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$snapshot/$crate/Cargo.toml" | head -1)
+    [ "$crate_version" = "$version" ] ||
+        refuse "$crate/Cargo.toml has version '$crate_version' and impl/Cargo.toml has '$version': every binary of one release reports the same product version"
+done
 release=${LCL_RELEASE_VERSION:-$version}
 case "$release" in
     0.1.0) ;;
@@ -413,12 +422,20 @@ mkdir "$build"
 echo "building $name"
 ( cd "$snapshot/impl" && CARGO_TARGET_DIR="$build" cargo build --release --offline --locked \
     -p lcl-cli -p lcl-workspace )
+# The updater and the remote service are workspaces of their own, each built in
+# a directory of its own inside this run's.
+( cd "$snapshot/update" && CARGO_TARGET_DIR="$staging/build-update" \
+    cargo build --release --offline --locked )
+( cd "$snapshot/remote" && CARGO_TARGET_DIR="$staging/build-remote" \
+    cargo build --release --offline --locked )
 
 payload=$staging/payload/$name
 mkdir -p "$payload/bin" "$payload/share"
 
 install -m 0755 "$build/release/lcl" "$payload/bin/lcl"
 install -m 0755 "$build/release/lcl-workspace" "$payload/bin/lcl-workspace"
+install -m 0755 "$staging/build-update/release/lcl-update" "$payload/bin/lcl-update"
+install -m 0755 "$staging/build-remote/release/lcl-remote" "$payload/bin/lcl-remote"
 
 # The engine refuses to load a package that is not the approved release, so the
 # package travels with the binaries rather than being looked for at run time.
@@ -509,6 +526,15 @@ protocol=$(printf '%s\n' "$versions" | sed -n 's/^protocol //p')
 if [ -z "$identity" ] || [ -z "$language" ] || [ -z "$protocol" ]; then
     refuse "the built lcl did not report its package identity, language and protocol"
 fi
+
+# The updater reports the product version and is a release build: pinned to
+# the official source and trusting only the keys compiled into it. A test
+# build, which accepts a local server and test keys, is never released.
+updater=$("$payload/bin/lcl-update" version) || refuse "the built lcl-update could not report its version"
+[ "$updater" = "lcl-update $version" ] ||
+    refuse "the built lcl-update reports '$updater', not product version $version"
+update_source=$("$payload/bin/lcl-update" source) || refuse "the built lcl-update could not report its source"
+printf '%s\n' "$update_source" | grep -qx 'build:  release' || refuse "the built lcl-update is a test build"
 [ "$language" = "$carried" ] ||
     refuse "the built lcl reports language $language, but this $release payload carries $carried"
 # The Core 0.2.0 package's identity, as the built tool's own 0.2.0 engine
@@ -564,6 +590,7 @@ rustc_program=${RUSTC:-rustc}
     echo "sha256:           $(cut -d' ' -f1 < "$artifacts/$name.sha256")"
     echo "release version:  $release"
     echo "product version:  $version"
+    echo "update source:    $(printf '%s\n' "$update_source" | sed -n 's/^source: //p')"
     echo "language version: $language"
     echo "engine protocol:  $protocol"
     echo "package identity: $identity"

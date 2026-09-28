@@ -198,7 +198,7 @@ fn run(argv: &[String]) -> Result<(), String> {
             .with_open_document(open_document);
 
     let server = Server::bind_to(port)
-        .map_err(|e| format!("could not bind loopback: {e}"))?
+        .map_err(|e| format!("could not start the local server: {e}"))?
         .logging(log);
     let url = server.url();
     println!("LCL Workspace");
@@ -228,7 +228,8 @@ fn run(argv: &[String]) -> Result<(), String> {
         .with_settings_file(settings_file)
         .with_builtin_default(default_project)
         .with_notice(notice)
-        .with_reopen(reopen);
+        .with_reopen(reopen)
+        .with_updater(lcl_workspace::updates::Updater::installed());
     server
         .serve(Arc::new(routes))
         .map_err(|e| format!("the server stopped: {e}"))

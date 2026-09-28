@@ -114,6 +114,10 @@ button.danger:hover:not(:disabled) { filter: brightness(1.1); color: var(--accen
 }
 #titlebar .actions { display: flex; gap: 6px; margin-left: auto; }
 #titlebar #act-settings { flex: none; }
+/* An update is waiting: a mark, never an interruption. */
+#titlebar #act-settings.has-update::after { content: "●"; color: var(--accent); font-size: 9px; vertical-align: super; }
+.updates .release-notes { white-space: pre-wrap; max-height: 12em; overflow: auto; font-size: 12px; }
+.updates progress { width: 100%; }
 #titlebar .spec {
   font-family: var(--mono); font-size: 11px; color: var(--ink-faint);
   white-space: nowrap;

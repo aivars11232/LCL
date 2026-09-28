@@ -185,3 +185,95 @@ by `--localized-spec` or `LCL_LOCALIZED_SPEC`, and that package opens. The
 provenance's language version is what the built `lcl version` reports with
 exactly the packages the payload carries, and a candidate whose tool reports
 any other set is refused.
+
+## Updates
+
+A payload also carries `lcl-update`, the updater, and `lcl-remote`. `install.sh`
+installs `lcl-update` beside `lcl`, and replaces `lcl-remote` only where
+`remote/install.sh` already installed it; it never installs, enables or starts
+the remote service. Every file is published atomically, and `install.sh --list`
+names every path an installation writes without writing any.
+
+Every binary of a release reports one **product version**, the `version` in
+`impl/Cargo.toml`, `update/Cargo.toml` and `remote/Cargo.toml`, which must
+agree; `build_release.sh` refuses a candidate where they do not, or whose
+`lcl-update` is a test build. The product version is not the LCL Core
+language version.
+
+`lcl-update` finds updates in one place: the latest published, non-draft,
+non-pre-release GitHub Release of `aivars11232/LCL`, pinned in the build. It
+needs no token. It trusts an update only through the update signing keys in
+`update/trusted_keys.txt`, compiled into it (and into LCL for Android). It
+verifies the signed `update-manifest.json` before reading it, fetches only the
+artifacts it names, by name, from that same release, checks their size and
+SHA-256, stages and tests the new payload, keeps a copy of everything it will
+replace, installs with the payload's own `install.sh`, checks the result, and
+puts the copy back on any failure. User data — projects, `~/.config/lcl`,
+`~/.local/state/lcl` — is never written. Its state and downloads live under
+`~/.local/state/lcl/update` and `~/.cache/lcl/update`, which holds at most one
+staged update and, during an installation, one rollback copy.
+
+## Publishing an update release
+
+Nothing in this repository publishes a release. The owner does, by hand, with
+material that never enters the repository.
+
+**The update signing key.** One ECDSA P-256 key, created offline and kept
+outside the repository and outside every build machine's checkout, for example:
+
+```sh
+openssl ecparam -name prime256v1 -genkey -noout -out /secure/offline/lcl-update-1.key
+openssl pkey -in /secure/offline/lcl-update-1.key -pubout -outform DER | od -An -v -tx1 | tr -d ' \n'
+```
+
+The second command prints the public key's hex, which goes into
+`update/trusted_keys.txt` as `lcl-update-1 <hex>` and is committed. Only a
+build that lists the key can verify releases signed with it, so the first
+update-capable release is installed by hand. The private key is never printed,
+committed, bundled or copied into a build.
+
+**Rotating the key.** Create the next key offline, list it in
+`update/trusted_keys.txt` beside the current one, and publish that build,
+signed with the current key. Later releases may be signed with the next key.
+Remove the old key only in a release after that. A key a manifest names is
+never trusted unless the installed build already lists it.
+
+**The Android signing key.** Android installs an update only over an app
+signed with the same key. The release build takes that key from
+`LCL_RELEASE_STORE_FILE`, `LCL_RELEASE_STORE_PASSWORD`, `LCL_RELEASE_KEY_ALIAS`
+and `LCL_RELEASE_KEY_PASSWORD` (or `~/.gradle/gradle.properties`), never from
+the repository. Every release must be signed with the same key as the one
+before; the release builder refuses an APK whose certificate differs.
+
+**Building.** From a clean checkout of the commit being released, with the
+product version raised in the three `Cargo.toml` files:
+
+```sh
+LCL_UPDATE_OUT=/tmp/lcl-release-0.4.0 \
+LCL_UPDATE_SIGNING_KEY=/secure/offline/lcl-update-1.key \
+LCL_UPDATE_KEY_ID=lcl-update-1 \
+LCL_ANDROID_VERSION_CODE=4 \
+LCL_PREVIOUS_MANIFEST=/path/to/the/last/update-manifest.json \
+LCL_RELEASE_NOTES_FILE=/path/to/notes.txt \
+LCL_RELEASE_STORE_FILE=/secure/lcl-release.jks LCL_RELEASE_STORE_PASSWORD=... \
+LCL_RELEASE_KEY_ALIAS=lcl LCL_RELEASE_KEY_PASSWORD=... \
+ANDROID_HOME=/path/to/sdk packaging/build_update_release.sh
+```
+
+The first update release names `LCL_PREVIOUS_MANIFEST=none` and the APK
+certificate's SHA-256 in `LCL_ANDROID_SIGNER_SHA256`. The builder writes, to
+the new directory only: `update-manifest.json`, `update-manifest.sig`,
+`lcl-<version>-linux-x86_64.tar.gz` and `.sha256`,
+`lcl-android-<version>-<code>.apk` and `.sha256`, both provenance records and
+`SHA256SUMS`. It refuses when a product version disagrees, the versionCode does
+not advance, the APK is unsigned or signed by another key, the manifest cannot
+be signed or is not verified by the key list the release carries, a digest does
+not describe the file written, or the working tree is not exactly the commit
+recorded. `LCL_UPDATE_DRY_RUN=1` rehearses the whole build with test keys and
+marks every output *not for publication*.
+
+**Publishing.** Create a GitHub Release whose tag is `v<version>` — neither a
+draft nor a pre-release — and attach every file of that directory, for example
+`gh release create v0.4.0 /tmp/lcl-release-0.4.0/* --title "LCL 0.4.0" --notes-file notes.txt`.
+Then check it as a client would: `lcl-update check` on a PC with the previous
+release installed reports *update available* for the new version.

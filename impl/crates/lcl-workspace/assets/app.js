@@ -1163,6 +1163,7 @@ function openSettings() {
     templates.id = "open-templates";
     templates.onclick = () => openTemplates();
     form.append(templates);
+    updatesSection(form);
     androidDevices(form);
     body.append(form);
   }, [
@@ -1223,6 +1224,202 @@ function openSettings() {
       }
     }],
   ]);
+}
+
+/* ---------------------------------------------------------------- updates */
+
+/* What the installed updater last found, or null when this workspace has no
+ * updater beside it. Reading it never uses the network. */
+async function loadUpdate() {
+  try {
+    state.update = await api("GET", "/api/update");
+  } catch (_) {
+    state.update = null;
+  }
+  markUpdate();
+  return state.update;
+}
+
+/* A quiet mark on the Settings button while an update waits. It never opens
+ * anything and never takes focus from the editor. */
+function markUpdate() {
+  const s = state.update && state.update.state;
+  const waiting = Boolean(s && s.available &&
+    (s.state === "update_available" || s.state === "ready_to_install"));
+  const button = $("#act-settings");
+  button.classList.toggle("has-update", waiting);
+  button.title = waiting ? `Settings — LCL ${s.available.version} is available` : "Settings";
+}
+
+/* At start, a check only when the last one is a day old. Offline or not, the
+ * workspace works exactly the same. */
+async function checkUpdatesWhenDue() {
+  const u = await loadUpdate();
+  if (!u || !u.configured || !u.check_due) return;
+  try {
+    state.update = await api("POST", "/api/update/check");
+  } catch (_) {
+    return;
+  }
+  markUpdate();
+}
+
+const UPDATE_STATES = {
+  up_to_date: "Up to date",
+  checking: "Checking",
+  update_available: "Update available",
+  downloading: "Downloading",
+  ready_to_install: "Ready to install (restart required)",
+  installing: "Installing",
+  failed: "Failed",
+  offline: "Could not check: offline",
+  not_configured: "Updates are not set up in this build",
+};
+
+const UPDATE_PROBLEMS = {
+  offline: "No network",
+  invalid: "Invalid update",
+  verification: "Verification failed",
+  download: "Download failed",
+  install: "Installation failed",
+  unsupported: "Cannot update automatically",
+  not_configured: "Not set up",
+  busy: "Busy",
+};
+
+function formatSize(bytes) {
+  return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
+}
+
+function updatesSection(form) {
+  form.append(el("h3", "", "Updates"));
+  const box = el("div", "updates");
+  box.id = "updates";
+  form.append(box);
+  renderUpdates(box);
+  loadUpdate().then(() => { if (box.isConnected) renderUpdates(box); });
+}
+
+function renderUpdates(box) {
+  box.replaceChildren();
+  const u = state.update;
+  if (!u) {
+    box.append(el("p", "note", "Updates are not available here: lcl-update is not installed beside this workspace."));
+    return;
+  }
+  const s = u.state || {};
+  const when = (secs) => (secs ? new Date(secs * 1000).toLocaleString() : "never");
+  box.append(el("p", "", `Installed version: LCL ${u.installed}`));
+  box.append(el("p", "", `Last update check: ${when(s.checked_at)}`));
+  const shown = el("p", "update-state", `State: ${UPDATE_STATES[s.state] || "Not checked yet"}`);
+  shown.id = "update-state";
+  box.append(shown);
+  if (s.error) {
+    box.append(el("p", "note warning", `${UPDATE_PROBLEMS[s.error.kind] || "Problem"}: ${s.error.message}`));
+  }
+  if (s.available) {
+    const a = s.available;
+    box.append(el("p", "", `New version: LCL ${a.version} · released ${a.published_at.slice(0, 10)} · ${formatSize(a.size)}`));
+    /* Release notes are text to read, never markup. */
+    const notes = el("pre", "release-notes");
+    notes.textContent = a.release_notes;
+    box.append(notes);
+  }
+  if (s.state === "downloading" && s.progress) {
+    const bar = el("progress");
+    bar.max = s.progress.total;
+    bar.value = s.progress.done;
+    box.append(bar);
+  }
+  const row = el("div", "path-field");
+  const check = el("button", "", "Check for updates");
+  check.type = "button";
+  check.id = "update-check";
+  check.disabled = !u.configured || s.state === "downloading" || s.state === "installing";
+  check.onclick = async () => {
+    check.disabled = true;
+    shown.textContent = "State: Checking";
+    try {
+      state.update = await api("POST", "/api/update/check");
+    } catch (e) {
+      toast(`Could not check for updates. ${e.message}`, "bad");
+    }
+    markUpdate();
+    renderUpdates(box);
+  };
+  row.append(check);
+  if (s.state === "update_available") {
+    const update = el("button", "primary", "Update");
+    update.type = "button";
+    update.id = "update-download";
+    update.onclick = async () => {
+      update.disabled = true;
+      try {
+        await api("POST", "/api/update/download");
+      } catch (e) {
+        toast(`The update could not be downloaded. ${e.message}`, "bad");
+        return;
+      }
+      followDownload(box);
+    };
+    row.append(update);
+  }
+  if (s.state === "ready_to_install") {
+    const install = el("button", "primary", "Install and restart");
+    install.type = "button";
+    install.id = "update-install";
+    install.onclick = () => installUpdate(s.available ? s.available.version : "");
+    row.append(install);
+  }
+  box.append(row);
+}
+
+/* Follow a download until it is staged or has failed. Only a verified,
+ * staged update is ever called ready. */
+async function followDownload(box) {
+  const started = Date.now();
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    await loadUpdate();
+    if (box.isConnected) renderUpdates(box);
+    const s = state.update && state.update.state;
+    const going = s && (s.state === "downloading" ||
+      (s.state === "update_available" && Date.now() - started < 10000));
+    if (!going) return;
+  }
+}
+
+/* Installing closes this window's workspace, so it waits for unsaved work to
+ * be saved or closed: nothing is discarded to restart. */
+function installUpdate(version) {
+  const unsaved = unsavedDocuments();
+  modal("Install update", (body) => {
+    body.append(el("p", "",
+      `LCL Workspace closes, LCL ${version} is installed and checked, and LCL Workspace opens again. ` +
+      "If anything fails, the version you have now is put back. Your projects, settings, templates " +
+      "and paired devices are not touched."));
+    if (unsaved.length) {
+      body.append(el("p", "note warning",
+        `Save or close ${unsaved.map((d) => d.id).join(", ")} first: installing restarts LCL Workspace.`));
+    }
+  }, [
+    ["Cancel", "", (close) => close()],
+    ["Install and restart", "primary", async (close) => {
+      if (unsavedDocuments().length) return;
+      try {
+        await api("POST", "/api/update/install");
+      } catch (e) {
+        toast(`Not installed. ${e.message}`, "bad");
+        return;
+      }
+      close();
+      const note = el("div", null,
+        "Installing the update. LCL Workspace opens again in a new window when it is done; this page can be closed.");
+      note.style.cssText = "padding:40px;font:14px system-ui";
+      document.body.replaceChildren(note);
+    }],
+  ]);
+  if (unsaved.length) [...$("#modal-actions").querySelectorAll("button")].pop().disabled = true;
 }
 
 /* ------------------------------------------------------- android devices */
@@ -3271,6 +3468,8 @@ function convertDocument(id) {
     if (open) { await openDocument(open); await runAnalysis(); }
     renderCapabilities();
     $("#hint").textContent = "Ctrl+S save · F12 definition · Shift+F12 references";
+    /* In the background, never in the way: only a quiet mark if one waits. */
+    checkUpdatesWhenDue();
   } catch (e) {
     /* The message is text from the server or the transport, never markup. */
     const failure = el("div", null, `Could not start: ${e.message}`);

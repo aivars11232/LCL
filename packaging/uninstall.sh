@@ -9,6 +9,7 @@ for path in \
     "$bin/lcl" \
     "$bin/lcl-workspace" \
     "$bin/lcl-workspace-launch" \
+    "$bin/lcl-update" \
     "$data/applications/lcl-workspace.desktop" \
     "$data/mime/packages/lcl.xml"
 do

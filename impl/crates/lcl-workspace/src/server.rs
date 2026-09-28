@@ -96,7 +96,7 @@ impl Server {
         Ok(Server {
             listener,
             address,
-            token: mint_token(),
+            token: mint_token()?,
             log: false,
             ingress: INGRESS_TIMEOUT,
         })
@@ -298,36 +298,63 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     difference == 0
 }
 
-/// Mint a 256-bit session token, hex encoded.
+/// Mint a 256-bit session token, hex encoded, from the operating system's
+/// entropy source.
 ///
-/// The operating system's entropy source first. `RandomState` is the fallback:
-/// it is seeded by the OS per process and is what `std`'s own hash maps rely on
-/// for collision resistance, so it is a real source rather than a pretend one.
-fn mint_token() -> String {
+/// The token is the credential every request must present, so there is no
+/// weaker fallback: without secure randomness the workspace does not start.
+fn mint_token() -> std::io::Result<String> {
+    mint_token_from(read_urandom)
+}
+
+fn mint_token_from(fill: impl FnOnce(&mut [u8]) -> std::io::Result<()>) -> std::io::Result<String> {
     let mut bytes = [0u8; 32];
-    if read_urandom(&mut bytes).is_err() {
-        use std::collections::hash_map::RandomState;
-        use std::hash::{BuildHasher, Hash, Hasher};
-        for chunk in bytes.chunks_mut(8) {
-            let state = RandomState::new();
-            let mut hasher = state.build_hasher();
-            std::time::SystemTime::now().hash(&mut hasher);
-            std::process::id().hash(&mut hasher);
-            // A fresh address is different every iteration.
-            (&chunk as *const _ as usize).hash(&mut hasher);
-            let value = hasher.finish().to_le_bytes();
-            chunk.copy_from_slice(&value[..chunk.len()]);
-        }
-    }
+    fill(&mut bytes).map_err(|e| {
+        std::io::Error::new(
+            e.kind(),
+            format!(
+                "no secure randomness for the session token (/dev/urandom: {e}); \
+                 the workspace does not start without it"
+            ),
+        )
+    })?;
     let mut hex = String::with_capacity(64);
     for byte in bytes {
         hex.push_str(&format!("{byte:02x}"));
     }
-    hex
+    Ok(hex)
 }
 
 fn read_urandom(buffer: &mut [u8]) -> std::io::Result<()> {
     use std::io::Read;
     let mut file = std::fs::File::open("/dev/urandom")?;
     file.read_exact(buffer)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_token_is_64_hex_digits_of_os_randomness() {
+        let token = mint_token_from(|b| {
+            b.fill(0xab);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(token, "ab".repeat(32));
+        let (one, two) = (mint_token().unwrap(), mint_token().unwrap());
+        assert_eq!(one.len(), 64);
+        assert!(one.bytes().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(one, two);
+    }
+
+    #[test]
+    fn without_secure_randomness_there_is_no_token_and_no_server() {
+        let error =
+            mint_token_from(|_| Err(std::io::Error::new(std::io::ErrorKind::NotFound, "gone")))
+                .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        assert!(error.to_string().contains("does not start"), "{error}");
+    }
 }

@@ -85,8 +85,24 @@ pub fn private_dir(dir: &Path) -> std::io::Result<()> {
 
 static NEXT_TEMPORARY: AtomicU64 = AtomicU64::new(0);
 
-/// Write a file readable by the user alone, atomically.
+/// Write a file readable by the user alone, atomically, and make the
+/// replacement durable: the temporary is synced, renamed over `path`, and the
+/// directory synced, so a crash after a reported write cannot bring back the
+/// old registry, pairing or identity.
 pub fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    write_private_with(path, bytes, sync_directory)
+}
+
+/// Make the entries of `dir`, such as a completed rename, durable.
+pub fn sync_directory(dir: &Path) -> std::io::Result<()> {
+    File::open(dir)?.sync_all()
+}
+
+fn write_private_with(
+    path: &Path,
+    bytes: &[u8],
+    sync_dir: impl FnOnce(&Path) -> std::io::Result<()>,
+) -> std::io::Result<()> {
     let dir = path.parent().unwrap_or(Path::new("."));
     private_dir(dir)?;
     let name = path
@@ -113,7 +129,8 @@ pub fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     }
     std::fs::rename(&temporary, path).inspect_err(|_| {
         let _ = std::fs::remove_file(&temporary);
-    })
+    })?;
+    sync_dir(dir)
 }
 
 /// An exclusive lock on one registry, held until dropped.
@@ -144,4 +161,31 @@ pub fn now() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_private_write_syncs_its_directory_after_the_rename() {
+        let dir = std::env::temp_dir().join(format!("lcl-remote-sync-{}", std::process::id()));
+        let file = dir.join("devices.json");
+        let mut synced = None;
+        write_private_with(&file, b"one\n", |d| {
+            synced = Some((d.to_path_buf(), std::fs::read(&file)?));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(synced, Some((dir.clone(), b"one\n".to_vec())));
+        let error = write_private_with(&file, b"two\n", |_| {
+            Err(std::io::Error::other("the disk went away"))
+        })
+        .unwrap_err();
+        assert_eq!(error.to_string(), "the disk went away");
+        assert_eq!(std::fs::read(&file).unwrap(), b"two\n");
+        write_private(&file, b"three\n").unwrap();
+        assert_eq!(std::fs::read(&file).unwrap(), b"three\n");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

@@ -65,6 +65,9 @@ pub struct Routes {
     /// is cleared when another folder is opened.
     notice: RwLock<Option<String>>,
     reopen: Option<Reopen>,
+    /// The installed updater, for Settings → Updates; a window without one
+    /// (the phone's routes, a development build) answers that it has none.
+    updater: Option<crate::updates::Updater>,
 }
 
 impl Routes {
@@ -78,7 +81,14 @@ impl Routes {
             builtin_default: None,
             notice: RwLock::new(None),
             reopen: None,
+            updater: None,
         }
+    }
+
+    /// Offer Settings → Updates through this updater.
+    pub fn with_updater(mut self, updater: Option<crate::updates::Updater>) -> Routes {
+        self.updater = updater;
+        self
     }
 
     /// Let this window open the projects folder in place of its own folder.
@@ -222,6 +232,18 @@ impl Routes {
             ("GET", "/manual/manual.css") => Response::css(manual::VIEWER_CSS),
             ("GET", "/manual/snapshot") => manual::snapshot(),
 
+            ("GET", "/api/update")
+            | ("POST", "/api/update/check")
+            | ("POST", "/api/update/download")
+            | ("POST", "/api/update/install") => match &self.updater {
+                None => Response::error(404, "this workspace has no updater installed beside it"),
+                Some(updater) => match request.path.as_str() {
+                    "/api/update" => updater.status(),
+                    "/api/update/check" => updater.check(),
+                    "/api/update/download" => updater.download(),
+                    _ => updater.install(),
+                },
+            },
             ("GET", "/api/settings") => self.read_settings(),
             ("PUT", "/api/settings") => self.save_settings(request),
             ("GET", "/api/folder") => self.folder(request, false),

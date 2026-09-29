@@ -72,7 +72,7 @@ Check that everything works:
 
 ```
 $ lcl version
-lcl 0.1.0
+lcl 0.1.1
 protocol lcl.engine/1
 language 0.1.0
 

@@ -10,6 +10,7 @@ import copy
 import http.server
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -75,7 +76,7 @@ publish = false
         (cls.root / 'remote/Cargo.toml').write_text('version = "0.3.0"\n')
         (cls.root / '.gitignore').write_text('/android/app/build/\n')
         p = cls.root / 'update/Cargo.toml'
-        p.write_text(p.read_text().replace('version = "0.1.0"', 'version = "0.3.0"'))
+        p.write_text(re.sub(r'^version = ".*"$', 'version = "0.3.0"', p.read_text(), count=1, flags=re.M))
         cls.key = cls.base / 'test.key'
         run('openssl', 'ecparam', '-name', 'prime256v1', '-genkey', '-noout', '-out', str(cls.key))
         public = run('openssl', 'pkey', '-in', str(cls.key), '-pubout', '-outform', 'DER')

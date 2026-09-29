@@ -581,14 +581,6 @@ function uiState(h) {
 const ALL_ACTIONS = ["#act-check", "#act-inspect", "#act-run", "#act-save", "#act-reload"];
 
 const uiCases = [
-  // -------------------------------------------------------------------------
-  // UI-02 — the empty workspace, the visible editor and Settings
-  // -------------------------------------------------------------------------
-  //
-  // The observed defect: with no document open, the source textarea (which is
-  // transparent, so that the engine-painted layer underneath is what is seen)
-  // stayed editable, and typing produced text nobody could see. This case is
-  // first so that it sees the page exactly as it booted over an empty project.
   ["an empty workspace boots with no editable editor and no document actions", async h => {
     assert.equal(h.active(), null, "an empty project opened a document");
     assert.deepEqual(uiState(h), { editable: false, empty: true, disabled: ALL_ACTIONS });
@@ -1177,6 +1169,98 @@ const uiCases = [
     h.edit("LCL:\n");
     assert.equal(dotted(), false, "the tree kept its mark after the edit was undone");
   }],
+  ["the project tree folds and unfolds folders, and keeps them folded while the page is open", async h => {
+    h.run(`state.entries = [
+      { id: "a.lcl", directory: false }, { id: "docs", directory: true }, { id: "docs/guide", directory: true },
+      { id: "docs/guide/g.lcl", directory: false }, { id: "docs/x.lcl", directory: false }];
+      state.active = null; state.revealed = null; state.collapsed.clear(); renderTree()`);
+    const rows = () => h.get("#tree").children.map(li => li.title);
+    const row = id => h.get("#tree").children.find(li => li.title === id);
+    const key = k => ({ key: k, preventDefault() {} });
+    const all = ["a.lcl", "docs", "docs/guide", "docs/guide/g.lcl", "docs/x.lcl"];
+    assert.deepEqual(rows(), all);
+    assert.equal(row("docs").ariaExpanded, "true");
+    assert.equal(row("docs").children[0].textContent, "▾");
+    row("docs").onclick();
+    assert.deepEqual(rows(), ["a.lcl", "docs"]);
+    assert.equal(row("docs").ariaExpanded, "false");
+    assert.equal(row("docs").children[0].textContent, "▸");
+    // A fresh listing draws the tree again; the fold stays.
+    h.run("renderTree()");
+    assert.deepEqual(rows(), ["a.lcl", "docs"]);
+    // From the keyboard: Right unfolds, Left folds, and focus stays on the folder.
+    row("docs").onkeydown(key("ArrowRight"));
+    assert.deepEqual(rows(), all);
+    assert.equal(h.run('document.activeElement && document.activeElement.title'), "docs");
+    row("docs/guide").onkeydown(key("ArrowLeft"));
+    assert.deepEqual(rows(), ["a.lcl", "docs", "docs/guide", "docs/x.lcl"]);
+    // A folder folded inside a folded one is still folded when the outer one opens.
+    row("docs").onkeydown(key("Enter"));
+    row("docs").onkeydown(key(" "));
+    assert.deepEqual(rows(), ["a.lcl", "docs", "docs/guide", "docs/x.lcl"]);
+  }],
+  ["a document chosen in the tree opens and is marked, and the tree follows new folders", async h => {
+    await h.add("tree-fold/deep/inner.lcl", "LCL:\n");
+    await h.add("tree-top.lcl", "LCL:\n");
+    await bounded(h.run("loadTree()"), "the listing");
+    assert(h.treeIds().includes("tree-fold/deep/inner.lcl"), "the new document is not listed");
+    const entries = JSON.parse(h.run("JSON.stringify(state.entries)"));
+    if (entries.some(e => e.directory)) {
+      // A real server lists the folders it made for the document.
+      assert(entries.some(e => e.directory && e.id === "tree-fold/deep"), "the new folder is not listed");
+    }
+    const row = id => h.get("#tree").children.find(li => li.title === id);
+    const marked = () => h.get("#tree").children.filter(li => li.classList.contains("open")).map(li => li.title);
+    assert.deepEqual(marked(), ["tree-top.lcl"]);
+    // Choosing another document in the tree opens it and moves the mark.
+    h.run('state.collapsed.add("tree-fold"); renderTree()');
+    assert.equal(row("tree-fold/deep/inner.lcl"), undefined);
+    await bounded(h.run('openDocument("tree-fold/deep/inner.lcl")'), "switching documents");
+    // It is the active document now, so the folders around it opened.
+    assert.equal(h.run("state.active"), "tree-fold/deep/inner.lcl");
+    assert.deepEqual(marked(), ["tree-fold/deep/inner.lcl"]);
+    await bounded(row("tree-top.lcl").onclick(), "opening from the tree");
+    assert.equal(h.run("state.active"), "tree-top.lcl");
+    assert.equal(h.get("#code").value, "LCL:\n");
+    assert.deepEqual(marked(), ["tree-top.lcl"]);
+  }],
+  ["the project sidebar is resized by its edge and remembers its width", async h => {
+    h.run('document.querySelector("#sidebar").getBoundingClientRect = () => ({ width: 232 })');
+    const width = () => h.run('document.documentElement.style.getPropertyValue("--sidebar")');
+    const handle = h.get("#sidebar-resize");
+    handle.onpointerdown({ clientX: 232, pointerId: 1, preventDefault() {} });
+    handle.onpointermove({ clientX: 300 });
+    assert.equal(width(), "300px");
+    assert.equal(h.run('localStorage.getItem("lcl.workspace.sidebar")'), null, "kept before the drag ended");
+    handle.onpointerup({ clientX: 332 });
+    assert.equal(width(), "332px");
+    assert.equal(h.run('localStorage.getItem("lcl.workspace.sidebar")'), "332");
+    // Never narrower or wider than the layout allows.
+    handle.onpointerdown({ clientX: 232, pointerId: 1, preventDefault() {} });
+    handle.onpointerup({ clientX: 5000 });
+    assert.equal(width(), "480px");
+    handle.onpointerdown({ clientX: 232, pointerId: 1, preventDefault() {} });
+    handle.onpointerup({ clientX: -5000 });
+    assert.equal(width(), "160px");
+    // From the keyboard.
+    h.run('document.querySelector("#sidebar").getBoundingClientRect = () => ({ width: 300 })');
+    handle.onkeydown({ key: "ArrowLeft", preventDefault() {} });
+    assert.equal(width(), "284px");
+    // The next page starts at the width kept; a double click forgets it.
+    h.run('document.documentElement.style.removeProperty("--sidebar"); initSidebarResize()');
+    assert.equal(width(), "284px");
+    handle.ondblclick();
+    assert.equal(width(), "");
+    assert.equal(h.run('localStorage.getItem("lcl.workspace.sidebar")'), null);
+  }],
+  // -------------------------------------------------------------------------
+  // UI-02 — the empty workspace, the visible editor and Settings
+  // -------------------------------------------------------------------------
+  //
+  // The observed defect: with no document open, the source textarea (which is
+  // transparent, so that the engine-painted layer underneath is what is seen)
+  // stayed editable, and typing produced text nobody could see. This case is
+  // first so that it sees the page exactly as it booted over an empty project.
 ];
 
 const cases = [

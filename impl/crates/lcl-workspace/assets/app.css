@@ -79,7 +79,7 @@ button.danger:hover:not(:disabled) { filter: brightness(1.1); color: var(--accen
 
 #shell {
   display: grid;
-  grid-template-columns: 232px minmax(0, 1fr) 360px;
+  grid-template-columns: var(--sidebar, 232px) minmax(0, 1fr) 360px;
   grid-template-rows: 44px minmax(0, 1fr);
   grid-template-areas:
     "title  title    title"
@@ -128,6 +128,15 @@ button.danger:hover:not(:disabled) { filter: brightness(1.1); color: var(--accen
   background: var(--bg-sunken);
   border-right: 1px solid var(--line);
   display: flex; flex-direction: column; min-height: 0;
+  position: relative;
+}
+/* The edge the sidebar is resized by. */
+#sidebar .resize {
+  position: absolute; top: 0; right: -3px; width: 6px; height: 100%;
+  cursor: col-resize; z-index: 3; touch-action: none;
+}
+#sidebar .resize:hover, #sidebar .resize.dragging, #sidebar .resize:focus-visible {
+  background: var(--accent); opacity: 0.5; outline: none;
 }
 .panel-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -142,8 +151,8 @@ button.danger:hover:not(:disabled) { filter: brightness(1.1); color: var(--accen
 }
 .tree li:hover { background: var(--line-soft); }
 .tree li.open { background: var(--line); color: var(--accent); }
-.tree li.dir { color: var(--ink-faint); cursor: default; font-size: 11.5px; }
-.tree li.dir:hover { background: transparent; }
+.tree li.dir { color: var(--ink-faint); font-size: 11.5px; }
+.tree li .fold { display: inline-block; width: 14px; text-align: center; color: var(--ink-faint); }
 .tree li .dot { color: var(--warn); margin-right: 4px; }
 .tree li:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 
@@ -407,7 +416,7 @@ button.danger:hover:not(:disabled) { filter: brightness(1.1); color: var(--accen
 .toast.warn { border-left-color: var(--warn); }
 
 @media (max-width: 1100px) {
-  #shell { grid-template-columns: 190px minmax(0, 1fr) 300px; }
+  #shell { grid-template-columns: var(--sidebar, 190px) minmax(0, 1fr) 300px; }
 }
 
 /* Settings → Android devices */

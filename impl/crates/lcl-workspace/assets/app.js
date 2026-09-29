@@ -194,6 +194,10 @@ const state = {
   roles: { available: false, roles: [], modes: [] },
   /* The project whose readiness the sidebar shows; see refreshReadiness. */
   readiness: { entry: null, status: null, report: null, generation: 0 },
+  /* The folders folded in the project tree, for as long as this page is open,
+   * and the document whose folders were last opened to show it. */
+  collapsed: new Set(),
+  revealed: null,
 };
 
 /* How a document came to be open, which is a different question from whether
@@ -372,18 +376,50 @@ async function showOpenedFolder() {
   await loadTree();
 }
 
+/* Whether a folded folder hides this entry of the tree. */
+function foldedAway(id) {
+  const parts = id.split("/");
+  for (let i = 1; i < parts.length; i++) {
+    if (state.collapsed.has(parts.slice(0, i).join("/"))) return true;
+  }
+  return false;
+}
+
+/* Fold a folder of the tree, or unfold it; from the keyboard, focus stays on it. */
+function toggleFolder(id, refocus) {
+  if (!state.collapsed.delete(id)) state.collapsed.add(id);
+  renderTree();
+  if (!refocus) return;
+  const rows = [...$("#tree").children];
+  const row = rows.find((li) => li.dataset.dir === id);
+  if (!row) return;
+  for (const li of rows) li.tabIndex = -1;
+  row.tabIndex = 0;
+  row.focus();
+}
+
 function renderTree() {
   const list = $("#tree");
   list.replaceChildren();
-  /* One document in the tree takes Tab focus, the open one or else the first;
-   * the arrow keys move between the rest. */
-  const files = state.entries.filter((e) => !e.directory);
-  const focusable = (files.find((e) => e.id === state.active) || files[0] || {}).id;
-  for (const entry of state.entries) {
+  /* When another document becomes active, the folders around it open, so the
+   * tree shows what is being edited. A folder folded after that stays so. */
+  if (state.active && state.active !== state.revealed) {
+    const parts = state.active.split("/");
+    for (let i = 1; i < parts.length; i++) state.collapsed.delete(parts.slice(0, i).join("/"));
+  }
+  state.revealed = state.active;
+  const shown = state.entries.filter((e) => !foldedAway(e.id));
+  /* One row of the tree takes Tab focus, the open document or else the first
+   * document or folder shown; the arrow keys move between the rest. */
+  const files = shown.filter((e) => !e.directory);
+  const focusable = (files.find((e) => e.id === state.active) || files[0] || shown[0] || {}).id;
+  for (const entry of shown) {
     const depth = entry.id.split("/").length - 1;
     const name = entry.id.split("/").pop();
+    const folded = entry.directory && state.collapsed.has(entry.id);
     const item = el("li", entry.directory ? "dir" : "");
-    item.style.paddingLeft = `${10 + depth * 12}px`;
+    item.style.paddingLeft = `${4 + depth * 12}px`;
+    item.append(el("span", "fold", entry.directory ? (folded ? "▸" : "▾") : ""));
     if (!entry.directory) {
       const doc = state.docs.get(entry.id);
       if (dirty(doc)) item.append(el("span", "dot", "●"));
@@ -395,10 +431,15 @@ function renderTree() {
       item.append(role);
     }
     item.title = entry.id;
+    item.tabIndex = entry.id === focusable ? 0 : -1;
     if (entry.id === state.active) item.classList.add("open");
-    if (!entry.directory) {
+    if (entry.directory) {
+      item.dataset.dir = entry.id;
+      item.ariaExpanded = String(!folded);
+      item.onclick = () => toggleFolder(entry.id, false);
+      item.onkeydown = (e) => folderKey(e, entry.id, item, folded);
+    } else {
       item.dataset.id = entry.id;
-      item.tabIndex = entry.id === focusable ? 0 : -1;
       item.onclick = () => openDocument(entry.id);
       item.oncontextmenu = (e) => {
         e.preventDefault();
@@ -421,15 +462,85 @@ function treeKey(e, id, item) {
     const r = item.getBoundingClientRect();
     openMenu(id, r.left + 16, r.bottom, item);
   } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-    e.preventDefault();
-    const items = [...document.querySelectorAll("#tree li[data-id]")];
-    const next = items[items.indexOf(item) + (e.key === "ArrowDown" ? 1 : -1)];
-    if (next) {
-      item.tabIndex = -1;
-      next.tabIndex = 0;
-      next.focus();
-    }
+    moveTreeFocus(e, item);
   }
+}
+
+/* The keys a focused folder in the tree answers to: Enter or Space fold and
+ * unfold it, Right unfolds and Left folds. */
+function folderKey(e, id, item, folded) {
+  if (e.key === "Enter" || e.key === " " || (e.key === "ArrowRight" && folded) || (e.key === "ArrowLeft" && !folded)) {
+    e.preventDefault();
+    toggleFolder(id, true);
+  } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    moveTreeFocus(e, item);
+  }
+}
+
+/* Up and Down move between the rows the tree shows, documents and folders. */
+function moveTreeFocus(e, item) {
+  e.preventDefault();
+  const items = [...document.querySelectorAll("#tree li[data-id], #tree li[data-dir]")];
+  const next = items[items.indexOf(item) + (e.key === "ArrowDown" ? 1 : -1)];
+  if (next) {
+    item.tabIndex = -1;
+    next.tabIndex = 0;
+    next.focus();
+  }
+}
+
+/* ------------------------------------------------------- sidebar width */
+
+/* The project sidebar is as wide as it was last dragged, in this browser. */
+const SIDEBAR_KEY = "lcl.workspace.sidebar";
+const SIDEBAR_MIN = 160;
+const SIDEBAR_MAX = 480;
+
+function setSidebarWidth(px, keep) {
+  const width = Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, px)));
+  document.documentElement.style.setProperty("--sidebar", `${width}px`);
+  const store = keep && storage();
+  if (store) {
+    try { store.setItem(SIDEBAR_KEY, String(width)); } catch (_) { /* remembered for this page only */ }
+  }
+  return width;
+}
+
+/* The edge between the sidebar and the editor: drag it, or focus it and use
+ * Left and Right. A double click returns the width chosen by the layout. */
+function initSidebarResize() {
+  const handle = $("#sidebar-resize");
+  const store = storage();
+  let saved = NaN;
+  try { saved = store ? parseInt(store.getItem(SIDEBAR_KEY), 10) : NaN; } catch (_) { /* none */ }
+  if (Number.isInteger(saved)) setSidebarWidth(saved, false);
+  const width = () => $("#sidebar").getBoundingClientRect().width;
+  let drag = null;
+  handle.onpointerdown = (e) => {
+    e.preventDefault();
+    drag = { x: e.clientX, width: width() };
+    try { handle.setPointerCapture(e.pointerId); } catch (_) { /* moves still arrive while over the edge */ }
+    handle.classList.add("dragging");
+  };
+  handle.onpointermove = (e) => {
+    if (drag) setSidebarWidth(drag.width + e.clientX - drag.x, false);
+  };
+  handle.onpointerup = handle.onpointercancel = (e) => {
+    if (!drag) return;
+    setSidebarWidth(drag.width + e.clientX - drag.x, true);
+    drag = null;
+    handle.classList.remove("dragging");
+  };
+  handle.onkeydown = (e) => {
+    const step = e.key === "ArrowLeft" ? -16 : e.key === "ArrowRight" ? 16 : 0;
+    if (!step) return;
+    e.preventDefault();
+    setSidebarWidth(width() + step, true);
+  };
+  handle.ondblclick = () => {
+    document.documentElement.style.removeProperty("--sidebar");
+    try { if (store) store.removeItem(SIDEBAR_KEY); } catch (_) { /* nothing kept */ }
+  };
 }
 
 /* The menu a document in the tree opens: one at a time, closed by choosing,
@@ -3449,6 +3560,7 @@ function convertDocument(id) {
   /* Preferences and the empty state come first, before any request, so the
    * page never shows an editable editor with nothing in it. */
   applySettings(loadSettings());
+  initSidebarResize();
   render();
   try {
     await loadSession();

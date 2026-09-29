@@ -8,12 +8,13 @@
 * what an update never touches: your projects, settings, templates and pairings;
 * how LCL knows an update is genuine.
 
-> **Tool note.** Updating needs a release that is signed with the LCL update
-> key, and the builds made so far trust no update key yet. Until the first
-> signed release is published and installed, **Settings → Updates** says
-> *Updates are not set up in this build*, and you install new versions as
-> Chapter 2 describes. Everything below is how it works once that release is
-> in place.
+> **Tool note.** Updates are set up. LCL trusts one update key,
+> `lcl-update-1`, and signed stable releases are published on GitHub, the
+> first of them LCL 0.1.1. An LCL installed from LCL 0.1.1 or later finds and
+> installs newer releases as this chapter describes, on the PC and on the
+> phone. An older build that says *Updates are not set up in this build* in
+> **Settings → Updates** does not trust the key: install the latest release
+> once by hand, as Chapter 2 describes, and it updates itself from then on.
 
 ## 20.1 Where updates come from
 
@@ -25,6 +26,10 @@ reaches both.
 A release is offered only when it is **newer** than the one you have, compared
 by version number part by part: 0.10.0 is newer than 0.9.0. An older or equal
 version is never offered, so an update never moves you backwards.
+
+LCL shows a release's version without a final `.0`: **LCL 0.5** is release
+0.5.0. Its GitHub release (`v0.5.0`), its files and `lcl-update` keep the full
+number, and LCL 0.1.1 updates to it directly.
 
 The version an update talks about is the version of the LCL *product* — the
 programs and the app. It is not the version of the LCL language: a new product

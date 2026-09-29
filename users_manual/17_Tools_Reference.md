@@ -159,6 +159,9 @@ the edits of any other document leaves its file as it is on disk.
 Right-clicking a document in the project tree, or pressing Delete when it is
 selected there, offers **Delete…**, which asks first and removes the file
 for good. It deletes nothing if the file changed while you were being asked.
+**↻** beside `+` lists the project again after other programs changed its
+files; tabs and unsaved edits stay as they are. The tree shows at most 4096
+entries and 12 folder levels, and says so when a project has more.
 
 The ⚙ **Settings** button sets two kinds of setting:
 

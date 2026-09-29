@@ -15,19 +15,30 @@
 * A terminal and a plain-text editor. Any editor works, as long as it saves
   UTF-8 text and lets you indent with **spaces, not tabs**. Chapter 4 explains
   why that matters.
-* The LCL release archive, `lcl-<version>-linux-x86_64.tar.gz`. In the LCL
-  repository the current one is under `releases/candidates/`, in the directory
-  whose provenance file names the newest commit.
+* The LCL release archive, `lcl-<version>-linux-x86_64.tar.gz`, from the
+  latest stable release on GitHub:
+  <https://github.com/aivars11232/LCL/releases/latest>. For LCL 0.5 that is
+  `lcl-0.5.0-linux-x86_64.tar.gz`: file names carry the full version number,
+  and LCL itself shows it without the final `.0`. The release also lists the
+  archive's SHA-256 fingerprint, in `lcl-0.5.0-linux-x86_64.sha256`.
+
+This version, LCL 0.5, is the version of the *product*: the programs and the
+app. The language has versions of its own, Core 0.1.0 to 0.3.0, which the
+rest of this chapter names where they matter.
 
 ## 2.2 Installing
 
 Unpack the archive and run its installer:
 
 ```
-$ tar -xzf lcl-0.2.0-linux-x86_64.tar.gz
-$ cd lcl-0.2.0-linux-x86_64
+$ mkdir lcl-install
+$ tar -xzf lcl-0.5.0-linux-x86_64.tar.gz -C lcl-install
+$ cd lcl-install/*/
 $ ./install.sh
 ```
+
+The archive holds one folder, and `cd lcl-install/*/` goes into it whatever
+it is called.
 
 The installer needs no administrator rights and writes only under your home
 directory. It prints every path it touches. The important ones are:
@@ -72,7 +83,7 @@ Check that everything works:
 
 ```
 $ lcl version
-lcl 0.1.1
+lcl 0.5.0
 protocol lcl.engine/1
 language 0.1.0
 
@@ -265,6 +276,14 @@ Using it:
   are lost too. Deleting removes the file from the project for good. If the
   file changes on disk while the question is open, nothing is deleted. Only
   `.lcl` and `.lcl.txt` documents can be deleted this way.
+* **↻** (next to `+`) reads the project folder again. Use it after another
+  program adds, removes or renames files there: the tree does not follow the
+  disk by itself. Only the tree changes; open documents, unsaved edits and
+  folded folders stay as they are.
+* A project with more than 4096 files and folders, or with folders nested
+  more than 12 deep, is shown in part, and the tree says **File tree limited
+  to 4096 entries and 12 folder levels; some files are not shown.** Documents
+  already open, or opened another way, work as usual.
 * Until a document is open, the editor shows **No document open** and can't
   be typed into. Check, Inspect, Run, Save and Reload are unavailable until
   you create or select a document.

@@ -368,7 +368,8 @@ What works and was tested:
 
 - **Same network.** Phone and PC on the same LAN: pairing, reconnection,
   discovery after an address change. Tested on an Android 16 emulator against
-  a real `lcl-remote` on the PC.
+  a real `lcl-remote` on the PC, and in use on a physical phone on the PC's
+  Wi-Fi network (see [Known limitations](#known-limitations)).
 
 What works by design but was **not** tested:
 
@@ -526,9 +527,15 @@ What is **not implemented**:
 ## Known limitations
 
 - No relay and no NAT traversal; see [Networks](#networks-what-works-where).
-- Tested on an emulator (Android 16, x86_64). Not yet tested on a physical
-  phone, with a physical camera scanning a QR code, on a phone on a separate
-  LAN, or over the Internet or mobile data.
+- The automated tests run on an emulator (Android 16, x86_64). The app has
+  also been used on one physical phone, an OPPO Find X3 Neo 5G (CPH2207,
+  ColorOS) on the same Wi-Fi network as its PC. There its owner has run the
+  app connected to the PC, worked in the Workspace, used the Files drawer and
+  its folding tree, moved between the app's screens, and installed the
+  updater-enabled app (LCL 0.1.1) over the earlier build in place, keeping
+  its pairing. **Not tested:** pairing by scanning the QR code with the
+  phone's camera on a final build, a phone on a separate LAN, the Internet,
+  mobile data, and other phones and Android versions.
 - A pairing QR code scanned with another app is read by that app, one-time
   code included. That no longer pairs anything: the other app can only make
   a pending request, which shows a verification code different from your
@@ -552,8 +559,9 @@ What is **not implemented**:
   delete).
 - No background connection when Android stops the process (by design; see
   above).
-- `lcl-remote` is not yet part of the LCL release payload; it is built and
-  installed from source with `remote/install.sh`.
+- `lcl-remote` ships in the PC release archive, and the release installer and
+  updates replace it once it is installed; installing it the first time, with
+  its user service, is still `remote/install.sh`.
 
 ## Troubleshooting
 

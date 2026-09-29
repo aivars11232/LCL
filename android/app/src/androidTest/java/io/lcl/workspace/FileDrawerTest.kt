@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.lcl.workspace.ui.FilesDrawer
 import io.lcl.workspace.ui.ProjectTree
+import io.lcl.workspace.ui.TREE_TRUNCATED
 import io.lcl.workspace.workspace.FileTree
 import io.lcl.workspace.workspace.TreeEntry
 import org.junit.Assert.assertFalse
@@ -51,6 +52,7 @@ class FileDrawerTest {
     private var entries by mutableStateOf(listing)
     private var folded by mutableStateOf(emptySet<String>())
     private var active by mutableStateOf<String?>(null)
+    private var truncated by mutableStateOf(false)
 
     private fun exists(tag: String) = rule.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
     /** Whether the merged tree, the one accessibility services read, has the node. */
@@ -71,6 +73,7 @@ class FileDrawerTest {
                         onToggle = { folded = FileTree.toggle(folded, it) },
                         onOpen = { active = it; close() },
                         onReadiness = {},
+                        truncated = truncated,
                     )
                 },
             ) { open ->
@@ -117,6 +120,19 @@ class FileDrawerTest {
         rule.onRoot().performTouchInput { click(centerRight - Offset(24f, 0f)) }
         rule.waitForIdle()
         assertFalse(exists("file:a.lcl"))
+    }
+
+    @Test
+    fun a_listing_cut_short_by_the_pc_says_so_in_the_drawer() {
+        show()
+        rule.onNodeWithTag("files").performClick()
+        rule.onNodeWithTag("file:a.lcl").assertIsDisplayed()
+        assertFalse(exists("tree_truncated"))
+        truncated = true
+        rule.onNodeWithTag("tree_truncated").assertIsDisplayed().assertTextEquals(TREE_TRUNCATED)
+        // What is listed still opens.
+        rule.onNodeWithTag("file:a.lcl").performClick()
+        rule.onNodeWithTag("editing").assertTextEquals("a.lcl")
     }
 
     @Test

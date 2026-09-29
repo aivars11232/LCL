@@ -166,6 +166,9 @@ internal fun FilesDrawer(
     }
 }
 
+/** What the tree says when the PC's limits left part of the project out; the PC's own words. */
+internal const val TREE_TRUNCATED = "File tree limited to 4096 entries and 12 folder levels; some files are not shown."
+
 /**
  * The project's folders and documents as the PC lists them: a folder folds
  * and unfolds, a document opens, and the document being edited is marked.
@@ -183,10 +186,22 @@ internal fun ProjectTree(
     onOpen: (String) -> Unit,
     onReadiness: (String) -> Unit,
     modifier: Modifier = Modifier,
+    /** Whether the PC's limits left documents or folders out of [rows]. */
+    truncated: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     val faint = colors.onSurface.copy(alpha = 0.6f)
     LazyColumn(modifier) {
+        if (truncated) {
+            item(key = "tree_truncated") {
+                Text(
+                    TREE_TRUNCATED,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LocalLclColors.current.warn,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp).testTag("tree_truncated"),
+                )
+            }
+        }
         items(rows, key = { it.entry.id }) { row ->
             val entry = row.entry
             val current = !entry.directory && entry.id == active
@@ -293,6 +308,7 @@ private fun FilesPane(
             onOpen = { id -> controller.open(id); onOpened() },
             onReadiness = controller::readiness,
             modifier = Modifier.fillMaxSize(),
+            truncated = ui.treeTruncated,
         )
     }
     if (creating) {

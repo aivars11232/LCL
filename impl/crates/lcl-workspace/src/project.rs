@@ -26,12 +26,23 @@ use crate::document::{self, Document, DocumentError};
 use lcl_project::{Project, ProjectError, MANIFEST_FILE};
 use lcl_protocol::{Engine, Engines};
 use lcl_resolver::SourceUnit;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
+use std::time::{Duration, SystemTime};
 
 /// How deep the file walk goes. A project is a source tree, not a filesystem.
-const MAX_DEPTH: usize = 12;
-/// How many documents the tree reports at most.
-const MAX_ENTRIES: usize = 4096;
+pub const MAX_DEPTH: usize = 12;
+/// How many entries, documents and folders, the tree reports at most.
+pub const MAX_ENTRIES: usize = 4096;
+/// The largest document whose `KIND` the tree reads.
+const KIND_LIMIT: u64 = 1 << 20;
+/// How old a file's timestamps must be before its cached `KIND` is trusted.
+/// A filesystem stamps a write with a coarse clock (FAT to two seconds), so a
+/// rewrite of the same length inside one tick can leave every timestamp as it
+/// was. Past this margin a later write cannot share the old stamp.
+const SETTLED: Duration = Duration::from_secs(3);
 
 /// Why a workspace could not be opened.
 #[derive(Debug)]
@@ -75,6 +86,67 @@ pub struct Entry {
     pub bytes: Option<u64>,
 }
 
+/// The tree's entries and whether the walk left eligible ones out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Listing {
+    pub entries: Vec<Entry>,
+    /// True only when at least one more document or folder existed than the
+    /// limits let the tree report: more than [`MAX_ENTRIES`], or one below
+    /// [`MAX_DEPTH`]. A listing of exactly [`MAX_ENTRIES`] can be complete.
+    pub truncated: bool,
+}
+
+/// What a file's metadata says about its bytes without reading them: length,
+/// modification time and, on Unix, the inode and its change time, which an
+/// in-place rewrite or a replacing rename moves even when it keeps the length
+/// and the modification time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Stamp {
+    len: u64,
+    modified: SystemTime,
+    #[cfg(unix)]
+    node: (u64, u64, i64, i64),
+}
+
+impl Stamp {
+    fn of(metadata: &std::fs::Metadata) -> Option<Stamp> {
+        #[cfg(unix)]
+        use std::os::unix::fs::MetadataExt;
+        Some(Stamp {
+            len: metadata.len(),
+            modified: metadata.modified().ok()?,
+            #[cfg(unix)]
+            node: (
+                metadata.dev(),
+                metadata.ino(),
+                metadata.ctime(),
+                metadata.ctime_nsec(),
+            ),
+        })
+    }
+
+    /// Whether every timestamp is old enough that no later write can repeat
+    /// this stamp. A stamp that is not is never cached, so the file is read
+    /// again on the next listing.
+    fn settled(&self) -> bool {
+        let now = SystemTime::now();
+        let old = |at: SystemTime| now.duration_since(at).is_ok_and(|age| age >= SETTLED);
+        #[cfg(unix)]
+        {
+            let changed = SystemTime::UNIX_EPOCH
+                .checked_add(Duration::new(
+                    u64::try_from(self.node.2).unwrap_or(0),
+                    u32::try_from(self.node.3).unwrap_or(0),
+                ))
+                .unwrap_or(now);
+            if !old(changed) {
+                return false;
+            }
+        }
+        old(self.modified)
+    }
+}
+
 /// One open project, with the engine that judges it.
 pub struct Workspace {
     project: Project,
@@ -89,6 +161,12 @@ pub struct Workspace {
     /// launched for one. A file association supplies it; an ordinary launch
     /// does not.
     open_document: Option<String>,
+    /// The `KIND` last read from each listed document, with the stamp it was
+    /// read at. Tree labels only: checking, running and resolving always read
+    /// the file.
+    kinds: Mutex<HashMap<String, (Stamp, Option<String>)>>,
+    /// How many times the tree has read a document for its `KIND`.
+    kind_reads: AtomicU64,
 }
 
 impl Workspace {
@@ -208,6 +286,8 @@ impl Workspace {
             localized_spec_root,
             project_spec_root,
             open_document: None,
+            kinds: Mutex::new(HashMap::new()),
+            kind_reads: AtomicU64::new(0),
         })
     }
 
@@ -375,11 +455,91 @@ impl Workspace {
     /// is not language meaning, but a list that reordered itself between two
     /// reads would still be a bug a user sees.
     pub fn documents(&self) -> Result<Vec<Entry>, WorkspaceError> {
-        let mut entries = Vec::new();
-        walk(self.project.root(), self.project.root(), 0, &mut entries)?;
-        entries.sort_by(|a, b| a.id.cmp(&b.id));
-        entries.truncate(MAX_ENTRIES);
-        Ok(entries)
+        Ok(self.listing()?.entries)
+    }
+
+    /// The same listing, saying whether the limits left anything out.
+    pub fn listing(&self) -> Result<Listing, WorkspaceError> {
+        let mut listing = Listing {
+            entries: Vec::new(),
+            truncated: false,
+        };
+        walk(self.project.root(), self.project.root(), 0, &mut listing)?;
+        listing.entries.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(listing)
+    }
+
+    /// The `SPECIFICATION` `KIND` the tree shows beside each entry, in order:
+    /// `None` for a folder and for a document that cannot be read, does not
+    /// parse, or is over 1 MiB.
+    ///
+    /// A document whose stamp is unchanged since it was last read is not read
+    /// again. Afterwards the cache holds only the documents listed here, so a
+    /// deleted one is forgotten.
+    pub fn tree_kinds(&self, entries: &[Entry]) -> Vec<Option<String>> {
+        let kinds = entries.iter().map(|e| self.tree_kind(e)).collect();
+        let listed: HashSet<&str> = entries
+            .iter()
+            .filter(|e| !e.directory)
+            .map(|e| e.id.as_str())
+            .collect();
+        self.cached_kinds()
+            .retain(|id, _| listed.contains(id.as_str()));
+        kinds
+    }
+
+    /// How many times [`Workspace::tree_kinds`] has read a document rather
+    /// than reuse what it read before, and how many documents it holds now.
+    #[doc(hidden)]
+    pub fn tree_kind_stats(&self) -> (u64, usize) {
+        (
+            self.kind_reads.load(Ordering::Relaxed),
+            self.cached_kinds().len(),
+        )
+    }
+
+    fn tree_kind(&self, entry: &Entry) -> Option<String> {
+        if entry.directory {
+            return None;
+        }
+        // The stamp is taken before the read: a write in between leaves a
+        // stamp older than the bytes, which only costs one more read later.
+        let metadata = document::resolve(self.project.root(), &entry.id)
+            .ok()
+            .and_then(|path| std::fs::metadata(path).ok());
+        let Some(metadata) = metadata.filter(|m| m.is_file() && m.len() <= KIND_LIMIT) else {
+            self.cached_kinds().remove(&entry.id);
+            return None;
+        };
+        let stamp = Stamp::of(&metadata);
+        if let Some(stamp) = stamp {
+            if let Some((cached, kind)) = self.cached_kinds().get(&entry.id) {
+                if *cached == stamp {
+                    return kind.clone();
+                }
+            }
+        }
+        self.kind_reads.fetch_add(1, Ordering::Relaxed);
+        let kind = self
+            .read(&entry.id)
+            .ok()
+            .and_then(|d| crate::authoring::declared_kind(self, &entry.id, &d.text));
+        let mut cache = self.cached_kinds();
+        match stamp.filter(Stamp::settled) {
+            Some(stamp) => {
+                cache.insert(entry.id.clone(), (stamp, kind.clone()));
+            }
+            None => {
+                cache.remove(&entry.id);
+            }
+        }
+        kind
+    }
+
+    fn cached_kinds(&self) -> std::sync::MutexGuard<'_, HashMap<String, (Stamp, Option<String>)>> {
+        self.kinds
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// Read one document.
@@ -431,14 +591,15 @@ impl Workspace {
     }
 }
 
-/// Walk one directory, appending every `.lcl` document and every directory.
+/// Walk one directory, appending every `.lcl` document and every directory,
+/// and marking the listing truncated when an eligible entry is left out.
 fn walk(
     root: &Path,
     directory: &Path,
     depth: usize,
-    out: &mut Vec<Entry>,
+    out: &mut Listing,
 ) -> Result<(), WorkspaceError> {
-    if depth > MAX_DEPTH || out.len() > MAX_ENTRIES {
+    if out.truncated {
         return Ok(());
     }
     let listing = std::fs::read_dir(directory).map_err(|e| WorkspaceError::Io {
@@ -449,47 +610,61 @@ fn walk(
     children.sort();
 
     for path in children {
-        let Ok(relative) = path.strip_prefix(root) else {
+        let Some((relative, is_dir)) = eligible(root, &path) else {
             continue;
         };
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-        // A dot directory is tooling, not source. The package cache is one.
-        if name.starts_with('.') {
-            continue;
+        // One more entry than the tree may report, or one deeper than it
+        // goes: the listing is incomplete, and says so.
+        if depth > MAX_DEPTH || out.entries.len() == MAX_ENTRIES {
+            out.truncated = true;
+            return Ok(());
         }
-        // A link is listed only when what it names is inside the project, which
-        // is also what opening it requires; the walk never enumerates through
-        // one that leaves.
-        let Ok(metadata) = std::fs::symlink_metadata(&path) else {
-            continue;
-        };
-        let is_dir = if metadata.file_type().is_symlink() {
-            match path.canonicalize() {
-                Ok(target) if lcl_capabilities::contains(root, &target) => target.is_dir(),
-                _ => continue,
-            }
-        } else {
-            metadata.is_dir()
-        };
         if is_dir {
-            out.push(Entry {
-                id: to_identity(relative),
+            out.entries.push(Entry {
+                id: to_identity(&relative),
                 directory: true,
                 bytes: None,
             });
             walk(root, &path, depth + 1, out)?;
-        } else if lcl_project::is_document(&name) {
-            out.push(Entry {
-                id: to_identity(relative),
+            if out.truncated {
+                return Ok(());
+            }
+        } else {
+            out.entries.push(Entry {
+                id: to_identity(&relative),
                 directory: false,
                 bytes: std::fs::metadata(&path).ok().map(|m| m.len()),
             });
         }
     }
     Ok(())
+}
+
+/// Whether the tree lists this path, and as a folder or a document: its
+/// root-relative path when it does.
+fn eligible(root: &Path, path: &Path) -> Option<(PathBuf, bool)> {
+    let relative = path.strip_prefix(root).ok()?.to_path_buf();
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    // A dot directory is tooling, not source. The package cache is one.
+    if name.starts_with('.') {
+        return None;
+    }
+    // A link is listed only when what it names is inside the project, which
+    // is also what opening it requires; the walk never enumerates through
+    // one that leaves.
+    let metadata = std::fs::symlink_metadata(path).ok()?;
+    let is_dir = if metadata.file_type().is_symlink() {
+        match path.canonicalize() {
+            Ok(target) if lcl_capabilities::contains(root, &target) => target.is_dir(),
+            _ => return None,
+        }
+    } else {
+        metadata.is_dir()
+    };
+    (is_dir || lcl_project::is_document(&name)).then_some((relative, is_dir))
 }
 
 /// A root-relative path as one identity string, `/`-separated.

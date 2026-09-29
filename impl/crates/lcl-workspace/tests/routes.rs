@@ -37,6 +37,12 @@ fn the_tree_lists_every_document_and_nothing_else() {
     assert!(ids.contains(&"sub"));
     assert!(!ids.iter().any(|id| id.ends_with(".txt")));
     assert!(!ids.contains(&"lcl.project.json"));
+    // Nothing was left out, and the reply says so rather than leaving the
+    // count to be guessed at.
+    assert_eq!(
+        reply.get("truncated").and_then(|t| t.as_bool()),
+        Some(false)
+    );
 }
 
 #[test]

@@ -44,6 +44,8 @@ class WorkspaceControllerTest {
     /** The project's files on the PC. */
     private val files = linkedMapOf("a.lcl" to "LCL:\n", "notes.lcl.txt" to "LCL:\n")
     private val kinds = mutableMapOf<String, String>()
+    /** Whether the stand-in PC says its limits cut the listing short. */
+    private var truncated = false
     /** The fake PC's scaffold: its bytes depend on role, mode and the file name. */
     private var templateEdition = 1
     private fun scaffoldText(role: String, mode: String, path: String) = "PC scaffold $templateEdition for $role ($mode) at $path\n"
@@ -72,7 +74,7 @@ class WorkspaceControllerTest {
         // As the PC lists a project: every folder and document, sorted.
         "tree" -> reply(200, "entries" to JsonArray((files.keys + files.keys.flatMap(FileTree::ancestors)).distinct().sorted().map {
             buildJsonObject { put("id", it); put("directory", it !in files); kinds[it]?.let { k -> put("kind", k) } }
-        }))
+        }), "truncated" to truncated)
         "roles" -> reply(
             200,
             "available" to true,
@@ -225,6 +227,28 @@ class WorkspaceControllerTest {
         workspace.create("fresh")
         runCurrent()
         assertTrue(workspace.ui.value.tree.any { it.id == "fresh.lcl" })
+    }
+
+    @Test
+    fun a_listing_the_pc_cut_short_says_so_until_one_is_complete() = runTest {
+        val (_, workspace) = connected()
+        assertFalse(workspace.ui.value.treeTruncated)
+        truncated = true
+        workspace.refreshTree()
+        assertTrue(workspace.ui.value.treeTruncated)
+        // Files already listed still open.
+        workspace.open("a.lcl")
+        runCurrent()
+        assertEquals("a.lcl", workspace.ui.value.activeDocument?.id)
+        truncated = false
+        workspace.refreshTree()
+        assertFalse(workspace.ui.value.treeTruncated)
+    }
+
+    @Test
+    fun the_truncation_notice_says_what_the_pc_workspace_says() {
+        val page = java.io.File("../../impl/crates/lcl-workspace/assets/index.html").readText()
+        assertTrue(page.contains(">${io.lcl.workspace.ui.TREE_TRUNCATED}<"))
     }
 
     @Test

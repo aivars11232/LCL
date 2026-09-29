@@ -358,7 +358,21 @@ async function loadSession() {
 async function loadTree() {
   const reply = await api("GET", "/api/documents");
   state.entries = reply.entries;
+  /* The server's limits left documents or folders out: say so, rather than
+   * let a partial tree pass for the whole project. */
+  $("#tree-truncated").hidden = reply.truncated !== true;
   renderTree();
+}
+
+/* ↻: list the project again, for files another program added, removed or
+ * renamed. Only the tree changes: open tabs, unsaved text and conflicts stay
+ * as they are, and folded folders that still exist stay folded. */
+async function refreshTree() {
+  const button = $("#act-refresh");
+  button.disabled = true;
+  try { await loadTree(); }
+  catch (e) { toast(`Could not refresh the file tree: ${e.message}`, "bad"); }
+  finally { button.disabled = false; }
 }
 
 /* The open documents holding anything not yet kept on disk: edits, a save
@@ -2941,6 +2955,7 @@ $("#act-run").onclick = startRun;
 $("#act-save").onclick = () => save();
 $("#act-reload").onclick = reload;
 $("#act-new").onclick = newDocument;
+$("#act-refresh").onclick = refreshTree;
 $("#act-new-project").onclick = newProject;
 $("#act-settings").onclick = openSettings;
 $("#act-manual").onclick = openManual;

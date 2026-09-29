@@ -83,6 +83,8 @@ data class WorkspaceUi(
     val projects: List<ProjectInfo> = emptyList(),
     val project: ProjectInfo? = null,
     val tree: List<TreeEntry> = emptyList(),
+    /** Whether the PC's limits left documents or folders out of [tree]. */
+    val treeTruncated: Boolean = false,
     val documents: List<OpenDocument> = emptyList(),
     val active: String? = null,
     /** The last Check, Validate or Inspect report, per document key, and which it was. */
@@ -246,7 +248,7 @@ class WorkspaceController(
 
     fun selectProject(id: String) {
         val project = _ui.value.projects.firstOrNull { it.id == id } ?: return
-        _ui.update { it.copy(project = project, tree = emptyList()) }
+        _ui.update { it.copy(project = project, tree = emptyList(), treeTruncated = false) }
         scope.launch { refreshTree() }
     }
 
@@ -258,7 +260,7 @@ class WorkspaceController(
             val e = element as? JsonObject ?: return@mapNotNull null
             TreeEntry(e.str("id") ?: return@mapNotNull null, e.bool("directory") == true, e.str("kind"))
         } ?: emptyList()
-        _ui.update { it.copy(tree = entries) }
+        _ui.update { it.copy(tree = entries, treeTruncated = reply.obj.bool("truncated") == true) }
         loadRoles()
     }
 

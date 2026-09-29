@@ -322,44 +322,37 @@ impl Routes {
 
     /// Every `.lcl` document in the project.
     fn documents(&self, workspace: &Workspace) -> Response {
-        match workspace.documents() {
-            Ok(entries) => Response::json(
-                Object::new()
-                    .with(
-                        "entries",
-                        Node::array(entries.iter().map(|e| {
-                            Object::new()
-                                .with("id", Node::string(&e.id))
-                                .with("directory", Node::Bool(e.directory))
-                                .with(
-                                    "bytes",
-                                    match e.bytes {
-                                        Some(n) => Node::u64(n),
-                                        None => Node::Null,
-                                    },
-                                )
-                                .with("kind", Self::kind_of(workspace, e))
-                                .into()
-                        })),
-                    )
-                    .pretty(),
-            ),
+        match workspace.listing() {
+            Ok(listing) => {
+                // The `SPECIFICATION` `KIND` each document declares, as its
+                // engine parses it: the role of a project part, `kind.project`
+                // for an entry; `null` for a folder, an unreadable or
+                // unparsable file, or one over 1 MiB.
+                let kinds = workspace.tree_kinds(&listing.entries);
+                Response::json(
+                    Object::new()
+                        .with(
+                            "entries",
+                            Node::array(listing.entries.iter().zip(kinds).map(|(e, kind)| {
+                                Object::new()
+                                    .with("id", Node::string(&e.id))
+                                    .with("directory", Node::Bool(e.directory))
+                                    .with(
+                                        "bytes",
+                                        match e.bytes {
+                                            Some(n) => Node::u64(n),
+                                            None => Node::Null,
+                                        },
+                                    )
+                                    .with("kind", kind.as_deref().map_or(Node::Null, Node::string))
+                                    .into()
+                            })),
+                        )
+                        .with("truncated", Node::Bool(listing.truncated))
+                        .pretty(),
+                )
+            }
             Err(e) => Response::error(400, &e.to_string()),
-        }
-    }
-
-    /// The `SPECIFICATION` `KIND` a listed document declares, as its engine
-    /// parses it: the role of a project part, `kind.project` for an entry.
-    /// `null` for a folder, an unreadable or unparsable file, or one over
-    /// 1 MiB, which the tree does not read.
-    fn kind_of(workspace: &Workspace, entry: &crate::project::Entry) -> Node {
-        if entry.directory || entry.bytes.map_or(true, |n| n > 1 << 20) {
-            return Node::Null;
-        }
-        match workspace.read(&entry.id) {
-            Ok(document) => authoring::declared_kind(workspace, &entry.id, &document.text)
-                .map_or(Node::Null, Node::string),
-            Err(_) => Node::Null,
         }
     }
 

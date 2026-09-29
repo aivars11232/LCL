@@ -140,6 +140,8 @@ async function harness(options) {
   };
   let nextHold = null;
   let failListing = false;
+  // Controlled mode's stand-in for a project too large for the tree's limits.
+  let fixtureTruncated = false;
   let failTokens = false;
   // The computer's settings and the folders that exist, for controlled mode.
   // In real-server mode the server's own settings file and filesystem answer.
@@ -207,7 +209,10 @@ async function harness(options) {
         formal_version: "0.1.0", authority: "authoritative", identity_digest: "fixture", root: "/spec",
       } });
     } else if (url.pathname === "/api/documents") {
-      reply = jsonReply({ entries: [...stored.keys()].sort().map(id => ({ id, directory: false, bytes: null })) });
+      reply = jsonReply({
+        entries: [...stored.keys()].sort().map(id => ({ id, directory: false, bytes: null })),
+        truncated: fixtureTruncated,
+      });
     } else if (url.pathname === "/api/document" && method === "POST") {
       // Create: the default ending for a name without one, an explicit one
       // kept, and never over an existing document.
@@ -428,8 +433,28 @@ async function harness(options) {
     },
     /// Another writer changes a document behind the page's back.
     async writeBehind(id, text) {
-      if (options.project) await fs.writeFile(path.join(options.project, id), text);
-      else stored.set(id, text);
+      if (options.project) {
+        await fs.mkdir(path.dirname(path.join(options.project, id)), { recursive: true });
+        await fs.writeFile(path.join(options.project, id), text);
+      } else stored.set(id, text);
+    },
+    /// Another program renames a document behind the page's back.
+    async renameBehind(from, to) {
+      if (options.project) await fs.rename(path.join(options.project, from), path.join(options.project, to));
+      else { stored.set(to, stored.get(from)); stored.delete(from); }
+    },
+    /// Fill the project past the tree's 4096 entries, or empty it again.
+    async overfill(on) {
+      const dir = options.project && path.join(options.project, "overfill");
+      if (!on) {
+        if (dir) await fs.rm(dir, { recursive: true, force: true });
+        fixtureTruncated = false;
+        return;
+      }
+      if (dir) {
+        await fs.mkdir(dir, { recursive: true });
+        for (let i = 0; i < 4097; i++) await fs.writeFile(path.join(dir, `d${String(i).padStart(5, "0")}.lcl`), "");
+      } else fixtureTruncated = true;
     },
     /// Another program removes a document behind the page's back.
     async removeBehind(id) {
@@ -1198,6 +1223,61 @@ const uiCases = [
     row("docs").onkeydown(key("Enter"));
     row("docs").onkeydown(key(" "));
     assert.deepEqual(rows(), ["a.lcl", "docs", "docs/guide", "docs/x.lcl"]);
+  }],
+  ["↻ shows files another program added, removed or renamed, and keeps tabs, unsaved text and folds", async h => {
+    await h.add("refresh/a.lcl", "A\n");
+    await h.add("refresh/b.lcl", "B\n");
+    await h.add("refresh-old.lcl", "R\n");
+    await h.add("keep.lcl", "saved\n");
+    h.edit("unsaved edit\n");
+    h.run('state.collapsed.add("refresh"); renderTree()');
+    const rows = () => h.get("#tree").children.map(li => li.title);
+    assert(!rows().includes("refresh/a.lcl"), "the folded folder shows its documents");
+
+    await h.writeBehind("outside-new.lcl", "N\n");
+    await h.writeBehind("outside-dir/inner.lcl", "I\n");
+    await h.removeBehind("refresh/b.lcl");
+    await h.renameBehind("refresh-old.lcl", "refresh-renamed.lcl");
+    assert(!h.treeIds().includes("outside-new.lcl"), "the tree changed before anyone asked");
+
+    await bounded(h.get("#act-refresh").onclick(), "refresh");
+    const ids = h.treeIds();
+    for (const id of ["outside-new.lcl", "outside-dir/inner.lcl", "refresh-renamed.lcl", "refresh/a.lcl", "keep.lcl"]) {
+      assert(ids.includes(id), `${id} is not listed after ↻`);
+    }
+    for (const id of ["refresh/b.lcl", "refresh-old.lcl"]) assert(!ids.includes(id), `${id} is still listed after ↻`);
+    if (h.realDisk) {
+      const dirs = JSON.parse(h.run("JSON.stringify(state.entries.filter(e => e.directory).map(e => e.id))"));
+      assert(dirs.includes("outside-dir"), "the new folder is not listed");
+    }
+    // Only the tree changed: every tab, the unsaved text and the fold are kept.
+    assert.deepEqual(JSON.parse(h.run("JSON.stringify([...state.docs.keys()].sort())")),
+      ["keep.lcl", "refresh-old.lcl", "refresh/a.lcl", "refresh/b.lcl"]);
+    assert.deepEqual(h.doc("keep.lcl"), { text: "unsaved edit\n", saved: "saved\n", dirty: true });
+    assert.equal(h.get("#code").value, "unsaved edit\n");
+    assert.equal(await h.persisted("keep.lcl"), "saved\n", "↻ saved or reloaded a document");
+    assert(h.run('state.collapsed.has("refresh")'), "the fold was lost");
+    assert(!rows().includes("refresh/a.lcl"), "the folded folder opened");
+    const marked = h.get("#tree").children.filter(li => li.classList.contains("open")).map(li => li.title);
+    assert.deepEqual(marked, ["keep.lcl"]);
+    assert.equal(h.get("#act-refresh").disabled, false);
+    assert(!h.modalOpen());
+    for (const id of ["outside-new.lcl", "outside-dir/inner.lcl", "refresh-renamed.lcl", "refresh/a.lcl"]) await h.removeBehind(id);
+  }],
+  ["the tree says when its limits left documents out, and nothing when they did not", async h => {
+    assert((await h.page()).includes(">File tree limited to 4096 entries and 12 folder levels; some files are not shown.<"),
+      "the served page does not carry the warning's words");
+    await bounded(h.run("loadTree()"), "listing");
+    assert.equal(h.get("#tree-truncated").hidden, true, "a complete tree carries the warning");
+    try {
+      await h.overfill(true);
+      await bounded(h.get("#act-refresh").onclick(), "refresh");
+      assert.equal(h.get("#tree-truncated").hidden, false, "a truncated tree shows no warning");
+      // A real server reports exactly its limit, never more.
+      if (h.realDisk) assert.equal(h.run("state.entries.length"), 4096);
+    } finally { await h.overfill(false); }
+    await bounded(h.get("#act-refresh").onclick(), "refresh");
+    assert.equal(h.get("#tree-truncated").hidden, true, "the warning outlived the extra files");
   }],
   ["a document chosen in the tree opens and is marked, and the tree follows new folders", async h => {
     await h.add("tree-fold/deep/inner.lcl", "LCL:\n");

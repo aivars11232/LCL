@@ -45,9 +45,12 @@ android {
         targetSdk = 36
         // Every release raises versionCode; Android installs an update only
         // over a lower one. The properties let a build (or the update test in
-        // tools/e2e.sh) set them without editing this file.
-        versionCode = providers.gradleProperty("lclVersionCode").orNull?.toInt() ?: 1
-        versionName = providers.gradleProperty("lclVersionName").orNull ?: "0.1.0"
+        // tools/e2e.sh) set them without editing this file. The defaults are
+        // the next release's: versionName is the product version exactly as
+        // impl/Cargo.toml has it, which people see as ProductVersion.shown
+        // gives it (0.5.0 as "0.5"); versionCode is never shown.
+        versionCode = providers.gradleProperty("lclVersionCode").orNull?.toInt() ?: 8
+        versionName = providers.gradleProperty("lclVersionName").orNull ?: "0.5.0"
         buildConfigField("String", "UPDATE_TRUSTED_KEYS", "\"$trustedUpdateKeys\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

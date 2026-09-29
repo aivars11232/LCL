@@ -1373,7 +1373,7 @@ function markUpdate() {
     (s.state === "update_available" || s.state === "ready_to_install"));
   const button = $("#act-settings");
   button.classList.toggle("has-update", waiting);
-  button.title = waiting ? `Settings — LCL ${s.available.version} is available` : "Settings";
+  button.title = waiting ? `Settings — LCL ${shownVersion(s.available.version)} is available` : "Settings";
 }
 
 /* At start, a check only when the last one is a day old. Offline or not, the
@@ -1412,6 +1412,14 @@ const UPDATE_PROBLEMS = {
   busy: "Busy",
 };
 
+/* The product version as people read it: a release's one trailing ".0"
+ * dropped, so 0.5.0 reads "0.5" and 1.2.0 "1.2", while 1.2.3 and every
+ * pre-release read in full. Words only: the updater compares, and every tag
+ * and file name carries, the full version. */
+function shownVersion(version) {
+  return /^\d+\.\d+\.0$/.test(version) ? version.slice(0, -2) : version;
+}
+
 function formatSize(bytes) {
   return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
 }
@@ -1434,7 +1442,7 @@ function renderUpdates(box) {
   }
   const s = u.state || {};
   const when = (secs) => (secs ? new Date(secs * 1000).toLocaleString() : "never");
-  box.append(el("p", "", `Installed version: LCL ${u.installed}`));
+  box.append(el("p", "", `Installed version: LCL ${shownVersion(u.installed)}`));
   box.append(el("p", "", `Last update check: ${when(s.checked_at)}`));
   const shown = el("p", "update-state", `State: ${UPDATE_STATES[s.state] || "Not checked yet"}`);
   shown.id = "update-state";
@@ -1444,7 +1452,7 @@ function renderUpdates(box) {
   }
   if (s.available) {
     const a = s.available;
-    box.append(el("p", "", `New version: LCL ${a.version} · released ${a.published_at.slice(0, 10)} · ${formatSize(a.size)}`));
+    box.append(el("p", "", `Available update: LCL ${shownVersion(a.version)} · released ${a.published_at.slice(0, 10)} · ${formatSize(a.size)}`));
     /* Release notes are text to read, never markup. */
     const notes = el("pre", "release-notes");
     notes.textContent = a.release_notes;
@@ -1520,7 +1528,7 @@ function installUpdate(version) {
   const unsaved = unsavedDocuments();
   modal("Install update", (body) => {
     body.append(el("p", "",
-      `LCL Workspace closes, LCL ${version} is installed and checked, and LCL Workspace opens again. ` +
+      `LCL Workspace closes, LCL ${shownVersion(version)} is installed and checked, and LCL Workspace opens again. ` +
       "If anything fails, the version you have now is put back. Your projects, settings, templates " +
       "and paired devices are not touched."));
     if (unsaved.length) {

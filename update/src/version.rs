@@ -78,6 +78,18 @@ impl Version {
     pub fn is_prerelease(&self) -> bool {
         !self.pre.is_empty()
     }
+
+    /// The version as people read it in LCL's own words: a release's one
+    /// trailing `.0` dropped, so `0.5.0` reads `0.5` and `1.2.0` reads `1.2`,
+    /// while `1.2.3` and every pre-release read in full. For text only:
+    /// comparisons, tags, file names and manifests keep the full version.
+    pub fn shown(&self) -> String {
+        if self.patch == 0 && self.pre.is_empty() {
+            format!("{}.{}", self.major, self.minor)
+        } else {
+            self.to_string()
+        }
+    }
 }
 
 impl Ord for Version {
@@ -161,6 +173,31 @@ mod tests {
         assert_eq!(v("1.2.3").cmp(&v("1.2.3")), Ordering::Equal);
         assert_eq!(v("1.0.0-rc.1").to_string(), "1.0.0-rc.1");
         assert!(v("1.0.0-rc.1").is_prerelease() && !v("1.0.0").is_prerelease());
+    }
+
+    #[test]
+    fn a_release_reads_without_one_trailing_zero_and_nothing_else_is_shortened() {
+        for (full, shown) in [
+            ("0.5.0", "0.5"),
+            ("1.2.0", "1.2"),
+            ("1.0.0", "1.0"),
+            ("1.2.3", "1.2.3"),
+            ("0.10.0", "0.10"),
+            ("1.0.0-rc.1", "1.0.0-rc.1"),
+            ("1.2.0-beta.0", "1.2.0-beta.0"),
+        ] {
+            assert_eq!(v(full).shown(), shown, "{full}");
+            // What is shown never replaces what is compared.
+            assert_eq!(v(full).to_string(), full);
+        }
+    }
+
+    #[test]
+    fn the_published_updater_accepts_and_orders_the_next_release() {
+        // v0.1.1 carries exactly this parser: 0.5.0 is a version to it, and a
+        // newer one, while 0.5 is not a version at all.
+        assert!(v("0.5.0") > v("0.1.1"));
+        assert!(Version::parse("0.5").is_err());
     }
 
     #[test]

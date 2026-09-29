@@ -207,7 +207,10 @@ printf 'e2e-test-key %s\n' "$(openssl pkey -in "$work/update-test.key" -pubout -
 update_props="-PlclUpdateTestEndpoint=http://10.0.2.2:$update_port -PlclUpdateTestKeys=$work/update-test-keys.txt"
 
 log "building the app and its instrumented tests"
-(cd "$android" && ./gradlew --console=plain -q assembleDebug assembleDebugAndroidTest $update_props)
+# The app under test starts at versionCode 1 whatever the release defaults
+# are, so the same-signed updates below (2, then 3) install over it.
+(cd "$android" && ./gradlew --console=plain -q assembleDebug assembleDebugAndroidTest \
+    -PlclVersionCode=1 -PlclVersionName=0.1.0 $update_props)
 # -d: an earlier run may have left the higher-versioned update build installed.
 "$adb" install -r -t -d "$android/app/build/outputs/apk/debug/app-debug.apk" >/dev/null
 "$adb" install -r -t -d "$android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk" >/dev/null

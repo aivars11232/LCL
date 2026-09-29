@@ -43,6 +43,7 @@ import io.lcl.workspace.editor.EditorState
 import io.lcl.workspace.remote.Protocol
 import io.lcl.workspace.remote.obj
 import io.lcl.workspace.remote.str
+import io.lcl.workspace.update.ProductVersion
 import io.lcl.workspace.workspace.LocalText
 import io.lcl.workspace.workspace.OpenDocument
 import io.lcl.workspace.workspace.WorkspaceController
@@ -115,14 +116,14 @@ fun AboutScreen(container: AppContainer, connection: ConnectionState, onBack: ()
             Text(label, style = MaterialTheme.typography.labelMedium)
             Text(value ?: "—", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("about:$label"))
         }
-        row("App", "LCL for Android ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+        row("App", "LCL ${ProductVersion.shown(BuildConfig.VERSION_NAME)}")
         row("Remote protocol", Protocol.VERSION)
         row("Connection", describe(connection))
         row("PC", pc?.let { "${it.name} (${it.pcId})" })
         row("PC fingerprint", pc?.fingerprint)
         row("This device's fingerprint for it", deviceFingerprint)
         row("This device's key", keyProtection?.let { "Android Keystore, not exportable · ${it.description}" })
-        row("PC service", about?.str("service"))
+        row("PC service", about?.str("service")?.let(ProductVersion::shownService))
         row("PC engine protocol", about?.str("engine_protocol"))
         val core = about?.obj("core")
         row("LCL Core 0.1", core?.let { "${it.str("formal_version")} · ${it.str("authority")}\n${it.str("identity_digest")}" })

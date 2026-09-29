@@ -57,7 +57,7 @@ pub fn applicable(
             "unsupported",
             format!(
                 "LCL {} is for {}, and this computer is {}",
-                manifest.product_version,
+                manifest.product_version.shown(),
                 manifest.pc.architecture,
                 crate::ARCHITECTURE
             ),
@@ -68,7 +68,7 @@ pub fn applicable(
             "unsupported",
             format!(
                 "LCL {} needs a newer updater than this one; install it manually",
-                manifest.product_version
+                manifest.product_version.shown()
             ),
         ));
     }
@@ -76,8 +76,10 @@ pub fn applicable(
         return Err((
             "unsupported",
             format!(
-                "LCL {} replaces {} or newer only, and {installed} is installed; install it manually",
-                manifest.product_version, manifest.minimum_supported_version
+                "LCL {} replaces {} or newer only, and {} is installed; install it manually",
+                manifest.product_version.shown(),
+                manifest.minimum_supported_version.shown(),
+                installed.shown()
             ),
         ));
     }

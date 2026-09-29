@@ -26,6 +26,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import io.lcl.workspace.AppContainer
 import io.lcl.workspace.BuildConfig
 import io.lcl.workspace.update.Phase
+import io.lcl.workspace.update.ProductVersion
 import io.lcl.workspace.update.UpdateUi
 import java.text.DateFormat
 import java.util.Date
@@ -75,7 +76,7 @@ fun UpdatesScreen(container: AppContainer, onBack: () -> Unit) {
             TextButton(onClick = onBack, Modifier.testTag("back")) { Text("Back") }
             Text("Updates", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         }
-        Text("Installed version: LCL ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", Modifier.testTag("update_installed"))
+        Text("Installed version: LCL ${ProductVersion.shown(BuildConfig.VERSION_NAME)}", Modifier.testTag("update_installed"))
         Text("Last update check: " + (ui.lastCheck?.let { DateFormat.getDateTimeInstance().format(Date(it)) } ?: "never"))
         Text("State: ${stateLabel(ui)}", fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("update_state"))
         ui.problem?.let { (kind, message) ->
@@ -84,7 +85,7 @@ fun UpdatesScreen(container: AppContainer, onBack: () -> Unit) {
         val manifest = ui.manifest
         if (manifest != null && ui.phase != Phase.UpToDate) {
             Text(
-                "New version: LCL ${manifest.productVersion} · released ${manifest.publishedAt.take(10)} · ${size(manifest.android.size)}",
+                "Available update: LCL ${ProductVersion.shown(manifest.productVersion.toString())} · released ${manifest.publishedAt.take(10)} · ${size(manifest.android.size)}",
                 Modifier.testTag("update_available"),
             )
             // Release notes are text to read, never interpreted.

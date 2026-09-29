@@ -256,13 +256,17 @@ fun isNewer(manifest: UpdateManifest, installed: InstalledApp): Boolean {
     if (current != null && manifest.productVersion <= current) return false
     if (manifest.android.versionCode <= installed.versionCode) {
         if (current == null) return false
-        throw UpdateRefused("invalid", "LCL ${manifest.productVersion} does not advance the app's versionCode")
+        throw UpdateRefused("invalid", "LCL ${ProductVersion.shown(manifest.productVersion.toString())} does not advance the app's versionCode")
     }
     if (current != null && current < manifest.minimumSupportedVersion) {
-        throw UpdateRefused("unsupported", "LCL ${manifest.productVersion} replaces ${manifest.minimumSupportedVersion} or newer only; install it manually")
+        throw UpdateRefused(
+            "unsupported",
+            "LCL ${ProductVersion.shown(manifest.productVersion.toString())} replaces " +
+                "${ProductVersion.shown(manifest.minimumSupportedVersion.toString())} or newer only; install it manually",
+        )
     }
     if (installed.sdk < manifest.android.minimumSdk) {
-        throw UpdateRefused("unsupported", "LCL ${manifest.productVersion} needs Android API ${manifest.android.minimumSdk}")
+        throw UpdateRefused("unsupported", "LCL ${ProductVersion.shown(manifest.productVersion.toString())} needs Android API ${manifest.android.minimumSdk}")
     }
     return true
 }

@@ -1264,6 +1264,30 @@ const uiCases = [
     assert(!h.modalOpen());
     for (const id of ["outside-new.lcl", "outside-dir/inner.lcl", "refresh-renamed.lcl", "refresh/a.lcl"]) await h.removeBehind(id);
   }],
+  ["Updates names the product version as people read it, never a package number", async h => {
+    const lines = JSON.parse(h.run(`(() => {
+      const box = document.createElement("div");
+      state.update = { installed: "0.5.0", configured: true, state: { state: "update_available", checked_at: 0,
+        available: { version: "0.5.0", published_at: "2026-09-30T00:00:00Z", size: 2048, release_notes: "notes" } } };
+      renderUpdates(box);
+      return JSON.stringify(box.children.map(c => c.textContent));
+    })()`));
+    assert.equal(lines[0], "Installed version: LCL 0.5");
+    assert(lines.includes("Available update: LCL 0.5 · released 2026-09-30 · 2 KB"), lines.join(" | "));
+    for (const line of lines) {
+      assert(!line.includes("0.5.0") && !/\(\d+\)/.test(line), `shown: ${line}`);
+    }
+    // The mark on Settings, and the question before installing, name it the same way.
+    h.run("markUpdate()");
+    assert.equal(h.get("#act-settings").title, "Settings — LCL 0.5 is available");
+    h.run('installUpdate("0.5.0")');
+    assert(h.modalText().includes("LCL Workspace closes, LCL 0.5 is installed and checked"), h.modalText());
+    assert(!h.modalText().includes("0.5.0"), h.modalText());
+    h.run("closeModal()");
+    const shown = JSON.parse(h.run(`JSON.stringify(["0.5.0", "1.2.0", "1.2.3", "0.10.0", "1.0.0-rc.1", "0.5"].map(shownVersion))`));
+    assert.deepEqual(shown, ["0.5", "1.2", "1.2.3", "0.10", "1.0.0-rc.1", "0.5"]);
+    h.run("state.update = null; markUpdate()");
+  }],
   ["the tree says when its limits left documents out, and nothing when they did not", async h => {
     assert((await h.page()).includes(">File tree limited to 4096 entries and 12 folder levels; some files are not shown.<"),
       "the served page does not carry the warning's words");

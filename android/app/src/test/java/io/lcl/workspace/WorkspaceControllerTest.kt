@@ -23,6 +23,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import io.lcl.workspace.workspace.FileTree
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -68,7 +69,10 @@ class WorkspaceControllerTest {
         )
         "about" -> reply(200, "service" to "lcl-remote test")
         "settings" -> reply(200, "default_extension" to ".lcl")
-        "tree" -> reply(200, "entries" to JsonArray(files.keys.map { buildJsonObject { put("id", it); put("directory", false); kinds[it]?.let { k -> put("kind", k) } } }))
+        // As the PC lists a project: every folder and document, sorted.
+        "tree" -> reply(200, "entries" to JsonArray((files.keys + files.keys.flatMap(FileTree::ancestors)).distinct().sorted().map {
+            buildJsonObject { put("id", it); put("directory", it !in files); kinds[it]?.let { k -> put("kind", k) } }
+        }))
         "roles" -> reply(
             200,
             "available" to true,
@@ -175,6 +179,52 @@ class WorkspaceControllerTest {
         assertEquals(listOf("a.lcl", "notes.lcl.txt"), ui.tree.map { it.id })
         assertEquals("lcl-remote test", ui.about!!.str("service"))
         assertEquals(".lcl", ui.defaultEnding)
+    }
+
+    @Test
+    fun folders_fold_and_unfold_and_the_document_being_edited_is_revealed() = runTest {
+        files["docs/guide/g.lcl"] = "LCL:\n"
+        files["docs/x.lcl"] = "LCL:\n"
+        val (_, workspace) = connected()
+        val shown = { FileTree.rows(workspace.ui.value.tree, workspace.ui.value.folded).map { it.entry.id } }
+        assertEquals(listOf("a.lcl", "docs", "docs/guide", "docs/guide/g.lcl", "docs/x.lcl", "notes.lcl.txt"), shown())
+        workspace.toggleFolder("docs")
+        assertEquals(listOf("a.lcl", "docs", "notes.lcl.txt"), shown())
+        workspace.toggleFolder("docs")
+        assertEquals(6, shown().size)
+        // Opening a document inside folded folders unfolds them, and it is the one marked.
+        workspace.toggleFolder("docs/guide")
+        workspace.toggleFolder("docs")
+        workspace.open("docs/guide/g.lcl")
+        runCurrent()
+        assertEquals(emptySet<String>(), workspace.ui.value.folded)
+        assertEquals("p1/docs/guide/g.lcl", workspace.ui.value.active)
+        // So does switching back to its tab.
+        workspace.open("a.lcl")
+        runCurrent()
+        workspace.toggleFolder("docs")
+        workspace.activate("p1/docs/guide/g.lcl")
+        assertEquals(emptySet<String>(), workspace.ui.value.folded)
+    }
+
+    @Test
+    fun the_tree_follows_the_pc_and_keeps_its_folds() = runTest {
+        files["docs/x.lcl"] = "LCL:\n"
+        val (_, workspace) = connected()
+        workspace.toggleFolder("docs")
+        // Files and folders added and removed on the PC.
+        files["docs/new.lcl"] = "LCL:\n"
+        files["later/y.lcl"] = "LCL:\n"
+        files.remove("docs/x.lcl")
+        workspace.refreshTree()
+        val ui = workspace.ui.value
+        assertEquals(listOf("a.lcl", "docs", "docs/new.lcl", "later", "later/y.lcl", "notes.lcl.txt"), ui.tree.map { it.id })
+        assertEquals(setOf("docs"), ui.folded)
+        assertEquals(listOf("a.lcl", "docs", "later", "later/y.lcl", "notes.lcl.txt"), FileTree.rows(ui.tree, ui.folded).map { it.entry.id })
+        // A document created from the device is listed at once.
+        workspace.create("fresh")
+        runCurrent()
+        assertTrue(workspace.ui.value.tree.any { it.id == "fresh.lcl" })
     }
 
     @Test

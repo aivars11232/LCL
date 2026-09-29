@@ -96,8 +96,13 @@ data class WorkspaceUi(
     val roles: List<RoleInfo> = emptyList(),
     /** The last project readiness asked for, shown until dismissed. */
     val readiness: Readiness? = null,
+    /** The folders folded in each project's tree, by project id, for as long as the app runs. */
+    val folds: Map<String, Set<String>> = emptyMap(),
 ) {
     val activeDocument: OpenDocument? get() = documents.firstOrNull { key(it) == active }
+
+    /** The folders folded in the current project's tree. */
+    val folded: Set<String> get() = project?.let { folds[it.id] }.orEmpty()
 
     companion object {
         fun key(doc: OpenDocument) = "${doc.project}/${doc.id}"
@@ -284,9 +289,22 @@ class WorkspaceController(
 
     // --------------------------------------------------------------- documents
 
+    /** Fold [folder] in the current project's tree if it is open, or open it. */
+    fun toggleFolder(folder: String) {
+        val project = _ui.value.project ?: return
+        _ui.update { it.copy(folds = it.folds + (project.id to FileTree.toggle(it.folded, folder))) }
+    }
+
+    /** Open every folder around [id] in [project]'s tree, so the document shows there. */
+    private fun reveal(project: String, id: String) = _ui.update {
+        val folded = it.folds[project] ?: return@update it
+        it.copy(folds = it.folds + (project to FileTree.reveal(folded, id)))
+    }
+
     fun open(id: String) {
         val project = _ui.value.project ?: return
         val key = "${project.id}/$id"
+        reveal(project.id, id)
         if (_ui.value.documents.any { WorkspaceUi.key(it) == key }) {
             _ui.update { it.copy(active = key) }
             return
@@ -301,7 +319,10 @@ class WorkspaceController(
         }
     }
 
-    fun activate(key: String) = _ui.update { it.copy(active = key) }
+    fun activate(key: String) {
+        _ui.value.documents.firstOrNull { WorkspaceUi.key(it) == key }?.let { reveal(it.project, it.id) }
+        _ui.update { it.copy(active = key) }
+    }
 
     fun close(key: String) {
         val doc = _ui.value.documents.firstOrNull { WorkspaceUi.key(it) == key } ?: return

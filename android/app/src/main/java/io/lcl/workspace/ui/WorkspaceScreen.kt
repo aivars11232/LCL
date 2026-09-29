@@ -21,6 +21,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DrawerState
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
@@ -44,8 +49,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -62,12 +72,14 @@ import io.lcl.workspace.remote.arr
 import io.lcl.workspace.remote.long
 import io.lcl.workspace.remote.obj
 import io.lcl.workspace.remote.str
+import io.lcl.workspace.workspace.FileTree
 import io.lcl.workspace.workspace.LclNames
 import io.lcl.workspace.workspace.OpenDocument
 import io.lcl.workspace.workspace.Readiness
 import io.lcl.workspace.workspace.RoleInfo
 import io.lcl.workspace.workspace.RunGrants
 import io.lcl.workspace.workspace.RunState
+import io.lcl.workspace.workspace.TreeRow
 import io.lcl.workspace.workspace.WorkspaceController
 import io.lcl.workspace.workspace.WorkspaceUi
 import kotlinx.coroutines.launch
@@ -101,11 +113,129 @@ fun WorkspaceScreen(
         } else if (showFiles || ui.activeDocument == null) {
             FilesPane(controller, ui, connected, onHome, onManual, onOpened = { showFiles = false }, modifier = Modifier.fillMaxSize())
         } else {
-            BackHandler { showFiles = true }
-            EditorPane(controller, ui, editors, settings, connected, onFiles = { showFiles = true }, modifier = Modifier.fillMaxSize())
+            val drawer = rememberDrawerState(DrawerValue.Closed)
+            // With the tree closed, Back shows the files full screen, as before.
+            BackHandler(enabled = !drawer.isOpen) { showFiles = true }
+            // Opening the tree lists the project again, so it shows what is on the PC now.
+            LaunchedEffect(drawer.targetValue) {
+                if (drawer.targetValue == DrawerValue.Open && connected) controller.refreshTree()
+            }
+            FilesDrawer(
+                drawer,
+                width = minOf(maxWidth * 0.86f, 360.dp),
+                files = { close -> FilesPane(controller, ui, connected, onHome, onManual, onOpened = close, modifier = Modifier.fillMaxSize()) },
+            ) { open ->
+                EditorPane(controller, ui, editors, settings, connected, onFiles = open, modifier = Modifier.fillMaxSize())
+            }
         }
     }
     ui.run?.paused?.let { pause -> ApprovalDialog(pause, controller) }
+}
+
+/**
+ * The project tree as a panel that slides in from the left over [content].
+ * [content] is handed `open` for its Files button; [files] is handed `close`,
+ * for choosing a file. Tapping outside the panel, swiping it back or Back also
+ * close it. What the panel shows exists only while it is open, so nothing
+ * hidden past the edge can be found or pressed; and while it is open it is
+ * modal: what is behind it is hidden from accessibility services, as the scrim
+ * hides it from touch.
+ */
+@Composable
+internal fun FilesDrawer(
+    drawer: DrawerState,
+    width: Dp,
+    files: @Composable (close: () -> Unit) -> Unit,
+    content: @Composable (open: () -> Unit) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val showing = drawer.isOpen || drawer.targetValue == DrawerValue.Open
+    BackHandler(enabled = drawer.isOpen) { scope.launch { drawer.close() } }
+    ModalNavigationDrawer(
+        drawerState = drawer,
+        // Swiping only closes it: a swipe from the edge would fight the
+        // editor's own sideways scrolling.
+        gesturesEnabled = drawer.isOpen,
+        drawerContent = {
+            ModalDrawerSheet(Modifier.width(width).testTag("files_drawer")) {
+                if (showing) files { scope.launch { drawer.close() } }
+            }
+        },
+    ) {
+        Box(if (showing) Modifier.clearAndSetSemantics {} else Modifier) { content { scope.launch { drawer.open() } } }
+    }
+}
+
+/**
+ * The project's folders and documents as the PC lists them: a folder folds
+ * and unfolds, a document opens, and the document being edited is marked.
+ */
+@Composable
+internal fun ProjectTree(
+    rows: List<TreeRow>,
+    /** The document being edited, if it is in this project. */
+    active: String?,
+    /** The documents open in tabs, and those of them with unsaved edits. */
+    open: Set<String>,
+    dirty: Set<String>,
+    connected: Boolean,
+    onToggle: (String) -> Unit,
+    onOpen: (String) -> Unit,
+    onReadiness: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    val faint = colors.onSurface.copy(alpha = 0.6f)
+    LazyColumn(modifier) {
+        items(rows, key = { it.entry.id }) { row ->
+            val entry = row.entry
+            val current = !entry.directory && entry.id == active
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(if (current) colors.secondaryContainer else Color.Transparent)
+                    .clickable { if (entry.directory) onToggle(entry.id) else onOpen(entry.id) }
+                    .semantics {
+                        if (entry.directory) stateDescription = if (row.folded) "Folded" else "Unfolded" else selected = current
+                    }
+                    .padding(start = (4 + row.depth * 14).dp, top = 10.dp, bottom = 10.dp, end = 8.dp)
+                    .testTag("file:${entry.id}"),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.width(18.dp)) { if (entry.directory) Text(if (row.folded) "▸" else "▾", color = faint) }
+                if (entry.id in dirty) Text("● ", color = LocalLclColors.current.warn)
+                Text(
+                    if (entry.directory) "${row.name}/" else row.name,
+                    color = when {
+                        current -> colors.onSecondaryContainer
+                        entry.directory -> faint
+                        else -> colors.onSurface
+                    },
+                    fontWeight = if (current || entry.id in open) FontWeight.SemiBold else null,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                // The role the file declares, as the PC's engine read it.
+                entry.kind?.let { kind ->
+                    Text(
+                        WorkspaceController.roleLabel(kind),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (kind == "kind.project") colors.primary else faint,
+                        modifier = Modifier.padding(horizontal = 6.dp).testTag("role:${entry.id}"),
+                    )
+                }
+                if (entry.kind == "kind.project") {
+                    TextButton(
+                        onClick = { onReadiness(entry.id) },
+                        enabled = connected,
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                        modifier = Modifier.testTag("readiness:${entry.id}"),
+                    ) { Text("Readiness") }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -152,45 +282,18 @@ private fun FilesPane(
                 modifier = Modifier.padding(8.dp),
             )
         }
-        LazyColumn(Modifier.fillMaxSize()) {
-            items(ui.tree, key = { it.id }) { entry ->
-                val depth = entry.id.count { it == '/' }
-                val name = entry.id.substringAfterLast('/')
-                val open = ui.documents.firstOrNull { it.project == ui.project?.id && it.id == entry.id }
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .then(if (entry.directory) Modifier else Modifier.clickable { controller.open(entry.id); onOpened() })
-                        .padding(start = (8 + depth * 14).dp, top = 10.dp, bottom = 10.dp, end = 8.dp)
-                        .testTag("file:${entry.id}"),
-                ) {
-                    if (open?.dirty == true) Text("● ", color = LocalLclColors.current.warn)
-                    Text(
-                        if (entry.directory) "$name/" else name,
-                        color = if (entry.directory) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface,
-                        fontWeight = if (open != null) FontWeight.SemiBold else null,
-                        modifier = Modifier.weight(1f),
-                    )
-                    // The role the file declares, as the PC's engine read it.
-                    entry.kind?.let { kind ->
-                        Text(
-                            WorkspaceController.roleLabel(kind),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (kind == "kind.project") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            modifier = Modifier.padding(horizontal = 6.dp).testTag("role:${entry.id}"),
-                        )
-                    }
-                    if (entry.kind == "kind.project") {
-                        TextButton(
-                            onClick = { controller.readiness(entry.id) },
-                            enabled = connected,
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                            modifier = Modifier.testTag("readiness:${entry.id}"),
-                        ) { Text("Readiness") }
-                    }
-                }
-            }
-        }
+        val here = ui.documents.filter { it.project == ui.project?.id }
+        ProjectTree(
+            rows = FileTree.rows(ui.tree, ui.folded),
+            active = ui.activeDocument?.takeIf { it.project == ui.project?.id }?.id,
+            open = here.map { it.id }.toSet(),
+            dirty = here.filter { it.dirty }.map { it.id }.toSet(),
+            connected = connected,
+            onToggle = controller::toggleFolder,
+            onOpen = { id -> controller.open(id); onOpened() },
+            onReadiness = controller::readiness,
+            modifier = Modifier.fillMaxSize(),
+        )
     }
     if (creating) {
         NewDocumentDialog(
@@ -349,7 +452,7 @@ private fun EditorPane(
     Column(modifier) {
         // Tabs.
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (onFiles != null) TextButton(onClick = onFiles, Modifier.testTag("files")) { Text("Files") }
+            if (onFiles != null) TextButton(onClick = onFiles, Modifier.testTag("files")) { Text("☰ Files") }
             ui.documents.forEach { d ->
                 val key = WorkspaceUi.key(d)
                 FilterChip(

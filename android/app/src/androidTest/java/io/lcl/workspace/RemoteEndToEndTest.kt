@@ -115,7 +115,8 @@ class RemoteEndToEndTest {
 
     private fun goHome() {
         if (exists("pair_new")) return
-        if (exists("files")) rule.onNodeWithTag("files").performClick()
+        // Home is on the files list: full screen, or in the drawer if it is open.
+        if (!exists("home") && exists("files")) rule.onNodeWithTag("files").performClick()
         waitFor("home")
         rule.onNodeWithTag("home").performClick()
         waitFor("pair_new")

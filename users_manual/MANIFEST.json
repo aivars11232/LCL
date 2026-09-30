@@ -2,7 +2,7 @@
   "format": 1,
   "manual": "LCL Users Manual",
   "version": "0.3.0",
-  "digest": "ce96cc7ecaec9b7687592a76998d84d01cc2627bd85ac9995f93c371d049e600",
+  "digest": "af9628ec8f8960637d25339bae1f157f018fddd1a684edb06eebc60990caaa9b",
   "files": [
     {
       "name": "01_What_Is_LCL.md",
@@ -10,7 +10,7 @@
     },
     {
       "name": "02_Installing_and_Running.md",
-      "sha256": "6ecbe65eb2f8dc419b94dbab5d6e8579697a4ec6d05630cdedd0ab418bd52b17"
+      "sha256": "716d7b3ebac990845bacae889c9e7487e453dc061cab9844e351d87a290004f3"
     },
     {
       "name": "03_Your_First_Program.md",
@@ -70,7 +70,7 @@
     },
     {
       "name": "17_Tools_Reference.md",
-      "sha256": "9b6093b4fe8406fc8cf392d0c5ad4f6c650f4c59f02eaf17b5489014120be84b"
+      "sha256": "4e1944d9ff010ff701fe8f169fe8b621da19101137e44dfb679baaf5fed0eb19"
     },
     {
       "name": "18_Starting_Files_From_Templates.md",

@@ -280,9 +280,15 @@ Using it:
   program adds, removes or renames files there: the tree does not follow the
   disk by itself. Only the tree changes; open documents, unsaved edits and
   folded folders stay as they are.
-* A project with more than 4096 files and folders, or with folders nested
-  more than 12 deep, is shown in part, and the tree says **File tree limited
-  to 4096 entries and 12 folder levels; some files are not shown.** Documents
+* The tree shows LCL documents (`.lcl` and `.lcl.txt`) and the folders that
+  lead to them. A folder with no document anywhere inside it, such as one
+  that holds only outputs, logs or data, or an empty one, is not shown, but
+  it stays on disk exactly as it is. A folder of any name that does hold a
+  document, such as `docs/rules.lcl`, is shown.
+* A project whose tree would need more than 4096 entries, with documents
+  more than 12 folders deep, or with more than 100,000 files and folders to
+  look through, is shown in part, and the tree says **File tree limited to
+  4096 entries and 12 folder levels; some files are not shown.** Documents
   already open, or opened another way, work as usual.
 * Until a document is open, the editor shows **No document open** and can't
   be typed into. Check, Inspect, Run, Save and Reload are unavailable until

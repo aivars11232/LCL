@@ -30,7 +30,7 @@ code the desktop workspace uses.
 |---|---|---|---|
 | List shared projects | ✅ | `projects` | the service's project list, read from `remote.json` on every request |
 | Switch project | ✅ | — | |
-| Project tree (`.lcl` and `.lcl.txt` only) | ✅ | `tree` | `GET /api/documents` |
+| Project tree (`.lcl` and `.lcl.txt` only, and the folders that lead to them, as the PC lists them) | ✅ | `tree` | `GET /api/documents` |
 | PC's default file ending | ✅ | `settings` | `GET /api/settings` |
 | Open a document | ✅ | `open` | `GET /api/document` |
 | Close a document | ✅ | `close` | — (stops change notifications) |

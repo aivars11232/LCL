@@ -22,6 +22,7 @@ lcl <command> [options] [document]
 | `lcl spec` | | reports the specification package's path, version, identity and authority |
 | `lcl syntax` | | prints syntax facts for editors and tools: the recognised endings (`.lcl.txt`, `.lcl`), encoding, word counts |
 | `lcl version` | | prints the tool, protocol and language versions |
+| `lcl --version` | | prints the product version alone, on one line: `lcl 0.5.0` |
 | `lcl help` | | prints the built-in help |
 
 The package cache used by `vendor` and `list` must be declared as `"cache"`
@@ -160,8 +161,10 @@ Right-clicking a document in the project tree, or pressing Delete when it is
 selected there, offers **Delete…**, which asks first and removes the file
 for good. It deletes nothing if the file changed while you were being asked.
 **↻** beside `+` lists the project again after other programs changed its
-files; tabs and unsaved edits stay as they are. The tree shows at most 4096
-entries and 12 folder levels, and says so when a project has more.
+files; tabs and unsaved edits stay as they are. The tree shows documents and
+the folders that lead to them, never a folder without a document inside. It
+shows at most 4096 entries and 12 folder levels, and says so when a project
+has more.
 
 The ⚙ **Settings** button sets two kinds of setting:
 

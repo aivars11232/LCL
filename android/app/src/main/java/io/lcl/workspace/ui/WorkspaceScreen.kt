@@ -166,12 +166,11 @@ internal fun FilesDrawer(
     }
 }
 
-/** What the tree says when the PC's limits left part of the project out; the PC's own words. */
-internal const val TREE_TRUNCATED = "File tree limited to 4096 entries and 12 folder levels; some files are not shown."
-
 /**
- * The project's folders and documents as the PC lists them: a folder folds
- * and unfolds, a document opens, and the document being edited is marked.
+ * The project's folders and documents as the PC lists them, one folder at a
+ * time: a folder unfolds (reading its children) and folds, a document opens,
+ * and the document being edited is marked. Under a folder whose listing the
+ * PC cut short, a note says so, for that folder alone.
  */
 @Composable
 internal fun ProjectTree(
@@ -186,24 +185,23 @@ internal fun ProjectTree(
     onOpen: (String) -> Unit,
     onReadiness: (String) -> Unit,
     modifier: Modifier = Modifier,
-    /** Whether the PC's limits left documents or folders out of [rows]. */
-    truncated: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     val faint = colors.onSurface.copy(alpha = 0.6f)
     LazyColumn(modifier) {
-        if (truncated) {
-            item(key = "tree_truncated") {
-                Text(
-                    TREE_TRUNCATED,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = LocalLclColors.current.warn,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp).testTag("tree_truncated"),
-                )
-            }
-        }
         items(rows, key = { it.entry.id }) { row ->
             val entry = row.entry
+            if (row.note != null) {
+                Text(
+                    row.note,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LocalLclColors.current.warn,
+                    modifier = Modifier
+                        .padding(start = (4 + (row.depth + 1) * 14).dp, top = 6.dp, bottom = 6.dp, end = 8.dp)
+                        .testTag("limited:${FileTree.parentOf(entry.id)}"),
+                )
+                return@items
+            }
             val current = !entry.directory && entry.id == active
             Row(
                 Modifier
@@ -265,6 +263,7 @@ private fun FilesPane(
 ) {
     var picking by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf(false) }
+    var makingFolder by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     Column(modifier.padding(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -284,22 +283,23 @@ private fun FilesPane(
             }
             TextButton(onClick = { scope.launch { controller.refreshTree() } }, enabled = connected) { Text("Refresh") }
             TextButton(onClick = { creating = true }, enabled = connected && ui.project != null, modifier = Modifier.testTag("new_document")) { Text("New") }
+            TextButton(onClick = { makingFolder = true }, enabled = connected && ui.project != null, modifier = Modifier.testTag("new_folder")) { Text("Folder") }
             ManualIcon(onManual)
         }
         ui.project?.let {
             Text(it.root, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         HorizontalDivider(Modifier.padding(vertical = 4.dp))
-        if (ui.tree.isEmpty()) {
+        if (ui.explorer.folders[""]?.entries.isNullOrEmpty()) {
             Text(
-                if (connected) "No LCL documents here yet. New creates one." else "Connect to the PC to see its projects.",
+                if (connected) "Nothing here yet. New creates a document; Folder makes a folder." else "Connect to the PC to see its projects.",
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(8.dp),
             )
         }
         val here = ui.documents.filter { it.project == ui.project?.id }
         ProjectTree(
-            rows = FileTree.rows(ui.tree, ui.folded),
+            rows = FileTree.rows(ui.explorer),
             active = ui.activeDocument?.takeIf { it.project == ui.project?.id }?.id,
             open = here.map { it.id }.toSet(),
             dirty = here.filter { it.dirty }.map { it.id }.toSet(),
@@ -308,7 +308,13 @@ private fun FilesPane(
             onOpen = { id -> controller.open(id); onOpened() },
             onReadiness = controller::readiness,
             modifier = Modifier.fillMaxSize(),
-            truncated = ui.treeTruncated,
+        )
+    }
+    if (makingFolder) {
+        NewFolderDialog(
+            inside = ui.activeDocument?.takeIf { it.project == ui.project?.id }?.let { FileTree.parentOf(it.id) } ?: "",
+            onCreate = { folder -> controller.createFolder(folder); makingFolder = false },
+            onDismiss = { makingFolder = false },
         )
     }
     if (creating) {
@@ -323,6 +329,26 @@ private fun FilesPane(
     ui.readiness?.let { readiness ->
         ReadinessDialog(readiness, onOpen = { unit -> controller.dismissReadiness(); controller.open(unit); onOpened() }, onDismiss = controller::dismissReadiness)
     }
+}
+
+/** New folder: a path inside the project, under a folder that exists; it can stay empty. */
+@Composable
+private fun NewFolderDialog(inside: String, onCreate: (String) -> Unit, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf(if (inside.isEmpty()) "" else "$inside/") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New folder") },
+        text = {
+            Column {
+                Text("A folder path inside the project. Its parent must exist; the folder can stay empty.", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, modifier = Modifier.testTag("new_folder_name"))
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onCreate(name.trim().trimEnd('/')) }, enabled = name.trim().trimEnd('/').isNotEmpty(), modifier = Modifier.testTag("create_folder")) { Text("Create") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /** The small help affordance: it switches to the Manual tab. */

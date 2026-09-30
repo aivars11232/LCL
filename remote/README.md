@@ -259,7 +259,9 @@ workspace's routes do; `body` is the route's JSON.
 | `projects` | | the shared projects |
 | `unpair` | | revokes the device making the request — never another |
 | `session` | `project` | `GET /api/session` |
-| `tree` | `project` | `GET /api/documents` |
+| `children` | `project`, `parent` (optional; the root without it) | `GET /api/tree?parent=`: the direct children of one folder — every folder in it, empty or not, then its LCL documents — and nothing below them; `truncated` when that folder alone holds more than 4096. The explorer reads a folder when it is unfolded, never the whole project |
+| `mkdir` | `project`, `folder` | `POST /api/tree/folder`: one empty folder, under a folder that exists, inside the project |
+| `tree` | `project` | kept for apps published before `children` existed (LCL 0.5.0 and earlier): the same explorer flattened into their one answer, every folder and document to 12 levels and at most 4096 entries, each folder's contents right after it, `truncated` when anything was left out. A current app asks `children` instead; when an older PC answers `children` with `400` (unknown operation), the app falls back to `tree` and takes one folder's children out of it |
 | `settings` | `project` | `GET /api/settings` |
 | `open` | `project`, `document` | `GET /api/document`; the document is then watched for changes |
 | `close` | `project`, `document` | stops watching it |

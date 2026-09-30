@@ -1264,8 +1264,8 @@ fn projects_trees_and_both_endings_are_served() {
     std::fs::write(home.workspace().join("classic.lcl"), VALID).unwrap();
     std::fs::write(home.workspace().join("shared.lcl.txt"), VALID).unwrap();
     std::fs::write(home.workspace().join("notes.txt"), "plain text\n").unwrap();
-    // Folders with no document below them are the PC's to leave out; the
-    // phone shows exactly what the PC lists.
+    // Every folder is listed, empty or of other files: the explorer shows the
+    // project as it is, and the phone shows exactly what the PC lists.
     for dir in ["outputs", "logs/old", "empty-folder", "docs"] {
         std::fs::create_dir_all(home.workspace().join(dir)).unwrap();
     }
@@ -1275,21 +1275,95 @@ fn projects_trees_and_both_endings_are_served() {
     let pc = start(&home);
     let (mut client, _) = pair(&home, &pc, &device(), "tree");
     let project = project(&mut client);
+    let ids_of = |body: &Json| -> Vec<String> {
+        body.get("entries")
+            .and_then(Json::as_array)
+            .unwrap()
+            .iter()
+            .map(|e| s(e, "id"))
+            .collect()
+    };
+    // The explorer: one folder's direct children, folders first, and nothing
+    // below them; a folder is read only when asked for.
+    let (status, root) = client.request("children", &format!("\"project\":\"{project}\""));
+    assert_eq!(status, 200, "{root:?}");
+    assert_eq!(s(&root, "parent"), "");
+    assert_eq!(
+        ids_of(&root),
+        vec![
+            "docs",
+            "empty-folder",
+            "logs",
+            "outputs",
+            "classic.lcl",
+            "shared.lcl.txt"
+        ],
+        "ordinary .txt must not be listed; every folder must"
+    );
+    assert_eq!(root.get("truncated").and_then(Json::as_bool), Some(false));
+    let (status, logs) = client.request(
+        "children",
+        &format!("\"project\":\"{project}\",\"parent\":\"logs\""),
+    );
+    assert_eq!(status, 200);
+    assert_eq!(ids_of(&logs), vec!["logs/old"]);
+    let (status, empty) = client.request(
+        "children",
+        &format!("\"project\":\"{project}\",\"parent\":\"empty-folder\""),
+    );
+    assert_eq!(status, 200);
+    assert!(ids_of(&empty).is_empty(), "an empty folder lists as empty");
+    for bad in ["..", "/etc", "nowhere", "classic.lcl", "../tree"] {
+        let (status, _) = client.request(
+            "children",
+            &format!("\"project\":\"{project}\",\"parent\":\"{bad}\""),
+        );
+        assert!(status >= 400, "{bad} was listed");
+    }
+    // A folder made from the phone is real, empty, and listed at once; one
+    // outside the project is refused.
+    let (status, made) = client.request(
+        "mkdir",
+        &format!("\"project\":\"{project}\",\"folder\":\"docs/planning\""),
+    );
+    assert_eq!(status, 200, "{made:?}");
+    assert_eq!(s(&made, "id"), "docs/planning");
+    assert!(home.workspace().join("docs/planning").is_dir());
+    let (status, docs) = client.request(
+        "children",
+        &format!("\"project\":\"{project}\",\"parent\":\"docs\""),
+    );
+    assert_eq!(status, 200);
+    assert_eq!(ids_of(&docs), vec!["docs/planning", "docs/rules.lcl"]);
+    for bad in ["../escaped", "/tmp/escaped", ".hidden", "docs/planning"] {
+        let (status, _) = client.request(
+            "mkdir",
+            &format!("\"project\":\"{project}\",\"folder\":\"{bad}\""),
+        );
+        assert!(status >= 400, "{bad} was created");
+    }
+    assert!(!home.workspace().parent().unwrap().join("escaped").exists());
+    // The answer apps before `children` draw the whole project from: the
+    // same explorer flattened, parents before children, in the old shape.
     let (status, tree) = client.request("tree", &format!("\"project\":\"{project}\""));
     assert_eq!(status, 200);
-    let ids: Vec<String> = tree
-        .get("entries")
-        .and_then(Json::as_array)
-        .unwrap()
-        .iter()
-        .map(|e| s(e, "id"))
-        .collect();
     assert_eq!(
-        ids,
-        vec!["classic.lcl", "docs", "docs/rules.lcl", "shared.lcl.txt"],
-        "ordinary .txt and folders without a document must not be listed"
+        ids_of(&tree),
+        vec![
+            "docs",
+            "docs/planning",
+            "docs/rules.lcl",
+            "empty-folder",
+            "logs",
+            "logs/old",
+            "outputs",
+            "classic.lcl",
+            "shared.lcl.txt"
+        ]
     );
     assert_eq!(tree.get("truncated").and_then(Json::as_bool), Some(false));
+    let first = &tree.get("entries").and_then(Json::as_array).unwrap()[0];
+    assert_eq!(first.get("directory").and_then(Json::as_bool), Some(true));
     for id in ["classic.lcl", "shared.lcl.txt"] {
         let (status, doc) = client.request(
             "open",

@@ -44,8 +44,27 @@ class WorkspaceControllerTest {
     /** The project's files on the PC. */
     private val files = linkedMapOf("a.lcl" to "LCL:\n", "notes.lcl.txt" to "LCL:\n")
     private val kinds = mutableMapOf<String, String>()
-    /** Whether the stand-in PC says its limits cut the listing short. */
-    private var truncated = false
+    /** The folder whose listing the stand-in PC says its bound cut short. */
+    private var truncated: String? = null
+    /** Folders made with `mkdir`; the rest are implied by the files' paths. */
+    private val madeFolders = mutableSetOf<String>()
+    /** A PC from before `children` existed answers only `tree`. */
+    private var legacyPc = false
+    /** The projects the stand-in PC shares. */
+    private var projects = listOf(Triple("p1", "Demo", "/home/me/demo"))
+    /** The direct children of one folder, as the PC lists them: folders first. */
+    private fun childrenOf(parent: String): List<JsonObject> {
+        val under = { id: String -> if (parent.isEmpty()) id else if (id.startsWith("$parent/")) id.removePrefix("$parent/") else null }
+        val folders = sortedSetOf<String>(); val docs = sortedSetOf<String>()
+        for (id in files.keys + madeFolders) {
+            val rest = under(id) ?: continue
+            if (rest.contains('/')) folders += rest.substringBefore('/') else if (id in madeFolders) folders += rest else docs += rest
+        }
+        val join = { name: String -> if (parent.isEmpty()) name else "$parent/$name" }
+        return folders.map { buildJsonObject { put("id", join(it)); put("name", it); put("directory", true) } } +
+            docs.map { buildJsonObject { put("id", join(it)); put("name", it); put("directory", false); kinds[join(it)]?.let { k -> put("kind", k) } } }
+    }
+    private fun isFolder(id: String) = id.isEmpty() || childrenOf(id.substringBeforeLast('/', "")).any { it.str("id") == id && it.bool("directory") == true }
     /** The fake PC's scaffold: its bytes depend on role, mode and the file name. */
     private var templateEdition = 1
     private fun scaffoldText(role: String, mode: String, path: String) = "PC scaffold $templateEdition for $role ($mode) at $path\n"
@@ -67,14 +86,31 @@ class WorkspaceControllerTest {
     private suspend fun answer(op: String, f: JsonObject): Reply = when (op) {
         "projects" -> reply(
             200,
-            "projects" to JsonArray(listOf(buildJsonObject { put("id", "p1"); put("name", "Demo"); put("root", "/home/me/demo"); put("default", true) })),
+            "projects" to JsonArray(projects.map { (id, name, root) -> buildJsonObject { put("id", id); put("name", name); put("root", root); put("default", id == "p1") } }),
         )
         "about" -> reply(200, "service" to "lcl-remote test")
         "settings" -> reply(200, "default_extension" to ".lcl")
-        // As the PC lists a project: every folder and document, sorted.
+        // The explorer: one folder's direct children, and nothing below them.
+        "children" -> {
+            val parent = f.str("parent") ?: ""
+            when {
+                legacyPc -> reply(400, "error" to "unknown operation children")
+                !isFolder(parent) -> reply(404, "error" to "there is no such folder in the project")
+                else -> reply(200, "parent" to parent, "entries" to JsonArray(childrenOf(parent)), "truncated" to (truncated == parent))
+            }
+        }
+        "mkdir" -> {
+            val folder = f.str("folder")!!
+            when {
+                isFolder(folder) || folder in files -> reply(409, "error" to "$folder already exists")
+                !isFolder(folder.substringBeforeLast('/', "")) -> reply(422, "error" to "no such parent")
+                else -> { madeFolders += folder; reply(200, "id" to folder, "directory" to true) }
+            }
+        }
+        // As a PC before `children` lists a project: every folder and document, parents first.
         "tree" -> reply(200, "entries" to JsonArray((files.keys + files.keys.flatMap(FileTree::ancestors)).distinct().sorted().map {
             buildJsonObject { put("id", it); put("directory", it !in files); kinds[it]?.let { k -> put("kind", k) } }
-        }), "truncated" to truncated)
+        }), "truncated" to (truncated == ""))
         "roles" -> reply(
             200,
             "available" to true,
@@ -178,77 +214,158 @@ class WorkspaceControllerTest {
         val (_, workspace) = connected()
         val ui = workspace.ui.value
         assertEquals("p1", ui.project!!.id)
-        assertEquals(listOf("a.lcl", "notes.lcl.txt"), ui.tree.map { it.id })
+        assertEquals(listOf("a.lcl", "notes.lcl.txt"), ui.explorer.folders[""]!!.entries.map { it.id })
+        // Nothing but the root was asked for: no whole-project tree.
+        assertTrue(requests.none { it.first == "tree" })
         assertEquals("lcl-remote test", ui.about!!.str("service"))
         assertEquals(".lcl", ui.defaultEnding)
     }
 
     @Test
-    fun folders_fold_and_unfold_and_the_document_being_edited_is_revealed() = runTest {
+    fun folders_unfold_lazily_fold_and_the_document_being_edited_is_revealed() = runTest {
         files["docs/guide/g.lcl"] = "LCL:\n"
         files["docs/x.lcl"] = "LCL:\n"
+        madeFolders += "planning"
         val (_, workspace) = connected()
-        val shown = { FileTree.rows(workspace.ui.value.tree, workspace.ui.value.folded).map { it.entry.id } }
-        assertEquals(listOf("a.lcl", "docs", "docs/guide", "docs/guide/g.lcl", "docs/x.lcl", "notes.lcl.txt"), shown())
+        val shown = { FileTree.rows(workspace.ui.value.explorer).map { it.entry.id } }
+        val listed = { requests.filter { it.first == "children" }.map { it.second.str("parent") } }
+        // The root, folders first, every folder even an empty one; nothing below them was asked for.
+        assertEquals(listOf("docs", "planning", "a.lcl", "notes.lcl.txt"), shown())
+        assertEquals(listOf(""), listed())
+        // Unfolding docs asks for docs alone; guide inside it stays folded.
         workspace.toggleFolder("docs")
-        assertEquals(listOf("a.lcl", "docs", "notes.lcl.txt"), shown())
-        workspace.toggleFolder("docs")
-        assertEquals(6, shown().size)
-        // Opening a document inside folded folders unfolds them, and it is the one marked.
+        runCurrent()
+        assertEquals(listOf("docs", "docs/guide", "docs/x.lcl", "planning", "a.lcl", "notes.lcl.txt"), shown())
+        assertEquals(listOf("", "docs"), listed())
         workspace.toggleFolder("docs/guide")
+        runCurrent()
+        assertEquals(listOf("docs", "docs/guide", "docs/guide/g.lcl", "docs/x.lcl", "planning", "a.lcl", "notes.lcl.txt"), shown())
+        // Folding asks for nothing; unfolding again reads the folder afresh and keeps guide unfolded.
         workspace.toggleFolder("docs")
+        runCurrent()
+        assertEquals(listOf("docs", "planning", "a.lcl", "notes.lcl.txt"), shown())
+        assertEquals(listOf("", "docs", "docs/guide"), listed())
+        workspace.toggleFolder("docs")
+        runCurrent()
+        assertEquals(7, shown().size)
+        // The empty folder unfolds to nothing.
+        workspace.toggleFolder("planning")
+        runCurrent()
+        assertEquals(7, shown().size)
+        assertTrue("planning" in workspace.ui.value.explorer.expanded)
+        // Opening a document inside folded folders unfolds them, and it is the one marked.
+        workspace.toggleFolder("docs")
+        runCurrent()
         workspace.open("docs/guide/g.lcl")
         runCurrent()
-        assertEquals(emptySet<String>(), workspace.ui.value.folded)
+        assertTrue(setOf("docs", "docs/guide").all { it in workspace.ui.value.explorer.expanded })
         assertEquals("p1/docs/guide/g.lcl", workspace.ui.value.active)
+        assertTrue(shown().contains("docs/guide/g.lcl"))
         // So does switching back to its tab.
         workspace.open("a.lcl")
         runCurrent()
         workspace.toggleFolder("docs")
+        runCurrent()
         workspace.activate("p1/docs/guide/g.lcl")
-        assertEquals(emptySet<String>(), workspace.ui.value.folded)
+        runCurrent()
+        assertTrue("docs" in workspace.ui.value.explorer.expanded)
+        assertTrue(requests.none { it.first == "tree" })
     }
 
     @Test
-    fun the_tree_follows_the_pc_and_keeps_its_folds() = runTest {
+    fun refresh_rereads_the_root_and_unfolded_folders_and_leaves_folded_ones_alone() = runTest {
         files["docs/x.lcl"] = "LCL:\n"
+        files["folded/f.lcl"] = "LCL:\n"
         val (_, workspace) = connected()
         workspace.toggleFolder("docs")
+        runCurrent()
+        val shown = { FileTree.rows(workspace.ui.value.explorer).map { it.entry.id } }
         // Files and folders added and removed on the PC.
         files["docs/new.lcl"] = "LCL:\n"
         files["later/y.lcl"] = "LCL:\n"
+        files["folded/later.lcl"] = "LCL:\n"
         files.remove("docs/x.lcl")
+        val before = requests.size
         workspace.refreshTree()
-        val ui = workspace.ui.value
-        assertEquals(listOf("a.lcl", "docs", "docs/new.lcl", "later", "later/y.lcl", "notes.lcl.txt"), ui.tree.map { it.id })
-        assertEquals(setOf("docs"), ui.folded)
-        assertEquals(listOf("a.lcl", "docs", "later", "later/y.lcl", "notes.lcl.txt"), FileTree.rows(ui.tree, ui.folded).map { it.entry.id })
-        // A document created from the device is listed at once.
-        workspace.create("fresh")
+        assertEquals(listOf("", "docs"), requests.drop(before).filter { it.first == "children" }.map { it.second.str("parent") })
+        assertEquals(listOf("docs", "docs/new.lcl", "folded", "later", "a.lcl", "notes.lcl.txt"), shown())
+        assertEquals(setOf("docs"), workspace.ui.value.explorer.expanded)
+        // The folded folder is read when it is unfolded, and what was added shows then.
+        workspace.toggleFolder("folded")
         runCurrent()
-        assertTrue(workspace.ui.value.tree.any { it.id == "fresh.lcl" })
+        assertTrue(shown().contains("folded/later.lcl"))
+        // A document created from the device is listed at once, and only its folder was read.
+        val beforeCreate = requests.size
+        workspace.create("docs/fresh")
+        runCurrent()
+        assertTrue(shown().contains("docs/fresh.lcl"))
+        assertTrue(requests.drop(beforeCreate).filter { it.first == "children" }.all { it.second.str("parent") in setOf("", "docs") })
+        // A folder made from the device is real, empty and listed at once.
+        workspace.createFolder("docs/archive")
+        runCurrent()
+        assertTrue(shown().contains("docs/archive"))
+        assertTrue("docs/archive" in madeFolders)
+        assertTrue("docs/archive" in workspace.ui.value.explorer.expanded)
+        assertTrue(requests.none { it.first == "tree" })
     }
 
     @Test
-    fun a_listing_the_pc_cut_short_says_so_until_one_is_complete() = runTest {
+    fun switching_projects_clears_the_last_projects_tree() = runTest {
         val (_, workspace) = connected()
-        assertFalse(workspace.ui.value.treeTruncated)
-        truncated = true
-        workspace.refreshTree()
-        assertTrue(workspace.ui.value.treeTruncated)
-        // Files already listed still open.
-        workspace.open("a.lcl")
+        workspace.toggleFolder("docs")
         runCurrent()
-        assertEquals("a.lcl", workspace.ui.value.activeDocument?.id)
-        truncated = false
-        workspace.refreshTree()
-        assertFalse(workspace.ui.value.treeTruncated)
+        projects = projects + Triple("p2", "Other", "/home/me/other")
+        workspace.loadProjects()
+        workspace.selectProject("p2")
+        runCurrent()
+        assertEquals("p2", workspace.ui.value.project?.id)
+        assertTrue(workspace.ui.value.explorers["p2"]?.folders?.containsKey("") == true)
+        assertFalse(workspace.ui.value.explorers.containsKey("p1") && workspace.ui.value.explorer.folders.containsKey("docs"))
+        // Back to p1: its explorer starts over too.
+        workspace.selectProject("p1")
+        runCurrent()
+        assertEquals(setOf(""), workspace.ui.value.explorer.folders.keys)
+        assertEquals(emptySet<String>(), workspace.ui.value.explorer.expanded)
     }
 
     @Test
-    fun the_truncation_notice_says_what_the_pc_workspace_says() {
-        val page = java.io.File("../../impl/crates/lcl-workspace/assets/index.html").readText()
-        assertTrue(page.contains(">${io.lcl.workspace.ui.TREE_TRUNCATED}<"))
+    fun a_pc_from_before_children_is_read_through_its_whole_tree() = runTest {
+        legacyPc = true
+        files["docs/x.lcl"] = "LCL:\n"
+        val (_, workspace) = connected()
+        val shown = { FileTree.rows(workspace.ui.value.explorer).map { it.entry.id } }
+        assertEquals(listOf("docs", "a.lcl", "notes.lcl.txt"), shown())
+        workspace.toggleFolder("docs")
+        runCurrent()
+        assertEquals(listOf("docs", "docs/x.lcl", "a.lcl", "notes.lcl.txt"), shown())
+        assertTrue(requests.any { it.first == "tree" })
+    }
+
+    @Test
+    fun a_folder_the_pc_cut_short_says_so_under_that_folder_alone() = runTest {
+        files["big/b.lcl"] = "LCL:\n"
+        val (_, workspace) = connected()
+        val notes = { FileTree.rows(workspace.ui.value.explorer).filter { it.note != null }.map { FileTree.parentOf(it.entry.id) } }
+        assertEquals(emptyList<String>(), notes())
+        truncated = "big"
+        workspace.toggleFolder("big")
+        runCurrent()
+        assertEquals(listOf("big"), notes())
+        assertTrue(workspace.ui.value.explorer.folders["big"]!!.truncated)
+        assertFalse(workspace.ui.value.explorer.folders[""]!!.truncated)
+        // Files already listed still open.
+        workspace.open("big/b.lcl")
+        runCurrent()
+        assertEquals("big/b.lcl", workspace.ui.value.activeDocument?.id)
+        truncated = null
+        workspace.refreshTree()
+        assertEquals(emptyList<String>(), notes())
+    }
+
+    @Test
+    fun the_folder_limit_note_says_what_the_pc_workspace_says() {
+        val page = java.io.File("../../impl/crates/lcl-workspace/assets/app.js").readText()
+        assertTrue(page.contains("const FOLDER_LIMITED = \"${FileTree.FOLDER_LIMITED}\";"))
     }
 
     @Test
@@ -269,7 +386,7 @@ class WorkspaceControllerTest {
         assertEquals(preview!!.digest, sent.str("scaffold_digest"))
         assertEquals("a file made by role carries no text from the phone", null, sent["text"])
         assertEquals(preview!!.text, files["house.lcl"])
-        assertEquals("kind.part.rules", workspace.ui.value.tree.single { it.id == "house.lcl" }.kind)
+        assertEquals("kind.part.rules", workspace.ui.value.explorer.entry("house.lcl")!!.kind)
         // Blank stays available and needs no preview.
         workspace.create("blank")
         runCurrent()
@@ -540,7 +657,7 @@ class WorkspaceControllerTest {
         val ui = workspace.ui.value
         assertTrue(ui.documents.isEmpty())
         assertNull(ui.project)
-        assertTrue(ui.tree.isEmpty())
+        assertTrue(ui.explorers.isEmpty())
         assertNull(ui.about)
     }
 

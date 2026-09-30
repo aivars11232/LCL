@@ -29,7 +29,10 @@ import kotlinx.serialization.json.put
 data class ProjectInfo(val id: String, val name: String, val root: String, val isDefault: Boolean)
 
 /** One listed file or folder, and the SPECIFICATION KIND the PC's engine read in the file. */
-data class TreeEntry(val id: String, val directory: Boolean, val kind: String? = null)
+data class TreeEntry(val id: String, val directory: Boolean, val kind: String? = null) {
+    /** The last part of the path: what the explorer shows. */
+    val name: String get() = id.substringAfterLast('/')
+}
 
 /**
  * The exact starting text the PC would write for a new file of [role] named
@@ -82,9 +85,8 @@ data class RunGrants(
 data class WorkspaceUi(
     val projects: List<ProjectInfo> = emptyList(),
     val project: ProjectInfo? = null,
-    val tree: List<TreeEntry> = emptyList(),
-    /** Whether the PC's limits left documents or folders out of [tree]. */
-    val treeTruncated: Boolean = false,
+    /** Each project's explorer, by project id, for as long as the app runs: what the PC has listed, folder by folder. */
+    val explorers: Map<String, Explorer> = emptyMap(),
     val documents: List<OpenDocument> = emptyList(),
     val active: String? = null,
     /** The last Check, Validate or Inspect report, per document key, and which it was. */
@@ -98,13 +100,11 @@ data class WorkspaceUi(
     val roles: List<RoleInfo> = emptyList(),
     /** The last project readiness asked for, shown until dismissed. */
     val readiness: Readiness? = null,
-    /** The folders folded in each project's tree, by project id, for as long as the app runs. */
-    val folds: Map<String, Set<String>> = emptyMap(),
 ) {
     val activeDocument: OpenDocument? get() = documents.firstOrNull { key(it) == active }
 
-    /** The folders folded in the current project's tree. */
-    val folded: Set<String> get() = project?.let { folds[it.id] }.orEmpty()
+    /** The current project's explorer: empty until the PC listed its root. */
+    val explorer: Explorer get() = project?.let { explorers[it.id] } ?: Explorer()
 
     companion object {
         fun key(doc: OpenDocument) = "${doc.project}/${doc.id}"
@@ -246,22 +246,87 @@ class WorkspaceController(
         }
     }
 
+    /** Switch to another shared project: its explorer starts over, and nothing of the last one shows. */
     fun selectProject(id: String) {
         val project = _ui.value.projects.firstOrNull { it.id == id } ?: return
-        _ui.update { it.copy(project = project, tree = emptyList(), treeTruncated = false) }
+        _ui.update { it.copy(project = project, explorers = it.explorers - project.id) }
         scope.launch { refreshTree() }
     }
 
+    private fun updateExplorer(project: String, change: (Explorer) -> Explorer) = _ui.update {
+        it.copy(explorers = it.explorers + (project to change(it.explorers[project] ?: Explorer())))
+    }
+
+    private fun entriesOf(reply: Reply): List<TreeEntry> = reply.obj.arr("entries")?.mapNotNull { element ->
+        val e = element as? JsonObject ?: return@mapNotNull null
+        TreeEntry(e.str("id") ?: return@mapNotNull null, e.bool("directory") == true, e.str("kind"))
+    } ?: emptyList()
+
+    /**
+     * Read one folder of [project] from the PC — its direct children and
+     * nothing below them — into the explorer. A PC from before `children`
+     * existed (LCL 0.5.0) answers 400 for it; then its whole `tree` is asked
+     * for once, and this folder's children are taken out of it.
+     */
+    private suspend fun loadFolder(project: String, folder: String): Boolean {
+        val reply = ask("children", fields(project, "parent" to folder)) ?: return false
+        if (reply.ok) {
+            updateExplorer(project) { it.with(folder, LoadedFolder(entriesOf(reply), reply.obj.bool("truncated") == true)) }
+            return true
+        }
+        if (reply.status == 400 && reply.error?.contains("unknown operation") == true) {
+            val whole = ask("tree", fields(project)) ?: return false
+            if (!whole.ok) { say(whole.error ?: "The project could not be listed."); return false }
+            val all = entriesOf(whole)
+            val direct = all.filter { FileTree.parentOf(it.id) == folder }
+            val children = direct.filter { it.directory } + direct.filter { !it.directory }
+            updateExplorer(project) { it.with(folder, LoadedFolder(children, whole.obj.bool("truncated") == true && folder.isEmpty())) }
+            return true
+        }
+        if (reply.status == 404) updateExplorer(project) { it.without(folder) }
+        say(reply.error ?: "$folder could not be listed.")
+        return false
+    }
+
+    /**
+     * Read the root and every unfolded folder again, for what changed on the
+     * PC. A folded folder is not read: it is read when it is unfolded. Tabs,
+     * unsaved text and folds stay as they are; a folder that is gone leaves
+     * the tree with everything below it.
+     */
     suspend fun refreshTree() {
         val project = _ui.value.project ?: return
-        val reply = ask("tree", fields(project.id)) ?: return
-        if (!reply.ok) return say(reply.error ?: "The project could not be listed.")
-        val entries = reply.obj.arr("entries")?.mapNotNull { element ->
-            val e = element as? JsonObject ?: return@mapNotNull null
-            TreeEntry(e.str("id") ?: return@mapNotNull null, e.bool("directory") == true, e.str("kind"))
-        } ?: emptyList()
-        _ui.update { it.copy(tree = entries, treeTruncated = reply.obj.bool("truncated") == true) }
+        if (!loadFolder(project.id, "")) return
+        val unfolded = _ui.value.explorers[project.id]?.expanded.orEmpty().sortedBy { it.count { c -> c == '/' } }
+        for (folder in unfolded) {
+            val explorer = _ui.value.explorers[project.id] ?: Explorer()
+            if (!explorer.isFolder(folder)) { updateExplorer(project.id) { it.without(folder) }; continue }
+            loadFolder(project.id, folder)
+        }
         loadRoles()
+    }
+
+    /** Make one empty folder in the current project; it shows at once. */
+    fun createFolder(folder: String) {
+        val project = _ui.value.project ?: return
+        scope.launch {
+            val reply = ask("mkdir", fields(project.id, "folder" to folder)) ?: return@launch
+            if (!reply.ok) return@launch say(reply.error ?: "Not created.")
+            val made = reply.obj.str("id") ?: folder
+            // Its parent is read again, so it shows at once, unfolded and empty.
+            revealFolders(project.id, made, fresh = true)
+            if (loadFolder(project.id, made)) updateExplorer(project.id) { it.copy(expanded = it.expanded + made) }
+            say("Created folder $made")
+        }
+    }
+
+    /** Unfold every folder on the way to [id], reading the ones never read; with [fresh], reading them again. */
+    private suspend fun revealFolders(project: String, id: String, fresh: Boolean = false) {
+        for (folder in listOf("") + FileTree.ancestors(id)) {
+            val known = _ui.value.explorers[project]?.folders?.containsKey(folder) == true
+            if ((fresh || !known) && !loadFolder(project, folder)) return
+            if (folder.isNotEmpty()) updateExplorer(project) { it.copy(expanded = it.expanded + folder) }
+        }
     }
 
     /** The roles New can create, from the PC's engine. */
@@ -291,22 +356,22 @@ class WorkspaceController(
 
     // --------------------------------------------------------------- documents
 
-    /** Fold [folder] in the current project's tree if it is open, or open it. */
+    /** Fold [folder] in the current project's tree if it is unfolded, or unfold it, reading its children from the PC. */
     fun toggleFolder(folder: String) {
         val project = _ui.value.project ?: return
-        _ui.update { it.copy(folds = it.folds + (project.id to FileTree.toggle(it.folded, folder))) }
-    }
-
-    /** Open every folder around [id] in [project]'s tree, so the document shows there. */
-    private fun reveal(project: String, id: String) = _ui.update {
-        val folded = it.folds[project] ?: return@update it
-        it.copy(folds = it.folds + (project to FileTree.reveal(folded, id)))
+        if (folder in _ui.value.explorer.expanded) {
+            updateExplorer(project.id) { it.copy(expanded = it.expanded - folder) }
+            return
+        }
+        scope.launch {
+            if (loadFolder(project.id, folder)) updateExplorer(project.id) { it.copy(expanded = it.expanded + folder) }
+        }
     }
 
     fun open(id: String) {
         val project = _ui.value.project ?: return
         val key = "${project.id}/$id"
-        reveal(project.id, id)
+        scope.launch { revealFolders(project.id, id) }
         if (_ui.value.documents.any { WorkspaceUi.key(it) == key }) {
             _ui.update { it.copy(active = key) }
             return
@@ -322,7 +387,7 @@ class WorkspaceController(
     }
 
     fun activate(key: String) {
-        _ui.value.documents.firstOrNull { WorkspaceUi.key(it) == key }?.let { reveal(it.project, it.id) }
+        _ui.value.documents.firstOrNull { WorkspaceUi.key(it) == key }?.let { doc -> scope.launch { revealFolders(doc.project, doc.id) } }
         _ui.update { it.copy(active = key) }
     }
 
@@ -480,8 +545,11 @@ class WorkspaceController(
             }
             val reply = ask("create", request) ?: return@launch
             if (!reply.ok) return@launch say(reply.error ?: "Not created.")
-            refreshTree()
-            reply.obj.str("id")?.let(::open)
+            // Its folder is read again, so it is in the tree at once; nothing
+            // else of the project is.
+            val id = reply.obj.str("id") ?: return@launch
+            revealFolders(project.id, id, fresh = true)
+            open(id)
         }
     }
 

@@ -1264,8 +1264,9 @@ fn a_text_ending_document_opens_through_the_desktop_entry() {
         "a .lcl.txt document must open exactly like a .lcl one:\n{body}"
     );
 
-    // And it is listed, so the person can see it in the project.
-    let (status, tree) = get(&url, "/api/tree?parent=papers");
+    // And it is listed, so the person can see it in the project: its own
+    // folder is the project root (no manifest above it), so at the root.
+    let (status, tree) = get(&url, "/api/tree");
     assert_eq!(status, 200);
     assert!(
         tree.contains("report.lcl.txt"),

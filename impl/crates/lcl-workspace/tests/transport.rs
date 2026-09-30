@@ -382,7 +382,7 @@ fn an_authenticated_event_stream_is_not_disconnected_by_the_ingress_bound() {
     let reply = send(
         running.address,
         "GET",
-        &format!("/api/documents?t={}", running.token),
+        &format!("/api/tree?t={}", running.token),
         &[],
         b"",
     );

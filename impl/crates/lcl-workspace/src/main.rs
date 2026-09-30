@@ -43,11 +43,14 @@ OPTIONS:
                         after the project's \"profiles\" directory. Repeatable;
                         a later file for the same locale replaces an earlier one.
     --default-project <PATH>
-                        The project to open when neither PROJECT nor --document
-                        is given: the default workspace chosen in Settings when
-                        that folder exists, and PATH otherwise. The desktop
-                        launcher passes its built-in default here. An explicit
-                        PROJECT or --document always wins.
+                        The Projects folder to start from when neither PROJECT
+                        nor --document is given: the one chosen in Settings
+                        when that folder exists, and PATH otherwise. The window
+                        then shows the Projects home, the projects in that
+                        folder to choose from; the folder itself is never
+                        opened as one project. The desktop launcher passes its
+                        built-in default here. An explicit PROJECT or
+                        --document always wins.
     --create            Create a project here before opening it.
     --port <PORT>       Bind this loopback port instead of an ephemeral one.
     --open              Open the URL with xdg-open once the server is listening.
@@ -139,6 +142,9 @@ fn run(argv: &[String]) -> Result<(), String> {
     // wins over it: a saved preference is a default, never an override.
     let settings_file = lcl_workspace::settings::location();
     let mut notice = None;
+    // A launch that names nothing starts on the Projects home: the Projects
+    // folder is a container of projects, and is not opened as one.
+    let mut home = false;
     let (root, open_document) = match &document {
         Some(path) => {
             let (root, id) = Workspace::locate_document(path).map_err(|e| e.to_string())?;
@@ -154,6 +160,7 @@ fn run(argv: &[String]) -> Result<(), String> {
                         .unwrap_or_default();
                     let (root, told) = lcl_workspace::settings::default_project(&loaded, fallback);
                     notice = told;
+                    home = !create;
                     root
                 }
                 (None, None) => {
@@ -202,7 +209,11 @@ fn run(argv: &[String]) -> Result<(), String> {
         .logging(log);
     let url = server.url();
     println!("LCL Workspace");
-    println!("  project  {}", workspace.root().display());
+    if home {
+        println!("  projects {}", workspace.root().display());
+    } else {
+        println!("  project  {}", workspace.root().display());
+    }
     if let Some(id) = workspace.open_document() {
         println!("  document {id}");
     }
@@ -228,6 +239,7 @@ fn run(argv: &[String]) -> Result<(), String> {
         .with_settings_file(settings_file)
         .with_builtin_default(default_project)
         .with_notice(notice)
+        .with_home(home)
         .with_reopen(reopen)
         .with_updater(lcl_workspace::updates::Updater::installed());
     server

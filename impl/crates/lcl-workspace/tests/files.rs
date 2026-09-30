@@ -55,7 +55,7 @@ fn digest(path: &Path) -> String {
 }
 
 fn listed(running: &Running) -> Vec<String> {
-    let reply = request(running, "GET", "/api/documents", "");
+    let reply = request(running, "GET", "/api/tree", "");
     assert_eq!(reply.status, 200, "{}", reply.body);
     parse(&reply.body)
         .get("entries")

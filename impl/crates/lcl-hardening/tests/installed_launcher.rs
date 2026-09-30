@@ -1265,7 +1265,7 @@ fn a_text_ending_document_opens_through_the_desktop_entry() {
     );
 
     // And it is listed, so the person can see it in the project.
-    let (status, tree) = get(&url, "/api/documents");
+    let (status, tree) = get(&url, "/api/tree?parent=papers");
     assert_eq!(status, 200);
     assert!(
         tree.contains("report.lcl.txt"),

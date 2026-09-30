@@ -13,6 +13,7 @@ assert(Number(process.versions.node.split(".")[0]) >= 22, "editor regressions re
 const hash = text => createHash("sha256").update(text).digest("hex");
 const jsonReply = (value, status = 200) => new Response(JSON.stringify(value), { status });
 const tick = () => new Promise(resolve => setImmediate(resolve));
+const parentOfId = id => (id.includes("/") ? id.slice(0, id.lastIndexOf("/")) : "");
 function deferred() {
   let resolve;
   const promise = new Promise(done => { resolve = done; });
@@ -91,6 +92,9 @@ class Node {
     if (registry) registry.set(`#${value}`, this);
   }
   append(...children) { this.children.push(...children); }
+  setAttribute(name, value) { (this.attributes ||= {})[name] = String(value); }
+  getBoundingClientRect() { return { width: 0, height: 0, top: 0, left: 0, bottom: 0, right: 0 }; }
+  getAttribute(name) { return this.attributes ? this.attributes[name] ?? null : null; }
   replaceChildren(...children) { this.children = children; }
   querySelector(selector) {
     for (const child of this.children) {
@@ -140,8 +144,37 @@ async function harness(options) {
   };
   let nextHold = null;
   let failListing = false;
-  // Controlled mode's stand-in for a project too large for the tree's limits.
+  // Controlled mode's stand-in for a folder too large for one listing.
   let fixtureTruncated = false;
+  // Folders made with New folder, in controlled mode; the rest are implied
+  // by the documents' paths, as on a disk.
+  const madeFolders = new Set();
+  // The Projects home, in controlled mode: whether it is shown, and what the
+  // Projects folder holds.
+  let fixtureHome = false;
+  let fixtureRoot = "/fixture";
+  const fixtureProjects = [
+    { name: "Alpha", path: "/fixture/projects/Alpha", manifest: true },
+    { name: "Beta", path: "/fixture/projects/Beta", manifest: false },
+  ];
+  // Every folder the page asked the server to list, in order, in both modes.
+  const treeRequests = [];
+  /// The direct children of one folder of the controlled project: the
+  /// folders in it (implied by paths, or made), then the documents.
+  const childrenOf = (parent) => {
+    const under = (id) => parent === "" ? id : (id.startsWith(`${parent}/`) ? id.slice(parent.length + 1) : null);
+    const folders = new Set(), docs = [];
+    for (const id of [...stored.keys(), ...madeFolders].sort()) {
+      const rest = under(id);
+      if (rest === null) continue;
+      if (rest.includes("/")) folders.add(rest.split("/")[0]);
+      else if (madeFolders.has(id)) folders.add(rest);
+      else docs.push(rest);
+    }
+    const join = (name) => parent === "" ? name : `${parent}/${name}`;
+    return [...[...folders].sort().map(name => ({ id: join(name), name, directory: true, bytes: null })),
+      ...docs.sort().map(name => ({ id: join(name), name, directory: false, bytes: null }))];
+  };
   let failTokens = false;
   // The computer's settings and the folders that exist, for controlled mode.
   // In real-server mode the server's own settings file and filesystem answer.
@@ -188,7 +221,8 @@ async function harness(options) {
     }
     if (method === "PUT") puts.push({ id, body: init.body });
     let reply;
-    if (url.pathname === "/api/documents" && failListing) {
+    if (url.pathname === "/api/tree" && method === "GET") treeRequests.push(url.searchParams.get("parent") || "");
+    if (url.pathname === "/api/tree" && failListing) {
       failListing = false;
       reply = jsonReply({ error: "listing unavailable after persistence" }, 503);
     } else if (url.pathname === "/api/tokens" && failTokens) {
@@ -205,14 +239,31 @@ async function harness(options) {
     } else if (url.pathname === "/api/masters") {
       reply = jsonReply({ available: false, masters: [] });
     } else if (url.pathname === "/api/session") {
-      reply = jsonReply({ root: "/fixture", spec: {
+      reply = jsonReply({ root: fixtureRoot, home: fixtureHome, open: null, entry: null, spec: {
         formal_version: "0.1.0", authority: "authoritative", identity_digest: "fixture", root: "/spec",
       } });
-    } else if (url.pathname === "/api/documents") {
-      reply = jsonReply({
-        entries: [...stored.keys()].sort().map(id => ({ id, directory: false, bytes: null })),
-        truncated: fixtureTruncated,
-      });
+    } else if (url.pathname === "/api/tree" && method === "GET") {
+      const parent = url.searchParams.get("parent") || "";
+      if (fixtureHome) reply = jsonReply({ error: "no project is open" }, 409);
+      else if (parent && !childrenOf(parentOfId(parent)).some(e => e.id === parent && e.directory)) {
+        reply = jsonReply({ error: "there is no such folder in the project" }, 404);
+      } else reply = jsonReply({ parent, entries: childrenOf(parent), truncated: fixtureTruncated && parent === "overfill" });
+    } else if (url.pathname === "/api/tree/folder") {
+      const folder = id.replace(/\/+$/, "");
+      const parent = parentOfId(folder);
+      if (madeFolders.has(folder) || childrenOf(parent).some(e => e.id === folder)) reply = jsonReply({ error: `${folder} already exists` }, 409);
+      else if (parent && !childrenOf(parentOfId(parent)).some(e => e.id === parent && e.directory)) reply = jsonReply({ error: `${parent} does not exist` }, 422);
+      else { madeFolders.add(folder); reply = jsonReply({ id: folder, directory: true }); }
+    } else if (url.pathname === "/api/projects" && method === "GET") {
+      reply = jsonReply({ folder: "/fixture/projects", home: fixtureHome,
+        projects: fixtureProjects.map(p => ({ ...p, current: !fixtureHome && p.path === fixtureRoot })) });
+    } else if (url.pathname === "/api/projects/open") {
+      fixtureHome = true; fixtureRoot = "/fixture/projects";
+      reply = jsonReply({ root: fixtureRoot, home: true, open: null, entry: null, spec: { formal_version: "0.1.0", authority: "authoritative", identity_digest: "fixture", root: "/spec" } });
+    } else if (url.pathname === "/api/project/open") {
+      const target = url.searchParams.get("path");
+      if (!target.startsWith("/")) reply = jsonReply({ error: `${target} is not an absolute path` }, 400);
+      else { fixtureHome = false; fixtureRoot = target; reply = jsonReply({ root: target, home: false, open: null, entry: null, spec: { formal_version: "0.1.0", authority: "authoritative", identity_digest: "fixture", root: "/spec" } }); }
     } else if (url.pathname === "/api/document" && method === "POST") {
       // Create: the default ending for a name without one, an explicit one
       // kept, and never over an existing document.
@@ -455,13 +506,28 @@ async function harness(options) {
       if (!on) {
         if (dir) await fs.rm(dir, { recursive: true, force: true });
         fixtureTruncated = false;
+        madeFolders.delete("overfill");
         return;
       }
       if (dir) {
         await fs.mkdir(dir, { recursive: true });
         for (let i = 0; i < 4097; i++) await fs.writeFile(path.join(dir, `d${String(i).padStart(5, "0")}.lcl`), "");
-      } else fixtureTruncated = true;
+      } else { fixtureTruncated = true; madeFolders.add("overfill"); }
     },
+    /// Whether a folder exists on disk (or in the fixture's store).
+    async folderExists(id) {
+      if (!options.project) return madeFolders.has(id) || [...stored.keys()].some(k => k.startsWith(`${id}/`));
+      return fs.stat(path.join(options.project, id)).then(st => st.isDirectory(), () => false);
+    },
+    /// Another program makes a folder behind the page's back.
+    async mkdirBehind(id) {
+      if (options.project) await fs.mkdir(path.join(options.project, id), { recursive: true });
+      else madeFolders.add(id);
+    },
+    /// The folders the page asked the server to list since the last look.
+    treeRequests() { return treeRequests.splice(0); },
+    /// The project this real server is over, as an absolute path.
+    projectPath() { return options.project ? path.resolve(options.project) : "/fixture"; },
     /// Another program removes a document behind the page's back.
     async removeBehind(id) {
       if (options.project) await fs.unlink(path.join(options.project, id));
@@ -481,8 +547,20 @@ async function harness(options) {
     },
     /// The documents the project tree lists.
     treeIds() {
-      return JSON.parse(run("JSON.stringify(state.entries.filter(e => !e.directory).map(e => e.id))"));
+      return JSON.parse(run("JSON.stringify(treeEntries().filter(e => !e.directory).map(e => e.id))"));
     },
+    /// Every folder the explorer has listed so far.
+    treeDirs() {
+      return JSON.parse(run("JSON.stringify(treeEntries().filter(e => e.directory).map(e => e.id))"));
+    },
+    /// The rows the tree shows, by id, and the folders whose listing was cut short.
+    /// With `only`, the rows among those the case itself made (other cases
+    /// leave documents in the shared project).
+    rows(only) {
+      const all = get("#tree").children.filter(li => li.className !== "tree-note").map(li => li.title);
+      return only ? all.filter(id => only.some(p => id === p || id.startsWith(`${p}/`))) : all;
+    },
+    limited() { return get("#tree").children.filter(li => li.className === "tree-note").map(li => li.dataset.limited); },
     modalOpen() { return get("#modal-backdrop").hidden === false; },
     modalTitle() { return get("#modal-title").textContent; },
     modalText() {
@@ -568,6 +646,8 @@ async function harness(options) {
       run('if (typeof applySettings === "function") applySettings({ ...DEFAULT_SETTINGS })');
       // The computer's settings go back to their defaults too, wherever they live.
       fixtureSettings = { ...FIXTURE_SETTINGS };
+      fixtureHome = false; fixtureRoot = "/fixture"; madeFolders.clear(); treeRequests.length = 0;
+      run("state.session = state.session || {}; state.session.home = false; state.tree.children.clear(); state.tree.expanded.clear();");
       if (options.server) {
         const reply = await request(new URL("/api/settings", origin), {
           method: "PUT", body: JSON.stringify({ default_extension: ".lcl", default_workspace: null }),
@@ -1192,7 +1272,8 @@ const uiCases = [
 
   ["the project tree marks a document unsaved from the first keystroke", async h => {
     await h.add("tree-dot.lcl", "LCL:\n");
-    h.run('state.entries = [{ id: "tree-dot.lcl", directory: false }]; renderTree()');
+    await bounded(h.run("loadTree()"), "listing");
+    await bounded(h.run('openDocument("tree-dot.lcl")'), "open");
     const dotted = () => h.get("#tree").children.some(li => li.children.some(c => c.className === "dot"));
     assert.equal(dotted(), false);
     h.edit("LCL:\nX\n");
@@ -1200,75 +1281,176 @@ const uiCases = [
     h.edit("LCL:\n");
     assert.equal(dotted(), false, "the tree kept its mark after the edit was undone");
   }],
-  ["the project tree folds and unfolds folders, and keeps them folded while the page is open", async h => {
-    h.run(`state.entries = [
-      { id: "a.lcl", directory: false }, { id: "docs", directory: true }, { id: "docs/guide", directory: true },
-      { id: "docs/guide/g.lcl", directory: false }, { id: "docs/x.lcl", directory: false }];
-      state.active = null; state.revealed = null; state.collapsed.clear(); renderTree()`);
-    const rows = () => h.get("#tree").children.map(li => li.title);
+  ["the explorer lists one folder at a time: a folder is read when it is unfolded, and only then", async h => {
+    for (const id of ["a.lcl", "docs/x.lcl", "docs/guide/g.lcl", "huge/h1/deep.lcl", "huge/h2/deep.lcl"]) await h.writeBehind(id, "LCL:\n");
+    h.treeRequests();
+    await bounded(h.run("loadTree()"), "listing");
+    const mine = ["docs", "huge", "a.lcl"];
+    // The root, and nothing below it: folders first, then documents.
+    assert.deepEqual(h.treeRequests(), [""]);
+    assert.deepEqual(h.rows(mine), ["docs", "huge", "a.lcl"]);
     const row = id => h.get("#tree").children.find(li => li.title === id);
     const key = k => ({ key: k, preventDefault() {} });
-    const all = ["a.lcl", "docs", "docs/guide", "docs/guide/g.lcl", "docs/x.lcl"];
-    assert.deepEqual(rows(), all);
-    assert.equal(row("docs").ariaExpanded, "true");
-    assert.equal(row("docs").children[0].textContent, "▾");
-    row("docs").onclick();
-    assert.deepEqual(rows(), ["a.lcl", "docs"]);
     assert.equal(row("docs").ariaExpanded, "false");
     assert.equal(row("docs").children[0].textContent, "▸");
-    // A fresh listing draws the tree again; the fold stays.
+    // Unfolding docs reads docs, and nothing inside guide or huge.
+    await bounded(row("docs").onclick(), "unfold docs");
+    assert.deepEqual(h.treeRequests(), ["docs"]);
+    assert.deepEqual(h.rows(mine), ["docs", "docs/guide", "docs/x.lcl", "huge", "a.lcl"]);
+    assert.equal(row("docs").ariaExpanded, "true");
+    assert.equal(row("docs").children[0].textContent, "▾");
+    // Folding reads nothing; a fresh render keeps the fold.
+    await bounded(row("docs").onclick(), "fold docs");
+    assert.deepEqual(h.treeRequests(), []);
+    assert.deepEqual(h.rows(mine), ["docs", "huge", "a.lcl"]);
     h.run("renderTree()");
-    assert.deepEqual(rows(), ["a.lcl", "docs"]);
-    // From the keyboard: Right unfolds, Left folds, and focus stays on the folder.
-    row("docs").onkeydown(key("ArrowRight"));
-    assert.deepEqual(rows(), all);
+    assert.deepEqual(h.rows(mine), ["docs", "huge", "a.lcl"]);
+    // From the keyboard: Right unfolds (reading the folder again), Left folds,
+    // and focus stays on the folder.
+    await bounded(row("docs").onkeydown(key("ArrowRight")), "Right");
+    assert.deepEqual(h.treeRequests(), ["docs"]);
+    assert.deepEqual(h.rows(mine), ["docs", "docs/guide", "docs/x.lcl", "huge", "a.lcl"]);
     assert.equal(h.run('document.activeElement && document.activeElement.title'), "docs");
-    row("docs/guide").onkeydown(key("ArrowLeft"));
-    assert.deepEqual(rows(), ["a.lcl", "docs", "docs/guide", "docs/x.lcl"]);
-    // A folder folded inside a folded one is still folded when the outer one opens.
-    row("docs").onkeydown(key("Enter"));
-    row("docs").onkeydown(key(" "));
-    assert.deepEqual(rows(), ["a.lcl", "docs", "docs/guide", "docs/x.lcl"]);
+    await bounded(row("docs/guide").onkeydown(key("ArrowRight")), "unfold guide");
+    assert.deepEqual(h.treeRequests(), ["docs/guide"]);
+    assert.deepEqual(h.rows(mine), ["docs", "docs/guide", "docs/guide/g.lcl", "docs/x.lcl", "huge", "a.lcl"]);
+    // Folding the outer folder hides the inner one; unfolding it again shows
+    // the inner one as it was, and re-reads only the outer one.
+    await bounded(row("docs").onkeydown(key("ArrowLeft")), "fold docs");
+    assert.deepEqual(h.rows(mine), ["docs", "huge", "a.lcl"]);
+    await bounded(row("docs").onkeydown(key("Enter")), "Enter");
+    assert.deepEqual(h.treeRequests(), ["docs"]);
+    assert.deepEqual(h.rows(mine), ["docs", "docs/guide", "docs/guide/g.lcl", "docs/x.lcl", "huge", "a.lcl"]);
+    await bounded(row("docs").onkeydown(key(" ")), "Space");
+    assert.deepEqual(h.rows(mine), ["docs", "huge", "a.lcl"]);
+    // huge was never read: nothing of it is known to the page.
+    assert(!h.treeDirs().includes("huge/h1"));
+    assert(!h.treeIds().some(id => id.startsWith("huge/")));
+    for (const id of ["a.lcl", "docs/x.lcl", "docs/guide/g.lcl", "huge/h1/deep.lcl", "huge/h2/deep.lcl"]) await h.removeBehind(id);
   }],
-  ["↻ shows files another program added, removed or renamed, and keeps tabs, unsaved text and folds", async h => {
+  ["a file click opens exactly that file, a second click activates its tab, and its folders open around it", async h => {
+    for (const id of ["contracts/security/network.lcl.txt", "contracts/api.lcl.txt", "top.lcl"]) await h.writeBehind(id, "LCL:\n");
+    await bounded(h.run("loadTree()"), "listing");
+    const row = id => h.get("#tree").children.find(li => li.title === id);
+    const marked = () => h.get("#tree").children.filter(li => li.classList.contains("open")).map(li => li.title);
+    await bounded(row("top.lcl").onclick(), "open top");
+    assert.equal(h.run("state.active"), "top.lcl");
+    assert.deepEqual(marked(), ["top.lcl"]);
+    assert.deepEqual(h.run("state.order.join()"), "top.lcl");
+    // Opening a nested document, without unfolding anything by hand, reads
+    // exactly the folders on the way to it and shows it, marked.
+    h.treeRequests();
+    await bounded(h.run('openDocument("contracts/security/network.lcl.txt")'), "open nested");
+    assert.deepEqual(h.treeRequests(), ["contracts", "contracts/security"]);
+    assert.deepEqual(h.rows(["contracts", "top.lcl"]), ["contracts", "contracts/security", "contracts/security/network.lcl.txt", "contracts/api.lcl.txt", "top.lcl"]);
+    assert.deepEqual(marked(), ["contracts/security/network.lcl.txt"]);
+    assert.equal(h.get("#code").value, "LCL:\n");
+    // Clicking an open document again activates its tab: no duplicate.
+    await bounded(row("top.lcl").onclick(), "back to top");
+    await bounded(row("contracts/security/network.lcl.txt").onclick(), "again");
+    assert.deepEqual(h.run("JSON.stringify(state.order)"), JSON.stringify(["top.lcl", "contracts/security/network.lcl.txt"]));
+    assert.equal(h.get("#tabs").children.length, 2);
+    assert.deepEqual(marked(), ["contracts/security/network.lcl.txt"]);
+    for (const id of ["contracts/security/network.lcl.txt", "contracts/api.lcl.txt", "top.lcl"]) await h.removeBehind(id);
+  }],
+  ["New folder makes an empty folder that shows at once, and New document here puts a file in it", async h => {
+    await h.add("root.lcl", "LCL:\n");
+    assert.equal(h.get("#act-new-folder").hidden, false);
+    h.get("#act-new-folder").onclick();
+    assert.equal(h.modalTitle(), "New folder");
+    h.get("#new-folder-path").value = "planning";
+    await bounded(h.choose("Create"), "create folder");
+    assert.equal(await h.folderExists("planning"), true, "no folder was made");
+    assert(h.rows().includes("planning"), h.rows().join(" | "));
+    const row = id => h.get("#tree").children.find(li => li.title === id);
+    // Empty, and it unfolds and folds like any folder.
+    assert.equal(row("planning").ariaExpanded, "true");
+    await bounded(row("planning").onclick(), "fold");
+    await bounded(row("planning").onclick(), "unfold");
+    assert(!h.rows().some(id => id.startsWith("planning/")));
+    // A folder inside it, from its own menu.
+    h.run('openFolderMenu("planning", 0, 0, null)');
+    const inner = [...h.run("document.body.children").at(-1).children].find(b => b.textContent === "New folder here…");
+    inner.onclick();
+    assert.equal(h.get("#new-folder-path").value, "planning/");
+    h.get("#new-folder-path").value = "planning/phase_1";
+    await bounded(h.choose("Create"), "create inner");
+    assert.equal(await h.folderExists("planning/phase_1"), true);
+    assert(h.rows().includes("planning/phase_1"));
+    // Taken: refused, nothing changes.
+    h.get("#act-new-folder").onclick();
+    h.get("#new-folder-path").value = "planning";
+    await bounded(h.choose("Create"), "create again");
+    assert(h.toasts().some(t => t.startsWith("Not created.")), h.toasts().join(" | "));
+    // New document here: the dialog starts in the folder, the file is made
+    // there, listed there, opened and marked, and only that folder's path
+    // was read again.
+    h.run('newDocument("planning")');
+    assert.equal(h.get("#new-path").value, "planning/untitled.lcl");
+    h.get("#new-path").value = "planning/phase.lcl";
+    h.treeRequests();
+    await bounded(h.choose("Create"), "create document");
+    assert.equal(h.run("state.active"), "planning/phase.lcl");
+    assert.equal(await h.exists("planning/phase.lcl"), true);
+    assert(h.rows().includes("planning/phase.lcl"), h.rows().join(" | "));
+    const requested = h.treeRequests();
+    assert(requested.every(r => r === "" || r === "planning"), requested.join(","));
+    assert.deepEqual(h.get("#tree").children.filter(li => li.classList.contains("open")).map(li => li.title), ["planning/phase.lcl"]);
+    // + from the sidebar starts where the open document is.
+    h.get("#act-new").onclick();
+    assert.equal(h.get("#new-path").value, "planning/untitled.lcl");
+    h.run("closeModal()");
+    h.close("planning/phase.lcl"); await bounded(h.choose("Discard"), "discard");
+    await h.removeBehind("root.lcl");
+  }],
+  ["↻ re-reads the root and unfolded folders, leaves folded ones alone, and keeps tabs, unsaved text and folds", async h => {
     await h.add("refresh/a.lcl", "A\n");
     await h.add("refresh/b.lcl", "B\n");
+    await h.add("folded/f.lcl", "F\n");
     await h.add("refresh-old.lcl", "R\n");
     await h.add("keep.lcl", "saved\n");
     h.edit("unsaved edit\n");
-    h.run('state.collapsed.add("refresh"); renderTree()');
-    const rows = () => h.get("#tree").children.map(li => li.title);
-    assert(!rows().includes("refresh/a.lcl"), "the folded folder shows its documents");
+    h.run('state.tree.expanded.delete("folded"); renderTree()');
+    assert(!h.rows().includes("folded/f.lcl"), "the folded folder shows its documents");
+    assert(h.rows().includes("refresh/a.lcl"));
 
     await h.writeBehind("outside-new.lcl", "N\n");
     await h.writeBehind("outside-dir/inner.lcl", "I\n");
+    await h.writeBehind("folded/later.lcl", "L\n");
     await h.removeBehind("refresh/b.lcl");
     await h.renameBehind("refresh-old.lcl", "refresh-renamed.lcl");
     assert(!h.treeIds().includes("outside-new.lcl"), "the tree changed before anyone asked");
 
+    h.treeRequests();
     await bounded(h.get("#act-refresh").onclick(), "refresh");
+    // The root and the unfolded folder were read; the folded one and the new
+    // folder were not.
+    assert.deepEqual(h.treeRequests().sort(), ["", "refresh"]);
     const ids = h.treeIds();
-    for (const id of ["outside-new.lcl", "outside-dir/inner.lcl", "refresh-renamed.lcl", "refresh/a.lcl", "keep.lcl"]) {
+    for (const id of ["outside-new.lcl", "refresh-renamed.lcl", "refresh/a.lcl", "keep.lcl"]) {
       assert(ids.includes(id), `${id} is not listed after ↻`);
     }
-    for (const id of ["refresh/b.lcl", "refresh-old.lcl"]) assert(!ids.includes(id), `${id} is still listed after ↻`);
-    if (h.realDisk) {
-      const dirs = JSON.parse(h.run("JSON.stringify(state.entries.filter(e => e.directory).map(e => e.id))"));
-      assert(dirs.includes("outside-dir"), "the new folder is not listed");
-    }
+    for (const id of ["refresh/b.lcl", "refresh-old.lcl", "outside-dir/inner.lcl", "folded/later.lcl"]) assert(!ids.includes(id), `${id} is listed after ↻`);
+    assert(h.treeDirs().includes("outside-dir"), "the new folder is not listed");
     // Only the tree changed: every tab, the unsaved text and the fold are kept.
     assert.deepEqual(JSON.parse(h.run("JSON.stringify([...state.docs.keys()].sort())")),
-      ["keep.lcl", "refresh-old.lcl", "refresh/a.lcl", "refresh/b.lcl"]);
+      ["folded/f.lcl", "keep.lcl", "refresh-old.lcl", "refresh/a.lcl", "refresh/b.lcl"]);
     assert.deepEqual(h.doc("keep.lcl"), { text: "unsaved edit\n", saved: "saved\n", dirty: true });
     assert.equal(h.get("#code").value, "unsaved edit\n");
     assert.equal(await h.persisted("keep.lcl"), "saved\n", "↻ saved or reloaded a document");
-    assert(h.run('state.collapsed.has("refresh")'), "the fold was lost");
-    assert(!rows().includes("refresh/a.lcl"), "the folded folder opened");
+    assert(!h.run('state.tree.expanded.has("folded")'), "the fold was lost");
+    assert(h.run('state.tree.expanded.has("refresh")'), "the unfolded folder folded");
+    assert(!h.rows().includes("folded/f.lcl"), "the folded folder opened");
     const marked = h.get("#tree").children.filter(li => li.classList.contains("open")).map(li => li.title);
     assert.deepEqual(marked, ["keep.lcl"]);
     assert.equal(h.get("#act-refresh").disabled, false);
     assert(!h.modalOpen());
-    for (const id of ["outside-new.lcl", "outside-dir/inner.lcl", "refresh-renamed.lcl", "refresh/a.lcl"]) await h.removeBehind(id);
+    // Unfolding the folded folder now reads it, and the file made behind the
+    // page's back is there.
+    const row = id => h.get("#tree").children.find(li => li.title === id);
+    await bounded(row("folded").onclick(), "unfold");
+    assert(h.rows().includes("folded/later.lcl"));
+    for (const id of ["outside-new.lcl", "outside-dir/inner.lcl", "refresh-renamed.lcl", "refresh/a.lcl", "folded/f.lcl", "folded/later.lcl"]) await h.removeBehind(id);
   }],
   ["a dialog never outgrows the window: its body scrolls between a fixed title and buttons", async h => {
     // Geometry is measured in a real browser (the release smoke); here the
@@ -1320,41 +1502,92 @@ const uiCases = [
     assert.deepEqual(shown, ["0.5", "1.2", "1.2.3", "0.10", "1.0.0-rc.1", "0.5"]);
     h.run("state.update = null; markUpdate()");
   }],
-  ["the tree says when its limits left documents out, and nothing when they did not", async h => {
-    assert((await h.page()).includes(">File tree limited to 4096 entries and 12 folder levels; some files are not shown.<"),
-      "the served page does not carry the warning's words");
-    await bounded(h.run("loadTree()"), "listing");
-    assert.equal(h.get("#tree-truncated").hidden, true, "a complete tree carries the warning");
+  ["a folder over the bound says so under itself, and the rest of the project is untouched", async h => {
+    await h.add("small.lcl", "LCL:\n");
+    assert.deepEqual(h.limited(), [], "a complete folder carries the warning");
     try {
       await h.overfill(true);
       await bounded(h.get("#act-refresh").onclick(), "refresh");
-      assert.equal(h.get("#tree-truncated").hidden, false, "a truncated tree shows no warning");
-      // A real server reports exactly its limit, never more.
-      if (h.realDisk) assert.equal(h.run("state.entries.length"), 4096);
+      assert.deepEqual(h.limited(), [], "the root is not the folder over the bound");
+      const row = id => h.get("#tree").children.find(li => li.title === id);
+      await bounded(row("overfill").onclick(), "unfold");
+      assert.deepEqual(h.limited(), ["overfill"], "the folder over the bound shows no warning");
+      const note = h.get("#tree").children.find(li => li.className === "tree-note");
+      assert.equal(note.textContent, "Folder limited to 4096 entries.");
+      // A real server reports exactly its bound, never more, and the first
+      // entries in order; the root still lists everything else.
+      if (h.realDisk) {
+        assert.equal(h.run('state.tree.children.get("overfill").entries.length'), 4096);
+        assert.equal(h.run('state.tree.children.get("overfill").entries[0].id'), "overfill/d00000.lcl");
+      }
+      assert(h.rows().includes("small.lcl"));
     } finally { await h.overfill(false); }
     await bounded(h.get("#act-refresh").onclick(), "refresh");
-    assert.equal(h.get("#tree-truncated").hidden, true, "the warning outlived the extra files");
+    assert.deepEqual(h.limited(), [], "the warning outlived the extra files");
+    assert(!h.rows().includes("overfill"));
+  }],
+  ["the Projects home offers the projects of the Projects folder, and choosing one shows only that project", async h => {
+    await h.add("chosen.lcl", "LCL:\n");
+    h.edit("unsaved\n");
+    // With unsaved work nothing changes: the tabs would close with it.
+    await bounded(h.run("goHome()"), "home refused");
+    assert(h.toasts().some(t => t.includes("Save or close chosen.lcl first")), h.toasts().join(" | "));
+    assert.equal(h.run("state.session.home"), false);
+    h.edit("LCL:\n");
+    const before = h.projectPath();
+    try {
+      await bounded(h.run("goHome()"), "home");
+      assert.equal(h.run("state.session.home"), true);
+      assert.equal(h.get("#home").hidden, false);
+      assert.equal(h.get("#tree").hidden, true);
+      assert.equal(h.get("#sidebar-title").textContent, "Projects");
+      assert.equal(h.get("#act-new").hidden, true);
+      assert.equal(h.get("#act-home").hidden, true);
+      assert.equal(h.run("state.docs.size"), 0, "the tabs stayed open");
+      assert.equal(h.run("state.tree.children.size"), 0, "the Projects folder was listed as a tree");
+      const names = h.get("#projects").children.map(li => li.children[0] && li.children[0].textContent);
+      if (!h.realDisk) assert.deepEqual(names, ["Alpha", "Beta"]);
+      assert(h.get("#home-open-folder"), "no Open project folder");
+      // Choosing a project: only its own root is read, and the explorer is back.
+      const target = h.realDisk ? before : "/fixture/projects/Alpha";
+      h.treeRequests();
+      await bounded(h.run(`openProject(${JSON.stringify(target)})`), "open project");
+      assert.equal(h.run("state.session.home"), false);
+      assert.equal(h.run("state.session.root"), target);
+      assert.deepEqual(h.treeRequests(), [""]);
+      assert.equal(h.get("#home").hidden, true);
+      assert.equal(h.get("#tree").hidden, false);
+      assert.equal(h.get("#act-home").hidden, false);
+      // Open project folder…: a relative path is refused, nothing changes.
+      h.run("openFolderDialog()");
+      assert.equal(h.modalTitle(), "Open project folder");
+      h.get("#open-folder-path").value = "relative/folder";
+      await bounded(h.choose("Open"), "open relative");
+      assert(h.toasts().some(t => t.startsWith("Could not open relative/folder")), h.toasts().join(" | "));
+      assert.equal(h.run("state.session.root"), target);
+      h.run("closeModal()");
+    } finally {
+      if (h.run("state.session.home") || h.run("state.session.root") !== before) await bounded(h.run(`openProject(${JSON.stringify(before)})`), "restore");
+    }
   }],
   ["a document chosen in the tree opens and is marked, and the tree follows new folders", async h => {
     await h.add("tree-fold/deep/inner.lcl", "LCL:\n");
     await h.add("tree-top.lcl", "LCL:\n");
     await bounded(h.run("loadTree()"), "the listing");
-    assert(h.treeIds().includes("tree-fold/deep/inner.lcl"), "the new document is not listed");
-    const entries = JSON.parse(h.run("JSON.stringify(state.entries)"));
-    if (entries.some(e => e.directory)) {
-      // A real server lists the folders it made for the document.
-      assert(entries.some(e => e.directory && e.id === "tree-fold/deep"), "the new folder is not listed");
-    }
+    // A fresh listing reads the root alone; the open document's folders are
+    // read again only when it is shown.
+    assert.deepEqual(h.rows(["tree-fold", "tree-top.lcl"]), ["tree-fold", "tree-top.lcl"]);
+    await bounded(h.run('openDocument("tree-top.lcl")'), "show");
     const row = id => h.get("#tree").children.find(li => li.title === id);
     const marked = () => h.get("#tree").children.filter(li => li.classList.contains("open")).map(li => li.title);
     assert.deepEqual(marked(), ["tree-top.lcl"]);
-    // Choosing another document in the tree opens it and moves the mark.
-    h.run('state.collapsed.add("tree-fold"); renderTree()');
     assert.equal(row("tree-fold/deep/inner.lcl"), undefined);
+    // Choosing the nested document opens it and moves the mark, and the
+    // folders around it open.
     await bounded(h.run('openDocument("tree-fold/deep/inner.lcl")'), "switching documents");
-    // It is the active document now, so the folders around it opened.
     assert.equal(h.run("state.active"), "tree-fold/deep/inner.lcl");
     assert.deepEqual(marked(), ["tree-fold/deep/inner.lcl"]);
+    assert(h.treeDirs().includes("tree-fold/deep"), "the folders on the way were not listed");
     await bounded(row("tree-top.lcl").onclick(), "opening from the tree");
     assert.equal(h.run("state.active"), "tree-top.lcl");
     assert.equal(h.get("#code").value, "LCL:\n");

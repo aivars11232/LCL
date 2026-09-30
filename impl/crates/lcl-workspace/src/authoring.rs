@@ -420,32 +420,12 @@ pub fn named_project(
     })
 }
 
-/// `dir`, relative to `root` with `/` separators, when it is inside `root`.
-pub fn inside(dir: &Path, root: &Path) -> Option<String> {
-    let real = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
-    let dir = match (dir.parent(), dir.file_name()) {
-        // The project folder may not exist yet; the projects folder does.
-        (Some(parent), Some(name)) => real(parent).join(name),
-        _ => real(dir),
-    };
-    let relative = dir.strip_prefix(real(root)).ok()?;
-    let parts: Vec<String> = relative
-        .components()
-        .map(|c| c.as_os_str().to_string_lossy().to_string())
-        .collect();
-    (!parts.is_empty()).then(|| parts.join("/"))
-}
-
 /// A named project as the page shows it: where it goes, whether that folder
 /// is already taken, whether creating it opens the projects folder in this
 /// window (it does when the project would otherwise be outside what the
 /// window shows), and its files. `folder` and `entry` are ids in the window
 /// as it will be after the creation.
-pub fn named_plan_json(plan: &NamedProject, projects: &Path, root: &Path) -> String {
-    let (folder, opens) = match inside(&plan.dir, root) {
-        Some(folder) => (folder, false),
-        None => (plan.name.clone(), true),
-    };
+pub fn named_plan_json(plan: &NamedProject, projects: &Path) -> String {
     Object::new()
         .with("name", Node::string(&plan.name))
         .with("projects", Node::string(projects.display().to_string()))
@@ -454,20 +434,14 @@ pub fn named_plan_json(plan: &NamedProject, projects: &Path, root: &Path) -> Str
             "exists",
             Node::Bool(std::fs::symlink_metadata(&plan.dir).is_ok()),
         )
-        .with("opens_projects_folder", Node::Bool(opens))
-        .with("folder", Node::string(&folder))
-        .with(
-            "entry",
-            Node::string(prefixed(&folder, &plan.files[0].path)),
-        )
+        // Once created, the new project is the one this window shows, so
+        // every path here is relative to the project itself.
+        .with("opens_project", Node::Bool(true))
+        .with("entry", Node::string(&plan.files[0].path))
         .with("plan_digest", Node::string(&plan.digest))
         .with(
             "files",
-            Node::array(
-                plan.files
-                    .iter()
-                    .map(|f| planned_json(f, &prefixed(&folder, &f.path))),
-            ),
+            Node::array(plan.files.iter().map(|f| planned_json(f, &f.path))),
         )
         .pretty()
 }

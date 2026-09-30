@@ -43,7 +43,7 @@ fn a_directory_without_a_manifest_still_opens() {
     let scratch = Scratch::new("rootless");
     scratch.put("one.lcl", &example("01_MINIMAL_TASK.lcl"));
     let workspace = Workspace::open(&scratch.path, canonical_root()).expect("rootless opens");
-    let documents = workspace.documents().expect("it lists");
+    let documents = workspace.children("").expect("it lists").entries;
     assert_eq!(documents.len(), 1);
     assert_eq!(documents[0].id, "one.lcl");
 }
@@ -151,32 +151,34 @@ fn a_new_document_can_be_created_inside_the_project() {
         .expect("a new document in a new directory");
     assert_eq!(saved.text, text);
 
-    let listed = workspace.documents().expect("lists");
-    assert!(listed
+    let root = workspace.children("").expect("lists").entries;
+    assert!(root.iter().any(|e| e.id == "nested" && e.directory));
+    let nested = workspace.children("nested").expect("lists").entries;
+    assert!(nested
         .iter()
         .any(|e| e.id == "nested/fresh.lcl" && !e.directory));
-    assert!(listed.iter().any(|e| e.id == "nested" && e.directory));
 }
 
 #[test]
 fn the_document_tree_is_ordered_and_does_not_depend_on_the_filesystem() {
     let (_scratch, workspace) = project_of_examples("ordering");
-    let first = workspace.documents().expect("lists");
-    let second = workspace.documents().expect("lists again");
+    let first = workspace.children("").expect("lists");
+    let second = workspace.children("").expect("lists again");
     assert_eq!(first, second, "two reads must agree");
 
-    let ids: Vec<&str> = first.iter().map(|e| e.id.as_str()).collect();
+    let ids: Vec<&str> = first.entries.iter().map(|e| e.id.as_str()).collect();
     let mut sorted = ids.clone();
     sorted.sort();
-    assert_eq!(ids, sorted, "the tree is in ascending identity order");
+    assert_eq!(ids, sorted, "the folder is in ascending name order");
 }
 
 #[test]
 fn a_dot_directory_is_not_source_and_is_not_listed() {
     let (scratch, workspace) = project_of_examples("dotdir");
     scratch.put(".lcl-cache/vendored.lcl", &example("01_MINIMAL_TASK.lcl"));
-    let listed = workspace.documents().expect("lists");
+    let listed = workspace.children("").expect("lists").entries;
     assert!(!listed.iter().any(|e| e.id.starts_with(".lcl-cache")));
+    assert!(workspace.children(".lcl-cache").is_err());
 }
 
 #[test]
@@ -313,8 +315,9 @@ fn the_tree_lists_both_endings_and_no_other_text_file() {
     scratch.put("backup.lcl.bak", "not a document either");
 
     let ids: Vec<String> = workspace
-        .documents()
+        .children("")
         .expect("the tree lists")
+        .entries
         .into_iter()
         .filter(|e| !e.directory)
         .map(|e| e.id)
@@ -391,14 +394,25 @@ fn the_project_tree_never_lists_through_a_link_out_of_the_project() {
     std::os::unix::fs::symlink(scratch.join("inner"), scratch.join("alias")).unwrap();
 
     let ids: Vec<String> = workspace
-        .documents()
+        .children("")
         .expect("it lists")
+        .entries
         .into_iter()
         .map(|entry| entry.id)
         .collect();
     assert!(!ids.iter().any(|id| id.starts_with("linked")), "{ids:?}");
-    assert!(ids.contains(&"inner/kept.lcl".to_string()), "{ids:?}");
-    assert!(ids.contains(&"alias/kept.lcl".to_string()), "{ids:?}");
+    assert!(ids.contains(&"inner".to_string()), "{ids:?}");
+    assert!(workspace.children("linked-dir").is_err());
+    // A link that stays inside the project is a folder like any other.
+    assert!(ids.contains(&"alias".to_string()), "{ids:?}");
+    let alias: Vec<String> = workspace
+        .children("alias")
+        .expect("it lists")
+        .entries
+        .into_iter()
+        .map(|entry| entry.id)
+        .collect();
+    assert_eq!(alias, ["alias/kept.lcl"]);
     assert_eq!(
         workspace.read("alias/kept.lcl").expect("inside").text,
         example("01_MINIMAL_TASK.lcl")

@@ -259,7 +259,7 @@ fn every_role_creates_its_own_scaffold_and_the_file_is_the_preview() {
     );
 
     // The tree says what each file declares, never what its name suggests.
-    let tree = json(&request(&running, "GET", "/api/documents", ""));
+    let tree = json(&request(&running, "GET", "/api/tree", ""));
     for entry in tree.get("entries").and_then(Json::as_array).unwrap() {
         let id = text(entry, "id");
         assert_eq!(text(entry, "kind"), declared[id], "{id}");

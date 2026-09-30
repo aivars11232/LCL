@@ -1,10 +1,11 @@
-//! The project tree at scale: the `KIND` labels it reads once per unchanged
-//! document, and the limits it reports when it leaves anything out.
+//! The project explorer: one folder listed at a time and nothing below it,
+//! every folder shown, a per-folder bound, containment, folder creation, and
+//! the `KIND` labels it reads once per unchanged document.
 
 mod common;
 
 use common::{canonical_root, example, Scratch};
-use lcl_workspace::project::{MAX_DEPTH, MAX_ENTRIES};
+use lcl_workspace::project::MAX_CHILDREN;
 use lcl_workspace::Workspace;
 use std::time::{Duration, SystemTime};
 
@@ -12,11 +13,13 @@ fn open(scratch: &Scratch) -> Workspace {
     Workspace::open(&scratch.path, canonical_root()).expect("the folder opens")
 }
 
-/// The kind the tree shows for each listed document, by identity.
-fn kinds(workspace: &Workspace) -> Vec<(String, Option<String>)> {
-    let entries = workspace.documents().expect("it lists");
-    let kinds = workspace.tree_kinds(&entries);
-    entries
+/// The kind the tree shows for each document listed in one folder, by
+/// identity: what the page gets when that folder is unfolded.
+fn kinds_in(workspace: &Workspace, folder: &str) -> Vec<(String, Option<String>)> {
+    let children = workspace.children(folder).expect("it lists");
+    let kinds = workspace.tree_kinds(&children);
+    children
+        .entries
         .into_iter()
         .zip(kinds)
         .filter(|(e, _)| !e.directory)
@@ -24,12 +27,27 @@ fn kinds(workspace: &Workspace) -> Vec<(String, Option<String>)> {
         .collect()
 }
 
+fn kinds(workspace: &Workspace) -> Vec<(String, Option<String>)> {
+    kinds_in(workspace, "")
+}
+
 fn kind_of(workspace: &Workspace, id: &str) -> Option<String> {
-    kinds(workspace)
+    let folder = id.rsplit_once('/').map_or("", |(f, _)| f);
+    kinds_in(workspace, folder)
         .into_iter()
         .find(|(listed, _)| listed == id)
         .unwrap_or_else(|| panic!("{id} is not listed"))
         .1
+}
+
+/// The ids one folder lists, in the order the explorer shows them, and
+/// whether the folder's bound left any out.
+fn listed(workspace: &Workspace, folder: &str) -> (Vec<String>, bool) {
+    let children = workspace.children(folder).expect("it lists");
+    (
+        children.entries.into_iter().map(|e| e.id).collect(),
+        children.truncated,
+    )
 }
 
 /// Put a document whose timestamps are an hour old, as a file nobody has
@@ -189,191 +207,223 @@ fn malformed_oversized_and_unreadable_documents_have_no_kind() {
     }
 }
 
-/// A project holding `count` tree entries: empty documents, flat.
-fn flat(name: &str, count: usize) -> Scratch {
-    let scratch = Scratch::new(name);
-    for i in 0..count {
-        scratch.put(&format!("d{i:05}.lcl"), "");
-    }
-    scratch
-}
-
 #[test]
-fn a_listing_below_the_limit_is_complete() {
-    let scratch = flat("tree-below", 10);
-    let listing = open(&scratch).listing().unwrap();
-    assert_eq!(listing.entries.len(), 10);
-    assert!(!listing.truncated);
-}
-
-#[test]
-fn exactly_the_limit_is_still_a_complete_listing() {
-    // Folders count as entries: 4095 documents in one folder is 4096.
-    let scratch = flat("tree-exact", 0);
-    for i in 0..MAX_ENTRIES - 1 {
-        scratch.put(&format!("dir/d{i:05}.lcl"), "");
-    }
-    let listing = open(&scratch).listing().unwrap();
-    assert_eq!(listing.entries.len(), MAX_ENTRIES);
-    assert!(
-        !listing.truncated,
-        "a complete tree of exactly the limit was called truncated"
-    );
-}
-
-#[test]
-fn one_entry_over_the_limit_is_reported() {
-    let scratch = flat("tree-over", MAX_ENTRIES + 1);
-    let listing = open(&scratch).listing().unwrap();
-    assert_eq!(listing.entries.len(), MAX_ENTRIES);
-    assert!(listing.truncated);
-    let ids: Vec<&str> = listing.entries.iter().map(|e| e.id.as_str()).collect();
-    let mut sorted = ids.clone();
-    sorted.sort();
-    assert_eq!(ids, sorted, "a truncated tree is still in identity order");
-}
-
-#[test]
-fn a_document_below_the_depth_limit_is_reported() {
-    // The walk reads folders down to MAX_DEPTH below the root, so the deepest
-    // listed entry is MAX_DEPTH + 1 components long.
-    let at_limit = (0..MAX_DEPTH)
-        .map(|i| format!("l{i}"))
-        .collect::<Vec<_>>()
-        .join("/");
-    let scratch = Scratch::new("tree-depth");
-    scratch.put(&format!("{at_limit}/deepest.lcl"), "");
-    let listing = open(&scratch).listing().unwrap();
-    assert!(!listing.truncated, "the deepest listed level is complete");
-    assert!(listing
-        .entries
-        .iter()
-        .any(|e| e.id.ends_with("deepest.lcl")));
-
-    scratch.put(&format!("{at_limit}/l{MAX_DEPTH}/too-deep.lcl"), "");
-    let listing = open(&scratch).listing().unwrap();
-    assert!(listing.truncated);
-    assert!(!listing
-        .entries
-        .iter()
-        .any(|e| e.id.ends_with("too-deep.lcl")));
-}
-
-/// The ids a listing shows, and whether it says it left anything out.
-fn shown(scratch: &Scratch) -> (Vec<String>, bool) {
-    let listing = open(scratch).listing().unwrap();
-    (
-        listing.entries.into_iter().map(|e| e.id).collect(),
-        listing.truncated,
-    )
-}
-
-#[test]
-fn a_folder_is_listed_only_on_the_way_to_a_document() {
-    let scratch = Scratch::new("tree-prune");
+fn a_folder_lists_its_direct_children_folders_first_and_nothing_below() {
+    let scratch = Scratch::new("tree-children");
     scratch.put("main.lcl.txt", "LCL:\n");
-    scratch.put("rules/rules.lcl.txt", "LCL:\n");
+    scratch.put("rules/behavior.lcl.txt", "LCL:\n");
+    scratch.put("rules/security.lcl.txt", "LCL:\n");
+    scratch.put("tasks/task_001.lcl.txt", "LCL:\n");
+    scratch.put("tasks/archive/old.lcl", "LCL:\n");
     scratch.put("outputs/result.json", "{}");
     scratch.put("logs/run.log", "ran\n");
-    scratch.put("work/cache.bin", "\u{1}");
     scratch.put("notes.txt", "not a document");
     std::fs::create_dir(scratch.join("empty-folder")).unwrap();
+    let workspace = open(&scratch);
+    // The root: every folder, empty or of other files, then the documents.
+    // Nothing inside any folder is listed or read.
     assert_eq!(
-        shown(&scratch),
+        listed(&workspace, ""),
         (
-            vec![
-                "main.lcl.txt".to_string(),
-                "rules".to_string(),
-                "rules/rules.lcl.txt".to_string()
-            ],
+            [
+                "empty-folder",
+                "logs",
+                "outputs",
+                "rules",
+                "tasks",
+                "main.lcl.txt"
+            ]
+            .map(String::from)
+            .to_vec(),
             false
         )
     );
-    // Visibility only: nothing on disk is touched.
-    for kept in [
-        "outputs/result.json",
-        "logs/run.log",
-        "work/cache.bin",
-        "empty-folder",
-    ] {
-        assert!(scratch.join(kept).exists(), "{kept}");
-    }
-}
-
-#[test]
-fn no_folder_name_is_hidden_when_a_document_is_inside() {
-    let scratch = Scratch::new("tree-no-blacklist");
-    scratch.put("docs/rules.lcl", "LCL:\n");
-    scratch.put("data/model.lcl.txt", "LCL:\n");
-    scratch.put("outputs/deep/er/x.lcl", "LCL:\n");
-    scratch.put("outputs/deep/other.json", "{}");
-    scratch.put("work/a/b/c.bin", "");
-    std::fs::create_dir_all(scratch.join("docs/empty/inside")).unwrap();
-    let (ids, truncated) = shown(&scratch);
     assert_eq!(
-        ids,
-        [
-            "data",
-            "data/model.lcl.txt",
-            "docs",
-            "docs/rules.lcl",
-            "outputs",
-            "outputs/deep",
-            "outputs/deep/er",
-            "outputs/deep/er/x.lcl"
-        ]
+        listed(&workspace, "rules").0,
+        ["rules/behavior.lcl.txt", "rules/security.lcl.txt"]
     );
+    assert_eq!(
+        listed(&workspace, "tasks").0,
+        ["tasks/archive", "tasks/task_001.lcl.txt"]
+    );
+    assert_eq!(
+        listed(&workspace, "tasks/archive").0,
+        ["tasks/archive/old.lcl"]
+    );
+    // A folder of other files is a folder; the other files are not documents.
+    assert_eq!(listed(&workspace, "outputs").0, Vec::<String>::new());
+    assert_eq!(listed(&workspace, "empty-folder").0, Vec::<String>::new());
+    let root = workspace.children("").unwrap();
+    assert!(root.entries.iter().all(|e| e.name == e.id));
+    assert_eq!(
+        workspace.children("tasks").unwrap().entries[1].name,
+        "task_001.lcl.txt"
+    );
+}
+
+#[test]
+fn a_folder_that_is_not_unfolded_is_never_read() {
+    let scratch = Scratch::new("tree-lazy");
+    scratch.put("main.lcl", "LCL:\n");
+    scratch.put("huge/locked/secret.lcl", "LCL:\n");
+    for i in 0..50 {
+        scratch.put(&format!("huge/d{i:02}/x.lcl"), "LCL:\n");
+    }
+    #[cfg(unix)]
+    let unreadable = {
+        use std::os::unix::fs::PermissionsExt;
+        let locked = scratch.join("huge/locked");
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        // Root reads through any permission; the check means nothing then.
+        std::fs::read_dir(&locked).is_err()
+    };
+    let workspace = open(&scratch);
+    // The root and `huge` list without touching what is below them, so the
+    // folder nobody can read breaks nothing until it is unfolded itself.
+    assert_eq!(listed(&workspace, "").0, ["huge", "main.lcl"]);
+    let (inside, truncated) = listed(&workspace, "huge");
+    assert_eq!(inside.len(), 51);
     assert!(!truncated);
+    #[cfg(unix)]
+    if unreadable {
+        let refused = workspace.children("huge/locked");
+        assert!(refused.is_err(), "an unreadable folder was listed");
+        assert!(refused.unwrap_err().to_string().contains("not readable"));
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(
+            scratch.join("huge/locked"),
+            std::fs::Permissions::from_mode(0o700),
+        );
+    }
 }
 
 #[test]
-fn folders_of_other_files_never_use_up_the_entry_limit() {
-    let scratch = Scratch::new("tree-clutter-budget");
-    // Clutter before and after the documents, in name order.
-    for i in 0..300 {
-        scratch.put(&format!("a_clutter_{i:03}/data.bin"), "");
-        scratch.put(&format!("zz_clutter_{i:03}/log.txt"), "");
+fn the_bound_is_per_folder_and_keeps_the_first_entries() {
+    let scratch = Scratch::new("tree-bound");
+    scratch.put("main.lcl", "");
+    for i in 0..=MAX_CHILDREN {
+        scratch.put(&format!("big/d{i:05}.lcl"), "");
     }
-    for i in 0..MAX_ENTRIES {
-        scratch.put(&format!("d{i:05}.lcl"), "");
+    for i in 0..MAX_CHILDREN {
+        scratch.put(&format!("exact/d{i:05}.lcl"), "");
     }
-    let (ids, truncated) = shown(&scratch);
-    assert_eq!(ids.len(), MAX_ENTRIES);
-    assert!(ids.iter().all(|id| id.ends_with(".lcl")));
-    assert!(
-        !truncated,
-        "folders without documents made a complete tree look cut short"
+    scratch.put("small/one.lcl", "");
+    let workspace = open(&scratch);
+    // The root is complete: the bound is about the folder that exceeds it.
+    assert_eq!(
+        listed(&workspace, ""),
+        (
+            ["big", "exact", "small", "main.lcl"]
+                .map(String::from)
+                .to_vec(),
+            false
+        )
     );
-
-    // One document more, inside a folder met at the limit: that one is cut.
-    scratch.put("zz_more/x.lcl", "");
-    let (ids, truncated) = shown(&scratch);
-    assert_eq!(ids.len(), MAX_ENTRIES);
-    assert!(truncated);
+    let big = workspace.children("big").unwrap();
+    assert_eq!(big.entries.len(), MAX_CHILDREN);
+    assert!(big.truncated);
+    assert_eq!(big.entries[0].id, "big/d00000.lcl");
+    assert_eq!(
+        big.entries[MAX_CHILDREN - 1].id,
+        format!("big/d{:05}.lcl", MAX_CHILDREN - 1)
+    );
+    let exact = workspace.children("exact").unwrap();
+    assert_eq!(exact.entries.len(), MAX_CHILDREN);
+    assert!(
+        !exact.truncated,
+        "a folder of exactly the bound is complete"
+    );
+    assert_eq!(
+        listed(&workspace, "small"),
+        (vec!["small/one.lcl".to_string()], false)
+    );
 }
 
 #[test]
-fn a_deep_folder_without_documents_is_not_a_truncation() {
-    let deep = (0..MAX_DEPTH + 3)
-        .map(|i| format!("l{i}"))
-        .collect::<Vec<_>>()
-        .join("/");
-    let scratch = Scratch::new("tree-deep-clutter");
-    scratch.put(&format!("{deep}/data.bin"), "");
-    scratch.put("main.lcl", "");
-    assert_eq!(shown(&scratch), (vec!["main.lcl".to_string()], false));
-}
-
-#[test]
-fn a_listing_examines_a_bounded_number_of_files() {
-    let scratch = Scratch::new("tree-scan-budget");
-    scratch.put("main.lcl", "");
-    let bulk = scratch.join("bulk");
-    std::fs::create_dir(&bulk).unwrap();
-    for i in 0..=lcl_workspace::project::MAX_SCANNED {
-        std::fs::File::create(bulk.join(format!("f{i}"))).unwrap();
+fn a_listing_never_leaves_the_project() {
+    let scratch = Scratch::new("tree-contained");
+    let outside = Scratch::new("tree-contained-outside");
+    outside.put("private/leak.lcl", "LCL:\n");
+    scratch.put("main.lcl", "LCL:\n");
+    scratch.put("inner/kept.lcl", "LCL:\n");
+    std::fs::create_dir(scratch.join(".git")).unwrap();
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(outside.join("private"), scratch.join("linked-dir")).unwrap();
+        std::os::unix::fs::symlink(outside.join("private/leak.lcl"), scratch.join("linked.lcl"))
+            .unwrap();
+        std::os::unix::fs::symlink(scratch.join("inner"), scratch.join("alias")).unwrap();
     }
-    // It stops, and says it could not look at everything.
-    let (_, truncated) = shown(&scratch);
-    assert!(truncated);
+    let workspace = open(&scratch);
+    let (root, _) = listed(&workspace, "");
+    assert!(!root.iter().any(|id| id.starts_with("linked")), "{root:?}");
+    assert!(!root.iter().any(|id| id.starts_with('.')), "{root:?}");
+    #[cfg(unix)]
+    {
+        assert!(
+            root.contains(&"alias".to_string()),
+            "a link inside the project is listed"
+        );
+        assert_eq!(listed(&workspace, "alias").0, ["alias/kept.lcl"]);
+        assert!(workspace.children("linked-dir").is_err());
+    }
+    for bad in [
+        "..",
+        "../",
+        "/",
+        "/etc",
+        "inner/../..",
+        ".git",
+        "inner/../../tree-contained-outside",
+    ] {
+        assert!(workspace.children(bad).is_err(), "{bad} was listed");
+    }
+    assert!(workspace.children("missing").is_err());
+    assert!(
+        workspace.children("main.lcl").is_err(),
+        "a document is not a folder"
+    );
+    assert!(!outside.join("private/anything").exists());
+}
+
+#[test]
+fn a_folder_is_made_where_it_was_asked_for_and_shows_at_once() {
+    let scratch = Scratch::new("tree-mkdir");
+    scratch.put("main.lcl", "LCL:\n");
+    scratch.put("tasks/task_001.lcl", "LCL:\n");
+    let workspace = open(&scratch);
+    assert_eq!(workspace.create_folder("planning").unwrap(), "planning");
+    assert!(scratch.join("planning").is_dir());
+    assert_eq!(listed(&workspace, "").0, ["planning", "tasks", "main.lcl"]);
+    assert_eq!(listed(&workspace, "planning").0, Vec::<String>::new());
+    assert_eq!(
+        workspace.create_folder("tasks/archive/").unwrap(),
+        "tasks/archive"
+    );
+    assert_eq!(
+        listed(&workspace, "tasks").0,
+        ["tasks/archive", "tasks/task_001.lcl"]
+    );
+    // A document made in the new folder is listed there, and only there.
+    workspace
+        .create_document("planning/phase_1.lcl", "LCL:\n")
+        .unwrap();
+    assert_eq!(listed(&workspace, "planning").0, ["planning/phase_1.lcl"]);
+    // Refused: a taken name, a dot name, a parent nobody made, and anything
+    // outside the project; nothing else is created.
+    for bad in [
+        "planning",
+        "tasks/task_001.lcl",
+        ".hidden",
+        "planning/.x",
+        "nowhere/deep",
+        "../out",
+        "/tmp/out",
+        "",
+    ] {
+        assert!(workspace.create_folder(bad).is_err(), "{bad} was created");
+    }
+    assert!(!scratch.join("nowhere").exists());
+    assert!(!scratch.path.parent().unwrap().join("out").exists());
+    assert_eq!(listed(&workspace, "").0, ["planning", "tasks", "main.lcl"]);
 }

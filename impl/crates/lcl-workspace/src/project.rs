@@ -2,15 +2,24 @@
 //!
 //! ## Listing files is not resolving them
 //!
-//! This module walks a project directory to fill a file tree. That is a file
-//! browser, and it is worth being explicit that it is not source resolution,
-//! because `05_SEMANTICS/02` is emphatic that "ambient current directory and
-//! implied nearby files do not exist in portable LCL".
+//! This module lists one folder of a project at a time to fill the project
+//! explorer. That is a file browser, and it is worth being explicit that it is
+//! not source resolution, because `05_SEMANTICS/02` is emphatic that "ambient
+//! current directory and implied nearby files do not exist in portable LCL".
 //!
-//! Nothing found by this walk enters a program. When a document is checked or
+//! Nothing a listing finds enters a program. When a document is checked or
 //! run, the units that load are exactly the ones that document named, through
 //! `lcl_project::FileProvider`, and the report says which those were. A file
 //! sitting in the tree that nothing imports is a file the engine never reads.
+//!
+//! ## One folder at a time
+//!
+//! The explorer is lazy: [`Workspace::children`] reads the direct children of
+//! the one folder asked for, and nothing below them. A folder that is never
+//! unfolded is never read, so the size of a project, or of anything else that
+//! happens to be inside it, does not decide how long the sidebar takes. Every
+//! folder inside the project is listed, empty or not: the explorer shows the
+//! project as it is on disk, and a person may make a folder before its files.
 //!
 //! ## One engine, opened once
 //!
@@ -32,16 +41,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
-/// How deep the file walk goes. A project is a source tree, not a filesystem.
-pub const MAX_DEPTH: usize = 12;
-/// How many entries the tree reports at most: documents, and the folders on
-/// the way to them. Folders without a document never count.
-pub const MAX_ENTRIES: usize = 4096;
-/// How many filesystem entries one listing examines at most, shown or not,
-/// so a project full of other files cannot make a listing unbounded.
-pub const MAX_SCANNED: usize = 100_000;
-/// How deep the walk looks, past [`MAX_DEPTH`], for a document it cannot show.
-const PROBE_DEPTH: usize = 64;
+/// How many entries one folder's listing reports at most. The bound is per
+/// folder, because a listing is: one folder holding more says so, and every
+/// other folder of the project is listed in full.
+pub const MAX_CHILDREN: usize = 4096;
 /// The largest document whose `KIND` the tree reads.
 const KIND_LIMIT: u64 = 1 << 20;
 /// How old a file's timestamps must be before its cached `KIND` is trusted.
@@ -87,18 +90,23 @@ impl From<DocumentError> for WorkspaceError {
 pub struct Entry {
     /// Root-relative path, with `/` separators on every platform.
     pub id: String,
+    /// The last part of the path: what the explorer shows.
+    pub name: String,
     pub directory: bool,
     /// Byte length, for a file.
     pub bytes: Option<u64>,
 }
 
-/// The tree's entries and whether the walk left eligible ones out.
+/// The direct children of one folder, and whether the bound left any out.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Listing {
+pub struct Children {
+    /// The folder listed: a root-relative identity, or `""` for the root.
+    pub parent: String,
+    /// Folders first, then documents, each in name order.
     pub entries: Vec<Entry>,
-    /// True only when at least one more document or folder existed than the
-    /// limits let the tree report: more than [`MAX_ENTRIES`], or one below
-    /// [`MAX_DEPTH`]. A listing of exactly [`MAX_ENTRIES`] can be complete.
+    /// True only when this folder held more listable entries than
+    /// [`MAX_CHILDREN`]; the first [`MAX_CHILDREN`] are in `entries`. A
+    /// folder of exactly [`MAX_CHILDREN`] is complete.
     pub truncated: bool,
 }
 
@@ -447,64 +455,152 @@ impl Workspace {
         Some(to_identity(relative))
     }
 
-    /// Every LCL document in the project, and every folder on the way to
-    /// one, in ascending identity order.
-    ///
-    /// The tree navigates documents; it is not a file browser. A folder is
-    /// listed only when a document is somewhere below it, so folders of
-    /// outputs, logs or data, and empty ones, are left out whatever they are
-    /// called, and a `docs/rules.lcl` keeps `docs/`. [`MAX_ENTRIES`] counts
-    /// only what is listed; [`MAX_SCANNED`] bounds the filesystem entries
-    /// examined, listed or not. Dot directories are tooling and never walked.
+    /// The folder `parent` names, proven inside the project: the root for
+    /// `""`. A folder that does not exist, is not a folder, or is a dot
+    /// directory (tooling, never listed) is refused.
+    fn folder(&self, parent: &str) -> Result<PathBuf, WorkspaceError> {
+        let root = self.project.root();
+        if parent.is_empty() {
+            return Ok(root.to_path_buf());
+        }
+        let path = document::resolve(root, parent)?;
+        let hidden = path
+            .strip_prefix(root)
+            .ok()
+            .into_iter()
+            .flat_map(Path::components)
+            .any(|c| c.as_os_str().to_string_lossy().starts_with('.'));
+        if hidden || !path.is_dir() {
+            return Err(WorkspaceError::Io {
+                path,
+                detail: "there is no such folder in the project".to_string(),
+            });
+        }
+        Ok(path)
+    }
+
+    /// The direct children of one folder of the project: every folder in it,
+    /// empty or not, and every LCL document, and nothing below them.
     ///
     /// Both recognised suffixes, `.lcl` and `.lcl.txt`. The test is on the file
     /// name rather than on `Path::extension`, because the extension of
     /// `notes.lcl.txt` is `txt` and a listing built on that would show neither
     /// the new default nor anything else useful. Ordinary `.txt` files are not
-    /// listed: only the exact `.lcl.txt` ending is recognised.
+    /// listed: only the exact `.lcl.txt` ending is recognised. A dot directory
+    /// is tooling, not source, and is not listed; a link is listed only when
+    /// what it names is inside the project.
     ///
-    /// Deterministic: the walk sorts each directory's entries by name rather
-    /// than taking the filesystem's enumeration order, which contract 5.3
-    /// names as something observable meaning must never depend on. A file tree
-    /// is not language meaning, but a list that reordered itself between two
-    /// reads would still be a bug a user sees.
-    pub fn documents(&self) -> Result<Vec<Entry>, WorkspaceError> {
-        Ok(self.listing()?.entries)
-    }
-
-    /// The same listing, saying whether the limits left anything out.
-    pub fn listing(&self) -> Result<Listing, WorkspaceError> {
-        let mut listing = Listing {
-            entries: Vec::new(),
-            truncated: false,
-        };
+    /// Deterministic: folders first, then documents, each sorted by name
+    /// rather than taken in the filesystem's enumeration order, which
+    /// contract 5.3 names as something observable meaning must never depend
+    /// on. A file tree is not language meaning, but a list that reordered
+    /// itself between two reads would still be a bug a person sees. At most
+    /// [`MAX_CHILDREN`] entries, the first in that order; `truncated` says
+    /// when there were more.
+    pub fn children(&self, parent: &str) -> Result<Children, WorkspaceError> {
         let root = self.project.root();
-        Walk {
-            root,
-            out: &mut listing,
-            scanned: 0,
+        let directory = self.folder(parent)?;
+        let listing = std::fs::read_dir(&directory).map_err(|e| WorkspaceError::Io {
+            path: directory.clone(),
+            detail: format!("the folder is not readable: {e}"),
+        })?;
+        let mut folders = Vec::new();
+        let mut documents = Vec::new();
+        for entry in listing.filter_map(Result::ok) {
+            let path = entry.path();
+            let Some((name, is_dir)) = eligible(root, &path) else {
+                continue;
+            };
+            let id = if parent.is_empty() {
+                name.clone()
+            } else {
+                format!("{parent}/{name}")
+            };
+            if is_dir {
+                folders.push(Entry {
+                    id,
+                    name,
+                    directory: true,
+                    bytes: None,
+                });
+            } else {
+                documents.push(Entry {
+                    id,
+                    name,
+                    directory: false,
+                    bytes: std::fs::metadata(&path).ok().map(|m| m.len()),
+                });
+            }
         }
-        .walk(root, 0)?;
-        listing.entries.sort_by(|a, b| a.id.cmp(&b.id));
-        Ok(listing)
+        folders.sort_by(|a, b| a.name.cmp(&b.name));
+        documents.sort_by(|a, b| a.name.cmp(&b.name));
+        let mut entries = folders;
+        entries.append(&mut documents);
+        let truncated = entries.len() > MAX_CHILDREN;
+        entries.truncate(MAX_CHILDREN);
+        Ok(Children {
+            parent: parent.to_string(),
+            entries,
+            truncated,
+        })
     }
 
-    /// The `SPECIFICATION` `KIND` the tree shows beside each entry, in order:
-    /// `None` for a folder and for a document that cannot be read, does not
-    /// parse, or is over 1 MiB.
+    /// Make one folder in the project, empty, where the explorer can show it
+    /// at once. `id` is root-relative; its parent must exist, so a folder is
+    /// made where a person chose, never along a path nobody looked at. A dot
+    /// name is refused (the explorer never lists one), and so is a name that
+    /// is taken.
+    pub fn create_folder(&self, id: &str) -> Result<String, WorkspaceError> {
+        let root = self.project.root();
+        let path = document::resolve(root, id)?;
+        let relative = path.strip_prefix(root).map_err(|_| WorkspaceError::Io {
+            path: path.clone(),
+            detail: "the folder would be outside the project".to_string(),
+        })?;
+        if relative
+            .components()
+            .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
+        {
+            return Err(WorkspaceError::Io {
+                path: path.clone(),
+                detail: "a folder name cannot start with a dot".to_string(),
+            });
+        }
+        if std::fs::symlink_metadata(&path).is_ok() {
+            return Err(WorkspaceError::Document(DocumentError::AlreadyExists(path)));
+        }
+        std::fs::create_dir(&path).map_err(|e| WorkspaceError::Io {
+            path: path.clone(),
+            detail: format!("the folder could not be created: {e}"),
+        })?;
+        Ok(to_identity(relative))
+    }
+
+    /// The `SPECIFICATION` `KIND` the tree shows beside each entry of one
+    /// folder's listing, in order: `None` for a folder and for a document
+    /// that cannot be read, does not parse, or is over 1 MiB. Only the
+    /// documents listed are read; nothing below the folder is.
     ///
     /// A document whose stamp is unchanged since it was last read is not read
-    /// again. Afterwards the cache holds only the documents listed here, so a
-    /// deleted one is forgotten.
-    pub fn tree_kinds(&self, entries: &[Entry]) -> Vec<Option<String>> {
-        let kinds = entries.iter().map(|e| self.tree_kind(e)).collect();
-        let listed: HashSet<&str> = entries
+    /// again. Afterwards the cache holds, for this folder, only the documents
+    /// listed here, so a deleted one is forgotten; other folders' entries are
+    /// kept until they are listed again.
+    pub fn tree_kinds(&self, children: &Children) -> Vec<Option<String>> {
+        let kinds = children.entries.iter().map(|e| self.tree_kind(e)).collect();
+        let listed: HashSet<&str> = children
+            .entries
             .iter()
             .filter(|e| !e.directory)
             .map(|e| e.id.as_str())
             .collect();
-        self.cached_kinds()
-            .retain(|id, _| listed.contains(id.as_str()));
+        let parent = children.parent.as_str();
+        self.cached_kinds().retain(|id, _| {
+            let in_folder = match id.rsplit_once('/') {
+                Some((folder, _)) => folder == parent,
+                None => parent.is_empty(),
+            };
+            !in_folder || listed.contains(id.as_str())
+        });
         kinds
     }
 
@@ -611,131 +707,17 @@ impl Workspace {
     }
 }
 
-/// The walk for one listing: where it started, what it found, and how many
-/// filesystem entries it has examined.
-struct Walk<'a> {
-    root: &'a Path,
-    out: &'a mut Listing,
-    scanned: usize,
-}
-
-impl Walk<'_> {
-    /// The children of one directory, in name order; `None` once the scan
-    /// budget is spent, which leaves the listing truncated.
-    fn children(&mut self, directory: &Path) -> Result<Option<Vec<PathBuf>>, WorkspaceError> {
-        let listing = std::fs::read_dir(directory).map_err(|e| WorkspaceError::Io {
-            path: directory.to_path_buf(),
-            detail: format!("the directory is not readable: {e}"),
-        })?;
-        let mut children = Vec::new();
-        for entry in listing.filter_map(Result::ok) {
-            self.scanned += 1;
-            if self.scanned > MAX_SCANNED {
-                self.out.truncated = true;
-                return Ok(None);
-            }
-            children.push(entry.path());
-        }
-        children.sort();
-        Ok(Some(children))
-    }
-
-    /// Append the documents below `directory` and the folders that lead to
-    /// them; true when there was at least one. A folder is appended before
-    /// its contents and taken back when nothing below it was, so a folder of
-    /// other files, or an empty one, is never listed. Marks the listing
-    /// truncated when a document is left out, at the entry limit or below
-    /// the depth limit, and only then.
-    fn walk(&mut self, directory: &Path, depth: usize) -> Result<bool, WorkspaceError> {
-        if depth > MAX_DEPTH {
-            if self.holds_document(directory, depth)? {
-                self.out.truncated = true;
-            }
-            return Ok(false);
-        }
-        let Some(children) = self.children(directory)? else {
-            return Ok(false);
-        };
-        let mut found = false;
-        for path in children {
-            if self.out.truncated {
-                break;
-            }
-            let Some((relative, is_dir)) = eligible(self.root, &path) else {
-                continue;
-            };
-            let full = self.out.entries.len() == MAX_ENTRIES;
-            if is_dir {
-                if full {
-                    // No room even for the folder: whether the listing is
-                    // incomplete depends on what is inside it.
-                    if self.holds_document(&path, depth + 1)? {
-                        self.out.truncated = true;
-                    }
-                    continue;
-                }
-                let mark = self.out.entries.len();
-                self.out.entries.push(Entry {
-                    id: to_identity(&relative),
-                    directory: true,
-                    bytes: None,
-                });
-                if self.walk(&path, depth + 1)? {
-                    found = true;
-                } else {
-                    self.out.entries.truncate(mark);
-                }
-            } else if full {
-                self.out.truncated = true;
-            } else {
-                found = true;
-                self.out.entries.push(Entry {
-                    id: to_identity(&relative),
-                    directory: false,
-                    bytes: std::fs::metadata(&path).ok().map(|m| m.len()),
-                });
-            }
-        }
-        Ok(found)
-    }
-
-    /// Whether a document is anywhere below `directory`, which is `depth`
-    /// below the root. A spent scan budget, or a depth past any real source
-    /// tree (a link looping back up), counts as yes: it cannot rule one out.
-    fn holds_document(&mut self, directory: &Path, depth: usize) -> Result<bool, WorkspaceError> {
-        if depth > PROBE_DEPTH {
-            return Ok(true);
-        }
-        let Some(children) = self.children(directory)? else {
-            return Ok(true);
-        };
-        for path in children {
-            match eligible(self.root, &path) {
-                Some((_, false)) => return Ok(true),
-                Some((_, true)) if self.holds_document(&path, depth + 1)? => return Ok(true),
-                _ if self.out.truncated => return Ok(true),
-                _ => {}
-            }
-        }
-        Ok(false)
-    }
-}
-
-/// Whether the tree lists this path, and as a folder or a document: its
-/// root-relative path when it does.
-fn eligible(root: &Path, path: &Path) -> Option<(PathBuf, bool)> {
-    let relative = path.strip_prefix(root).ok()?.to_path_buf();
-    let name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_default();
+/// Whether the explorer lists this path, and as a folder or a document: its
+/// name when it does.
+fn eligible(root: &Path, path: &Path) -> Option<(String, bool)> {
+    let name = path.file_name()?.to_string_lossy().to_string();
     // A dot directory is tooling, not source. The package cache is one.
     if name.starts_with('.') {
         return None;
     }
     // A link is listed only when what it names is inside the project, which
-    // is also what opening it requires; the walk never enumerates through
-    // one that leaves.
+    // is also what opening it requires; the explorer never looks through one
+    // that leaves.
     let metadata = std::fs::symlink_metadata(path).ok()?;
     let is_dir = if metadata.file_type().is_symlink() {
         match path.canonicalize() {
@@ -745,7 +727,7 @@ fn eligible(root: &Path, path: &Path) -> Option<(PathBuf, bool)> {
     } else {
         metadata.is_dir()
     };
-    (is_dir || lcl_project::is_document(&name)).then_some((relative, is_dir))
+    (is_dir || lcl_project::is_document(&name)).then_some((name, is_dir))
 }
 
 /// A root-relative path as one identity string, `/`-separated.

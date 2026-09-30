@@ -177,8 +177,9 @@ fn saving_and_reopening_keeps_the_localized_bytes() {
     let reopened = Arc::new(Workspace::open(&scratch.path, canonical_root()).expect("reopens"));
     assert_eq!(reopened.read("main.lcl").expect("reads").text, edited);
     let documents: Vec<String> = reopened
-        .documents()
+        .children("")
         .expect("lists")
+        .entries
         .into_iter()
         .filter(|entry| !entry.directory)
         .map(|entry| entry.id)

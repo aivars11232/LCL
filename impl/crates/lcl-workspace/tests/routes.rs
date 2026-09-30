@@ -23,26 +23,59 @@ fn the_session_names_the_package_every_result_is_judged_against() {
 }
 
 #[test]
-fn the_tree_lists_every_document_and_nothing_else() {
+fn the_tree_lists_one_folder_at_a_time_and_nothing_else() {
     let (scratch, running) = serve_examples("tree");
     scratch.put("notes.txt", "not a document");
     scratch.put("sub/nested.lcl", &common::example("01_MINIMAL_TASK.lcl"));
+    std::fs::create_dir(scratch.join("empty")).unwrap();
 
-    let reply = get_json(&running, "/api/documents", &[]);
+    let reply = get_json(&running, "/api/tree", &[]);
+    assert_eq!(text(reply.get("parent").unwrap()), "");
     let entries = reply.get("entries").unwrap().as_array().expect("an array");
     let ids: Vec<&str> = entries.iter().map(|e| text(e.get("id").unwrap())).collect();
-
+    // Folders first, every folder, then documents; nothing from inside `sub`.
+    assert_eq!(&ids[..2], ["empty", "sub"]);
     assert!(ids.contains(&"01_MINIMAL_TASK.lcl"));
-    assert!(ids.contains(&"sub/nested.lcl"));
-    assert!(ids.contains(&"sub"));
+    assert!(!ids.contains(&"sub/nested.lcl"));
     assert!(!ids.iter().any(|id| id.ends_with(".txt")));
     assert!(!ids.contains(&"lcl.project.json"));
+    assert_eq!(text(entries[1].get("name").unwrap()), "sub");
     // Nothing was left out, and the reply says so rather than leaving the
     // count to be guessed at.
     assert_eq!(
         reply.get("truncated").and_then(|t| t.as_bool()),
         Some(false)
     );
+
+    let sub = get_json(&running, "/api/tree", &[("parent", "sub")]);
+    assert_eq!(text(sub.get("parent").unwrap()), "sub");
+    let inside: Vec<&str> = sub
+        .get("entries")
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| text(e.get("id").unwrap()))
+        .collect();
+    assert_eq!(inside, ["sub/nested.lcl"]);
+    let empty = get_json(&running, "/api/tree", &[("parent", "empty")]);
+    assert!(empty.get("entries").unwrap().as_array().unwrap().is_empty());
+    // Outside the project, or no such folder: refused, with nothing listed.
+    for (bad, status) in [
+        ("..", 400),
+        ("/etc", 400),
+        ("nowhere", 404),
+        ("notes.txt", 404),
+    ] {
+        let reply = common::send(
+            running.address,
+            "GET",
+            &format!("/api/tree?parent={bad}&t={}", running.token),
+            &[],
+            b"",
+        );
+        assert_eq!(reply.status, status, "{bad}: {}", reply.body);
+    }
 }
 
 #[test]

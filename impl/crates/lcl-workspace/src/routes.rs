@@ -52,14 +52,24 @@ pub type Reopen = Box<dyn Fn(&Path) -> Result<Workspace, String> + Send + Sync>;
 
 /// Everything the routes need, shared across connection threads.
 pub struct Routes {
-    /// The folder this window shows. It changes only when New Project or
-    /// Settings opens the projects folder here ([`Routes::with_reopen`]).
+    /// The folder this window shows: the active project, or, on the Projects
+    /// home, the Projects folder itself. It changes when a project is chosen,
+    /// created or opened, or the home is shown ([`Routes::with_reopen`]).
     workspace: RwLock<Arc<Workspace>>,
+    /// Whether this window shows the Projects home — the projects in the
+    /// Projects folder, to choose one — rather than a project's explorer. A
+    /// desktop launch with no project or document starts here; the Projects
+    /// folder is a container of projects, never a project of its own.
+    home: RwLock<bool>,
     runs: Runs,
     /// The user's settings file, when this process knows where one lives.
     settings_file: Option<PathBuf>,
     /// The launcher's built-in default workspace, when a launcher named one.
     builtin_default: Option<PathBuf>,
+    /// The folder this window was launched with: the Projects folder of last
+    /// resort, when none is chosen in Settings and no launcher named one. It
+    /// does not move with the active project.
+    launched: PathBuf,
     /// Something the person should be told about how this launch chose its
     /// project, such as a chosen default workspace that no longer exists. It
     /// is cleared when another folder is opened.
@@ -75,7 +85,9 @@ impl Routes {
     /// default and none can be saved. [`Routes::with_settings_file`] names one.
     pub fn new(workspace: Arc<Workspace>) -> Routes {
         Routes {
+            launched: workspace.root().to_path_buf(),
             workspace: RwLock::new(workspace),
+            home: RwLock::new(false),
             runs: Runs::new(),
             settings_file: None,
             builtin_default: None,
@@ -109,6 +121,20 @@ impl Routes {
     pub fn with_builtin_default(mut self, folder: Option<PathBuf>) -> Routes {
         self.builtin_default = folder;
         self
+    }
+
+    /// Start on the Projects home instead of a project's explorer. The
+    /// workspace given is the Projects folder, opened only so that New
+    /// Project and the settings have an engine and a folder to work with;
+    /// nothing lists it.
+    pub fn with_home(mut self, home: bool) -> Routes {
+        self.home = RwLock::new(home);
+        self
+    }
+
+    /// Whether this window shows the Projects home now.
+    pub fn is_home(&self) -> bool {
+        *self.home.read().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Something to tell the person when the page loads.
@@ -183,7 +209,8 @@ impl Routes {
             ("GET", "/brand/lcl-icon-32.png") => Response::png(BRAND_ICON_PNG),
 
             ("GET", "/api/session") => self.session(&workspace),
-            ("GET", "/api/documents") => self.documents(&workspace),
+            ("GET", "/api/tree") => self.tree(&workspace, request),
+            ("POST", "/api/tree/folder") => self.create_folder(&workspace, request),
             ("GET", "/api/document") => self.read_document(&workspace, request),
             ("PUT", "/api/document") => self.save_document(&workspace, request),
             ("POST", "/api/document") => self.create_document(&workspace, request),
@@ -207,7 +234,9 @@ impl Routes {
             ("POST", "/api/project") => {
                 authoring::create_project(&workspace, &self.masters(), request, self.ending())
             }
+            ("GET", "/api/projects") => self.list_projects(&workspace),
             ("POST", "/api/projects/open") => self.open_projects_folder(),
+            ("POST", "/api/project/open") => self.open_project(request),
             ("GET", "/api/project/status") => authoring::project_status(&workspace, request),
             ("GET", "/api/masters") => authoring::list_masters(&workspace, &self.masters()),
             ("GET", "/api/master") => authoring::read_master(&self.masters(), request),
@@ -316,26 +345,43 @@ impl Routes {
             )
             // How this launch chose its project, when there is something to say.
             .with("notice", Node::optional(notice))
+            // The Projects home: `root` is then the Projects folder, a
+            // container of projects and not a project, and the page offers
+            // the projects in it instead of an explorer.
+            .with("home", Node::Bool(self.is_home()))
             .pretty();
         Response::json(body)
     }
 
-    /// Every `.lcl` document in the project.
-    fn documents(&self, workspace: &Workspace) -> Response {
-        match workspace.listing() {
-            Ok(listing) => {
-                // The `SPECIFICATION` `KIND` each document declares, as its
-                // engine parses it: the role of a project part, `kind.project`
-                // for an entry; `null` for a folder, an unreadable or
-                // unparsable file, or one over 1 MiB.
-                let kinds = workspace.tree_kinds(&listing.entries);
+    /// `GET /api/tree?parent=`: the direct children of one folder of the
+    /// project, the root for no `parent`, and nothing below them. Folders
+    /// first, then documents, each in name order; every folder, empty or not.
+    /// `truncated` is about this folder alone: it held more than
+    /// [`crate::project::MAX_CHILDREN`] entries, and these are the first.
+    fn tree(&self, workspace: &Workspace, request: &Request) -> Response {
+        if self.is_home() {
+            return Response::error(
+                409,
+                "no project is open: choose one on the Projects home first",
+            );
+        }
+        let parent = request.param("parent").unwrap_or("");
+        match workspace.children(parent) {
+            Ok(children) => {
+                // The `SPECIFICATION` `KIND` each listed document declares,
+                // as its engine parses it: the role of a project part,
+                // `kind.project` for an entry; `null` for a folder, an
+                // unreadable or unparsable file, or one over 1 MiB.
+                let kinds = workspace.tree_kinds(&children);
                 Response::json(
                     Object::new()
+                        .with("parent", Node::string(&children.parent))
                         .with(
                             "entries",
-                            Node::array(listing.entries.iter().zip(kinds).map(|(e, kind)| {
+                            Node::array(children.entries.iter().zip(kinds).map(|(e, kind)| {
                                 Object::new()
                                     .with("id", Node::string(&e.id))
+                                    .with("name", Node::string(&e.name))
                                     .with("directory", Node::Bool(e.directory))
                                     .with(
                                         "bytes",
@@ -348,11 +394,44 @@ impl Routes {
                                     .into()
                             })),
                         )
-                        .with("truncated", Node::Bool(listing.truncated))
+                        .with("truncated", Node::Bool(children.truncated))
                         .pretty(),
                 )
             }
-            Err(e) => Response::error(400, &e.to_string()),
+            Err(crate::WorkspaceError::Document(crate::DocumentError::Outside(_))) => {
+                Response::error(400, "that folder is not inside the project")
+            }
+            Err(e) => Response::error(404, &e.to_string()),
+        }
+    }
+
+    /// `POST /api/tree/folder?id=`: make one empty folder in the project,
+    /// under a folder that exists. The explorer shows it at once.
+    fn create_folder(&self, workspace: &Workspace, request: &Request) -> Response {
+        if self.is_home() {
+            return Response::error(409, "no project is open");
+        }
+        let Some(id) = request
+            .param("id")
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+        else {
+            return Response::error(400, "a folder name is required");
+        };
+        match workspace.create_folder(id) {
+            Ok(id) => Response::json(
+                Object::new()
+                    .with("id", Node::string(&id))
+                    .with("directory", Node::Bool(true))
+                    .pretty(),
+            ),
+            Err(crate::WorkspaceError::Document(crate::DocumentError::AlreadyExists(_))) => {
+                Response::error(409, &format!("{id} already exists"))
+            }
+            Err(crate::WorkspaceError::Document(crate::DocumentError::Outside(_))) => {
+                Response::error(400, "that folder would be outside the project")
+            }
+            Err(e) => Response::error(422, &e.to_string()),
         }
     }
 
@@ -751,13 +830,14 @@ impl Routes {
         self.settings().settings.default_extension
     }
 
-    /// Where New Project creates projects: the Projects folder chosen in
-    /// Settings, which must be a folder that exists and can be written — a
-    /// chosen folder is never silently replaced by another — or, when none is
-    /// chosen, the launcher's built-in default workspace, or this window's
-    /// folder when no launcher named one. A settings file that cannot be read
-    /// does not say which folder was chosen, so it is an error here too.
-    fn projects_folder(&self, workspace: &Workspace) -> Result<PathBuf, String> {
+    /// Where New Project creates projects and the Projects home looks: the
+    /// Projects folder chosen in Settings, which must be a folder that exists
+    /// and can be written — a chosen folder is never silently replaced by
+    /// another — or, when none is chosen, the launcher's built-in default
+    /// workspace, or the folder this window was launched with when no
+    /// launcher named one. A settings file that cannot be read does not say
+    /// which folder was chosen, so it is an error here too.
+    fn projects_folder(&self, _workspace: &Workspace) -> Result<PathBuf, String> {
         let loaded = self.settings();
         if let Some(problem) = loaded.problem {
             return Err(format!(
@@ -786,7 +866,7 @@ impl Routes {
             None => Ok(self
                 .builtin_default
                 .clone()
-                .unwrap_or_else(|| workspace.root().to_path_buf())),
+                .unwrap_or_else(|| self.launched.clone())),
         }
     }
 
@@ -804,20 +884,16 @@ impl Routes {
             &projects,
             self.ending(),
         ) {
-            Ok(plan) => Response::json(authoring::named_plan_json(
-                &plan,
-                &projects,
-                workspace.root(),
-            )),
+            Ok(plan) => Response::json(authoring::named_plan_json(&plan, &projects)),
             Err(refusal) => refusal,
         }
     }
 
     /// `POST /api/project?name=&plan_digest=`: create the previewed project in
     /// its own new folder, all files or none. A folder of that name that
-    /// already exists is never written into. When the new project is outside
-    /// the folder this window shows, the window opens the projects folder, so
-    /// the project is in the tree the moment it exists.
+    /// already exists is never written into. The new project then becomes
+    /// this window's active project: its explorer shows the project's own
+    /// files, and nothing beside it in the Projects folder.
     fn create_named_project(&self, workspace: &Workspace, request: &Request) -> Response {
         let projects = match self.projects_folder(workspace) {
             Ok(projects) => projects,
@@ -846,41 +922,89 @@ impl Routes {
                 ),
             );
         }
-        let opens = authoring::inside(&plan.dir, workspace.root()).is_none();
-        if opens && self.reopen.is_none() {
+        if self.reopen.is_none() {
             return Response::error(
                 409,
-                &format!(
-                    "{} is outside this workspace, and this window cannot open another folder; \
-                     nothing was created",
-                    plan.dir.display()
-                ),
+                "this window cannot open another folder, so it cannot show a new project; \
+                 nothing was created",
             );
         }
         if let Err(detail) = masters::create(&plan.dir, &plan.files) {
             return Response::error(409, &detail);
         }
-        if opens {
-            if let Err(detail) = self.open_folder(&projects) {
-                return Response::error(
-                    500,
-                    &format!(
-                        "The project was created in {}, but this window could not open {}: \
-                         {detail}",
-                        plan.dir.display(),
-                        projects.display()
-                    ),
-                );
-            }
+        if let Err(detail) = self.open_folder(&plan.dir, false) {
+            return Response::error(
+                500,
+                &format!(
+                    "The project was created in {}, but this window could not open it: {detail}",
+                    plan.dir.display()
+                ),
+            );
         }
-        Response::json(authoring::named_plan_json(
-            &plan,
-            &projects,
-            self.workspace().root(),
-        ))
+        Response::json(authoring::named_plan_json(&plan, &projects))
     }
 
-    /// `POST /api/projects/open`: show the projects folder in this window.
+    /// `GET /api/projects`: the Projects home's list — every folder directly
+    /// inside the Projects folder, by name. The Projects folder is where
+    /// projects live, so each folder in it is one: New Project makes a folder
+    /// of documents there without a manifest, and one is opened rootless.
+    /// `manifest` says which hold `lcl.project.json`. A shallow look, on
+    /// purpose: nothing below those folders is read.
+    fn list_projects(&self, workspace: &Workspace) -> Response {
+        let projects = match self.projects_folder(workspace) {
+            Ok(projects) => projects,
+            Err(detail) => return Response::error(409, &detail),
+        };
+        let listing = match std::fs::read_dir(&projects) {
+            Ok(listing) => listing,
+            Err(e) => {
+                return Response::error(
+                    409,
+                    &format!(
+                        "the Projects folder {} is not readable: {e}",
+                        projects.display()
+                    ),
+                )
+            }
+        };
+        let mut found: Vec<(String, PathBuf)> = listing
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| p.is_dir())
+            .filter_map(|p| Some((p.file_name()?.to_string_lossy().to_string(), p)))
+            .filter(|(name, _)| !name.starts_with('.'))
+            .collect();
+        found.sort_by(|a, b| a.0.cmp(&b.0));
+        let current = if self.is_home() {
+            None
+        } else {
+            Some(workspace.root().to_path_buf())
+        };
+        Response::json(
+            Object::new()
+                .with("folder", Node::string(projects.display().to_string()))
+                .with("home", Node::Bool(self.is_home()))
+                .with(
+                    "projects",
+                    Node::array(found.into_iter().map(|(name, path)| {
+                        let here = current.as_deref() == Some(path.as_path());
+                        let manifest = path.join(lcl_project::MANIFEST_FILE).is_file();
+                        Object::new()
+                            .with("name", Node::string(&name))
+                            .with("path", Node::string(path.display().to_string()))
+                            .with("manifest", Node::Bool(manifest))
+                            .with("current", Node::Bool(here))
+                            .into()
+                    })),
+                )
+                .pretty(),
+        )
+    }
+
+    /// `POST /api/projects/open`: show the Projects home in this window. The
+    /// Projects folder becomes this window's folder only as the place New
+    /// Project creates in; its contents are offered as projects, never
+    /// listed as one tree.
     fn open_projects_folder(&self) -> Response {
         let workspace = self.workspace();
         let projects = match self.projects_folder(&workspace) {
@@ -890,20 +1014,50 @@ impl Routes {
         if self.reopen.is_none() {
             return Response::error(409, "this window cannot open another folder");
         }
-        match self.open_folder(&projects) {
+        match self.open_folder(&projects, true) {
             Ok(()) => self.session(&self.workspace()),
             Err(detail) => Response::error(500, &detail),
         }
     }
 
+    /// `POST /api/project/open?path=`: make the folder at an absolute path
+    /// this window's active project. A project from the Projects home, or
+    /// any folder the person names explicitly: one without a manifest opens
+    /// as a rootless project. The page asks about unsaved work before this.
+    fn open_project(&self, request: &Request) -> Response {
+        let Some(raw) = request.param("path").filter(|p| !p.is_empty()) else {
+            return Response::error(400, "a folder path is required");
+        };
+        let path = PathBuf::from(raw);
+        if !path.is_absolute() {
+            return Response::error(
+                400,
+                &format!("{raw} is not an absolute path; write it from /"),
+            );
+        }
+        if !path.is_dir() {
+            return Response::error(404, &format!("{raw} is not a folder"));
+        }
+        if self.reopen.is_none() {
+            return Response::error(409, "this window cannot open another folder");
+        }
+        match self.open_folder(&path, false) {
+            Ok(()) => self.session(&self.workspace()),
+            Err(detail) => Response::error(422, &detail),
+        }
+    }
+
     /// Show `folder` in this window from now on, opened as this launch opened
-    /// its own. Runs already started keep the workspace they started in.
-    fn open_folder(&self, folder: &Path) -> Result<(), String> {
+    /// its own: as the active project, or, with `home`, as the Projects
+    /// folder behind the Projects home. Runs already started keep the
+    /// workspace they started in.
+    fn open_folder(&self, folder: &Path, home: bool) -> Result<(), String> {
         let Some(reopen) = &self.reopen else {
             return Err("this window cannot open another folder".to_string());
         };
         let next = Arc::new(reopen(folder)?);
         *self.workspace.write().unwrap_or_else(|e| e.into_inner()) = next;
+        *self.home.write().unwrap_or_else(|e| e.into_inner()) = home;
         *self.notice.write().unwrap_or_else(|e| e.into_inner()) = None;
         Ok(())
     }

@@ -145,11 +145,22 @@ button.danger:hover:not(:disabled) { filter: brightness(1.1); color: var(--accen
   color: var(--ink-faint);
 }
 #sidebar .panel-head > span:first-child { margin-right: auto; }
-.tree-note {
-  margin: 0 10px 6px; padding: 3px 6px; font-size: 11px; line-height: 1.35;
-  color: var(--warn); border: 1px solid var(--line); border-radius: 3px;
-}
 .tree { list-style: none; margin: 0; padding: 0 0 12px; overflow: auto; flex: 1; }
+.tree[hidden] { display: none; }
+/* Under a folder whose listing the server cut short: for that folder only. */
+.tree li.tree-note { color: var(--warn); font-size: 11px; cursor: default; white-space: normal; }
+.tree li.tree-note:hover { background: none; }
+/* The Projects home: the projects of the Projects folder, to choose one. */
+.home { overflow: auto; flex: 1; padding: 0 0 12px; }
+.home[hidden] { display: none; }
+.home .home-folder { margin: 0 10px 6px; font-size: 11px; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home .projects { list-style: none; margin: 0; padding: 0; }
+.home .projects li { padding: 5px 10px; cursor: pointer; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.home .projects li:hover { background: var(--line-soft); }
+.home .projects li:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.home .projects li.empty { color: var(--ink-faint); cursor: default; }
+.home .projects li .role { margin-left: 6px; font-size: 10.5px; color: var(--ink-faint); border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; }
+.home .home-actions { display: flex; flex-direction: column; gap: 6px; padding: 10px; }
 .tree li {
   padding: 3px 10px 3px 0; cursor: pointer; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; font-size: 12.5px;

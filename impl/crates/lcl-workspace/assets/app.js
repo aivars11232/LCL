@@ -175,7 +175,12 @@ function carry(spans, edit) {
 
 const state = {
   session: null,
-  entries: [],
+  /* The project explorer, one folder at a time: the children the server
+   * listed for each folder asked for ("" is the root), and which folders are
+   * unfolded. A folder that was never unfolded was never read. */
+  tree: { children: new Map(), expanded: new Set() },
+  /* The Projects home: the folders of the Projects folder, when shown. */
+  home: { folder: "", projects: [] },
   docs: new Map(),      // id -> Doc
   order: [],            // tab order
   active: null,         // id
@@ -194,10 +199,6 @@ const state = {
   roles: { available: false, roles: [], modes: [] },
   /* The project whose readiness the sidebar shows; see refreshReadiness. */
   readiness: { entry: null, status: null, report: null, generation: 0 },
-  /* The folders folded in the project tree, for as long as this page is open,
-   * and the document whose folders were last opened to show it. */
-  collapsed: new Set(),
-  revealed: null,
 };
 
 /* How a document came to be open, which is a different question from whether
@@ -358,24 +359,111 @@ async function loadSession() {
     `Every result shown here was produced against this package.`;
 }
 
+/* What the tree says under a folder whose listing the server cut short. */
+const FOLDER_LIMITED = "Folder limited to 4096 entries.";
+
+/* The folder an id is in: "" for the root. */
+function parentOf(id) {
+  const at = id.lastIndexOf("/");
+  return at < 0 ? "" : id.slice(0, at);
+}
+
+/* The folders around an id, outermost first, the root ("") not included. */
+function ancestorsOf(id) {
+  const parts = id.split("/");
+  const out = [];
+  for (let i = 1; i < parts.length; i++) out.push(parts.slice(0, i).join("/"));
+  return out;
+}
+
+/* Whether an id names an LCL document, by its ending. */
+function isDocumentId(id) {
+  return /\.lcl(\.txt)?$/.test(id);
+}
+
+/* An entry the explorer has listed, wherever it is; undefined when its folder
+ * was never unfolded. */
+function knownEntry(id) {
+  const listed = state.tree.children.get(parentOf(id));
+  return listed && listed.entries.find((e) => e.id === id);
+}
+
+/* Every entry the explorer has listed so far, parents before children. */
+function treeEntries() {
+  const out = [];
+  const walk = (parent) => {
+    const listed = state.tree.children.get(parent);
+    if (!listed) return;
+    for (const entry of listed.entries) {
+      out.push(entry);
+      if (entry.directory) walk(entry.id);
+    }
+  };
+  walk("");
+  return out;
+}
+
+/* Read one folder of the project from the server: its direct children and
+ * nothing below them. The listing replaces what this page had for it. */
+async function loadFolder(parent) {
+  const reply = await api("GET", "/api/tree", { parent });
+  state.tree.children.set(parent, { entries: reply.entries, truncated: reply.truncated === true });
+  return reply;
+}
+
+/* A folder that is gone: nothing of it, or below it, stays in the tree. */
+function forgetFolder(id) {
+  for (const key of [...state.tree.children.keys()]) {
+    if (key === id || key.startsWith(`${id}/`)) state.tree.children.delete(key);
+  }
+  for (const key of [...state.tree.expanded]) {
+    if (key === id || key.startsWith(`${id}/`)) state.tree.expanded.delete(key);
+  }
+}
+
+/* Start the explorer over for the project this window shows now: the root
+ * and nothing else is read. On the Projects home there is no tree. */
 async function loadTree() {
-  const reply = await api("GET", "/api/documents");
-  state.entries = reply.entries;
-  /* The server's limits left documents or folders out: say so, rather than
-   * let a partial tree pass for the whole project. */
-  $("#tree-truncated").hidden = reply.truncated !== true;
+  state.tree.children.clear();
+  state.tree.expanded.clear();
+  if (state.session && state.session.home) { renderTree(); return; }
+  await loadFolder("");
   renderTree();
 }
 
-/* ↻: list the project again, for files another program added, removed or
- * renamed. Only the tree changes: open tabs, unsaved text and conflicts stay
- * as they are, and folded folders that still exist stay folded. */
+/* ↻: read the root and every unfolded folder again, for files another
+ * program added, removed or renamed. A folded folder is not read: it is read
+ * when it is unfolded. Only the tree changes: open tabs, unsaved text and
+ * conflicts stay as they are, and folded folders that still exist stay
+ * folded. A folder that is gone leaves the tree with everything below it. */
 async function refreshTree() {
   const button = $("#act-refresh");
   button.disabled = true;
-  try { await loadTree(); }
-  catch (e) { toast(`Could not refresh the file tree: ${e.message}`, "bad"); }
-  finally { button.disabled = false; }
+  try {
+    if (state.session && state.session.home) { await loadHome(); return; }
+    const folders = ["", ...[...state.tree.expanded].sort((a, b) => a.split("/").length - b.split("/").length)];
+    for (const folder of folders) {
+      if (folder && !knownEntry(folder)) { forgetFolder(folder); continue; }
+      try { await loadFolder(folder); }
+      catch (e) {
+        if (e.status === 404) forgetFolder(folder);
+        else throw e;
+      }
+    }
+    renderTree();
+  } catch (e) {
+    toast(`Could not refresh the file tree: ${e.message}`, "bad");
+  } finally { button.disabled = false; }
+}
+
+/* Unfold every folder around a document, reading the ones this page has not
+ * read yet, so the document shows in the tree. With `fresh`, the folders are
+ * read again even when they were: for a document just made. */
+async function reveal(id, fresh = false) {
+  for (const folder of ["", ...ancestorsOf(id)]) {
+    if (fresh || !state.tree.children.has(folder)) await loadFolder(folder);
+    if (folder) state.tree.expanded.add(folder);
+  }
 }
 
 /* The open documents holding anything not yet kept on disk: edits, a save
@@ -384,27 +472,34 @@ function unsavedDocuments() {
   return [...state.docs.values()].filter((d) => dirty(d) || d.pendingSaves || d.lifecycle === "created");
 }
 
-/* After the server opened another folder in this window: every tab named a
- * document of the folder before, so all of them close (the caller made sure
- * none was unsaved), and the header and tree show the folder now open. */
+/* After the server opened another folder in this window, or the Projects
+ * home: every tab named a document of the folder before, so all of them
+ * close (the caller made sure none was unsaved), and the header and tree
+ * show what is open now. */
 async function showOpenedFolder() {
   for (const doc of [...state.docs.values()]) dropDocument(doc);
+  state.readiness = { entry: null, status: null, report: null, generation: state.readiness.generation + 1 };
+  renderReadiness();
   await loadSession();
+  await loadRoles();
+  if (state.session.home) await loadHome();
   await loadTree();
 }
 
-/* Whether a folded folder hides this entry of the tree. */
-function foldedAway(id) {
-  const parts = id.split("/");
-  for (let i = 1; i < parts.length; i++) {
-    if (state.collapsed.has(parts.slice(0, i).join("/"))) return true;
+/* Fold a folder of the tree, or unfold it, reading its direct children from
+ * the server as it opens; from the keyboard, focus stays on it. */
+async function toggleFolder(id, refocus) {
+  if (state.tree.expanded.has(id)) {
+    state.tree.expanded.delete(id);
+  } else {
+    try { await loadFolder(id); }
+    catch (e) {
+      if (e.status === 404) { forgetFolder(id); await refreshTree(); }
+      toast(`Could not list ${id}. ${e.message}`, "bad");
+      return;
+    }
+    state.tree.expanded.add(id);
   }
-  return false;
-}
-
-/* Fold a folder of the tree, or unfold it; from the keyboard, focus stays on it. */
-function toggleFolder(id, refocus) {
-  if (!state.collapsed.delete(id)) state.collapsed.add(id);
   renderTree();
   if (!refocus) return;
   const rows = [...$("#tree").children];
@@ -418,61 +513,219 @@ function toggleFolder(id, refocus) {
 function renderTree() {
   const list = $("#tree");
   list.replaceChildren();
-  /* When another document becomes active, the folders around it open, so the
-   * tree shows what is being edited. A folder folded after that stays so. */
-  if (state.active && state.active !== state.revealed) {
-    const parts = state.active.split("/");
-    for (let i = 1; i < parts.length; i++) state.collapsed.delete(parts.slice(0, i).join("/"));
-  }
-  state.revealed = state.active;
-  const shown = state.entries.filter((e) => !foldedAway(e.id));
+  const home = Boolean(state.session && state.session.home);
+  $("#home").hidden = !home;
+  $("#tree").hidden = home;
+  $("#sidebar-title").textContent = home ? "Projects" : "Project";
+  for (const id of ["#act-new", "#act-new-folder"]) $(id).hidden = home;
+  $("#act-home").hidden = home;
+  if (home) return;
   /* One row of the tree takes Tab focus, the open document or else the first
    * document or folder shown; the arrow keys move between the rest. */
+  const shown = [];
+  const collect = (parent) => {
+    const listed = state.tree.children.get(parent);
+    if (!listed) return;
+    for (const entry of listed.entries) {
+      shown.push(entry);
+      if (entry.directory && state.tree.expanded.has(entry.id)) collect(entry.id);
+    }
+  };
+  collect("");
   const files = shown.filter((e) => !e.directory);
   const focusable = (files.find((e) => e.id === state.active) || files[0] || shown[0] || {}).id;
-  for (const entry of shown) {
-    const depth = entry.id.split("/").length - 1;
-    const name = entry.id.split("/").pop();
-    const folded = entry.directory && state.collapsed.has(entry.id);
-    const item = el("li", entry.directory ? "dir" : "");
-    item.style.paddingLeft = `${4 + depth * 12}px`;
-    item.append(el("span", "fold", entry.directory ? (folded ? "▸" : "▾") : ""));
-    if (!entry.directory) {
-      const doc = state.docs.get(entry.id);
-      if (dirty(doc)) item.append(el("span", "dot", "●"));
+  const draw = (parent, depth) => {
+    const listed = state.tree.children.get(parent);
+    if (!listed) return;
+    for (const entry of listed.entries) {
+      const expanded = entry.directory && state.tree.expanded.has(entry.id);
+      const item = el("li", entry.directory ? "dir" : "");
+      item.style.paddingLeft = `${4 + depth * 12}px`;
+      item.append(el("span", "fold", entry.directory ? (expanded ? "▾" : "▸") : ""));
+      if (!entry.directory) {
+        const doc = state.docs.get(entry.id);
+        if (dirty(doc)) item.append(el("span", "dot", "●"));
+      }
+      item.append(document.createTextNode(entry.name || entry.id.split("/").pop()));
+      if (entry.kind) {
+        const role = el("span", `role${entry.kind === "kind.project" ? " entry" : ""}`, roleLabel(entry.kind));
+        role.title = `This file declares SPECIFICATION KIND ${entry.kind}`;
+        item.append(role);
+      }
+      item.title = entry.id;
+      item.tabIndex = entry.id === focusable ? 0 : -1;
+      if (entry.id === state.active) item.classList.add("open");
+      if (entry.directory) {
+        item.dataset.dir = entry.id;
+        item.ariaExpanded = String(expanded);
+        item.onclick = () => toggleFolder(entry.id, false);
+        item.oncontextmenu = (e) => {
+          e.preventDefault();
+          openFolderMenu(entry.id, e.clientX, e.clientY, item);
+        };
+        item.onkeydown = (e) => folderKey(e, entry.id, item, !expanded);
+      } else {
+        item.dataset.id = entry.id;
+        item.onclick = () => openDocument(entry.id);
+        item.oncontextmenu = (e) => {
+          e.preventDefault();
+          openMenu(entry.id, e.clientX, e.clientY, item);
+        };
+        item.onkeydown = (e) => treeKey(e, entry.id, item);
+      }
+      list.append(item);
+      if (expanded) draw(entry.id, depth + 1);
     }
-    item.append(document.createTextNode(name));
-    if (entry.kind) {
-      const role = el("span", `role${entry.kind === "kind.project" ? " entry" : ""}`, roleLabel(entry.kind));
-      role.title = `This file declares SPECIFICATION KIND ${entry.kind}`;
-      item.append(role);
+    /* The server's bound left entries of this folder out: say so under it,
+     * for this folder alone. */
+    if (listed.truncated) {
+      const note = el("li", "tree-note", FOLDER_LIMITED);
+      note.style.paddingLeft = `${4 + (depth + (parent ? 1 : 0)) * 12}px`;
+      note.setAttribute("role", "status");
+      note.dataset.limited = parent;
+      list.append(note);
     }
-    item.title = entry.id;
-    item.tabIndex = entry.id === focusable ? 0 : -1;
-    if (entry.id === state.active) item.classList.add("open");
-    if (entry.directory) {
-      item.dataset.dir = entry.id;
-      item.ariaExpanded = String(!folded);
-      item.onclick = () => toggleFolder(entry.id, false);
-      item.onkeydown = (e) => folderKey(e, entry.id, item, folded);
-    } else {
-      item.dataset.id = entry.id;
-      item.onclick = () => openDocument(entry.id);
-      item.oncontextmenu = (e) => {
-        e.preventDefault();
-        openMenu(entry.id, e.clientX, e.clientY, item);
-      };
-      item.onkeydown = (e) => treeKey(e, entry.id, item);
-    }
+  };
+  draw("", 0);
+}
+
+/* ------------------------------------------------------- projects home */
+
+/* The Projects home: every folder of the Projects folder, to choose one, with
+ * New project and Open project folder. The Projects folder is where projects
+ * live; it is never shown as one tree. */
+async function loadHome() {
+  const box = $("#home");
+  box.replaceChildren();
+  let home;
+  try {
+    home = await api("GET", "/api/projects");
+  } catch (e) {
+    box.append(el("p", "note warning", e.message));
+    return;
+  }
+  state.home = home;
+  const where = el("p", "note home-folder", home.folder);
+  where.title = home.folder;
+  box.append(where);
+  const list = el("ul", "projects");
+  list.id = "projects";
+  for (const project of home.projects) {
+    const item = el("li", "project");
+    item.tabIndex = 0;
+    item.dataset.path = project.path;
+    item.append(el("span", "name", project.name));
+    if (!project.manifest) item.append(el("span", "role", "no manifest"));
+    item.title = project.path;
+    item.onclick = () => openProject(project.path);
+    item.onkeydown = (e) => { if (e.key === "Enter") openProject(project.path); };
     list.append(item);
   }
+  if (!home.projects.length) list.append(el("li", "empty", "No projects here yet."));
+  box.append(list);
+  const actions = el("div", "home-actions");
+  const create = el("button", "", "+ New project");
+  create.type = "button";
+  create.id = "home-new-project";
+  create.disabled = !state.roles.available;
+  create.onclick = newProject;
+  const open = el("button", "", "Open project folder…");
+  open.type = "button";
+  open.id = "home-open-folder";
+  open.onclick = openFolderDialog;
+  actions.append(create, open);
+  box.append(actions);
+  renderTree();
+}
+
+/* Make one folder this window's project. Nothing changes while a document
+ * has unsaved work: the tabs would close with it. */
+async function openProject(path) {
+  const unsaved = unsavedDocuments();
+  if (unsaved.length) {
+    toast(`Save or close ${unsaved.map((d) => d.id).join(", ")} first: opening a project closes every tab.`, "warn");
+    return false;
+  }
+  try {
+    await api("POST", "/api/project/open", { path });
+  } catch (e) {
+    toast(`Could not open ${path}. ${e.message}`, "bad");
+    return false;
+  }
+  await showOpenedFolder();
+  toast(`This window now shows ${state.session.root}.`, "good");
+  return true;
+}
+
+/* Back to the Projects home, with the same care for unsaved work. */
+async function goHome() {
+  const unsaved = unsavedDocuments();
+  if (unsaved.length) {
+    toast(`Save or close ${unsaved.map((d) => d.id).join(", ")} first: the Projects home closes every tab.`, "warn");
+    return;
+  }
+  try {
+    await api("POST", "/api/projects/open");
+  } catch (e) {
+    toast(`Could not open the Projects folder. ${e.message}`, "bad");
+    return;
+  }
+  await showOpenedFolder();
+}
+
+/* Open project folder…: any folder, by its absolute path. One without a
+ * project manifest opens as a rootless project. */
+function openFolderDialog() {
+  modal("Open project folder", (body) => {
+    body.append(el("p", "", "The full path of a folder, starting with /. A folder without lcl.project.json opens as a rootless project."));
+    const input = el("input", "field");
+    input.id = "open-folder-path";
+    input.value = state.home.folder ? `${state.home.folder}/` : "/";
+    const status = el("p", "note");
+    status.id = "open-folder-status";
+    body.append(input, status);
+  }, [
+    ["Cancel", "", (close) => close()],
+    ["Open", "primary", async (close) => {
+      const path = $("#open-folder-path").value.trim();
+      if (!path) return;
+      if (await openProject(path)) close();
+    }],
+  ]);
+}
+
+/* New folder: an empty folder, made where it was asked for and shown at
+ * once. `inside` prefills the dialog with a folder of the tree. */
+function newFolder(inside) {
+  modal("New folder", (body) => {
+    body.append(el("p", "", "A folder path inside the project. Its parent must exist; the folder can stay empty."));
+    const input = el("input", "field");
+    input.id = "new-folder-path";
+    input.value = inside ? `${inside}/` : "";
+    body.append(input);
+  }, [
+    ["Cancel", "", (close) => close()],
+    ["Create", "primary", async (close) => {
+      const id = $("#new-folder-path").value.trim().replace(/\/+$/, "");
+      close();
+      if (!id) return;
+      try {
+        const made = await api("POST", "/api/tree/folder", { id });
+        await reveal(`${made.id}/x`, true);
+        renderTree();
+        toast(`Created folder ${made.id}`, "good");
+      } catch (e) {
+        toast(`Not created. ${e.message}`, "bad");
+      }
+    }],
+  ]);
 }
 
 /* ---------------------------------------------------------- tree actions */
 
 /* The keys a focused document in the tree answers to. Delete only ever asks. */
 function treeKey(e, id, item) {
-  if (e.key === "Enter") { e.preventDefault(); openDocument(id); }
+  if (e.key === "Enter") { e.preventDefault(); return openDocument(id); }
   else if (e.key === "Delete") { e.preventDefault(); deleteDocument(id); }
   else if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
     e.preventDefault();
@@ -488,10 +741,10 @@ function treeKey(e, id, item) {
 function folderKey(e, id, item, folded) {
   if (e.key === "Enter" || e.key === " " || (e.key === "ArrowRight" && folded) || (e.key === "ArrowLeft" && !folded)) {
     e.preventDefault();
-    toggleFolder(id, true);
-  } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-    moveTreeFocus(e, item);
+    return toggleFolder(id, true);
   }
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") moveTreeFocus(e, item);
+  return undefined;
 }
 
 /* Up and Down move between the rows the tree shows, documents and folders. */
@@ -577,7 +830,7 @@ function openMenu(id, x, y, returnTo) {
   menu.setAttribute("role", "menu");
   menu.setAttribute("aria-label", id);
   const actions = [["Open", () => openDocument(id)], ["Delete…", () => deleteDocument(id)]];
-  const listed = state.entries.find((e) => e.id === id);
+  const listed = knownEntry(id);
   if (listed && listed.kind === "kind.task" && state.roles.available) {
     actions.splice(1, 0, ["Convert to multi-file project…", () => convertDocument(id)]);
   }
@@ -614,6 +867,31 @@ function openMenu(id, x, y, returnTo) {
   menu.querySelector("button").focus();
 }
 
+/* The menu a folder in the tree opens: what to make inside it. */
+function openFolderMenu(id, x, y, returnTo) {
+  closeMenu();
+  const menu = el("div", "context-menu");
+  menu.setAttribute("role", "menu");
+  menu.setAttribute("aria-label", id);
+  for (const [label, act] of [["New document here…", () => newDocument(id)], ["New folder here…", () => newFolder(id)]]) {
+    const item = el("button", "", label);
+    item.setAttribute("role", "menuitem");
+    item.onclick = () => { closeMenu(); act(); };
+    menu.append(item);
+  }
+  menu.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeMenu(); if (returnTo) returnTo.focus(); }
+  });
+  menu.addEventListener("focusout", (e) => { if (!menu.contains(e.relatedTarget)) closeMenu(); });
+  document.body.append(menu);
+  const box = menu.getBoundingClientRect();
+  const view = document.documentElement;
+  menu.style.left = `${Math.max(0, Math.min(x, view.clientWidth - box.width - 4))}px`;
+  menu.style.top = `${Math.max(0, Math.min(y, view.clientHeight - box.height - 4))}px`;
+  treeMenu = menu;
+  menu.querySelector("button").focus();
+}
+
 document.addEventListener("mousedown", (e) => {
   if (treeMenu && !treeMenu.contains(e.target)) closeMenu();
 });
@@ -631,7 +909,7 @@ async function deleteDocument(id) {
     shown = await api("GET", "/api/document", { id });
   } catch (e) {
     toast(`${id} could not be read, so it was not deleted. ${e.message}`, "bad");
-    try { await loadTree(); } catch (_) { /* the listing says what is there */ }
+    await refreshTree();
     return;
   }
   const doc = state.docs.get(id);
@@ -649,12 +927,12 @@ async function deleteDocument(id) {
         await api("DELETE", "/api/document", { id, digest: shown.digest });
       } catch (e) {
         toast(`${id} was not deleted. ${e.message}`, "bad");
-        try { await loadTree(); } catch (_) { /* as above */ }
+        await refreshTree();
         return;
       }
       const open = state.docs.get(id);
       if (open) dropDocument(open);
-      try { await loadTree(); } catch (_) { /* as above */ }
+      await refreshTree();
       toast(`Deleted ${id}`, "good");
     }],
   ]);
@@ -673,6 +951,9 @@ async function openDocument(id, { focusByte, created } = {}) {
     state.order.push(id);
   }
   state.active = id;
+  /* The folders around it open, reading the ones never read, so the tree
+   * shows what is being edited; a folder folded after that stays so. */
+  try { await reveal(id, created !== undefined); } catch (_) { /* the tree shows what it can */ }
   renderTabs();
   renderTree();
   const doc = current();
@@ -718,7 +999,7 @@ async function discardNew(doc) {
     }
   }
   dropDocument(doc);
-  try { await loadTree(); } catch (_) { /* the tree refreshes on the next listing */ }
+  await refreshTree();
 }
 
 function closeDocument(id) {
@@ -839,7 +1120,7 @@ async function save(doc = current()) {
     toast(`Saved ${doc.id}`, "good");
     // A refresh failure cannot turn an acknowledged write into a failed save.
     try {
-      await loadTree();
+      await refreshTree();
       refreshReadiness();
       if (current() === doc) await refreshTokens();
     } catch (e) {
@@ -895,8 +1176,11 @@ async function reload() {
  * A role's text is the engine's scaffold or a Master (see Settings →
  * Templates), chosen and written by the server; this dialog only shows the
  * exact text first. Nothing is created until Create is pressed. */
-function newDocument() {
+function newDocument(inside) {
   const ending = state.files.default_extension;
+  /* Where the new document goes: the folder given, else the folder of the
+   * document being edited, else the root. */
+  const folder = inside !== undefined ? inside : (state.active ? parentOf(state.active) : "");
   /* The roles were read at start; the Masters are read while the dialog is
    * already open, and fill in its choices when they arrive. */
   const kinds = [["", "Blank LCL file"]].concat(state.roles.roles.map((r) => [r.role, r.label]));
@@ -917,7 +1201,7 @@ function newDocument() {
       "either one: the ending you type is kept, and existing documents keep their name."));
     const input = el("input", "field");
     input.id = "new-path";
-    input.value = `untitled${ending}`;
+    input.value = `${folder ? `${folder}/` : ""}untitled${ending}`;
     const kindLabel = el("label", "", "Kind of file");
     kindLabel.htmlFor = "new-kind";
     const kind = el("select", "field");
@@ -1012,8 +1296,8 @@ function newDocument() {
         /* Creating is its own route: it applies the .lcl default and
          * refuses to overwrite. Saving stays exact, so an open document is
          * never renamed under the person editing it. The server decides the
-         * final name, and the reply says what it chose. */
-        await loadTree();
+         * final name, and the reply says what it chose. Opening it reads its
+         * folder again, so it is in the tree at once; nothing else is read. */
         await openDocument(created.id, { created: created.digest });
         toast(
           created.id === created.requested
@@ -1261,7 +1545,7 @@ function openSettings() {
       }
       closeModal();
       await showOpenedFolder();
-      toast(`This window now shows ${state.session.root}.`, "good");
+      toast("This window now shows the Projects home.", "good");
     };
     if (files.default_workspace && files.default_workspace_exists === false) {
       status.append(el("span", "bad",
@@ -1272,8 +1556,8 @@ function openSettings() {
     form.append(el("p", "note",
       `This window shows ${files.current_workspace || (state.session && state.session.root) || ""}. ` +
       "New Project creates every new project in the Projects folder, each in a folder of its " +
-      "own, and LCL Workspace opens the Projects folder when it starts from the desktop menu; " +
-      "a folder or document opened explicitly still wins. Leave it empty for the built-in " +
+      "own, and LCL Workspace starts on the Projects home, the projects in that folder, when it " +
+      "starts from the desktop menu; a folder or document opened explicitly still wins. Leave it empty for the built-in " +
       "folder. The default file type is the ending of a new document named without one and " +
       "of every file a new project starts with."));
     if (files.problem) form.append(el("p", "note warning", files.problem));
@@ -1862,7 +2146,7 @@ function syncDocumentUI(doc) {
 /* The slot marks of the current text, from the engine, for a file whose tree
  * entry declares a project part role. Anything else has none. */
 async function refreshSlots(doc, revision) {
-  const listed = state.entries.find((e) => e.id === doc.id);
+  const listed = knownEntry(doc.id);
   if (!listed || !listed.kind || !listed.kind.startsWith("kind.part.")) { doc.slots = []; return; }
   try {
     const reply = await api("POST", "/api/slots", { id: doc.id }, doc.text);
@@ -2965,8 +3249,10 @@ $("#act-inspect").onclick = async () => { await runAnalysis(); showView("structu
 $("#act-run").onclick = startRun;
 $("#act-save").onclick = () => save();
 $("#act-reload").onclick = reload;
-$("#act-new").onclick = newDocument;
+$("#act-new").onclick = () => newDocument();
+$("#act-new-folder").onclick = () => newFolder(state.active ? parentOf(state.active) : "");
 $("#act-refresh").onclick = refreshTree;
+$("#act-home").onclick = goHome;
 $("#act-new-project").onclick = newProject;
 $("#act-settings").onclick = openSettings;
 $("#act-manual").onclick = openManual;
@@ -3203,16 +3489,15 @@ async function newProject() {
             `${reply.path} already exists. An existing project is never written into: choose another name.`));
           return;
         }
-        if (reply.opens_projects_folder) {
+        if (reply.opens_project) {
           const unsaved = unsavedDocuments();
           if (unsaved.length) {
             where.append(el("span", "bad",
-              `. This window will show the Projects folder ${reply.projects} instead of ` +
+              `. This window will then show the new project instead of ` +
               `${state.session.root}: save or close ${unsaved.map((d) => d.id).join(", ")} first.`));
             return;
           }
-          where.append(el("span", "",
-            `. This window will then show the Projects folder ${reply.projects}.`));
+          where.append(el("span", "", ". This window will then show the new project."));
         }
         plan = reply;
         $("#project-create").disabled = false;
@@ -3242,8 +3527,7 @@ async function newProject() {
         return;
       }
       try {
-        if (chosen.opens_projects_folder) await showOpenedFolder();
-        else await loadTree();
+        await showOpenedFolder();
         await openDocument(made.entry);
       } catch (e) {
         toast(`Created ${made.path}, but it could not be shown. ${e.message}`, "warn");
@@ -3264,7 +3548,7 @@ async function newProject() {
  * document when it is an entry (it declares kind.project), else the entry
  * last shown when it lists the open document as a part. */
 function entryFor(id) {
-  const listed = state.entries.find((e) => e.id === id);
+  const listed = knownEntry(id);
   if (listed && listed.kind === "kind.project") return id;
   const shown = state.readiness;
   if (shown.entry && shown.report && shown.report.project &&
@@ -3338,7 +3622,7 @@ function renderReadiness() {
   };
   row(project.entry, project.entry_status, project.entry, "kind.project");
   for (const part of project.parts) {
-    row(part.unit || part.source, part.status, part.unit && state.entries.some((e) => e.id === part.unit) ? part.unit : null,
+    row(part.unit || part.source, part.status, part.unit && isDocumentId(part.unit) ? part.unit : null,
       part.kind, part.required);
   }
   box.append(list);
@@ -3348,7 +3632,7 @@ function renderReadiness() {
     for (const item of diagnostics.slice(0, 20)) {
       const li = el("li", "", `${item.id} — ${item.source}:${item.position ? item.position.line : "?"}`);
       li.title = item.meaning || "";
-      if (state.entries.some((e) => e.id === item.source)) {
+      if (isDocumentId(item.source)) {
         li.tabIndex = 0;
         li.onclick = () => openDocument(item.source, { focusByte: item.span.start });
       }
@@ -3567,7 +3851,7 @@ function convertDocument(id) {
       close();
       try {
         await api("POST", "/api/convert", { id, folder, plan_digest: chosen.plan_digest });
-        await loadTree();
+        await refreshTree();
         await openDocument(chosen.entry);
         toast(`Created ${chosen.entry}. ${id} is unchanged.`, "good");
       } catch (e) {
@@ -3595,14 +3879,16 @@ function convertDocument(id) {
      * a chosen default workspace that no longer exists. */
     if (state.session.notice) toast(state.session.notice, "warn");
     await loadRoles();
+    if (state.session.home) await loadHome();
     await loadTree();
     /* What to show first, most specific wins. A document this launch was
      * opened for -- a desktop file association passes one -- then the
-     * manifest's declared entry, then whatever the project holds. */
+     * manifest's declared entry, then the first document at the project's
+     * root. On the Projects home, nothing: a project is chosen first. */
     const launched = state.session.open;
     const entry = state.session.entry;
-    const first = state.entries.find((e) => !e.directory);
-    const open = launched || entry || (first && first.id);
+    const first = treeEntries().find((e) => !e.directory);
+    const open = state.session.home ? null : (launched || entry || (first && first.id));
     if (open) { await openDocument(open); await runAnalysis(); }
     renderCapabilities();
     $("#hint").textContent = "Ctrl+S save · F12 definition · Shift+F12 references";

@@ -182,8 +182,8 @@ fn projects_are_real_sibling_folders_in_the_chosen_projects_folder() {
     );
     assert!(!flag(&plan, "exists"));
     assert!(
-        flag(&plan, "opens_projects_folder"),
-        "the window shows another folder"
+        flag(&plan, "opens_project"),
+        "the window will show the new project"
     );
     assert_eq!(reply.status, 200, "{}", reply.body);
     let alpha = projects.join("Alpha");
@@ -201,7 +201,7 @@ fn projects_are_real_sibling_folders_in_the_chosen_projects_folder() {
     let files = plan.get("files").and_then(Json::as_array).unwrap();
     assert_eq!(files.len(), 13);
     for (file, path) in files.iter().zip(&wanted) {
-        assert_eq!(text(file, "path"), format!("Alpha/{path}"));
+        assert_eq!(text(file, "path"), path.as_str());
         assert_eq!(written[path.as_str()], text(file, "text").as_bytes());
     }
     let entry = String::from_utf8(written["main.lcl.txt"].clone()).unwrap();
@@ -217,40 +217,86 @@ fn projects_are_real_sibling_folders_in_the_chosen_projects_folder() {
     );
     assert!(!desk.window.join("Alpha").exists());
 
-    // The window now shows the projects folder, and the tree the real
-    // hierarchy with what each file declares.
+    // The window now shows the new project itself, not the Projects folder:
+    // its root children are the project's own folders and entry, and the
+    // tree says what each file declares once its folder is unfolded.
     let session = json(&request(&desk.running, "GET", "/api/session", ""));
-    assert_eq!(PathBuf::from(text(&session, "root")), real(&projects.path));
-    let listed = json(&request(&desk.running, "GET", "/api/documents", ""));
-    let entries = listed.get("entries").and_then(Json::as_array).unwrap();
-    let find = |id: &str| {
-        entries
-            .iter()
-            .find(|e| text(e, "id") == id)
-            .unwrap_or_else(|| panic!("{id} is not in the tree"))
-    };
-    assert!(flag(find("Alpha"), "directory"));
-    assert!(flag(find("Alpha/stop_conditions"), "directory"));
-    for (id, kind) in [
-        ("Alpha/rules/rules.lcl.txt", "kind.part.rules"),
-        ("Alpha/contracts/contracts.lcl.txt", "kind.part.rules"),
+    assert_eq!(PathBuf::from(text(&session, "root")), real(&alpha));
+    assert!(!flag(&session, "home"));
+    let listed = json(&request(&desk.running, "GET", "/api/tree", ""));
+    let ids: Vec<&str> = listed
+        .get("entries")
+        .and_then(Json::as_array)
+        .unwrap()
+        .iter()
+        .map(|e| text(e, "id"))
+        .collect();
+    assert!(ids.contains(&"stop_conditions"), "{ids:?}");
+    assert!(ids.contains(&"main.lcl.txt"), "{ids:?}");
+    assert!(!ids.iter().any(|id| id.starts_with("Alpha")), "{ids:?}");
+    for (folder, id, kind) in [
+        ("rules", "rules/rules.lcl.txt", "kind.part.rules"),
         (
-            "Alpha/stop_conditions/stop_conditions.lcl.txt",
+            "contracts",
+            "contracts/contracts.lcl.txt",
+            "kind.part.rules",
+        ),
+        (
+            "stop_conditions",
+            "stop_conditions/stop_conditions.lcl.txt",
             "kind.part.checks",
         ),
-        ("Alpha/tasks/task_001.lcl.txt", "kind.part.task"),
+        ("tasks", "tasks/task_001.lcl.txt", "kind.part.task"),
     ] {
-        assert!(!flag(find(id), "directory"));
-        assert_eq!(text(find(id), "kind"), kind, "{id}");
+        let inside = json(&request(
+            &desk.running,
+            "GET",
+            &format!("/api/tree?parent={folder}"),
+            "",
+        ));
+        let entry = inside
+            .get("entries")
+            .and_then(Json::as_array)
+            .unwrap()
+            .iter()
+            .find(|e| text(e, "id") == id)
+            .unwrap_or_else(|| panic!("{id} is not in {folder}"));
+        assert!(!flag(entry, "directory"));
+        assert_eq!(text(entry, "kind"), kind, "{id}");
     }
+    // The Projects home lists Alpha as a project, shallowly, and knows it is
+    // the one open now.
+    let home = json(&request(&desk.running, "GET", "/api/projects", ""));
+    assert_eq!(PathBuf::from(text(&home, "folder")), projects.path);
+    let names: Vec<(&str, bool)> = home
+        .get("projects")
+        .and_then(Json::as_array)
+        .unwrap()
+        .iter()
+        .map(|p| (text(p, "name"), flag(p, "current")))
+        .collect();
+    assert_eq!(names, [("Alpha", true)]);
 
-    // B: a sibling, created where the window already is.
+    // B: a sibling in the Projects folder, and then the active project; Alpha
+    // is not in its tree.
     let (plan, reply) = create(&desk.running, "Beta");
-    assert!(!flag(&plan, "opens_projects_folder"));
+    assert!(flag(&plan, "opens_project"));
     assert_eq!(reply.status, 200, "{}", reply.body);
-    assert_eq!(text(&json(&reply), "entry"), "Beta/main.lcl.txt");
+    assert_eq!(text(&json(&reply), "entry"), "main.lcl.txt");
     assert!(projects.join("Beta/tasks/task_001.lcl.txt").is_file());
     assert_eq!(tree(&alpha), written, "creating Beta leaves Alpha alone");
+    let session = json(&request(&desk.running, "GET", "/api/session", ""));
+    assert_eq!(
+        PathBuf::from(text(&session, "root")),
+        real(&projects.join("Beta"))
+    );
+    let listed = json(&request(&desk.running, "GET", "/api/tree", ""));
+    assert!(!listed
+        .get("entries")
+        .and_then(Json::as_array)
+        .unwrap()
+        .iter()
+        .any(|e| text(e, "id").contains("Alpha")));
 
     // G: the same name again is refused, and Alpha is untouched.
     std::fs::write(alpha.join("rules/rules.lcl.txt"), "mine\n").unwrap();
@@ -449,5 +495,152 @@ fn the_projects_folder_survives_a_restart() {
     assert_eq!(
         PathBuf::from(text(&json(&reply), "root")),
         real(&projects.path)
+    );
+}
+
+/// A desktop launch names no project: the window starts on the Projects
+/// home, offering the folders of the Projects folder, and never lists that
+/// folder as one tree. Choosing a project opens exactly that folder; a
+/// folder without a manifest, opened explicitly, is a rootless project.
+#[test]
+fn the_projects_folder_is_a_container_of_projects_and_never_one_tree() {
+    let projects = Scratch::new("home-projects");
+    projects.put(
+        "Alpha/lcl.project.json",
+        "{\"format\": \"lcl.project/1\"}\n",
+    );
+    projects.put("Alpha/main.lcl.txt", "LCL:\n");
+    projects.put("Alpha/tasks/task_1.lcl.txt", "LCL:\n");
+    std::fs::create_dir(projects.join("Alpha/empty")).unwrap();
+    projects.put("Beta/lcl.project.json", "{\"format\": \"lcl.project/1\"}\n");
+    projects.put("Beta/main.lcl.txt", "LCL:\n");
+    projects.put("unrelated/data.txt", "not a document");
+    let config = Scratch::new("home-config");
+    let _builtin = Scratch::new("home-builtin");
+    // The launcher's built-in default is the Projects folder itself here.
+    let routes = Routes::new(Arc::new(open(&projects.path).expect("the folder opens")))
+        .with_settings_file(Some(config.join("lcl/workspace-settings.json")))
+        .with_builtin_default(Some(projects.path.clone()))
+        .with_reopen(Box::new(open))
+        .with_home(true);
+    let running = common::start(Arc::new(routes));
+
+    let session = json(&request(&running, "GET", "/api/session", ""));
+    assert!(flag(&session, "home"));
+    let refused = request(&running, "GET", "/api/tree", "");
+    assert_eq!(
+        refused.status, 409,
+        "the Projects folder was listed as a tree"
+    );
+    let home = json(&request(&running, "GET", "/api/projects", ""));
+    assert!(flag(&home, "home"));
+    let listed: Vec<(&str, bool, bool)> = home
+        .get("projects")
+        .and_then(Json::as_array)
+        .unwrap()
+        .iter()
+        .map(|p| (text(p, "name"), flag(p, "manifest"), flag(p, "current")))
+        .collect();
+    assert_eq!(
+        listed,
+        [
+            ("Alpha", true, false),
+            ("Beta", true, false),
+            ("unrelated", false, false)
+        ]
+    );
+
+    // Choosing Alpha: its own files, one folder at a time, and nothing of
+    // Beta anywhere in it.
+    let opened = json(&request(
+        &running,
+        "POST",
+        &format!(
+            "/api/project/open?path={}",
+            projects.join("Alpha").display()
+        ),
+        "",
+    ));
+    assert!(!flag(&opened, "home"));
+    assert_eq!(
+        PathBuf::from(text(&opened, "root")),
+        real(&projects.join("Alpha"))
+    );
+    let ids = |parent: &str| -> Vec<String> {
+        json(&request(
+            &running,
+            "GET",
+            &format!("/api/tree?parent={parent}"),
+            "",
+        ))
+        .get("entries")
+        .and_then(Json::as_array)
+        .unwrap()
+        .iter()
+        .map(|e| text(e, "id").to_string())
+        .collect()
+    };
+    assert_eq!(ids(""), ["empty", "tasks", "main.lcl.txt"]);
+    assert_eq!(ids("tasks"), ["tasks/task_1.lcl.txt"]);
+    assert_eq!(ids("empty"), Vec::<String>::new());
+    assert!(request(&running, "GET", "/api/tree?parent=../Beta", "").status >= 400);
+    let home = json(&request(&running, "GET", "/api/projects", ""));
+    let current: Vec<&str> = home
+        .get("projects")
+        .and_then(Json::as_array)
+        .unwrap()
+        .iter()
+        .filter(|p| flag(p, "current"))
+        .map(|p| text(p, "name"))
+        .collect();
+    assert_eq!(current, ["Alpha"]);
+
+    // New Folder, in the active project.
+    let made = request(&running, "POST", "/api/tree/folder?id=planning", "");
+    assert_eq!(made.status, 200, "{}", made.body);
+    assert!(projects.join("Alpha/planning").is_dir());
+    assert_eq!(ids(""), ["empty", "planning", "tasks", "main.lcl.txt"]);
+    assert_eq!(
+        request(&running, "POST", "/api/tree/folder?id=planning", "").status,
+        409
+    );
+    assert_eq!(
+        request(&running, "POST", "/api/tree/folder?id=../Gamma", "").status,
+        400
+    );
+    assert!(!projects.join("Gamma").exists());
+
+    // Back to the Projects home: nothing is listed as a tree again.
+    let back = json(&request(&running, "POST", "/api/projects/open", ""));
+    assert!(flag(&back, "home"));
+    assert_eq!(request(&running, "GET", "/api/tree", "").status, 409);
+
+    // An explicit folder without a manifest is a rootless project.
+    let example = Scratch::new("home-rootless");
+    example.put("main.lcl", "LCL:\n");
+    example.put("folder/other.lcl", "LCL:\n");
+    let opened = json(&request(
+        &running,
+        "POST",
+        &format!("/api/project/open?path={}", example.path.display()),
+        "",
+    ));
+    assert_eq!(PathBuf::from(text(&opened, "root")), real(&example.path));
+    assert_eq!(ids(""), ["folder", "main.lcl"]);
+    assert_eq!(ids("folder"), ["folder/other.lcl"]);
+    // A relative path, or no folder, opens nothing.
+    assert_eq!(
+        request(&running, "POST", "/api/project/open?path=Alpha", "").status,
+        400
+    );
+    assert_eq!(
+        request(
+            &running,
+            "POST",
+            "/api/project/open?path=/nonexistent/lcl",
+            ""
+        )
+        .status,
+        404
     );
 }

@@ -41,19 +41,19 @@ class VersionDisplayTest {
     fun updates_and_about_show_lcl_0_5_and_never_the_package_numbers() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val info = context.packageManager.getPackageInfo(context.packageName, 0)
-        assertEquals("0.5.2", info.versionName)
-        assertEquals(5002L, info.longVersionCode)
+        assertEquals("0.9.0", info.versionName)
+        assertEquals(9000L, info.longVersionCode)
 
         rule.waitUntil("the app is up", 30_000) { exists("home_updates") }
         rule.onNodeWithTag("home_updates").performScrollTo().performClick()
         rule.waitUntil("Updates", 10_000) { exists("update_installed") }
-        rule.onNodeWithTag("update_installed").assertTextEquals("Installed version: LCL 0.5.2")
+        rule.onNodeWithTag("update_installed").assertTextEquals("Installed version: LCL 0.9")
         back()
 
         rule.waitUntil("home", 10_000) { exists("home_about") }
         rule.onNodeWithTag("home_about").performScrollTo().performClick()
         rule.waitUntil("About", 10_000) { exists("about:App") }
-        rule.onNodeWithTag("about:App").assertTextEquals("LCL 0.5.2")
+        rule.onNodeWithTag("about:App").assertTextEquals("LCL 0.9")
         for (tag in listOf("about:App", "about:PC service")) {
             if (!exists(tag)) continue
             val shown = textOf(tag)

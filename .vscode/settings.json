@@ -1,4 +1,3 @@
 {
-    "java.configuration.updateBuildConfiguration": "automatic",
-    "python-envs.defaultEnvManager": "ms-python.python:system"
+    "java.configuration.updateBuildConfiguration": "automatic"
 }

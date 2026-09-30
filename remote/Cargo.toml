@@ -12,7 +12,7 @@
 # routes, in process, exactly as the browser workspace uses them.
 [package]
 name = "lcl-remote"
-version = "0.5.2"
+version = "0.9.0"
 edition = "2021"
 # `std::fs::File::lock`, used to serialise the device and pairing registries
 # between the service and the command line.

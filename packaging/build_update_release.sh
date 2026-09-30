@@ -96,13 +96,20 @@ for crate in update remote; do
         refuse "$crate/Cargo.toml does not carry product version $version"
 done
 # The APK's versionCode follows from the version unless one is given
-# explicitly: the same rule the Android build applies, so the two agree.
+# explicitly: the same rule the Android build applies (build.gradle.kts,
+# versionCodeOf), so the two agree — exactly MAJOR.MINOR.PATCH, MINOR and
+# PATCH at most 999 so no two versions share a code, within Android's range.
 if [ -n "${LCL_ANDROID_VERSION_CODE:-}" ]; then
     case "$LCL_ANDROID_VERSION_CODE" in *[!0-9]*) refuse "LCL_ANDROID_VERSION_CODE must be a number" ;; esac
     code=$LCL_ANDROID_VERSION_CODE
 else
-    code=$(printf '%s\n' "$version" | awk -F'[.-]' '/^[0-9]+\.[0-9]+\.[0-9]+/ { print $1 * 1000000 + $2 * 1000 + $3; ok = 1 } END { exit !ok }') ||
-        refuse "no versionCode follows from product version $version; set LCL_ANDROID_VERSION_CODE"
+    code=$(printf '%s\n' "$version" | awk -F'.' '
+        /^[0-9]+\.[0-9]+\.[0-9]+$/ && $2 <= 999 && $3 <= 999 {
+            code = $1 * 1000000 + $2 * 1000 + $3
+            if (code >= 1 && code <= 2100000000) { print code; ok = 1 }
+        }
+        END { exit !ok }') ||
+        refuse "no versionCode follows from product version $version (exactly MAJOR.MINOR.PATCH, MINOR and PATCH at most 999, within Android's range); set LCL_ANDROID_VERSION_CODE"
 fi
 
 # Update System V1: exactly one production update key, kept. More than one is
@@ -208,11 +215,11 @@ fi
 
 # 1. The PC payload, through the release builder and all of its checks.
 LCL_RELEASE_VERSION=0.3.0 LCL_RELEASE_OUT="$work/pc" "$root/packaging/build_release.sh"
-pc_built="$work/pc/lcl-0.3.0-linux-x86_64.tar.gz"
+pc_built="$work/pc/lcl-$version-linux-x86_64.tar.gz"
 [ -f "$pc_built" ] || refuse "the release builder produced no PC payload"
 pc_name=lcl-$version-linux-x86_64.tar.gz
 cp "$pc_built" "$artifacts/$pc_name"
-cp "$work/pc/lcl-0.3.0-PROVENANCE.txt" "$artifacts/lcl-$version-pc-PROVENANCE.txt"
+cp "$work/pc/lcl-$version-PROVENANCE.txt" "$artifacts/lcl-$version-pc-PROVENANCE.txt"
 
 # 2. The APK, signed with the release key the Android build reads.
 ( cd "$root/android" && ./gradlew --offline -q assembleRelease \

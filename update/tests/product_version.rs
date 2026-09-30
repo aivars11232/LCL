@@ -36,10 +36,16 @@ fn gradle_default(property: &str) -> String {
 }
 
 /// Android's versionCode for a product version, as the Android build and the
-/// release builder both derive it.
-fn version_code_of(version: &str) -> u64 {
-    let v = lcl_update::version::Version::parse(version).unwrap();
-    v.major * 1_000_000 + v.minor * 1_000 + v.patch
+/// release builder both derive it: MAJOR·1 000 000 + MINOR·1 000 + PATCH, for
+/// exactly MAJOR.MINOR.PATCH with MINOR and PATCH at most 999, within
+/// Android's range; `None` for any other version.
+fn version_code_of(version: &str) -> Option<u64> {
+    let v = lcl_update::version::Version::parse(version).ok()?;
+    if v.is_prerelease() || v.minor > 999 || v.patch > 999 {
+        return None;
+    }
+    let code = v.major * 1_000_000 + v.minor * 1_000 + v.patch;
+    (1..=2_100_000_000).contains(&code).then_some(code)
 }
 
 #[test]
@@ -72,16 +78,46 @@ fn the_android_version_code_follows_from_the_version_and_is_past_every_published
         "versionCodeOf(versionName!!)",
         "build.gradle.kts no longer derives versionCode from the version"
     );
-    assert!(read("packaging/build_update_release.sh").contains("$1 * 1000000 + $2 * 1000 + $3"));
-    assert_eq!(version_code_of("0.5.2"), 5002);
-    // v0.1.1 was published with versionCode 7 and v0.5.0 with 8; a build of
-    // this version must never look older than a release a phone may have.
-    let code = version_code_of(lcl_update::PRODUCT_VERSION);
-    assert!(code > 8, "versionCode {code}");
+    let builder = read("packaging/build_update_release.sh");
+    assert!(builder.contains("$1 * 1000000 + $2 * 1000 + $3"));
+    // Both anchor the version and bound its parts, so the two never differ.
+    assert!(builder.contains("/^[0-9]+\\.[0-9]+\\.[0-9]+$/ && $2 <= 999 && $3 <= 999"));
+    assert!(builder.contains("code <= 2100000000"));
+    let gradle = read("android/app/build.gradle.kts");
+    assert!(
+        gradle.contains("matchEntire(version)") && gradle.contains("minor <= 999 && patch <= 999")
+    );
+    assert!(gradle.contains("code in 1..2_100_000_000"));
+    assert_eq!(version_code_of("0.9.0"), Some(9000));
+    // v0.1.1 was published with versionCode 7, v0.5.0 with 8, v0.5.2 with
+    // 5002; a build of this version must never look older than a release a
+    // phone may have.
+    let code = version_code_of(lcl_update::PRODUCT_VERSION).expect("a code follows");
+    assert!(code > 5002, "versionCode {code}");
     // And it grows with the version, so a later release always installs.
     assert!(
-        version_code_of("0.5.3") > code
-            && version_code_of("0.6.0") > code
-            && version_code_of("1.0.0") > code
+        version_code_of("0.9.1") > Some(code)
+            && version_code_of("0.10.0") > Some(code)
+            && version_code_of("1.0.0") > Some(code)
     );
+    // The boundary of a part: 0.5.999 and 0.6.0 are neighbours, never equal.
+    assert_eq!(version_code_of("0.5.999"), Some(5999));
+    assert_eq!(version_code_of("0.6.0"), Some(6000));
+    assert_eq!(version_code_of("2100.0.0"), Some(2_100_000_000));
+    // Beyond it, or not exactly MAJOR.MINOR.PATCH: no code, so no build.
+    for bad in [
+        "0.5.1000",
+        "0.1000.0",
+        "2101.0.0",
+        "0.0.0",
+        "1.2",
+        "1.2.3.4",
+        "v1.2.3",
+        "1.2.3-rc1",
+        " 1.2.3",
+        "1.2.3 ",
+        "01.2.3",
+    ] {
+        assert_eq!(version_code_of(bad), None, "{bad}");
+    }
 }

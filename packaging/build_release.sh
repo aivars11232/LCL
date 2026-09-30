@@ -72,11 +72,13 @@
 #
 #   LCL_RELEASE_OUT=<dir>   where to write. Defaults to
 #                           releases/candidates/<name>-<short source id>.
-#   LCL_RELEASE_VERSION=<v> the language release the candidate is for: 0.1.0,
+#   LCL_RELEASE_VERSION=<v> the language release the candidate bundles: 0.1.0,
 #                           0.2.0 or 0.3.0. A 0.3.0 candidate bundles all three
 #                           packages; the Core 0.3.0 one judges 0.3.0 documents
-#                           and multi-file projects. Defaults to the product version in
-#                           impl/Cargo.toml. A 0.2.0 candidate bundles the
+#                           and multi-file projects. Defaults to the newest Core
+#                           package in the captured source. It is not the product
+#                           version (impl/Cargo.toml), which numbers the programs
+#                           and the release. A 0.2.0 candidate bundles the
 #                           Core 0.1.0 package and the Core 0.2.0 package, whose
 #                           localized documents the tools judge alongside 0.1.0
 #                           ones; a 0.1.0 candidate bundles only Core 0.1.0.
@@ -388,7 +390,13 @@ for crate in update remote; do
     [ "$crate_version" = "$version" ] ||
         refuse "$crate/Cargo.toml has version '$crate_version' and impl/Cargo.toml has '$version': every binary of one release reports the same product version"
 done
-release=${LCL_RELEASE_VERSION:-$version}
+# The Core bundle is chosen apart from the product version: the programs of
+# product 0.5.0 and later carry Core 0.3.0, and a product version is never a
+# Core package version. Without a choice, the newest package the source holds.
+core_bundle=0.1.0
+[ -f "$snapshot/canonical/LCL_Core_0.2.0/VERSION.txt" ] && core_bundle=0.2.0
+[ -f "$snapshot/canonical/LCL_Core_0.3.0/VERSION.txt" ] && core_bundle=0.3.0
+release=${LCL_RELEASE_VERSION:-$core_bundle}
 case "$release" in
     0.1.0) ;;
     0.2.0)
@@ -403,7 +411,9 @@ case "$release" in
         ;;
     *) refuse "LCL_RELEASE_VERSION must be 0.1.0, 0.2.0 or 0.3.0, not $release" ;;
 esac
-name=lcl-$release-linux-x86_64
+# The candidate is named by the product version: what the programs report and
+# the release is called. The Core bundle it carries is in the provenance.
+name=lcl-$version-linux-x86_64
 
 out=${LCL_RELEASE_OUT:-$root/releases/candidates/$name-$short_source_id}
 check_output "$out"
@@ -590,7 +600,7 @@ rustc_program=${RUSTC:-rustc}
     echo
     echo "artifact:         $name.tar.gz"
     echo "sha256:           $(cut -d' ' -f1 < "$artifacts/$name.sha256")"
-    echo "release version:  $release"
+    echo "core bundle:      $release"
     echo "product version:  $version"
     echo "update source:    $(printf '%s\n' "$update_source" | sed -n 's/^source: //p')"
     echo "language version: $language"
@@ -619,14 +629,14 @@ rustc_program=${RUSTC:-rustc}
     echo "PAYLOAD, every file in the tarball: executable class, size, SHA-256, path"
     echo
     cat "$staging/payload-manifest"
-} > "$artifacts/lcl-$release-PROVENANCE.txt"
+} > "$artifacts/lcl-$version-PROVENANCE.txt"
 
 # ---------------------------------------------------------------------------
 # 6. Publish: claim the output directory, copy, and check what arrived
 # ---------------------------------------------------------------------------
 
 set -- "$name.tar.gz" "$name.sha256" "$name-source.tar.gz" "$name-source.sha256" \
-    SOURCE_INVENTORY.tsv "lcl-$release-PROVENANCE.txt"
+    SOURCE_INVENTORY.tsv "lcl-$version-PROVENANCE.txt"
 if [ -f "$artifacts/SOURCE_CHANGES.patch" ]; then
     set -- "$@" SOURCE_CHANGES.patch
 fi

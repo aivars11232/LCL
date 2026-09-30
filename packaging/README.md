@@ -182,12 +182,15 @@ distribution/plugins/dependencies. Provision these before going offline;
 `lcl-0.2.0-linux-x86_64` candidate. It bundles the Core 0.1.0 package and the
 Core 0.2.0 package: `install.sh` installs both, the desktop launcher passes the
 0.2.0 package as `--localized-spec`, and the provenance records both package
-identities. Without the variable the release version is the product version in
-`impl/Cargo.toml`, and a 0.1.0 candidate is built exactly as before.
-`LCL_RELEASE_VERSION=0.3.0` builds `lcl-0.3.0-linux-x86_64`, which also bundles
-the Core 0.3.0 package (multi-file projects and file roles): `install.sh`
-installs it, and the desktop launcher passes it as `--project-spec`. No other
-value is accepted. Building a candidate is a release task of its own.
+identities. Without the variable the newest Core package in the source is
+bundled (0.3.0 now). The variable chooses the Core bundle only: the candidate
+and its archive are named by the product version in `impl/Cargo.toml`,
+`lcl-<product version>-linux-x86_64`, which the programs report and the release
+is called, and the provenance records which Core packages it carries.
+`LCL_RELEASE_VERSION=0.3.0` bundles the Core 0.3.0 package too (multi-file
+projects and file roles): `install.sh` installs it, and the desktop launcher
+passes it as `--project-spec`. No other value is accepted. Building a candidate
+is a release task of its own.
 
 `lcl version` names Core 0.2.0 only when a Core 0.2.0 package is named to it,
 by `--localized-spec` or `LCL_LOCALIZED_SPEC`, and that package opens. The
@@ -280,9 +283,13 @@ ANDROID_HOME=/path/to/sdk packaging/build_update_release.sh
 
 The APK's `versionCode` is not typed anywhere: it follows from the product
 version, as the Android build derives it (`MAJOR * 1000000 + MINOR * 1000 +
-PATCH`, so 0.5.2 is 5002), which grows with every release;
-`LCL_ANDROID_VERSION_CODE` overrides it only for tests. The builder still
-refuses a code that does not advance past the previous release's.
+PATCH`, so 0.9.0 is 9000), which grows with every release. The version must
+be exactly `MAJOR.MINOR.PATCH` with `MINOR` and `PATCH` at most 999 (0.5.999
+is 5999 and 0.6.0 is 6000, so no two versions share a code), and the code
+must fit Android's range (at most 2100000000); the builder refuses anything
+else, as the Android build does. `LCL_ANDROID_VERSION_CODE` overrides it only
+for tests. The builder still refuses a code that does not advance past the
+previous release's.
 
 The previous manifest's detached signature is verified against the keys already
 trusted by the release tooling, then parsed by the updater's strict parser,

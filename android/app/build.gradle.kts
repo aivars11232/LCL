@@ -35,12 +35,21 @@ val syncManual by tasks.registering(Sync::class) {
     into(manualAssets.resolve("manual"))
 }
 
-/** Android's versionCode for a product version: MAJOR * 1 000 000 + MINOR * 1 000 + PATCH. */
+/**
+ * Android's versionCode for a product version: MAJOR * 1 000 000 + MINOR * 1 000 + PATCH
+ * (0.9.0 is 9000), so it grows with the version. The version must be exactly
+ * MAJOR.MINOR.PATCH, MINOR and PATCH at most 999 (0.5.999 is 5999 and 0.6.0 is 6000:
+ * no two versions share a code), and the code within Android's range (at most
+ * 2 100 000 000). The release builder applies the same rule.
+ */
 fun versionCodeOf(version: String): Int {
-    val m = Regex("^(\\d+)\\.(\\d+)\\.(\\d+)").find(version)
-        ?: error("versionName $version is not MAJOR.MINOR.PATCH, so no versionCode follows from it")
-    val (major, minor, patch) = m.destructured
-    return major.toInt() * 1_000_000 + minor.toInt() * 1_000 + patch.toInt()
+    val m = Regex("^(\\d+)\\.(\\d+)\\.(\\d+)$").matchEntire(version)
+        ?: error("versionName $version is not exactly MAJOR.MINOR.PATCH, so no versionCode follows from it")
+    val (major, minor, patch) = m.destructured.toList().map { it.toLong() }
+    require(minor <= 999 && patch <= 999) { "versionName $version: MINOR and PATCH must be at most 999 for a versionCode to follow" }
+    val code = major * 1_000_000 + minor * 1_000 + patch
+    require(code in 1..2_100_000_000) { "versionName $version gives versionCode $code, outside Android's range" }
+    return code.toInt()
 }
 
 android {
@@ -56,10 +65,10 @@ android {
         // "0.5"). versionCode is Android's own number: it installs an update
         // only over a lower one, and it is never shown. Nobody types it: it
         // is derived from the version (MAJOR * 1 000 000 + MINOR * 1 000 +
-        // PATCH, so 0.5.2 is 5002), which grows whenever the version does.
+        // PATCH, so 0.9.0 is 9000), which grows whenever the version does.
         // The properties let a build (or the update test in tools/e2e.sh)
         // set both without editing this file.
-        versionName = providers.gradleProperty("lclVersionName").orNull ?: "0.5.2"
+        versionName = providers.gradleProperty("lclVersionName").orNull ?: "0.9.0"
         versionCode = providers.gradleProperty("lclVersionCode").orNull?.toInt() ?: versionCodeOf(versionName!!)
         buildConfigField("String", "UPDATE_TRUSTED_KEYS", "\"$trustedUpdateKeys\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

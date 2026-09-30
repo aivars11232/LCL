@@ -79,12 +79,20 @@ class LocalProjectsTest {
         local.mkdir("Gamma", "empty")
         local.createFile("Gamma", "docs/x.lcl.txt", "kept\n")
         local.recordSynced("Gamma", "docs/x.lcl.txt", LocalProjects.digest("kept\n"), "p1", "Gamma/docs/x.lcl.txt", "pcdigest", 1_000L)
+        // Folders are recorded too, with no digest: the PC has them.
+        for (folder in listOf("docs", "empty")) local.recordSynced("Gamma", folder, "", "p1", "Gamma/$folder", "", 1_000L)
         // A new instance over the same storage, as after the process died.
         val again = LocalProjects(root)
         assertEquals(listOf("Gamma"), again.projects().map { it.name })
         assertEquals(listOf("docs", "empty"), again.children("Gamma", "").entries.map { it.id })
         assertEquals("kept\n", again.read("Gamma", "docs/x.lcl.txt").text)
         assertTrue(again.isSynced("Gamma", "docs/x.lcl.txt"))
+        assertTrue(again.isSynced("Gamma", "empty"))
+        assertTrue(again.fullySynced("Gamma"))
+        // Without the PC's word for a folder, the project is not fully synced.
+        again.mkdir("Gamma", "later")
+        assertFalse(again.fullySynced("Gamma"))
+        again.deleteFolder("Gamma", "later")
         assertTrue(again.fullySynced("Gamma"))
         assertEquals("Gamma/docs/x.lcl.txt", again.syncRecords("Gamma").getValue("docs/x.lcl.txt").pcPath)
         // An edit after the sync makes it unsynced again, until a PC confirms the new bytes.

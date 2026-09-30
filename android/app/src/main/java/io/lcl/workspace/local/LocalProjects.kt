@@ -26,6 +26,9 @@ data class LocalDocument(val id: String, val text: String, val digest: String)
 /** What a PC confirmed for one local document: the phone bytes it holds a copy of, and where. */
 data class SyncRecord(val localDigest: String, val pcProject: String, val pcPath: String, val pcDigest: String, val at: Long)
 
+/** Every folder and every document of a local project, by id: what a whole-project sync must carry. */
+data class Inventory(val folders: List<String>, val documents: List<String>)
+
 /** A local operation the storage refuses, and why. */
 class LocalRefused(message: String) : Exception(message)
 
@@ -46,10 +49,14 @@ class LocalConflict(val text: String, val digest: String) : Exception("the docum
  * the project only: `..`, absolute paths and dot names are refused.
  *
  * Syncing to a PC is recorded per document in the project's `.sync.json`:
- * the digest of the local bytes a PC confirmed it holds, and where. A
- * document counts as synced only while its bytes still have that digest.
+ * the digest of the local bytes a PC confirmed it holds, and where; a folder
+ * the PC made or had is recorded the same way, with no digest. A document
+ * counts as synced only while its bytes still have that digest. The
+ * explorer's per-folder listing is cut at [MAX_CHILDREN] for the screen; a
+ * sync reads the whole project through [inventory] instead, bounded on its
+ * own by [maxSyncItems], so nothing is ever left out of a sync silently.
  */
-class LocalProjects(private val root: File) {
+class LocalProjects(private val root: File, private val maxSyncItems: Int = MAX_SYNC_ITEMS) {
     init {
         root.mkdirs()
     }
@@ -57,6 +64,8 @@ class LocalProjects(private val root: File) {
     companion object {
         const val PREFIX = "local:"
         const val MAX_CHILDREN = 4096
+        /** Folders and documents together, at most, for one project's sync inventory. */
+        const val MAX_SYNC_ITEMS = 20_000
         private const val SYNC_FILE = ".sync.json"
 
         fun isLocal(projectId: String): Boolean = projectId.startsWith(PREFIX)
@@ -143,16 +152,38 @@ class LocalProjects(private val root: File) {
         return idOf(project, dir)
     }
 
-    /** Every document of the project, by id, deepest folders included: for syncing the whole project. */
-    fun documents(project: String): List<String> {
-        val out = mutableListOf<String>()
+    /**
+     * Every folder and every document of the project, by id, deepest
+     * included: the complete inventory a whole-project sync needs. Read from
+     * the disk directly, never through [children], whose cut at
+     * [MAX_CHILDREN] is for the screen: a sync knows about every entry or
+     * stops. More than [maxSyncItems] entries in all is refused, and the
+     * caller stops with everything kept.
+     */
+    fun inventory(project: String): Inventory {
+        val folders = mutableListOf<String>()
+        val documents = mutableListOf<String>()
         fun walk(parent: String) {
-            val folder = children(project, parent)
-            for (entry in folder.entries) if (entry.directory) walk(entry.id) else out += entry.id
+            val listed = resolve(project, parent).listFiles()
+                ?: throw LocalRefused("${parent.ifEmpty { "the project" }} is not readable, so the sync stops: nothing is written, marked synced or removed")
+            val join = { name: String -> if (parent.isEmpty()) name else "$parent/$name" }
+            for (entry in listed.sortedBy { it.name }) {
+                if (entry.name.startsWith(".")) continue
+                when {
+                    entry.isDirectory -> { folders += join(entry.name); walk(join(entry.name)) }
+                    entry.isFile && LclNames.isDocument(entry.name) -> documents += join(entry.name)
+                }
+                if (folders.size + documents.size > maxSyncItems) {
+                    throw LocalRefused("the project has more than $maxSyncItems folders and documents, so the sync stops: nothing is written, marked synced or removed")
+                }
+            }
         }
         walk("")
-        return out.sorted()
+        return Inventory(folders.sorted(), documents.sorted())
     }
+
+    /** Every document of the project, by id: the documents of its [inventory]. */
+    fun documents(project: String): List<String> = inventory(project).documents
 
     // ---------------------------------------------------------------- documents
 
@@ -206,6 +237,7 @@ class LocalProjects(private val root: File) {
         if (id.isEmpty() || !dir.isDirectory) throw LocalRefused("$id is not a folder of the project")
         if (dir.listFiles().orEmpty().any { !it.name.startsWith(".") }) throw LocalRefused("$id is not empty")
         if (!dir.deleteRecursively()) throw LocalRefused("$id could not be deleted")
+        removeSyncRecord(project, id)
     }
 
     /** The bytes reach the disk beside the target and replace it in one rename. */
@@ -244,10 +276,19 @@ class LocalProjects(private val root: File) {
         }.toMap()
     }
 
-    /** A PC confirmed it holds [id]'s bytes (digest [localDigest]) at [pcPath]; only then is this called. */
+    /**
+     * A PC confirmed it holds [id]'s bytes (digest [localDigest]) at [pcPath];
+     * only then is this called. For a folder, [localDigest] and [pcDigest]
+     * are empty: the PC has the folder.
+     */
     fun recordSynced(project: String, id: String, localDigest: String, pcProject: String, pcPath: String, pcDigest: String, at: Long) {
         val records = syncRecords(project) + (id to SyncRecord(localDigest, pcProject, pcPath, pcDigest, at))
         writeSyncRecords(project, records)
+    }
+
+    /** Many confirmations at once, in one write: a sync records each entry as it is confirmed and writes them together at its end. */
+    fun recordSyncedAll(project: String, confirmed: Map<String, SyncRecord>) {
+        if (confirmed.isNotEmpty()) writeSyncRecords(project, syncRecords(project) + confirmed)
     }
 
     private fun removeSyncRecord(project: String, id: String) {
@@ -264,16 +305,24 @@ class LocalProjects(private val root: File) {
         replace(syncFile(project), json.toString())
     }
 
-    /** Whether [id]'s bytes now are the ones a PC confirmed. */
+    /** Whether [id] is now what a PC confirmed: a document's bytes, or a folder's presence. */
     fun isSynced(project: String, id: String): Boolean {
         val record = syncRecords(project)[id] ?: return false
+        if (record.localDigest.isEmpty()) return runCatching { resolve(project, id).isDirectory }.getOrDefault(false)
         return runCatching { read(project, id).digest == record.localDigest }.getOrDefault(false)
     }
 
-    /** Whether every document of the project is synced as it is now (an empty project is not). */
+    /**
+     * Whether everything in the project is recorded as confirmed by a PC as
+     * it is now: every document with its current bytes, every folder. A
+     * project with nothing in it has nothing to lose; one too large to
+     * inventory is never fully synced. The records say what a PC held once;
+     * whether it still does is the PC's to confirm again.
+     */
     fun fullySynced(project: String): Boolean {
-        val documents = documents(project)
+        val inventory = runCatching { inventory(project) }.getOrElse { return false }
         val records = syncRecords(project)
-        return documents.isNotEmpty() && documents.all { id -> records[id]?.localDigest == read(project, id).digest }
+        return inventory.folders.all { records[it]?.localDigest?.isEmpty() == true } &&
+            inventory.documents.all { id -> records[id]?.localDigest == read(project, id).digest }
     }
 }

@@ -327,6 +327,13 @@ private fun FilesPane(
                 modifier = Modifier.testTag("project_where"),
             )
         }
+        project?.takeIf { it.local }?.let { local ->
+            // Read again after an edit or save, a change in the explorer, or a sync.
+            val unsaved = ui.documents.filter { it.project == local.id && it.dirty }.map { it.id }
+            var status by remember(local.id) { mutableStateOf("") }
+            LaunchedEffect(local.id, unsaved, ui.explorers[local.id], ui.syncEpoch) { status = controller.localStatus(local.id) }
+            Text(status, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("local_status"))
+        }
         HorizontalDivider(Modifier.padding(vertical = 4.dp))
         if (ui.explorer.folders[""]?.entries.isNullOrEmpty()) {
             Text(
@@ -356,18 +363,23 @@ private fun FilesPane(
         NewLocalProjectDialog(onCreate = { name -> controller.createLocalProject(name); makingLocal = false }, onDismiss = { makingLocal = false })
     }
     if (removing && project != null) {
-        val synced = controller.localProjectSynced(project.id)
+        // The PC is asked now whether it still holds everything as recorded; a record alone proves the past.
+        var verdict by remember(project.id) { mutableStateOf<Result<Unit>?>(null) }
+        LaunchedEffect(project.id) { verdict = controller.verifyRemovable(project.id) }
         AlertDialog(
             onDismissRequest = { removing = false },
             title = { Text("Remove ${project.name} from this phone?") },
             text = {
                 Text(
-                    if (synced) "Every document of it is on the PC as it is now. The phone's copy is removed; the PC's stays."
-                    else "Not every document of it is on a PC as it is now, so it stays on this phone. Sync it first.",
+                    verdict?.fold(
+                        { "The PC confirmed just now that it holds every folder and document of it as they are here. The phone's copy is removed; the PC's stays." },
+                        { it.message ?: "It stays on this phone." },
+                    ) ?: "Asking the PC whether it still holds every folder and document as they are here…",
+                    modifier = Modifier.testTag("remove_verdict"),
                 )
             },
             confirmButton = {
-                TextButton(onClick = { controller.removeLocalProject(project.id); removing = false }, enabled = synced, modifier = Modifier.testTag("confirm_remove_local")) { Text("Remove") }
+                TextButton(onClick = { controller.removeLocalProject(project.id); removing = false }, enabled = verdict?.isSuccess == true, modifier = Modifier.testTag("confirm_remove_local")) { Text("Remove") }
             },
             dismissButton = { TextButton(onClick = { removing = false }) { Text("Cancel") } },
         )
@@ -686,7 +698,18 @@ private fun SyncDialog(controller: WorkspaceController, ui: WorkspaceUi, project
     var busy by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text(if (result == null) "Sync ${project.name} to the PC" else if (result!!.complete) "Synced ${project.name}" else "Sync incomplete") },
+        title = {
+            val done = result
+            Text(
+                when {
+                    done == null -> "Sync ${project.name} to the PC"
+                    done.removed -> "Synced and removed ${project.name}"
+                    done.complete -> "Synced ${project.name}"
+                    done.partial -> "Partial sync of ${project.name}"
+                    else -> "Sync failed"
+                },
+            )
+        },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 val done = result
@@ -696,9 +719,15 @@ private fun SyncDialog(controller: WorkspaceController, ui: WorkspaceUi, project
                         done.outcomes.forEach { o ->
                             Text("${if (o.ok) "✓" else "✕"} ${o.id} → ${o.destination}: ${o.detail}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("sync_outcome:${o.id}"))
                         }
+                        done.problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("sync_problem")) }
                         if (done.removed) Text("Removed from this phone.", fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("sync_removed"))
-                        else if (done.complete) Text("Every document is on the PC as it is here. Remove keeps the PC's copy and takes the phone's away.", style = MaterialTheme.typography.bodySmall)
-                        else Text("The phone's copy is unchanged. Nothing was removed.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("sync_kept"))
+                        else if (done.complete) Text("Every folder and document is on the PC as it is here. Remove takes the phone's copy away once the PC confirms that again; the PC's stays.", style = MaterialTheme.typography.bodySmall)
+                        else Text(
+                            if (done.partial) "Partial sync: what the PC confirmed is marked ✓, the rest is not on the PC. The phone's copy is unchanged; syncing again continues safely."
+                            else "The phone's copy is unchanged. Nothing was removed.",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.testTag("sync_kept"),
+                        )
                     }
                     checked == null -> {
                         Text("Nothing is written until you press Sync. First the PC is asked what it holds at each destination.", style = MaterialTheme.typography.bodySmall)
@@ -714,7 +743,13 @@ private fun SyncDialog(controller: WorkspaceController, ui: WorkspaceUi, project
                     else -> {
                         val absent = checked.items.count { it.state == SyncState.ABSENT }
                         val same = checked.items.count { it.state == SyncState.IDENTICAL }
-                        Text("$absent to create, $same already on the PC, ${checked.conflicts.size} with different bytes on the PC.", modifier = Modifier.testTag("sync_summary"))
+                        val newer = checked.items.count { it.state == SyncState.SUPERSEDED }
+                        Text(
+                            "$absent to create, $same already on the PC, ${checked.conflicts.size} with different bytes on the PC." +
+                                (if (newer > 0) " $newer to update with this phone's newer version." else "") +
+                                (if (checked.folders.isNotEmpty()) " ${checked.folders.size} folder${if (checked.folders.size == 1) "" else "s"}." else ""),
+                            modifier = Modifier.testTag("sync_summary"),
+                        )
                         checked.conflicts.forEach { item ->
                             Column(Modifier.padding(vertical = 4.dp)) {
                                 Text(item.destination, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
@@ -727,7 +762,7 @@ private fun SyncDialog(controller: WorkspaceController, ui: WorkspaceUi, project
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = removeAfter, onCheckedChange = { removeAfter = it }, modifier = Modifier.testTag("sync_remove_after"))
-                            Text("Remove from this phone after the PC confirms every document", style = MaterialTheme.typography.bodySmall)
+                            Text("Remove from this phone after the PC confirms every folder and document", style = MaterialTheme.typography.bodySmall)
                         }
                         problem?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("sync_problem")) }
                     }

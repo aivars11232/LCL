@@ -100,7 +100,9 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
             Box(Modifier.fillMaxSize().safeDrawingPadding()) {
                 Column(Modifier.fillMaxSize()) {
                     ConnectionBanner(connection, onReconnect = container.connection::reconnectNow, onOpenPcs = { screen = Screen.Home })
-                    val back: () -> Unit = { backFrom(screen, container.pcs.activeId() != null)?.let { screen = it } }
+                    // A workspace is in use with a PC, or with a project on this phone.
+                    val workspaceUi by container.workspace.ui.collectAsState()
+                    val back: () -> Unit = { backFrom(screen, container.pcs.activeId() != null || workspaceUi.project?.local == true)?.let { screen = it } }
                     BackHandler(enabled = tab == Tab.Manual) { tab = Tab.Workspace }
                     // Only the dashboard lets system Back leave the app.
                     BackHandler(enabled = tab == Tab.Workspace && screen != Screen.Home) { back() }

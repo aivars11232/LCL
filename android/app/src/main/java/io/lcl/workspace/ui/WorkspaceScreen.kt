@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ModalDrawerSheet
@@ -72,13 +73,19 @@ import io.lcl.workspace.remote.arr
 import io.lcl.workspace.remote.long
 import io.lcl.workspace.remote.obj
 import io.lcl.workspace.remote.str
+import io.lcl.workspace.local.LocalProjects
 import io.lcl.workspace.workspace.FileTree
 import io.lcl.workspace.workspace.LclNames
 import io.lcl.workspace.workspace.OpenDocument
+import io.lcl.workspace.workspace.ProjectInfo
 import io.lcl.workspace.workspace.Readiness
 import io.lcl.workspace.workspace.RoleInfo
 import io.lcl.workspace.workspace.RunGrants
 import io.lcl.workspace.workspace.RunState
+import io.lcl.workspace.workspace.SyncChoice
+import io.lcl.workspace.workspace.SyncPlan
+import io.lcl.workspace.workspace.SyncResult
+import io.lcl.workspace.workspace.SyncState
 import io.lcl.workspace.workspace.TreeRow
 import io.lcl.workspace.workspace.WorkspaceController
 import io.lcl.workspace.workspace.WorkspaceUi
@@ -101,17 +108,21 @@ fun WorkspaceScreen(
     val ui by controller.ui.collectAsState()
     var showFiles by remember { mutableStateOf(ui.active == null) }
     val connected = connection is ConnectionState.Connected
+    // A sync of a phone project, held here, above the layouts: the project
+    // may leave the list (removed once the PC confirmed) and the layout may
+    // change with it, and the dialog still shows the result until Close.
+    var syncing by remember { mutableStateOf<ProjectInfo?>(null) }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 840.dp
         if (wide) {
             Row(Modifier.fillMaxSize()) {
-                FilesPane(controller, ui, connected, onHome, onManual, onOpened = {}, modifier = Modifier.width(300.dp).fillMaxHeight())
+                FilesPane(controller, ui, connected, onHome, onManual, onOpened = {}, onSync = { syncing = it }, modifier = Modifier.width(300.dp).fillMaxHeight())
                 Box(Modifier.width(1.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant))
                 EditorPane(controller, ui, editors, settings, connected, onFiles = null, modifier = Modifier.weight(1f))
             }
         } else if (showFiles || ui.activeDocument == null) {
-            FilesPane(controller, ui, connected, onHome, onManual, onOpened = { showFiles = false }, modifier = Modifier.fillMaxSize())
+            FilesPane(controller, ui, connected, onHome, onManual, onOpened = { showFiles = false }, onSync = { syncing = it }, modifier = Modifier.fillMaxSize())
         } else {
             val drawer = rememberDrawerState(DrawerValue.Closed)
             // With the tree closed, Back shows the files full screen, as before.
@@ -123,13 +134,14 @@ fun WorkspaceScreen(
             FilesDrawer(
                 drawer,
                 width = minOf(maxWidth * 0.86f, 360.dp),
-                files = { close -> FilesPane(controller, ui, connected, onHome, onManual, onOpened = close, modifier = Modifier.fillMaxSize()) },
+                files = { close -> FilesPane(controller, ui, connected, onHome, onManual, onOpened = close, onSync = { syncing = it }, modifier = Modifier.fillMaxSize()) },
             ) { open ->
                 EditorPane(controller, ui, editors, settings, connected, onFiles = open, modifier = Modifier.fillMaxSize())
             }
         }
     }
     ui.run?.paused?.let { pause -> ApprovalDialog(pause, controller) }
+    syncing?.let { SyncDialog(controller, ui, it, onDismiss = { syncing = null }) }
 }
 
 /**
@@ -259,40 +271,70 @@ private fun FilesPane(
     onHome: () -> Unit,
     onManual: () -> Unit,
     onOpened: () -> Unit,
+    onSync: (ProjectInfo) -> Unit,
     modifier: Modifier,
 ) {
     var picking by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf(false) }
     var makingFolder by remember { mutableStateOf(false) }
+    var makingLocal by remember { mutableStateOf(false) }
+    var removing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val project = ui.project
+    // A project on this phone works with no PC; a PC's needs the connection.
+    val usable = project != null && (connected || project.local)
     Column(modifier.padding(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onHome, Modifier.testTag("home")) { Text("Home") }
-            Box(Modifier.weight(1f)) {
-                TextButton(onClick = { picking = true }, enabled = ui.projects.size > 1) {
-                    Text(ui.project?.name ?: "No project", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Box {
+                TextButton(onClick = { picking = true }, modifier = Modifier.testTag("project_picker")) {
+                    Text(project?.name ?: "No project", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 DropdownMenu(expanded = picking, onDismissRequest = { picking = false }) {
-                    ui.projects.forEach { p ->
+                    val local = ui.projects.filter { it.local }
+                    val onPc = ui.projects.filter { !it.local }
+                    Text("On this phone", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+                    local.forEach { p ->
+                        DropdownMenuItem(text = { Text(p.name) }, onClick = { picking = false; controller.selectProject(p.id) }, modifier = Modifier.testTag("pick:${p.id}"))
+                    }
+                    DropdownMenuItem(text = { Text("New project on this phone…") }, onClick = { picking = false; makingLocal = true }, modifier = Modifier.testTag("pick_new_local"))
+                    Text(if (connected) "On the PC" else "On the PC (not connected)", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+                    onPc.forEach { p ->
                         DropdownMenuItem(
                             text = { Text(p.name + if (p.isDefault) "  (default)" else "") },
                             onClick = { picking = false; controller.selectProject(p.id) },
+                            modifier = Modifier.testTag("pick:${p.id}"),
                         )
                     }
                 }
             }
-            TextButton(onClick = { scope.launch { controller.refreshTree() } }, enabled = connected) { Text("Refresh") }
-            TextButton(onClick = { creating = true }, enabled = connected && ui.project != null, modifier = Modifier.testTag("new_document")) { Text("New") }
-            TextButton(onClick = { makingFolder = true }, enabled = connected && ui.project != null, modifier = Modifier.testTag("new_folder")) { Text("Folder") }
+            TextButton(onClick = { scope.launch { controller.refreshTree() } }, enabled = usable) { Text("Refresh") }
+            TextButton(onClick = { creating = true }, enabled = usable, modifier = Modifier.testTag("new_document")) { Text("New") }
+            TextButton(onClick = { makingFolder = true }, enabled = usable, modifier = Modifier.testTag("new_folder")) { Text("Folder") }
+            if (project?.local == true) {
+                TextButton(onClick = { onSync(project) }, enabled = connected, modifier = Modifier.testTag("sync")) { Text("Sync…") }
+                TextButton(onClick = { removing = true }, modifier = Modifier.testTag("remove_local")) { Text("Remove") }
+            }
             ManualIcon(onManual)
         }
-        ui.project?.let {
-            Text(it.root, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        project?.let {
+            Text(
+                if (it.local) "On this phone · Check, Validate, Inspect and Run need a PC" else it.root,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.testTag("project_where"),
+            )
         }
         HorizontalDivider(Modifier.padding(vertical = 4.dp))
         if (ui.explorer.folders[""]?.entries.isNullOrEmpty()) {
             Text(
-                if (connected) "Nothing here yet. New creates a document; Folder makes a folder." else "Connect to the PC to see its projects.",
+                when {
+                    usable -> "Nothing here yet. New creates a document; Folder makes a folder."
+                    project == null && ui.projects.none { it.local } -> "Connect to the PC to see its projects, or make a project on this phone from the project name above."
+                    else -> "Connect to the PC to see its projects."
+                },
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(8.dp),
             )
@@ -308,6 +350,26 @@ private fun FilesPane(
             onOpen = { id -> controller.open(id); onOpened() },
             onReadiness = controller::readiness,
             modifier = Modifier.fillMaxSize(),
+        )
+    }
+    if (makingLocal) {
+        NewLocalProjectDialog(onCreate = { name -> controller.createLocalProject(name); makingLocal = false }, onDismiss = { makingLocal = false })
+    }
+    if (removing && project != null) {
+        val synced = controller.localProjectSynced(project.id)
+        AlertDialog(
+            onDismissRequest = { removing = false },
+            title = { Text("Remove ${project.name} from this phone?") },
+            text = {
+                Text(
+                    if (synced) "Every document of it is on the PC as it is now. The phone's copy is removed; the PC's stays."
+                    else "Not every document of it is on a PC as it is now, so it stays on this phone. Sync it first.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { controller.removeLocalProject(project.id); removing = false }, enabled = synced, modifier = Modifier.testTag("confirm_remove_local")) { Text("Remove") }
+            },
+            dismissButton = { TextButton(onClick = { removing = false }) { Text("Cancel") } },
         )
     }
     if (makingFolder) {
@@ -490,6 +552,7 @@ private fun EditorPane(
     val doc = ui.activeDocument
     var panel by remember { mutableStateOf(Panel.NONE) }
     var confirmReload by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
     var runOptions by remember { mutableStateOf(false) }
     Column(modifier) {
         // Tabs.
@@ -512,17 +575,23 @@ private fun EditorPane(
         }
         val key = WorkspaceUi.key(doc)
         val editor = editors.getOrPut(key) { EditorState() }
+        // A document on this phone is edited and saved with no PC; the
+        // engine's actions need one, and never run over a local copy.
+        val local = LocalProjects.isLocal(doc.project)
+        val editable = connected || local
+        val engine = connected && !local
         // Actions.
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            val edit = connected && doc.conflict == null
+            val edit = editable && doc.conflict == null
             // Phone first: the actions used most come first and fit a phone's width.
             val compact = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-            OutlinedButton(onClick = { controller.save(key) }, enabled = connected && doc.dirty, contentPadding = compact, modifier = Modifier.testTag("action_save")) { Text("Save") }
-            OutlinedButton(onClick = { controller.analyse("check"); panel = Panel.DIAGNOSTICS }, enabled = connected, contentPadding = compact, modifier = Modifier.testTag("action_check")) { Text("Check") }
-            OutlinedButton(onClick = { runOptions = true }, enabled = connected && ui.run?.finished != false, contentPadding = compact, modifier = Modifier.testTag("action_run")) { Text("Run") }
-            OutlinedButton(onClick = { controller.analyse("inspect"); panel = Panel.STRUCTURE }, enabled = connected, contentPadding = compact, modifier = Modifier.testTag("action_inspect")) { Text("Inspect") }
-            OutlinedButton(onClick = { controller.analyse("validate"); panel = Panel.DIAGNOSTICS }, enabled = connected, contentPadding = compact, modifier = Modifier.testTag("action_validate")) { Text("Validate") }
-            OutlinedButton(onClick = { if (doc.dirty) confirmReload = true else controller.reload(key) }, enabled = connected, contentPadding = compact, modifier = Modifier.testTag("action_reload")) { Text("Reload") }
+            OutlinedButton(onClick = { controller.save(key) }, enabled = editable && doc.dirty, contentPadding = compact, modifier = Modifier.testTag("action_save")) { Text("Save") }
+            OutlinedButton(onClick = { controller.analyse("check"); panel = Panel.DIAGNOSTICS }, enabled = engine, contentPadding = compact, modifier = Modifier.testTag("action_check")) { Text("Check") }
+            OutlinedButton(onClick = { runOptions = true }, enabled = engine && ui.run?.finished != false, contentPadding = compact, modifier = Modifier.testTag("action_run")) { Text("Run") }
+            OutlinedButton(onClick = { controller.analyse("inspect"); panel = Panel.STRUCTURE }, enabled = engine, contentPadding = compact, modifier = Modifier.testTag("action_inspect")) { Text("Inspect") }
+            OutlinedButton(onClick = { controller.analyse("validate"); panel = Panel.DIAGNOSTICS }, enabled = engine, contentPadding = compact, modifier = Modifier.testTag("action_validate")) { Text("Validate") }
+            OutlinedButton(onClick = { if (doc.dirty) confirmReload = true else controller.reload(key) }, enabled = editable, contentPadding = compact, modifier = Modifier.testTag("action_reload")) { Text("Reload") }
+            if (local) OutlinedButton(onClick = { confirmDelete = true }, enabled = !doc.dirty, contentPadding = compact, modifier = Modifier.testTag("action_delete")) { Text("Delete") }
             TextButton(onClick = { editor.undo(doc.text)?.let { controller.edit(key, it) } }, enabled = edit && editor.history.canUndo) { Text("Undo") }
             TextButton(onClick = { editor.redo(doc.text)?.let { controller.edit(key, it) } }, enabled = edit && editor.history.canRedo) { Text("Redo") }
             TextButton(onClick = { controller.edit(key, editor.insert(doc.text, INDENT)) }, enabled = edit, modifier = Modifier.testTag("action_indent")) { Text("Indent") }
@@ -535,7 +604,7 @@ private fun EditorPane(
             }
         }
         if (doc.deletedOnPc) Banner("${doc.name} no longer exists on the PC.", LocalLclColors.current.bad) {}
-        if (!connected) Banner("Offline: this copy is read-only until the PC is back.", LocalLclColors.current.symbol) {}
+        if (!connected && !local) Banner("Offline: this copy is read-only until the PC is back.", LocalLclColors.current.symbol) {}
         Row(Modifier.padding(horizontal = 12.dp)) {
             Text(
                 (if (doc.dirty) "Unsaved" else "Saved") + " · ${position(doc.text, editor.selection)}",
@@ -548,7 +617,7 @@ private fun EditorPane(
             document = doc,
             state = editor,
             onTextChange = { controller.edit(key, it) },
-            readOnly = !connected || doc.conflict != null,
+            readOnly = !editable || doc.conflict != null,
             fontSize = settings.fontSize,
             lineNumbers = settings.lineNumbers,
             modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -582,9 +651,121 @@ private fun EditorPane(
             dismissButton = { TextButton(onClick = { confirmReload = false }) { Text("Cancel") } },
         )
     }
+    if (confirmDelete && doc != null) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Delete ${doc.name} from this phone?") },
+            text = { Text("The file is removed from this phone for good.") },
+            confirmButton = { TextButton(onClick = { confirmDelete = false; controller.deleteLocal(WorkspaceUi.key(doc)) }, modifier = Modifier.testTag("confirm_delete")) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+        )
+    }
     if (runOptions) {
         RunOptionsDialog(onRun = { grants -> runOptions = false; controller.run(grants); panel = Panel.RUN }, onDismiss = { runOptions = false })
     }
+}
+
+/**
+ * Sync a project on this phone to a PC project: first a check of what the PC
+ * holds at every destination, nothing written; then the person's choice for
+ * each conflict; then the sync, each document confirmed by the PC; and, if
+ * asked, the phone's copy removed only after every document is confirmed.
+ */
+@Composable
+private fun SyncDialog(controller: WorkspaceController, ui: WorkspaceUi, project: ProjectInfo, onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val pcProjects = ui.projects.filter { !it.local }
+    var target by remember { mutableStateOf(pcProjects.firstOrNull()) }
+    var picking by remember { mutableStateOf(false) }
+    var folder by remember { mutableStateOf(project.name) }
+    var plan by remember { mutableStateOf<SyncPlan?>(null) }
+    var choices by remember { mutableStateOf(mapOf<String, SyncChoice>()) }
+    var removeAfter by remember { mutableStateOf(false) }
+    var problem by remember { mutableStateOf<String?>(null) }
+    var result by remember { mutableStateOf<SyncResult?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text(if (result == null) "Sync ${project.name} to the PC" else if (result!!.complete) "Synced ${project.name}" else "Sync incomplete") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val done = result
+                val checked = plan
+                when {
+                    done != null -> {
+                        done.outcomes.forEach { o ->
+                            Text("${if (o.ok) "✓" else "✕"} ${o.id} → ${o.destination}: ${o.detail}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("sync_outcome:${o.id}"))
+                        }
+                        if (done.removed) Text("Removed from this phone.", fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("sync_removed"))
+                        else if (done.complete) Text("Every document is on the PC as it is here. Remove keeps the PC's copy and takes the phone's away.", style = MaterialTheme.typography.bodySmall)
+                        else Text("The phone's copy is unchanged. Nothing was removed.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("sync_kept"))
+                    }
+                    checked == null -> {
+                        Text("Nothing is written until you press Sync. First the PC is asked what it holds at each destination.", style = MaterialTheme.typography.bodySmall)
+                        Box {
+                            OutlinedButton(onClick = { picking = true }, modifier = Modifier.testTag("sync_pc_project")) { Text("PC project: ${target?.name ?: "none shared"}") }
+                            DropdownMenu(expanded = picking, onDismissRequest = { picking = false }) {
+                                pcProjects.forEach { p -> DropdownMenuItem(text = { Text(p.name) }, onClick = { target = p; picking = false }) }
+                            }
+                        }
+                        OutlinedTextField(value = folder, onValueChange = { folder = it }, singleLine = true, label = { Text("Folder in the PC project (empty for its root)") }, modifier = Modifier.testTag("sync_folder"))
+                        problem?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("sync_problem")) }
+                    }
+                    else -> {
+                        val absent = checked.items.count { it.state == SyncState.ABSENT }
+                        val same = checked.items.count { it.state == SyncState.IDENTICAL }
+                        Text("$absent to create, $same already on the PC, ${checked.conflicts.size} with different bytes on the PC.", modifier = Modifier.testTag("sync_summary"))
+                        checked.conflicts.forEach { item ->
+                            Column(Modifier.padding(vertical = 4.dp)) {
+                                Text(item.destination, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+                                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    for ((choice, label) in listOf(SyncChoice.KEEP_PC to "Keep PC version", SyncChoice.REPLACE to "Replace with phone version", SyncChoice.RENAME to "Save as ${item.renamed.substringAfterLast('/')}")) {
+                                        FilterChip(selected = choices[item.id] == choice, onClick = { choices = choices + (item.id to choice) }, label = { Text(label) }, modifier = Modifier.testTag("sync_choice:${item.id}:${choice.name}"))
+                                    }
+                                }
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = removeAfter, onCheckedChange = { removeAfter = it }, modifier = Modifier.testTag("sync_remove_after"))
+                            Text("Remove from this phone after the PC confirms every document", style = MaterialTheme.typography.bodySmall)
+                        }
+                        problem?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("sync_problem")) }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            val done = result
+            val checked = plan
+            when {
+                done != null -> TextButton(onClick = onDismiss) { Text("Close") }
+                checked == null -> TextButton(
+                    onClick = {
+                        val pcProject = target ?: return@TextButton
+                        busy = true; problem = null
+                        scope.launch {
+                            controller.planSync(project, pcProject, folder).fold({ plan = it }, { problem = it.message })
+                            busy = false
+                        }
+                    },
+                    enabled = !busy && target != null,
+                    modifier = Modifier.testTag("sync_check"),
+                ) { Text("Check") }
+                else -> TextButton(
+                    onClick = {
+                        busy = true; problem = null
+                        scope.launch {
+                            result = controller.runSync(checked, choices, removeAfter)
+                            busy = false
+                        }
+                    },
+                    enabled = !busy && checked.conflicts.all { it.id in choices },
+                    modifier = Modifier.testTag("sync_go"),
+                ) { Text(if (removeAfter) "Sync and remove from phone" else "Sync") }
+            }
+        },
+        dismissButton = { if (result == null) TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") } },
+    )
 }
 
 /** Line and column of the cursor, lines counted by line feeds, columns in characters. */

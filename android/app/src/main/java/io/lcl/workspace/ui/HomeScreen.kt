@@ -16,6 +16,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -26,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -63,7 +65,10 @@ fun HomeScreen(
 ) {
     val update by container.updates.ui.collectAsState()
     var forgetting by remember { mutableStateOf<PcRecord?>(null) }
+    var makingLocal by remember { mutableStateOf(false) }
     val pcs by container.connection.records.collectAsState()
+    val workspace by container.workspace.ui.collectAsState()
+    val localProjects = workspace.projects.filter { it.local }
     val active = state.pcOrNull
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -75,9 +80,29 @@ fun HomeScreen(
         }
         Text(
             "Your PC's LCL on this screen. The PC keeps the projects, runs the engine and decides every " +
-                "effect; this device edits, checks and asks.",
+                "effect; this device edits, checks and asks. Projects on this phone can be made and edited " +
+                "without a PC, and synced to one when you choose.",
             style = MaterialTheme.typography.bodyMedium,
         )
+        // Projects on this phone: usable with no PC at all.
+        Card(Modifier.fillMaxWidth().testTag("local_projects")) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("On this phone", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                if (localProjects.isEmpty()) {
+                    Text("No projects on this phone yet.", style = MaterialTheme.typography.bodySmall)
+                }
+                for (project in localProjects) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(project.name, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        TextButton(
+                            onClick = { container.workspace.selectProject(project.id); onOpenWorkspace() },
+                            modifier = Modifier.testTag("open_local:${project.name}"),
+                        ) { Text("Open") }
+                    }
+                }
+                OutlinedButton(onClick = { makingLocal = true }, Modifier.testTag("new_local_project")) { Text("New project on this phone") }
+            }
+        }
         if (pcs.isEmpty()) {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -131,6 +156,12 @@ fun HomeScreen(
         }
         Spacer(Modifier.height(24.dp))
     }
+    if (makingLocal) {
+        NewLocalProjectDialog(
+            onCreate = { name -> container.workspace.createLocalProject(name); makingLocal = false; onOpenWorkspace() },
+            onDismiss = { makingLocal = false },
+        )
+    }
     forgetting?.let { pc ->
         AlertDialog(
             onDismissRequest = { forgetting = null },
@@ -158,4 +189,23 @@ fun HomeScreen(
             dismissButton = { TextButton(onClick = { forgetting = null }) { Text("Cancel") } },
         )
     }
+}
+
+/** A new project on this phone: one folder under the app's own storage, named here. */
+@Composable
+fun NewLocalProjectDialog(onCreate: (String) -> Unit, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf("") }
+    val valid = name.isNotBlank() && !name.contains('/') && !name.trim().startsWith(".")
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New project on this phone") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("A project kept in this app's private storage. It needs no PC; Sync sends it to one when you choose.", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, label = { Text("Project name") }, modifier = Modifier.testTag("local_project_name"))
+            }
+        },
+        confirmButton = { TextButton(onClick = { onCreate(name.trim()) }, enabled = valid, modifier = Modifier.testTag("create_local_project")) { Text("Create") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }

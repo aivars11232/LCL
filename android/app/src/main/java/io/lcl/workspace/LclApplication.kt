@@ -9,6 +9,7 @@ import io.lcl.workspace.data.AppSettings
 import io.lcl.workspace.data.PcStore
 import io.lcl.workspace.data.PreferencesStore
 import io.lcl.workspace.data.SettingsStore
+import io.lcl.workspace.local.LocalProjects
 import io.lcl.workspace.remote.Discovery
 import io.lcl.workspace.remote.KeystoreIdentities
 import io.lcl.workspace.remote.TlsTransport
@@ -58,7 +59,9 @@ class AppContainer(context: Context) {
         scope = scope,
         discover = { pcId -> withContext(Dispatchers.IO) { Discovery.find(pcId) } },
     )
-    val workspace = WorkspaceController(connection, scope)
+    /** Projects on this phone: app-private files, never cache. */
+    val localProjects = LocalProjects(java.io.File(context.filesDir, "local-projects"))
+    val workspace = WorkspaceController(connection, scope, local = localProjects)
     /** The pairing attempt, which outlives the Pair screen. */
     val pairing = PairingController(connection, scope)
 

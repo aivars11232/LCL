@@ -10,6 +10,9 @@ import android.util.Log
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -426,6 +429,60 @@ class RemoteEndToEndTest {
         shot("p14_03_dashboard_after_back")
         assertEquals("navigation changed the pairing", pcsBefore, pairedPcs())
         waitForLabel("Connected")
+    }
+
+    /**
+     * A project made on the phone, with a document edited there, syncs to
+     * the PC only when asked: the PC is checked first, the document is
+     * created in the shared project, the PC's answer confirms the bytes, and
+     * only then is the phone's copy removed, on request. The host checks the
+     * bytes on the PC's disk afterwards.
+     */
+    @Test
+    fun p17_a_project_made_on_the_phone_syncs_to_the_pc_and_leaves_the_phone() {
+        waitForLabel("Connected")
+        goHome()
+        val storage = File(instrumentation.targetContext.filesDir, "local-projects")
+        File(storage, "Phone").deleteRecursively()
+        rule.onNodeWithTag("new_local_project").performScrollTo().performClick()
+        rule.onNodeWithTag("local_project_name").performTextInput("Phone")
+        rule.onNodeWithTag("create_local_project").performClick()
+        waitFor("project_where")
+        assertTrue(textOf("project_where").startsWith("On this phone"))
+        rule.onNodeWithTag("new_document").performClick()
+        rule.onNodeWithTag("new_name").performTextClearance()
+        rule.onNodeWithTag("new_name").performTextInput("notes")
+        rule.onNodeWithTag("create").performClick()
+        waitFor("source")
+        typeIntoName(" SYNCED FROM PHONE")
+        action("save")
+        rule.waitUntil("saved on the phone", 10_000) { textOf("doc_state").startsWith("Saved") }
+        val text = File(storage, "Phone/notes.lcl").readText()
+        assertTrue(text, text.contains("SYNCED FROM PHONE"))
+        // The engine's actions are off for a phone document, even connected.
+        for (tag in listOf("action_check", "action_run")) rule.onNodeWithTag(tag).assertIsNotEnabled()
+        shot("p17_01_phone_project")
+        // Sync: check first (nothing written), then sync and remove.
+        rule.onNodeWithTag("files").performClick()
+        waitFor("sync")
+        rule.onNodeWithTag("sync").performClick()
+        waitFor("sync_check")
+        // The button's text is its child's: read the merged node.
+        rule.onNodeWithTag("sync_pc_project").assertTextContains("PC project: ", substring = true)
+        rule.onNodeWithTag("sync_pc_project").assert(hasText("none shared", substring = true).not())
+        rule.onNodeWithTag("sync_check").performClick()
+        rule.waitUntil("the check's answer", 30_000) { exists("sync_summary") || exists("sync_problem") }
+        if (exists("sync_problem")) { shot("p17_02_problem"); throw AssertionError("the check failed: ${textOf("sync_problem")}") }
+        assertEquals("1 to create, 0 already on the PC, 0 with different bytes on the PC.", textOf("sync_summary"))
+        shot("p17_02_checked")
+        rule.onNodeWithTag("sync_remove_after").performClick()
+        rule.onNodeWithTag("sync_go").performClick()
+        waitFor("sync_outcome:notes.lcl")
+        shot("p17_03_synced")
+        assertTrue(textOf("sync_outcome:notes.lcl"), textOf("sync_outcome:notes.lcl").contains("created on the PC"))
+        waitFor("sync_removed")
+        assertFalse("the phone's copy stayed", File(storage, "Phone").exists())
+        ready("P17_SYNCED ${text.length}")
     }
 
     /**

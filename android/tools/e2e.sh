@@ -298,6 +298,20 @@ cp "$repo/canonical/LCL_Core_0.3.0/09_CONFORMANCE/PROJECT_FIXTURES/missing_requi
 "$remote" devices --json >"$out/devices-before-core03.json"
 core03=$(payload "$out/pair-core03.json")
 phase p12_core03_roles_manual_readiness_and_identity_conflict -e link "'$core03'"
+
+# 12b. A project made on the phone syncs to the PC's shared project on request:
+# the PC holds exactly the phone's bytes (with the final line feed the PC
+# adds), and the phone's copy is removed only after the PC confirmed them.
+rm -rf "$project/Phone"
+phase p17_a_project_made_on_the_phone_syncs_to_the_pc_and_leaves_the_phone
+check "the phone's document is on the PC exactly, with the PC's final line feed" python3 - "$project/Phone/notes.lcl" <<'PY17'
+import sys
+seed = 'LCL:\n    VERSION: "0.1.0"\n\nSPECIFICATION:\n    ID: example.new\n    NAME: "New document"\n    VERSION: "1.0.0"\n    KIND: kind.task\n    DOMAIN: "general"\n'
+got = open(sys.argv[1], encoding="utf-8").read()
+assert "SYNCED FROM PHONE" in got, got
+assert got.startswith("LCL:") and got.endswith("\n"), repr(got[-40:])
+assert got.replace(" SYNCED FROM PHONE", "") == seed, repr(got)
+PY17
 check "the phone's Rules file is the PC's scaffold" grep -q 'KIND: kind.part.rules' "$project/house_rules.lcl"
 check "the unsaved phone edit stayed on the phone" absent 'KEPT' "$project/house_rules.lcl"
 "$remote" devices --json >"$out/devices-after-core03.json"

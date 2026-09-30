@@ -43,6 +43,23 @@ fn version_reports_the_protocol_and_the_language() {
     assert_eq!(lcl(&["version", "extra"]).code, USAGE);
 }
 
+/// `--version` is the product version alone, on one line. Every published
+/// `lcl-update` (LCL 0.1.0 and 0.1.1) checks a staged and an installed `lcl`
+/// by exactly this answer, compared whole: a second line here and those
+/// installations can never update.
+#[test]
+fn dash_dash_version_is_the_product_version_alone() {
+    let run = lcl(&["--version"]);
+    assert_eq!(run.code, SUCCESS);
+    assert_eq!(run.stdout, format!("lcl {}\n", env!("CARGO_PKG_VERSION")));
+    // `version` begins with the same line and goes on.
+    let full = lcl(&["version"]).stdout;
+    assert!(
+        full.starts_with(&run.stdout) && full.len() > run.stdout.len(),
+        "{full}"
+    );
+}
+
 #[test]
 fn a_valid_document_checks_clean() {
     let root = project("cli_check_ok", "main.lcl", &example("01_MINIMAL_TASK.lcl"));

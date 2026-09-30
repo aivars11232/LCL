@@ -131,14 +131,9 @@ impl Rollback {
 /// their specification package.
 fn healthy(ctx: &Context, version: &str) -> Result<(), String> {
     let limit = Duration::from_secs(60);
-    let answers = |program: &str, args: &[&str], wanted: &str| match run(
-        &ctx.paths.bin.join(program),
-        args,
-        None,
-        limit,
-    )? {
-        (true, out) if out.trim() == wanted => Ok(()),
-        (_, out) => Err(format!("the installed {program} answered {:?}", out.trim())),
+    let answers = |program: &str, args: &[&str], wanted: &str| {
+        stage::reports(&ctx.paths.bin.join(program), args, None, wanted)
+            .map_err(|out| format!("the installed {program} answered {out:?}"))
     };
     answers("lcl-update", &["version"], &format!("lcl-update {version}"))?;
     answers("lcl", &["--version"], &format!("lcl {version}"))?;

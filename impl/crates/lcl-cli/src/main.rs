@@ -96,6 +96,13 @@ fn run(argv: &[String]) -> Result<i32, Failure> {
             print!("{}", args::usage());
             Ok(exit::SUCCESS)
         }
+        // One line, always: every published lcl-update (LCL 0.1.0 and 0.1.1)
+        // checks a staged and an installed `lcl --version` by comparing its
+        // whole answer with `lcl X.Y.Z`, and updates only when it matches.
+        Command::ProductVersion => {
+            println!("lcl {}", env!("CARGO_PKG_VERSION"));
+            Ok(exit::SUCCESS)
+        }
         Command::Version(common) => {
             // The languages a command's engines judge documents under: Core
             // 0.1.0 always, and Core 0.2.0 only when a package named here opens

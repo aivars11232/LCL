@@ -50,6 +50,8 @@ pub enum Command {
     Help,
     /// Print the tool, protocol and language versions.
     Version(Common),
+    /// `--version`: print the product version alone, one line.
+    ProductVersion,
 }
 
 /// One document command's subject and options.
@@ -124,7 +126,8 @@ pub fn parse(argv: &[String]) -> Result<Command, UsageError> {
     let rest = &argv[1..];
     match first.as_str() {
         "help" | "--help" | "-h" => Ok(Command::Help),
-        "version" | "--version" => Ok(Command::Version(only_options(rest)?)),
+        "version" => Ok(Command::Version(only_options(rest)?)),
+        "--version" => only_options(rest).map(|_| Command::ProductVersion),
         "check" => Ok(Command::Check(document(rest)?)),
         "validate" => Ok(Command::Validate(document(rest)?)),
         "run" => Ok(Command::Run(document(rest)?)),
@@ -362,6 +365,7 @@ pub fn usage() -> String {
             "emit registry-derived syntax metadata for editors and tooling",
         ),
         ("version", "print the tool, protocol and language versions"),
+        ("--version", "print the product version alone, as lcl X.Y.Z"),
         ("help", "print this text"),
     ] {
         out.push_str(&format!("    {name:<16}{description}\n"));

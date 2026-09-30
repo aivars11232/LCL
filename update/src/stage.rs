@@ -100,6 +100,23 @@ pub(crate) fn run(
     Ok((status.success(), String::from_utf8_lossy(&out).into_owned()))
 }
 
+/// Whether `program args` succeeds with `wanted` as its first line: how
+/// `lcl --version` and `lcl-update version` name the product version. Only the
+/// first line counts, because `lcl` goes on to name its protocol and
+/// languages; comparing the whole answer refused every real release (LCL
+/// 0.1.0 and 0.1.1 did, so they never updated). On a mismatch, the answer.
+pub(crate) fn reports(
+    program: &Path,
+    args: &[&str],
+    dir: Option<&Path>,
+    wanted: &str,
+) -> Result<(), String> {
+    match run(program, args, dir, Duration::from_secs(60))? {
+        (true, out) if out.lines().next().map(str::trim) == Some(wanted) => Ok(()),
+        (_, out) => Err(out.trim().to_string()),
+    }
+}
+
 /// The SHA-256 of `bytes`, by `ring`.
 pub fn sha256(bytes: &[u8]) -> String {
     trust::hex(ring::digest::digest(&ring::digest::SHA256, bytes).as_ref())
@@ -181,14 +198,9 @@ pub fn validate(payload: &Path, manifest: &Manifest) -> Result<(), String> {
     }
     let version = manifest.product_version.to_string();
     let limit = Duration::from_secs(60);
-    let answers = |program: &str, args: &[&str], wanted: &str| -> Result<(), String> {
-        match run(&payload.join(program), args, Some(payload), limit)? {
-            (true, out) if out.trim() == wanted => Ok(()),
-            (_, out) => Err(format!(
-                "the staged {program} answered {:?}, not {wanted:?}",
-                out.trim()
-            )),
-        }
+    let answers = |program: &str, args: &[&str], wanted: &str| {
+        reports(&payload.join(program), args, Some(payload), wanted)
+            .map_err(|out| format!("the staged {program} answered {out:?}, not {wanted:?}"))
     };
     answers(
         "bin/lcl-update",

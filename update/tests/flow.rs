@@ -12,7 +12,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// A release's assets, and a way to spoil them.
 type Assets = Vec<(&'static str, Vec<u8>)>;
@@ -251,7 +251,10 @@ fn payload(dir: &Path, version: &str, lcl_update: Option<&Path>, flaw: Flaw) -> 
     };
     write(
         &top.join("bin/lcl"),
-        &format!("#!/bin/sh\ncase \"$1\" in\n--version) echo \"lcl {version}\" ;;\nspec) {unhealthy}\n [ -d \"$3\" ] || exit 2 ;;\nesac\n"),
+        // `lcl --version` answers as the real LCL 0.1.0 and 0.1.1 binaries
+        // do: the product line, then the protocol and the language. The
+        // updater must read the first line, or it refuses every real release.
+        &format!("#!/bin/sh\ncase \"$1\" in\n--version) printf 'lcl {version}\\nprotocol lcl.engine/1\\nlanguage 0.1.0\\n' ;;\nspec) {unhealthy}\n [ -d \"$3\" ] || exit 2 ;;\nesac\n"),
         0o755,
     );
     write(
@@ -345,6 +348,27 @@ fn manifest(version: &str, artifact: &[u8], architecture: &str) -> Vec<u8> {
     .into_bytes()
 }
 
+/// A release newer than the updater under test, whatever the product version
+/// is: the next minor version. `later` is newer still.
+fn next() -> &'static str {
+    static NEXT: OnceLock<String> = OnceLock::new();
+    NEXT.get_or_init(|| minor_after(1))
+}
+
+fn later() -> &'static str {
+    static LATER: OnceLock<String> = OnceLock::new();
+    LATER.get_or_init(|| minor_after(2))
+}
+
+fn minor_after(step: u64) -> String {
+    let v = lcl_update::version::Version::parse(lcl_update::PRODUCT_VERSION).unwrap();
+    format!("{}.{}.0", v.major, v.minor + step)
+}
+
+fn leak(text: String) -> &'static str {
+    Box::leak(text.into_boxed_str())
+}
+
 /// A home with LCL 0.1.0 installed by the real install.sh, carrying the real
 /// (test) updater, and user data beside it.
 fn installed_home(name: &str, signer: &Signer, remote_running: bool) -> Home {
@@ -424,7 +448,7 @@ fn a_check_offers_only_a_newer_signed_stable_release() {
     let (ok, json) = home.update(&server, &["check"]);
     assert!(ok);
     assert_eq!(state_of(&json).0, "up_to_date");
-    for (v, pre) in [("0.1.0", false), ("0.0.9", false), ("0.9.0", true)] {
+    for (v, pre) in [("0.1.0", false), ("0.0.9", false), (later(), true)] {
         server.publish(&format!("v{v}"), pre, &version(v));
         assert_eq!(
             state_of(&home.update(&server, &["check"]).1).0,
@@ -434,18 +458,18 @@ fn a_check_offers_only_a_newer_signed_stable_release() {
     }
 
     // A newer one, signed: offered, with what a person is shown.
-    server.publish("v0.2.0", false, &version("0.2.0"));
+    server.publish(leak(format!("v{}", next())), false, &version(next()));
     let (ok, json) = home.update(&server, &["check"]);
     assert!(ok);
     assert_eq!(state_of(&json).0, "update_available");
     let available = json.get("state").unwrap().get("available").unwrap();
     assert_eq!(
         available.get("version").and_then(Json::as_str),
-        Some("0.2.0")
+        Some(next())
     );
     assert_eq!(
         available.get("release_notes").and_then(Json::as_str),
-        Some("Test release 0.2.0.")
+        Some(format!("Test release {}.", next()).as_str())
     );
     assert_eq!(json.get("check_due").and_then(Json::as_bool), Some(false));
 
@@ -485,16 +509,20 @@ fn a_check_offers_only_a_newer_signed_stable_release() {
         (
             "wrong architecture",
             Box::new(|a| {
-                a[0].1 = manifest("0.2.0", b"artifact 0.2.0", "aarch64-linux");
+                a[0].1 = manifest(
+                    next(),
+                    format!("artifact {}", next()).as_bytes(),
+                    "aarch64-linux",
+                );
                 a[1].1 = signer.sign(&a[0].1);
             }),
             "unsupported",
         ),
     ];
     for (what, change, kind) in cases {
-        let mut assets = version("0.2.0");
+        let mut assets = version(next());
         change(&mut assets);
-        server.publish("v0.2.0", false, &assets);
+        server.publish(leak(format!("v{}", next())), false, &assets);
         let (ok, json) = home.update(&server, &["check"]);
         assert!(!ok, "{what}");
         assert_eq!(
@@ -522,18 +550,21 @@ fn a_download_is_staged_only_when_it_is_exactly_what_was_signed() {
     let home = installed_home("download", &signer, false);
     let before = home.installed();
     let publish = |artifact: &[u8], served: &[u8]| {
-        let m = manifest("0.2.0", artifact, "x86_64-linux");
+        let m = manifest(next(), artifact, "x86_64-linux");
         server.publish(
-            "v0.2.0",
+            leak(format!("v{}", next())),
             false,
             &[
                 ("update-manifest.json", m.clone()),
                 ("update-manifest.sig", signer.sign(&m)),
-                ("lcl-0.2.0-linux-x86_64.tar.gz", served.to_vec()),
+                (
+                    leak(format!("lcl-{}-linux-x86_64.tar.gz", next())),
+                    served.to_vec(),
+                ),
             ],
         );
     };
-    let good = tarball(&payload(&home.root.join("new"), "0.2.0", None, Flaw::None));
+    let good = tarball(&payload(&home.root.join("new"), next(), None, Flaw::None));
 
     // The artifact served is not the one signed (same size, other bytes).
     let mut altered = good.clone();
@@ -558,7 +589,7 @@ fn a_download_is_staged_only_when_it_is_exactly_what_was_signed() {
     // A payload whose own binaries do not report the signed version.
     let wrong = tarball(&payload(
         &home.root.join("wrong"),
-        "0.2.0",
+        next(),
         None,
         Flaw::WrongStagedVersion,
     ));
@@ -581,15 +612,18 @@ fn an_update_installs_keeps_user_data_restarts_only_a_running_service_and_cleans
     let server = Server::start();
     let home = installed_home("apply", &signer, true);
     let data = user_data(&home);
-    let artifact = tarball(&payload(&home.root.join("new"), "0.2.0", None, Flaw::None));
-    let m = manifest("0.2.0", &artifact, "x86_64-linux");
+    let artifact = tarball(&payload(&home.root.join("new"), next(), None, Flaw::None));
+    let m = manifest(next(), &artifact, "x86_64-linux");
     server.publish(
-        "v0.2.0",
+        leak(format!("v{}", next())),
         false,
         &[
             ("update-manifest.json", m.clone()),
             ("update-manifest.sig", signer.sign(&m)),
-            ("lcl-0.2.0-linux-x86_64.tar.gz", artifact),
+            (
+                leak(format!("lcl-{}-linux-x86_64.tar.gz", next())),
+                artifact,
+            ),
         ],
     );
     assert!(home.update(&server, &["check"]).0);
@@ -599,6 +633,17 @@ fn an_update_installs_keeps_user_data_restarts_only_a_running_service_and_cleans
     let (ok, json) = home.update(&server, &["apply"]);
     assert!(ok, "{json:?}");
     assert_eq!(state_of(&json).0, "up_to_date");
+    // Nothing is left to offer: the update found is gone, and what was
+    // installed is recorded.
+    let state = json.get("state").unwrap();
+    assert_eq!(state.get("available"), Some(&Json::Null));
+    assert_eq!(
+        state
+            .get("updated")
+            .and_then(|u| u.get("version"))
+            .and_then(Json::as_str),
+        Some(next())
+    );
 
     let version = |program: &str, arg: &str| {
         String::from_utf8(
@@ -610,11 +655,18 @@ fn an_update_installs_keeps_user_data_restarts_only_a_running_service_and_cleans
         )
         .unwrap()
     };
-    assert_eq!(version("lcl", "--version").trim(), "lcl 0.2.0");
-    assert_eq!(version("lcl-update", "version").trim(), "lcl-update 0.2.0");
+    assert_eq!(
+        version("lcl", "--version").lines().next(),
+        Some(format!("lcl {}", next()).as_str()),
+        "the binaries were replaced"
+    );
+    assert_eq!(
+        version("lcl-update", "version").trim(),
+        format!("lcl-update {}", next())
+    );
     assert_eq!(
         version("lcl-remote", "").trim(),
-        "remote 0.2.0",
+        format!("remote {}", next()),
         "an installed remote service is updated too"
     );
     assert_eq!(
@@ -645,15 +697,18 @@ fn a_failed_installation_is_rolled_back_and_a_stopped_service_stays_stopped() {
         );
         let before = home.installed();
         let data = user_data(&home);
-        let artifact = tarball(&payload(&home.root.join("new"), "0.2.0", None, flaw));
-        let m = manifest("0.2.0", &artifact, "x86_64-linux");
+        let artifact = tarball(&payload(&home.root.join("new"), next(), None, flaw));
+        let m = manifest(next(), &artifact, "x86_64-linux");
         server.publish(
-            "v0.2.0",
+            leak(format!("v{}", next())),
             false,
             &[
                 ("update-manifest.json", m.clone()),
                 ("update-manifest.sig", signer.sign(&m)),
-                ("lcl-0.2.0-linux-x86_64.tar.gz", artifact),
+                (
+                    leak(format!("lcl-{}-linux-x86_64.tar.gz", next())),
+                    artifact,
+                ),
             ],
         );
         assert!(home.update(&server, &["check"]).0);

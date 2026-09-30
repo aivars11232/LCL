@@ -36,6 +36,9 @@ mkdir -p "$out"
 export XDG_CONFIG_HOME=$work/config XDG_STATE_HOME=$work/state XDG_DATA_HOME=$work/data
 project=$XDG_DATA_HOME/lcl/workspace
 todo=$work/todo
+# The run's work folder starts empty: a backup file left by an earlier run on
+# the same E2E_DIR makes the run's core.create refuse, and p1 fail.
+rm -rf "$todo"
 mkdir -p "$project" "$todo"
 printf 'Buy milk\n' >"$todo/todo.txt"
 # The manual's file example, pointed at this run's own folder.

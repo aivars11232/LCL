@@ -675,10 +675,17 @@ fn a_0_2_0_candidate_records_both_languages() {
         "localized",
     )
     .succeeded();
+    // The candidate is named by the product version (0.1.0 in this fixture),
+    // whatever Core bundle it carries; the provenance records both.
     let recorded =
-        std::fs::read_to_string(candidate.join("lcl-0.2.0-PROVENANCE.txt")).expect("provenance");
+        std::fs::read_to_string(candidate.join("lcl-0.1.0-PROVENANCE.txt")).expect("provenance");
     assert!(
         recorded.contains("language version: 0.1.0 0.2.0\n"),
+        "{recorded}"
+    );
+    assert!(
+        recorded.contains("core bundle:      0.2.0\n")
+            && recorded.contains("product version:  0.1.0\n"),
         "{recorded}"
     );
 
@@ -687,10 +694,10 @@ fn a_0_2_0_candidate_records_both_languages() {
     std::fs::create_dir_all(&unpacked).expect("writable");
     shell(&[
         r#"tar -xzf "$1" -C "$2""#,
-        s(&candidate.join("lcl-0.2.0-linux-x86_64.tar.gz")),
+        s(&candidate.join(format!("{NAME}.tar.gz"))),
         s(&unpacked),
     ]);
-    let share = unpacked.join("lcl-0.2.0-linux-x86_64/share");
+    let share = unpacked.join(NAME).join("share");
     for version in ["0.1.0", "0.2.0"] {
         assert_eq!(
             std::fs::read_to_string(share.join(format!("LCL_Core_{version}/VERSION.txt"))).ok(),

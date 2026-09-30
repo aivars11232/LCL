@@ -178,8 +178,9 @@ distribution/plugins/dependencies. Provision these before going offline;
 
 ## Release version
 
-`LCL_RELEASE_VERSION=0.2.0 packaging/build_release.sh` builds a separate
-`lcl-0.2.0-linux-x86_64` candidate. It bundles the Core 0.1.0 package and the
+`LCL_RELEASE_VERSION=0.2.0 packaging/build_release.sh` builds a candidate
+carrying the Core 0.2.0 bundle (named by the product version, as every
+candidate is). It bundles the Core 0.1.0 package and the
 Core 0.2.0 package: `install.sh` installs both, the desktop launcher passes the
 0.2.0 package as `--localized-spec`, and the provenance records both package
 identities. Without the variable the newest Core package in the source is

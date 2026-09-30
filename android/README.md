@@ -250,7 +250,9 @@ may keep it in a StrongBox secure element, in a trusted execution environment
 only a handle. The app requires none of the hardware kinds, so phones without
 them are supported, and **About → This device's key** shows what Android
 reports for the key. The emulator the app is tested on reports a software
-key; no physical phone has been checked yet.
+key. The app has been used on a physical phone (see below), but which
+key-protection backing that phone reports has not been systematically
+verified.
 
 ## Working on a document
 
@@ -274,16 +276,28 @@ key; no physical phone has been checked yet.
   documents, editing, Save (atomic: the bytes replace the file in one rename,
   so a failed save leaves the previous version whole), Reload and Delete.
   The phone has no LCL engine, so Check, Validate, Inspect and Run are off
-  for them until the project is on a PC. **Sync…** (connected) sends one to
-  a PC project's folder on request, never on its own: the PC is asked first
-  what it holds at each destination — nothing there, the same bytes, or
-  different ones, which the person decides (keep the PC's, replace, or save
-  beside as `name-phone.lcl`) — then each document is created or replaced
-  and counts as synced only when the PC's answer names the bytes sent. A
-  lost connection stops the rest and changes nothing on the phone. **Remove**
-  takes the phone's copy away only when every document is on a PC as it is
-  now, and only when asked; **Sync and remove from phone** does both, in that
-  order.
+  for them until the project is on a PC. The Files pane says where such a
+  project stands: local, unsaved changes, synced, changed since sync.
+  **Sync…** (connected; the PC needs LCL 0.5.1 or newer, which has the
+  folder operations) sends the whole project — every folder, empty ones too,
+  and every document, read from the disk in full, never from the explorer's
+  4096-entry listing — to a PC project's folder on request, never on its
+  own. It refuses while any document of the project has unsaved edits,
+  naming them, because what it sends is the disk. The PC is asked first what
+  it holds at each destination — nothing, the same bytes, different ones
+  (the person decides: keep the PC's, replace, or save beside as
+  `name-phone.lcl`, and that copy stays the destination on later syncs while
+  the PC holds what it confirmed), or the version this phone last synced
+  there, which the newer text replaces without a question. Each entry counts
+  as synced only when the PC's answer names it, and the disk is read again at
+  the end: a document edited meanwhile is not synced. A lost connection or a
+  refused file stops the rest and is reported as a partial sync; the phone's
+  copy stays whole and the next sync continues. **Remove** takes the phone's
+  copy away only when asked, only after the PC, asked again just then,
+  confirms it still holds every folder and document as they are on the phone
+  (a PC file changed or deleted since refuses, naming it), and it is reported
+  removed only once it is gone; **Sync and remove from phone** does both,
+  with the confirmations of that same complete sync.
 - **Editor.** Monospace text that is always visible; line numbers that start
   at 1, follow every inserted or deleted line at once, scroll with the text and
   can be hidden; no wrapping, with horizontal scrolling for long lines;

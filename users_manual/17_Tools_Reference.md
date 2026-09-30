@@ -22,7 +22,7 @@ lcl <command> [options] [document]
 | `lcl spec` | | reports the specification package's path, version, identity and authority |
 | `lcl syntax` | | prints syntax facts for editors and tools: the recognised endings (`.lcl.txt`, `.lcl`), encoding, word counts |
 | `lcl version` | | prints the tool, protocol and language versions |
-| `lcl --version` | | prints the product version alone, on one line: `lcl 0.5.2` |
+| `lcl --version` | | prints the product version alone, on one line: `lcl 0.9.0` |
 | `lcl help` | | prints the built-in help |
 
 The package cache used by `vendor` and `list` must be declared as `"cache"`
@@ -183,8 +183,10 @@ None of them is ever written into a document or a project file, and none
 changes what a document means or how it runs.
 
 LCL for Android can also keep projects on the phone itself, edit them
-without a PC, and sync them into a PC project when you choose; see
-`android/README.md` in the source. Settings also has **Android devices** when `lcl-remote` is installed beside
+without a PC, and sync them into a PC project when you choose: the PC needs
+LCL 0.5.1 or newer, a sync sends what is on the phone's disk (so it waits
+for unsaved edits to be saved), and the phone's copy is removed only after
+the PC confirms it holds everything; see `android/README.md` in the source. Settings also has **Android devices** when `lcl-remote` is installed beside
 `lcl-workspace` or on `PATH`: a pairing QR code for LCL for Android, the
 pending pairing requests, the paired devices with whether each is online and
 when it last connected, and **Revoke**. Scanning the QR code does not trust

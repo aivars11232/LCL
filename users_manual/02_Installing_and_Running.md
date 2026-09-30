@@ -17,13 +17,13 @@
   why that matters.
 * The LCL release archive, `lcl-<version>-linux-x86_64.tar.gz`, from the
   latest stable release on GitHub:
-  <https://github.com/aivars11232/LCL/releases/latest>. For LCL 0.5.2 that is
-  `lcl-0.5.2-linux-x86_64.tar.gz`: file names carry the full version number,
-  and LCL itself shows a release ending in `.0` without that `.0` (LCL 0.5 is
-  release 0.5.0). The release also lists the archive's SHA-256 fingerprint, in
-  `lcl-0.5.2-linux-x86_64.sha256`.
+  <https://github.com/aivars11232/LCL/releases/latest>. File names carry the
+  full version number (for LCL 0.9, the version this manual describes, that is
+  `lcl-0.9.0-linux-x86_64.tar.gz`), and LCL itself shows a release ending in
+  `.0` without that `.0` (LCL 0.5 is release 0.5.0). The release also lists the
+  archive's SHA-256 fingerprint, in `lcl-<version>-linux-x86_64.sha256`.
 
-This version, LCL 0.5.2, is the version of the *product*: the programs and the
+This manual describes LCL 0.9, the version of the *product*: the programs and the
 app. The language has versions of its own, Core 0.1.0 to 0.3.0, which the
 rest of this chapter names where they matter.
 
@@ -33,7 +33,7 @@ Unpack the archive and run its installer:
 
 ```
 $ mkdir lcl-install
-$ tar -xzf lcl-0.5.2-linux-x86_64.tar.gz -C lcl-install
+$ tar -xzf lcl-0.9.0-linux-x86_64.tar.gz -C lcl-install
 $ cd lcl-install/*/
 $ ./install.sh
 ```
@@ -84,7 +84,7 @@ Check that everything works:
 
 ```
 $ lcl version
-lcl 0.5.2
+lcl 0.9.0
 protocol lcl.engine/1
 language 0.1.0
 
@@ -298,11 +298,17 @@ Using it:
   the first 4096, and the tree says **Folder limited to 4096 entries.**
   under it. Other folders of the project are unaffected. Documents already
   open, or opened another way, work as usual.
-* **⌂** goes to the **Projects home**: the projects in your Projects folder
-  (see **Settings** below), to choose one, with **+ New project** and **Open
-  project folder…** for any folder by its full path. A folder without
-  `lcl.project.json` opens as a project of its own too. Switching projects
-  never loses your work: the tabs of the project you leave, unsaved edits
+* **⌂** goes to the **Projects home**: your LCL projects, to choose one,
+  with **+ New project** and **Open project folder…** for any folder by its
+  full path. A project is listed there for one of two reasons: it is a folder
+  of your Projects folder (see **Settings** below) that declares itself with
+  `lcl.project.json`, or it was made by **New project** or kept on request —
+  **Open project folder…** has **Keep in Projects Home** for that, and the
+  **⋯** menu of a kept project has **Remove from Projects Home**, which only
+  forgets the project and touches nothing on disk. Your other folders in the
+  Projects folder are never listed just for being there. A folder without
+  `lcl.project.json` opens as a project of its own, marked **Rootless** on
+  the home. Switching projects never loses your work: the tabs of the project you leave, unsaved edits
   included, are kept in the window and come back when you return to it, and
   the Projects home marks such a project with **●**. Nothing is saved by
   switching; save with **Save** or Ctrl+S when you choose. Closing the
@@ -321,12 +327,12 @@ Using it:
   (see Chapter 17), so otherwise a new start begins with their defaults.
   **Files** chooses the **default file type** for new documents and the
   **Projects folder**: where **New project** creates every new project, each
-  in a folder of its own, and whose projects the **Projects home** offers when
-  you start **LCL Workspace** from the desktop menu; the Projects folder
-  itself is never opened as one project. **Open folder** shows the Projects
-  home in the open window. These two are kept for your
-  computer, in `~/.config/lcl/workspace-settings.json`, so they apply to every
-  launch. Type the folder's full path, starting with `/`. **Check** tells you
+  in a folder of its own, and whose declared projects the **Projects home**
+  offers, with the projects kept there, when you start **LCL Workspace** from
+  the desktop menu; the Projects folder itself is never opened as one
+  project. **Open folder** shows the Projects home in the open window. These
+  two are kept for your computer, in `~/.config/lcl/workspace-settings.json`
+  (with the list of kept projects), so they apply to every launch. Type the folder's full path, starting with `/`. **Check** tells you
   whether it exists, and a missing folder is only created if you press
   **Create this folder**. Leave the path empty to use the built-in folder,
   `~/.local/share/lcl/workspace`. A folder or document you open yourself,

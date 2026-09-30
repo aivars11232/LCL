@@ -354,6 +354,12 @@ async function harness(options) {
         ? await (await fetch(new URL(`/?t=${token}`, origin), { signal: AbortSignal.timeout(4000) })).text()
         : await fs.readFile(path.join(path.dirname(options.app), "index.html"), "utf8");
     },
+    /// The stylesheet as served: the real server's, or the file it embeds.
+    async stylesheet() {
+      return options.server
+        ? await (await fetch(new URL(`/app.css?t=${token}`, origin), { signal: AbortSignal.timeout(4000) })).text()
+        : await fs.readFile(path.join(path.dirname(options.app), "app.css"), "utf8");
+    },
     /// Everything painted on the visible layer, as text.
     painted() {
       const collect = node => (node.children.length
@@ -1263,6 +1269,32 @@ const uiCases = [
     assert.equal(h.get("#act-refresh").disabled, false);
     assert(!h.modalOpen());
     for (const id of ["outside-new.lcl", "outside-dir/inner.lcl", "refresh-renamed.lcl", "refresh/a.lcl"]) await h.removeBehind(id);
+  }],
+  ["a dialog never outgrows the window: its body scrolls between a fixed title and buttons", async h => {
+    // Geometry is measured in a real browser (the release smoke); here the
+    // rules that produce it are held in place, as the page serves them.
+    const rules = new Map();
+    for (const block of (await h.stylesheet()).replace(/\/\*[\s\S]*?\*\//g, "").split("}")) {
+      const [selector, body] = block.split("{");
+      if (body !== undefined) rules.set(selector.trim().replace(/\s+/g, " "), body.replace(/\s+/g, " "));
+    }
+    const rule = selector => {
+      assert(rules.has(selector), `no rule for ${selector}`);
+      return rules.get(selector);
+    };
+    assert.match(rule(".backdrop"), /padding: 16px/);
+    for (const want of [/max-height: 100%/, /display: flex/, /flex-direction: column/, /max-width: min\(560px, 100%\)/]) {
+      assert.match(rule(".modal"), want);
+    }
+    for (const want of [/flex: 1 1 auto/, /min-height: 0/, /overflow-y: auto/]) assert.match(rule("#modal-body"), want);
+    assert.match(rule(".modal-actions"), /flex: none/);
+    assert.match(rule(".modal h2"), /flex: none/);
+    // The body is shared between dialogs: each new one starts at its top.
+    h.run("openSettings()");
+    h.get("#modal-body").scrollTop = 900;
+    h.run("closeModal(); newDocument()");
+    assert.equal(h.get("#modal-body").scrollTop, 0);
+    h.run("closeModal()");
   }],
   ["Updates names the product version as people read it, never a package number", async h => {
     const lines = JSON.parse(h.run(`(() => {

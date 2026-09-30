@@ -377,18 +377,24 @@ button.danger:hover:not(:disabled) { filter: brightness(1.1); color: var(--accen
 .backdrop {
   position: fixed; inset: 0; background: rgba(0,0,0,0.55);
   display: flex; align-items: center; justify-content: center; z-index: 50;
+  padding: 16px;
 }
 .backdrop[hidden] { display: none; }
+/* A dialog never outgrows the window, whatever its content or the browser's
+ * zoom: the title and the buttons stay in view, and only the body between
+ * them scrolls. */
 .modal {
   background: var(--bg-raised); border: 1px solid var(--line); border-radius: 8px;
-  padding: 18px 20px; min-width: 380px; max-width: 560px;
+  padding: 18px 20px; min-width: min(380px, 100%); max-width: min(560px, 100%);
+  max-height: 100%; display: flex; flex-direction: column;
   box-shadow: 0 18px 44px rgba(0,0,0,0.5);
 }
-.modal h2 { margin: 0 0 10px; font-size: 14px; }
+.modal h2 { margin: 0 0 10px; font-size: 14px; flex: none; }
+#modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .modal .field { width: 100%; padding: 7px 9px; margin: 8px 0;
   background: var(--bg-sunken); border: 1px solid var(--line);
   border-radius: 4px; color: var(--ink); font: 12px var(--mono); }
-.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+.modal-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 14px; flex: none; }
 .modal .request { font-family: var(--mono); font-size: 11.5px; line-height: 1.7; }
 .modal .settings { display: grid; grid-template-columns: auto 1fr; gap: 10px 14px; align-items: center; margin: 6px 0; }
 .modal .settings h3 { grid-column: 1 / -1; margin: 6px 0 0; font-size: 10.5px;

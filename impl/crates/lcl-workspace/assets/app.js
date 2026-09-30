@@ -314,6 +314,9 @@ function modal(title, build, actions) {
   $("#modal-title").textContent = title;
   const body = $("#modal-body");
   body.replaceChildren();
+  /* The body is shared: a new dialog starts at its top, not where the last
+   * one was scrolled to. */
+  body.scrollTop = 0;
   build(body);
   const bar = $("#modal-actions");
   bar.replaceChildren();

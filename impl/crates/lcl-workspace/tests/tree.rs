@@ -258,3 +258,122 @@ fn a_document_below_the_depth_limit_is_reported() {
         .iter()
         .any(|e| e.id.ends_with("too-deep.lcl")));
 }
+
+/// The ids a listing shows, and whether it says it left anything out.
+fn shown(scratch: &Scratch) -> (Vec<String>, bool) {
+    let listing = open(scratch).listing().unwrap();
+    (
+        listing.entries.into_iter().map(|e| e.id).collect(),
+        listing.truncated,
+    )
+}
+
+#[test]
+fn a_folder_is_listed_only_on_the_way_to_a_document() {
+    let scratch = Scratch::new("tree-prune");
+    scratch.put("main.lcl.txt", "LCL:\n");
+    scratch.put("rules/rules.lcl.txt", "LCL:\n");
+    scratch.put("outputs/result.json", "{}");
+    scratch.put("logs/run.log", "ran\n");
+    scratch.put("work/cache.bin", "\u{1}");
+    scratch.put("notes.txt", "not a document");
+    std::fs::create_dir(scratch.join("empty-folder")).unwrap();
+    assert_eq!(
+        shown(&scratch),
+        (
+            vec![
+                "main.lcl.txt".to_string(),
+                "rules".to_string(),
+                "rules/rules.lcl.txt".to_string()
+            ],
+            false
+        )
+    );
+    // Visibility only: nothing on disk is touched.
+    for kept in [
+        "outputs/result.json",
+        "logs/run.log",
+        "work/cache.bin",
+        "empty-folder",
+    ] {
+        assert!(scratch.join(kept).exists(), "{kept}");
+    }
+}
+
+#[test]
+fn no_folder_name_is_hidden_when_a_document_is_inside() {
+    let scratch = Scratch::new("tree-no-blacklist");
+    scratch.put("docs/rules.lcl", "LCL:\n");
+    scratch.put("data/model.lcl.txt", "LCL:\n");
+    scratch.put("outputs/deep/er/x.lcl", "LCL:\n");
+    scratch.put("outputs/deep/other.json", "{}");
+    scratch.put("work/a/b/c.bin", "");
+    std::fs::create_dir_all(scratch.join("docs/empty/inside")).unwrap();
+    let (ids, truncated) = shown(&scratch);
+    assert_eq!(
+        ids,
+        [
+            "data",
+            "data/model.lcl.txt",
+            "docs",
+            "docs/rules.lcl",
+            "outputs",
+            "outputs/deep",
+            "outputs/deep/er",
+            "outputs/deep/er/x.lcl"
+        ]
+    );
+    assert!(!truncated);
+}
+
+#[test]
+fn folders_of_other_files_never_use_up_the_entry_limit() {
+    let scratch = Scratch::new("tree-clutter-budget");
+    // Clutter before and after the documents, in name order.
+    for i in 0..300 {
+        scratch.put(&format!("a_clutter_{i:03}/data.bin"), "");
+        scratch.put(&format!("zz_clutter_{i:03}/log.txt"), "");
+    }
+    for i in 0..MAX_ENTRIES {
+        scratch.put(&format!("d{i:05}.lcl"), "");
+    }
+    let (ids, truncated) = shown(&scratch);
+    assert_eq!(ids.len(), MAX_ENTRIES);
+    assert!(ids.iter().all(|id| id.ends_with(".lcl")));
+    assert!(
+        !truncated,
+        "folders without documents made a complete tree look cut short"
+    );
+
+    // One document more, inside a folder met at the limit: that one is cut.
+    scratch.put("zz_more/x.lcl", "");
+    let (ids, truncated) = shown(&scratch);
+    assert_eq!(ids.len(), MAX_ENTRIES);
+    assert!(truncated);
+}
+
+#[test]
+fn a_deep_folder_without_documents_is_not_a_truncation() {
+    let deep = (0..MAX_DEPTH + 3)
+        .map(|i| format!("l{i}"))
+        .collect::<Vec<_>>()
+        .join("/");
+    let scratch = Scratch::new("tree-deep-clutter");
+    scratch.put(&format!("{deep}/data.bin"), "");
+    scratch.put("main.lcl", "");
+    assert_eq!(shown(&scratch), (vec!["main.lcl".to_string()], false));
+}
+
+#[test]
+fn a_listing_examines_a_bounded_number_of_files() {
+    let scratch = Scratch::new("tree-scan-budget");
+    scratch.put("main.lcl", "");
+    let bulk = scratch.join("bulk");
+    std::fs::create_dir(&bulk).unwrap();
+    for i in 0..=lcl_workspace::project::MAX_SCANNED {
+        std::fs::File::create(bulk.join(format!("f{i}"))).unwrap();
+    }
+    // It stops, and says it could not look at everything.
+    let (_, truncated) = shown(&scratch);
+    assert!(truncated);
+}

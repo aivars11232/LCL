@@ -34,8 +34,14 @@ use std::time::{Duration, SystemTime};
 
 /// How deep the file walk goes. A project is a source tree, not a filesystem.
 pub const MAX_DEPTH: usize = 12;
-/// How many entries, documents and folders, the tree reports at most.
+/// How many entries the tree reports at most: documents, and the folders on
+/// the way to them. Folders without a document never count.
 pub const MAX_ENTRIES: usize = 4096;
+/// How many filesystem entries one listing examines at most, shown or not,
+/// so a project full of other files cannot make a listing unbounded.
+pub const MAX_SCANNED: usize = 100_000;
+/// How deep the walk looks, past [`MAX_DEPTH`], for a document it cannot show.
+const PROBE_DEPTH: usize = 64;
 /// The largest document whose `KIND` the tree reads.
 const KIND_LIMIT: u64 = 1 << 20;
 /// How old a file's timestamps must be before its cached `KIND` is trusted.
@@ -441,7 +447,15 @@ impl Workspace {
         Some(to_identity(relative))
     }
 
-    /// Every LCL document in the project, in ascending identity order.
+    /// Every LCL document in the project, and every folder on the way to
+    /// one, in ascending identity order.
+    ///
+    /// The tree navigates documents; it is not a file browser. A folder is
+    /// listed only when a document is somewhere below it, so folders of
+    /// outputs, logs or data, and empty ones, are left out whatever they are
+    /// called, and a `docs/rules.lcl` keeps `docs/`. [`MAX_ENTRIES`] counts
+    /// only what is listed; [`MAX_SCANNED`] bounds the filesystem entries
+    /// examined, listed or not. Dot directories are tooling and never walked.
     ///
     /// Both recognised suffixes, `.lcl` and `.lcl.txt`. The test is on the file
     /// name rather than on `Path::extension`, because the extension of
@@ -464,7 +478,13 @@ impl Workspace {
             entries: Vec::new(),
             truncated: false,
         };
-        walk(self.project.root(), self.project.root(), 0, &mut listing)?;
+        let root = self.project.root();
+        Walk {
+            root,
+            out: &mut listing,
+            scanned: 0,
+        }
+        .walk(root, 0)?;
         listing.entries.sort_by(|a, b| a.id.cmp(&b.id));
         Ok(listing)
     }
@@ -591,53 +611,114 @@ impl Workspace {
     }
 }
 
-/// Walk one directory, appending every `.lcl` document and every directory,
-/// and marking the listing truncated when an eligible entry is left out.
-fn walk(
-    root: &Path,
-    directory: &Path,
-    depth: usize,
-    out: &mut Listing,
-) -> Result<(), WorkspaceError> {
-    if out.truncated {
-        return Ok(());
-    }
-    let listing = std::fs::read_dir(directory).map_err(|e| WorkspaceError::Io {
-        path: directory.to_path_buf(),
-        detail: format!("the directory is not readable: {e}"),
-    })?;
-    let mut children: Vec<PathBuf> = listing.filter_map(Result::ok).map(|e| e.path()).collect();
-    children.sort();
+/// The walk for one listing: where it started, what it found, and how many
+/// filesystem entries it has examined.
+struct Walk<'a> {
+    root: &'a Path,
+    out: &'a mut Listing,
+    scanned: usize,
+}
 
-    for path in children {
-        let Some((relative, is_dir)) = eligible(root, &path) else {
-            continue;
-        };
-        // One more entry than the tree may report, or one deeper than it
-        // goes: the listing is incomplete, and says so.
-        if depth > MAX_DEPTH || out.entries.len() == MAX_ENTRIES {
-            out.truncated = true;
-            return Ok(());
-        }
-        if is_dir {
-            out.entries.push(Entry {
-                id: to_identity(&relative),
-                directory: true,
-                bytes: None,
-            });
-            walk(root, &path, depth + 1, out)?;
-            if out.truncated {
-                return Ok(());
+impl Walk<'_> {
+    /// The children of one directory, in name order; `None` once the scan
+    /// budget is spent, which leaves the listing truncated.
+    fn children(&mut self, directory: &Path) -> Result<Option<Vec<PathBuf>>, WorkspaceError> {
+        let listing = std::fs::read_dir(directory).map_err(|e| WorkspaceError::Io {
+            path: directory.to_path_buf(),
+            detail: format!("the directory is not readable: {e}"),
+        })?;
+        let mut children = Vec::new();
+        for entry in listing.filter_map(Result::ok) {
+            self.scanned += 1;
+            if self.scanned > MAX_SCANNED {
+                self.out.truncated = true;
+                return Ok(None);
             }
-        } else {
-            out.entries.push(Entry {
-                id: to_identity(&relative),
-                directory: false,
-                bytes: std::fs::metadata(&path).ok().map(|m| m.len()),
-            });
+            children.push(entry.path());
         }
+        children.sort();
+        Ok(Some(children))
     }
-    Ok(())
+
+    /// Append the documents below `directory` and the folders that lead to
+    /// them; true when there was at least one. A folder is appended before
+    /// its contents and taken back when nothing below it was, so a folder of
+    /// other files, or an empty one, is never listed. Marks the listing
+    /// truncated when a document is left out, at the entry limit or below
+    /// the depth limit, and only then.
+    fn walk(&mut self, directory: &Path, depth: usize) -> Result<bool, WorkspaceError> {
+        if depth > MAX_DEPTH {
+            if self.holds_document(directory, depth)? {
+                self.out.truncated = true;
+            }
+            return Ok(false);
+        }
+        let Some(children) = self.children(directory)? else {
+            return Ok(false);
+        };
+        let mut found = false;
+        for path in children {
+            if self.out.truncated {
+                break;
+            }
+            let Some((relative, is_dir)) = eligible(self.root, &path) else {
+                continue;
+            };
+            let full = self.out.entries.len() == MAX_ENTRIES;
+            if is_dir {
+                if full {
+                    // No room even for the folder: whether the listing is
+                    // incomplete depends on what is inside it.
+                    if self.holds_document(&path, depth + 1)? {
+                        self.out.truncated = true;
+                    }
+                    continue;
+                }
+                let mark = self.out.entries.len();
+                self.out.entries.push(Entry {
+                    id: to_identity(&relative),
+                    directory: true,
+                    bytes: None,
+                });
+                if self.walk(&path, depth + 1)? {
+                    found = true;
+                } else {
+                    self.out.entries.truncate(mark);
+                }
+            } else if full {
+                self.out.truncated = true;
+            } else {
+                found = true;
+                self.out.entries.push(Entry {
+                    id: to_identity(&relative),
+                    directory: false,
+                    bytes: std::fs::metadata(&path).ok().map(|m| m.len()),
+                });
+            }
+        }
+        Ok(found)
+    }
+
+    /// Whether a document is anywhere below `directory`, which is `depth`
+    /// below the root. A spent scan budget, or a depth past any real source
+    /// tree (a link looping back up), counts as yes: it cannot rule one out.
+    fn holds_document(&mut self, directory: &Path, depth: usize) -> Result<bool, WorkspaceError> {
+        if depth > PROBE_DEPTH {
+            return Ok(true);
+        }
+        let Some(children) = self.children(directory)? else {
+            return Ok(true);
+        };
+        for path in children {
+            match eligible(self.root, &path) {
+                Some((_, false)) => return Ok(true),
+                Some((_, true)) if self.holds_document(&path, depth + 1)? => return Ok(true),
+                _ if self.out.truncated => return Ok(true),
+                _ => {}
+            }
+        }
+        Ok(false)
+    }
 }
 
 /// Whether the tree lists this path, and as a folder or a document: its

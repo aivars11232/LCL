@@ -1264,6 +1264,14 @@ fn projects_trees_and_both_endings_are_served() {
     std::fs::write(home.workspace().join("classic.lcl"), VALID).unwrap();
     std::fs::write(home.workspace().join("shared.lcl.txt"), VALID).unwrap();
     std::fs::write(home.workspace().join("notes.txt"), "plain text\n").unwrap();
+    // Folders with no document below them are the PC's to leave out; the
+    // phone shows exactly what the PC lists.
+    for dir in ["outputs", "logs/old", "empty-folder", "docs"] {
+        std::fs::create_dir_all(home.workspace().join(dir)).unwrap();
+    }
+    std::fs::write(home.workspace().join("outputs/result.json"), "{}").unwrap();
+    std::fs::write(home.workspace().join("logs/old/run.log"), "ran\n").unwrap();
+    std::fs::write(home.workspace().join("docs/rules.lcl"), VALID).unwrap();
     let pc = start(&home);
     let (mut client, _) = pair(&home, &pc, &device(), "tree");
     let project = project(&mut client);
@@ -1278,9 +1286,10 @@ fn projects_trees_and_both_endings_are_served() {
         .collect();
     assert_eq!(
         ids,
-        vec!["classic.lcl", "shared.lcl.txt"],
-        "ordinary .txt must not be listed"
+        vec!["classic.lcl", "docs", "docs/rules.lcl", "shared.lcl.txt"],
+        "ordinary .txt and folders without a document must not be listed"
     );
+    assert_eq!(tree.get("truncated").and_then(Json::as_bool), Some(false));
     for id in ["classic.lcl", "shared.lcl.txt"] {
         let (status, doc) = client.request(
             "open",

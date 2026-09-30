@@ -300,9 +300,13 @@ Using it:
 * **⌂** goes to the **Projects home**: the projects in your Projects folder
   (see **Settings** below), to choose one, with **+ New project** and **Open
   project folder…** for any folder by its full path. A folder without
-  `lcl.project.json` opens as a project of its own too. Choosing a project
-  closes every tab, so the workspace refuses while a document has unsaved
-  edits, and says which.
+  `lcl.project.json` opens as a project of its own too. Switching projects
+  never loses your work: the tabs of the project you leave, unsaved edits
+  included, are kept in the window and come back when you return to it, and
+  the Projects home marks such a project with **●**. Nothing is saved by
+  switching; save with **Save** or Ctrl+S when you choose. Closing the
+  window while anything in it is unsaved makes the browser ask whether to
+  leave, so you can stay and save first.
 * Until a document is open, the editor shows **No document open** and can't
   be typed into. Check, Inspect, Run, Save and Reload are unavailable until
   you create or select a document.

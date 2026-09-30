@@ -181,6 +181,10 @@ const state = {
   tree: { children: new Map(), expanded: new Set() },
   /* The Projects home: the folders of the Projects folder, when shown. */
   home: { folder: "", projects: [] },
+  /* The documents of the projects this window left, by project folder: kept
+   * as they were, edits and all, until that project is shown again or the
+   * window closes. Nothing is saved or discarded by switching. */
+  parked: new Map(),
   docs: new Map(),      // id -> Doc
   order: [],            // tab order
   active: null,         // id
@@ -472,18 +476,55 @@ function unsavedDocuments() {
   return [...state.docs.values()].filter((d) => dirty(d) || d.pendingSaves || d.lifecycle === "created");
 }
 
+/* The unsaved work anywhere in this window: the project shown and the ones
+ * left, whose documents are parked. */
+function unsavedAnywhere() {
+  const kept = [...state.parked.values()].flatMap((p) => [...p.docs.values()]);
+  return [...state.docs.values(), ...kept].filter((d) => dirty(d) || d.pendingSaves || d.lifecycle === "created");
+}
+
+/* Leaving a project: its tabs, edits and unfolded folders are kept aside
+ * under its folder, so coming back finds them as they were. */
+function parkDocuments() {
+  if (!state.session || state.session.home) return;
+  if (!state.docs.size && !state.tree.expanded.size) return;
+  state.parked.set(state.session.root, {
+    docs: state.docs, order: state.order, active: state.active, expanded: new Set(state.tree.expanded),
+  });
+  state.docs = new Map();
+  state.order = [];
+  state.active = null;
+}
+
 /* After the server opened another folder in this window, or the Projects
- * home: every tab named a document of the folder before, so all of them
- * close (the caller made sure none was unsaved), and the header and tree
- * show what is open now. */
+ * home: the tabs of the folder before are parked, the header and tree show
+ * what is open now, and the tabs parked for it, if any, come back. */
 async function showOpenedFolder() {
-  for (const doc of [...state.docs.values()]) dropDocument(doc);
+  parkDocuments();
+  code.value = "";
   state.readiness = { entry: null, status: null, report: null, generation: state.readiness.generation + 1 };
   renderReadiness();
   await loadSession();
   await loadRoles();
   if (state.session.home) await loadHome();
   await loadTree();
+  const kept = state.parked.get(state.session.root);
+  if (kept && !state.session.home) {
+    state.parked.delete(state.session.root);
+    state.docs = kept.docs;
+    state.order = kept.order;
+    state.tree.expanded = kept.expanded;
+    for (const folder of [...kept.expanded].sort((a, b) => a.split("/").length - b.split("/").length)) {
+      try { await loadFolder(folder); } catch (_) { forgetFolder(folder); }
+    }
+    renderTabs();
+    renderTree();
+    if (kept.active && state.docs.has(kept.active)) await openDocument(kept.active);
+    else render();
+  } else {
+    renderTabs();
+    render();
+  }
 }
 
 /* Fold a folder of the tree, or unfold it, reading its direct children from
@@ -614,6 +655,13 @@ async function loadHome() {
     const item = el("li", "project");
     item.tabIndex = 0;
     item.dataset.path = project.path;
+    /* Unsaved work parked for this project is marked, as a dirty tab is. */
+    const kept = state.parked.get(project.path);
+    if (kept && [...kept.docs.values()].some((d) => dirty(d) || d.pendingSaves || d.lifecycle === "created")) {
+      const dot = el("span", "dot", "●");
+      dot.title = "Unsaved documents of this project are kept in this window";
+      item.append(dot);
+    }
     item.append(el("span", "name", project.name));
     if (!project.manifest) item.append(el("span", "role", "no manifest"));
     item.title = project.path;
@@ -638,14 +686,10 @@ async function loadHome() {
   renderTree();
 }
 
-/* Make one folder this window's project. Nothing changes while a document
- * has unsaved work: the tabs would close with it. */
+/* Make one folder this window's project. The tabs of the project shown now
+ * stay in this window, unsaved edits and all, until it is shown again. */
 async function openProject(path) {
   const unsaved = unsavedDocuments();
-  if (unsaved.length) {
-    toast(`Save or close ${unsaved.map((d) => d.id).join(", ")} first: opening a project closes every tab.`, "warn");
-    return false;
-  }
   try {
     await api("POST", "/api/project/open", { path });
   } catch (e) {
@@ -653,17 +697,13 @@ async function openProject(path) {
     return false;
   }
   await showOpenedFolder();
-  toast(`This window now shows ${state.session.root}.`, "good");
+  toast(`This window now shows ${state.session.root}.` +
+    (unsaved.length ? ` ${unsaved.length} unsaved document${unsaved.length > 1 ? "s are" : " is"} kept until you come back.` : ""), "good");
   return true;
 }
 
-/* Back to the Projects home, with the same care for unsaved work. */
+/* Back to the Projects home; the tabs are kept the same way. */
 async function goHome() {
-  const unsaved = unsavedDocuments();
-  if (unsaved.length) {
-    toast(`Save or close ${unsaved.map((d) => d.id).join(", ")} first: the Projects home closes every tab.`, "warn");
-    return;
-  }
   try {
     await api("POST", "/api/projects/open");
   } catch (e) {
@@ -1530,11 +1570,6 @@ function openSettings() {
     openHere.onclick = async () => {
       if (where.value.trim() !== (files.default_workspace || "")) {
         status.replaceChildren(el("span", "bad", "Save first: Open folder opens the saved Projects folder."));
-        return;
-      }
-      if (unsavedDocuments().length) {
-        status.replaceChildren(el("span", "bad",
-          "Save or close the open documents first: this window will show the Projects folder instead."));
         return;
       }
       try {
@@ -3249,6 +3284,17 @@ $("#act-inspect").onclick = async () => { await runAnalysis(); showView("structu
 $("#act-run").onclick = startRun;
 $("#act-save").onclick = () => save();
 $("#act-reload").onclick = reload;
+/* Closing the window with unsaved work anywhere in it, shown or parked: the
+ * browser asks whether to leave. A page cannot offer its own Save here, so
+ * staying and saving (Ctrl+S, or the Save button) is the way to keep it. */
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  window.addEventListener("beforeunload", (e) => {
+    if (!unsavedAnywhere().length) return;
+    e.preventDefault();
+    e.returnValue = "";
+  });
+}
+
 $("#act-new").onclick = () => newDocument();
 $("#act-new-folder").onclick = () => newFolder(state.active ? parentOf(state.active) : "");
 $("#act-refresh").onclick = refreshTree;
@@ -3490,14 +3536,7 @@ async function newProject() {
           return;
         }
         if (reply.opens_project) {
-          const unsaved = unsavedDocuments();
-          if (unsaved.length) {
-            where.append(el("span", "bad",
-              `. This window will then show the new project instead of ` +
-              `${state.session.root}: save or close ${unsaved.map((d) => d.id).join(", ")} first.`));
-            return;
-          }
-          where.append(el("span", "", ". This window will then show the new project."));
+          where.append(el("span", "", ". This window will then show the new project; the tabs open now are kept for when you come back."));
         }
         plan = reply;
         $("#project-create").disabled = false;

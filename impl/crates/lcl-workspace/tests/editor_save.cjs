@@ -381,8 +381,14 @@ async function harness(options) {
     }
     return reply;
   };
+  // The window, for what the page registers on it: closing it with unsaved work.
+  const windowListeners = new Map();
+  const windowDouble = {
+    addEventListener(name, callback) { windowListeners.set(name, [...(windowListeners.get(name) || []), callback]); },
+    dispatch(name, event) { for (const callback of windowListeners.get(name) || []) callback(event); return event; },
+  };
   const context = vm.createContext({
-    document, location: { origin, search: `?t=${token}` }, fetch: request, localStorage,
+    document, window: windowDouble, location: { origin, search: `?t=${token}` }, fetch: request, localStorage,
     URL, URLSearchParams, Event, TextEncoder,
     getComputedStyle: () => ({ getPropertyValue: () => "20" }),
     // Analysis/toast timers are controlled; no production function is replaced.
@@ -528,6 +534,11 @@ async function harness(options) {
     treeRequests() { return treeRequests.splice(0); },
     /// The project this real server is over, as an absolute path.
     projectPath() { return options.project ? path.resolve(options.project) : "/fixture"; },
+    /// The browser about to close the window: what the page does with it.
+    closeWindow() {
+      const event = { defaultPrevented: false, returnValue: undefined, preventDefault() { this.defaultPrevented = true; } };
+      return windowDouble.dispatch("beforeunload", event);
+    },
     /// Another program removes a document behind the page's back.
     async removeBehind(id) {
       if (options.project) await fs.unlink(path.join(options.project, id));
@@ -1529,13 +1540,10 @@ const uiCases = [
   ["the Projects home offers the projects of the Projects folder, and choosing one shows only that project", async h => {
     await h.add("chosen.lcl", "LCL:\n");
     h.edit("unsaved\n");
-    // With unsaved work nothing changes: the tabs would close with it.
-    await bounded(h.run("goHome()"), "home refused");
-    assert(h.toasts().some(t => t.includes("Save or close chosen.lcl first")), h.toasts().join(" | "));
-    assert.equal(h.run("state.session.home"), false);
-    h.edit("LCL:\n");
     const before = h.projectPath();
     try {
+      // Unsaved work does not stop a switch: the tabs are parked for the
+      // project left, and the home marks it.
       await bounded(h.run("goHome()"), "home");
       assert.equal(h.run("state.session.home"), true);
       assert.equal(h.get("#home").hidden, false);
@@ -1543,21 +1551,30 @@ const uiCases = [
       assert.equal(h.get("#sidebar-title").textContent, "Projects");
       assert.equal(h.get("#act-new").hidden, true);
       assert.equal(h.get("#act-home").hidden, true);
-      assert.equal(h.run("state.docs.size"), 0, "the tabs stayed open");
+      assert.equal(h.run("state.docs.size"), 0, "the tabs stayed in the way");
       assert.equal(h.run("state.tree.children.size"), 0, "the Projects folder was listed as a tree");
-      const names = h.get("#projects").children.map(li => li.children[0] && li.children[0].textContent);
+      assert.equal(h.run(`state.parked.get(${JSON.stringify(before)}).docs.get("chosen.lcl").text`), "unsaved\n");
+      const names = h.get("#projects").children.map(li => (li.children.find(c => c.className === "name") || {}).textContent);
       if (!h.realDisk) assert.deepEqual(names, ["Alpha", "Beta"]);
       assert(h.get("#home-open-folder"), "no Open project folder");
+      assert(h.closeWindow().defaultPrevented, "closing the window with parked unsaved work was not questioned");
       // Choosing a project: only its own root is read, and the explorer is back.
       const target = h.realDisk ? before : "/fixture/projects/Alpha";
       h.treeRequests();
       await bounded(h.run(`openProject(${JSON.stringify(target)})`), "open project");
       assert.equal(h.run("state.session.home"), false);
       assert.equal(h.run("state.session.root"), target);
-      assert.deepEqual(h.treeRequests(), [""]);
+      assert(h.treeRequests().every(r => r === ""), "more than the root was read");
       assert.equal(h.get("#home").hidden, true);
       assert.equal(h.get("#tree").hidden, false);
       assert.equal(h.get("#act-home").hidden, false);
+      if (h.realDisk) {
+        // Back where the edits were made: they are here, unsaved, in their tab.
+        assert.deepEqual(h.doc("chosen.lcl"), { text: "unsaved\n", saved: "LCL:\n", dirty: true });
+        assert.equal(h.run("state.active"), "chosen.lcl");
+        assert.equal(h.get("#code").value, "unsaved\n");
+        assert.equal(h.run("state.parked.size"), 0);
+      }
       // Open project folder…: a relative path is refused, nothing changes.
       h.run("openFolderDialog()");
       assert.equal(h.modalTitle(), "Open project folder");
@@ -1568,7 +1585,41 @@ const uiCases = [
       h.run("closeModal()");
     } finally {
       if (h.run("state.session.home") || h.run("state.session.root") !== before) await bounded(h.run(`openProject(${JSON.stringify(before)})`), "restore");
+      h.run("state.parked.clear()");
     }
+  }],
+  ["unsaved documents survive a switch away and back, and closing the window asks only while something is unsaved", async h => {
+    await h.add("park-a.lcl", "A\n");
+    await h.add("park-b.lcl", "B\n");
+    assert(!h.closeWindow().defaultPrevented, "a clean window was questioned");
+    h.edit("B edited\n");
+    assert(h.closeWindow().defaultPrevented, "an unsaved document did not question closing");
+    await bounded(h.run('openDocument("park-a.lcl")'), "a");
+    h.edit("A edited\n");
+    const before = h.projectPath();
+    const other = h.realDisk ? before : "/fixture/projects/Beta";
+    try {
+      await bounded(h.run(`openProject(${JSON.stringify(other)})`), "away");
+      if (!h.realDisk) {
+        assert.equal(h.run("state.docs.size"), 0);
+        assert.equal(h.get("#tabs").children.length, 0);
+        assert(h.closeWindow().defaultPrevented, "parked unsaved work did not question closing");
+        await bounded(h.run(`openProject(${JSON.stringify(before)})`), "back");
+      }
+      assert.deepEqual(h.run("JSON.stringify(state.order)"), JSON.stringify(["park-a.lcl", "park-b.lcl"]));
+      assert.deepEqual(h.doc("park-a.lcl"), { text: "A edited\n", saved: "A\n", dirty: true });
+      assert.deepEqual(h.doc("park-b.lcl"), { text: "B edited\n", saved: "B\n", dirty: true });
+      assert.equal(h.run("state.active"), "park-a.lcl");
+      assert.equal(h.get("#code").value, "A edited\n");
+      assert.equal(await h.persisted("park-a.lcl"), "A\n", "switching saved something");
+      // Saving by hand (the Save button, Ctrl+S) still works, and then closing is quiet.
+      assert.equal(await bounded(h.run("save()"), "save a"), true);
+      assert.equal(await h.persisted("park-a.lcl"), "A edited\n");
+      await bounded(h.run('openDocument("park-b.lcl")'), "b");
+      assert.equal(await bounded(h.run("save()"), "save b"), true);
+      assert.equal(await h.persisted("park-b.lcl"), "B edited\n");
+      assert(!h.closeWindow().defaultPrevented, "a saved window was questioned");
+    } finally { h.run("state.parked.clear()"); }
   }],
   ["a document chosen in the tree opens and is marked, and the tree follows new folders", async h => {
     await h.add("tree-fold/deep/inner.lcl", "LCL:\n");

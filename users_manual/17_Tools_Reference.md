@@ -168,6 +168,9 @@ tabs and unsaved edits stay as they are. A folder holding more than 4096
 entries shows the first 4096 and says so under itself. **⌂** shows the
 Projects home: the projects of the Projects folder, **+ New project**, and
 **Open project folder…** for any folder, with or without `lcl.project.json`.
+Switching projects keeps the tabs of the project left, unsaved edits and all,
+until it is shown again; closing the window with unsaved work makes the
+browser ask first.
 
 The ⚙ **Settings** button sets two kinds of setting:
 

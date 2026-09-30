@@ -2,7 +2,7 @@
   "format": 1,
   "manual": "LCL Users Manual",
   "version": "0.3.0",
-  "digest": "9381f3b3576fdd1bc6393dcee05cff6407ce13ded16ee64eac1d8a2e68bf343f",
+  "digest": "d8a9a52e99604e56e03f3f4e69892a0c781928369a8113dac3a1d5c4ca8ddaa2",
   "files": [
     {
       "name": "01_What_Is_LCL.md",
@@ -70,7 +70,7 @@
     },
     {
       "name": "17_Tools_Reference.md",
-      "sha256": "e83a491dcdae0d16a681913dff066252d74b7627053a90d74fd6e0d3641e52d9"
+      "sha256": "7ffc2052f7cf92d54b954058696237447b0df1e954ffeb229f88a9f414a12783"
     },
     {
       "name": "18_Starting_Files_From_Templates.md",

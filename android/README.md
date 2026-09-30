@@ -268,6 +268,22 @@ key; no physical phone has been checked yet.
   project is gone from the list and every request for it is refused from the
   next one on, and a run the phone started there is stopped and reported
   ended.
+- **Projects on this phone.** Made from the dashboard (**New project on this
+  phone**) or the project picker, kept in the app's private storage (never
+  its cache), and usable with no PC at all: the same explorer, folders and
+  documents, editing, Save (atomic: the bytes replace the file in one rename,
+  so a failed save leaves the previous version whole), Reload and Delete.
+  The phone has no LCL engine, so Check, Validate, Inspect and Run are off
+  for them until the project is on a PC. **Sync…** (connected) sends one to
+  a PC project's folder on request, never on its own: the PC is asked first
+  what it holds at each destination — nothing there, the same bytes, or
+  different ones, which the person decides (keep the PC's, replace, or save
+  beside as `name-phone.lcl`) — then each document is created or replaced
+  and counts as synced only when the PC's answer names the bytes sent. A
+  lost connection stops the rest and changes nothing on the phone. **Remove**
+  takes the phone's copy away only when every document is on a PC as it is
+  now, and only when asked; **Sync and remove from phone** does both, in that
+  order.
 - **Editor.** Monospace text that is always visible; line numbers that start
   at 1, follow every inserted or deleted line at once, scroll with the text and
   can be hidden; no wrapping, with horizontal scrolling for long lines;

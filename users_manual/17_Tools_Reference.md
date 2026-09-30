@@ -182,7 +182,9 @@ The ⚙ **Settings** button sets two kinds of setting:
 None of them is ever written into a document or a project file, and none
 changes what a document means or how it runs.
 
-Settings also has **Android devices** when `lcl-remote` is installed beside
+LCL for Android can also keep projects on the phone itself, edit them
+without a PC, and sync them into a PC project when you choose; see
+`android/README.md` in the source. Settings also has **Android devices** when `lcl-remote` is installed beside
 `lcl-workspace` or on `PATH`: a pairing QR code for LCL for Android, the
 pending pairing requests, the paired devices with whether each is online and
 when it last connected, and **Revoke**. Scanning the QR code does not trust

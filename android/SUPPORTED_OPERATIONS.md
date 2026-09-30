@@ -51,6 +51,9 @@ code the desktop workspace uses.
 | Rename, move | ⏳ | — | not in the protocol yet |
 | The whole project in one answer (apps of LCL 0.5.0 and earlier) | compatibility | `tree` | kept on the PC for older apps; a current app asks `children`, and falls back to `tree` only on a PC that does not know `children` |
 | Open a `.lcl` / `.lcl.txt` file from another app | ✅ | `check` / `inspect` | read-only view, judged on the PC; strict UTF-8, at most 4 MB — anything else is refused and nothing is sent |
+| Projects on this phone: make, list lazily, new folder, new document, edit, save, reload, delete — with no PC | ✅ | — (the app's private storage) | no engine on the phone: Check, Validate, Inspect and Run stay off for them |
+| Sync a phone project (or one of its documents) to a PC project's folder, on request | ✅ | `open` to check each destination, then `mkdir`, `create` or `save` with `base` | the existing routes; a conflict is the person's choice; a document is synced only when the PC's digest matches the bytes sent |
+| Remove a phone project after a confirmed sync | ✅ | — | only when every document is on the PC as it is now, and only when asked |
 
 ## Editing
 

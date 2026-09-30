@@ -35,6 +35,14 @@ val syncManual by tasks.registering(Sync::class) {
     into(manualAssets.resolve("manual"))
 }
 
+/** Android's versionCode for a product version: MAJOR * 1 000 000 + MINOR * 1 000 + PATCH. */
+fun versionCodeOf(version: String): Int {
+    val m = Regex("^(\\d+)\\.(\\d+)\\.(\\d+)").find(version)
+        ?: error("versionName $version is not MAJOR.MINOR.PATCH, so no versionCode follows from it")
+    val (major, minor, patch) = m.destructured
+    return major.toInt() * 1_000_000 + minor.toInt() * 1_000 + patch.toInt()
+}
+
 android {
     namespace = "io.lcl.workspace"
     compileSdk = 37
@@ -43,14 +51,16 @@ android {
         applicationId = "io.lcl.workspace"
         minSdk = 29
         targetSdk = 36
-        // Every release raises versionCode; Android installs an update only
-        // over a lower one. The properties let a build (or the update test in
-        // tools/e2e.sh) set them without editing this file. The defaults are
-        // the next release's: versionName is the product version exactly as
-        // impl/Cargo.toml has it, which people see as ProductVersion.shown
-        // gives it (0.5.0 as "0.5"); versionCode is never shown.
-        versionCode = providers.gradleProperty("lclVersionCode").orNull?.toInt() ?: 8
-        versionName = providers.gradleProperty("lclVersionName").orNull ?: "0.5.0"
+        // versionName is the product version exactly as impl/Cargo.toml has
+        // it, which people see as ProductVersion.shown gives it (0.5.0 as
+        // "0.5"). versionCode is Android's own number: it installs an update
+        // only over a lower one, and it is never shown. Nobody types it: it
+        // is derived from the version (MAJOR * 1 000 000 + MINOR * 1 000 +
+        // PATCH, so 0.5.1 is 5001), which grows whenever the version does.
+        // The properties let a build (or the update test in tools/e2e.sh)
+        // set both without editing this file.
+        versionName = providers.gradleProperty("lclVersionName").orNull ?: "0.5.1"
+        versionCode = providers.gradleProperty("lclVersionCode").orNull?.toInt() ?: versionCodeOf(versionName!!)
         buildConfigField("String", "UPDATE_TRUSTED_KEYS", "\"$trustedUpdateKeys\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -270,7 +270,6 @@ product version raised in the three `Cargo.toml` files:
 LCL_UPDATE_OUT=/tmp/lcl-release-0.4.0 \
 LCL_UPDATE_SIGNING_KEY=/secure/offline/lcl-update-1.key \
 LCL_UPDATE_KEY_ID=lcl-update-1 \
-LCL_ANDROID_VERSION_CODE=4 \
 LCL_PREVIOUS_MANIFEST=/path/to/the/last/update-manifest.json \
 LCL_PREVIOUS_MANIFEST_SIGNATURE=/path/to/the/last/update-manifest.sig \
 LCL_RELEASE_NOTES_FILE=/path/to/notes.txt \
@@ -278,6 +277,12 @@ LCL_RELEASE_STORE_FILE=/secure/lcl-release.jks LCL_RELEASE_STORE_PASSWORD=... \
 LCL_RELEASE_KEY_ALIAS=lcl LCL_RELEASE_KEY_PASSWORD=... \
 ANDROID_HOME=/path/to/sdk packaging/build_update_release.sh
 ```
+
+The APK's `versionCode` is not typed anywhere: it follows from the product
+version, as the Android build derives it (`MAJOR * 1000000 + MINOR * 1000 +
+PATCH`, so 0.5.1 is 5001), which grows with every release;
+`LCL_ANDROID_VERSION_CODE` overrides it only for tests. The builder still
+refuses a code that does not advance past the previous release's.
 
 The previous manifest's detached signature is verified against the keys already
 trusted by the release tooling, then parsed by the updater's strict parser,

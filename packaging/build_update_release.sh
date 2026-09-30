@@ -15,7 +15,10 @@
 #                                     P-256), outside the repository. Its
 #                                     contents are never printed.
 #   LCL_UPDATE_KEY_ID=<id>            its id in update/trusted_keys.txt
-#   LCL_ANDROID_VERSION_CODE=<n>      the APK's versionCode
+#   LCL_ANDROID_VERSION_CODE=<n>      the APK's versionCode; by default it follows
+#                                     from the product version, as the Android
+#                                     build derives it: MAJOR * 1000000 +
+#                                     MINOR * 1000 + PATCH (0.5.1 is 5001)
 #   LCL_PREVIOUS_MANIFEST=<file>      the last published update-manifest.json,
 #                                     exactly as the official repository's latest
 #                                     stable release carries it; or "none" for
@@ -55,7 +58,7 @@ refuse() {
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 dry=${LCL_UPDATE_DRY_RUN:-}
-for name in LCL_UPDATE_OUT LCL_UPDATE_SIGNING_KEY LCL_UPDATE_KEY_ID LCL_ANDROID_VERSION_CODE \
+for name in LCL_UPDATE_OUT LCL_UPDATE_SIGNING_KEY LCL_UPDATE_KEY_ID \
     LCL_PREVIOUS_MANIFEST LCL_RELEASE_NOTES_FILE; do
     eval "value=\${$name:-}"
     [ -n "$value" ] || refuse "$name is not set"
@@ -77,8 +80,6 @@ inside "$out" && refuse "LCL_UPDATE_OUT must be outside the repository"
 inside "$key" && refuse "the update signing key must live outside the repository"
 [ -r "$key" ] || refuse "the update signing key $key cannot be read"
 case "$LCL_UPDATE_KEY_ID" in *[!a-z0-9-]*) refuse "LCL_UPDATE_KEY_ID must be a-z, 0-9 and -" ;; esac
-case "$LCL_ANDROID_VERSION_CODE" in ''|*[!0-9]*) refuse "LCL_ANDROID_VERSION_CODE must be a number" ;; esac
-code=$LCL_ANDROID_VERSION_CODE
 minimum=${LCL_MINIMUM_SUPPORTED_VERSION:-0.1.0}
 
 # The source: one commit, and in a real release nothing else.
@@ -94,6 +95,15 @@ for crate in update remote; do
     [ "$(sed -n 's/^version = "\(.*\)"$/\1/p' "$root/$crate/Cargo.toml" | head -1)" = "$version" ] ||
         refuse "$crate/Cargo.toml does not carry product version $version"
 done
+# The APK's versionCode follows from the version unless one is given
+# explicitly: the same rule the Android build applies, so the two agree.
+if [ -n "${LCL_ANDROID_VERSION_CODE:-}" ]; then
+    case "$LCL_ANDROID_VERSION_CODE" in *[!0-9]*) refuse "LCL_ANDROID_VERSION_CODE must be a number" ;; esac
+    code=$LCL_ANDROID_VERSION_CODE
+else
+    code=$(printf '%s\n' "$version" | awk -F'[.-]' '/^[0-9]+\.[0-9]+\.[0-9]+/ { print $1 * 1000000 + $2 * 1000 + $3; ok = 1 } END { exit !ok }') ||
+        refuse "no versionCode follows from product version $version; set LCL_ANDROID_VERSION_CODE"
+fi
 
 # Update System V1: exactly one production update key, kept. More than one is
 # never released; a real release needs the one (a rehearsal may have none).

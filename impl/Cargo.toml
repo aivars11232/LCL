@@ -104,7 +104,7 @@ members = [
 # `lcl-conformance`'s report states the implementation version beside the
 # language version it was judged against. 0.1.0 here is the first release of
 # the implementation, frozen by LCL-TASK-0020 as the release candidate.
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 rust-version = "1.75"
 publish = false

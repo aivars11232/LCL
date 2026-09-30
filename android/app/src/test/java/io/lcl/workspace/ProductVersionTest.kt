@@ -39,7 +39,10 @@ class ProductVersionTest {
         assertEquals(product, cargoVersion("remote/Cargo.toml"))
         assertEquals(product, cargoVersion("update/Cargo.toml"))
         assertEquals(product, BuildConfig.VERSION_NAME)
-        // v0.1.1 was published with versionCode 7; the default is past it.
-        assertTrue("versionCode ${BuildConfig.VERSION_CODE}", BuildConfig.VERSION_CODE > 7)
+        // versionCode follows from the version: MAJOR * 1 000 000 + MINOR * 1 000 + PATCH,
+        // past every published one (v0.1.1 was 7, v0.5.0 was 8).
+        val (major, minor, patch) = Regex("^(\\d+)\\.(\\d+)\\.(\\d+)").find(BuildConfig.VERSION_NAME)!!.destructured
+        assertEquals(major.toInt() * 1_000_000 + minor.toInt() * 1_000 + patch.toInt(), BuildConfig.VERSION_CODE)
+        assertTrue("versionCode ${BuildConfig.VERSION_CODE}", BuildConfig.VERSION_CODE > 8)
     }
 }

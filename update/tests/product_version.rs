@@ -35,6 +35,13 @@ fn gradle_default(property: &str) -> String {
     default.trim_matches('"').to_string()
 }
 
+/// Android's versionCode for a product version, as the Android build and the
+/// release builder both derive it.
+fn version_code_of(version: &str) -> u64 {
+    let v = lcl_update::version::Version::parse(version).unwrap();
+    v.major * 1_000_000 + v.minor * 1_000 + v.patch
+}
+
 #[test]
 fn every_part_of_a_release_carries_one_product_version() {
     let product = lcl_update::PRODUCT_VERSION;
@@ -57,9 +64,21 @@ fn every_part_of_a_release_carries_one_product_version() {
 }
 
 #[test]
-fn the_android_default_version_code_is_past_every_published_one() {
-    // v0.1.1 was published with versionCode 7; a default build must never
-    // look older than a release a phone may already have.
-    let code: u64 = gradle_default("lclVersionCode").parse().expect("a number");
-    assert!(code > 7, "default versionCode {code}");
+fn the_android_version_code_follows_from_the_version_and_is_past_every_published_one() {
+    // Nobody types the code: the Android build derives it from versionName,
+    // and the release builder from the product version, by one rule.
+    assert_eq!(
+        gradle_default("lclVersionCode"),
+        "versionCodeOf(versionName!!)",
+        "build.gradle.kts no longer derives versionCode from the version"
+    );
+    assert!(read("packaging/build_update_release.sh")
+        .contains("$1 * 1000000 + $2 * 1000 + $3"));
+    assert_eq!(version_code_of("0.5.1"), 5001);
+    // v0.1.1 was published with versionCode 7 and v0.5.0 with 8; a build of
+    // this version must never look older than a release a phone may have.
+    let code = version_code_of(lcl_update::PRODUCT_VERSION);
+    assert!(code > 8, "versionCode {code}");
+    // And it grows with the version, so a later release always installs.
+    assert!(version_code_of("0.5.2") > code && version_code_of("0.6.0") > code && version_code_of("1.0.0") > code);
 }

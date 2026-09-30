@@ -1,13 +1,16 @@
 package io.lcl.workspace.ui
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import io.lcl.workspace.data.Theme
 
 /** The desktop workspace's palette, so LCL looks like LCL on both screens. */
@@ -52,21 +55,29 @@ fun LclTheme(theme: Theme, content: @Composable () -> Unit) {
         Theme.LIGHT -> false
     }
     val scheme = if (dark) {
+        // The desktop workspace's graphite, with its one blue accent.
         darkColorScheme(
-            primary = Color(0xFF5AA9E6), onPrimary = Color(0xFF0C1116),
-            background = Color(0xFF16181D), surface = Color(0xFF16181D),
-            surfaceVariant = Color(0xFF1C1F26), onSurface = Color(0xFFD7DCE5), onBackground = Color(0xFFD7DCE5),
-            error = Color(0xFFE0645F),
+            primary = Color(0xFF63B0EE), onPrimary = Color(0xFF0B1117),
+            background = Color(0xFF14171C), surface = Color(0xFF14171C),
+            surfaceVariant = Color(0xFF1B1F26), onSurface = Color(0xFFDDE2EA), onBackground = Color(0xFFDDE2EA),
+            onSurfaceVariant = Color(0xFF97A0B0), outline = Color(0xFF2A2F39), outlineVariant = Color(0xFF20242C),
+            error = Color(0xFFE46A64),
         )
     } else {
         lightColorScheme(
-            primary = Color(0xFF1F6FB2), onPrimary = Color.White,
-            background = Color(0xFFF6F7F9), surface = Color(0xFFF6F7F9),
-            surfaceVariant = Color.White, onSurface = Color(0xFF232830), onBackground = Color(0xFF232830),
+            primary = Color(0xFF1D6FB8), onPrimary = Color.White,
+            background = Color(0xFFF4F6F9), surface = Color(0xFFF4F6F9),
+            surfaceVariant = Color.White, onSurface = Color(0xFF1F242C), onBackground = Color(0xFF1F242C),
+            onSurfaceVariant = Color(0xFF5B6370), outline = Color(0xFFD5DAE2), outlineVariant = Color(0xFFE5E8EE),
             error = Color(0xFFB3312C),
         )
     }
+    // Corners stay small: a workspace tool, not a card deck.
+    val shapes = Shapes(
+        extraSmall = RoundedCornerShape(4.dp), small = RoundedCornerShape(6.dp), medium = RoundedCornerShape(8.dp),
+        large = RoundedCornerShape(10.dp), extraLarge = RoundedCornerShape(12.dp),
+    )
     androidx.compose.runtime.CompositionLocalProvider(LocalLclColors provides if (dark) DarkLcl else LightLcl) {
-        MaterialTheme(colorScheme = scheme, content = content)
+        MaterialTheme(colorScheme = scheme, shapes = shapes, content = content)
     }
 }

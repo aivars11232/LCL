@@ -30,7 +30,9 @@ code the desktop workspace uses.
 |---|---|---|---|
 | List shared projects | ✅ | `projects` | the service's project list, read from `remote.json` on every request |
 | Switch project | ✅ | — | |
-| Project tree (`.lcl` and `.lcl.txt` only, and the folders that lead to them, as the PC lists them) | ✅ | `tree` | `GET /api/documents` |
+| Project explorer, one folder at a time: every folder (empty or not) and the `.lcl` / `.lcl.txt` documents of the folder unfolded, as the PC lists them; a folder is read when it is unfolded, never the whole project | ✅ | `children` | `GET /api/tree?parent=` |
+| A folder the PC's bound cut short (more than 4096 entries) | ✅ | `children` (`truncated`) | the note under that folder alone |
+| Refresh: the root and the unfolded folders read again | ✅ | `children` | as above; folded folders are read when unfolded |
 | PC's default file ending | ✅ | `settings` | `GET /api/settings` |
 | Open a document | ✅ | `open` | `GET /api/document` |
 | Close a document | ✅ | `close` | — (stops change notifications) |
@@ -41,11 +43,13 @@ code the desktop workspace uses.
 | Changes made on the PC | ✅ | `document_changed` event | the service watches open documents |
 | New document (`test` → `test.lcl`, explicit endings kept) | ✅ | `create` | `POST /api/document` |
 | New document of a role (Task, Description, Rules, Context, Data, Output, Checks, Definitions; Guided or Minimal) | ✅ | `roles`, `scaffold`, then `create` with `role`, `mode` and `scaffold_digest` | `GET /api/roles`; `GET /api/scaffold` shows the PC's exact starting text for that name; `POST /api/document` with `role` writes it — the PC's own scaffold, or the role's default Master on the PC — only while it is still exactly the text shown (409 if a template or default changed, 428 without a preview). The app holds no scaffold. |
-| A file's role in the tree | ✅ | `tree` (`kind`) | the `SPECIFICATION KIND` the PC's engine reads in the file, never guessed from the name |
+| A file's role in the tree | ✅ | `children` (`kind`) | the `SPECIFICATION KIND` the PC's engine reads in the file, never guessed from the name |
 | Project readiness (per file: ready, invalid, missing, omitted, duplicate) | ✅ | `project` | `GET /api/project/status`: the engine's `validate` report for the entry on disk. Run is refused by the PC until the project is admitted. |
 | A new file's exact starting text, without creating it | — (protocol) | `scaffold` | `GET /api/scaffold` |
 | Delete a document | ⏳ | `delete` with `digest` | `DELETE /api/document` — in the protocol, not yet in the app's UI |
-| Rename, move, new folder | ⏳ | — | not in the protocol yet |
+| New folder (empty, under a folder that exists) | ✅ | `mkdir` | `POST /api/tree/folder` |
+| Rename, move | ⏳ | — | not in the protocol yet |
+| The whole project in one answer (apps of LCL 0.5.0 and earlier) | compatibility | `tree` | kept on the PC for older apps; a current app asks `children`, and falls back to `tree` only on a PC that does not know `children` |
 | Open a `.lcl` / `.lcl.txt` file from another app | ✅ | `check` / `inspect` | read-only view, judged on the PC; strict UTF-8, at most 4 MB — anything else is refused and nothing is sent |
 
 ## Editing

@@ -142,7 +142,7 @@ browser.
 | `--spec <PATH>` | the specification package (else `LCL_SPEC`, else the project file) |
 | `--localized-spec <PATH>`, `--profile <FILE>` | for localized documents |
 | `--project-spec <PATH>` | the Core 0.3.0 package, for multi-file projects and file roles (else `LCL_PROJECT_SPEC`, else the project file's `project_spec`); the desktop launcher passes the installed one |
-| `--default-project <PATH>` | the folder to open when neither `PROJECT` nor `--document` is given: the Projects folder chosen in Settings if that folder exists, otherwise `PATH` (the desktop launcher passes its built-in folder here) |
+| `--default-project <PATH>` | the Projects folder to start from when neither `PROJECT` nor `--document` is given: the one chosen in Settings if that folder exists, otherwise `PATH` (the desktop launcher passes its built-in folder here). The window starts on the Projects home, offering that folder's projects; the folder itself is not opened as a project |
 | `--create` | create a project here before opening it |
 | `--port <PORT>` | use this port instead of a random one |
 | `--open` | open the printed address in the browser |
@@ -160,11 +160,14 @@ the edits of any other document leaves its file as it is on disk.
 Right-clicking a document in the project tree, or pressing Delete when it is
 selected there, offers **Delete…**, which asks first and removes the file
 for good. It deletes nothing if the file changed while you were being asked.
-**↻** beside `+` lists the project again after other programs changed its
-files; tabs and unsaved edits stay as they are. The tree shows documents and
-the folders that lead to them, never a folder without a document inside. It
-shows at most 4096 entries and 12 folder levels, and says so when a project
-has more.
+The sidebar lists the open project one folder at a time: a folder is read
+when it is unfolded, and only its direct contents are shown; every folder is
+shown, empty or not. **▤** makes an empty folder; **↻** reads the root and
+the unfolded folders again after other programs changed the project, and
+tabs and unsaved edits stay as they are. A folder holding more than 4096
+entries shows the first 4096 and says so under itself. **⌂** shows the
+Projects home: the projects of the Projects folder, **+ New project**, and
+**Open project folder…** for any folder, with or without `lcl.project.json`.
 
 The ⚙ **Settings** button sets two kinds of setting:
 
@@ -187,10 +190,11 @@ then **Approve device**) only if that code is the one the phone shows, and
 itself, not by the workspace; see `remote/README.md` in the source.
 
 After `install.sh`, the desktop menu has an **LCL Workspace** entry, and
-`.lcl` files can be opened with it. A menu launch opens the Projects folder
-chosen in Settings, or `~/.local/share/lcl/workspace` when none is
-chosen or the chosen folder no longer exists. In that last case the page
-says why. Opening a document from your file manager, or starting
+`.lcl` files can be opened with it. A menu launch starts on the Projects home
+of the Projects folder chosen in Settings, or of `~/.local/share/lcl/workspace`
+when none is chosen or the chosen folder no longer exists. In that last case
+the page says why. The Projects folder is where projects live; it is not
+opened as one. Opening a document from your file manager, or starting
 `lcl-workspace` with a folder, always wins over the default. Menu launches
 write any problem to `~/.local/state/lcl/launch.log`.
 

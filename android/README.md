@@ -255,12 +255,19 @@ key; no physical phone has been checked yet.
 ## Working on a document
 
 - **Projects and files.** The PC's shared projects (its default workspace, plus
-  any added with `lcl-remote projects add`), their `.lcl` and `.lcl.txt`
-  documents, and a project picker. Other files, `.txt` included, are not LCL
-  and are not listed. `lcl-remote projects add` and `remove` take effect for a
-  running service at once: a removed project is gone from the list and every
-  request for it is refused from the next one on, and a run the phone started
-  there is stopped and reported ended.
+  any added with `lcl-remote projects add`), a project picker, and each
+  project's explorer: its folders and `.lcl` / `.lcl.txt` documents, one
+  folder at a time. The PC lists a folder when it is unfolded, never the
+  whole project; every folder is shown, empty or not; a folder of other files
+  is a folder, and the other files (`.txt` included) are not LCL and are not
+  listed. **Folder** makes an empty folder; **Refresh** reads the root and
+  the unfolded folders again. A folder the PC's bound cut short (more than
+  4096 entries) says so under itself. Switching projects starts the explorer
+  over: nothing of the last project stays in the tree. `lcl-remote projects
+  add` and `remove` take effect for a running service at once: a removed
+  project is gone from the list and every request for it is refused from the
+  next one on, and a run the phone started there is stopped and reported
+  ended.
 - **Editor.** Monospace text that is always visible; line numbers that start
   at 1, follow every inserted or deleted line at once, scroll with the text and
   can be hidden; no wrapping, with horizontal scrolling for long lines;

@@ -276,20 +276,33 @@ Using it:
   are lost too. Deleting removes the file from the project for good. If the
   file changes on disk while the question is open, nothing is deleted. Only
   `.lcl` and `.lcl.txt` documents can be deleted this way.
-* **↻** (next to `+`) reads the project folder again. Use it after another
+* The sidebar is the project explorer: the folders and LCL documents
+  (`.lcl` and `.lcl.txt`) of the open project, one folder at a time. It
+  starts with the project's root. Click a folder to unfold it: only then is
+  that folder read, and only its own contents are shown; click it again to
+  fold it. Every folder is shown, empty or not, and a folder of other files
+  (outputs, logs, data) is shown as a folder; the files that are not LCL
+  documents are not listed. Clicking a document opens it, or brings its tab
+  to the front if it is already open, and the folders around it unfold so
+  it is marked in the tree.
+* **▤** (next to `+`) makes a new, empty folder where you name it; its
+  parent must exist. Right-clicking a folder offers **New document here…**
+  and **New folder here…**. A new document goes into the folder of the
+  document you are editing unless you type another path.
+* **↻** reads the root and every unfolded folder again. Use it after another
   program adds, removes or renames files there: the tree does not follow the
-  disk by itself. Only the tree changes; open documents, unsaved edits and
-  folded folders stay as they are.
-* The tree shows LCL documents (`.lcl` and `.lcl.txt`) and the folders that
-  lead to them. A folder with no document anywhere inside it, such as one
-  that holds only outputs, logs or data, or an empty one, is not shown, but
-  it stays on disk exactly as it is. A folder of any name that does hold a
-  document, such as `docs/rules.lcl`, is shown.
-* A project whose tree would need more than 4096 entries, with documents
-  more than 12 folders deep, or with more than 100,000 files and folders to
-  look through, is shown in part, and the tree says **File tree limited to
-  4096 entries and 12 folder levels; some files are not shown.** Documents
-  already open, or opened another way, work as usual.
+  disk by itself. A folded folder is read when you unfold it. Only the tree
+  changes; open documents, unsaved edits and folded folders stay as they are.
+* A folder holding more than 4096 folders and documents is shown in part,
+  the first 4096, and the tree says **Folder limited to 4096 entries.**
+  under it. Other folders of the project are unaffected. Documents already
+  open, or opened another way, work as usual.
+* **⌂** goes to the **Projects home**: the projects in your Projects folder
+  (see **Settings** below), to choose one, with **+ New project** and **Open
+  project folder…** for any folder by its full path. A folder without
+  `lcl.project.json` opens as a project of its own too. Choosing a project
+  closes every tab, so the workspace refuses while a document has unsaved
+  edits, and says which.
 * Until a document is open, the editor shows **No document open** and can't
   be typed into. Check, Inspect, Run, Save and Reload are unavailable until
   you create or select a document.
@@ -303,8 +316,10 @@ Using it:
   (see Chapter 17), so otherwise a new start begins with their defaults.
   **Files** chooses the **default file type** for new documents and the
   **Projects folder**: where **New project** creates every new project, each
-  in a folder of its own, and the folder that **LCL Workspace** opens when you
-  start it from the desktop menu; **Open folder** shows it in the open window. These two are kept for your
+  in a folder of its own, and whose projects the **Projects home** offers when
+  you start **LCL Workspace** from the desktop menu; the Projects folder
+  itself is never opened as one project. **Open folder** shows the Projects
+  home in the open window. These two are kept for your
   computer, in `~/.config/lcl/workspace-settings.json`, so they apply to every
   launch. Type the folder's full path, starting with `/`. **Check** tells you
   whether it exists, and a missing folder is only created if you press

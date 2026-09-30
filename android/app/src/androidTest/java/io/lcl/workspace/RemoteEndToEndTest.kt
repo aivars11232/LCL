@@ -334,6 +334,12 @@ class RemoteEndToEndTest {
         rule.onNodeWithTag("files").performClick()
         waitFor("role:house_rules.lcl")
         assertEquals("Rules", textOf("role:house_rules.lcl"))
+        // The explorer is lazy: proj's contents are not there until proj is
+        // unfolded, and unfolding it asks the PC for that folder alone.
+        waitFor("file:proj")
+        assertFalse("a folded folder's contents were listed", exists("file:proj/main.lcl"))
+        rule.onNodeWithTag("file:proj").performClick()
+        waitFor("file:proj/main.lcl")
         waitFor("readiness:proj/main.lcl")
         rule.onNodeWithTag("readiness:proj/main.lcl").performClick()
         rule.waitUntil("the readiness", 20_000) { exists("readiness_status") }

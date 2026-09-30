@@ -275,7 +275,17 @@ fn projects_are_real_sibling_folders_in_the_chosen_projects_folder() {
         .iter()
         .map(|p| (text(p, "name"), flag(p, "current")))
         .collect();
-    assert_eq!(names, [("Alpha", true)]);
+    assert_eq!(
+        names,
+        [("Alpha", true)],
+        "a project New Project made is on the home although it has no manifest"
+    );
+    assert!(
+        std::fs::read_to_string(desk.config.join("lcl/workspace-settings.json"))
+            .unwrap()
+            .contains(&real(&alpha).display().to_string()),
+        "New Project registered the project in the settings file"
+    );
 
     // B: a sibling in the Projects folder, and then the active project; Alpha
     // is not in its tree.
@@ -512,9 +522,14 @@ fn the_projects_folder_is_a_container_of_projects_and_never_one_tree() {
     projects.put("Alpha/main.lcl.txt", "LCL:\n");
     projects.put("Alpha/tasks/task_1.lcl.txt", "LCL:\n");
     std::fs::create_dir(projects.join("Alpha/empty")).unwrap();
-    projects.put("Beta/lcl.project.json", "{\"format\": \"lcl.project/1\"}\n");
+    // Beta has no manifest, only a document at its root, as New Project makes
+    // them; Delta keeps its only document in a subfolder; the rest is the
+    // person's own, nothing of LCL in it.
     projects.put("Beta/main.lcl.txt", "LCL:\n");
+    projects.put("Delta/deep/x.lcl", "LCL:\n");
     projects.put("unrelated/data.txt", "not a document");
+    projects.put("Photos/holiday.jpg", "");
+    std::fs::create_dir(projects.join("empty")).unwrap();
     let config = Scratch::new("home-config");
     let _builtin = Scratch::new("home-builtin");
     // The launcher's built-in default is the Projects folder itself here.
@@ -543,11 +558,9 @@ fn the_projects_folder_is_a_container_of_projects_and_never_one_tree() {
         .collect();
     assert_eq!(
         listed,
-        [
-            ("Alpha", true, false),
-            ("Beta", true, false),
-            ("unrelated", false, false)
-        ]
+        [("Alpha", true, false)],
+        "only the project that declares itself: nothing is a project for being \
+         a folder here, or for holding a document"
     );
 
     // Choosing Alpha: its own files, one folder at a time, and nothing of
@@ -628,6 +641,76 @@ fn the_projects_folder_is_a_container_of_projects_and_never_one_tree() {
     assert_eq!(PathBuf::from(text(&opened, "root")), real(&example.path));
     assert_eq!(ids(""), ["folder", "main.lcl"]);
     assert_eq!(ids("folder"), ["folder/other.lcl"]);
+    // Opened once, it is not on the home; opened with Keep, it is, wherever
+    // it lives, and so is Beta once kept — as rootless projects that can be
+    // dropped again. Dropping one leaves its folder exactly as it was.
+    let rootless_name = example
+        .path
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    let listed_now = || -> Vec<(String, bool, bool)> {
+        json(&request(&running, "GET", "/api/projects", ""))
+            .get("projects")
+            .and_then(Json::as_array)
+            .unwrap()
+            .iter()
+            .map(|p| {
+                (
+                    text(p, "name").to_string(),
+                    flag(p, "manifest"),
+                    flag(p, "registered"),
+                )
+            })
+            .collect()
+    };
+    assert_eq!(listed_now(), [("Alpha".to_string(), true, false)]);
+    for folder in [example.path.clone(), projects.join("Beta")] {
+        let reply = request(
+            &running,
+            "POST",
+            &format!("/api/project/open?path={}&keep=1", folder.display()),
+            "",
+        );
+        assert_eq!(reply.status, 200, "{}", reply.body);
+    }
+    assert_eq!(
+        listed_now(),
+        [
+            ("Alpha".to_string(), true, false),
+            ("Beta".to_string(), false, true),
+            (rootless_name.clone(), false, true)
+        ]
+    );
+    let before = tree(&projects.join("Beta"));
+    let reply = request(
+        &running,
+        "POST",
+        &format!(
+            "/api/projects/forget?path={}",
+            projects.join("Beta").display()
+        ),
+        "",
+    );
+    assert_eq!(reply.status, 200, "{}", reply.body);
+    assert_eq!(
+        listed_now(),
+        [
+            ("Alpha".to_string(), true, false),
+            (rootless_name.clone(), false, true)
+        ]
+    );
+    assert_eq!(
+        tree(&projects.join("Beta")),
+        before,
+        "forgetting touched the disk"
+    );
+    assert!(projects.join("Beta/main.lcl.txt").is_file());
+    assert_eq!(
+        request(&running, "POST", "/api/projects/forget?path=Beta", "").status,
+        400
+    );
     // A relative path, or no folder, opens nothing.
     assert_eq!(
         request(&running, "POST", "/api/project/open?path=Alpha", "").status,

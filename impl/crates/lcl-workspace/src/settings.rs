@@ -2,11 +2,15 @@
 //!
 //! ## Not LCL
 //!
-//! Two preferences about the product, and nothing about the language: which
-//! folder a launch opens when it names no project, and which ending a new
-//! document gets when its name has neither `.lcl` nor `.lcl.txt`. Neither can
-//! change what a document means or how it runs. They are never written into a
-//! document, a project manifest or a lock, and the engine never sees them.
+//! Preferences about the product, and nothing about the language: which
+//! folder a launch opens when it names no project, which ending a new
+//! document gets when its name has neither `.lcl` nor `.lcl.txt`, and which
+//! folders the Projects home lists as projects although they hold no
+//! `lcl.project.json` (the ones New Project made, and the ones the person
+//! chose to keep there). None can change what a document means or how it
+//! runs. They are never written into a document, a project manifest or a
+//! lock, and the engine never sees them: a project absent from the Projects
+//! home is exactly as valid as one on it.
 //!
 //! The browser keeps presentation (theme, font size, line numbers) in its own
 //! storage, because that is about one screen. These are about the computer: a
@@ -51,6 +55,10 @@ pub struct Settings {
     /// The ending a new document gets when its name has neither LCL ending:
     /// one of [`lcl_project::SUFFIXES`].
     pub default_extension: &'static str,
+    /// The projects the Projects home lists because they were made or kept
+    /// there explicitly, not because of anything inside them: absolute,
+    /// canonical folder paths, each once. Product metadata only.
+    pub projects: Vec<PathBuf>,
 }
 
 impl Default for Settings {
@@ -58,6 +66,27 @@ impl Default for Settings {
         Settings {
             default_workspace: None,
             default_extension: lcl_project::SUFFIX,
+            projects: Vec::new(),
+        }
+    }
+}
+
+impl Settings {
+    /// Keep `project` on the Projects home, or drop it from there: `true`
+    /// when that changed the list. Paths are compared as given, so callers
+    /// pass canonical ones.
+    pub fn keep_project(&mut self, project: &Path, keep: bool) -> bool {
+        let at = self.projects.iter().position(|p| p == project);
+        match (at, keep) {
+            (None, true) => {
+                self.projects.push(project.to_path_buf());
+                true
+            }
+            (Some(at), false) => {
+                self.projects.remove(at);
+                true
+            }
+            _ => false,
         }
     }
 }
@@ -167,6 +196,26 @@ pub fn parse(text: &str) -> Loaded {
             ),
         },
     }
+    match document.get("projects") {
+        None | Some(lcl_spec::json::Json::Null) => {}
+        Some(value) => match value.as_array() {
+            Some(items) => {
+                for item in items {
+                    match item.as_str().map(PathBuf::from) {
+                        Some(path) if path.is_absolute() => {
+                            settings.keep_project(&path, true);
+                        }
+                        _ => problems.push(
+                            "a project of the Projects home is not an absolute path, so it is not listed",
+                        ),
+                    }
+                }
+            }
+            None => problems.push(
+                "its projects are not a list, so the Projects home lists only manifest projects",
+            ),
+        },
+    }
     Loaded {
         settings,
         problem: (!problems.is_empty())
@@ -189,6 +238,15 @@ pub fn to_json(settings: &Settings) -> String {
             "default_extension",
             Node::string(settings.default_extension),
         )
+        .with(
+            "projects",
+            Node::array(
+                settings
+                    .projects
+                    .iter()
+                    .map(|p| Node::string(p.display().to_string())),
+            ),
+        )
         .pretty()
 }
 
@@ -206,6 +264,9 @@ pub fn store(path: &Path, settings: &Settings) -> Result<(), String> {
     }
     if ending(settings.default_extension).is_none() {
         return Err("the default file type must be .lcl or .lcl.txt".to_string());
+    }
+    if let Some(project) = settings.projects.iter().find(|p| !p.is_absolute()) {
+        return Err(format!("{} is not an absolute path", project.display()));
     }
     write_atomically(path, to_json(settings).as_bytes())
 }
@@ -346,10 +407,22 @@ mod tests {
         let written = Settings {
             default_workspace: Some(PathBuf::from("/home/u/My LCL $work")),
             default_extension: lcl_project::TEXT_SUFFIX,
+            projects: vec![PathBuf::from("/home/u/Kept"), PathBuf::from("/srv/Other")],
         };
         let loaded = parse(&to_json(&written));
         assert_eq!(loaded.settings, written);
         assert_eq!(loaded.problem, None);
+
+        // Kept once each; dropping is by the same path.
+        let mut settings = written.clone();
+        assert!(!settings.keep_project(Path::new("/home/u/Kept"), true));
+        assert!(settings.keep_project(Path::new("/home/u/New"), true));
+        assert!(settings.keep_project(Path::new("/home/u/Kept"), false));
+        assert!(!settings.keep_project(Path::new("/home/u/Kept"), false));
+        assert_eq!(
+            settings.projects,
+            [PathBuf::from("/srv/Other"), PathBuf::from("/home/u/New")]
+        );
     }
 
     #[test]
@@ -393,6 +466,18 @@ mod tests {
             ));
             assert_eq!(loaded.settings.default_extension, ".lcl", "{other}");
         }
+
+        // A project that is not an absolute path is skipped, the rest kept,
+        // each once; projects that are not a list are none.
+        let loaded =
+            parse("{\"version\": 1, \"projects\": [\"/a\", \"relative\", \"/b\", \"/a\", 7]}");
+        assert_eq!(
+            loaded.settings.projects,
+            [PathBuf::from("/a"), PathBuf::from("/b")]
+        );
+        assert!(loaded.problem.is_some());
+        let loaded = parse("{\"version\": 1, \"projects\": \"/a\"}");
+        assert!(loaded.settings.projects.is_empty() && loaded.problem.is_some());
     }
 
     #[test]
@@ -433,11 +518,13 @@ mod tests {
         let first = Settings {
             default_workspace: Some(PathBuf::from("/a")),
             default_extension: lcl_project::SUFFIX,
+            projects: Vec::new(),
         };
         store(&file, &first).expect("stored");
         let second = Settings {
             default_workspace: None,
             default_extension: lcl_project::TEXT_SUFFIX,
+            projects: vec![PathBuf::from("/b/Kept")],
         };
         store(&file, &second).expect("replaced");
         assert_eq!(load(&file).settings, second);

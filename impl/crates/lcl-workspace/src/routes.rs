@@ -237,6 +237,7 @@ impl Routes {
             ("GET", "/api/projects") => self.list_projects(&workspace),
             ("POST", "/api/projects/open") => self.open_projects_folder(),
             ("POST", "/api/project/open") => self.open_project(request),
+            ("POST", "/api/projects/forget") => self.forget_project(request),
             ("GET", "/api/project/status") => authoring::project_status(&workspace, request),
             ("GET", "/api/masters") => authoring::list_masters(&workspace, &self.masters()),
             ("GET", "/api/master") => authoring::read_master(&self.masters(), request),
@@ -941,15 +942,75 @@ impl Routes {
                 ),
             );
         }
+        // Made by LCL, so known to the Projects home from now on.
+        if let Err(detail) = self.keep_project(&plan.dir, true) {
+            return Response::error(
+                500,
+                &format!(
+                    "The project was created in {} and opened, but could not be kept on the \
+                     Projects home: {detail}",
+                    plan.dir.display()
+                ),
+            );
+        }
         Response::json(authoring::named_plan_json(&plan, &projects))
     }
 
-    /// `GET /api/projects`: the Projects home's list — every folder directly
-    /// inside the Projects folder, by name. The Projects folder is where
-    /// projects live, so each folder in it is one: New Project makes a folder
-    /// of documents there without a manifest, and one is opened rootless.
-    /// `manifest` says which hold `lcl.project.json`. A shallow look, on
-    /// purpose: nothing below those folders is read.
+    /// Keep `folder` on the Projects home, or drop it from there: the
+    /// settings file's list of explicitly known projects, by canonical path.
+    /// Nothing on disk but that file changes.
+    fn keep_project(&self, folder: &Path, keep: bool) -> Result<(), String> {
+        let Some(file) = &self.settings_file else {
+            return Err(
+                "this computer keeps no settings file (no HOME), so the Projects \
+                        home cannot keep projects"
+                    .to_string(),
+            );
+        };
+        let loaded = self.settings();
+        if let Some(problem) = loaded.problem {
+            return Err(format!("{problem} Save Settings again first."));
+        }
+        let mut next = loaded.settings;
+        if next.keep_project(&normal(folder), keep) {
+            settings::store(file, &next)?;
+        }
+        Ok(())
+    }
+
+    /// `POST /api/projects/forget?path=`: drop a project from the Projects
+    /// home. Only its registration goes; the folder and every file in it
+    /// stay exactly as they are.
+    fn forget_project(&self, request: &Request) -> Response {
+        let Some(raw) = request.param("path").filter(|p| !p.is_empty()) else {
+            return Response::error(400, "a folder path is required");
+        };
+        let path = PathBuf::from(raw);
+        if !path.is_absolute() {
+            return Response::error(400, &format!("{raw} is not an absolute path"));
+        }
+        match self.keep_project(&path, false) {
+            Ok(()) => Response::json(
+                Object::new()
+                    .with("path", Node::string(raw))
+                    .with("registered", Node::Bool(false))
+                    .pretty(),
+            ),
+            Err(detail) => Response::error(409, &detail),
+        }
+    }
+
+    /// `GET /api/projects`: the Projects home's list, by name — the folders
+    /// with an explicit reason to be LCL projects, and no other: a direct
+    /// subfolder of the Projects folder that declares itself with
+    /// `lcl.project.json`, and every project the settings file keeps (made by
+    /// New Project, or kept on request when opened), wherever it is. A folder
+    /// is never a project merely for being in the Projects folder, or for
+    /// holding an LCL document somewhere: the person's own folders there are
+    /// not offered, though Open project folder… can still open any. A shallow
+    /// look, on purpose: the Projects folder's entries and each candidate's
+    /// manifest file, nothing below. `manifest` says which declare themselves,
+    /// `registered` which are kept and so can be dropped from the home.
     fn list_projects(&self, workspace: &Workspace) -> Response {
         let projects = match self.projects_folder(workspace) {
             Ok(projects) => projects,
@@ -967,18 +1028,36 @@ impl Routes {
                 )
             }
         };
-        let mut found: Vec<(String, PathBuf)> = listing
-            .filter_map(Result::ok)
-            .map(|e| e.path())
+        // Kept projects first, so a manifest project that is also kept is
+        // listed once, as kept.
+        let mut found: Vec<(String, PathBuf, bool)> = self
+            .settings()
+            .settings
+            .projects
+            .into_iter()
             .filter(|p| p.is_dir())
-            .filter_map(|p| Some((p.file_name()?.to_string_lossy().to_string(), p)))
-            .filter(|(name, _)| !name.starts_with('.'))
+            .filter_map(|p| Some((p.file_name()?.to_string_lossy().to_string(), p, true)))
             .collect();
-        found.sort_by(|a, b| a.0.cmp(&b.0));
+        for path in listing.filter_map(Result::ok).map(|e| e.path()) {
+            let Some(name) = path.file_name().map(|n| n.to_string_lossy().to_string()) else {
+                continue;
+            };
+            if name.starts_with('.')
+                || !path.is_dir()
+                || !path.join(lcl_project::MANIFEST_FILE).is_file()
+            {
+                continue;
+            }
+            let path = normal(&path);
+            if !found.iter().any(|(_, kept, _)| *kept == path) {
+                found.push((name, path, false));
+            }
+        }
+        found.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
         let current = if self.is_home() {
             None
         } else {
-            Some(workspace.root().to_path_buf())
+            Some(normal(workspace.root()))
         };
         Response::json(
             Object::new()
@@ -986,13 +1065,14 @@ impl Routes {
                 .with("home", Node::Bool(self.is_home()))
                 .with(
                     "projects",
-                    Node::array(found.into_iter().map(|(name, path)| {
+                    Node::array(found.into_iter().map(|(name, path, registered)| {
                         let here = current.as_deref() == Some(path.as_path());
                         let manifest = path.join(lcl_project::MANIFEST_FILE).is_file();
                         Object::new()
                             .with("name", Node::string(&name))
                             .with("path", Node::string(path.display().to_string()))
                             .with("manifest", Node::Bool(manifest))
+                            .with("registered", Node::Bool(registered))
                             .with("current", Node::Bool(here))
                             .into()
                     })),
@@ -1020,11 +1100,14 @@ impl Routes {
         }
     }
 
-    /// `POST /api/project/open?path=`: make the folder at an absolute path
-    /// this window's active project. A project from the Projects home, or
-    /// any folder the person names explicitly: one without a manifest opens
-    /// as a rootless project. The page asks about unsaved work before this.
+    /// `POST /api/project/open?path=&keep=`: make the folder at an absolute
+    /// path this window's active project. A project from the Projects home,
+    /// or any folder the person names explicitly: one without a manifest
+    /// opens as a rootless project, and with `keep=1` it is kept on the
+    /// Projects home from then on — only when asked, so a folder opened once
+    /// is not registered behind the person's back.
     fn open_project(&self, request: &Request) -> Response {
+        let keep = matches!(request.param("keep"), Some("1" | "true"));
         let Some(raw) = request.param("path").filter(|p| !p.is_empty()) else {
             return Response::error(400, "a folder path is required");
         };
@@ -1041,10 +1124,20 @@ impl Routes {
         if self.reopen.is_none() {
             return Response::error(409, "this window cannot open another folder");
         }
-        match self.open_folder(&path, false) {
-            Ok(()) => self.session(&self.workspace()),
-            Err(detail) => Response::error(422, &detail),
+        if let Err(detail) = self.open_folder(&path, false) {
+            return Response::error(422, &detail);
         }
+        if keep {
+            if let Err(detail) = self.keep_project(&path, true) {
+                return Response::error(
+                    500,
+                    &format!(
+                        "{raw} was opened, but could not be kept on the Projects home: {detail}"
+                    ),
+                );
+            }
+        }
+        self.session(&self.workspace())
     }
 
     /// Show `folder` in this window from now on, opened as this launch opened
@@ -1112,6 +1205,12 @@ impl Routes {
             }
         })
     }
+}
+
+/// One spelling of a folder's path, for keeping and comparing: canonical when
+/// the folder can be resolved, as given otherwise.
+fn normal(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
 // ---------------------------------------------------------------------------

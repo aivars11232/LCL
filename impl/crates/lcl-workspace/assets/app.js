@@ -662,8 +662,25 @@ async function loadHome() {
       dot.title = "Unsaved documents of this project are kept in this window";
       item.append(dot);
     }
-    item.append(el("span", "name", project.name));
-    if (!project.manifest) item.append(el("span", "role", "no manifest"));
+    item.append(el("span", "glyph", "▣"), el("span", "name", project.name));
+    if (!project.manifest) {
+      const role = el("span", "role", "Rootless");
+      role.title = "No lcl.project.json: opened as a rootless project";
+      item.append(role);
+    }
+    if (project.registered) {
+      /* Kept here on request (or made by New Project): can be dropped again. */
+      const more = el("button", "icon menu", "⋯");
+      more.type = "button";
+      more.title = "Project actions";
+      more.setAttribute("aria-label", `Actions for ${project.name}`);
+      more.onclick = (e) => {
+        e.stopPropagation();
+        const at = more.getBoundingClientRect();
+        openHomeMenu(project, at.left, at.bottom, item);
+      };
+      item.append(more);
+    }
     item.title = project.path;
     item.onclick = () => openProject(project.path);
     item.onkeydown = (e) => { if (e.key === "Enter") openProject(project.path); };
@@ -687,11 +704,12 @@ async function loadHome() {
 }
 
 /* Make one folder this window's project. The tabs of the project shown now
- * stay in this window, unsaved edits and all, until it is shown again. */
-async function openProject(path) {
+ * stay in this window, unsaved edits and all, until it is shown again. With
+ * `keep`, the folder is kept on the Projects home from now on. */
+async function openProject(path, keep = false) {
   const unsaved = unsavedDocuments();
   try {
-    await api("POST", "/api/project/open", { path });
+    await api("POST", "/api/project/open", keep ? { path, keep: "1" } : { path });
   } catch (e) {
     toast(`Could not open ${path}. ${e.message}`, "bad");
     return false;
@@ -721,17 +739,35 @@ function openFolderDialog() {
     const input = el("input", "field");
     input.id = "open-folder-path";
     input.value = state.home.folder ? `${state.home.folder}/` : "/";
+    const keep = el("label", "check");
+    const box = el("input", "");
+    box.type = "checkbox";
+    box.id = "open-folder-keep";
+    keep.append(box, el("span", "", "Keep in Projects Home"));
     const status = el("p", "note");
     status.id = "open-folder-status";
-    body.append(input, status);
+    body.append(input, keep, status);
   }, [
     ["Cancel", "", (close) => close()],
     ["Open", "primary", async (close) => {
       const path = $("#open-folder-path").value.trim();
       if (!path) return;
-      if (await openProject(path)) close();
+      if (await openProject(path, $("#open-folder-keep").checked)) close();
     }],
   ]);
+}
+
+/* Drop a project from the Projects home. Its folder and files stay as they
+ * are; only the home stops listing it. */
+async function forgetProject(project) {
+  try {
+    await api("POST", "/api/projects/forget", { path: project.path });
+  } catch (e) {
+    toast(`${project.name} is still on the Projects home. ${e.message}`, "bad");
+    return;
+  }
+  toast(`${project.name} was removed from the Projects home. Its folder was not touched.`, "good");
+  await loadHome();
 }
 
 /* New folder: an empty folder, made where it was asked for and shown at
@@ -909,12 +945,23 @@ function openMenu(id, x, y, returnTo) {
 
 /* The menu a folder in the tree opens: what to make inside it. */
 function openFolderMenu(id, x, y, returnTo) {
+  actionMenu(id, [["New document here…", () => newDocument(id)], ["New folder here…", () => newFolder(id)]], x, y, returnTo);
+}
+
+/* The menu of a project kept on the Projects home. */
+function openHomeMenu(project, x, y, returnTo) {
+  actionMenu(project.name, [["Remove from Projects Home", () => forgetProject(project)]], x, y, returnTo);
+}
+
+/* One small menu of `actions` ([label, act] pairs) at (x, y), kept inside
+ * the window; Escape or leaving it closes it. */
+function actionMenu(label, actions, x, y, returnTo) {
   closeMenu();
   const menu = el("div", "context-menu");
   menu.setAttribute("role", "menu");
-  menu.setAttribute("aria-label", id);
-  for (const [label, act] of [["New document here…", () => newDocument(id)], ["New folder here…", () => newFolder(id)]]) {
-    const item = el("button", "", label);
+  menu.setAttribute("aria-label", label);
+  for (const [text, act] of actions) {
+    const item = el("button", "", text);
     item.setAttribute("role", "menuitem");
     item.onclick = () => { closeMenu(); act(); };
     menu.append(item);

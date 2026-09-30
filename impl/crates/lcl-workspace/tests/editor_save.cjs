@@ -153,10 +153,15 @@ async function harness(options) {
   // Projects folder holds.
   let fixtureHome = false;
   let fixtureRoot = "/fixture";
-  const fixtureProjects = [
-    { name: "Alpha", path: "/fixture/projects/Alpha", manifest: true },
-    { name: "Beta", path: "/fixture/projects/Beta", manifest: false },
+  // Alpha declares itself with a manifest; Beta is kept in the registry.
+  const initialProjects = () => [
+    { name: "Alpha", path: "/fixture/projects/Alpha", manifest: true, registered: false },
+    { name: "Beta", path: "/fixture/projects/Beta", manifest: false, registered: true },
   ];
+  const fixtureProjects = initialProjects();
+  // The folders the page asked to keep on the home, and to drop from it.
+  const fixtureKept = [];
+  const fixtureForgotten = [];
   // Every folder the page asked the server to list, in order, in both modes.
   const treeRequests = [];
   /// The direct children of one folder of the controlled project: the
@@ -263,7 +268,19 @@ async function harness(options) {
     } else if (url.pathname === "/api/project/open") {
       const target = url.searchParams.get("path");
       if (!target.startsWith("/")) reply = jsonReply({ error: `${target} is not an absolute path` }, 400);
-      else { fixtureHome = false; fixtureRoot = target; reply = jsonReply({ root: target, home: false, open: null, entry: null, spec: { formal_version: "0.1.0", authority: "authoritative", identity_digest: "fixture", root: "/spec" } }); }
+      else {
+        fixtureHome = false; fixtureRoot = target;
+        if (url.searchParams.get("keep") === "1") {
+          fixtureKept.push(target);
+          if (!fixtureProjects.some(p => p.path === target)) fixtureProjects.push({ name: target.split("/").pop(), path: target, manifest: false, registered: true });
+        }
+        reply = jsonReply({ root: target, home: false, open: null, entry: null, spec: { formal_version: "0.1.0", authority: "authoritative", identity_digest: "fixture", root: "/spec" } });
+      }
+    } else if (url.pathname === "/api/projects/forget") {
+      const target = url.searchParams.get("path");
+      const at = fixtureProjects.findIndex(p => p.path === target && p.registered);
+      if (at < 0) reply = jsonReply({ error: `${target} is not kept on the Projects home` }, 409);
+      else { fixtureForgotten.push(target); fixtureProjects.splice(at, 1); reply = jsonReply({ path: target, registered: false }); }
     } else if (url.pathname === "/api/document" && method === "POST") {
       // Create: the default ending for a name without one, an explicit one
       // kept, and never over an existing document.
@@ -532,6 +549,8 @@ async function harness(options) {
     },
     /// The folders the page asked the server to list since the last look.
     treeRequests() { return treeRequests.splice(0); },
+    kept() { return fixtureKept.splice(0); },
+    forgotten() { return fixtureForgotten.splice(0); },
     /// The project this real server is over, as an absolute path.
     projectPath() { return options.project ? path.resolve(options.project) : "/fixture"; },
     /// The browser about to close the window: what the page does with it.
@@ -658,6 +677,7 @@ async function harness(options) {
       // The computer's settings go back to their defaults too, wherever they live.
       fixtureSettings = { ...FIXTURE_SETTINGS };
       fixtureHome = false; fixtureRoot = "/fixture"; madeFolders.clear(); treeRequests.length = 0;
+      fixtureProjects.splice(0, fixtureProjects.length, ...initialProjects()); fixtureKept.length = 0; fixtureForgotten.length = 0;
       run("state.session = state.session || {}; state.session.home = false; state.tree.children.clear(); state.tree.expanded.clear();");
       if (options.server) {
         const reply = await request(new URL("/api/settings", origin), {
@@ -1583,6 +1603,50 @@ const uiCases = [
       assert(h.toasts().some(t => t.startsWith("Could not open relative/folder")), h.toasts().join(" | "));
       assert.equal(h.run("state.session.root"), target);
       h.run("closeModal()");
+    } finally {
+      if (h.run("state.session.home") || h.run("state.session.root") !== before) await bounded(h.run(`openProject(${JSON.stringify(before)})`), "restore");
+      h.run("state.parked.clear()");
+    }
+  }],
+  ["the Projects home marks rootless projects, keeps a folder only when asked, and Remove from Projects Home touches nothing on disk", async h => {
+    const before = h.projectPath();
+    try {
+      await bounded(h.run("goHome()"), "home");
+      if (!h.realDisk) {
+        const rows = h.get("#projects").children;
+        const beta = rows.find(li => li.dataset.path === "/fixture/projects/Beta");
+        const alpha = rows.find(li => li.dataset.path === "/fixture/projects/Alpha");
+        assert(beta.children.some(c => c.className === "role" && c.textContent === "Rootless"), "Beta is not marked rootless");
+        assert(!alpha.children.some(c => c.className === "role"), "Alpha, a manifest project, is marked");
+        assert(beta.children.some(c => c.className === "icon menu"), "the kept project has no actions");
+        assert(!alpha.children.some(c => c.className === "icon menu"), "a manifest project offers actions");
+        // Remove from Projects Home: only the registration is asked to go;
+        // no document or folder request follows, and the home no longer
+        // lists it.
+        h.run('openHomeMenu({ name: "Beta", path: "/fixture/projects/Beta", registered: true }, 0, 0, null)');
+        const menu = [...h.run("document.body.children").at(-1).children].map(b => b.textContent);
+        assert.deepEqual(menu, ["Remove from Projects Home"]);
+        h.run("closeMenu()");
+        await bounded(h.run('forgetProject({ name: "Beta", path: "/fixture/projects/Beta" })'), "forget");
+        assert.deepEqual(h.forgotten(), ["/fixture/projects/Beta"]);
+        assert(!h.get("#projects").children.some(li => li.dataset.path === "/fixture/projects/Beta"), "Beta is still listed");
+        assert(h.toasts().some(t => t.includes("was not touched")), h.toasts().join(" | "));
+      }
+      // Open project folder…: kept on the home only when the box is ticked.
+      const target = h.realDisk ? before : "/fixture/projects/Gamma";
+      h.run("openFolderDialog()");
+      assert.equal(h.modalTitle(), "Open project folder");
+      h.get("#open-folder-path").value = target;
+      h.get("#open-folder-keep").checked = true;
+      await bounded(h.choose("Open"), "open kept");
+      assert.equal(h.run("state.session.root"), target);
+      if (!h.realDisk) {
+        assert.deepEqual(h.kept(), [target]);
+        await bounded(h.run("goHome()"), "home again");
+        assert(h.get("#projects").children.some(li => li.dataset.path === target), "the kept folder is not on the home");
+        await bounded(h.run(`openProject(${JSON.stringify(target)})`), "open plain");
+        assert.deepEqual(h.kept(), [], "opening without Keep registered the folder");
+      }
     } finally {
       if (h.run("state.session.home") || h.run("state.session.root") !== before) await bounded(h.run(`openProject(${JSON.stringify(before)})`), "restore");
       h.run("state.parked.clear()");

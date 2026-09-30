@@ -22,7 +22,7 @@ lcl <command> [options] [document]
 | `lcl spec` | | reports the specification package's path, version, identity and authority |
 | `lcl syntax` | | prints syntax facts for editors and tools: the recognised endings (`.lcl.txt`, `.lcl`), encoding, word counts |
 | `lcl version` | | prints the tool, protocol and language versions |
-| `lcl --version` | | prints the product version alone, on one line: `lcl 0.5.1` |
+| `lcl --version` | | prints the product version alone, on one line: `lcl 0.5.2` |
 | `lcl help` | | prints the built-in help |
 
 The package cache used by `vendor` and `list` must be declared as `"cache"`

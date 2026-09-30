@@ -56,10 +56,10 @@ android {
         // "0.5"). versionCode is Android's own number: it installs an update
         // only over a lower one, and it is never shown. Nobody types it: it
         // is derived from the version (MAJOR * 1 000 000 + MINOR * 1 000 +
-        // PATCH, so 0.5.1 is 5001), which grows whenever the version does.
+        // PATCH, so 0.5.2 is 5002), which grows whenever the version does.
         // The properties let a build (or the update test in tools/e2e.sh)
         // set both without editing this file.
-        versionName = providers.gradleProperty("lclVersionName").orNull ?: "0.5.1"
+        versionName = providers.gradleProperty("lclVersionName").orNull ?: "0.5.2"
         versionCode = providers.gradleProperty("lclVersionCode").orNull?.toInt() ?: versionCodeOf(versionName!!)
         buildConfigField("String", "UPDATE_TRUSTED_KEYS", "\"$trustedUpdateKeys\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

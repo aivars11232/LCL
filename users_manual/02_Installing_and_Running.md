@@ -17,13 +17,13 @@
   why that matters.
 * The LCL release archive, `lcl-<version>-linux-x86_64.tar.gz`, from the
   latest stable release on GitHub:
-  <https://github.com/aivars11232/LCL/releases/latest>. For LCL 0.5.1 that is
-  `lcl-0.5.1-linux-x86_64.tar.gz`: file names carry the full version number,
+  <https://github.com/aivars11232/LCL/releases/latest>. For LCL 0.5.2 that is
+  `lcl-0.5.2-linux-x86_64.tar.gz`: file names carry the full version number,
   and LCL itself shows a release ending in `.0` without that `.0` (LCL 0.5 is
   release 0.5.0). The release also lists the archive's SHA-256 fingerprint, in
-  `lcl-0.5.1-linux-x86_64.sha256`.
+  `lcl-0.5.2-linux-x86_64.sha256`.
 
-This version, LCL 0.5.1, is the version of the *product*: the programs and the
+This version, LCL 0.5.2, is the version of the *product*: the programs and the
 app. The language has versions of its own, Core 0.1.0 to 0.3.0, which the
 rest of this chapter names where they matter.
 
@@ -33,7 +33,7 @@ Unpack the archive and run its installer:
 
 ```
 $ mkdir lcl-install
-$ tar -xzf lcl-0.5.1-linux-x86_64.tar.gz -C lcl-install
+$ tar -xzf lcl-0.5.2-linux-x86_64.tar.gz -C lcl-install
 $ cd lcl-install/*/
 $ ./install.sh
 ```
@@ -84,7 +84,7 @@ Check that everything works:
 
 ```
 $ lcl version
-lcl 0.5.1
+lcl 0.5.2
 protocol lcl.engine/1
 language 0.1.0
 

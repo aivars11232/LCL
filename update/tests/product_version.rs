@@ -73,14 +73,14 @@ fn the_android_version_code_follows_from_the_version_and_is_past_every_published
         "build.gradle.kts no longer derives versionCode from the version"
     );
     assert!(read("packaging/build_update_release.sh").contains("$1 * 1000000 + $2 * 1000 + $3"));
-    assert_eq!(version_code_of("0.5.1"), 5001);
+    assert_eq!(version_code_of("0.5.2"), 5002);
     // v0.1.1 was published with versionCode 7 and v0.5.0 with 8; a build of
     // this version must never look older than a release a phone may have.
     let code = version_code_of(lcl_update::PRODUCT_VERSION);
     assert!(code > 8, "versionCode {code}");
     // And it grows with the version, so a later release always installs.
     assert!(
-        version_code_of("0.5.2") > code
+        version_code_of("0.5.3") > code
             && version_code_of("0.6.0") > code
             && version_code_of("1.0.0") > code
     );

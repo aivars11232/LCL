@@ -280,7 +280,7 @@ ANDROID_HOME=/path/to/sdk packaging/build_update_release.sh
 
 The APK's `versionCode` is not typed anywhere: it follows from the product
 version, as the Android build derives it (`MAJOR * 1000000 + MINOR * 1000 +
-PATCH`, so 0.5.1 is 5001), which grows with every release;
+PATCH`, so 0.5.2 is 5002), which grows with every release;
 `LCL_ANDROID_VERSION_CODE` overrides it only for tests. The builder still
 refuses a code that does not advance past the previous release's.
 

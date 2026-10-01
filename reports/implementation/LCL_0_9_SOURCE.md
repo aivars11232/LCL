@@ -285,42 +285,59 @@ tracked text; the diff since 93041b3 adds no password, token or key material.
 
 ## FINAL GATE
 
-**Interrupted — not green on the final HEAD.** The owner shut the PC down
-during the second verification chain (2026-10-01 ~00:55).
+Governing gate `/mnt/F/.lcl-pretest/v05/v05-gate.sh` (71 commands, each with
+an expected status), on the final source commit **`aaf3766`**:
 
-- Gate run 1, on `56cbe0f` (`/mnt/F/.lcl-pretest/v05/gate5-run.log`,
-  results `gate5-results-56cbe0f.tsv`): 71 commands, 51 as expected, and:
-  - `test-workspace` and `msrv-tests` (both toolchains): 1969 passed, 1
-    failed — `lcl-hardening/tests/release_build.rs`
-    `a_0_2_0_candidate_records_both_languages`, which still read the
-    candidate by the Core bundle's name after the §47 rename. Fixed in
-    `e578cb3` (the test now expects `lcl-0.1.0-…` for the fixture's product
-    version and asserts `core bundle: 0.2.0` / `product version: 0.1.0`);
-    that test passes alone. The two phases were **not rerun** on `e578cb3`.
-  - `update-tests`: 34 passed, 1 failed — `flow.rs`
-    `a_check_offers_only_a_newer_signed_stable_release` with `ETXTBSY` ("Text
-    file busy"): the known race of tests that write and execute binaries in
-    one process. The updater suite rerun alone passed 24 + 2 + 2 (0 failed).
-    Phase e was **not rerun**.
-  - The selftest's two deliberate failures, Core 0.1/0.2/0.3 checksums,
-    validators, EBNF, identities and anchors, `protected`, the real_process
-    runs, remote tests, manual manifest/examples, readiness gate and the real
-    Firefox smoke passed as expected.
-- Android E2E run 10 (`e2e-run10.log`): the seven no-PC phases passed; `p1`
-  failed because the run's `core.create` was refused
-  (`error.operation.precondition`) — `todo_backup.txt` was left in the
-  reused `E2E_DIR` work folder by run 9 (2026-09-30). The harness now empties
-  that folder (`e578cb3`, `android/tools/e2e.sh`). The E2E was **not rerun**.
-- Instrumented `LocalProjectsUiTest` (1), `VersionDisplayTest` (1),
-  `FileDrawerTest` (3): **5/5 passed** on the emulator
-  (`/mnt/F/.lcl-pretest/v05/ui-*.txt`), run by `adb shell am instrument` on
-  the APKs built from the final Android sources (Gradle's connected task needs
-  an artifact the offline cache lacks).
-- The E2E rerun (run 11, after the work-folder fix) was stopped at the
-  shutdown during its first phases, with no failure before the stop.
+- Full run (`/mnt/F/.lcl-pretest/v05/gate7-run.log`): **70 of 71 as
+  expected** — fmt, clippy, the MSRV 1.75 check and suite (1970 passed, 0
+  failed, 1 ignored), Core 0.1/0.2/0.3 checksums, validators, EBNF, identities
+  and anchors, `protected`, the conformance text and readiness gate, the 12
+  sequential and 18 concurrent `real_process` runs, remote fmt/clippy/tests
+  (65), update fmt/clippy/tests (35), manual manifest and examples, the real
+  Firefox smoke, and the selftest's two deliberate failures. One mismatch:
+  `test-workspace`, 1969 passed and 1 failed —
+  `remote::tests::a_failure_is_reported_in_the_program_s_own_words` in
+  `lcl-workspace`, with "Text file busy (os error 26)": the known ETXTBSY race
+  of the test process (see Known limitations), not a statement about the
+  product.
+- Rerun of that command's phase on the same commit (`gate7b-run.log`): fmt,
+  clippy and `test-workspace` as expected — **1970 passed, 0 failed, 1
+  ignored**.
 
-To finish: `bash /mnt/F/.lcl-pretest/v05/final-chain2.sh` (E2E → gate phases
-a, b, e → verdict), one heavy job after another.
+So every one of the 71 commands has its expected status on `aaf3766`: 70 in
+the full run, `test-workspace` in the rerun. The gate keeps one results file
+per run, so there is no single 71-row verdict: the full run's table is in
+`gate7-run.log`, the rerun's three rows in `gate7b-results-aaf3766.tsv`.
+
+For the record: the first full run, on `56cbe0f` (`gate5-run.log`), found one
+real defect of this task — the hardening test
+`a_0_2_0_candidate_records_both_languages` still read the candidate by its
+Core bundle's name after the §47 rename (fixed in `e578cb3`) — and one ETXTBSY
+flake in the updater's `flow.rs`, green on rerun. Phases a, b and e then
+passed on `3d1fe4f` (`gate6-run.log`, 15/15). The verification was interrupted
+once by a shutdown of the PC and resumed the next morning.
+
+**Android E2E** (`android/tools/e2e.sh`, the `lcl36` emulator against a real
+`lcl-remote`), on `aaf3766` (`e2e-run12.log`): **all phases passed** — the
+seven no-PC phases; p1 pair and work (edit, save, Check, Validate, Inspect,
+an approved run); p2–p11, p13, p14 (reconnects, network loss, PC restart,
+conflict, revocation, repair, scan, denied pairing, key retirement, forget,
+Back); p12 (Core 0.3 roles and readiness); p15/p16 (an update found, verified,
+installed in place, the pairing kept); p17 (a project made on the phone
+synced into the PC's project, the PC's bytes checked on disk, the phone's copy
+removed only after confirmation); and no ANR or crash of LCL in the system's
+record. Two harness defects were fixed on the way, both from reusing
+`E2E_DIR`: a backup file left in the run's work folder made the run's
+`core.create` refuse at p1 (`e578cb3`), and device records left in the
+service's trust store by earlier and interrupted runs failed "exactly one
+device" after p1 (`aaf3766`: a run now removes its own config, state, data,
+work folder, evidence and update release before it starts).
+
+**Instrumented UI tests** on the emulator (`ui-*.txt`): `LocalProjectsUiTest`
+1/1, `VersionDisplayTest` 1/1 (versionName 0.9.0, versionCode 9000, "LCL
+0.9", never the code), `FileDrawerTest` 3/3 — run with `adb shell am
+instrument`, since Gradle's connected task needs an artifact the offline cache
+lacks.
 
 ## PHYSICAL PHONE RESULT
 
@@ -355,13 +372,28 @@ path is exercised at release time).
 Before the gate (2026-10-01 00:04): `/mnt/F` 62 G used / 197 G free, `/`
 151 G used / 35 G free; repository 4.6 G with build output; `/mnt/F/.lcl-android`
 7.5 G (SDK, JDK, AVD, Gradle caches — kept).
-After (2026-10-01 00:58, verification interrupted): `/mnt/F` 87 G used /
-172 G free. Build output was **kept**, because the gate and the E2E still
-have to be rerun on the final HEAD: `/mnt/F/.lcl-pretest/v05/target` (9.5 G,
-the gate's Cargo target), `/mnt/F/.lcl-pretest/remote-target` (2.6 G, the
-E2E's `lcl-remote`), `impl/target`, `remote/target`, `update/target` and
-`android/app/build` inside the repository (4.7 G in all). All of it is
-rebuildable and is to be deleted once the verification is green.
+Peak during the verification: `/mnt/F` 87 G used.
+
+After the verification and the cleanup (2026-10-01 07:09): **`/mnt/F` 56 G
+used / 202 G free**, repository 233 M. Deleted, all rebuildable build output
+of this task's test and gate runs:
+
+- in the repository (ignored by Git): `impl/target` (3.8 G), `remote/target`,
+  `update/target`, `android/app/build`, `android/build`, `android/.gradle`;
+- outside it: `/mnt/F/.lcl-pretest/v05/target` (9.5 G, the gate's Cargo
+  target), `/mnt/F/.lcl-closure-4t-4c1cd4c659b7/target-msrv` (14 G, the gate's
+  Rust 1.75 target), `/mnt/F/.lcl-pretest/remote-target` (2.6 G, the E2E's
+  `lcl-remote`), `/mnt/F/.lcl-pretest/update-target` (0.4 G).
+
+Kept, hidden folders beside the repository: `/mnt/F/.lcl-android` 7.5 G (JDK,
+Android SDK, emulator image, Gradle caches, the debug keystore the app is
+signed with), `/mnt/F/.lcl-pretest` 3.7 G (logs and evidence of this and
+earlier tasks), `/mnt/F/.lcl-residual-repair-01-lxd8dwu8` 1.1 G (the Rust 1.75
+toolchain the gate needs), `/mnt/F/.lcl-closure-4t-4c1cd4c659b7` 0.5 G,
+`/mnt/F/.lcl-repair-6t` 0.2 G, `/mnt/F/.lcl-releases` 0.1 G (published
+manifests, release notes), `/mnt/F/.lcl-bootstrap-20260928`,
+`/mnt/F/.lcl-updater-repair-20260928`. No global Cargo or Gradle cache and no
+signing material was deleted; `git clean` was not used.
 
 ## GIT
 
@@ -373,11 +405,12 @@ Commits on `main` after `93041b3`:
 4. `7ec3e70` Product version 0.9.0; bounded versionCode rule; the candidate is named by the product version
 5. `56cbe0f` Docs: the Projects home, phone sync safety, versioning
 6. `e578cb3` Tests: the candidate's name follows the product version; the E2E's work folder starts empty
-7. this report
+7. `3d1fe4f` Report, first version (pushed at the owner's request when the PC was shut down mid-verification)
+8. `aaf3766` Android E2E: a run starts without what an earlier run left in its work directory
+9. this report
 
-`git diff --check` clean. Pushed at the owner's request (2026-10-01 ~01:00)
-right after this report's commit, before the verification was complete;
-`origin/main` is to equal this report's commit.
+`git diff --check` clean; working tree clean; pushed, `main` == `origin/main`.
+No tag and no release were made.
 
 ## KNOWN LIMITATIONS
 
@@ -400,14 +433,27 @@ right after this report's commit, before the verification was complete;
   path is a release-time proof.
 - `equivalence.rs` in `lcl-workspace` needs a whole-workspace build; a
   single-crate test run reports it as failed for that reason alone.
+- The ETXTBSY flake is still there. Tests that write a stand-in program from
+  the test process and execute it at once (`lcl-workspace` `remote::tests`,
+  the updater's `flow.rs`) fail now and then with "Text file busy": another
+  test thread that forks in that window carries the still-open write
+  descriptor until its own exec. It cost three gate commands across this
+  task's runs, each green on rerun. The fix is test-only — retry the launch on
+  that one error, or have the helper write the stand-in through a child
+  process — and was left out of this task's scope.
 
 ## FINAL VERDICT
 
-**LCL_0_9_SOURCE_VERIFICATION_INTERRUPTED** — not `LCL_0_9_SOURCE_READY`.
-Every required source fix is in, every focused suite is green (including the
-five instrumented UI tests and the PC runtime check), and the two real
-failures of the first gate run and the E2E's first failure are fixed in
-`e578cb3`; but the governing gate's phases a, b and e and the full Android E2E
-have not been rerun on the final HEAD, because the PC was shut down. Nothing
-is published: no `v0.9.0` tag, no release. Not claimed: `LCL_0_9_RELEASED`,
-`CORE_0_3_RELEASED`, `CORE_0_3_REVIEW_COMPLETE`.
+**LCL_0_9_SOURCE_READY**
+
+Every required source fix is in, and the final governing gate passes on
+`aaf3766`: all 71 commands with their expected status (70 in the full run,
+`test-workspace` on the rerun of its phase after an ETXTBSY flake), the full
+Android E2E, and the instrumented UI tests. The product source is 0.9.0,
+shown as LCL 0.9, Android versionCode 9000; a release candidate is buildable
+(`packaging/build_update_release.sh`, predecessor manifest: published v0.5.2).
+
+Not done here, by the task's own terms: publication of v0.9.0 (a separate
+owner authorisation, after the PC runtime test on an installed build and the
+physical-phone acceptance, which was not run). Not claimed:
+`LCL_0_9_RELEASED`, `CORE_0_3_RELEASED`, `CORE_0_3_REVIEW_COMPLETE`.

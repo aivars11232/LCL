@@ -906,6 +906,18 @@ cargo clippy --offline --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
 
+Rust is kept in rustfmt's format, which the last line checks. The workspace
+page's script, stylesheet and page tests are kept in Prettier's (3.6.2, with
+`printWidth` 100 from `.prettierrc.json` at the repository root):
+
+```bash
+prettier --check crates/lcl-workspace/assets/app.js crates/lcl-workspace/assets/app.css \
+    crates/lcl-workspace/tests/editor_save.cjs
+```
+
+`assets/index.html` is not formatted by a tool. The Android app's Kotlin has
+its own formatter; see `android/README.md`, "Code style".
+
 The M9 binary, over a document or a project:
 
 ```bash

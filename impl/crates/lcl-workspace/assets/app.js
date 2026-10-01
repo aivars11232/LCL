@@ -41,7 +41,11 @@ async function api(method, path, params, body) {
   const reply = await fetch(url, init);
   const text = await reply.text();
   let parsed = null;
-  try { parsed = text ? JSON.parse(text) : null; } catch (_) { parsed = null; }
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch (_) {
+    parsed = null;
+  }
   if (!reply.ok) {
     const detail = (parsed && parsed.error) || text || reply.statusText;
     const error = new Error(detail);
@@ -85,7 +89,10 @@ function buildIndex(text) {
     if (text[i] === "\n") lineStarts.push(byteAt[i] + 1);
   }
   return {
-    charAt, byteAt, lineStarts, byteLength: b,
+    charAt,
+    byteAt,
+    lineStarts,
+    byteLength: b,
     char(byte) {
       if (byte <= 0) return 0;
       if (byte >= charAt.length) return text.length;
@@ -101,10 +108,12 @@ function buildIndex(text) {
      * for the cursor readout; anything the engine reported carries its own
      * position and that one is displayed instead. */
     position(byte) {
-      let lo = 0, hi = lineStarts.length - 1;
+      let lo = 0,
+        hi = lineStarts.length - 1;
       while (lo < hi) {
         const mid = (lo + hi + 1) >> 1;
-        if (lineStarts[mid] <= byte) lo = mid; else hi = mid - 1;
+        if (lineStarts[mid] <= byte) lo = mid;
+        else hi = mid - 1;
       }
       const start = this.char(lineStarts[lo]);
       const here = this.char(byte);
@@ -126,8 +135,10 @@ function editBetween(before, beforeIndex, after, afterIndex) {
   let head = 0;
   while (head < shorter && before.charCodeAt(head) === after.charCodeAt(head)) head++;
   let tail = 0;
-  while (tail < shorter - head &&
-         before.charCodeAt(before.length - 1 - tail) === after.charCodeAt(after.length - 1 - tail)) {
+  while (
+    tail < shorter - head &&
+    before.charCodeAt(before.length - 1 - tail) === after.charCodeAt(after.length - 1 - tail)
+  ) {
     tail++;
   }
   /* A character outside the Basic Multilingual Plane is two UTF-16 units. A
@@ -185,16 +196,16 @@ const state = {
    * as they were, edits and all, until that project is shown again or the
    * window closes. Nothing is saved or discarded by switching. */
   parked: new Map(),
-  docs: new Map(),      // id -> Doc
-  order: [],            // tab order
-  active: null,         // id
+  docs: new Map(), // id -> Doc
+  order: [], // tab order
+  active: null, // id
   syntax: null,
-  run: null,            // the live run, when there is one
+  run: null, // the live run, when there is one
   grants: { allow_read: [], allow_write: [], allow_program: [], allow_host: [] },
   inputs: [],
-  breakOnEffects: true,   // ask before every effect, which is the safe default
+  breakOnEffects: true, // ask before every effect, which is the safe default
   breakOnOperations: false,
-  settings: null,         // workspace preferences; see `applySettings`
+  settings: null, // workspace preferences; see `applySettings`
   /* The settings that belong to the computer rather than this browser: the
    * default file type and the default workspace. The server keeps them in the
    * user's configuration directory; see `loadFileSettings`. */
@@ -218,7 +229,10 @@ const state = {
  * is on disk. The state is never inferred from a name or from `dirty`. */
 function Doc(id, text, digest, lifecycle = "opened") {
   return {
-    id, text, digest, lifecycle,
+    id,
+    text,
+    digest,
+    lifecycle,
     saved: text,
     revision: 0,
     pendingSaves: 0,
@@ -232,8 +246,8 @@ function Doc(id, text, digest, lifecycle = "opened") {
      * remembers the newest answer applied, and an older one is not. */
     issued: { tokens: 0, analysis: 0 },
     accepted: { tokens: 0, analysis: 0 },
-    tokens: null,        // token spans from the engine, carried across edits
-    report: null,        // the last engine report for this document
+    tokens: null, // token spans from the engine, carried across edits
+    report: null, // the last engine report for this document
     navigation: null,
     /* What the editor draws from `report` and `navigation`: squiggles and
      * reference marks, as byte spans. Kept apart from the report, which is
@@ -275,7 +289,10 @@ function markReport(doc) {
   for (const d of (doc.report && doc.report.diagnostics) || []) {
     if (d.source !== doc.id) continue;
     squiggles.push({
-      start: d.span.start, end: d.span.end, severity: severityOf(d), line: d.position.line,
+      start: d.span.start,
+      end: d.span.end,
+      severity: severityOf(d),
+      line: d.position.line,
     });
   }
   const refs = [];
@@ -302,7 +319,14 @@ const emptyState = $("#empty-state");
 
 /* Every control that acts on the open document. With no document they are
  * disabled together, by `syncDocumentUI`, and by nothing else. */
-const DOCUMENT_ACTIONS = ["#act-check", "#act-validate", "#act-inspect", "#act-run", "#act-save", "#act-reload"];
+const DOCUMENT_ACTIONS = [
+  "#act-check",
+  "#act-validate",
+  "#act-inspect",
+  "#act-run",
+  "#act-save",
+  "#act-reload",
+];
 
 function toast(message, kind = "") {
   const node = el("div", `toast ${kind}`, message);
@@ -430,7 +454,10 @@ function forgetFolder(id) {
 async function loadTree() {
   state.tree.children.clear();
   state.tree.expanded.clear();
-  if (state.session && state.session.home) { renderTree(); return; }
+  if (state.session && state.session.home) {
+    renderTree();
+    return;
+  }
   await loadFolder("");
   renderTree();
 }
@@ -444,12 +471,22 @@ async function refreshTree() {
   const button = $("#act-refresh");
   button.disabled = true;
   try {
-    if (state.session && state.session.home) { await loadHome(); return; }
-    const folders = ["", ...[...state.tree.expanded].sort((a, b) => a.split("/").length - b.split("/").length)];
+    if (state.session && state.session.home) {
+      await loadHome();
+      return;
+    }
+    const folders = [
+      "",
+      ...[...state.tree.expanded].sort((a, b) => a.split("/").length - b.split("/").length),
+    ];
     for (const folder of folders) {
-      if (folder && !knownEntry(folder)) { forgetFolder(folder); continue; }
-      try { await loadFolder(folder); }
-      catch (e) {
+      if (folder && !knownEntry(folder)) {
+        forgetFolder(folder);
+        continue;
+      }
+      try {
+        await loadFolder(folder);
+      } catch (e) {
         if (e.status === 404) forgetFolder(folder);
         else throw e;
       }
@@ -457,7 +494,9 @@ async function refreshTree() {
     renderTree();
   } catch (e) {
     toast(`Could not refresh the file tree: ${e.message}`, "bad");
-  } finally { button.disabled = false; }
+  } finally {
+    button.disabled = false;
+  }
 }
 
 /* Unfold every folder around a document, reading the ones this page has not
@@ -473,14 +512,18 @@ async function reveal(id, fresh = false) {
 /* The open documents holding anything not yet kept on disk: edits, a save
  * still on its way, or a new file nobody has saved. */
 function unsavedDocuments() {
-  return [...state.docs.values()].filter((d) => dirty(d) || d.pendingSaves || d.lifecycle === "created");
+  return [...state.docs.values()].filter(
+    (d) => dirty(d) || d.pendingSaves || d.lifecycle === "created",
+  );
 }
 
 /* The unsaved work anywhere in this window: the project shown and the ones
  * left, whose documents are parked. */
 function unsavedAnywhere() {
   const kept = [...state.parked.values()].flatMap((p) => [...p.docs.values()]);
-  return [...state.docs.values(), ...kept].filter((d) => dirty(d) || d.pendingSaves || d.lifecycle === "created");
+  return [...state.docs.values(), ...kept].filter(
+    (d) => dirty(d) || d.pendingSaves || d.lifecycle === "created",
+  );
 }
 
 /* Leaving a project: its tabs, edits and unfolded folders are kept aside
@@ -489,7 +532,10 @@ function parkDocuments() {
   if (!state.session || state.session.home) return;
   if (!state.docs.size && !state.tree.expanded.size) return;
   state.parked.set(state.session.root, {
-    docs: state.docs, order: state.order, active: state.active, expanded: new Set(state.tree.expanded),
+    docs: state.docs,
+    order: state.order,
+    active: state.active,
+    expanded: new Set(state.tree.expanded),
   });
   state.docs = new Map();
   state.order = [];
@@ -502,7 +548,12 @@ function parkDocuments() {
 async function showOpenedFolder() {
   parkDocuments();
   code.value = "";
-  state.readiness = { entry: null, status: null, report: null, generation: state.readiness.generation + 1 };
+  state.readiness = {
+    entry: null,
+    status: null,
+    report: null,
+    generation: state.readiness.generation + 1,
+  };
   renderReadiness();
   await loadSession();
   await loadRoles();
@@ -514,8 +565,14 @@ async function showOpenedFolder() {
     state.docs = kept.docs;
     state.order = kept.order;
     state.tree.expanded = kept.expanded;
-    for (const folder of [...kept.expanded].sort((a, b) => a.split("/").length - b.split("/").length)) {
-      try { await loadFolder(folder); } catch (_) { forgetFolder(folder); }
+    for (const folder of [...kept.expanded].sort(
+      (a, b) => a.split("/").length - b.split("/").length,
+    )) {
+      try {
+        await loadFolder(folder);
+      } catch (_) {
+        forgetFolder(folder);
+      }
     }
     renderTabs();
     renderTree();
@@ -533,9 +590,13 @@ async function toggleFolder(id, refocus) {
   if (state.tree.expanded.has(id)) {
     state.tree.expanded.delete(id);
   } else {
-    try { await loadFolder(id); }
-    catch (e) {
-      if (e.status === 404) { forgetFolder(id); await refreshTree(); }
+    try {
+      await loadFolder(id);
+    } catch (e) {
+      if (e.status === 404) {
+        forgetFolder(id);
+        await refreshTree();
+      }
       toast(`Could not list ${id}. ${e.message}`, "bad");
       return;
     }
@@ -589,7 +650,11 @@ function renderTree() {
       }
       item.append(document.createTextNode(entry.name || entry.id.split("/").pop()));
       if (entry.kind) {
-        const role = el("span", `role${entry.kind === "kind.project" ? " entry" : ""}`, roleLabel(entry.kind));
+        const role = el(
+          "span",
+          `role${entry.kind === "kind.project" ? " entry" : ""}`,
+          roleLabel(entry.kind),
+        );
         role.title = `This file declares SPECIFICATION KIND ${entry.kind}`;
         item.append(role);
       }
@@ -657,7 +722,10 @@ async function loadHome() {
     item.dataset.path = project.path;
     /* Unsaved work parked for this project is marked, as a dirty tab is. */
     const kept = state.parked.get(project.path);
-    if (kept && [...kept.docs.values()].some((d) => dirty(d) || d.pendingSaves || d.lifecycle === "created")) {
+    if (
+      kept &&
+      [...kept.docs.values()].some((d) => dirty(d) || d.pendingSaves || d.lifecycle === "created")
+    ) {
       const dot = el("span", "dot", "●");
       dot.title = "Unsaved documents of this project are kept in this window";
       item.append(dot);
@@ -683,7 +751,9 @@ async function loadHome() {
     }
     item.title = project.path;
     item.onclick = () => openProject(project.path);
-    item.onkeydown = (e) => { if (e.key === "Enter") openProject(project.path); };
+    item.onkeydown = (e) => {
+      if (e.key === "Enter") openProject(project.path);
+    };
     list.append(item);
   }
   if (!home.projects.length) list.append(el("li", "empty", "No projects here yet."));
@@ -715,8 +785,13 @@ async function openProject(path, keep = false) {
     return false;
   }
   await showOpenedFolder();
-  toast(`This window now shows ${state.session.root}.` +
-    (unsaved.length ? ` ${unsaved.length} unsaved document${unsaved.length > 1 ? "s are" : " is"} kept until you come back.` : ""), "good");
+  toast(
+    `This window now shows ${state.session.root}.` +
+      (unsaved.length
+        ? ` ${unsaved.length} unsaved document${unsaved.length > 1 ? "s are" : " is"} kept until you come back.`
+        : ""),
+    "good",
+  );
   return true;
 }
 
@@ -734,27 +809,41 @@ async function goHome() {
 /* Open project folder…: any folder, by its absolute path. One without a
  * project manifest opens as a rootless project. */
 function openFolderDialog() {
-  modal("Open project folder", (body) => {
-    body.append(el("p", "", "The full path of a folder, starting with /. A folder without lcl.project.json opens as a rootless project."));
-    const input = el("input", "field");
-    input.id = "open-folder-path";
-    input.value = state.home.folder ? `${state.home.folder}/` : "/";
-    const keep = el("label", "check");
-    const box = el("input", "");
-    box.type = "checkbox";
-    box.id = "open-folder-keep";
-    keep.append(box, el("span", "", "Keep in Projects Home"));
-    const status = el("p", "note");
-    status.id = "open-folder-status";
-    body.append(input, keep, status);
-  }, [
-    ["Cancel", "", (close) => close()],
-    ["Open", "primary", async (close) => {
-      const path = $("#open-folder-path").value.trim();
-      if (!path) return;
-      if (await openProject(path, $("#open-folder-keep").checked)) close();
-    }],
-  ]);
+  modal(
+    "Open project folder",
+    (body) => {
+      body.append(
+        el(
+          "p",
+          "",
+          "The full path of a folder, starting with /. A folder without lcl.project.json opens as a rootless project.",
+        ),
+      );
+      const input = el("input", "field");
+      input.id = "open-folder-path";
+      input.value = state.home.folder ? `${state.home.folder}/` : "/";
+      const keep = el("label", "check");
+      const box = el("input", "");
+      box.type = "checkbox";
+      box.id = "open-folder-keep";
+      keep.append(box, el("span", "", "Keep in Projects Home"));
+      const status = el("p", "note");
+      status.id = "open-folder-status";
+      body.append(input, keep, status);
+    },
+    [
+      ["Cancel", "", (close) => close()],
+      [
+        "Open",
+        "primary",
+        async (close) => {
+          const path = $("#open-folder-path").value.trim();
+          if (!path) return;
+          if (await openProject(path, $("#open-folder-keep").checked)) close();
+        },
+      ],
+    ],
+  );
 }
 
 /* Drop a project from the Projects home. Its folder and files stay as they
@@ -773,37 +862,55 @@ async function forgetProject(project) {
 /* New folder: an empty folder, made where it was asked for and shown at
  * once. `inside` prefills the dialog with a folder of the tree. */
 function newFolder(inside) {
-  modal("New folder", (body) => {
-    body.append(el("p", "", "A folder path inside the project. Its parent must exist; the folder can stay empty."));
-    const input = el("input", "field");
-    input.id = "new-folder-path";
-    input.value = inside ? `${inside}/` : "";
-    body.append(input);
-  }, [
-    ["Cancel", "", (close) => close()],
-    ["Create", "primary", async (close) => {
-      const id = $("#new-folder-path").value.trim().replace(/\/+$/, "");
-      close();
-      if (!id) return;
-      try {
-        const made = await api("POST", "/api/tree/folder", { id });
-        await reveal(`${made.id}/x`, true);
-        renderTree();
-        toast(`Created folder ${made.id}`, "good");
-      } catch (e) {
-        toast(`Not created. ${e.message}`, "bad");
-      }
-    }],
-  ]);
+  modal(
+    "New folder",
+    (body) => {
+      body.append(
+        el(
+          "p",
+          "",
+          "A folder path inside the project. Its parent must exist; the folder can stay empty.",
+        ),
+      );
+      const input = el("input", "field");
+      input.id = "new-folder-path";
+      input.value = inside ? `${inside}/` : "";
+      body.append(input);
+    },
+    [
+      ["Cancel", "", (close) => close()],
+      [
+        "Create",
+        "primary",
+        async (close) => {
+          const id = $("#new-folder-path").value.trim().replace(/\/+$/, "");
+          close();
+          if (!id) return;
+          try {
+            const made = await api("POST", "/api/tree/folder", { id });
+            await reveal(`${made.id}/x`, true);
+            renderTree();
+            toast(`Created folder ${made.id}`, "good");
+          } catch (e) {
+            toast(`Not created. ${e.message}`, "bad");
+          }
+        },
+      ],
+    ],
+  );
 }
 
 /* ---------------------------------------------------------- tree actions */
 
 /* The keys a focused document in the tree answers to. Delete only ever asks. */
 function treeKey(e, id, item) {
-  if (e.key === "Enter") { e.preventDefault(); return openDocument(id); }
-  else if (e.key === "Delete") { e.preventDefault(); deleteDocument(id); }
-  else if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    return openDocument(id);
+  } else if (e.key === "Delete") {
+    e.preventDefault();
+    deleteDocument(id);
+  } else if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
     e.preventDefault();
     const r = item.getBoundingClientRect();
     openMenu(id, r.left + 16, r.bottom, item);
@@ -815,7 +922,12 @@ function treeKey(e, id, item) {
 /* The keys a focused folder in the tree answers to: Enter or Space fold and
  * unfold it, Right unfolds and Left folds. */
 function folderKey(e, id, item, folded) {
-  if (e.key === "Enter" || e.key === " " || (e.key === "ArrowRight" && folded) || (e.key === "ArrowLeft" && !folded)) {
+  if (
+    e.key === "Enter" ||
+    e.key === " " ||
+    (e.key === "ArrowRight" && folded) ||
+    (e.key === "ArrowLeft" && !folded)
+  ) {
     e.preventDefault();
     return toggleFolder(id, true);
   }
@@ -847,7 +959,11 @@ function setSidebarWidth(px, keep) {
   document.documentElement.style.setProperty("--sidebar", `${width}px`);
   const store = keep && storage();
   if (store) {
-    try { store.setItem(SIDEBAR_KEY, String(width)); } catch (_) { /* remembered for this page only */ }
+    try {
+      store.setItem(SIDEBAR_KEY, String(width));
+    } catch (_) {
+      /* remembered for this page only */
+    }
   }
   return width;
 }
@@ -858,14 +974,22 @@ function initSidebarResize() {
   const handle = $("#sidebar-resize");
   const store = storage();
   let saved = NaN;
-  try { saved = store ? parseInt(store.getItem(SIDEBAR_KEY), 10) : NaN; } catch (_) { /* none */ }
+  try {
+    saved = store ? parseInt(store.getItem(SIDEBAR_KEY), 10) : NaN;
+  } catch (_) {
+    /* none */
+  }
   if (Number.isInteger(saved)) setSidebarWidth(saved, false);
   const width = () => $("#sidebar").getBoundingClientRect().width;
   let drag = null;
   handle.onpointerdown = (e) => {
     e.preventDefault();
     drag = { x: e.clientX, width: width() };
-    try { handle.setPointerCapture(e.pointerId); } catch (_) { /* moves still arrive while over the edge */ }
+    try {
+      handle.setPointerCapture(e.pointerId);
+    } catch (_) {
+      /* moves still arrive while over the edge */
+    }
     handle.classList.add("dragging");
   };
   handle.onpointermove = (e) => {
@@ -885,7 +1009,11 @@ function initSidebarResize() {
   };
   handle.ondblclick = () => {
     document.documentElement.style.removeProperty("--sidebar");
-    try { if (store) store.removeItem(SIDEBAR_KEY); } catch (_) { /* nothing kept */ }
+    try {
+      if (store) store.removeItem(SIDEBAR_KEY);
+    } catch (_) {
+      /* nothing kept */
+    }
   };
 }
 
@@ -905,7 +1033,10 @@ function openMenu(id, x, y, returnTo) {
   const menu = el("div", "context-menu");
   menu.setAttribute("role", "menu");
   menu.setAttribute("aria-label", id);
-  const actions = [["Open", () => openDocument(id)], ["Delete…", () => deleteDocument(id)]];
+  const actions = [
+    ["Open", () => openDocument(id)],
+    ["Delete…", () => deleteDocument(id)],
+  ];
   const listed = knownEntry(id);
   if (listed && listed.kind === "kind.task" && state.roles.available) {
     actions.splice(1, 0, ["Convert to multi-file project…", () => convertDocument(id)]);
@@ -913,7 +1044,10 @@ function openMenu(id, x, y, returnTo) {
   for (const [label, act] of actions) {
     const item = el("button", "", label);
     item.setAttribute("role", "menuitem");
-    item.onclick = () => { closeMenu(); act(); };
+    item.onclick = () => {
+      closeMenu();
+      act();
+    };
     menu.append(item);
   }
   menu.addEventListener("keydown", (e) => {
@@ -945,12 +1079,27 @@ function openMenu(id, x, y, returnTo) {
 
 /* The menu a folder in the tree opens: what to make inside it. */
 function openFolderMenu(id, x, y, returnTo) {
-  actionMenu(id, [["New document here…", () => newDocument(id)], ["New folder here…", () => newFolder(id)]], x, y, returnTo);
+  actionMenu(
+    id,
+    [
+      ["New document here…", () => newDocument(id)],
+      ["New folder here…", () => newFolder(id)],
+    ],
+    x,
+    y,
+    returnTo,
+  );
 }
 
 /* The menu of a project kept on the Projects home. */
 function openHomeMenu(project, x, y, returnTo) {
-  actionMenu(project.name, [["Remove from Projects Home", () => forgetProject(project)]], x, y, returnTo);
+  actionMenu(
+    project.name,
+    [["Remove from Projects Home", () => forgetProject(project)]],
+    x,
+    y,
+    returnTo,
+  );
 }
 
 /* One small menu of `actions` ([label, act] pairs) at (x, y), kept inside
@@ -963,13 +1112,23 @@ function actionMenu(label, actions, x, y, returnTo) {
   for (const [text, act] of actions) {
     const item = el("button", "", text);
     item.setAttribute("role", "menuitem");
-    item.onclick = () => { closeMenu(); act(); };
+    item.onclick = () => {
+      closeMenu();
+      act();
+    };
     menu.append(item);
   }
   menu.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeMenu(); if (returnTo) returnTo.focus(); }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      closeMenu();
+      if (returnTo) returnTo.focus();
+    }
   });
-  menu.addEventListener("focusout", (e) => { if (!menu.contains(e.relatedTarget)) closeMenu(); });
+  menu.addEventListener("focusout", (e) => {
+    if (!menu.contains(e.relatedTarget)) closeMenu();
+  });
   document.body.append(menu);
   const box = menu.getBoundingClientRect();
   const view = document.documentElement;
@@ -1001,28 +1160,36 @@ async function deleteDocument(id) {
   }
   const doc = state.docs.get(id);
   const name = id.split("/").pop();
-  modal(`Delete "${name}"?`, (body) => {
-    body.append(el("p", "", "This permanently removes the file from the project."));
-    if (doc && (dirty(doc) || doc.pendingSaves)) {
-      body.append(el("p", "warning", "It is open with unsaved edits, and they are lost too."));
-    }
-  }, [
-    ["Cancel", "", (close) => close()],
-    ["Delete", "danger", async (close) => {
-      close();
-      try {
-        await api("DELETE", "/api/document", { id, digest: shown.digest });
-      } catch (e) {
-        toast(`${id} was not deleted. ${e.message}`, "bad");
-        await refreshTree();
-        return;
+  modal(
+    `Delete "${name}"?`,
+    (body) => {
+      body.append(el("p", "", "This permanently removes the file from the project."));
+      if (doc && (dirty(doc) || doc.pendingSaves)) {
+        body.append(el("p", "warning", "It is open with unsaved edits, and they are lost too."));
       }
-      const open = state.docs.get(id);
-      if (open) dropDocument(open);
-      await refreshTree();
-      toast(`Deleted ${id}`, "good");
-    }],
-  ]);
+    },
+    [
+      ["Cancel", "", (close) => close()],
+      [
+        "Delete",
+        "danger",
+        async (close) => {
+          close();
+          try {
+            await api("DELETE", "/api/document", { id, digest: shown.digest });
+          } catch (e) {
+            toast(`${id} was not deleted. ${e.message}`, "bad");
+            await refreshTree();
+            return;
+          }
+          const open = state.docs.get(id);
+          if (open) dropDocument(open);
+          await refreshTree();
+          toast(`Deleted ${id}`, "good");
+        },
+      ],
+    ],
+  );
 }
 
 /* ------------------------------------------------------------ documents */
@@ -1040,7 +1207,11 @@ async function openDocument(id, { focusByte, created } = {}) {
   state.active = id;
   /* The folders around it open, reading the ones never read, so the tree
    * shows what is being edited; a folder folded after that stays so. */
-  try { await reveal(id, created !== undefined); } catch (_) { /* the tree shows what it can */ }
+  try {
+    await reveal(id, created !== undefined);
+  } catch (_) {
+    /* the tree shows what it can */
+  }
   renderTabs();
   renderTree();
   const doc = current();
@@ -1050,7 +1221,9 @@ async function openDocument(id, { focusByte, created } = {}) {
   if (focusByte !== undefined) revealByte(focusByte);
   code.focus();
   refreshReadiness();
-  refreshSlots(doc, doc.revision).then(() => { if (current() === doc) render(); });
+  refreshSlots(doc, doc.revision).then(() => {
+    if (current() === doc) render();
+  });
 }
 
 /* Take one document out of the editor: its tab and its buffer. When it was
@@ -1064,7 +1237,9 @@ function dropDocument(doc) {
     state.active = state.order[state.order.length - 1] || null;
     if (state.active) code.value = state.docs.get(state.active).text;
   }
-  renderTabs(); renderTree(); render();
+  renderTabs();
+  renderTree();
+  render();
 }
 
 /* Discard a document this page created and nobody has saved: its file goes
@@ -1096,37 +1271,72 @@ function closeDocument(id) {
   if (doc.lifecycle === "created") {
     /* Whether or not it was edited: until someone saves it, a new document's
      * file is only a placeholder, and closing it is the moment to decide. */
-    modal("Unsaved new document", (body) => {
-      body.append(el("p", "", `${id.split("/").pop()} has not been saved.`));
-      body.append(el("p", "note",
-        "Discard removes the file that was created for it. Save keeps it as an ordinary document."));
-    }, [
-      ["Cancel", "", (close) => close()],
-      ["Discard", "", (close) => { close(); return discardNew(doc); }],
-      ["Save", "primary", async (close) => {
-        close();
-        if (await save(doc)) {
-          if (!dirty(doc) && !doc.pendingSaves) drop();
-          else toast(`${id} still has unsaved changes.`, "warn");
-        }
-      }],
-    ]);
+    modal(
+      "Unsaved new document",
+      (body) => {
+        body.append(el("p", "", `${id.split("/").pop()} has not been saved.`));
+        body.append(
+          el(
+            "p",
+            "note",
+            "Discard removes the file that was created for it. Save keeps it as an ordinary document.",
+          ),
+        );
+      },
+      [
+        ["Cancel", "", (close) => close()],
+        [
+          "Discard",
+          "",
+          (close) => {
+            close();
+            return discardNew(doc);
+          },
+        ],
+        [
+          "Save",
+          "primary",
+          async (close) => {
+            close();
+            if (await save(doc)) {
+              if (!dirty(doc) && !doc.pendingSaves) drop();
+              else toast(`${id} still has unsaved changes.`, "warn");
+            }
+          },
+        ],
+      ],
+    );
     return;
   }
   if (dirty(doc) || doc.pendingSaves) {
-    modal("Unsaved changes", (body) => {
-      body.append(el("p", "", `${id} has unsaved edits.`));
-    }, [
-      ["Cancel", "", (close) => close()],
-      ["Discard", "", (close) => { close(); drop(); }],
-      ["Save", "primary", async (close) => {
-        close();
-        if (await save(doc)) {
-          if (!dirty(doc) && !doc.pendingSaves) drop();
-          else toast(`${id} still has unsaved changes.`, "warn");
-        }
-      }],
-    ]);
+    modal(
+      "Unsaved changes",
+      (body) => {
+        body.append(el("p", "", `${id} has unsaved edits.`));
+      },
+      [
+        ["Cancel", "", (close) => close()],
+        [
+          "Discard",
+          "",
+          (close) => {
+            close();
+            drop();
+          },
+        ],
+        [
+          "Save",
+          "primary",
+          async (close) => {
+            close();
+            if (await save(doc)) {
+              if (!dirty(doc) && !doc.pendingSaves) drop();
+              else toast(`${id} still has unsaved changes.`, "warn");
+            }
+          },
+        ],
+      ],
+    );
     return;
   }
   drop();
@@ -1141,7 +1351,10 @@ function renderTabs() {
     if (dirty(doc)) item.append(el("span", "dirty", "●"));
     item.append(el("span", "", id.split("/").pop()));
     const close = el("span", "close", "×");
-    close.onclick = (e) => { e.stopPropagation(); closeDocument(id); };
+    close.onclick = (e) => {
+      e.stopPropagation();
+      closeDocument(id);
+    };
     item.append(close);
     item.title = id;
     item.onclick = () => openDocument(id);
@@ -1155,66 +1368,76 @@ async function save(doc = current()) {
   const submitted = doc.text;
   const revision = doc.revision;
   doc.pendingSaves++;
-  const pending = doc.saveTail.then(async () => {
-    // Discard can close a document while its next save is still queued.
-    if (state.docs.get(doc.id) !== doc) return false;
-    /* A save queued behind a conflict waits for the person's choice rather
-     * than raising the same conflict again. */
-    if (doc.conflict) {
-      toast(`Not saved. ${doc.id} changed on disk; choose Reload or Keep mine first.`, "warn");
-      return false;
-    }
-    let reply, persisted;
-    try {
-      /* The revision this edit started from: the digest the last load or the
-       * last acknowledged save gave. A queued save runs after the one before
-       * it was acknowledged, so it bases itself on that save, never on a
-       * digest its own queue already replaced. */
-      reply = await api("PUT", "/api/document", { id: doc.id, base: doc.digest }, submitted);
-      if (!reply || reply.id !== doc.id || typeof reply.digest !== "string" ||
-          typeof reply.final_line_feed_added !== "boolean") {
-        throw new Error("The server did not acknowledge this document's save.");
-      }
-      persisted = submitted + (reply.final_line_feed_added ? "\n" : "");
-      if (reply.bytes !== buildIndex(persisted).byteLength) {
-        throw new Error("The server did not acknowledge the submitted content length.");
-      }
-    } catch (e) {
-      if (e.status === 409 && e.reply && e.reply.conflict) {
-        doc.conflict = { digest: e.reply.digest, exists: e.reply.exists };
-        showConflict(doc);
+  const pending = doc.saveTail
+    .then(async () => {
+      // Discard can close a document while its next save is still queued.
+      if (state.docs.get(doc.id) !== doc) return false;
+      /* A save queued behind a conflict waits for the person's choice rather
+       * than raising the same conflict again. */
+      if (doc.conflict) {
+        toast(`Not saved. ${doc.id} changed on disk; choose Reload or Keep mine first.`, "warn");
         return false;
       }
-      toast(`Not saved. ${e.message}`, "bad");
-      return false;
-    }
-    // Only acknowledged bytes form the saved baseline. Later input belongs to
-    // the next revision and must never be overwritten or marked as saved here.
-    doc.saved = persisted;
-    doc.digest = reply.digest;
-    // Saved on purpose: from now on it is an ordinary document, and a discard
-    // drops only edits made after this.
-    doc.lifecycle = "saved";
-    if (doc.revision === revision && doc.text === submitted) {
-      doc.text = persisted;
-      doc.index = buildIndex(persisted);
-      if (current() === doc) code.value = persisted;
-    }
-    if (reply.final_line_feed_added) {
-      toast("A final line feed was added, which 02_LEXICAL/01 requires.", "warn");
-    }
-    renderTabs(); renderTree(); render();
-    toast(`Saved ${doc.id}`, "good");
-    // A refresh failure cannot turn an acknowledged write into a failed save.
-    try {
-      await refreshTree();
-      refreshReadiness();
-      if (current() === doc) await refreshTokens();
-    } catch (e) {
-      toast(`Saved ${doc.id}; could not refresh the project. ${e.message}`, "warn");
-    }
-    return true;
-  }).finally(() => { doc.pendingSaves--; });
+      let reply, persisted;
+      try {
+        /* The revision this edit started from: the digest the last load or the
+         * last acknowledged save gave. A queued save runs after the one before
+         * it was acknowledged, so it bases itself on that save, never on a
+         * digest its own queue already replaced. */
+        reply = await api("PUT", "/api/document", { id: doc.id, base: doc.digest }, submitted);
+        if (
+          !reply ||
+          reply.id !== doc.id ||
+          typeof reply.digest !== "string" ||
+          typeof reply.final_line_feed_added !== "boolean"
+        ) {
+          throw new Error("The server did not acknowledge this document's save.");
+        }
+        persisted = submitted + (reply.final_line_feed_added ? "\n" : "");
+        if (reply.bytes !== buildIndex(persisted).byteLength) {
+          throw new Error("The server did not acknowledge the submitted content length.");
+        }
+      } catch (e) {
+        if (e.status === 409 && e.reply && e.reply.conflict) {
+          doc.conflict = { digest: e.reply.digest, exists: e.reply.exists };
+          showConflict(doc);
+          return false;
+        }
+        toast(`Not saved. ${e.message}`, "bad");
+        return false;
+      }
+      // Only acknowledged bytes form the saved baseline. Later input belongs to
+      // the next revision and must never be overwritten or marked as saved here.
+      doc.saved = persisted;
+      doc.digest = reply.digest;
+      // Saved on purpose: from now on it is an ordinary document, and a discard
+      // drops only edits made after this.
+      doc.lifecycle = "saved";
+      if (doc.revision === revision && doc.text === submitted) {
+        doc.text = persisted;
+        doc.index = buildIndex(persisted);
+        if (current() === doc) code.value = persisted;
+      }
+      if (reply.final_line_feed_added) {
+        toast("A final line feed was added, which 02_LEXICAL/01 requires.", "warn");
+      }
+      renderTabs();
+      renderTree();
+      render();
+      toast(`Saved ${doc.id}`, "good");
+      // A refresh failure cannot turn an acknowledged write into a failed save.
+      try {
+        await refreshTree();
+        refreshReadiness();
+        if (current() === doc) await refreshTokens();
+      } catch (e) {
+        toast(`Saved ${doc.id}; could not refresh the project. ${e.message}`, "warn");
+      }
+      return true;
+    })
+    .finally(() => {
+      doc.pendingSaves--;
+    });
   // A rejected UI task must not poison this document's future save queue.
   doc.saveTail = pending.catch(() => false);
   return pending;
@@ -1236,23 +1459,38 @@ async function reload() {
     doc.saved = reply.text;
     doc.digest = reply.digest;
     if (doc.revision !== revision) {
-      renderTabs(); renderTree(); render();
+      renderTabs();
+      renderTree();
+      render();
       toast(`${doc.id} was edited while it reloaded; your edits are kept.`, "warn");
       return;
     }
     replaceText(doc, reply.text);
     if (current() === doc) code.value = doc.text;
-    renderTabs(); renderTree(); render();
+    renderTabs();
+    renderTree();
+    render();
     await refreshTokens();
     toast(`Reloaded ${doc.id}`);
   };
   if (dirty(doc)) {
-    modal("Discard edits?", (body) => {
-      body.append(el("p", "", `Reloading ${doc.id} throws away your unsaved edits.`));
-    }, [
-      ["Cancel", "", (close) => close()],
-      ["Discard and reload", "primary", (close) => { close(); go(); }],
-    ]);
+    modal(
+      "Discard edits?",
+      (body) => {
+        body.append(el("p", "", `Reloading ${doc.id} throws away your unsaved edits.`));
+      },
+      [
+        ["Cancel", "", (close) => close()],
+        [
+          "Discard and reload",
+          "primary",
+          (close) => {
+            close();
+            go();
+          },
+        ],
+      ],
+    );
     return;
   }
   await go();
@@ -1267,7 +1505,7 @@ function newDocument(inside) {
   const ending = state.files.default_extension;
   /* Where the new document goes: the folder given, else the folder of the
    * document being edited, else the root. */
-  const folder = inside !== undefined ? inside : (state.active ? parentOf(state.active) : "");
+  const folder = inside !== undefined ? inside : state.active ? parentOf(state.active) : "";
   /* The roles were read at start; the Masters are read while the dialog is
    * already open, and fill in its choices when they arrive. */
   const kinds = [["", "Blank LCL file"]].concat(state.roles.roles.map((r) => [r.role, r.label]));
@@ -1277,126 +1515,167 @@ function newDocument(inside) {
    * created only from that text: the server refuses (409) when the template,
    * default or name changed since, and (428) when nothing was previewed. */
   let previewed = null;
-  api("GET", "/api/masters").then((reply) => {
-    masters = reply.masters || [];
-    mastersArrived();
-  }, () => { /* no Masters: the canonical scaffolds remain */ });
-  modal("New document", (body) => {
-    body.append(el("p", "",
-      `A path inside the project. A name without an ending is created as ${ending}, ` +
-      "the default file type in Settings. Type .lcl or .lcl.txt yourself to choose " +
-      "either one: the ending you type is kept, and existing documents keep their name."));
-    const input = el("input", "field");
-    input.id = "new-path";
-    input.value = `${folder ? `${folder}/` : ""}untitled${ending}`;
-    const kindLabel = el("label", "", "Kind of file");
-    kindLabel.htmlFor = "new-kind";
-    const kind = el("select", "field");
-    kind.id = "new-kind";
-    for (const [value, label] of kinds) {
-      const option = el("option", "", label);
-      option.value = value;
-      kind.append(option);
-    }
-    const fromLabel = el("label", "", "Start from");
-    fromLabel.htmlFor = "new-from";
-    const from = el("select", "field");
-    from.id = "new-from";
-    const preview = el("pre", "scaffold-preview");
-    preview.id = "new-preview";
-    const note = el("p", "note");
-    const refill = () => {
-      from.replaceChildren();
-      const role = kind.value;
-      from.disabled = !role;
-      if (!role) return;
-      const options = [
-        ["default:guided", "Default (Guided)"], ["default:minimal", "Default (Minimal)"],
-        ["canonical:guided", "Canonical scaffold — Guided"], ["canonical:minimal", "Canonical scaffold — Minimal"],
-      ].concat(masters.filter((m) => (m.type || m.role) === role && m.valid).map((m) => [`master:${m.id}`, `Master: ${m.name}`]));
-      for (const [value, label] of options) {
+  api("GET", "/api/masters").then(
+    (reply) => {
+      masters = reply.masters || [];
+      mastersArrived();
+    },
+    () => {
+      /* no Masters: the canonical scaffolds remain */
+    },
+  );
+  modal(
+    "New document",
+    (body) => {
+      body.append(
+        el(
+          "p",
+          "",
+          `A path inside the project. A name without an ending is created as ${ending}, ` +
+            "the default file type in Settings. Type .lcl or .lcl.txt yourself to choose " +
+            "either one: the ending you type is kept, and existing documents keep their name.",
+        ),
+      );
+      const input = el("input", "field");
+      input.id = "new-path";
+      input.value = `${folder ? `${folder}/` : ""}untitled${ending}`;
+      const kindLabel = el("label", "", "Kind of file");
+      kindLabel.htmlFor = "new-kind";
+      const kind = el("select", "field");
+      kind.id = "new-kind";
+      for (const [value, label] of kinds) {
         const option = el("option", "", label);
         option.value = value;
-        from.append(option);
+        kind.append(option);
       }
-    };
-    let shown = 0;
-    const show = async () => {
-      const mine = ++shown;
-      previewed = null;
-      preview.replaceChildren();
-      note.textContent = "";
-      if (!kind.value) {
-        note.textContent = "A blank file holds only the LCL and SPECIFICATION headers.";
-        return;
-      }
-      const name = input.value.trim() || "untitled";
-      const path = /\.lcl(\.txt)?$/.test(name) ? name : name + ending;
-      try {
-        const scaffold = await api("GET", "/api/scaffold",
-          { path, role: kind.value, ...selectionParams(kind.value, from.value) });
-        if (mine !== shown) return;
-        previewed = scaffold.digest;
-        showScaffold(preview, scaffold);
-        note.textContent = "Exactly this text will be written. Marked lines: ! required slot, " +
-          "? optional slot, # guidance, ⚙ generated identifier.";
-      } catch (e) {
-        if (mine === shown) note.textContent = `No preview: ${e.message}`;
-      }
-    };
-    mastersArrived = () => {
-      if (!$("#new-from") || $("#new-from") !== from) return;
-      const chosen = from.value;
-      refill();
-      if ([...from.children].some((o) => o.value === chosen)) from.value = chosen;
-    };
-    kind.onchange = () => { refill(); show(); };
-    from.onchange = show;
-    input.oninput = () => { clearTimeout(input.timer); input.timer = setTimeout(show, 250); };
-    body.append(input, kindLabel, kind, fromLabel, from, note, preview);
-    refill();
-    show();
-  }, [
-    ["Cancel", "", (close) => close()],
-    ["Create", "primary", async (close) => {
-      const id = $("#new-path").value.trim();
-      const role = $("#new-kind").value;
-      const from = $("#new-from").value;
-      close();
-      if (!id) return;
-      try {
-        let created;
-        if (role) {
-          if (!previewed) throw new Error("wait for the preview: a file of a role is created only from the text shown.");
-          created = await api("POST", "/api/document",
-            { id, role, ...selectionParams(role, from), scaffold_digest: previewed });
-        } else {
-          /* A blank document is the smallest thing the grammar accepts.
-           * 04_GRAMMAR/01: "Every document starts with LCL then SPECIFICATION."
-           * The values are placeholders; the engine judges them like any other. */
-          const seed =
-            'LCL:\n    VERSION: "0.1.0"\n\n' +
-            'SPECIFICATION:\n    ID: example.new\n    NAME: "New document"\n' +
-            '    VERSION: "1.0.0"\n    KIND: kind.task\n    DOMAIN: "general"\n';
-          created = await api("POST", "/api/document", { id }, seed);
-        }
-        /* Creating is its own route: it applies the .lcl default and
-         * refuses to overwrite. Saving stays exact, so an open document is
-         * never renamed under the person editing it. The server decides the
-         * final name, and the reply says what it chose. Opening it reads its
-         * folder again, so it is in the tree at once; nothing else is read. */
-        await openDocument(created.id, { created: created.digest });
-        toast(
-          created.id === created.requested
-            ? `Created ${created.id}`
-            : `Created ${created.id}, the default name for ${created.requested}`,
-          "good",
+      const fromLabel = el("label", "", "Start from");
+      fromLabel.htmlFor = "new-from";
+      const from = el("select", "field");
+      from.id = "new-from";
+      const preview = el("pre", "scaffold-preview");
+      preview.id = "new-preview";
+      const note = el("p", "note");
+      const refill = () => {
+        from.replaceChildren();
+        const role = kind.value;
+        from.disabled = !role;
+        if (!role) return;
+        const options = [
+          ["default:guided", "Default (Guided)"],
+          ["default:minimal", "Default (Minimal)"],
+          ["canonical:guided", "Canonical scaffold — Guided"],
+          ["canonical:minimal", "Canonical scaffold — Minimal"],
+        ].concat(
+          masters
+            .filter((m) => (m.type || m.role) === role && m.valid)
+            .map((m) => [`master:${m.id}`, `Master: ${m.name}`]),
         );
-      } catch (e) {
-        toast(`Not created. ${e.message}`, "bad");
-      }
-    }],
-  ]);
+        for (const [value, label] of options) {
+          const option = el("option", "", label);
+          option.value = value;
+          from.append(option);
+        }
+      };
+      let shown = 0;
+      const show = async () => {
+        const mine = ++shown;
+        previewed = null;
+        preview.replaceChildren();
+        note.textContent = "";
+        if (!kind.value) {
+          note.textContent = "A blank file holds only the LCL and SPECIFICATION headers.";
+          return;
+        }
+        const name = input.value.trim() || "untitled";
+        const path = /\.lcl(\.txt)?$/.test(name) ? name : name + ending;
+        try {
+          const scaffold = await api("GET", "/api/scaffold", {
+            path,
+            role: kind.value,
+            ...selectionParams(kind.value, from.value),
+          });
+          if (mine !== shown) return;
+          previewed = scaffold.digest;
+          showScaffold(preview, scaffold);
+          note.textContent =
+            "Exactly this text will be written. Marked lines: ! required slot, " +
+            "? optional slot, # guidance, ⚙ generated identifier.";
+        } catch (e) {
+          if (mine === shown) note.textContent = `No preview: ${e.message}`;
+        }
+      };
+      mastersArrived = () => {
+        if (!$("#new-from") || $("#new-from") !== from) return;
+        const chosen = from.value;
+        refill();
+        if ([...from.children].some((o) => o.value === chosen)) from.value = chosen;
+      };
+      kind.onchange = () => {
+        refill();
+        show();
+      };
+      from.onchange = show;
+      input.oninput = () => {
+        clearTimeout(input.timer);
+        input.timer = setTimeout(show, 250);
+      };
+      body.append(input, kindLabel, kind, fromLabel, from, note, preview);
+      refill();
+      show();
+    },
+    [
+      ["Cancel", "", (close) => close()],
+      [
+        "Create",
+        "primary",
+        async (close) => {
+          const id = $("#new-path").value.trim();
+          const role = $("#new-kind").value;
+          const from = $("#new-from").value;
+          close();
+          if (!id) return;
+          try {
+            let created;
+            if (role) {
+              if (!previewed)
+                throw new Error(
+                  "wait for the preview: a file of a role is created only from the text shown.",
+                );
+              created = await api("POST", "/api/document", {
+                id,
+                role,
+                ...selectionParams(role, from),
+                scaffold_digest: previewed,
+              });
+            } else {
+              /* A blank document is the smallest thing the grammar accepts.
+               * 04_GRAMMAR/01: "Every document starts with LCL then SPECIFICATION."
+               * The values are placeholders; the engine judges them like any other. */
+              const seed =
+                'LCL:\n    VERSION: "0.1.0"\n\n' +
+                'SPECIFICATION:\n    ID: example.new\n    NAME: "New document"\n' +
+                '    VERSION: "1.0.0"\n    KIND: kind.task\n    DOMAIN: "general"\n';
+              created = await api("POST", "/api/document", { id }, seed);
+            }
+            /* Creating is its own route: it applies the .lcl default and
+             * refuses to overwrite. Saving stays exact, so an open document is
+             * never renamed under the person editing it. The server decides the
+             * final name, and the reply says what it chose. Opening it reads its
+             * folder again, so it is in the tree at once; nothing else is read. */
+            await openDocument(created.id, { created: created.digest });
+            toast(
+              created.id === created.requested
+                ? `Created ${created.id}`
+                : `Created ${created.id}, the default name for ${created.requested}`,
+              "good",
+            );
+          } catch (e) {
+            toast(`Not created. ${e.message}`, "bad");
+          }
+        },
+      ],
+    ],
+  );
 }
 
 /* ------------------------------------------------------------- settings */
@@ -1416,13 +1695,20 @@ const THEMES = ["system", "dark", "light"];
 const FONT_MIN = 11;
 const FONT_MAX = 20;
 const DEFAULT_SETTINGS = Object.freeze({
-  version: SETTINGS_VERSION, theme: "system", fontSize: 13, lineNumbers: true,
+  version: SETTINGS_VERSION,
+  theme: "system",
+  fontSize: 13,
+  lineNumbers: true,
 });
 
 function storage() {
   /* Absent, or refused by the browser's privacy settings: either way the
    * page works with defaults and simply remembers nothing. */
-  try { return globalThis.localStorage || null; } catch (_) { return null; }
+  try {
+    return globalThis.localStorage || null;
+  } catch (_) {
+    return null;
+  }
 }
 
 function validSettings(raw) {
@@ -1470,7 +1756,7 @@ function applySettings(settings) {
   if (settings.theme === "system") delete root.dataset.theme;
   else root.dataset.theme = settings.theme;
   root.style.setProperty("--editor-font", `${settings.fontSize}px`);
-  root.style.setProperty("--row", `${Math.round(settings.fontSize * 20 / 13)}px`);
+  root.style.setProperty("--row", `${Math.round((settings.fontSize * 20) / 13)}px`);
   root.classList.toggle("no-gutter", !settings.lineNumbers);
   syncScroll();
 }
@@ -1490,8 +1776,16 @@ async function loadFileSettings() {
  * that button, which names the exact path, is pressed. */
 async function describeFolder(path, status) {
   if (!path) {
-    status.replaceChildren(el("span", "", "Empty: new projects go in, and launches open, the built-in folder" +
-      (state.files.builtin_default_workspace ? ` ${state.files.builtin_default_workspace}.` : ".")));
+    status.replaceChildren(
+      el(
+        "span",
+        "",
+        "Empty: new projects go in, and launches open, the built-in folder" +
+          (state.files.builtin_default_workspace
+            ? ` ${state.files.builtin_default_workspace}.`
+            : "."),
+      ),
+    );
     return true;
   }
   let folder;
@@ -1502,8 +1796,13 @@ async function describeFolder(path, status) {
     return false;
   }
   if (!folder.absolute) {
-    status.replaceChildren(el("span", "bad",
-      `${path} is not an absolute path. Write it from /, for example /home/you/LCL.`));
+    status.replaceChildren(
+      el(
+        "span",
+        "bad",
+        `${path} is not an absolute path. Write it from /, for example /home/you/LCL.`,
+      ),
+    );
     return false;
   }
   if (folder.exists && !folder.directory) {
@@ -1511,8 +1810,9 @@ async function describeFolder(path, status) {
     return false;
   }
   if (folder.directory && folder.writable === false) {
-    status.replaceChildren(el("span", "bad",
-      `${path} is a folder, but new projects cannot be written to it.`));
+    status.replaceChildren(
+      el("span", "bad", `${path} is a folder, but new projects cannot be written to it.`),
+    );
     return false;
   }
   if (!folder.exists) {
@@ -1537,187 +1837,245 @@ async function describeFolder(path, status) {
 function openSettings() {
   const now = state.settings || { ...DEFAULT_SETTINGS };
   const files = state.files;
-  modal("Settings", (body) => {
-    const form = el("div", "settings");
+  modal(
+    "Settings",
+    (body) => {
+      const form = el("div", "settings");
 
-    form.append(el("h3", "", "Appearance"));
-    const themeLabel = el("label", "", "Theme");
-    themeLabel.htmlFor = "setting-theme";
-    const theme = el("select");
-    theme.id = "setting-theme";
-    for (const [value, label] of [["system", "System"], ["dark", "Dark"], ["light", "Light"]]) {
-      const option = el("option", "", label);
-      option.value = value;
-      theme.append(option);
-    }
-    theme.value = now.theme;
-    form.append(themeLabel, theme);
-
-    form.append(el("h3", "", "Editor"));
-    const sizeLabel = el("label", "", "Font size (px)");
-    sizeLabel.htmlFor = "setting-font-size";
-    const size = el("input");
-    size.id = "setting-font-size";
-    size.type = "number";
-    size.min = String(FONT_MIN);
-    size.max = String(FONT_MAX);
-    size.step = "1";
-    size.value = String(now.fontSize);
-    form.append(sizeLabel, size);
-
-    const numbersLabel = el("label", "", "Show line numbers");
-    numbersLabel.htmlFor = "setting-line-numbers";
-    const numbers = el("input");
-    numbers.id = "setting-line-numbers";
-    numbers.type = "checkbox";
-    numbers.checked = now.lineNumbers;
-    form.append(numbersLabel, numbers);
-
-    form.append(el("p", "note",
-      `Appearance and Editor are saved in this browser only. Font size is ${FONT_MIN} to ` +
-      `${FONT_MAX} px. Documents are always indented with spaces; Tab inserts four.`));
-
-    /* Files: kept by the workspace for this computer, not by the browser. */
-    form.append(el("h3", "", "Files"));
-    const typeLabel = el("label", "", "Default file type");
-    typeLabel.htmlFor = "setting-file-type";
-    const type = el("select");
-    type.id = "setting-file-type";
-    for (const [value, label] of [[".lcl", "LCL (.lcl)"], [".lcl.txt", "LCL Text (.lcl.txt)"]]) {
-      const option = el("option", "", label);
-      option.value = value;
-      type.append(option);
-    }
-    type.value = files.default_extension;
-    form.append(typeLabel, type);
-
-    const whereLabel = el("label", "", "Projects folder");
-    whereLabel.htmlFor = "setting-workspace";
-    const whereRow = el("div", "path-field");
-    const where = el("input");
-    where.id = "setting-workspace";
-    where.type = "text";
-    where.spellcheck = false;
-    where.value = files.default_workspace || "";
-    where.placeholder = files.builtin_default_workspace
-      ? `Empty: the built-in folder, ${files.builtin_default_workspace}`
-      : "Empty: the built-in folder";
-    const check = el("button", "", "Check");
-    check.type = "button";
-    const openHere = el("button", "", "Open folder");
-    openHere.type = "button";
-    openHere.id = "setting-workspace-open";
-    whereRow.append(where, check, openHere);
-    form.append(whereLabel, whereRow);
-    const status = el("p", "note folder-status");
-    status.id = "setting-workspace-status";
-    check.onclick = () => describeFolder(where.value.trim(), status);
-    /* Shows the saved Projects folder in this window, in place of the folder
-     * shown now; every tab closes, so none may hold unsaved work. */
-    openHere.onclick = async () => {
-      if (where.value.trim() !== (files.default_workspace || "")) {
-        status.replaceChildren(el("span", "bad", "Save first: Open folder opens the saved Projects folder."));
-        return;
+      form.append(el("h3", "", "Appearance"));
+      const themeLabel = el("label", "", "Theme");
+      themeLabel.htmlFor = "setting-theme";
+      const theme = el("select");
+      theme.id = "setting-theme";
+      for (const [value, label] of [
+        ["system", "System"],
+        ["dark", "Dark"],
+        ["light", "Light"],
+      ]) {
+        const option = el("option", "", label);
+        option.value = value;
+        theme.append(option);
       }
-      try {
-        await api("POST", "/api/projects/open");
-      } catch (e) {
-        status.replaceChildren(el("span", "bad", e.message));
-        return;
-      }
-      closeModal();
-      await showOpenedFolder();
-      toast("This window now shows the Projects home.", "good");
-    };
-    if (files.default_workspace && files.default_workspace_exists === false) {
-      status.append(el("span", "bad",
-        "This folder does not exist now: New Project refuses to create projects until it does, " +
-        "and a launch opens the built-in folder instead."));
-    }
-    form.append(status);
-    form.append(el("p", "note",
-      `This window shows ${files.current_workspace || (state.session && state.session.root) || ""}. ` +
-      "New Project creates every new project in the Projects folder, each in a folder of its " +
-      "own, and LCL Workspace starts on the Projects home, the projects in that folder, when it " +
-      "starts from the desktop menu; a folder or document opened explicitly still wins. Leave it empty for the built-in " +
-      "folder. The default file type is the ending of a new document named without one and " +
-      "of every file a new project starts with."));
-    if (files.problem) form.append(el("p", "note warning", files.problem));
-    if (!files.available) {
-      type.disabled = where.disabled = check.disabled = true;
-      form.append(el("p", "note warning",
-        "These cannot be saved: this workspace has no configuration folder (HOME or " +
-        "XDG_CONFIG_HOME is not set)."));
-    }
-    form.append(el("h3", "", "Templates"));
-    form.append(el("p", "note",
-      "Master templates: your own starting text for each kind of file and for new projects."));
-    const templates = el("button", "", "Templates…");
-    templates.type = "button";
-    templates.id = "open-templates";
-    templates.onclick = () => openTemplates();
-    form.append(templates);
-    updatesSection(form);
-    androidDevices(form);
-    body.append(form);
-  }, [
-    ["Cancel", "", (close) => close()],
-    /* Fills in the defaults and leaves the choice to Save or Cancel: one of
-     * these sections decides what every future launch opens. */
-    ["Reset to defaults", "", () => {
-      $("#setting-theme").value = DEFAULT_SETTINGS.theme;
-      $("#setting-font-size").value = String(DEFAULT_SETTINGS.fontSize);
-      $("#setting-line-numbers").checked = DEFAULT_SETTINGS.lineNumbers;
-      if (files.available) {
-        $("#setting-file-type").value = ".lcl";
-        $("#setting-workspace").value = "";
-      }
-    }],
-    ["Save", "primary", async (close) => {
-      /* A number field reports text it cannot read as "", which Number()
-       * would take for 0 and clamp to the minimum. Unreadable is unreadable. */
-      const typed = $("#setting-font-size").value.trim();
-      const requested = typed === "" ? NaN : Number(typed);
-      const clamped = Math.min(FONT_MAX, Math.max(FONT_MIN,
-        Number.isFinite(requested) ? Math.round(requested) : DEFAULT_SETTINGS.fontSize));
-      const next = validSettings({
-        version: SETTINGS_VERSION,
-        theme: $("#setting-theme").value,
-        fontSize: clamped,
-        lineNumbers: Boolean($("#setting-line-numbers").checked),
-      });
+      theme.value = now.theme;
+      form.append(themeLabel, theme);
 
-      /* The computer's settings first: a folder that is not there keeps the
-       * dialog open with the reason and, where it fits, a way to create it. */
-      const wanted = {
-        default_extension: $("#setting-file-type").value,
-        default_workspace: $("#setting-workspace").value.trim() || null,
-      };
-      const typeChanged = wanted.default_extension !== files.default_extension;
-      const whereChanged = wanted.default_workspace !== (files.default_workspace || null);
-      if (files.available && (typeChanged || whereChanged)) {
-        const status = $("#setting-workspace-status");
-        if (whereChanged && !(await describeFolder(wanted.default_workspace, status))) return;
-        try {
-          state.files = await api("PUT", "/api/settings", {}, JSON.stringify(wanted));
-        } catch (e) {
-          status.replaceChildren(el("span", "bad", `Not saved. ${e.message}`));
+      form.append(el("h3", "", "Editor"));
+      const sizeLabel = el("label", "", "Font size (px)");
+      sizeLabel.htmlFor = "setting-font-size";
+      const size = el("input");
+      size.id = "setting-font-size";
+      size.type = "number";
+      size.min = String(FONT_MIN);
+      size.max = String(FONT_MAX);
+      size.step = "1";
+      size.value = String(now.fontSize);
+      form.append(sizeLabel, size);
+
+      const numbersLabel = el("label", "", "Show line numbers");
+      numbersLabel.htmlFor = "setting-line-numbers";
+      const numbers = el("input");
+      numbers.id = "setting-line-numbers";
+      numbers.type = "checkbox";
+      numbers.checked = now.lineNumbers;
+      form.append(numbersLabel, numbers);
+
+      form.append(
+        el(
+          "p",
+          "note",
+          `Appearance and Editor are saved in this browser only. Font size is ${FONT_MIN} to ` +
+            `${FONT_MAX} px. Documents are always indented with spaces; Tab inserts four.`,
+        ),
+      );
+
+      /* Files: kept by the workspace for this computer, not by the browser. */
+      form.append(el("h3", "", "Files"));
+      const typeLabel = el("label", "", "Default file type");
+      typeLabel.htmlFor = "setting-file-type";
+      const type = el("select");
+      type.id = "setting-file-type";
+      for (const [value, label] of [
+        [".lcl", "LCL (.lcl)"],
+        [".lcl.txt", "LCL Text (.lcl.txt)"],
+      ]) {
+        const option = el("option", "", label);
+        option.value = value;
+        type.append(option);
+      }
+      type.value = files.default_extension;
+      form.append(typeLabel, type);
+
+      const whereLabel = el("label", "", "Projects folder");
+      whereLabel.htmlFor = "setting-workspace";
+      const whereRow = el("div", "path-field");
+      const where = el("input");
+      where.id = "setting-workspace";
+      where.type = "text";
+      where.spellcheck = false;
+      where.value = files.default_workspace || "";
+      where.placeholder = files.builtin_default_workspace
+        ? `Empty: the built-in folder, ${files.builtin_default_workspace}`
+        : "Empty: the built-in folder";
+      const check = el("button", "", "Check");
+      check.type = "button";
+      const openHere = el("button", "", "Open folder");
+      openHere.type = "button";
+      openHere.id = "setting-workspace-open";
+      whereRow.append(where, check, openHere);
+      form.append(whereLabel, whereRow);
+      const status = el("p", "note folder-status");
+      status.id = "setting-workspace-status";
+      check.onclick = () => describeFolder(where.value.trim(), status);
+      /* Shows the saved Projects folder in this window, in place of the folder
+       * shown now; every tab closes, so none may hold unsaved work. */
+      openHere.onclick = async () => {
+        if (where.value.trim() !== (files.default_workspace || "")) {
+          status.replaceChildren(
+            el("span", "bad", "Save first: Open folder opens the saved Projects folder."),
+          );
           return;
         }
+        try {
+          await api("POST", "/api/projects/open");
+        } catch (e) {
+          status.replaceChildren(el("span", "bad", e.message));
+          return;
+        }
+        closeModal();
+        await showOpenedFolder();
+        toast("This window now shows the Projects home.", "good");
+      };
+      if (files.default_workspace && files.default_workspace_exists === false) {
+        status.append(
+          el(
+            "span",
+            "bad",
+            "This folder does not exist now: New Project refuses to create projects until it does, " +
+              "and a launch opens the built-in folder instead.",
+          ),
+        );
       }
+      form.append(status);
+      form.append(
+        el(
+          "p",
+          "note",
+          `This window shows ${files.current_workspace || (state.session && state.session.root) || ""}. ` +
+            "New Project creates every new project in the Projects folder, each in a folder of its " +
+            "own, and LCL Workspace starts on the Projects home, the projects in that folder, when it " +
+            "starts from the desktop menu; a folder or document opened explicitly still wins. Leave it empty for the built-in " +
+            "folder. The default file type is the ending of a new document named without one and " +
+            "of every file a new project starts with.",
+        ),
+      );
+      if (files.problem) form.append(el("p", "note warning", files.problem));
+      if (!files.available) {
+        type.disabled = where.disabled = check.disabled = true;
+        form.append(
+          el(
+            "p",
+            "note warning",
+            "These cannot be saved: this workspace has no configuration folder (HOME or " +
+              "XDG_CONFIG_HOME is not set).",
+          ),
+        );
+      }
+      form.append(el("h3", "", "Templates"));
+      form.append(
+        el(
+          "p",
+          "note",
+          "Master templates: your own starting text for each kind of file and for new projects.",
+        ),
+      );
+      const templates = el("button", "", "Templates…");
+      templates.type = "button";
+      templates.id = "open-templates";
+      templates.onclick = () => openTemplates();
+      form.append(templates);
+      updatesSection(form);
+      androidDevices(form);
+      body.append(form);
+    },
+    [
+      ["Cancel", "", (close) => close()],
+      /* Fills in the defaults and leaves the choice to Save or Cancel: one of
+       * these sections decides what every future launch opens. */
+      [
+        "Reset to defaults",
+        "",
+        () => {
+          $("#setting-theme").value = DEFAULT_SETTINGS.theme;
+          $("#setting-font-size").value = String(DEFAULT_SETTINGS.fontSize);
+          $("#setting-line-numbers").checked = DEFAULT_SETTINGS.lineNumbers;
+          if (files.available) {
+            $("#setting-file-type").value = ".lcl";
+            $("#setting-workspace").value = "";
+          }
+        },
+      ],
+      [
+        "Save",
+        "primary",
+        async (close) => {
+          /* A number field reports text it cannot read as "", which Number()
+           * would take for 0 and clamp to the minimum. Unreadable is unreadable. */
+          const typed = $("#setting-font-size").value.trim();
+          const requested = typed === "" ? NaN : Number(typed);
+          const clamped = Math.min(
+            FONT_MAX,
+            Math.max(
+              FONT_MIN,
+              Number.isFinite(requested) ? Math.round(requested) : DEFAULT_SETTINGS.fontSize,
+            ),
+          );
+          const next = validSettings({
+            version: SETTINGS_VERSION,
+            theme: $("#setting-theme").value,
+            fontSize: clamped,
+            lineNumbers: Boolean($("#setting-line-numbers").checked),
+          });
 
-      close();
-      applySettings(next);
-      if (!saveSettings(next)) toast("Settings apply now but could not be stored in this browser.", "warn");
-      if (files.available && whereChanged) {
-        toast("Projects folder updated. New projects are created there, and LCL Workspace opens it " +
-          "the next time it starts from the menu.", "good");
-      }
-      if (files.available && typeChanged) {
-        toast(`New documents named without an ending are now created as ${wanted.default_extension}.`, "good");
-      }
-    }],
-  ]);
+          /* The computer's settings first: a folder that is not there keeps the
+           * dialog open with the reason and, where it fits, a way to create it. */
+          const wanted = {
+            default_extension: $("#setting-file-type").value,
+            default_workspace: $("#setting-workspace").value.trim() || null,
+          };
+          const typeChanged = wanted.default_extension !== files.default_extension;
+          const whereChanged = wanted.default_workspace !== (files.default_workspace || null);
+          if (files.available && (typeChanged || whereChanged)) {
+            const status = $("#setting-workspace-status");
+            if (whereChanged && !(await describeFolder(wanted.default_workspace, status))) return;
+            try {
+              state.files = await api("PUT", "/api/settings", {}, JSON.stringify(wanted));
+            } catch (e) {
+              status.replaceChildren(el("span", "bad", `Not saved. ${e.message}`));
+              return;
+            }
+          }
+
+          close();
+          applySettings(next);
+          if (!saveSettings(next))
+            toast("Settings apply now but could not be stored in this browser.", "warn");
+          if (files.available && whereChanged) {
+            toast(
+              "Projects folder updated. New projects are created there, and LCL Workspace opens it " +
+                "the next time it starts from the menu.",
+              "good",
+            );
+          }
+          if (files.available && typeChanged) {
+            toast(
+              `New documents named without an ending are now created as ${wanted.default_extension}.`,
+              "good",
+            );
+          }
+        },
+      ],
+    ],
+  );
 }
 
 /* ---------------------------------------------------------------- updates */
@@ -1738,11 +2096,14 @@ async function loadUpdate() {
  * anything and never takes focus from the editor. */
 function markUpdate() {
   const s = state.update && state.update.state;
-  const waiting = Boolean(s && s.available &&
-    (s.state === "update_available" || s.state === "ready_to_install"));
+  const waiting = Boolean(
+    s && s.available && (s.state === "update_available" || s.state === "ready_to_install"),
+  );
   const button = $("#act-settings");
   button.classList.toggle("has-update", waiting);
-  button.title = waiting ? `Settings — LCL ${shownVersion(s.available.version)} is available` : "Settings";
+  button.title = waiting
+    ? `Settings — LCL ${shownVersion(s.available.version)} is available`
+    : "Settings";
 }
 
 /* At start, a check only when the last one is a day old. Offline or not, the
@@ -1799,14 +2160,22 @@ function updatesSection(form) {
   box.id = "updates";
   form.append(box);
   renderUpdates(box);
-  loadUpdate().then(() => { if (box.isConnected) renderUpdates(box); });
+  loadUpdate().then(() => {
+    if (box.isConnected) renderUpdates(box);
+  });
 }
 
 function renderUpdates(box) {
   box.replaceChildren();
   const u = state.update;
   if (!u) {
-    box.append(el("p", "note", "Updates are not available here: lcl-update is not installed beside this workspace."));
+    box.append(
+      el(
+        "p",
+        "note",
+        "Updates are not available here: lcl-update is not installed beside this workspace.",
+      ),
+    );
     return;
   }
   const s = u.state || {};
@@ -1817,11 +2186,19 @@ function renderUpdates(box) {
   shown.id = "update-state";
   box.append(shown);
   if (s.error) {
-    box.append(el("p", "note warning", `${UPDATE_PROBLEMS[s.error.kind] || "Problem"}: ${s.error.message}`));
+    box.append(
+      el("p", "note warning", `${UPDATE_PROBLEMS[s.error.kind] || "Problem"}: ${s.error.message}`),
+    );
   }
   if (s.available) {
     const a = s.available;
-    box.append(el("p", "", `Available update: LCL ${shownVersion(a.version)} · released ${a.published_at.slice(0, 10)} · ${formatSize(a.size)}`));
+    box.append(
+      el(
+        "p",
+        "",
+        `Available update: LCL ${shownVersion(a.version)} · released ${a.published_at.slice(0, 10)} · ${formatSize(a.size)}`,
+      ),
+    );
     /* Release notes are text to read, never markup. */
     const notes = el("pre", "release-notes");
     notes.textContent = a.release_notes;
@@ -1885,8 +2262,10 @@ async function followDownload(box) {
     await loadUpdate();
     if (box.isConnected) renderUpdates(box);
     const s = state.update && state.update.state;
-    const going = s && (s.state === "downloading" ||
-      (s.state === "update_available" && Date.now() - started < 10000));
+    const going =
+      s &&
+      (s.state === "downloading" ||
+        (s.state === "update_available" && Date.now() - started < 10000));
     if (!going) return;
   }
 }
@@ -1895,32 +2274,53 @@ async function followDownload(box) {
  * be saved or closed: nothing is discarded to restart. */
 function installUpdate(version) {
   const unsaved = unsavedDocuments();
-  modal("Install update", (body) => {
-    body.append(el("p", "",
-      `LCL Workspace closes, LCL ${shownVersion(version)} is installed and checked, and LCL Workspace opens again. ` +
-      "If anything fails, the version you have now is put back. Your projects, settings, templates " +
-      "and paired devices are not touched."));
-    if (unsaved.length) {
-      body.append(el("p", "note warning",
-        `Save or close ${unsaved.map((d) => d.id).join(", ")} first: installing restarts LCL Workspace.`));
-    }
-  }, [
-    ["Cancel", "", (close) => close()],
-    ["Install and restart", "primary", async (close) => {
-      if (unsavedDocuments().length) return;
-      try {
-        await api("POST", "/api/update/install");
-      } catch (e) {
-        toast(`Not installed. ${e.message}`, "bad");
-        return;
+  modal(
+    "Install update",
+    (body) => {
+      body.append(
+        el(
+          "p",
+          "",
+          `LCL Workspace closes, LCL ${shownVersion(version)} is installed and checked, and LCL Workspace opens again. ` +
+            "If anything fails, the version you have now is put back. Your projects, settings, templates " +
+            "and paired devices are not touched.",
+        ),
+      );
+      if (unsaved.length) {
+        body.append(
+          el(
+            "p",
+            "note warning",
+            `Save or close ${unsaved.map((d) => d.id).join(", ")} first: installing restarts LCL Workspace.`,
+          ),
+        );
       }
-      close();
-      const note = el("div", null,
-        "Installing the update. LCL Workspace opens again in a new window when it is done; this page can be closed.");
-      note.style.cssText = "padding:40px;font:14px system-ui";
-      document.body.replaceChildren(note);
-    }],
-  ]);
+    },
+    [
+      ["Cancel", "", (close) => close()],
+      [
+        "Install and restart",
+        "primary",
+        async (close) => {
+          if (unsavedDocuments().length) return;
+          try {
+            await api("POST", "/api/update/install");
+          } catch (e) {
+            toast(`Not installed. ${e.message}`, "bad");
+            return;
+          }
+          close();
+          const note = el(
+            "div",
+            null,
+            "Installing the update. LCL Workspace opens again in a new window when it is done; this page can be closed.",
+          );
+          note.style.cssText = "padding:40px;font:14px system-ui";
+          document.body.replaceChildren(note);
+        },
+      ],
+    ],
+  );
   if (unsaved.length) [...$("#modal-actions").querySelectorAll("button")].pop().disabled = true;
 }
 
@@ -1960,12 +2360,18 @@ function androidDevices(form) {
   let timer = null;
   let watch = null;
   const stop = () => {
-    if (timer) { clearInterval(timer); timer = null; }
-    if (watch) { clearInterval(watch); watch = null; }
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+    if (watch) {
+      clearInterval(watch);
+      watch = null;
+    }
   };
   /* Closed, or replaced by another dialog: nothing more to show or poll. */
   const showing = () => box.isConnected && !$("#modal-backdrop").hidden;
-  const when = (seconds) => seconds ? new Date(seconds * 1000).toLocaleString() : "never";
+  const when = (seconds) => (seconds ? new Date(seconds * 1000).toLocaleString() : "never");
   const remaining = (expires) => {
     const seconds = Math.max(0, Math.round(expires - Date.now() / 1000));
     return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
@@ -1981,9 +2387,12 @@ function androidDevices(form) {
     confirming = null;
     try {
       await api("POST", `/api/remote/${decision}`, { id: r.request });
-      toast(decision === "approve"
-        ? `${r.name} is approved. The phone finishes pairing by itself within a few seconds.`
-        : `${r.name}'s request is denied. It is not trusted.`, "good");
+      toast(
+        decision === "approve"
+          ? `${r.name} is approved. The phone finishes pairing by itself within a few seconds.`
+          : `${r.name}'s request is denied. It is not trusted.`,
+        "good",
+      );
     } catch (e) {
       toast(`${decision === "approve" ? "Not approved" : "Not denied"}. ${e.message}`, "bad");
     }
@@ -1997,9 +2406,14 @@ function androidDevices(form) {
       requests.append(el("p", "note", "No pairing request is waiting."));
       return;
     }
-    requests.append(el("p", "note",
-      "A phone that scanned a pairing code asks to be trusted. Approve only the request whose " +
-      "verification code your phone shows; deny any you do not recognise."));
+    requests.append(
+      el(
+        "p",
+        "note",
+        "A phone that scanned a pairing code asks to be trusted. Approve only the request whose " +
+          "verification code your phone shows; deny any you do not recognise.",
+      ),
+    );
     if (!waiting.some((r) => r.request === confirming)) confirming = null;
     for (const r of waiting) {
       const row = el("div", "remote-request");
@@ -2008,9 +2422,13 @@ function androidDevices(form) {
         el("span", "remote-name", r.name),
         el("span", "remote-verification mono", r.verification),
         el("span", "note mono", `fingerprint ${r.fingerprint}`),
-        el("span", "note", r.status === "approved"
-          ? "approved; the phone finishes pairing by itself"
-          : `asked ${when(r.created)} · expires in ${remaining(r.expires)}`),
+        el(
+          "span",
+          "note",
+          r.status === "approved"
+            ? "approved; the phone finishes pairing by itself"
+            : `asked ${when(r.created)} · expires in ${remaining(r.expires)}`,
+        ),
       );
       if (r.status === "pending" && confirming === r.request) {
         const confirm = el("div", "remote-confirm");
@@ -2020,12 +2438,18 @@ function androidDevices(form) {
           el("p", "mono", `Fingerprint: ${r.fingerprint}`),
           el("p", "note", "Approve only if the phone shows this same verification code."),
           button("Approve device", () => decide(r, "approve")),
-          button("Cancel", () => { confirming = null; showRequests(); }),
+          button("Cancel", () => {
+            confirming = null;
+            showRequests();
+          }),
         );
         row.append(confirm);
       } else if (r.status === "pending") {
         row.append(
-          button("Approve…", () => { confirming = r.request; showRequests(); }),
+          button("Approve…", () => {
+            confirming = r.request;
+            showRequests();
+          }),
           button("Deny", () => decide(r, "deny")),
         );
       }
@@ -2038,20 +2462,31 @@ function androidDevices(form) {
     try {
       reply = await api("GET", "/api/remote/pending");
     } catch (e) {
-      requests.replaceChildren(el("h4", "", "Pending pairing requests"),
-        el("p", "bad", `Pairing requests are unavailable: ${e.message}`));
+      requests.replaceChildren(
+        el("h4", "", "Pending pairing requests"),
+        el("p", "bad", `Pairing requests are unavailable: ${e.message}`),
+      );
       return;
     }
-    if (reply.installed === false) { requests.replaceChildren(); return; }
+    if (reply.installed === false) {
+      requests.replaceChildren();
+      return;
+    }
     waiting = reply.requests || [];
     showRequests();
     /* Requests change from the phone's side too; follow them while any wait. */
     if (waiting.length > 0 && !timer && !watch) watch = setInterval(refresh, 2000);
-    if (watch && waiting.length === 0) { clearInterval(watch); watch = null; }
+    if (watch && waiting.length === 0) {
+      clearInterval(watch);
+      watch = null;
+    }
   }
 
   async function refresh() {
-    if (!showing()) { stop(); return null; }
+    if (!showing()) {
+      stop();
+      return null;
+    }
     let reply;
     try {
       reply = await api("GET", "/api/remote/devices");
@@ -2060,24 +2495,39 @@ function androidDevices(form) {
       return null;
     }
     if (reply.installed === false) {
-      status.replaceChildren(el("span", "", "LCL for Android pairs with this PC through lcl-remote, which is not installed here."));
+      status.replaceChildren(
+        el(
+          "span",
+          "",
+          "LCL for Android pairs with this PC through lcl-remote, which is not installed here.",
+        ),
+      );
       return null;
     }
-    status.replaceChildren(reply.service_running
-      ? el("span", "good", "The Android service is running; paired devices can connect.")
-      : el("span", "bad",
-        "The Android service is not running, so paired devices cannot connect. Start it with " +
-        "`lcl-remote serve`, or `systemctl --user start lcl-remote`."));
+    status.replaceChildren(
+      reply.service_running
+        ? el("span", "good", "The Android service is running; paired devices can connect.")
+        : el(
+            "span",
+            "bad",
+            "The Android service is not running, so paired devices cannot connect. Start it with " +
+              "`lcl-remote serve`, or `systemctl --user start lcl-remote`.",
+          ),
+    );
     devices = reply.devices || [];
     list.replaceChildren();
     if (devices.length === 0) list.append(el("p", "note", "No Android device is paired."));
     for (const d of devices) {
       const row = el("div", "remote-device");
       row.dataset.id = d.id;
-      const state = d.revoked_at ? `revoked ${when(d.revoked_at)}` : (d.online ? "online" : "offline");
+      const state = d.revoked_at
+        ? `revoked ${when(d.revoked_at)}`
+        : d.online
+          ? "online"
+          : "offline";
       row.append(
         el("span", "remote-name", d.name),
-        el("span", d.revoked_at ? "bad" : (d.online ? "good" : "note"), state),
+        el("span", d.revoked_at ? "bad" : d.online ? "good" : "note", state),
         el("span", "note", `last connected ${when(d.last_seen)} · paired ${when(d.paired_at)}`),
       );
       if (!d.revoked_at) {
@@ -2088,14 +2538,20 @@ function androidDevices(form) {
           if (revoke.dataset.confirm !== "1") {
             revoke.dataset.confirm = "1";
             revoke.textContent = "Revoke — click again to confirm";
-            setTimeout(() => { revoke.dataset.confirm = ""; revoke.textContent = "Revoke"; }, 5000);
+            setTimeout(() => {
+              revoke.dataset.confirm = "";
+              revoke.textContent = "Revoke";
+            }, 5000);
             return;
           }
           revoke.disabled = true;
           try {
             await api("POST", "/api/remote/revoke", { id: d.id });
             code.replaceChildren(); // an earlier "is paired" would now be wrong
-            toast(`${d.name} is revoked. It is disconnected and must pair again with a new QR code.`, "good");
+            toast(
+              `${d.name} is revoked. It is disconnected and must pair again with a new QR code.`,
+              "good",
+            );
           } catch (e) {
             toast(`Not revoked. ${e.message}`, "bad");
           }
@@ -2111,8 +2567,13 @@ function androidDevices(form) {
     const fresh = shown && devices.find((d) => !shown.known.has(d.id));
     if (fresh) {
       shown = null;
-      if (timer) { clearInterval(timer); timer = null; }
-      code.replaceChildren(el("p", "good", `${fresh.name} is paired. It reconnects by itself from now on.`));
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+      code.replaceChildren(
+        el("p", "good", `${fresh.name} is paired. It reconnects by itself from now on.`),
+      );
       pair.disabled = false;
     }
     return reply;
@@ -2145,11 +2606,23 @@ function androidDevices(form) {
     textLabel.htmlFor = "remote-link";
     code.replaceChildren(
       qr,
-      el("p", "", "On the phone: LCL → Pair a PC → Scan QR code. The phone shows this fingerprint before it asks to pair:"),
+      el(
+        "p",
+        "",
+        "On the phone: LCL → Pair a PC → Scan QR code. The phone shows this fingerprint before it asks to pair:",
+      ),
       el("p", "mono", `${fingerprint} …`),
-      el("p", "", "Scanning does not trust the phone. After Pair is pressed on the phone, its request appears under " +
-        "Pending pairing requests: approve it only if its verification code is the one the phone shows."),
-      el("p", "note", `The code pairs one device. Addresses in it: ${issued.addresses.join(", ")}.`),
+      el(
+        "p",
+        "",
+        "Scanning does not trust the phone. After Pair is pressed on the phone, its request appears under " +
+          "Pending pairing requests: approve it only if its verification code is the one the phone shows.",
+      ),
+      el(
+        "p",
+        "note",
+        `The code pairs one device. Addresses in it: ${issued.addresses.join(", ")}.`,
+      ),
       left,
       textLabel,
       text,
@@ -2161,7 +2634,9 @@ function androidDevices(form) {
       if (seconds <= 0) {
         stop();
         shown = null;
-        code.replaceChildren(el("p", "note", "The code expired. Pair Android device makes a new one."));
+        code.replaceChildren(
+          el("p", "note", "The code expired. Pair Android device makes a new one."),
+        );
         pair.disabled = false;
       } else if (waiting.some((r) => r.status === "pending")) {
         left.textContent = `A request is waiting below: compare its verification code with the phone. The code expires in ${remaining(issued.expires)}.`;
@@ -2196,7 +2671,8 @@ function render() {
   paintTokens(doc);
   renderGutter(doc);
   const required = (doc.slots || []).filter((m) => m.kind === "required_slot").length;
-  $("#doc-state").textContent = (dirty(doc) ? "modified" : "saved") +
+  $("#doc-state").textContent =
+    (dirty(doc) ? "modified" : "saved") +
     (required ? ` · ${required} required slot${required === 1 ? "" : "s"} to fill` : "");
   updateCursor();
   syncScroll();
@@ -2220,8 +2696,9 @@ function syncDocumentUI(doc) {
    * back to their empty state instead of describing a closed tab. */
   if (!open) {
     view("diagnostics").replaceChildren(el("div", "empty", "Nothing checked yet."));
-    view("structure").replaceChildren(el("div", "empty",
-      "Run Inspect to see imports, declarations and the execution plan."));
+    view("structure").replaceChildren(
+      el("div", "empty", "Run Inspect to see imports, declarations and the execution plan."),
+    );
   }
 }
 
@@ -2229,7 +2706,10 @@ function syncDocumentUI(doc) {
  * entry declares a project part role. Anything else has none. */
 async function refreshSlots(doc, revision) {
   const listed = knownEntry(doc.id);
-  if (!listed || !listed.kind || !listed.kind.startsWith("kind.part.")) { doc.slots = []; return; }
+  if (!listed || !listed.kind || !listed.kind.startsWith("kind.part.")) {
+    doc.slots = [];
+    return;
+  }
   try {
     const reply = await api("POST", "/api/slots", { id: doc.id }, doc.text);
     if (doc.revision === revision) doc.slots = reply.marks || [];
@@ -2255,7 +2735,10 @@ function renderGutter(doc) {
     const mark = marks.get(n);
     if (mark) line.classList.add(`has-${mark}`);
     const slot = slots.get(n);
-    if (slot) { line.classList.add(`slot-${slot}`); line.title = SLOT_TITLES[slot] || slot; }
+    if (slot) {
+      line.classList.add(`slot-${slot}`);
+      line.title = SLOT_TITLES[slot] || slot;
+    }
     if (doc.breakpoints.has(n)) line.classList.add("has-break");
     if (doc.stepAt === n) line.classList.add("at-step");
     line.onclick = () => toggleBreakpoint(doc, n);
@@ -2277,7 +2760,8 @@ function revealByte(byte) {
   code.focus();
   code.setSelectionRange(at, at);
   const { line } = doc.index.position(byte);
-  const row = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--row")) || 20;
+  const row =
+    parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--row")) || 20;
   code.scrollTop = Math.max(0, (line - 6) * row);
   syncScroll();
   updateCursor();
@@ -2321,7 +2805,7 @@ function paintTokens(doc) {
 
   /* Per-byte decoration. Documents here are kilobytes; three typed arrays
    * are cheaper and far simpler than interval arithmetic. */
-  const cls = new Uint8Array(total);      // 0 none, else CLASS_NAMES index
+  const cls = new Uint8Array(total); // 0 none, else CLASS_NAMES index
   const squiggle = new Uint8Array(total); // 0 none, else SEVERITY index
   const isRef = new Uint8Array(total);
 
@@ -2353,7 +2837,9 @@ function paintTokens(doc) {
   const emit = (fromByte, toByte) => {
     if (toByte <= fromByte) return;
     const slice = text.slice(doc.index.char(fromByte), doc.index.char(toByte));
-    const c = cls[fromByte], s = squiggle[fromByte], r = isRef[fromByte];
+    const c = cls[fromByte],
+      s = squiggle[fromByte],
+      r = isRef[fromByte];
     if (!c && !s && !r) {
       frag.append(document.createTextNode(slice));
       return;
@@ -2521,20 +3007,31 @@ function renderDiagnostics(doc) {
   const report = doc.report;
   panel.replaceChildren();
 
-  if (!report) { panel.append(el("div", "empty", "Nothing checked yet.")); return; }
+  if (!report) {
+    panel.append(el("div", "empty", "Nothing checked yet."));
+    return;
+  }
 
   const head = el("div", "group");
   const outcome = report.outcome;
   const status = el("div", `terminal-status ${outcome === "accepted" ? "good" : "bad"}`);
-  status.append(document.createTextNode(
-    outcome === "accepted"
-      ? `Accepted through ${report.reached}`
-      : `${outcome} at ${report.reached}`));
+  status.append(
+    document.createTextNode(
+      outcome === "accepted"
+        ? `Accepted through ${report.reached}`
+        : `${outcome} at ${report.reached}`,
+    ),
+  );
   /* Contract 5.6: a stage verdict is never a claim that the document ran. */
-  status.append(el("span", "why",
-    outcome === "accepted"
-      ? "Every stage up to here produced no unhandled diagnostic. This is not a claim that the document ran or succeeded."
-      : "Processing stopped at this stage."));
+  status.append(
+    el(
+      "span",
+      "why",
+      outcome === "accepted"
+        ? "Every stage up to here produced no unhandled diagnostic. This is not a claim that the document ran or succeeded."
+        : "Processing stopped at this stage.",
+    ),
+  );
   head.append(status);
   panel.append(head);
 
@@ -2550,18 +3047,27 @@ function renderDiagnostics(doc) {
     id.append(document.createTextNode(d.id));
     item.append(id);
 
-    const meta = el("div", "meta",
+    const meta = el(
+      "div",
+      "meta",
       `${d.source}:${d.position.line}:${d.position.column} · byte ${d.span.start}–${d.span.end} · ` +
-      `${d.stage} · ${d.default_status}`);
+        `${d.stage} · ${d.default_status}`,
+    );
     item.append(meta);
     item.append(el("div", "meaning", d.meaning));
     if (d.detail) item.append(el("div", "detail", d.detail));
 
     item.onclick = async () => {
       if (d.source !== doc.id && state.docs.has(d.source) === false) {
-        try { await openDocument(d.source, { focusByte: d.span.start }); return; } catch (_) {}
+        try {
+          await openDocument(d.source, { focusByte: d.span.start });
+          return;
+        } catch (_) {}
       }
-      if (d.source !== doc.id) { await openDocument(d.source, { focusByte: d.span.start }); return; }
+      if (d.source !== doc.id) {
+        await openDocument(d.source, { focusByte: d.span.start });
+        return;
+      }
       revealByte(d.span.start);
     };
     panel.append(item);
@@ -2573,8 +3079,13 @@ function renderStructure(doc) {
   panel.replaceChildren();
   const s = doc.report && doc.report.structure;
   if (!s) {
-    panel.append(el("div", "empty",
-      "The document did not reach the structural view. Fix the diagnostics first."));
+    panel.append(
+      el(
+        "div",
+        "empty",
+        "The document did not reach the structural view. Fix the diagnostics first.",
+      ),
+    );
     return;
   }
 
@@ -2615,7 +3126,9 @@ function renderStructure(doc) {
 
   if (s.plan.length) {
     const group = el("div", "group");
-    group.append(el("h3", "", `Execution plan (${s.plan.length} nodes, ${s.candidates} candidates)`));
+    group.append(
+      el("h3", "", `Execution plan (${s.plan.length} nodes, ${s.candidates} candidates)`),
+    );
     const rows = el("div", "rows");
     for (const node of s.plan) {
       const row = el("div", "row clickable plan-node");
@@ -2646,7 +3159,8 @@ function renderStructure(doc) {
 }
 
 function depthOf(plan, node) {
-  let depth = 0, at = node;
+  let depth = 0,
+    at = node;
   while (at && at.parent !== null && depth < 12) {
     at = plan[at.parent];
     depth++;
@@ -2663,12 +3177,19 @@ function depthOf(plan, node) {
  * resolver did not bind it, this says so rather than guessing a target. */
 function goToDefinition() {
   const doc = current();
-  if (!doc || !doc.navigation) { toast("No resolver data yet.", "warn"); return; }
+  if (!doc || !doc.navigation) {
+    toast("No resolver data yet.", "warn");
+    return;
+  }
   const byte = doc.index.byte(code.selectionStart);
 
   const reference = doc.navigation.references.find(
-    (r) => r.source === doc.id && r.span.start <= byte && byte < r.span.end);
-  if (!reference) { toast("The cursor is not on a reference.", "warn"); return; }
+    (r) => r.source === doc.id && r.span.start <= byte && byte < r.span.end,
+  );
+  if (!reference) {
+    toast("The cursor is not on a reference.", "warn");
+    return;
+  }
 
   if (reference.target === "unresolved") {
     toast(`${reference.text} does not resolve to a declaration.`, "bad");
@@ -2687,39 +3208,54 @@ function goToDefinition() {
 /* Find references to the declaration or reference under the cursor. */
 function findReferences() {
   const doc = current();
-  if (!doc || !doc.navigation) { toast("No resolver data yet.", "warn"); return; }
+  if (!doc || !doc.navigation) {
+    toast("No resolver data yet.", "warn");
+    return;
+  }
   const byte = doc.index.byte(code.selectionStart);
   const nav = doc.navigation;
 
   let index = null;
   const declaration = nav.declarations.find(
-    (d) => d.source === doc.id && d.id_span.start <= byte && byte < d.id_span.end);
+    (d) => d.source === doc.id && d.id_span.start <= byte && byte < d.id_span.end,
+  );
   if (declaration) index = declaration.index;
   else {
     const reference = nav.references.find(
-      (r) => r.source === doc.id && r.span.start <= byte && byte < r.span.end);
+      (r) => r.source === doc.id && r.span.start <= byte && byte < r.span.end,
+    );
     if (reference && reference.declaration !== null) index = reference.declaration;
   }
-  if (index === null) { toast("Put the cursor on a declaration or a reference.", "warn"); return; }
+  if (index === null) {
+    toast("Put the cursor on a declaration or a reference.", "warn");
+    return;
+  }
 
   const target = nav.declarations[index];
   const uses = nav.references.filter((r) => r.declaration === index);
-  modal(`References to ${target.id}`, (body) => {
-    if (!uses.length) { body.append(el("p", "", "Nothing references this declaration.")); return; }
-    const rows = el("div", "rows");
-    for (const use of uses) {
-      const row = el("div", "row clickable");
-      row.append(el("span", "k", `${use.source}:${use.position.line}:${use.position.column}`));
-      row.append(el("span", "v", use.slot ? `${use.slot.block}.${use.slot.field}` : use.text));
-      row.onclick = async () => {
-        closeModal();
-        if (use.source !== doc.id) await openDocument(use.source, { focusByte: use.span.start });
-        else revealByte(use.span.start);
-      };
-      rows.append(row);
-    }
-    body.append(rows);
-  }, [["Close", "primary", (close) => close()]]);
+  modal(
+    `References to ${target.id}`,
+    (body) => {
+      if (!uses.length) {
+        body.append(el("p", "", "Nothing references this declaration."));
+        return;
+      }
+      const rows = el("div", "rows");
+      for (const use of uses) {
+        const row = el("div", "row clickable");
+        row.append(el("span", "k", `${use.source}:${use.position.line}:${use.position.column}`));
+        row.append(el("span", "v", use.slot ? `${use.slot.block}.${use.slot.field}` : use.text));
+        row.onclick = async () => {
+          closeModal();
+          if (use.source !== doc.id) await openDocument(use.source, { focusByte: use.span.start });
+          else revealByte(use.span.start);
+        };
+        rows.append(row);
+      }
+      body.append(rows);
+    },
+    [["Close", "primary", (close) => close()]],
+  );
 }
 
 /* ----------------------------------------------------- running (phase D) */
@@ -2754,9 +3290,15 @@ async function startRun() {
   }
 
   state.run = {
-    id: started.run, finished: false, paused: null,
-    operations: [], effects: [], report: null, document: doc.id,
-    given: doc, revision: doc.revision,   // the document and text it was given
+    id: started.run,
+    finished: false,
+    paused: null,
+    operations: [],
+    effects: [],
+    report: null,
+    document: doc.id,
+    given: doc,
+    revision: doc.revision, // the document and text it was given
   };
   doc.stepAt = null;
   showView("execution");
@@ -2824,14 +3366,21 @@ function follow(run) {
     if (run.report && run.report.completion) showView("completion");
   });
   source.onerror = () => {
-    if (!run.finished) { run.finished = true; source.close(); renderExecution(); }
+    if (!run.finished) {
+      run.finished = true;
+      source.close();
+      renderExecution();
+    }
   };
 }
 
 async function stopRun() {
   if (!state.run || state.run.finished) return;
-  await api("POST", "/api/answer",
-    { run: state.run.id, sequence: (state.run.paused || {}).sequence || 0, answer: "cancel" });
+  await api("POST", "/api/answer", {
+    run: state.run.id,
+    sequence: (state.run.paused || {}).sequence || 0,
+    answer: "cancel",
+  });
   toast("Stopping the run. Every remaining effect is refused.", "warn");
 }
 
@@ -2892,7 +3441,11 @@ function renderExecution() {
       row.append(el("span", "k", e.stage));
       row.append(el("span", "v", e.operation));
       const verdict = e.permission || e.outcome;
-      const badge = el("span", `badge ${verdict === "granted" || verdict === "completed" ? "good" : "bad"}`, verdict);
+      const badge = el(
+        "span",
+        `badge ${verdict === "granted" || verdict === "completed" ? "good" : "bad"}`,
+        verdict,
+      );
       const tail = el("span", "tail");
       tail.append(badge);
       row.append(tail);
@@ -2914,8 +3467,13 @@ function renderCompletion(report) {
   panel.replaceChildren();
   const c = report && report.completion;
   if (!c) {
-    panel.append(el("div", "empty",
-      "The run did not reach completion. The Diagnostics view says where it stopped."));
+    panel.append(
+      el(
+        "div",
+        "empty",
+        "The run did not reach completion. The Diagnostics view says where it stopped.",
+      ),
+    );
     return;
   }
 
@@ -2939,7 +3497,10 @@ function renderCompletion(report) {
       row.append(el("span", "v", check.id));
       const tail = el("span", "tail");
       if (check.skipped) tail.append(el("span", "badge warn", `skipped: ${check.skipped}`));
-      else tail.append(el("span", `badge ${check.outcome === "TRUE" ? "good" : "bad"}`, check.outcome));
+      else
+        tail.append(
+          el("span", `badge ${check.outcome === "TRUE" ? "good" : "bad"}`, check.outcome),
+        );
       row.append(tail);
       row.onclick = () => revealByte(check.span.start);
       rows.append(row);
@@ -2969,7 +3530,10 @@ function renderCompletion(report) {
     const group = el("div", "group");
     group.append(el("h3", "", "Verdict"));
     const list = el("dl", "kv");
-    const pair = (k, v) => { list.append(el("dt", "", k)); list.append(el("dd", "", v)); };
+    const pair = (k, v) => {
+      list.append(el("dt", "", k));
+      list.append(el("dd", "", v));
+    };
     if (verdict.success) pair("SUCCESS", verdict.success);
     if (verdict.quantifier) pair("quantifier", verdict.quantifier);
     if (verdict.value) pair("value", verdict.value);
@@ -3018,8 +3582,11 @@ function renderCompletion(report) {
 function debugBar(run) {
   const bar = el("div", `debugbar${run.paused ? " paused" : ""}`);
 
-  const state_ = el("span", "state",
-    run.paused ? `paused · ${run.paused.kind}` : run.finished ? "finished" : "running");
+  const state_ = el(
+    "span",
+    "state",
+    run.paused ? `paused · ${run.paused.kind}` : run.finished ? "finished" : "running",
+  );
   bar.append(state_);
   bar.append(el("span", "spacer"));
 
@@ -3044,8 +3611,11 @@ function debugBar(run) {
     const fwd = el("button", "", "▶");
     fwd.title = "Step forward through the recorded invocations";
     fwd.onclick = () => stepTo((run.stepIndex === undefined ? -1 : run.stepIndex) + 1);
-    const where = el("span", "state",
-      run.stepIndex === undefined ? `${count} recorded` : `${run.stepIndex + 1} / ${count}`);
+    const where = el(
+      "span",
+      "state",
+      run.stepIndex === undefined ? `${count} recorded` : `${run.stepIndex + 1} / ${count}`,
+    );
     bar.append(back, fwd, where);
   }
   return bar;
@@ -3094,7 +3664,10 @@ function onPaused(run) {
    * rather than a second kind of stop. */
   if (doc && doc.breakpoints.size && pause.source === doc.id) {
     const line = doc.index.position(pause.span.start).line;
-    if (!doc.breakpoints.has(line)) { answerPause(run, "continue"); return; }
+    if (!doc.breakpoints.has(line)) {
+      answerPause(run, "continue");
+      return;
+    }
   }
 
   if (doc && pause.source === doc.id) {
@@ -3139,7 +3712,10 @@ function showConsent(run, pause) {
       const auth = el("div", "group");
       auth.append(el("h3", "", "What LCL authorized"));
       const list = el("dl", "kv");
-      const pair = (k, v) => { list.append(el("dt", "", k)); list.append(el("dd", "", v)); };
+      const pair = (k, v) => {
+        list.append(el("dt", "", k));
+        list.append(el("dd", "", v));
+      };
       pair("operation", pause.authorization.operation);
       if (pause.authorization.scope) pair("scope", pause.authorization.scope);
       pair("permitted by", pause.authorization.permitted_by.join(", ") || "—");
@@ -3149,16 +3725,40 @@ function showConsent(run, pause) {
       auth.append(list);
       body.append(auth);
 
-      const note = el("p", "empty",
+      const note = el(
+        "p",
+        "empty",
         "Allowing this grants host permission for this one request. " +
-        "It does not change what the document authorizes.");
+          "It does not change what the document authorizes.",
+      );
       body.append(note);
     },
     [
-      ["Stop the run", "", (close) => { close(); answerPause(run, "cancel"); }],
-      ["Deny", "", (close) => { close(); answerPause(run, "deny"); }],
-      ["Allow", "primary", (close) => { close(); answerPause(run, "continue"); }],
-    ]
+      [
+        "Stop the run",
+        "",
+        (close) => {
+          close();
+          answerPause(run, "cancel");
+        },
+      ],
+      [
+        "Deny",
+        "",
+        (close) => {
+          close();
+          answerPause(run, "deny");
+        },
+      ],
+      [
+        "Allow",
+        "primary",
+        (close) => {
+          close();
+          answerPause(run, "continue");
+        },
+      ],
+    ],
   );
 }
 
@@ -3166,8 +3766,7 @@ async function answerPause(run, answer) {
   const pause = run.paused;
   if (!pause) return;
   try {
-    await api("POST", "/api/answer",
-      { run: run.id, sequence: String(pause.sequence), answer });
+    await api("POST", "/api/answer", { run: run.id, sequence: String(pause.sequence), answer });
     run.paused = null;
     renderExecution();
   } catch (e) {
@@ -3182,10 +3781,13 @@ function renderCapabilities() {
   const panel = view("capabilities");
   panel.replaceChildren();
 
-  const intro = el("div", "empty",
+  const intro = el(
+    "div",
+    "empty",
     "A run grants the host nothing unless you name it here. " +
-    "Both gates must pass for an effect: the document must authorize it, and " +
-    "you must permit it.");
+      "Both gates must pass for an effect: the document must authorize it, and " +
+      "you must permit it.",
+  );
   panel.append(intro);
 
   const group = el("div", "group");
@@ -3204,7 +3806,10 @@ function renderCapabilities() {
     area.placeholder = hint;
     area.value = state.grants[key].join("\n");
     area.oninput = () => {
-      state.grants[key] = area.value.split("\n").map((s) => s.trim()).filter(Boolean);
+      state.grants[key] = area.value
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean);
     };
     field.append(area);
     group.append(field);
@@ -3219,37 +3824,56 @@ function renderCapabilities() {
   area.placeholder = "one per line, as id=expression";
   area.value = state.inputs.join("\n");
   area.oninput = () => {
-    state.inputs = area.value.split("\n").map((s) => s.trim()).filter(Boolean);
+    state.inputs = area.value
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
   };
   data.append(area);
-  data.append(el("div", "empty",
-    "The engine turns each expression into a value with its own evaluation. " +
-    "This workspace does not read literals."));
+  data.append(
+    el(
+      "div",
+      "empty",
+      "The engine turns each expression into a value with its own evaluation. " +
+        "This workspace does not read literals.",
+    ),
+  );
   panel.append(data);
 
   const stops = el("div", "group");
   stops.append(el("h3", "", "Where a run stops"));
   for (const [key, label, hint] of [
-    ["breakOnEffects", "Ask before every effect",
-     "Pause at the host boundary, where an effect leaves the language."],
-    ["breakOnOperations", "Ask before every operation",
-     "Pause at the standard library's dispatch, before the host is reached."],
+    [
+      "breakOnEffects",
+      "Ask before every effect",
+      "Pause at the host boundary, where an effect leaves the language.",
+    ],
+    [
+      "breakOnOperations",
+      "Ask before every operation",
+      "Pause at the standard library's dispatch, before the host is reached.",
+    ],
   ]) {
     const row = el("label", "row clickable");
     const box = document.createElement("input");
     box.type = "checkbox";
     box.checked = state[key];
-    box.onchange = () => { state[key] = box.checked; };
+    box.onchange = () => {
+      state[key] = box.checked;
+    };
     row.append(box);
     row.append(el("span", "v", label));
     stops.append(row);
     stops.append(el("div", "empty", hint));
   }
-  const note = el("div", "empty",
+  const note = el(
+    "div",
+    "empty",
     "Stepping between plan nodes is not offered. The runtime executes an " +
-    "accepted plan in one call, and a control that claimed otherwise would be " +
-    "a control that does not work. After a run, the recorded invocations step " +
-    "forward and back in the Execution view.");
+      "accepted plan in one call, and a control that claimed otherwise would be " +
+      "a control that does not work. After a run, the recorded invocations step " +
+      "forward and back in the Execution view.",
+  );
   stops.append(note);
   panel.append(stops);
 }
@@ -3261,7 +3885,10 @@ code.addEventListener("input", () => {
   /* The textarea is disabled with no document, so this should not happen;
    * if anything does reach it, re-rendering the empty state discards it
    * rather than keeping text nobody can see. */
-  if (!doc) { render(); return; }
+  if (!doc) {
+    render();
+    return;
+  }
   const wasDirty = dirty(doc);
   replaceText(doc, code.value);
   doc.stepAt = null;
@@ -3284,20 +3911,33 @@ code.addEventListener("keydown", (e) => {
 
 document.addEventListener("keydown", (e) => {
   const meta = e.ctrlKey || e.metaKey;
-  if (meta && e.key === "s") { e.preventDefault(); save(); }
-  else if (meta && e.key === "r") { e.preventDefault(); reload(); }
-  /* Shift+F12 first, and plain F12 says it is plain: `e.key === "F12"` is true
+  if (meta && e.key === "s") {
+    e.preventDefault();
+    save();
+  } else if (meta && e.key === "r") {
+    e.preventDefault();
+    reload();
+  } else if (e.shiftKey && e.key === "F12") {
+    /* Shift+F12 first, and plain F12 says it is plain: `e.key === "F12"` is true
      with Shift held too, so a bare test for it ahead of this one answered
      Shift+F12 with goToDefinition and left findReferences unreachable. */
-  else if (e.shiftKey && e.key === "F12") { e.preventDefault(); findReferences(); }
-  else if (!e.shiftKey && e.key === "F12") { e.preventDefault(); goToDefinition(); }
-  else if (meta && e.shiftKey && e.key === "F") { e.preventDefault(); findReferences(); }
-  else if (e.key === "Escape") closeModal();
+    e.preventDefault();
+    findReferences();
+  } else if (!e.shiftKey && e.key === "F12") {
+    e.preventDefault();
+    goToDefinition();
+  } else if (meta && e.shiftKey && e.key === "F") {
+    e.preventDefault();
+    findReferences();
+  } else if (e.key === "Escape") closeModal();
 });
 
 /* Ctrl+click follows a reference, the way every editor does it. */
 code.addEventListener("click", (e) => {
-  if (e.ctrlKey || e.metaKey) { e.preventDefault(); goToDefinition(); }
+  if (e.ctrlKey || e.metaKey) {
+    e.preventDefault();
+    goToDefinition();
+  }
 });
 
 /* Check (steps 1 to 5) or Validate (steps 1 to 9) over the buffer. A
@@ -3322,12 +3962,17 @@ async function engineCommand(route) {
     showReadiness(doc.id, report);
   }
   if (current() !== doc) return;
-  renderDiagnostics(doc); renderStructure(doc); render();
+  renderDiagnostics(doc);
+  renderStructure(doc);
+  render();
   showView("diagnostics");
 }
 $("#act-check").onclick = () => engineCommand("/api/check");
 $("#act-validate").onclick = () => engineCommand("/api/validate");
-$("#act-inspect").onclick = async () => { await runAnalysis(); showView("structure"); };
+$("#act-inspect").onclick = async () => {
+  await runAnalysis();
+  showView("structure");
+};
 $("#act-run").onclick = startRun;
 $("#act-save").onclick = () => save();
 $("#act-reload").onclick = reload;
@@ -3426,34 +4071,69 @@ function showScaffold(pre, scaffold) {
  * person chooses; nothing is merged and nothing is overwritten unasked. */
 function showConflict(doc) {
   const where = doc.conflict.exists ? "changed on disk" : "deleted from disk";
-  modal("Changed on disk", (body) => {
-    body.append(el("p", "",
-      `${doc.id} was ${where} after you loaded it — by LCL for Android, another window ` +
-      "or another program. Your edits were not saved, and nothing was merged."));
-    body.append(el("p", "note",
-      "Reload disk version replaces your edits with what is on disk. Keep mine writes " +
-      "your version over it, after one more confirmation."));
-  }, [
-    ["Cancel", "", (close) => close()],
-    ["Reload disk version", "", async (close) => {
-      close();
-      await resolveConflict(doc, "reload");
-    }],
-    ["Keep mine…", "primary", (close) => {
-      close();
-      modal("Overwrite the disk version?", (body) => {
-        body.append(el("p", "",
-          `The version of ${doc.id} on disk will be replaced by yours. The other ` +
-          "change is lost unless it was saved elsewhere."));
-      }, [
-        ["Cancel", "", (c) => c()],
-        ["Overwrite with mine", "primary", async (c) => {
-          c();
-          await resolveConflict(doc, "keep");
-        }],
-      ]);
-    }],
-  ]);
+  modal(
+    "Changed on disk",
+    (body) => {
+      body.append(
+        el(
+          "p",
+          "",
+          `${doc.id} was ${where} after you loaded it — by LCL for Android, another window ` +
+            "or another program. Your edits were not saved, and nothing was merged.",
+        ),
+      );
+      body.append(
+        el(
+          "p",
+          "note",
+          "Reload disk version replaces your edits with what is on disk. Keep mine writes " +
+            "your version over it, after one more confirmation.",
+        ),
+      );
+    },
+    [
+      ["Cancel", "", (close) => close()],
+      [
+        "Reload disk version",
+        "",
+        async (close) => {
+          close();
+          await resolveConflict(doc, "reload");
+        },
+      ],
+      [
+        "Keep mine…",
+        "primary",
+        (close) => {
+          close();
+          modal(
+            "Overwrite the disk version?",
+            (body) => {
+              body.append(
+                el(
+                  "p",
+                  "",
+                  `The version of ${doc.id} on disk will be replaced by yours. The other ` +
+                    "change is lost unless it was saved elsewhere.",
+                ),
+              );
+            },
+            [
+              ["Cancel", "", (c) => c()],
+              [
+                "Overwrite with mine",
+                "primary",
+                async (c) => {
+                  c();
+                  await resolveConflict(doc, "keep");
+                },
+              ],
+            ],
+          );
+        },
+      ],
+    ],
+  );
 }
 
 async function resolveConflict(doc, choice) {
@@ -3467,7 +4147,9 @@ async function resolveConflict(doc, choice) {
       doc.digest = reply.digest;
       replaceText(doc, reply.text);
       if (current() === doc) code.value = doc.text;
-      renderTabs(); renderTree(); render();
+      renderTabs();
+      renderTree();
+      render();
       await refreshTokens();
       toast(`Reloaded ${doc.id} from disk.`);
     } catch (e) {
@@ -3488,7 +4170,9 @@ async function resolveConflict(doc, choice) {
     doc.digest = created.digest;
     doc.saved = doc.text;
     doc.lifecycle = "saved";
-    renderTabs(); await loadTree(); render();
+    renderTabs();
+    await loadTree();
+    render();
     toast(`Saved ${doc.id} again.`, "good");
   } catch (e) {
     toast(`Not saved. ${e.message}`, "bad");
@@ -3505,7 +4189,11 @@ function openManual() {
   url.searchParams.set("t", TOKEN);
   const opened = window.open(url.toString(), "lcl-users-manual", "popup=yes,width=1000,height=820");
   if (opened) opened.focus();
-  else toast("The browser blocked the Users Manual window. Allow pop-ups for this page and try again.", "warn");
+  else
+    toast(
+      "The browser blocked the Users Manual window. Allow pop-ups for this page and try again.",
+      "warn",
+    );
 }
 
 /* -------------------------------------------------------- new project */
@@ -3516,112 +4204,162 @@ function openManual() {
 async function newProject() {
   await loadRoles();
   if (!state.roles.available) {
-    toast("Core 0.3.0 is not available in this workspace, and multi-file projects need it.", "warn");
+    toast(
+      "Core 0.3.0 is not available in this workspace, and multi-file projects need it.",
+      "warn",
+    );
     return;
   }
   let masters = [];
-  try { masters = (await api("GET", "/api/masters")).masters || []; } catch (_) { masters = []; }
+  try {
+    masters = (await api("GET", "/api/masters")).masters || [];
+  } catch (_) {
+    masters = [];
+  }
   let plan = null;
-  modal("New project", (body) => {
-    body.append(el("p", "",
-      "A new folder named after the project, in the Projects folder chosen in Settings. " +
-      "Its files are listed below before anything is written."));
-    const nameLabel = el("label", "", "Project name");
-    nameLabel.htmlFor = "project-name";
-    const name = el("input", "field");
-    name.id = "project-name";
-    name.value = "New_Project";
-    const where = el("p", "note");
-    where.id = "project-where";
-    const coreLabel = el("label", "", "LCL Core version");
-    coreLabel.htmlFor = "project-core";
-    const core = el("select", "field");
-    core.id = "project-core";
-    const only = el("option", "", `LCL Core ${state.roles.core}`);
-    only.value = state.roles.core;
-    core.append(only);
-    const fromLabel = el("label", "", "Start from");
-    fromLabel.htmlFor = "project-from";
-    const from = el("select", "field");
-    from.id = "project-from";
-    for (const [value, label] of [
-      ["default:guided", "Default (Guided)"], ["default:minimal", "Default (Minimal)"],
-      ["canonical:guided", "Canonical — Guided"], ["canonical:minimal", "Canonical — Minimal"],
-    ].concat(masters.filter((m) => m.role === "kind.project" && m.valid)
-      .map((m) => [`master:${m.id}`, `Master: ${m.name}`]))) {
-      const option = el("option", "", label);
-      option.value = value;
-      from.append(option);
-    }
-    const files = el("div", "plan");
-    files.id = "project-plan";
-    let asked = 0;
-    const show = async () => {
-      const mine = ++asked;
-      plan = null;
-      $("#project-create").disabled = true;
-      files.replaceChildren(el("p", "note", "Preparing the preview…"));
-      where.replaceChildren();
-      try {
-        const reply = await api("GET", "/api/project/plan",
-          { name: name.value.trim(), ...selectionParams("kind.project", from.value) });
-        if (mine !== asked) return;
-        files.replaceChildren();
-        where.append(el("span", "", `Will be created as ${reply.path}`));
-        for (const file of reply.files) {
-          const box = el("details");
-          const origin = file.origin.kind === "master" ? `Master ${file.origin.master}` : `canonical, ${file.origin.mode}`;
-          box.append(el("summary", "", `${file.path} — ${file.label} (${origin})`));
-          const pre = el("pre", "scaffold-preview");
-          showScaffold(pre, file);
-          box.append(pre);
-          files.append(box);
-        }
-        if (reply.exists) {
-          where.replaceChildren(el("span", "bad",
-            `${reply.path} already exists. An existing project is never written into: choose another name.`));
-          return;
-        }
-        if (reply.opens_project) {
-          where.append(el("span", "", ". This window will then show the new project; the tabs open now are kept for when you come back."));
-        }
-        plan = reply;
-        $("#project-create").disabled = false;
-      } catch (e) {
-        if (mine === asked) files.replaceChildren(el("p", "note warning", e.message));
+  modal(
+    "New project",
+    (body) => {
+      body.append(
+        el(
+          "p",
+          "",
+          "A new folder named after the project, in the Projects folder chosen in Settings. " +
+            "Its files are listed below before anything is written.",
+        ),
+      );
+      const nameLabel = el("label", "", "Project name");
+      nameLabel.htmlFor = "project-name";
+      const name = el("input", "field");
+      name.id = "project-name";
+      name.value = "New_Project";
+      const where = el("p", "note");
+      where.id = "project-where";
+      const coreLabel = el("label", "", "LCL Core version");
+      coreLabel.htmlFor = "project-core";
+      const core = el("select", "field");
+      core.id = "project-core";
+      const only = el("option", "", `LCL Core ${state.roles.core}`);
+      only.value = state.roles.core;
+      core.append(only);
+      const fromLabel = el("label", "", "Start from");
+      fromLabel.htmlFor = "project-from";
+      const from = el("select", "field");
+      from.id = "project-from";
+      for (const [value, label] of [
+        ["default:guided", "Default (Guided)"],
+        ["default:minimal", "Default (Minimal)"],
+        ["canonical:guided", "Canonical — Guided"],
+        ["canonical:minimal", "Canonical — Minimal"],
+      ].concat(
+        masters
+          .filter((m) => m.role === "kind.project" && m.valid)
+          .map((m) => [`master:${m.id}`, `Master: ${m.name}`]),
+      )) {
+        const option = el("option", "", label);
+        option.value = value;
+        from.append(option);
       }
-    };
-    name.oninput = () => { clearTimeout(name.timer); name.timer = setTimeout(show, 250); };
-    from.onchange = show;
-    body.append(nameLabel, name, where, coreLabel, core, fromLabel, from, files);
-    setTimeout(show, 0);
-  }, [
-    ["Cancel", "", (close) => close()],
-    ["Create", "primary", async (close) => {
-      if (!plan) return;
-      const chosen = plan;
-      close();
-      let made;
-      try {
-        made = await api("POST", "/api/project", {
-          name: chosen.name,
-          ...selectionParams("kind.project", $("#project-from") ? $("#project-from").value : ""),
-          plan_digest: chosen.plan_digest,
-        });
-      } catch (e) {
-        toast(`Not created. ${e.message}`, "bad");
-        return;
-      }
-      try {
-        await showOpenedFolder();
-        await openDocument(made.entry);
-      } catch (e) {
-        toast(`Created ${made.path}, but it could not be shown. ${e.message}`, "warn");
-        return;
-      }
-      toast(`Created project ${made.name}: ${made.files.length} files in ${made.path}.`, "good");
-    }],
-  ]);
+      const files = el("div", "plan");
+      files.id = "project-plan";
+      let asked = 0;
+      const show = async () => {
+        const mine = ++asked;
+        plan = null;
+        $("#project-create").disabled = true;
+        files.replaceChildren(el("p", "note", "Preparing the preview…"));
+        where.replaceChildren();
+        try {
+          const reply = await api("GET", "/api/project/plan", {
+            name: name.value.trim(),
+            ...selectionParams("kind.project", from.value),
+          });
+          if (mine !== asked) return;
+          files.replaceChildren();
+          where.append(el("span", "", `Will be created as ${reply.path}`));
+          for (const file of reply.files) {
+            const box = el("details");
+            const origin =
+              file.origin.kind === "master"
+                ? `Master ${file.origin.master}`
+                : `canonical, ${file.origin.mode}`;
+            box.append(el("summary", "", `${file.path} — ${file.label} (${origin})`));
+            const pre = el("pre", "scaffold-preview");
+            showScaffold(pre, file);
+            box.append(pre);
+            files.append(box);
+          }
+          if (reply.exists) {
+            where.replaceChildren(
+              el(
+                "span",
+                "bad",
+                `${reply.path} already exists. An existing project is never written into: choose another name.`,
+              ),
+            );
+            return;
+          }
+          if (reply.opens_project) {
+            where.append(
+              el(
+                "span",
+                "",
+                ". This window will then show the new project; the tabs open now are kept for when you come back.",
+              ),
+            );
+          }
+          plan = reply;
+          $("#project-create").disabled = false;
+        } catch (e) {
+          if (mine === asked) files.replaceChildren(el("p", "note warning", e.message));
+        }
+      };
+      name.oninput = () => {
+        clearTimeout(name.timer);
+        name.timer = setTimeout(show, 250);
+      };
+      from.onchange = show;
+      body.append(nameLabel, name, where, coreLabel, core, fromLabel, from, files);
+      setTimeout(show, 0);
+    },
+    [
+      ["Cancel", "", (close) => close()],
+      [
+        "Create",
+        "primary",
+        async (close) => {
+          if (!plan) return;
+          const chosen = plan;
+          close();
+          let made;
+          try {
+            made = await api("POST", "/api/project", {
+              name: chosen.name,
+              ...selectionParams(
+                "kind.project",
+                $("#project-from") ? $("#project-from").value : "",
+              ),
+              plan_digest: chosen.plan_digest,
+            });
+          } catch (e) {
+            toast(`Not created. ${e.message}`, "bad");
+            return;
+          }
+          try {
+            await showOpenedFolder();
+            await openDocument(made.entry);
+          } catch (e) {
+            toast(`Created ${made.path}, but it could not be shown. ${e.message}`, "warn");
+            return;
+          }
+          toast(
+            `Created project ${made.name}: ${made.files.length} files in ${made.path}.`,
+            "good",
+          );
+        },
+      ],
+    ],
+  );
   const create = [...$("#modal-actions").querySelectorAll("button")].pop();
   create.id = "project-create";
   create.disabled = true;
@@ -3637,15 +4375,23 @@ function entryFor(id) {
   const listed = knownEntry(id);
   if (listed && listed.kind === "kind.project") return id;
   const shown = state.readiness;
-  if (shown.entry && shown.report && shown.report.project &&
-      shown.report.project.parts.some((p) => p.unit === id)) return shown.entry;
+  if (
+    shown.entry &&
+    shown.report &&
+    shown.report.project &&
+    shown.report.project.parts.some((p) => p.unit === id)
+  )
+    return shown.entry;
   return null;
 }
 
 async function refreshReadiness() {
   const doc = current();
   const entry = doc ? entryFor(doc.id) : state.readiness.entry;
-  if (!entry) { renderReadiness(); return; }
+  if (!entry) {
+    renderReadiness();
+    return;
+  }
   const generation = ++state.readiness.generation;
   state.readiness.entry = entry;
   state.readiness.status = "loading";
@@ -3671,9 +4417,13 @@ function showReadiness(entry, report) {
   state.readiness.entry = entry;
   state.readiness.report = report;
   state.readiness.problem = null;
-  state.readiness.status = !project ? "invalid"
-    : project.admission === "admitted" ? "ready"
-    : !project.complete ? "incomplete" : "invalid";
+  state.readiness.status = !project
+    ? "invalid"
+    : project.admission === "admitted"
+      ? "ready"
+      : !project.complete
+        ? "incomplete"
+        : "invalid";
   renderReadiness();
 }
 
@@ -3702,21 +4452,37 @@ function renderReadiness() {
   const row = (label, status, unit, role, required) => {
     const li = el("li", `file ${status}`);
     li.append(el("span", "name", label), el("span", "state", status));
-    if (role) li.append(el("span", "role", `${roleLabel(role)}${required === false ? ", optional" : ""}`));
-    if (unit) { li.tabIndex = 0; li.onclick = () => openDocument(unit); li.onkeydown = (e) => { if (e.key === "Enter") openDocument(unit); }; }
+    if (role)
+      li.append(el("span", "role", `${roleLabel(role)}${required === false ? ", optional" : ""}`));
+    if (unit) {
+      li.tabIndex = 0;
+      li.onclick = () => openDocument(unit);
+      li.onkeydown = (e) => {
+        if (e.key === "Enter") openDocument(unit);
+      };
+    }
     list.append(li);
   };
   row(project.entry, project.entry_status, project.entry, "kind.project");
   for (const part of project.parts) {
-    row(part.unit || part.source, part.status, part.unit && isDocumentId(part.unit) ? part.unit : null,
-      part.kind, part.required);
+    row(
+      part.unit || part.source,
+      part.status,
+      part.unit && isDocumentId(part.unit) ? part.unit : null,
+      part.kind,
+      part.required,
+    );
   }
   box.append(list);
-  const diagnostics = (r.report.diagnostics || []);
+  const diagnostics = r.report.diagnostics || [];
   if (diagnostics.length) {
     const d = el("ul", "readiness-diagnostics");
     for (const item of diagnostics.slice(0, 20)) {
-      const li = el("li", "", `${item.id} — ${item.source}:${item.position ? item.position.line : "?"}`);
+      const li = el(
+        "li",
+        "",
+        `${item.id} — ${item.source}:${item.position ? item.position.line : "?"}`,
+      );
       li.title = item.meaning || "";
       if (isDocumentId(item.source)) {
         li.tabIndex = 0;
@@ -3730,7 +4496,8 @@ function renderReadiness() {
    * says so first. */
   if (doc && doc.id === r.entry) {
     $("#act-run").disabled = status !== "ready" && status !== "running";
-    $("#act-run").title = status === "ready" ? "Steps 1 to 13." : "The project is not ready: see Project readiness.";
+    $("#act-run").title =
+      status === "ready" ? "Steps 1 to 13." : "The project is not ready: see Project readiness.";
   }
 }
 
@@ -3748,76 +4515,100 @@ async function openTemplates() {
     return;
   }
   const all = roles.available ? [roles.project].concat(roles.roles) : [];
-  modal("Templates", (body) => {
-    if (!listing.available) {
-      body.append(el("p", "note warning", "Templates need a configuration folder (HOME or XDG_CONFIG_HOME)."));
-      return;
-    }
-    body.append(el("p", "note",
-      `Stored in ${listing.location}. A default is used for new files of its kind unless ` +
-      "another template is chosen; Canonical uses the scaffold the LCL Core defines."));
-    if (listing.defaults_problem) body.append(el("p", "note warning", listing.defaults_problem));
-    const table = el("div", "templates-defaults");
-    for (const role of all) {
-      const label = el("label", "", `${role.label} default`);
-      const pick = el("select", "field");
-      pick.id = `default-${role.role}`;
-      label.htmlFor = pick.id;
-      const canonical = el("option", "", "Canonical scaffold");
-      canonical.value = "";
-      pick.append(canonical);
-      for (const m of listing.masters.filter((m) => (m.type || m.role) === role.role && m.valid)) {
-        const option = el("option", "", m.name);
-        option.value = m.id;
-        pick.append(option);
+  modal(
+    "Templates",
+    (body) => {
+      if (!listing.available) {
+        body.append(
+          el(
+            "p",
+            "note warning",
+            "Templates need a configuration folder (HOME or XDG_CONFIG_HOME).",
+          ),
+        );
+        return;
       }
-      pick.value = (listing.defaults || {})[role.role] || "";
-      pick.onchange = async () => {
-        try {
-          await api("PUT", "/api/masters/default", { role: role.role, id: pick.value });
-          toast(pick.value ? `New ${role.label} files now start from ${pick.value}.` : `New ${role.label} files now start from the canonical scaffold.`, "good");
-        } catch (e) {
-          toast(`Default not changed. ${e.message}`, "bad");
-          openTemplates();
+      body.append(
+        el(
+          "p",
+          "note",
+          `Stored in ${listing.location}. A default is used for new files of its kind unless ` +
+            "another template is chosen; Canonical uses the scaffold the LCL Core defines.",
+        ),
+      );
+      if (listing.defaults_problem) body.append(el("p", "note warning", listing.defaults_problem));
+      const table = el("div", "templates-defaults");
+      for (const role of all) {
+        const label = el("label", "", `${role.label} default`);
+        const pick = el("select", "field");
+        pick.id = `default-${role.role}`;
+        label.htmlFor = pick.id;
+        const canonical = el("option", "", "Canonical scaffold");
+        canonical.value = "";
+        pick.append(canonical);
+        for (const m of listing.masters.filter(
+          (m) => (m.type || m.role) === role.role && m.valid,
+        )) {
+          const option = el("option", "", m.name);
+          option.value = m.id;
+          pick.append(option);
         }
-      };
-      table.append(label, pick);
-    }
-    body.append(table);
-    const list = el("ul", "templates");
-    for (const m of listing.masters) {
-      const li = el("li", m.valid ? "" : "invalid");
-      li.append(el("span", "name", `${m.name || m.id} (${m.id})`),
-        el("span", "role", m.role ? (m.label || roleLabel(m.role)) : "unreadable"));
-      if (!m.valid) li.append(el("span", "note warning", m.problem || "invalid"));
-      for (const [label, act] of [
-        ["Edit", () => editTemplate(m.id, "replace")],
-        ["Duplicate", () => editTemplate(m.id, "duplicate")],
-        ["Delete", () => deleteTemplate(m.id)],
-      ]) {
-        const b = el("button", "", label);
-        b.type = "button";
-        b.onclick = act;
-        li.append(b);
+        pick.value = (listing.defaults || {})[role.role] || "";
+        pick.onchange = async () => {
+          try {
+            await api("PUT", "/api/masters/default", { role: role.role, id: pick.value });
+            toast(
+              pick.value
+                ? `New ${role.label} files now start from ${pick.value}.`
+                : `New ${role.label} files now start from the canonical scaffold.`,
+              "good",
+            );
+          } catch (e) {
+            toast(`Default not changed. ${e.message}`, "bad");
+            openTemplates();
+          }
+        };
+        table.append(label, pick);
       }
-      list.append(li);
-    }
-    if (!listing.masters.length) list.append(el("li", "note", "No templates yet."));
-    body.append(list);
-    const newLabel = el("label", "", "New template for");
-    const newRole = el("select", "field");
-    newRole.id = "template-new-role";
-    newLabel.htmlFor = newRole.id;
-    for (const role of all) {
-      const option = el("option", "", role.label);
-      option.value = role.role;
-      newRole.append(option);
-    }
-    const create = el("button", "", "New template…");
-    create.type = "button";
-    create.onclick = () => editTemplate(null, "create", newRole.value);
-    body.append(newLabel, newRole, create);
-  }, [["Close", "primary", (close) => close()]]);
+      body.append(table);
+      const list = el("ul", "templates");
+      for (const m of listing.masters) {
+        const li = el("li", m.valid ? "" : "invalid");
+        li.append(
+          el("span", "name", `${m.name || m.id} (${m.id})`),
+          el("span", "role", m.role ? m.label || roleLabel(m.role) : "unreadable"),
+        );
+        if (!m.valid) li.append(el("span", "note warning", m.problem || "invalid"));
+        for (const [label, act] of [
+          ["Edit", () => editTemplate(m.id, "replace")],
+          ["Duplicate", () => editTemplate(m.id, "duplicate")],
+          ["Delete", () => deleteTemplate(m.id)],
+        ]) {
+          const b = el("button", "", label);
+          b.type = "button";
+          b.onclick = act;
+          li.append(b);
+        }
+        list.append(li);
+      }
+      if (!listing.masters.length) list.append(el("li", "note", "No templates yet."));
+      body.append(list);
+      const newLabel = el("label", "", "New template for");
+      const newRole = el("select", "field");
+      newRole.id = "template-new-role";
+      newLabel.htmlFor = newRole.id;
+      for (const role of all) {
+        const option = el("option", "", role.label);
+        option.value = role.role;
+        newRole.append(option);
+      }
+      const create = el("button", "", "New template…");
+      create.type = "button";
+      create.onclick = () => editTemplate(null, "create", newRole.value);
+      body.append(newLabel, newRole, create);
+    },
+    [["Close", "primary", (close) => close()]],
+  );
 }
 
 /* The editor for one Master's JSON. "create" starts from the canonical
@@ -3825,7 +4616,8 @@ async function openTemplates() {
 async function editTemplate(id, how, role) {
   let json;
   try {
-    if (how === "create") json = (await api("GET", "/api/master/starter", { role, mode: "guided" })).json;
+    if (how === "create")
+      json = (await api("GET", "/api/master/starter", { role, mode: "guided" })).json;
     else json = (await api("GET", "/api/master", { id })).json;
   } catch (e) {
     toast(`Template could not be read. ${e.message}`, "bad");
@@ -3837,49 +4629,97 @@ async function editTemplate(id, how, role) {
       copy.id = `${copy.id}-copy`;
       copy.name = `${copy.name} (copy)`;
       json = JSON.stringify(copy, null, 2);
-    } catch (_) { /* an unreadable Master is shown as it is, to be fixed */ }
+    } catch (_) {
+      /* an unreadable Master is shown as it is, to be fixed */
+    }
   }
-  modal(how === "replace" ? `Edit template ${id}` : "New template", (body) => {
-    body.append(el("p", "note",
-      "The template's file. It is checked by the LCL engine when you save, and a template " +
-      "that is not valid is not saved. Files already made from it do not change."));
-    const area = el("textarea", "field template-json");
-    area.id = "template-json";
-    area.spellcheck = false;
-    area.value = json;
-    body.append(area);
-  }, [
-    ["Cancel", "", (close) => { close(); openTemplates(); }],
-    ["Save", "primary", async (close) => {
-      const text = $("#template-json").value;
-      try {
-        await api("PUT", "/api/master", how === "replace" ? { replace: id } : { create: "1" }, text);
-        close();
-        toast("Template saved.", "good");
-        openTemplates();
-      } catch (e) {
-        toast(`Not saved. ${e.message}`, "bad");
-      }
-    }],
-  ]);
+  modal(
+    how === "replace" ? `Edit template ${id}` : "New template",
+    (body) => {
+      body.append(
+        el(
+          "p",
+          "note",
+          "The template's file. It is checked by the LCL engine when you save, and a template " +
+            "that is not valid is not saved. Files already made from it do not change.",
+        ),
+      );
+      const area = el("textarea", "field template-json");
+      area.id = "template-json";
+      area.spellcheck = false;
+      area.value = json;
+      body.append(area);
+    },
+    [
+      [
+        "Cancel",
+        "",
+        (close) => {
+          close();
+          openTemplates();
+        },
+      ],
+      [
+        "Save",
+        "primary",
+        async (close) => {
+          const text = $("#template-json").value;
+          try {
+            await api(
+              "PUT",
+              "/api/master",
+              how === "replace" ? { replace: id } : { create: "1" },
+              text,
+            );
+            close();
+            toast("Template saved.", "good");
+            openTemplates();
+          } catch (e) {
+            toast(`Not saved. ${e.message}`, "bad");
+          }
+        },
+      ],
+    ],
+  );
 }
 
 function deleteTemplate(id) {
-  modal(`Delete template ${id}?`, (body) => {
-    body.append(el("p", "", "Files already made from it are not changed. A default naming it goes back to the canonical scaffold."));
-  }, [
-    ["Cancel", "", (close) => { close(); openTemplates(); }],
-    ["Delete", "danger", async (close) => {
-      close();
-      try {
-        await api("DELETE", "/api/master", { id });
-        toast(`Deleted template ${id}.`, "good");
-      } catch (e) {
-        toast(`Not deleted. ${e.message}`, "bad");
-      }
-      openTemplates();
-    }],
-  ]);
+  modal(
+    `Delete template ${id}?`,
+    (body) => {
+      body.append(
+        el(
+          "p",
+          "",
+          "Files already made from it are not changed. A default naming it goes back to the canonical scaffold.",
+        ),
+      );
+    },
+    [
+      [
+        "Cancel",
+        "",
+        (close) => {
+          close();
+          openTemplates();
+        },
+      ],
+      [
+        "Delete",
+        "danger",
+        async (close) => {
+          close();
+          try {
+            await api("DELETE", "/api/master", { id });
+            toast(`Deleted template ${id}.`, "good");
+          } catch (e) {
+            toast(`Not deleted. ${e.message}`, "bad");
+          }
+          openTemplates();
+        },
+      ],
+    ],
+  );
 }
 
 /* ------------------------------------------------------------ convert */
@@ -3890,61 +4730,80 @@ function deleteTemplate(id) {
  * is admitted; the original is never changed. */
 function convertDocument(id) {
   let plan = null;
-  const stem = id.split("/").pop().replace(/\.lcl(\.txt)?$/, "");
+  const stem = id
+    .split("/")
+    .pop()
+    .replace(/\.lcl(\.txt)?$/, "");
   const parent = id.includes("/") ? id.slice(0, id.lastIndexOf("/") + 1) : "";
-  modal("Convert to multi-file project", (body) => {
-    body.append(el("p", "",
-      `${id} stays exactly as it is. The project is written to a new folder, and only ` +
-      "after you have seen every file."));
-    const label = el("label", "", "New folder");
-    label.htmlFor = "convert-folder";
-    const folder = el("input", "field");
-    folder.id = "convert-folder";
-    folder.value = `${parent}${stem}_project`;
-    const out = el("div", "plan");
-    let asked = 0;
-    const show = async () => {
-      const mine = ++asked;
-      plan = null;
-      $("#convert-create").disabled = true;
-      out.replaceChildren(el("p", "note", "Preparing the preview…"));
-      try {
-        const reply = await api("GET", "/api/convert/plan", { id, folder: folder.value.trim() });
-        if (mine !== asked) return;
-        out.replaceChildren();
-        for (const file of reply.files) {
-          const box = el("details");
-          box.open = true;
-          box.append(el("summary", "", file.path));
-          box.append(el("pre", "scaffold-preview", file.text));
-          out.append(box);
+  modal(
+    "Convert to multi-file project",
+    (body) => {
+      body.append(
+        el(
+          "p",
+          "",
+          `${id} stays exactly as it is. The project is written to a new folder, and only ` +
+            "after you have seen every file.",
+        ),
+      );
+      const label = el("label", "", "New folder");
+      label.htmlFor = "convert-folder";
+      const folder = el("input", "field");
+      folder.id = "convert-folder";
+      folder.value = `${parent}${stem}_project`;
+      const out = el("div", "plan");
+      let asked = 0;
+      const show = async () => {
+        const mine = ++asked;
+        plan = null;
+        $("#convert-create").disabled = true;
+        out.replaceChildren(el("p", "note", "Preparing the preview…"));
+        try {
+          const reply = await api("GET", "/api/convert/plan", { id, folder: folder.value.trim() });
+          if (mine !== asked) return;
+          out.replaceChildren();
+          for (const file of reply.files) {
+            const box = el("details");
+            box.open = true;
+            box.append(el("summary", "", file.path));
+            box.append(el("pre", "scaffold-preview", file.text));
+            out.append(box);
+          }
+          plan = reply;
+          $("#convert-create").disabled = false;
+        } catch (e) {
+          if (mine === asked) out.replaceChildren(el("p", "note warning", e.message));
         }
-        plan = reply;
-        $("#convert-create").disabled = false;
-      } catch (e) {
-        if (mine === asked) out.replaceChildren(el("p", "note warning", e.message));
-      }
-    };
-    folder.oninput = () => { clearTimeout(folder.timer); folder.timer = setTimeout(show, 250); };
-    body.append(label, folder, out);
-    setTimeout(show, 0);
-  }, [
-    ["Cancel", "", (close) => close()],
-    ["Create project", "primary", async (close) => {
-      if (!plan) return;
-      const chosen = plan;
-      const folder = $("#convert-folder").value.trim();
-      close();
-      try {
-        await api("POST", "/api/convert", { id, folder, plan_digest: chosen.plan_digest });
-        await refreshTree();
-        await openDocument(chosen.entry);
-        toast(`Created ${chosen.entry}. ${id} is unchanged.`, "good");
-      } catch (e) {
-        toast(`Not converted. ${e.message}`, "bad");
-      }
-    }],
-  ]);
+      };
+      folder.oninput = () => {
+        clearTimeout(folder.timer);
+        folder.timer = setTimeout(show, 250);
+      };
+      body.append(label, folder, out);
+      setTimeout(show, 0);
+    },
+    [
+      ["Cancel", "", (close) => close()],
+      [
+        "Create project",
+        "primary",
+        async (close) => {
+          if (!plan) return;
+          const chosen = plan;
+          const folder = $("#convert-folder").value.trim();
+          close();
+          try {
+            await api("POST", "/api/convert", { id, folder, plan_digest: chosen.plan_digest });
+            await refreshTree();
+            await openDocument(chosen.entry);
+            toast(`Created ${chosen.entry}. ${id} is unchanged.`, "good");
+          } catch (e) {
+            toast(`Not converted. ${e.message}`, "bad");
+          }
+        },
+      ],
+    ],
+  );
   const create = [...$("#modal-actions").querySelectorAll("button")].pop();
   create.id = "convert-create";
   create.disabled = true;
@@ -3974,8 +4833,11 @@ function convertDocument(id) {
     const launched = state.session.open;
     const entry = state.session.entry;
     const first = treeEntries().find((e) => !e.directory);
-    const open = state.session.home ? null : (launched || entry || (first && first.id));
-    if (open) { await openDocument(open); await runAnalysis(); }
+    const open = state.session.home ? null : launched || entry || (first && first.id);
+    if (open) {
+      await openDocument(open);
+      await runAnalysis();
+    }
     renderCapabilities();
     $("#hint").textContent = "Ctrl+S save · F12 definition · Shift+F12 references";
     /* In the background, never in the way: only a quiet mark if one waits. */

@@ -24,14 +24,20 @@ fn cargo_version(relative: &str) -> String {
         .to_string()
 }
 
-/// The quoted default after `?:` on the Gradle line that reads `property`.
+/// The default after `?:` in the Gradle statement that reads `property`,
+/// however the formatter wrapped that statement.
 fn gradle_default(property: &str) -> String {
     let script = read("android/app/build.gradle.kts");
-    let line = script
-        .lines()
-        .find(|l| l.contains(&format!("gradleProperty(\"{property}\")")))
+    let flat = script.split_whitespace().collect::<Vec<_>>().join(" ");
+    let statement = flat
+        .split(&format!("gradleProperty(\"{property}\")"))
+        .nth(1)
         .unwrap_or_else(|| panic!("build.gradle.kts does not read {property}"));
-    let default = line.rsplit("?:").next().unwrap().trim();
+    let default = statement
+        .split("?:")
+        .nth(1)
+        .and_then(|rest| rest.split_whitespace().next())
+        .unwrap_or_else(|| panic!("{property} has no default"));
     default.trim_matches('"').to_string()
 }
 

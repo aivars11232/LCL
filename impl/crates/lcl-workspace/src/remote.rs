@@ -77,9 +77,15 @@ pub fn valid_request_id(id: &str) -> bool {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
 
     /// A stand-in `lcl-remote`: a script that answers one way.
+    ///
+    /// Written by a child process, not by this one. While a process has a
+    /// file open for writing, a child another thread forks at that moment
+    /// inherits the descriptor, and running the file then fails with "Text
+    /// file busy" until that child has exec'd; tests run on several threads
+    /// and fork all the time. A script this process never opened cannot be
+    /// caught that way.
     fn fake(name: &str, script: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "lcl-workspace-remote-{name}-{}",
@@ -87,8 +93,14 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join(PROGRAM);
-        std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let written = Command::new("sh")
+            .arg("-c")
+            .arg(r#"printf '%s' "$1" > "$0" && chmod 755 "$0""#)
+            .arg(&path)
+            .arg(format!("#!/bin/sh\n{script}\n"))
+            .status()
+            .expect("sh runs");
+        assert!(written.success(), "{} was not written", path.display());
         path
     }
 

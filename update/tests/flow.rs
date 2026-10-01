@@ -220,10 +220,29 @@ fn state_of(json: &Json) -> (String, Option<String>) {
     )
 }
 
+/// Write a file with a mode.
+///
+/// A file that will be run is written by a child process, not by this one.
+/// While a process has a file open for writing, a child another thread forks
+/// at that moment inherits the descriptor, and running the file then fails
+/// with "Text file busy" until that child has exec'd; tests run on several
+/// threads and fork all the time. A file this process never opened cannot be
+/// caught that way.
 fn write(path: &Path, text: &str, mode: u32) {
     use std::os::unix::fs::PermissionsExt;
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(path, text).unwrap();
+    if mode & 0o111 == 0 {
+        std::fs::write(path, text).unwrap();
+    } else {
+        let written = Command::new("sh")
+            .arg("-c")
+            .arg(r#"printf '%s' "$1" > "$0""#)
+            .arg(path)
+            .arg(text)
+            .status()
+            .expect("sh runs");
+        assert!(written.success(), "{} was not written", path.display());
+    }
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
 }
 

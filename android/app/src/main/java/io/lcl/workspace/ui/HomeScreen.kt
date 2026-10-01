@@ -13,13 +13,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -92,7 +89,7 @@ fun HomeScreen(
                 Text("No projects on this phone yet.", style = MaterialTheme.typography.bodySmall)
             }
             for (project in localProjects) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().listRow().padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("▣", color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 10.dp))
                     Text(project.name, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     TextButton(
@@ -194,8 +191,8 @@ fun HomeScreen(
 @Composable
 private fun Section(label: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 1.2.sp, fontWeight = FontWeight.SemiBold)
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        SectionLabel(label)
+        HorizontalDivider(color = LocalLclColors.current.line)
         content()
     }
 }

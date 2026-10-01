@@ -1,5 +1,6 @@
 package io.lcl.workspace
 
+import android.graphics.Bitmap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsEnabled
@@ -39,14 +40,25 @@ class LocalProjectsUiTest {
     private fun source(): String =
         rule.onNodeWithTag("source", useUnmergedTree = true).fetchSemanticsNode().config.getOrNull(SemanticsProperties.EditableText)?.text ?: ""
 
+    /** A picture of the screen as it is now, kept with the run's evidence: how the phone-only screens look. */
+    private fun shot(name: String) {
+        rule.waitForIdle()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val bitmap = instrumentation.uiAutomation.takeScreenshot() ?: return
+        val dir = File(instrumentation.targetContext.getExternalFilesDir(null), "shots").apply { mkdirs() }
+        File(dir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
     @Test
     fun a_project_on_the_phone_is_made_edited_and_saved_without_a_pc() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val storage = File(context.filesDir, "local-projects")
         File(storage, "Offline").deleteRecursively()
         waitFor("new_local_project")
+        shot("local_01_dashboard")
         rule.onNodeWithTag("new_local_project").performScrollTo().performClick()
         rule.onNodeWithTag("local_project_name").performTextInput("Offline")
+        shot("local_02_new_project")
         rule.onNodeWithTag("create_local_project").performClick()
         // The workspace opens on it, usable with no PC.
         waitFor("project_where")
@@ -55,6 +67,7 @@ class LocalProjectsUiTest {
         rule.onNodeWithTag("new_folder_name").performTextInput("planning")
         rule.onNodeWithTag("create_folder").performClick()
         waitFor("file:planning")
+        shot("local_03_files")
         rule.onNodeWithTag("new_document").performClick()
         rule.onNodeWithTag("new_name").performTextClearance()
         rule.onNodeWithTag("new_name").performTextInput("planning/phase_1")
@@ -64,12 +77,14 @@ class LocalProjectsUiTest {
         // Saved on the phone; the engine's actions need a PC and are off.
         rule.onNodeWithTag("source").performTextInput("PHONE")
         rule.waitUntil("unsaved", 5_000) { textOf("doc_state").startsWith("Unsaved") }
+        shot("local_04_editor_unsaved")
         rule.onNodeWithTag("action_save").assertIsEnabled().performClick()
         rule.waitUntil("saved", 10_000) { textOf("doc_state").startsWith("Saved") }
         val onDisk = File(storage, "Offline/planning/phase_1.lcl").readText()
         assertEquals(source(), onDisk)
         assertTrue(onDisk.contains("PHONE"))
         for (tag in listOf("action_check", "action_run", "action_inspect", "action_validate")) rule.onNodeWithTag(tag).assertIsNotEnabled()
+        shot("local_05_editor_saved")
         // Recreated (rotation, memory pressure): the project and the document are still there.
         rule.activityRule.scenario.recreate()
         rule.waitUntil("the app is back", 15_000) { exists("new_local_project") || exists("project_where") || exists("source") }

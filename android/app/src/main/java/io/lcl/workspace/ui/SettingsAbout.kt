@@ -12,12 +12,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -67,7 +64,7 @@ private fun Title(text: String, onBack: () -> Unit) {
 fun SettingsScreen(settings: AppSettings, onChange: (AppSettings) -> Unit, onBack: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Title("Settings", onBack)
-        Text("Appearance", fontWeight = FontWeight.SemiBold)
+        SectionLabel("Appearance")
         for ((theme, label) in listOf(Theme.SYSTEM to "System", Theme.DARK to "Dark", Theme.LIGHT to "Light")) {
             Row(
                 Modifier.fillMaxWidth().selectable(selected = settings.theme == theme, onClick = { onChange(settings.copy(theme = theme)) }).testTag("theme_${label.lowercase()}"),
@@ -77,7 +74,7 @@ fun SettingsScreen(settings: AppSettings, onChange: (AppSettings) -> Unit, onBac
                 Text(label)
             }
         }
-        Text("Editor", fontWeight = FontWeight.SemiBold)
+        SectionLabel("Editor")
         Text("Font size: ${settings.fontSize} sp")
         Slider(
             value = settings.fontSize.toFloat(),

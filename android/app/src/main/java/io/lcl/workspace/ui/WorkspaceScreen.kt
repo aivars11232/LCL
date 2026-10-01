@@ -1,5 +1,9 @@
 package io.lcl.workspace.ui
 
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.border
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -29,13 +33,10 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import io.lcl.workspace.workspace.ScaffoldPreview
 import kotlinx.coroutines.delay
@@ -199,7 +200,8 @@ internal fun ProjectTree(
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
-    val faint = colors.onSurface.copy(alpha = 0.6f)
+    val lcl = LocalLclColors.current
+    val faint = lcl.inkDim
     LazyColumn(modifier) {
         items(rows, key = { it.entry.id }) { row ->
             val entry = row.entry
@@ -218,7 +220,9 @@ internal fun ProjectTree(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .background(if (current) colors.secondaryContainer else Color.Transparent)
+                    // The document being edited, as on the desktop: the accent's soft tint and a bar at the edge.
+                    .background(if (current) lcl.accentSoft else Color.Transparent)
+                    .drawBehind { if (current) drawRect(colors.primary, size = Size(2.dp.toPx(), size.height)) }
                     .clickable { if (entry.directory) onToggle(entry.id) else onOpen(entry.id) }
                     .semantics {
                         if (entry.directory) stateDescription = if (row.folded) "Folded" else "Unfolded" else selected = current
@@ -243,11 +247,17 @@ internal fun ProjectTree(
                 )
                 // The role the file declares, as the PC's engine read it.
                 entry.kind?.let { kind ->
+                    val entryPoint = kind == "kind.project"
                     Text(
                         WorkspaceController.roleLabel(kind),
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (kind == "kind.project") colors.primary else faint,
-                        modifier = Modifier.padding(horizontal = 6.dp).testTag("role:${entry.id}"),
+                        fontFamily = FontFamily.Monospace,
+                        color = if (entryPoint) colors.primary else faint,
+                        modifier = Modifier
+                            .padding(horizontal = 6.dp)
+                            .border(1.dp, if (entryPoint) colors.primary else lcl.line, CircleShape)
+                            .padding(horizontal = 7.dp, vertical = 1.dp)
+                            .testTag("role:${entry.id}"),
                     )
                 }
                 if (entry.kind == "kind.project") {
@@ -284,10 +294,11 @@ private fun FilesPane(
     // A project on this phone works with no PC; a PC's needs the connection.
     val usable = project != null && (connected || project.local)
     Column(modifier.padding(8.dp)) {
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onHome, Modifier.testTag("home")) { Text("Home") }
-            Box {
-                TextButton(onClick = { picking = true }, modifier = Modifier.testTag("project_picker")) {
+        // The project, with the way back to the dashboard and the manual beside it.
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            IconAction("⌂", "Home", onHome, Modifier.testTag("home"))
+            Box(Modifier.weight(1f)) {
+                OutlinedButton(onClick = { picking = true }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp), modifier = Modifier.fillMaxWidth().testTag("project_picker")) {
                     Text(project?.name ?: "No project", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 DropdownMenu(expanded = picking, onDismissRequest = { picking = false }) {
@@ -308,19 +319,13 @@ private fun FilesPane(
                     }
                 }
             }
-            TextButton(onClick = { scope.launch { controller.refreshTree() } }, enabled = usable) { Text("Refresh") }
-            TextButton(onClick = { creating = true }, enabled = usable, modifier = Modifier.testTag("new_document")) { Text("New") }
-            TextButton(onClick = { makingFolder = true }, enabled = usable, modifier = Modifier.testTag("new_folder")) { Text("Folder") }
-            if (project?.local == true) {
-                TextButton(onClick = { onSync(project) }, enabled = connected, modifier = Modifier.testTag("sync")) { Text("Sync…") }
-                TextButton(onClick = { removing = true }, modifier = Modifier.testTag("remove_local")) { Text("Remove") }
-            }
             ManualIcon(onManual)
         }
         project?.let {
             Text(
                 if (it.local) "On this phone · Check, Validate, Inspect and Run need a PC" else it.root,
                 style = MaterialTheme.typography.bodySmall,
+                color = LocalLclColors.current.inkDim,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -332,9 +337,21 @@ private fun FilesPane(
             val unsaved = ui.documents.filter { it.project == local.id && it.dirty }.map { it.id }
             var status by remember(local.id) { mutableStateOf("") }
             LaunchedEffect(local.id, unsaved, ui.explorers[local.id], ui.syncEpoch) { status = controller.localStatus(local.id) }
-            Text(status, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("local_status"))
+            // Where the phone's copy stands against a PC, with what can be done about it.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(status, style = MaterialTheme.typography.labelSmall, color = LocalLclColors.current.inkDim, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).testTag("local_status"))
+                TextButton(onClick = { onSync(local) }, enabled = connected, modifier = Modifier.testTag("sync")) { Text("Sync…") }
+                TextButton(onClick = { removing = true }, modifier = Modifier.testTag("remove_local")) { Text("Remove") }
+            }
         }
-        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+        // The explorer's head, as the desktop's: a label, and its actions as small marks.
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            SectionLabel("Files", Modifier.weight(1f).padding(start = 4.dp))
+            IconAction("↻", "Refresh", { scope.launch { controller.refreshTree() } }, enabled = usable)
+            IconAction("+", "New document", { creating = true }, Modifier.testTag("new_document"), enabled = usable)
+            IconAction("▤", "New folder", { makingFolder = true }, Modifier.testTag("new_folder"), enabled = usable)
+        }
+        HorizontalDivider(color = LocalLclColors.current.line)
         if (ui.explorer.folders[""]?.entries.isNullOrEmpty()) {
             Text(
                 when {
@@ -567,22 +584,25 @@ private fun EditorPane(
     var confirmDelete by remember { mutableStateOf(false) }
     var runOptions by remember { mutableStateOf(false) }
     Column(modifier) {
-        // Tabs.
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        val lcl = LocalLclColors.current
+        // Tabs, as the desktop's strip: sunk into the page, a hairline under
+        // it, and the document shown marked by the accent under its name.
+        Row(
+            Modifier.fillMaxWidth().background(lcl.sunken).hairline(lcl.line, top = false).horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             if (onFiles != null) TextButton(onClick = onFiles, Modifier.testTag("files")) { Text("☰ Files") }
             ui.documents.forEach { d ->
                 val key = WorkspaceUi.key(d)
-                FilterChip(
-                    selected = key == ui.active,
-                    onClick = { controller.activate(key) },
-                    label = { Text((if (d.dirty) "● " else "") + d.name, maxLines = 1) },
-                    trailingIcon = { Text("✕", Modifier.clickable { controller.close(key) }.padding(2.dp)) },
-                    modifier = Modifier.padding(end = 4.dp).testTag("tab:${d.id}"),
-                )
+                LclTab(selected = key == ui.active, onClick = { controller.activate(key) }, modifier = Modifier.testTag("tab:${d.id}")) {
+                    if (d.dirty) Text("● ", color = lcl.warn)
+                    Text(d.name, maxLines = 1)
+                    Text("✕", Modifier.padding(start = 6.dp).clickable { controller.close(key) }.padding(horizontal = 6.dp, vertical = 2.dp), color = lcl.inkFaint)
+                }
             }
         }
         if (doc == null) {
-            Text("No document open. Choose one from Files.", Modifier.padding(16.dp))
+            Text("No document open. Choose one from Files.", Modifier.padding(16.dp), color = lcl.inkDim)
             return@Column
         }
         val key = WorkspaceUi.key(doc)
@@ -593,7 +613,11 @@ private fun EditorPane(
         val editable = connected || local
         val engine = connected && !local
         // Actions.
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             val edit = editable && doc.conflict == null
             // Phone first: the actions used most come first and fit a phone's width.
             val compact = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
@@ -617,10 +641,12 @@ private fun EditorPane(
         }
         if (doc.deletedOnPc) Banner("${doc.name} no longer exists on the PC.", LocalLclColors.current.bad) {}
         if (!connected && !local) Banner("Offline: this copy is read-only until the PC is back.", LocalLclColors.current.symbol) {}
-        Row(Modifier.padding(horizontal = 12.dp)) {
+        // The status line, as the desktop's: monospace on a sunk strip.
+        Row(Modifier.fillMaxWidth().background(lcl.sunken).padding(horizontal = 12.dp, vertical = 3.dp)) {
             Text(
                 (if (doc.dirty) "Unsaved" else "Saved") + " · ${position(doc.text, editor.selection)}",
                 style = MaterialTheme.typography.bodySmall,
+                color = if (doc.dirty) lcl.warn else lcl.inkDim,
                 fontFamily = FontFamily.Monospace,
                 modifier = Modifier.testTag("doc_state"),
             )
@@ -635,13 +661,16 @@ private fun EditorPane(
             modifier = Modifier.weight(1f).fillMaxWidth(),
         )
         // Panels.
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        // The inspector's tabs, as on the desktop.
+        Row(Modifier.fillMaxWidth().background(lcl.sunken).hairline(lcl.line, top = true)) {
             for ((p, label) in listOf(Panel.DIAGNOSTICS to "Diagnostics", Panel.STRUCTURE to "Structure", Panel.RUN to "Run")) {
-                FilterChip(selected = panel == p, onClick = { panel = if (panel == p) Panel.NONE else p }, label = { Text(label) }, modifier = Modifier.testTag("panel_${label.lowercase()}"))
+                LclTab(selected = panel == p, onClick = { panel = if (panel == p) Panel.NONE else p }, modifier = Modifier.weight(1f).testTag("panel_${label.lowercase()}")) {
+                    Text(label)
+                }
             }
         }
         if (panel != Panel.NONE) {
-            Box(Modifier.fillMaxWidth().height(260.dp).background(MaterialTheme.colorScheme.surfaceVariant)) {
+            Box(Modifier.fillMaxWidth().height(260.dp).background(lcl.sunken)) {
                 when (panel) {
                     Panel.DIAGNOSTICS -> DiagnosticsPanel(ui.reports[key], doc) { byte ->
                         val at = Utf8Index(doc.text).charOf(byte)

@@ -1,5 +1,7 @@
 package io.lcl.workspace.ui
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.fillMaxHeight
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -13,13 +15,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -137,24 +136,32 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
                         is Screen.LocalDocument -> LocalDocumentScreen(container, current.uri, settings, back)
                     }
                     }
-                    NavigationBar(Modifier.height(64.dp)) {
-                        NavigationBarItem(
-                            selected = tab == Tab.Workspace,
-                            onClick = { tab = Tab.Workspace },
-                            icon = { Text("▤") },
-                            label = { Text("Workspace") },
-                            modifier = Modifier.testTag("tab_workspace"),
-                        )
-                        NavigationBarItem(
-                            selected = tab == Tab.Manual,
-                            onClick = { tab = Tab.Manual },
-                            icon = { Text("?") },
-                            label = { Text("Manual") },
-                            modifier = Modifier.testTag("tab_manual"),
-                        )
+                    // The two top-level tabs, as the desktop's tab strips: text,
+                    // and the accent along the edge of the one shown.
+                    val lcl = LocalLclColors.current
+                    Row(Modifier.fillMaxWidth().height(52.dp).background(lcl.raised).hairline(lcl.line, top = true)) {
+                        LclTab(tab == Tab.Workspace, { tab = Tab.Workspace }, Modifier.weight(1f).fillMaxHeight().testTag("tab_workspace"), barOnTop = true) {
+                            Text("▤  Workspace")
+                        }
+                        LclTab(tab == Tab.Manual, { tab = Tab.Manual }, Modifier.weight(1f).fillMaxHeight().testTag("tab_manual"), barOnTop = true) {
+                            Text("?  Manual")
+                        }
                     }
                 }
-                SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(16.dp))
+                // A message, as the desktop's toast: raised, a hairline around it, above the bottom tabs and the inspector's.
+                SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(start = 12.dp, end = 12.dp, bottom = 104.dp)) { data ->
+                    val lcl = LocalLclColors.current
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.medium,
+                        color = lcl.raised,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        border = BorderStroke(1.dp, lcl.line),
+                        shadowElevation = 6.dp,
+                    ) {
+                        Text(data.visuals.message, Modifier.padding(horizontal = 14.dp, vertical = 10.dp), style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
             }
         }
     }
@@ -199,17 +206,20 @@ fun ConnectionBanner(state: ConnectionState, onReconnect: () -> Unit, onOpenPcs:
         is ConnectionState.Revoked, is ConnectionState.NotPaired -> colors.bad to "Not trusted"
         ConnectionState.NoPc -> colors.symbol to "No PC"
     }
+    // The desktop's status strip: sunk into the page, a hairline under it,
+    // the state as a coloured dot and word, the detail in dim ink.
     Row(
         Modifier
             .fillMaxWidth()
-            .background(tint.copy(alpha = 0.14f))
-            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .background(colors.sunken)
+            .hairline(colors.line, top = false)
+            .padding(horizontal = 12.dp, vertical = 3.dp)
             .testTag("connection"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("● ", color = tint)
-        Text(label, fontWeight = FontWeight.SemiBold, color = tint, modifier = Modifier.testTag("connection_label"))
-        Text("  " + describe(state), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 2)
+        Text("● ", color = tint, style = MaterialTheme.typography.labelSmall)
+        Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = tint, modifier = Modifier.testTag("connection_label"))
+        Text("  " + describe(state), style = MaterialTheme.typography.bodySmall, color = colors.inkDim, modifier = Modifier.weight(1f), maxLines = 2)
         when (state) {
             is ConnectionState.Reconnecting, is ConnectionState.Disconnected, is ConnectionState.Offline ->
                 TextButton(onClick = onReconnect) { Text("Reconnect") }

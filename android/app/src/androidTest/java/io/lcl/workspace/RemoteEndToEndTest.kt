@@ -10,6 +10,7 @@ import android.util.Log
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
@@ -304,7 +305,9 @@ class RemoteEndToEndTest {
         waitForLabel("Connected")
         if (!exists("new_document") && exists("files")) rule.onNodeWithTag("files").performClick()
         waitFor("new_document")
-        rule.onNodeWithTag("new_document").performClick()
+        // New is off until the PC's project is listed; a press before that does nothing.
+        waitFor("file:todo.lcl")
+        rule.onNodeWithTag("new_document").assertIsEnabled().performClick()
         rule.onNodeWithTag("new_name").performTextClearance()
         rule.onNodeWithTag("new_name").performTextInput("house_rules")
         rule.onNodeWithTag("new_role").performClick()

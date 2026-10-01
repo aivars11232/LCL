@@ -98,8 +98,9 @@ Output — and under **Start from** the default, a canonical
 structure or one of your Masters. The dialog shows the exact text first. To
 make the new file part of the project, add a `PART` for it to `main.lcl`.
 
-On the phone, **New** offers the same kinds, Guided or Minimal; the PC writes
-the file, so both always start from exactly the same structure.
+On the phone, **+** in the Files pane offers the same kinds, Guided or
+Minimal; the PC writes the file, so both always start from exactly the same
+structure.
 
 ## 19.6 When a file changed somewhere else
 

@@ -10,6 +10,11 @@ No behaviour was changed: every step moved or reformatted code, renamed local
 names, or rewrote test helpers, and was verified by the suites that already
 existed. The product version stays 0.9.1; nothing was released.
 
+The work was done in two steps. The first gave each language one format and
+split the largest Android and workspace files. The second, which the owner
+asked for after reading the first ("Yes, proceed"), split the remote service's
+two large files and the page's three longest dialogs.
+
 ## Where the code was furthest from readable
 
 A survey before touching anything (about 185,000 lines in all):
@@ -78,6 +83,36 @@ No lines over 100 columns remain in the app's sources.
   process never holds it open. Afterwards the workspace's remote tests ran 40
   times and the updater's flow tests 15 times without a failure, and the gate
   below passed in a single run.
+- **`lcl-remote`: `session.rs` split** (second step). One connection from a
+  device was one file of 1,287 lines. `session.rs` (281 lines) now holds what
+  all connections share, a connection from accept to close, and the session
+  loop. Beside it, in `session/`: `wire` (TLS, frames and the messages written
+  into them), `admission` (`hello`), `operations` (the list of requests),
+  `documents` and `runs` (what a session holds open and follows) and
+  `legacy_tree` (the `tree` answer older apps ask for). Three functions were
+  more than moved:
+  - `project_op`, 210 lines of `match` inside a closure called on the spot, is
+    a table with one line per operation. Each operation that changes what the
+    session holds (`open`, `close`, `save`, `create`, `delete`, `run`,
+    `follow`, `answer`) is a function of its own, and a small `Asked` value
+    carries the project, its routes and the message to them.
+  - `admit` (140 lines) is `admit`, `pair` and `connect`.
+  - `serve` reads as its steps — accept, handshake, first frame, admit, the
+    session, close — with the TLS details inside `Wire`.
+
+  The run-event text that was written out three times is one function, and so
+  is the `{"error": …}` body that was built in seven places.
+- **`lcl-remote`: `pairing.rs` split** (second step). 1,182 lines, a third of
+  them tests. `pairing.rs` (558) keeps the types and the flow (`create`,
+  `present`, `approve`, `deny`); `pairing/state` is `pairing.json` — read,
+  written and changed under the lock — `pairing/payload` the QR text with its
+  test, and `pairing/tests` the flow's tests. `present` gave its first-time
+  branch to `enlist`. Its three-step finalization stays in one place on
+  purpose: the module's argument about a crash in the middle follows it step
+  by step.
+- The remote crate's public API is unchanged, and both files keep their paths
+  (`session.rs` beside `session/`, the layout `lcl-conformance` already uses),
+  so their history stays with them.
 - Rust was already in rustfmt's format; nothing else was reformatted.
 
 ## Workspace page
@@ -85,8 +120,24 @@ No lines over 100 columns remain in the app's sources.
 `app.js`, `app.css` and the page tests are formatted by Prettier 3.6.2
 (`.prettierrc.json`: `printWidth` 100), as the implementation README now
 says. The stylesheet went from one rule per line to the standard one
-declaration per line. `index.html` is left as written. The script's long
-functions were not restructured (see Not done).
+declaration per line. `index.html` is left as written.
+
+The script's three longest functions were dialogs written as one function
+each. In the second step:
+
+- **Settings** (`openSettings`, 248 lines) became the list of its sections,
+  each a function — `appearanceSection`, `editorSection`, `filesSection`,
+  `templatesSection`, next to the `updatesSection` and `androidDevices` that
+  were functions already — with saving as `saveSettingsDialog`. It is 36
+  lines.
+- **New document** (`newDocument`, 200 lines) keeps what the dialog does —
+  refill the choices, preview, create — and no longer holds what it only
+  contained: its fields, the start-from choices, the blank document's text and
+  the creating itself (`createDocument`). It is 114 lines.
+- **Android devices** (`androidDevices`, 323 lines) keeps the state and the
+  polling, which belong together. A device's row, a request's row, the pairing
+  code and the small formatters are functions beside it. It is 208 lines, as a
+  component of short functions over one state, none longer than 40 lines.
 
 ## Android E2E script
 
@@ -97,22 +148,39 @@ variable named `done` was renamed; `shellcheck` reports nothing.
 
 ## Verification
 
-On the final source commit `0cd1d5d`, one heavy job after another
-(`/mnt/F/.lcl-pretest/v05/cleanup-verify.sh`):
+Each step was verified on its final source commit, one heavy job after
+another (`/mnt/F/.lcl-pretest/v05/cleanup-verify.sh`): the first on `0cd1d5d`,
+the second on `dead635`. Both runs gave the same results:
 
 - **Gate** (`gate9-run.log`): 71 of 71 commands as expected in one run — fmt,
   clippy, the workspace suite on the current and the 1.75 toolchain (1970
   passed, 0 failed, 1 ignored on each), Core checksums, validators,
   identities and anchors, `protected`, conformance and readiness, the
   `real_process` runs, remote (65) and updater (35) suites, manual manifest
-  and examples, and the real Firefox smoke over the reformatted page.
+  and examples, and the real Firefox smoke over the page.
 - **Format checks** (`cleanup-checks.log`): `android/tools/format.sh --check`,
   `prettier --check` and `shellcheck` all clean.
-- **Android**: 142 JVM unit tests pass (one new: the starter text). The full
-  E2E with the cleaned script and the split routes behind `lcl-remote`: all
-  phases passed, no ANR or crash (`e2e-run14.log`). Instrumented
-  `LocalProjectsUiTest` in light and dark, `VersionDisplayTest`,
-  `FileDrawerTest` 3/3.
+- **Android**: 142 JVM unit tests pass (one new in the first step: the starter
+  text). The full E2E — the app on the emulator against `lcl-remote`, in the
+  second run the restructured one: all phases passed, no ANR or crash
+  (`e2e-run14.log`). Instrumented `LocalProjectsUiTest` in light and dark,
+  `VersionDisplayTest`, `FileDrawerTest` 3/3.
+
+The second step changed code that decides what a device and a person are
+told, so its text was compared before and after as well:
+
+- **Remote.** Every string literal of `session` and `pairing`, with escapes
+  and line continuations resolved (`rs_strings.py`). In `pairing` all are the
+  same but one message that is now written once instead of twice. In `session`
+  the differences are the intended ones: the run-event text and the `"error"`
+  key written once, and the `run` operation naming its fields through the same
+  helper as the others, which gives the same two messages.
+- **Page.** Every string of `app.js`, taken from the syntax tree with the
+  pieces of a `+` chain joined (`js_strings.cjs`): 1,944 are the same, six
+  differ only in the name of a helper inside `${…}`, and one comparison with
+  `"pending"` is written once instead of twice.
+- The 65 remote tests and the 74 page cases pass. No test was changed; the
+  pairing unit tests only moved to files of their own.
 
 Two tests that read source text had to follow the changes: `equivalence.rs`
 opens the route table by path (now `routes/mod.rs`), and the updater's version
@@ -125,13 +193,14 @@ passes).
 
 ## Not done
 
-- The page script's longest functions (`androidDevices` 323 lines, itself a
-  closure with nine named inner functions; `openSettings` 248; `newDocument`
-  200) were left: they are organised internally, and rewriting closure-heavy
-  page code is more risk than it returns in a pass that must not change
-  behaviour.
-- `remote/src/session.rs` (1,287 lines) and `pairing.rs` (1,182) are the next
-  candidates for the same split `routes.rs` got.
+- `androidDevices` is still one function of 208 lines. What is left in it
+  shares one state — the devices, the waiting requests, the code on screen,
+  two timers — and handing that state around as an object would rewrite every
+  line of it without making any of them clearer.
+- The page's other functions over 120 lines — `newProject` (163),
+  `renderCapabilities` (162), `convertDocument` (121) — were not part of
+  either step.
+- `Pairing::present` keeps its finalization in one function (see Rust).
 - The engine crates (parser, resolver, checker, semantics, runtime,
   conformance — about 80,000 lines) were not touched: they are in the standard
   format, governed by the Core packages, and their long lines are case tables.
@@ -145,7 +214,8 @@ Kept outside the repository, under `/mnt/F/.lcl-android/tools/`: the ktfmt
 The one-off scripts used for the moves — a declaration-level splitter for
 Kotlin, a method-level one for Rust, the string wrapper and the scope-aware
 renamer — are in `/mnt/F/.lcl-pretest/v05/` (`split_kt.py`, `split_rs.py`,
-`wrap_kt_strings.py`, `rename_kt.py`).
+`wrap_kt_strings.py`, `rename_kt.py`), and so are the two that compare text
+before and after (`rs_strings.py`, `js_strings.cjs`).
 
 ## Git
 
@@ -159,9 +229,12 @@ Commits on `main` after `4150021`, pushed:
 6. `c976724` Tests: stand-in programs are written by a child process, so running them is never 'Text file busy'
 7. `e8c4624` Tests: the version check reads the Gradle statement however it is wrapped
 8. `0cd1d5d` Android E2E script: helpers for the repeated JSON checks, one command per readable line
-9. this report
+9. `9899b0f` this report, as it stood after the first step
+10. `71e0baa` Remote: the session and pairing files split by responsibility, long functions in named steps
+11. `dead635` Workspace page: the Settings, New document and Android devices dialogs in named parts
+12. this report, with the second step
 
-Build output of the verification was deleted afterwards (the repository's
+Build output of each verification was deleted afterwards (the repository's
 ignored build folders, `/mnt/F/.lcl-pretest/v05/target`,
 `/mnt/F/.lcl-closure-4t-4c1cd4c659b7/target-msrv`,
 `/mnt/F/.lcl-pretest/update-target`, `/mnt/F/.lcl-pretest/remote-target`).

@@ -6,7 +6,6 @@ import io.lcl.workspace.editor.ByteSpan
 import io.lcl.workspace.local.LocalConflict
 import io.lcl.workspace.local.LocalProjects
 import io.lcl.workspace.local.LocalRefused
-import io.lcl.workspace.local.SyncRecord
 import io.lcl.workspace.remote.RemoteException
 import io.lcl.workspace.remote.Reply
 import io.lcl.workspace.remote.arr
@@ -36,143 +35,8 @@ import kotlinx.serialization.json.put
 /**
  * A project this device can work in: one the connected PC shares, or one on this phone ([local]).
  */
-/**
- * Sync needs the explorer operations of LCL 0.5.1 (`children`, `mkdir`); an older PC answers
- * "unknown operation".
- */
-const val SYNC_NEEDS_PC = "Syncing local projects requires LCL 0.5.1 or newer on the PC."
-
-data class ProjectInfo(
-    val id: String,
-    val name: String,
-    val root: String,
-    val isDefault: Boolean,
-    val local: Boolean = false,
-)
-
-/** One listed file or folder, and the SPECIFICATION KIND the PC's engine read in the file. */
-data class TreeEntry(val id: String, val directory: Boolean, val kind: String? = null) {
-    /** The last part of the path: what the explorer shows. */
-    val name: String
-        get() = id.substringAfterLast('/')
-}
-
-/**
- * The exact starting text the PC would write for a new file of [role] named [path], and its
- * SHA-256. Creation sends [digest] back, and the PC creates the file only if it would still write
- * exactly this text.
- */
-data class ScaffoldPreview(
-    val path: String,
-    val role: String,
-    val mode: String,
-    val text: String,
-    val digest: String,
-)
-
-/** A file role the PC's Core 0.3.0 engine defines. */
-data class RoleInfo(val role: String, val label: String)
-
-/** One file of a project, as the PC's engine judged it. */
-data class ReadinessFile(
-    val path: String,
-    val unit: String?,
-    val role: String,
-    val required: Boolean,
-    val status: String,
-)
-
-/**
- * A project's readiness: the PC engine's `validate` of the entry on disk. [status] is `ready` only
- * when the engine admitted the project.
- */
-data class Readiness(
-    val entry: String,
-    val status: String,
-    val files: List<ReadinessFile>,
-    val diagnostics: List<String>,
-)
-
-data class RunEvent(val name: String, val data: JsonObject)
-
-/** One run on the PC, as this device follows it. */
-data class RunState(
-    val project: String,
-    val run: String,
-    val document: String,
-    /** The document revision the run was given; its report describes that text. */
-    val revision: Long = 0,
-    val events: List<RunEvent> = emptyList(),
-    /** The pause the run is waiting at, for this device to answer. */
-    val paused: JsonObject? = null,
-    val report: JsonObject? = null,
-    val failed: String? = null,
-    val finished: Boolean = false,
-    /** Run events received, so a reconnect resumes from the first one missed. */
-    val seen: Long = 0,
-    val connectionLost: Boolean = false,
-)
-
-/**
- * Host permissions for one run: what this PC may do for it, beyond what the document authorizes.
- */
-data class RunGrants(
-    val read: List<String> = emptyList(),
-    val write: List<String> = emptyList(),
-    val program: List<String> = emptyList(),
-    val host: List<String> = emptyList(),
-    val inputs: List<String> = emptyList(),
-)
-
-data class WorkspaceUi(
-    val projects: List<ProjectInfo> = emptyList(),
-    val project: ProjectInfo? = null,
-    /**
-     * Each project's explorer, by project id, for as long as the app runs: what the PC has listed,
-     * folder by folder.
-     */
-    val explorers: Map<String, Explorer> = emptyMap(),
-    val documents: List<OpenDocument> = emptyList(),
-    val active: String? = null,
-    /** The last Check, Validate or Inspect report, per document key, and which it was. */
-    val reports: Map<String, Pair<String, JsonObject>> = emptyMap(),
-    val run: RunState? = null,
-    val about: JsonObject? = null,
-    /** The PC's default ending for new documents. */
-    val defaultEnding: String = LclNames.SUFFIX,
-    val busy: Boolean = false,
-    /** The file roles the PC offers for New; empty when the PC has no Core 0.3.0. */
-    val roles: List<RoleInfo> = emptyList(),
-    /** The last project readiness asked for, shown until dismissed. */
-    val readiness: Readiness? = null,
-    /** Bumped after every sync, so what shows a local project's state reads the records again. */
-    val syncEpoch: Int = 0,
-) {
-    val activeDocument: OpenDocument?
-        get() = documents.firstOrNull { key(it) == active }
-
-    /** The current project's explorer: empty until the PC listed its root. */
-    val explorer: Explorer
-        get() = project?.let { explorers[it.id] } ?: Explorer()
-
-    /** This state without anything of a PC: the phone's own projects and documents stay. */
-    fun withoutPc(): WorkspaceUi {
-        val documents = documents.filter { LocalProjects.isLocal(it.project) }
-        return WorkspaceUi(
-            projects = projects.filter { it.local },
-            project = project?.takeIf { it.local },
-            explorers = explorers.filterKeys(LocalProjects::isLocal),
-            documents = documents,
-            active = active?.takeIf { key -> documents.any { key(it) == key } },
-            reports = reports.filterKeys { key -> documents.any { key(it) == key } },
-            defaultEnding = defaultEnding,
-        )
-    }
-
-    companion object {
-        fun key(doc: OpenDocument) = "${doc.project}/${doc.id}"
-    }
-}
+/** Said when something needs projects on the phone and this build keeps none. */
+private const val NO_LOCAL_PROJECTS = "This build keeps no projects on the phone."
 
 /**
  * The workspace as this device sees it, kept in step with the PC.
@@ -194,6 +58,11 @@ class WorkspaceController(
 ) {
     private val _ui = MutableStateFlow(WorkspaceUi())
     val ui: StateFlow<WorkspaceUi> = _ui
+
+    /** Syncing phone projects to a PC; absent in a build that keeps no projects on the phone. */
+    private val sync: ProjectSync? = local?.let {
+        ProjectSync(connection, it, io, now, ::unsavedIn)
+    }
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 16)
     val messages: SharedFlow<String> = _messages
     private var analysis: Job? = null
@@ -233,7 +102,7 @@ class WorkspaceController(
     private fun storage(): LocalProjects? =
         local
             ?: run {
-                say("This build keeps no projects on the phone.")
+                say(NO_LOCAL_PROJECTS)
                 null
             }
 
@@ -252,32 +121,6 @@ class WorkspaceController(
         } catch (e: Exception) {
             say("The PC did not answer: ${e.message}")
             null
-        }
-
-    /**
-     * One request to the PC, or null when it cannot be reached; nothing is said here, the caller
-     * reports.
-     */
-    private suspend fun askQuietly(op: String, fields: JsonObject): Reply? =
-        try {
-            connection.request(op, fields)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            null
-        }
-
-    private fun fields(project: String, vararg pairs: Pair<String, Any?>): JsonObject =
-        buildJsonObject {
-            put("project", project)
-            for ((k, v) in pairs) when (v) {
-                is String -> put(k, v)
-                is Long -> put(k, v)
-                is Int -> put(k, v)
-                is Boolean -> put(k, v)
-                is JsonObject -> put(k, v)
-                is JsonArray -> put(k, v)
-            }
         }
 
     // -------------------------------------------------------------- connection
@@ -412,16 +255,6 @@ class WorkspaceController(
         _ui.value.documents.filter { it.project == projectId && it.dirty }.map { it.id }.sorted()
 
     /**
-     * The refusal for [doing] while [projectId] has unsaved edits, naming each document; null when
-     * it has none.
-     */
-    private fun unsavedRefusal(projectId: String, doing: String): String? {
-        val unsaved = unsavedIn(projectId)
-        if (unsaved.isEmpty()) return null
-        return "Save these documents before $doing:\n" + unsaved.joinToString("\n") { "• $it" }
-    }
-
-    /**
      * Whether the phone's records say every document and folder of the local project [id] was
      * confirmed by a PC as it is now.
      */
@@ -429,87 +262,15 @@ class WorkspaceController(
         local?.let { runCatching { it.fullySynced(LocalProjects.nameOf(id)) }.getOrDefault(false) }
             ?: false
 
-    /** What the project [id] on this phone is, against a PC, in a few words: for the Files pane. */
-    suspend fun localStatus(id: String): String {
-        val storage = local ?: return "On this phone"
-        val name = LocalProjects.nameOf(id)
-        val unsaved = unsavedIn(id)
-        if (unsaved.isNotEmpty())
-            return "Unsaved changes: ${unsaved.size} document${if (unsaved.size == 1) "" else "s"} — save before syncing or removing"
-        return withContext(io) {
-            runCatching {
-                val inventory = storage.inventory(name)
-                val entries = inventory.folders + inventory.documents
-                val synced = entries.count { storage.isSynced(name, it) }
-                when {
-                    entries.isEmpty() -> "Empty"
-                    synced == entries.size -> "Synced — the PC confirms again before removal"
-                    storage.syncRecords(name).isEmpty() -> "Local — not synced to a PC yet"
-                    else ->
-                        "Changed since sync — ${entries.size - synced} of ${entries.size} not on a PC as they are now"
-                }
-            }
-                .getOrElse { "Local — ${it.message}" }
-        }
-    }
+    /** Where the project [id] on this phone stands against a PC, in a few words. */
+    suspend fun localStatus(id: String): String = sync?.status(id) ?: "On this phone"
 
     /**
-     * Whether the project [id] on this phone can go: nothing of it is unsaved here, and the PC,
-     * asked now, holds every folder and every document as recorded — the same bytes at the same
-     * place. A record proves only what a PC held once, so a removal never trusts it without asking
-     * again; and without the PC, nothing is claimed.
+     * Whether the project [id] on this phone can go: nothing of it is unsaved, and the PC, asked
+     * now, still holds every folder and document as recorded ([ProjectSync.verifyRemovable]).
      */
-    suspend fun verifyRemovable(id: String): Result<Unit> {
-        val storage =
-            local
-                ?: return Result.failure(LocalRefused("This build keeps no projects on the phone."))
-        val name = LocalProjects.nameOf(id)
-        unsavedRefusal(id, "removing $name from this phone")?.let {
-            return Result.failure(LocalRefused(it))
-        }
-        if (connection.state.value !is ConnectionState.Connected) {
-            return Result.failure(
-                LocalRefused(
-                    "Connect to the PC first: without it the phone cannot confirm that the PC still holds $name."
-                )
-            )
-        }
-        val (inventory, records) =
-            try {
-                withContext(io) { storage.inventory(name) to storage.syncRecords(name) }
-            } catch (e: LocalRefused) {
-                return Result.failure(e)
-            }
-        val stays = { why: String ->
-            Result.failure<Unit>(LocalRefused("$why, so $name stays on this phone."))
-        }
-        for (folder in inventory.folders) {
-            val record = records[folder] ?: return stays("$folder/ was never synced to a PC")
-            val reply =
-                askQuietly("children", fields(record.pcProject, "parent" to record.pcPath))
-                    ?: return stays("The PC did not answer")
-            if (!reply.ok)
-                return stays(
-                    "$folder/ is no longer on the PC at ${record.pcPath} (${reply.error ?: reply.status})"
-                )
-        }
-        for (document in inventory.documents) {
-            val record = records[document]
-            val here = withContext(io) { storage.read(name, document).digest }
-            if (record == null || record.localDigest != here)
-                return stays("$document is not on a PC as it is now")
-            val reply =
-                askQuietly("open", fields(record.pcProject, "document" to record.pcPath))
-                    ?: return stays("The PC did not answer")
-            if (!reply.ok)
-                return stays(
-                    "$document is no longer on the PC at ${record.pcPath} (${reply.error ?: reply.status})"
-                )
-            if (reply.obj.str("digest") != record.pcDigest)
-                return stays("$document changed on the PC at ${record.pcPath} since it was synced")
-        }
-        return Result.success(Unit)
-    }
+    suspend fun verifyRemovable(id: String): Result<Unit> =
+        sync?.verifyRemovable(id) ?: Result.failure(LocalRefused(NO_LOCAL_PROJECTS))
 
     /**
      * Remove a project from this phone: only because the person asked, and only after the PC
@@ -536,11 +297,9 @@ class WorkspaceController(
      * A deletion that fails leaves the project listed, whatever part of it remains.
      */
     suspend fun removeLocalProjectConfirmed(id: String): Result<Unit> {
-        val storage =
-            local
-                ?: return Result.failure(LocalRefused("This build keeps no projects on the phone."))
+        val storage = local ?: return Result.failure(LocalRefused(NO_LOCAL_PROJECTS))
         val name = LocalProjects.nameOf(id)
-        unsavedRefusal(id, "removing $name from this phone")?.let {
+        unsavedRefusal(unsavedIn(id), "removing $name from this phone")?.let {
             return Result.failure(LocalRefused(it))
         }
         try {
@@ -1006,418 +765,58 @@ class WorkspaceController(
 
     /**
      * Find out, without writing anything, what syncing [localProject] (or only [ids] of it) into
-     * [folder] of [pcProject] would meet. Refused while a document of the project has unsaved edits
-     * here: a sync sends the bytes on disk, not what is on screen. Refused on a PC without the
-     * explorer operations (LCL 0.5.0 and earlier), which cannot make folders. The inventory is the
-     * whole project's, read from the disk, never the explorer's cut listing; a project too large
-     * stops here. For each document: whether the PC holds nothing at its destination, the same
-     * bytes, other bytes, or the version this phone last synced there — then the phone's newer text
-     * replaces it without a question, at the destination that sync used, so a copy saved beside the
-     * PC's stays beside it. Needs the PC; fails with the reason otherwise.
+     * [folder] of [pcProject] would meet ([ProjectSync.plan]).
      */
     suspend fun planSync(
         localProject: ProjectInfo,
         pcProject: ProjectInfo,
         folder: String,
         ids: List<String>? = null,
-    ): Result<SyncPlan> {
-        val storage =
-            local
-                ?: return Result.failure(LocalRefused("This build keeps no projects on the phone."))
-        if (!localProject.local || pcProject.local)
-            return Result.failure(
-                LocalRefused("Sync goes from a project on this phone to one on the PC.")
-            )
-        if (connection.state.value !is ConnectionState.Connected)
-            return Result.failure(LocalRefused("Connect to the PC first."))
-        unsavedRefusal(localProject.id, "syncing")?.let {
-            return Result.failure(LocalRefused(it))
-        }
-        val where = folder.trim().trim('/')
-        if (where.split('/').any { it == ".." || it.startsWith(".") })
-            return Result.failure(LocalRefused("\"$where\" is not a folder inside the PC project."))
-        val probe =
-            askQuietly("children", fields(pcProject.id, "parent" to ""))
-                ?: return Result.failure(LocalRefused("The PC did not answer."))
-        if (probe.status == 400 && probe.error?.contains("unknown operation") == true)
-            return Result.failure(LocalRefused(SYNC_NEEDS_PC))
-        if (!probe.ok)
-            return Result.failure(
-                LocalRefused("The PC refused ${pcProject.name}: ${probe.error ?: probe.status}")
-            )
-        val name = LocalProjects.nameOf(localProject.id)
-        val (inventory, records) =
-            try {
-                withContext(io) { storage.inventory(name) to storage.syncRecords(name) }
-            } catch (e: LocalRefused) {
-                return Result.failure(e)
-            }
-        val plan =
-            SyncPlan(
-                localProject,
-                pcProject,
-                where,
-                emptyList(),
-                if (ids == null) inventory.folders else emptyList(),
-                whole = ids == null,
-            )
-        val items = mutableListOf<SyncItem>()
-        for (id in ids ?: inventory.documents) {
-            val read =
-                try {
-                    withContext(io) { storage.read(name, id) }
-                } catch (e: LocalRefused) {
-                    return Result.failure(e)
-                }
-            val usual = plan.destination(id)
-            // Where the last sync into this folder put it, while the PC still holds exactly what it
-            // confirmed.
-            val record =
-                records[id]?.takeIf {
-                    it.pcProject == pcProject.id &&
-                        FileTree.parentOf(it.pcPath) == FileTree.parentOf(usual)
-                }
-            if (record != null) {
-                val there =
-                    askQuietly("open", fields(pcProject.id, "document" to record.pcPath))
-                        ?: return Result.failure(LocalRefused("The PC did not answer."))
-                if (there.ok && there.obj.str("digest") == record.pcDigest) {
-                    val state =
-                        if (read.digest == record.localDigest) SyncState.IDENTICAL
-                        else SyncState.SUPERSEDED
-                    items +=
-                        SyncItem(
-                            id,
-                            record.pcPath,
-                            read.text,
-                            read.digest,
-                            state,
-                            record.pcDigest,
-                            there.obj.str("text"),
-                        )
-                    continue
-                }
-            }
-            val reply =
-                askQuietly("open", fields(pcProject.id, "document" to usual))
-                    ?: return Result.failure(LocalRefused("The PC did not answer."))
-            items +=
-                when {
-                    reply.ok -> {
-                        val pcDigest = reply.obj.str("digest") ?: ""
-                        val state =
-                            if (pcDigest == read.digest) SyncState.IDENTICAL
-                            else SyncState.DIFFERENT
-                        SyncItem(
-                            id,
-                            usual,
-                            read.text,
-                            read.digest,
-                            state,
-                            pcDigest,
-                            reply.obj.str("text"),
-                        )
-                    }
-                    reply.status == 404 ->
-                        SyncItem(id, usual, read.text, read.digest, SyncState.ABSENT)
-                    else ->
-                        return Result.failure(
-                            LocalRefused("The PC refused $usual: ${reply.error ?: reply.status}")
-                        )
-                }
-        }
-        return Result.success(plan.copy(items = items))
-    }
+    ): Result<SyncPlan> =
+        sync?.plan(localProject, pcProject, folder, ids)
+            ?: Result.failure(LocalRefused(NO_LOCAL_PROJECTS))
 
     /**
-     * Do a planned sync. Refused before anything is written while a document of the project has
-     * unsaved edits. Every folder of the plan is made on the PC, empty ones too (one that is there
-     * already is checked to be a folder), then every document is written the way the person chose
-     * for it, and counts as synced only once the PC's answer names the bytes sent (their digest,
-     * with the final line feed the PC may add). A connection lost midway stops the rest, and what
-     * failed is reported as it is: the phone's copy stays whole, and running the sync again is
-     * safe, since what reached the PC is then found identical. The disk is read again at the end: a
-     * document edited meanwhile, or an entry that appeared or went, makes the sync incomplete. With
-     * [removeAfter], the phone's copy goes only after a complete whole-project sync, and the result
-     * says removed only once it is gone.
+     * Carry out a planned sync ([ProjectSync.run]). With [removeAfter], the phone's copy goes only
+     * after a complete sync of the whole project, and the result says removed only once it is gone.
      */
     suspend fun runSync(
         plan: SyncPlan,
         choices: Map<String, SyncChoice>,
         removeAfter: Boolean,
     ): SyncResult {
-        val storage =
-            local
+        val sync =
+            sync
                 ?: return SyncResult(
                     emptyList(),
                     complete = false,
                     removed = false,
-                    problem = "This build keeps no projects on the phone.",
+                    problem = NO_LOCAL_PROJECTS,
                 )
-        val name = LocalProjects.nameOf(plan.project.id)
-        unsavedRefusal(plan.project.id, "syncing")?.let {
-            return SyncResult(emptyList(), complete = false, removed = false, problem = it)
-        }
-        val outcomes = mutableListOf<SyncOutcome>()
-        // Every folder to make — the plan's own, and those on the way to each
-        // destination — shallowest first; one that exists already is fine.
-        val own = plan.folders.associateBy { plan.destination(it) }
-        val folders =
-            (own.keys +
-                    plan.items.flatMap { FileTree.ancestors(it.destination) } +
-                    own.keys.flatMap { FileTree.ancestors(it) })
-                .distinct()
-                .sortedWith(compareBy({ it.count { c -> c == '/' } }, { it }))
-        val unreachable = mutableSetOf<String>()
-        // What the PC confirmed, written to the records together at the end:
-        // one write, not one per entry. Lost to a crash before then, a
-        // confirmation is found again by the next sync, which asks the PC.
-        val confirmed = mutableMapOf<String, SyncRecord>()
-        var lost: String? = null
-        for (folder in folders) {
-            val local = own[folder]
-            val failed = { why: String ->
-                if (local != null) outcomes += SyncOutcome("$local/", folder, false, why)
-            }
-            if (lost != null) {
-                failed("not attempted: $lost")
-                continue
-            }
-            if (unreachable.any { folder == it || folder.startsWith("$it/") }) {
-                failed("its parent folder could not be made on the PC")
-                continue
-            }
-            val reply =
-                try {
-                    connection.request("mkdir", fields(plan.pcProject.id, "folder" to folder))
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    lost = e.message ?: "connection lost"
-                    failed("not confirmed: $lost")
-                    continue
-                }
-            // Taken: fine when what is there is a folder, which listing it proves.
-            val made =
-                reply.ok ||
-                    (reply.status == 409 &&
-                        askQuietly("children", fields(plan.pcProject.id, "parent" to folder))?.ok ==
-                            true)
-            if (!made) {
-                unreachable += folder
-                failed(
-                    if (reply.status == 409)
-                        "something that is not a folder is at $folder on the PC"
-                    else (reply.error ?: "refused (${reply.status})")
-                )
-                continue
-            }
-            if (local != null) {
-                confirmed[local] = SyncRecord("", plan.pcProject.id, folder, "", now())
-                outcomes +=
-                    SyncOutcome(
-                        "$local/",
-                        folder,
-                        true,
-                        if (reply.ok) "made on the PC" else "already on the PC",
-                    )
-            }
-        }
-        for (item in plan.items) {
-            val parent = FileTree.parentOf(item.destination)
-            if (lost != null) {
-                outcomes += SyncOutcome(item.id, item.destination, false, "not attempted: $lost")
-                continue
-            }
-            if (unreachable.any { parent == it || parent.startsWith("$it/") }) {
-                outcomes +=
-                    SyncOutcome(
-                        item.id,
-                        item.destination,
-                        false,
-                        "its folder could not be made on the PC",
-                    )
-                continue
-            }
-            val choice = choices[item.id]
-            val (op, request, destination) =
-                when (item.state) {
-                    SyncState.IDENTICAL -> {
-                        confirmed[item.id] =
-                            SyncRecord(
-                                item.localDigest,
-                                plan.pcProject.id,
-                                item.destination,
-                                item.pcDigest ?: item.localDigest,
-                                now(),
-                            )
-                        outcomes +=
-                            SyncOutcome(item.id, item.destination, true, "already on the PC")
-                        continue
-                    }
-                    SyncState.ABSENT ->
-                        Triple(
-                            "create",
-                            fields(
-                                plan.pcProject.id,
-                                "name" to item.destination,
-                                "text" to item.text,
-                            ),
-                            item.destination,
-                        )
-                    SyncState.SUPERSEDED ->
-                        Triple(
-                            "save",
-                            fields(
-                                plan.pcProject.id,
-                                "document" to item.destination,
-                                "base" to (item.pcDigest ?: ""),
-                                "text" to item.text,
-                            ),
-                            item.destination,
-                        )
-                    SyncState.DIFFERENT ->
-                        when (choice) {
-                            SyncChoice.REPLACE ->
-                                Triple(
-                                    "save",
-                                    fields(
-                                        plan.pcProject.id,
-                                        "document" to item.destination,
-                                        "base" to (item.pcDigest ?: ""),
-                                        "text" to item.text,
-                                    ),
-                                    item.destination,
-                                )
-                            SyncChoice.RENAME ->
-                                Triple(
-                                    "create",
-                                    fields(
-                                        plan.pcProject.id,
-                                        "name" to item.renamed,
-                                        "text" to item.text,
-                                    ),
-                                    item.renamed,
-                                )
-                            SyncChoice.KEEP_PC,
-                            null -> {
-                                outcomes +=
-                                    SyncOutcome(
-                                        item.id,
-                                        item.destination,
-                                        false,
-                                        "kept the PC's version; the phone's copy is not on the PC",
-                                    )
-                                continue
-                            }
-                        }
-                }
-            val reply =
-                try {
-                    connection.request(op, request)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    lost = e.message ?: "connection lost"
-                    outcomes += SyncOutcome(item.id, destination, false, "not confirmed: ${lost}")
-                    continue
-                }
-            if (!reply.ok) {
-                val why =
-                    when (reply.status) {
-                        409 ->
-                            "changed on the PC since it was checked, or exists; nothing was written"
-                        else -> reply.error ?: "refused (${reply.status})"
-                    }
-                outcomes += SyncOutcome(item.id, destination, false, why)
-                continue
-            }
-            // Confirmation is the PC's own digest of what it holds now: the
-            // bytes sent, or those bytes with the final line feed it adds.
-            val digest = reply.obj.str("digest")
-            val expected =
-                listOf(item.localDigest) +
-                    (if (item.text.endsWith("\n")) emptyList()
-                    else listOf(LocalProjects.digest(item.text + "\n")))
-            if (digest == null || digest !in expected) {
-                outcomes +=
-                    SyncOutcome(
-                        item.id,
-                        destination,
-                        false,
-                        "the PC reported other bytes than were sent; not marked synced",
-                    )
-                continue
-            }
-            confirmed[item.id] =
-                SyncRecord(item.localDigest, plan.pcProject.id, destination, digest, now())
-            outcomes +=
-                SyncOutcome(
-                    item.id,
-                    destination,
-                    true,
-                    when {
-                        item.state == SyncState.SUPERSEDED -> "updated on the PC"
-                        op == "save" -> "replaced on the PC"
-                        else -> "created on the PC"
-                    },
-                )
-        }
-        try {
-            withContext(io) { storage.recordSyncedAll(name, confirmed) }
-        } catch (e: LocalRefused) {
-            _ui.update { it.copy(syncEpoch = it.syncEpoch + 1) }
-            return SyncResult(
-                outcomes,
-                complete = false,
-                removed = false,
-                problem = "The phone could not record what the PC confirmed: ${e.message}",
-            )
-        }
-        // The disk again: what changed on the phone during the sync is not synced.
-        val changed = mutableListOf<String>()
-        if (plan.whole) {
-            try {
-                val now = withContext(io) { storage.inventory(name) }
-                changed +=
-                    now.documents
-                        .filter { id -> plan.items.none { it.id == id } }
-                        .map { "$it (new)" }
-                changed += plan.items.filter { it.id !in now.documents }.map { "${it.id} (gone)" }
-                changed += now.folders.filter { it !in plan.folders }.map { "$it/ (new)" }
-                changed += plan.folders.filter { it !in now.folders }.map { "$it/ (gone)" }
-            } catch (e: LocalRefused) {
-                changed += e.message ?: "the project could not be read again"
-            }
-        }
-        for (item in plan.items) {
-            if (
-                outcomes.any { it.id == item.id && it.ok } &&
-                    withContext(io) {
-                        runCatching { storage.read(name, item.id).digest }.getOrNull()
-                    } != item.localDigest
-            )
-                changed += "${item.id} (edited)"
-        }
-        var problem =
-            if (changed.isEmpty()) null
-            else
-                "Changed on the phone during the sync, so not synced: ${changed.joinToString(", ")}"
-        val complete =
-            changed.isEmpty() && outcomes.all { it.ok } && (outcomes.isNotEmpty() || plan.whole)
-        var removed = false
-        if (removeAfter) {
-            if (!plan.whole)
-                problem = "Only chosen documents were synced, so the project stays on this phone."
-            else if (complete && withContext(io) { storage.fullySynced(name) })
-                removeLocalProjectConfirmed(plan.project.id)
-                    .fold({ removed = true }, { problem = it.message })
-            else if (complete)
-                problem =
-                    "Not everything is recorded as confirmed as it is now, so the project stays on this phone."
-        }
+        var result = sync.run(plan, choices)
+        if (removeAfter) result = removeAfterSync(plan, result)
+        // What shows the project's state reads the records again.
         _ui.update { it.copy(syncEpoch = it.syncEpoch + 1) }
-        return SyncResult(outcomes, complete, removed, problem)
+        return result
+    }
+
+    /** Remove the phone's copy after a sync that asked for it, when that sync allows it. */
+    private suspend fun removeAfterSync(plan: SyncPlan, result: SyncResult): SyncResult {
+        if (!plan.whole) {
+            val problem = "Only chosen documents were synced, so the project stays on this phone."
+            return result.copy(problem = result.problem ?: problem)
+        }
+        if (!result.complete) return result
+        val name = LocalProjects.nameOf(plan.project.id)
+        val recorded = withContext(io) { local?.fullySynced(name) == true }
+        if (!recorded) {
+            val problem =
+                "Not everything is recorded as confirmed as it is now, " +
+                    "so the project stays on this phone."
+            return result.copy(problem = problem)
+        }
+        return removeLocalProjectConfirmed(plan.project.id)
+            .fold({ result.copy(removed = true) }, { result.copy(problem = it.message) })
     }
 
     /**

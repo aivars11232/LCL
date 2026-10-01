@@ -88,11 +88,40 @@ regenerated.
   for the seconds it shows.
 - Seen on the emulator only (1080×2400, light and dark); the wide two-pane
   layout was not photographed.
-- It reaches a phone only with a release: the published v0.9.0 does not
-  contain it. The product version is still 0.9.0 in this source.
+- When this report was first written the look was not released; see
+  **Release** below.
 
 ## Git
 
 1. Android: the desktop workspace's look on the phone
 2. Docs: the phone's look and its Files head
 3. this report
+4. `625e371` Product version 0.9.1
+5. this release note
+
+## Release
+
+Released as **LCL 0.9.1** at the owner's word (2026-10-01): source `625e371`
+(tag `v0.9.1`), Android versionCode 9001, predecessor v0.9.0 authenticated.
+
+- Gate on `625e371`: 71 of 71 commands as expected in one run
+  (`/mnt/F/.lcl-pretest/v05/gate8-run.log`; workspace suite 1970 passed, 0
+  failed, 1 ignored on both toolchains; remote 65; updater 35).
+- Android on `625e371`: JVM unit tests pass; `LocalProjectsUiTest` in light
+  and dark, `VersionDisplayTest` (versionName 0.9.1, versionCode 9001,
+  "LCL 0.9.1", the code never shown; its stale check for an old code was
+  corrected), `FileDrawerTest` 3/3. The full E2E ran on the same UI sources
+  one commit earlier (`7be7bd4`), in both themes; the bump changes only
+  version constants, and the E2E builds the app with versions of its own.
+- Release: 8/8 checksums, the manifest verified by the installed 0.9.0
+  updater, `lcl --version` one line (`lcl 0.9.1`), APK `io.lcl.workspace`
+  0.9.1 (9001) signed by the same certificate; nine files published and
+  byte-identical after upload.
+- This PC updated 0.9.0 → 0.9.1 through the installed Workspace's own updater
+  (`/mnt/F/.lcl-pretest/v05/pc-update-091`). The phone updates from Updates in
+  the app; the look on a physical phone is for the owner to confirm.
+
+Build output of the gate, the E2E and the release was deleted afterwards
+(the repository's ignored build folders, `/mnt/F/.lcl-pretest/v05/target`,
+`/mnt/F/.lcl-closure-4t-4c1cd4c659b7/target-msrv`,
+`/mnt/F/.lcl-pretest/update-target`, `/mnt/F/.lcl-pretest/remote-target`).

@@ -119,7 +119,9 @@ class ConnectionManager(
     private val discover: suspend (String) -> List<String>,
     private val now: () -> Long = { System.currentTimeMillis() / 1000 },
     /** Seconds to wait before retry number n. */
-    private val backoff: (Int) -> Int = { n -> listOf(1, 2, 4, 8, 15, 30)[minOf(n, 6) - 1] },
+    private val backoff: (Int) -> Int = { attempt ->
+        listOf(1, 2, 4, 8, 15, 30)[minOf(attempt, 6) - 1]
+    },
 ) {
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.NoPc)
     val state: StateFlow<ConnectionState> = _state
@@ -333,14 +335,16 @@ class ConnectionManager(
                                         "The PC denied this device. Nothing was paired."
                                     "pairing_upgrade_required",
                                     "unsupported_pairing_version" ->
-                                        "The PC and this app pair differently. Update LCL on both, then show a new QR code."
+                                        "The PC and this app pair differently. Update LCL on " +
+                                            "both, then show a new QR code."
                                     else -> opened.message
                                 }
                             )
                         is Opened.Pending -> {
                             if (!constantTimeEquals(opened.verification, verification)) {
                                 return failed(
-                                    "The PC's verification code does not match this device's. Nothing was paired; show a new QR code."
+                                    "The PC's verification code does not match this device's. " +
+                                        "Nothing was paired; show a new QR code."
                                 )
                             }
                             answering = address
@@ -410,12 +414,14 @@ class ConnectionManager(
                 if (answering == null) return failed(lastError)
                 if (now() >= expires)
                     return failed(
-                        "The pairing request expired before the PC approved it. Show a new QR code on the PC."
+                        "The pairing request expired before the PC approved it. Show a new QR " +
+                            "code on the PC."
                     )
                 delay(PAIRING_POLL_MS)
                 if (now() >= expires)
                     return failed(
-                        "The pairing request expired before the PC approved it. Show a new QR code on the PC."
+                        "The pairing request expired before the PC approved it. Show a new QR " +
+                            "code on the PC."
                     )
             }
         } catch (e: CancellationException) {
@@ -563,7 +569,10 @@ class ConnectionManager(
                 Retirement.Done -> {
                     update(pcId) {
                         it.copy(
-                            retiring = it.retiring.filterNot { k -> k.keyAlias == key.keyAlias }
+                            retiring =
+                                it.retiring.filterNot { retired ->
+                                    retired.keyAlias == key.keyAlias
+                                }
                         )
                     }
                     runCatching { identities.delete(key.keyAlias) }
@@ -720,8 +729,11 @@ class ConnectionManager(
 class IdentityConflictException(knownName: String) :
     java.io.IOException(
         "Identity conflict: this QR code names the PC paired here as \"$knownName\", but that PC " +
-            "now proves a different identity (another certificate). It may be a different computer, " +
-            "or someone posing as it, so nothing was changed: the pairing with \"$knownName\" stays as " +
-            "it is and keeps working. If that PC was reinstalled or reset on purpose, Forget it on " +
+            "now proves a different identity (another certificate). It may be a different " +
+            "computer, " +
+            "or someone posing as it, so nothing was changed: the pairing with \"$knownName\" " +
+            "stays as " +
+            "it is and keeps working. If that PC was reinstalled or reset on purpose, Forget it " +
+            "on " +
             "the PCs screen first, then pair again."
     )

@@ -84,8 +84,8 @@ class ManualSnapshot(
 
         private fun compareBytes(a: ByteArray, b: ByteArray): Int {
             for (i in 0 until minOf(a.size, b.size)) {
-                val d = (a[i].toInt() and 0xff) - (b[i].toInt() and 0xff)
-                if (d != 0) return d
+                val difference = (a[i].toInt() and 0xff) - (b[i].toInt() and 0xff)
+                if (difference != 0) return difference
             }
             return a.size - b.size
         }

@@ -63,21 +63,26 @@ data class Edit(val from: Int, val oldTo: Int, val newTo: Int, val lines: Int)
 
 /** The smallest range that changed between two texts. */
 fun editBetween(before: Utf8Index, after: Utf8Index): Edit {
-    val a = before.text
-    val b = after.text
-    val shorter = minOf(a.length, b.length)
+    val oldText = before.text
+    val newText = after.text
+    val shorter = minOf(oldText.length, newText.length)
     var head = 0
-    while (head < shorter && a[head] == b[head]) head++
+    while (head < shorter && oldText[head] == newText[head]) head++
     var tail = 0
-    while (tail < shorter - head && a[a.length - 1 - tail] == b[b.length - 1 - tail]) tail++
+    while (
+        tail < shorter - head &&
+            oldText[oldText.length - 1 - tail] == newText[newText.length - 1 - tail]
+    ) tail++
     // A tail that starts on the second unit of a changed pair gives it back.
-    if (tail > 0 && Character.isLowSurrogate(b[b.length - tail])) tail--
+    if (tail > 0 && Character.isLowSurrogate(newText[newText.length - tail])) tail--
     fun feeds(text: String, from: Int, to: Int) = (from until to).count { text[it] == '\n' }
     return Edit(
         from = before.byteOf(head),
-        oldTo = before.byteOf(a.length - tail),
-        newTo = after.byteOf(b.length - tail),
-        lines = feeds(b, head, b.length - tail) - feeds(a, head, a.length - tail),
+        oldTo = before.byteOf(oldText.length - tail),
+        newTo = after.byteOf(newText.length - tail),
+        lines =
+            feeds(newText, head, newText.length - tail) -
+                feeds(oldText, head, oldText.length - tail),
     )
 }
 

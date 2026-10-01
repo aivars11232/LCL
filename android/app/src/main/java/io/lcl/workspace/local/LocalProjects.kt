@@ -206,7 +206,8 @@ class LocalProjects(private val root: File, private val maxSyncItems: Int = MAX_
             val listed =
                 resolve(project, parent).listFiles()
                     ?: throw LocalRefused(
-                        "${parent.ifEmpty { "the project" }} is not readable, so the sync stops: nothing is written, marked synced or removed"
+                        "${parent.ifEmpty { "the project" }} is not readable, so the sync stops: " +
+                            "nothing is written, marked synced or removed"
                     )
             val join = { name: String -> if (parent.isEmpty()) name else "$parent/$name" }
             for (entry in listed.sortedBy { it.name }) {
@@ -220,7 +221,8 @@ class LocalProjects(private val root: File, private val maxSyncItems: Int = MAX_
                 }
                 if (folders.size + documents.size > maxSyncItems) {
                     throw LocalRefused(
-                        "the project has more than $maxSyncItems folders and documents, so the sync stops: nothing is written, marked synced or removed"
+                        "the project has more than $maxSyncItems folders and documents, so the " +
+                            "sync stops: nothing is written, marked synced or removed"
                     )
                 }
             }
@@ -325,13 +327,13 @@ class LocalProjects(private val root: File, private val maxSyncItems: Int = MAX_
                 ?: return emptyMap()
         return json
             .mapNotNull { (id, value) ->
-                val o = value as? JsonObject ?: return@mapNotNull null
+                val json = value as? JsonObject ?: return@mapNotNull null
                 SyncRecord(
-                        localDigest = o.str("local_digest") ?: return@mapNotNull null,
-                        pcProject = o.str("pc_project") ?: "",
-                        pcPath = o.str("pc_path") ?: "",
-                        pcDigest = o.str("pc_digest") ?: "",
-                        at = o.long("at") ?: 0L,
+                        localDigest = json.str("local_digest") ?: return@mapNotNull null,
+                        pcProject = json.str("pc_project") ?: "",
+                        pcPath = json.str("pc_path") ?: "",
+                        pcDigest = json.str("pc_digest") ?: "",
+                        at = json.long("at") ?: 0L,
                     )
                     .let { id to it }
             }

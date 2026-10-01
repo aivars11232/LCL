@@ -72,7 +72,8 @@ class PairingLinkTest {
         for (older in listOf(legacy, good.replace("v=2", "v=1"))) {
             val refused = assertThrows(InvalidLink::class.java) { PairingLink.parse(older) }
             assertEquals(
-                "This pairing code uses the older pairing flow. Update LCL on the PC and show a new QR code.",
+                "This pairing code uses the older pairing flow. Update LCL on the PC and show a " +
+                    "new QR code.",
                 refused.message,
             )
         }

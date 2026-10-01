@@ -104,7 +104,8 @@ fun SettingsScreen(settings: AppSettings, onChange: (AppSettings) -> Unit, onBac
             )
         }
         Text(
-            "Documents are always indented with spaces: the Indent button and a keyboard's Tab key insert four. " +
+            "Documents are always indented with spaces: the Indent button and a keyboard's Tab " +
+                "key insert four. " +
                 "These settings stay on this device.",
             style = MaterialTheme.typography.bodySmall,
         )
@@ -169,7 +170,8 @@ fun AboutScreen(container: AppContainer, connection: ConnectionState, onBack: ()
         )
         row(
             "Android",
-            "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}",
+            "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} " +
+                "${Build.MODEL}",
         )
         row("ABIs", Build.SUPPORTED_ABIS.joinToString())
         if (about == null)
@@ -241,7 +243,9 @@ fun LocalDocumentScreen(
                                 if (reply.ok) {
                                     val diagnostics =
                                         WorkspaceController.diagnosticSpans(reply.obj, name).size
-                                    "${op.replaceFirstChar { it.uppercase() }} on the PC: ${reply.obj.str("outcome")} at ${reply.obj.str("reached")}, $diagnostics diagnostic(s)"
+                                    "${op.replaceFirstChar { it.uppercase() }} on the PC: " +
+                                        "${reply.obj.str("outcome")} at " +
+                                        "${reply.obj.str("reached")}, $diagnostics diagnostic(s)"
                                 } else {
                                     reply.error
                                 }

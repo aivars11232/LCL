@@ -251,14 +251,14 @@ internal fun FilesPane(
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                     )
-                    local.forEach { p ->
+                    local.forEach { option ->
                         DropdownMenuItem(
-                            text = { Text(p.name) },
+                            text = { Text(option.name) },
                             onClick = {
                                 picking = false
-                                controller.selectProject(p.id)
+                                controller.selectProject(option.id)
                             },
-                            modifier = Modifier.testTag("pick:${p.id}"),
+                            modifier = Modifier.testTag("pick:${option.id}"),
                         )
                     }
                     DropdownMenuItem(
@@ -274,14 +274,16 @@ internal fun FilesPane(
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                     )
-                    onPc.forEach { p ->
+                    onPc.forEach { option ->
                         DropdownMenuItem(
-                            text = { Text(p.name + if (p.isDefault) "  (default)" else "") },
+                            text = {
+                                Text(option.name + if (option.isDefault) "  (default)" else "")
+                            },
                             onClick = {
                                 picking = false
-                                controller.selectProject(p.id)
+                                controller.selectProject(option.id)
                             },
-                            modifier = Modifier.testTag("pick:${p.id}"),
+                            modifier = Modifier.testTag("pick:${option.id}"),
                         )
                     }
                 }
@@ -365,7 +367,8 @@ internal fun FilesPane(
                 when {
                     usable -> "Nothing here yet. New creates a document; Folder makes a folder."
                     project == null && ui.projects.none { it.local } ->
-                        "Connect to the PC to see its projects, or make a project on this phone from the project name above."
+                        "Connect to the PC to see its projects, or make a project on this phone " +
+                            "from the project name above."
                     else -> "Connect to the PC to see its projects."
                 },
                 style = MaterialTheme.typography.bodySmall,
@@ -409,11 +412,14 @@ internal fun FilesPane(
                 Text(
                     verdict?.fold(
                         {
-                            "The PC confirmed just now that it holds every folder and document of it as they are here. The phone's copy is removed; the PC's stays."
+                            "The PC confirmed just now that it holds every folder and document " +
+                                "of it as they are here. The phone's copy is removed; the PC's " +
+                                "stays."
                         },
                         { it.message ?: "It stays on this phone." },
                     )
-                        ?: "Asking the PC whether it still holds every folder and document as they are here…",
+                        ?: "Asking the PC whether it still holds every folder and document as " +
+                            "they are here…",
                     modifier = Modifier.testTag("remove_verdict"),
                 )
             },

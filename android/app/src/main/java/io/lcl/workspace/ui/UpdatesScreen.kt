@@ -104,7 +104,9 @@ fun UpdatesScreen(container: AppContainer, onBack: () -> Unit) {
         val manifest = ui.manifest
         if (manifest != null && ui.phase != Phase.UpToDate) {
             Text(
-                "Available update: LCL ${ProductVersion.shown(manifest.productVersion.toString())} · released ${manifest.publishedAt.take(10)} · ${size(manifest.android.size)}",
+                "Available update: LCL " +
+                    "${ProductVersion.shown(manifest.productVersion.toString())} · released " +
+                    "${manifest.publishedAt.take(10)} · ${size(manifest.android.size)}",
                 Modifier.testTag("update_available"),
             )
             // Release notes are text to read, never interpreted.
@@ -145,14 +147,18 @@ fun UpdatesScreen(container: AppContainer, onBack: () -> Unit) {
         }
         if (ui.phase == Phase.NeedsPermission) {
             Text(
-                "Android asks you once to allow LCL to install apps (Install unknown apps). The verified update then continues.",
+                "Android asks you once to allow LCL to install apps (Install unknown apps). The " +
+                    "verified update then continues.",
                 style = MaterialTheme.typography.bodySmall,
             )
         }
         Text(
-            "LCL looks for new releases on the official LCL GitHub page at most once a day, and when you press Check. " +
-                "An update is offered only after its signature is verified, installed only after the APK matches that " +
-                "signed release, and Android keeps your paired PCs and settings. You do not need to be connected to a PC.",
+            "LCL looks for new releases on the official LCL GitHub page at most once a day, and " +
+                "when you press Check. " +
+                "An update is offered only after its signature is verified, installed only after " +
+                "the APK matches that " +
+                "signed release, and Android keeps your paired PCs and settings. You do not need " +
+                "to be connected to a PC.",
             style = MaterialTheme.typography.bodySmall,
         )
     }

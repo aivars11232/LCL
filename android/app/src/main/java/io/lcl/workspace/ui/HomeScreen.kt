@@ -84,7 +84,8 @@ fun HomeScreen(
             ManualIcon(onManual)
         }
         Text(
-            "Your PC's LCL on this screen: the PC keeps its projects, runs the engine and decides every " +
+            "Your PC's LCL on this screen: the PC keeps its projects, runs the engine and " +
+                "decides every " +
                 "effect. Projects on this phone need no PC, and go to one only when you sync them.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -132,7 +133,9 @@ fun HomeScreen(
             Section("On a PC") {
                 Text("No PC is paired yet.", fontWeight = FontWeight.SemiBold)
                 Text(
-                    "On the PC, run `lcl-remote pair` (or use Settings → Android devices in the LCL workspace), scan the QR code it shows with Pair a PC → Scan QR code, here in this app, then approve this device on the PC.",
+                    "On the PC, run `lcl-remote pair` (or use Settings → Android devices in the " +
+                        "LCL workspace), scan the QR code it shows with Pair a PC → Scan QR " +
+                        "code, here in this app, then approve this device on the PC.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -145,9 +148,11 @@ fun HomeScreen(
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Text(
-                    "Fingerprint ${pc.fingerprint.take(16)}… · paired ${DateFormat.getDateInstance().format(Date(pc.pairedAt * 1000))}" +
+                    "Fingerprint ${pc.fingerprint.take(16)}… · paired " +
+                        "${DateFormat.getDateInstance().format(Date(pc.pairedAt * 1000))}" +
                         (pc.lastConnected?.let {
-                            " · last connected ${DateFormat.getDateTimeInstance().format(Date(it * 1000))}"
+                            " · last connected " +
+                                "${DateFormat.getDateTimeInstance().format(Date(it * 1000))}"
                         } ?: ""),
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
@@ -234,16 +239,20 @@ fun HomeScreen(
             title = { Text("Forget ${pc.name}?") },
             text = {
                 Text(
-                    "This deletes this device's key for ${pc.name} and everything it knows about it. " +
-                        "To use it again you will need a new QR code from the PC. Disconnect instead " +
+                    "This deletes this device's key for ${pc.name} and everything it knows about " +
+                        "it. " +
+                        "To use it again you will need a new QR code from the PC. Disconnect " +
+                        "instead " +
                         "if you only want to stop the connection." +
                         if (pc.retiring.isEmpty()) {
                             ""
                         } else {
-                            " ${pc.name} may also still trust an earlier key of this device (device " +
+                            " ${pc.name} may also still trust an earlier key of this device " +
+                                "(device " +
                                 pc.retiring.joinToString(", ") { it.deviceId } +
                                 "): it asks the PC once more to " +
-                                "stop trusting it, and is deleted too. If the PC cannot be reached, revoke that " +
+                                "stop trusting it, and is deleted too. If the PC cannot be " +
+                                "reached, revoke that " +
                                 "device on the PC."
                         }
                 )
@@ -292,7 +301,8 @@ fun NewLocalProjectDialog(onCreate: (String) -> Unit, onDismiss: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "A project kept in this app's private storage. It needs no PC; Sync sends it to one when you choose.",
+                    "A project kept in this app's private storage. It needs no PC; Sync sends it " +
+                        "to one when you choose.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 OutlinedTextField(

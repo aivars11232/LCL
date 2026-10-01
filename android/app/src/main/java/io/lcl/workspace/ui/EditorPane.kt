@@ -73,15 +73,15 @@ internal fun EditorPane(
         ) {
             if (onFiles != null)
                 TextButton(onClick = onFiles, Modifier.testTag("files")) { Text("☰ Files") }
-            ui.documents.forEach { d ->
-                val key = WorkspaceUi.key(d)
+            ui.documents.forEach { document ->
+                val key = WorkspaceUi.key(document)
                 LclTab(
                     selected = key == ui.active,
                     onClick = { controller.activate(key) },
-                    modifier = Modifier.testTag("tab:${d.id}"),
+                    modifier = Modifier.testTag("tab:${document.id}"),
                 ) {
-                    if (d.dirty) Text("● ", color = lcl.warn)
-                    Text(d.name, maxLines = 1)
+                    if (document.dirty) Text("● ", color = lcl.warn)
+                    Text(document.name, maxLines = 1)
                     Text(
                         "✕",
                         Modifier.padding(start = 6.dp)
@@ -207,7 +207,8 @@ internal fun EditorPane(
         // Where the copy stands against the PC.
         doc.conflict?.let {
             Banner(
-                "${doc.name} changed on the PC since this copy was loaded. Nothing was overwritten.",
+                "${doc.name} changed on the PC since this copy was loaded. Nothing was " +
+                    "overwritten.",
                 LocalLclColors.current.warn,
             ) {
                 TextButton(
@@ -258,15 +259,15 @@ internal fun EditorPane(
         // Panels.
         // The inspector's tabs, as on the desktop.
         Row(Modifier.fillMaxWidth().background(lcl.sunken).hairline(lcl.line, top = true)) {
-            for ((p, label) in
+            for ((tab, label) in
                 listOf(
                     Panel.DIAGNOSTICS to "Diagnostics",
                     Panel.STRUCTURE to "Structure",
                     Panel.RUN to "Run",
                 )) {
                 LclTab(
-                    selected = panel == p,
-                    onClick = { panel = if (panel == p) Panel.NONE else p },
+                    selected = panel == tab,
+                    onClick = { panel = if (panel == tab) Panel.NONE else tab },
                     modifier = Modifier.weight(1f).testTag("panel_${label.lowercase()}"),
                 ) {
                     Text(label)
@@ -294,7 +295,8 @@ internal fun EditorPane(
             title = { Text("Discard your edits?") },
             text = {
                 Text(
-                    "Reloading replaces this copy with the PC's file and throws away your unsaved edits."
+                    "Reloading replaces this copy with the PC's file and throws away your " +
+                        "unsaved edits."
                 )
             },
             confirmButton = {

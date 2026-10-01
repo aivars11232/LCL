@@ -38,6 +38,21 @@ import kotlinx.serialization.json.put
 /** Said when something needs projects on the phone and this build keeps none. */
 private const val NO_LOCAL_PROJECTS = "This build keeps no projects on the phone."
 
+/** What a new document starts with when no role is chosen for it. */
+internal val NEW_DOCUMENT_TEXT =
+    """
+    LCL:
+        VERSION: "0.1.0"
+
+    SPECIFICATION:
+        ID: example.new
+        NAME: "New document"
+        VERSION: "1.0.0"
+        KIND: kind.task
+        DOMAIN: "general"
+    """
+        .trimIndent() + "\n"
+
 /**
  * The workspace as this device sees it, kept in step with the PC.
  *
@@ -192,12 +207,12 @@ class WorkspaceController(
         val reply = ask("projects") ?: return
         pcProjects =
             reply.obj.arr("projects")?.mapNotNull { element ->
-                val p = element as? JsonObject ?: return@mapNotNull null
+                val json = element as? JsonObject ?: return@mapNotNull null
                 ProjectInfo(
-                    p.str("id") ?: return@mapNotNull null,
-                    p.str("name") ?: "",
-                    p.str("root") ?: "",
-                    p.bool("default") == true,
+                    json.str("id") ?: return@mapNotNull null,
+                    json.str("name") ?: "",
+                    json.str("root") ?: "",
+                    json.bool("default") == true,
                 )
             } ?: emptyList()
         mergeProjects(preferPc = true)
@@ -337,11 +352,11 @@ class WorkspaceController(
 
     private fun entriesOf(reply: Reply): List<TreeEntry> =
         reply.obj.arr("entries")?.mapNotNull { element ->
-            val e = element as? JsonObject ?: return@mapNotNull null
+            val json = element as? JsonObject ?: return@mapNotNull null
             TreeEntry(
-                e.str("id") ?: return@mapNotNull null,
-                e.bool("directory") == true,
-                e.str("kind"),
+                json.str("id") ?: return@mapNotNull null,
+                json.bool("directory") == true,
+                json.str("kind"),
             )
         } ?: emptyList()
 
@@ -463,8 +478,8 @@ class WorkspaceController(
         val roles =
             if (reply.ok && reply.obj.bool("available") == true) {
                 reply.obj.arr("roles")?.mapNotNull { element ->
-                    val r = element as? JsonObject ?: return@mapNotNull null
-                    RoleInfo(r.str("role") ?: return@mapNotNull null, r.str("label") ?: "")
+                    val json = element as? JsonObject ?: return@mapNotNull null
+                    RoleInfo(json.str("role") ?: return@mapNotNull null, json.str("label") ?: "")
                 } ?: emptyList()
             } else emptyList()
         _ui.update { it.copy(roles = roles) }
@@ -586,12 +601,12 @@ class WorkspaceController(
             ?.takeIf { it.ok }
             ?.let { reply ->
                 val spans =
-                    reply.obj.arr("tokens")?.mapNotNull { t ->
-                        val o = t as? JsonObject ?: return@mapNotNull null
+                    reply.obj.arr("tokens")?.mapNotNull { token ->
+                        val json = token as? JsonObject ?: return@mapNotNull null
                         ByteSpan(
-                            (o.long("start") ?: return@mapNotNull null).toInt(),
-                            (o.long("end") ?: return@mapNotNull null).toInt(),
-                            o.str("class") ?: "",
+                            (json.long("start") ?: return@mapNotNull null).toInt(),
+                            (json.long("end") ?: return@mapNotNull null).toInt(),
+                            json.str("class") ?: "",
                         )
                     } ?: emptyList()
                 current(key)?.let { now -> replaceDocument(now) { it.withTokens(spans, revision) } }
@@ -616,7 +631,8 @@ class WorkspaceController(
         val doc = _ui.value.activeDocument ?: return
         if (isLocal(doc.project))
             return say(
-                "${op.replaceFirstChar { it.uppercase() }} needs the PC's engine: sync this project to a PC, or open the PC's copy."
+                "${op.replaceFirstChar { it.uppercase() }} needs the PC's engine: sync this " +
+                    "project to a PC, or open the PC's copy."
             )
         scope.launch {
             val revision = doc.revision
@@ -862,10 +878,7 @@ class WorkspaceController(
                         "scaffold_digest" to scaffoldDigest,
                     )
                 } else {
-                    val seed =
-                        "LCL:\n    VERSION: \"0.1.0\"\n\nSPECIFICATION:\n    ID: example.new\n    NAME: \"New document\"\n" +
-                            "    VERSION: \"1.0.0\"\n    KIND: kind.task\n    DOMAIN: \"general\"\n"
-                    fields(project.id, "name" to name, "text" to seed)
+                    fields(project.id, "name" to name, "text" to NEW_DOCUMENT_TEXT)
                 }
             val id =
                 if (project.local) {
@@ -1029,14 +1042,14 @@ class WorkspaceController(
          */
         fun diagnosticSpans(report: JsonObject, document: String): List<ByteSpan> =
             report.arr("diagnostics")?.mapNotNull { element ->
-                val d = element as? JsonObject ?: return@mapNotNull null
-                if (d.str("source") != document) return@mapNotNull null
-                val span = d.obj("span") ?: return@mapNotNull null
+                val json = element as? JsonObject ?: return@mapNotNull null
+                if (json.str("source") != document) return@mapNotNull null
+                val span = json.obj("span") ?: return@mapNotNull null
                 ByteSpan(
                     (span.long("start") ?: return@mapNotNull null).toInt(),
                     (span.long("end") ?: return@mapNotNull null).toInt(),
-                    severity(d.str("default_status")),
-                    d.obj("position")?.long("line")?.toInt(),
+                    severity(json.str("default_status")),
+                    json.obj("position")?.long("line")?.toInt(),
                 )
             } ?: emptyList()
 
@@ -1045,9 +1058,9 @@ class WorkspaceController(
             val project = report.obj("project")
             val diagnostics =
                 report.arr("diagnostics")?.mapNotNull { element ->
-                    val d = element as? JsonObject ?: return@mapNotNull null
-                    val line = d.obj("position")?.long("line")
-                    "${d.str("id") ?: "?"} — ${d.str("source") ?: "?"}${line?.let { ":$it" } ?: ""}"
+                    val json = element as? JsonObject ?: return@mapNotNull null
+                    val line = json.obj("position")?.long("line")
+                    "${json.str("id") ?: "?"} — ${json.str("source") ?: "?"}${line?.let { ":$it" } ?: ""}"
                 } ?: emptyList()
             if (project == null) return Readiness(entry, "invalid", emptyList(), diagnostics)
             val files =

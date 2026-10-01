@@ -120,7 +120,8 @@ private class ManualBridge(
     fun loaded(info: String) {
         val parts = info.split(' ')
         onLoaded(
-            "Users Manual ${parts.getOrNull(0) ?: ""} · ${parts.getOrNull(2) ?: "?"} files · offline · ${parts.getOrNull(1)?.take(12) ?: ""}"
+            "Users Manual ${parts.getOrNull(0) ?: ""} · ${parts.getOrNull(2) ?: "?"} files · " +
+                "offline · ${parts.getOrNull(1)?.take(12) ?: ""}"
         )
     }
 }

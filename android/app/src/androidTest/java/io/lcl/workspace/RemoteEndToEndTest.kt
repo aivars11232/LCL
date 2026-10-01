@@ -614,7 +614,8 @@ class RemoteEndToEndTest {
         } catch (e: Throwable) {
             Log.i(
                 TAG,
-                "updates: ${runCatching { textOf("update_state") }.getOrDefault("?")} | ${runCatching { textOf("update_problem") }.getOrDefault("")}",
+                "updates: ${runCatching { textOf("update_state") }.getOrDefault("?")} | " +
+                    "${runCatching { textOf("update_problem") }.getOrDefault("")}",
             )
             shot(name)
             throw e
@@ -689,7 +690,8 @@ class RemoteEndToEndTest {
         Log.i(TAG, "about key: ${textOf("about:This device's key")}")
         Log.i(
             TAG,
-            "about: ${textOf("about:LCL Core 0.1")} | ${textOf("about:LCL Core 0.2")} | ${textOf("about:PC service")}",
+            "about: ${textOf("about:LCL Core 0.1")} | ${textOf("about:LCL Core 0.2")} | " +
+                "${textOf("about:PC service")}",
         )
         shot("p2_02_about")
         back()

@@ -71,7 +71,8 @@ class LocalDocumentScreenTest {
                 "\"\n".toByteArray()
         open("latin1.lcl", bytes)
         assertFalse(
-            "a file that is not UTF-8 was shown, repaired: ${if (exists("source")) source() else ""}",
+            "a file that is not UTF-8 was shown, repaired: " +
+                "${if (exists("source")) source() else ""}",
             exists("source"),
         )
         assertFalse(

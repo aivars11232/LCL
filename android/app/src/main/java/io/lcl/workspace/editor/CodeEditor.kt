@@ -180,7 +180,7 @@ private fun gutter(text: String, document: OpenDocument, colors: LclColors): Ann
     val count = lineCount(text)
     val marked =
         document.marks
-            .mapNotNull { m -> m.line?.let { it to m.kind } }
+            .mapNotNull { mark -> mark.line?.let { it to mark.kind } }
             .groupBy({ it.first }, { it.second })
     return AnnotatedString.Builder()
         .apply {
@@ -228,14 +228,14 @@ class Highlight(private val document: OpenDocument, private val colors: LclColor
                     "symbol" -> colors.symbol
                     else -> null
                 } ?: return@forEach
-            val r = range(span.start, span.end) ?: return@forEach
+            val found = range(span.start, span.end) ?: return@forEach
             builder.addStyle(
                 SpanStyle(
                     color = color,
                     fontWeight = if (span.kind == "block") FontWeight.SemiBold else null,
                 ),
-                r.first,
-                r.last + 1,
+                found.first,
+                found.last + 1,
             )
         }
         document.marks.forEach { mark ->
@@ -245,14 +245,14 @@ class Highlight(private val document: OpenDocument, private val colors: LclColor
                     "warn" -> colors.warn
                     else -> colors.info
                 }
-            val r = range(mark.start, maxOf(mark.end, mark.start + 1)) ?: return@forEach
+            val found = range(mark.start, maxOf(mark.end, mark.start + 1)) ?: return@forEach
             builder.addStyle(
                 SpanStyle(
                     background = color.copy(alpha = 0.18f),
                     textDecoration = TextDecoration.Underline,
                 ),
-                r.first,
-                r.last + 1,
+                found.first,
+                found.last + 1,
             )
         }
         return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)

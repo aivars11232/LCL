@@ -276,7 +276,8 @@ class UpdateController(
                         waitingForConfirmation = false,
                         problem =
                             "cancelled" to
-                                "The installation was cancelled. LCL was not changed; press Update to try again.",
+                                "The installation was cancelled. LCL was not changed; press " +
+                                    "Update to try again.",
                     )
                 }
             else ->
@@ -286,7 +287,8 @@ class UpdateController(
                         waitingForConfirmation = false,
                         problem =
                             "install" to
-                                "Android did not install the update (${message ?: "status $status"}). LCL was not changed.",
+                                "Android did not install the update " +
+                                    "(${message ?: "status $status"}). LCL was not changed.",
                     )
                 }
         }

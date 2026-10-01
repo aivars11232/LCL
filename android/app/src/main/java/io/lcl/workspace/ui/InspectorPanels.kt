@@ -52,39 +52,45 @@ internal fun DiagnosticsPanel(
         )
         if (accepted)
             Text(
-                "No stage produced an unhandled diagnostic. This is not a claim that the document ran.",
+                "No stage produced an unhandled diagnostic. This is not a claim that the " +
+                    "document ran.",
                 style = MaterialTheme.typography.bodySmall,
             )
         val diagnostics = json.arr("diagnostics").orEmpty().mapNotNull { it as? JsonObject }
         if (diagnostics.isEmpty())
             Text("No diagnostics.", style = MaterialTheme.typography.bodySmall)
-        for (d in diagnostics) {
-            val here = d.str("source") == doc.id
+        for (diagnostic in diagnostics) {
+            val here = diagnostic.str("source") == doc.id
             Column(
                 Modifier.fillMaxWidth()
                     .padding(vertical = 4.dp)
                     .then(
                         if (here)
                             Modifier.clickable {
-                                onReveal(d.obj("span")?.long("start")?.toInt() ?: 0)
+                                onReveal(diagnostic.obj("span")?.long("start")?.toInt() ?: 0)
                             }
                         else Modifier
                     )
                     .testTag("diagnostic")
             ) {
                 Text(
-                    d.str("id") ?: "",
+                    diagnostic.str("id") ?: "",
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.SemiBold,
                 )
-                val position = d.obj("position")
+                val position = diagnostic.obj("position")
                 Text(
-                    "${d.str("source")}:${position?.long("line")}:${position?.long("column")} · ${d.str("stage")} · ${d.str("default_status")}",
+                    "${diagnostic.str("source")}:${position?.long("line")}:${position?.long("column")} · " +
+                        "${diagnostic.str("stage")} · ${diagnostic.str("default_status")}",
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                 )
-                d.str("meaning")?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                d.str("detail")?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                diagnostic.str("meaning")?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall)
+                }
+                diagnostic.str("detail")?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall)
+                }
             }
         }
     }
@@ -96,7 +102,8 @@ internal fun StructurePanel(report: Pair<String, JsonObject>?) {
         val structure = report?.second?.obj("structure")
         if (structure == null)
             return Text(
-                "Inspect shows the imports, declarations and execution plan the PC's engine derived."
+                "Inspect shows the imports, declarations and execution plan the PC's engine " +
+                    "derived."
             )
         val imports = structure.arr("imports").orEmpty().mapNotNull { it as? JsonObject }
         if (imports.isNotEmpty()) {
@@ -139,12 +146,14 @@ internal fun RunPanel(run: RunState?, controller: WorkspaceController) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(8.dp)) {
         if (run == null)
             return Text(
-                "Run asks the PC to run this document. It pauses before every effect for you to allow or deny it here."
+                "Run asks the PC to run this document. It pauses before every effect for you to " +
+                    "allow or deny it here."
             )
         val state =
             when {
                 run.connectionLost ->
-                    "connection lost — the run continues on the PC and is followed again on reconnect"
+                    "connection lost — the run continues on the PC and is followed again on " +
+                        "reconnect"
                 run.paused != null -> "paused · waiting for you"
                 run.finished -> "finished"
                 else -> "running"
@@ -184,7 +193,8 @@ internal fun RunPanel(run: RunState?, controller: WorkspaceController) {
                 .mapNotNull { it as? JsonObject }
                 .forEach {
                     Text(
-                        "${it.str("id")} = ${(it["value"] as? JsonPrimitive)?.content ?: "—"}  (${it.str("publication")})",
+                        "${it.str("id")} = ${(it["value"] as? JsonPrimitive)?.content ?: "—"}  " +
+                            "(${it.str("publication")})",
                         fontFamily = FontFamily.Monospace,
                         style = MaterialTheme.typography.bodySmall,
                     )

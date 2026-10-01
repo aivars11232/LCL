@@ -33,7 +33,8 @@ data class PairingLink(
         const val VERSION = 2
         private const val LEGACY_PREFIX = "lclpair://"
         const val OLDER_FLOW =
-            "This pairing code uses the older pairing flow. Update LCL on the PC and show a new QR code."
+            "This pairing code uses the older pairing flow. Update LCL on the PC and show a new " +
+                "QR code."
 
         /** Read pairing text, or throw [InvalidLink] saying what is wrong with it. */
         fun parse(text: String): PairingLink {
@@ -69,7 +70,8 @@ data class PairingLink(
             if (version < VERSION) throw InvalidLink(OLDER_FLOW)
             if (version != VERSION) {
                 throw InvalidLink(
-                    "This pairing code is version $version; this app reads version $VERSION. Update the app."
+                    "This pairing code is version $version; this app reads version $VERSION. " +
+                        "Update the app."
                 )
             }
             val fingerprint =

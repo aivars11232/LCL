@@ -47,13 +47,13 @@ private constructor(
         }
         if (pre.isEmpty() || other.pre.isEmpty())
             return other.pre.size.coerceAtMost(1) - pre.size.coerceAtMost(1)
-        for ((a, b) in pre.zip(other.pre)) {
+        for ((mine, theirs) in pre.zip(other.pre)) {
             val order =
                 when {
-                    a is ULong && b is ULong -> a.compareTo(b)
-                    a is ULong -> -1
-                    b is ULong -> 1
-                    else -> (a as String).compareTo(b as String)
+                    mine is ULong && theirs is ULong -> mine.compareTo(theirs)
+                    mine is ULong -> -1
+                    theirs is ULong -> 1
+                    else -> (mine as String).compareTo(theirs as String)
                 }
             if (order != 0) return order
         }
@@ -212,7 +212,7 @@ fun parseManifest(bytes: ByteArray): UpdateManifest {
     if (minimum > version) refuse("minimum_supported_version is newer than the release")
     val keyId = top.text("signing_key_id")
 
-    val p =
+    val pcMembers =
         top.getValue("pc")
             .members(
                 "pc",
@@ -226,17 +226,17 @@ fun parseManifest(bytes: ByteArray): UpdateManifest {
             )
     val pc =
         PcArtifact(
-            artifactName = p.text("artifact_name"),
-            size = p.whole("size").takeIf { it in 1..MAX_PC_ARTIFACT } ?: refuse("pc.size"),
-            sha256 = p.digest("sha256"),
+            artifactName = pcMembers.text("artifact_name"),
+            size = pcMembers.whole("size").takeIf { it in 1..MAX_PC_ARTIFACT } ?: refuse("pc.size"),
+            sha256 = pcMembers.digest("sha256"),
             architecture =
-                p.text("architecture").takeIf { architecturePattern.matches(it) }
+                pcMembers.text("architecture").takeIf { architecturePattern.matches(it) }
                     ?: refuse("pc.architecture"),
-            requiredUpdaterVersion = p.counted("required_updater_version"),
+            requiredUpdaterVersion = pcMembers.counted("required_updater_version"),
         )
     if (pc.artifactName != "lcl-$version-linux-x86_64.tar.gz") refuse("pc.artifact_name")
 
-    val a =
+    val androidMembers =
         top.getValue("android")
             .members(
                 "android",
@@ -253,14 +253,15 @@ fun parseManifest(bytes: ByteArray): UpdateManifest {
             )
     val artifact =
         AndroidArtifact(
-            artifactName = a.text("artifact_name"),
-            size = a.whole("size").takeIf { it in 1..MAX_APK } ?: refuse("android.size"),
-            sha256 = a.digest("sha256"),
-            applicationId = a.text("application_id"),
-            versionName = a.text("version_name"),
-            versionCode = a.counted("version_code"),
-            minimumSdk = a.counted("minimum_sdk").toInt(),
-            signerSha256 = a.digest("signer_sha256"),
+            artifactName = androidMembers.text("artifact_name"),
+            size =
+                androidMembers.whole("size").takeIf { it in 1..MAX_APK } ?: refuse("android.size"),
+            sha256 = androidMembers.digest("sha256"),
+            applicationId = androidMembers.text("application_id"),
+            versionName = androidMembers.text("version_name"),
+            versionCode = androidMembers.counted("version_code"),
+            minimumSdk = androidMembers.counted("minimum_sdk").toInt(),
+            signerSha256 = androidMembers.digest("signer_sha256"),
         )
     if (artifact.applicationId != APPLICATION_ID) refuse("android.application_id")
     if (artifact.versionName != version.toString()) refuse("android.version_name")
@@ -309,7 +310,8 @@ class TrustedKey(val id: String, spki: ByteArray) {
 }
 
 const val NOT_CONFIGURED =
-    "this build of LCL trusts no update signing key yet, so it cannot verify, and never installs, any update"
+    "this build of LCL trusts no update signing key yet, so it cannot verify, and never " +
+        "installs, any update"
 
 /** The manifest, read only once a trusted key's signature over its exact bytes verified. */
 fun verifyManifest(bytes: ByteArray, signature: ByteArray, keys: List<TrustedKey>): UpdateManifest {
@@ -363,20 +365,23 @@ fun isNewer(manifest: UpdateManifest, installed: InstalledApp): Boolean {
         if (current == null) return false
         throw UpdateRefused(
             "invalid",
-            "LCL ${ProductVersion.shown(manifest.productVersion.toString())} does not advance the app's versionCode",
+            "LCL ${ProductVersion.shown(manifest.productVersion.toString())} does not advance " +
+                "the app's versionCode",
         )
     }
     if (current != null && current < manifest.minimumSupportedVersion) {
         throw UpdateRefused(
             "unsupported",
             "LCL ${ProductVersion.shown(manifest.productVersion.toString())} replaces " +
-                "${ProductVersion.shown(manifest.minimumSupportedVersion.toString())} or newer only; install it manually",
+                "${ProductVersion.shown(manifest.minimumSupportedVersion.toString())} or newer " +
+                "only; install it manually",
         )
     }
     if (installed.sdk < manifest.android.minimumSdk) {
         throw UpdateRefused(
             "unsupported",
-            "LCL ${ProductVersion.shown(manifest.productVersion.toString())} needs Android API ${manifest.android.minimumSdk}",
+            "LCL ${ProductVersion.shown(manifest.productVersion.toString())} needs Android API " +
+                "${manifest.android.minimumSdk}",
         )
     }
     return true
@@ -393,8 +398,8 @@ fun checkApk(
     manifest: UpdateManifest,
     installed: InstalledApp,
 ) {
-    val a = manifest.android
-    if (size != a.size || digest != a.sha256) {
+    val android = manifest.android
+    if (size != android.size || digest != android.sha256) {
         throw UpdateRefused(
             "verification",
             "the downloaded APK does not match the size and SHA-256 its manifest signed",
@@ -404,10 +409,11 @@ fun checkApk(
         ?: throw UpdateRefused("verification", "the downloaded file is not an APK Android can read")
     if (facts.packageName != APPLICATION_ID)
         throw UpdateRefused("verification", "the APK is ${facts.packageName}, not LCL")
-    if (facts.versionCode != a.versionCode || facts.versionName != a.versionName) {
+    if (facts.versionCode != android.versionCode || facts.versionName != android.versionName) {
         throw UpdateRefused(
             "verification",
-            "the APK is ${facts.versionName} (${facts.versionCode}), not the signed ${a.versionName} (${a.versionCode})",
+            "the APK is ${facts.versionName} (${facts.versionCode}), not the signed " +
+                "${android.versionName} (${android.versionCode})",
         )
     }
     if (facts.versionCode <= installed.versionCode)
@@ -415,11 +421,12 @@ fun checkApk(
     if (
         facts.signers.isEmpty() ||
             facts.signers != installed.signers ||
-            a.signerSha256 !in facts.signers
+            android.signerSha256 !in facts.signers
     ) {
         throw UpdateRefused(
             "verification",
-            "the APK is not signed by the same key as the LCL installed, so Android could not update it in place",
+            "the APK is not signed by the same key as the LCL installed, so Android could not " +
+                "update it in place",
         )
     }
 }

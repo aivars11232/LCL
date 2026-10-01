@@ -47,7 +47,8 @@ object LocalText {
         if (!result.isError) result = decoder.flush(output)
         if (result.isError || result.isOverflow) {
             throw Refused(
-                "This file is not valid UTF-8 (byte ${input.position()} is not), so it was not opened. " +
+                "This file is not valid UTF-8 (byte ${input.position()} is not), so it was not " +
+                    "opened. " +
                     "An LCL document is UTF-8, and this app does not repair one."
             )
         }

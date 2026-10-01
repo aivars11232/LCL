@@ -84,11 +84,11 @@ internal fun SyncDialog(
                 val checked = plan
                 when {
                     done != null -> {
-                        done.outcomes.forEach { o ->
+                        done.outcomes.forEach { outcome ->
                             Text(
-                                "${if (o.ok) "✓" else "✕"} ${o.id} → ${o.destination}: ${o.detail}",
+                                "${if (outcome.ok) "✓" else "✕"} ${outcome.id} → ${outcome.destination}: ${outcome.detail}",
                                 style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.testTag("sync_outcome:${o.id}"),
+                                modifier = Modifier.testTag("sync_outcome:${outcome.id}"),
                             )
                         }
                         done.problem?.let {
@@ -107,13 +107,17 @@ internal fun SyncDialog(
                             )
                         else if (done.complete)
                             Text(
-                                "Every folder and document is on the PC as it is here. Remove takes the phone's copy away once the PC confirms that again; the PC's stays.",
+                                "Every folder and document is on the PC as it is here. Remove " +
+                                    "takes the phone's copy away once the PC confirms that " +
+                                    "again; the PC's stays.",
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         else
                             Text(
                                 if (done.partial)
-                                    "Partial sync: what the PC confirmed is marked ✓, the rest is not on the PC. The phone's copy is unchanged; syncing again continues safely."
+                                    "Partial sync: what the PC confirmed is marked ✓, the rest " +
+                                        "is not on the PC. The phone's copy is unchanged; " +
+                                        "syncing again continues safely."
                                 else "The phone's copy is unchanged. Nothing was removed.",
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.testTag("sync_kept"),
@@ -121,7 +125,8 @@ internal fun SyncDialog(
                     }
                     checked == null -> {
                         Text(
-                            "Nothing is written until you press Sync. First the PC is asked what it holds at each destination.",
+                            "Nothing is written until you press Sync. First the PC is asked what " +
+                                "it holds at each destination.",
                             style = MaterialTheme.typography.bodySmall,
                         )
                         Box {
@@ -135,11 +140,11 @@ internal fun SyncDialog(
                                 expanded = picking,
                                 onDismissRequest = { picking = false },
                             ) {
-                                pcProjects.forEach { p ->
+                                pcProjects.forEach { option ->
                                     DropdownMenuItem(
-                                        text = { Text(p.name) },
+                                        text = { Text(option.name) },
                                         onClick = {
-                                            target = p
+                                            target = option
                                             picking = false
                                         },
                                     )
@@ -166,11 +171,13 @@ internal fun SyncDialog(
                         val same = checked.items.count { it.state == SyncState.IDENTICAL }
                         val newer = checked.items.count { it.state == SyncState.SUPERSEDED }
                         Text(
-                            "$absent to create, $same already on the PC, ${checked.conflicts.size} with different bytes on the PC." +
+                            "$absent to create, $same already on the PC, " +
+                                "${checked.conflicts.size} with different bytes on the PC." +
                                 (if (newer > 0) " $newer to update with this phone's newer version."
                                 else "") +
                                 (if (checked.folders.isNotEmpty())
-                                    " ${checked.folders.size} folder${if (checked.folders.size == 1) "" else "s"}."
+                                    " ${checked.folders.size} " +
+                                        "folder${if (checked.folders.size == 1) "" else "s"}."
                                 else ""),
                             modifier = Modifier.testTag("sync_summary"),
                         )
@@ -212,7 +219,8 @@ internal fun SyncDialog(
                                 modifier = Modifier.testTag("sync_remove_after"),
                             )
                             Text(
-                                "Remove from this phone after the PC confirms every folder and document",
+                                "Remove from this phone after the PC confirms every folder and " +
+                                    "document",
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }

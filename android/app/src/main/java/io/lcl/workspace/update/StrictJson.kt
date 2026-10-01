@@ -22,27 +22,27 @@ internal object StrictJson {
         reader.whitespace()
         val value = reader.value()
         reader.whitespace()
-        if (reader.i != text.length) reader.fail("trailing content after top-level value")
+        if (reader.at != text.length) reader.fail("trailing content after top-level value")
         return value
     }
 
-    private class Reader(private val s: String) {
-        var i = 0
+    private class Reader(private val text: String) {
+        var at = 0
         private var depth = 0
 
-        fun fail(why: String): Nothing = throw Malformed("$why at $i")
+        fun fail(why: String): Nothing = throw Malformed("$why at $at")
 
-        private fun peek(): Char? = if (i < s.length) s[i] else null
+        private fun peek(): Char? = if (at < text.length) text[at] else null
 
         private fun digit() = peek()?.let { it in '0'..'9' } == true
 
         fun whitespace() {
-            while (peek().let { it == ' ' || it == '\t' || it == '\n' || it == '\r' }) i++
+            while (peek().let { it == ' ' || it == '\t' || it == '\n' || it == '\r' }) at++
         }
 
         private fun expect(c: Char) {
             if (peek() != c) fail("expected '$c'")
-            i++
+            at++
         }
 
         fun value(): Any =
@@ -58,8 +58,8 @@ internal object StrictJson {
             }
 
         private fun literal(word: String, value: Any): Any {
-            if (!s.startsWith(word, i)) fail("invalid literal, expected '$word'")
-            i += word.length
+            if (!text.startsWith(word, at)) fail("invalid literal, expected '$word'")
+            at += word.length
             return value
         }
 
@@ -78,7 +78,7 @@ internal object StrictJson {
             val members = LinkedHashMap<String, Any>()
             whitespace()
             if (peek() == '}') {
-                i++
+                at++
                 return members
             }
             while (true) {
@@ -91,9 +91,9 @@ internal object StrictJson {
                 members[key] = value()
                 whitespace()
                 when (peek()) {
-                    ',' -> i++
+                    ',' -> at++
                     '}' -> {
-                        i++
+                        at++
                         return members
                     }
                     else -> fail("expected ',' or '}' in object")
@@ -106,7 +106,7 @@ internal object StrictJson {
             val items = mutableListOf<Any>()
             whitespace()
             if (peek() == ']') {
-                i++
+                at++
                 return items
             }
             while (true) {
@@ -114,9 +114,9 @@ internal object StrictJson {
                 items += value()
                 whitespace()
                 when (peek()) {
-                    ',' -> i++
+                    ',' -> at++
                     ']' -> {
-                        i++
+                        at++
                         return items
                     }
                     else -> fail("expected ',' or ']' in array")
@@ -125,21 +125,21 @@ internal object StrictJson {
         }
 
         private fun hex4(): Int {
-            if (i + 4 > s.length) fail("truncated \\u escape")
-            var v = 0
+            if (at + 4 > text.length) fail("truncated \\u escape")
+            var value = 0
             repeat(4) {
-                val c = s[i]
-                val d =
+                val c = text[at]
+                val digit =
                     when (c) {
                         in '0'..'9' -> c - '0'
                         in 'a'..'f' -> c - 'a' + 10
                         in 'A'..'F' -> c - 'A' + 10
                         else -> fail("invalid hex digit in \\u escape")
                     }
-                v = (v shl 4) or d
-                i++
+                value = (value shl 4) or digit
+                at++
             }
-            return v
+            return value
         }
 
         fun string(): String {
@@ -149,14 +149,14 @@ internal object StrictJson {
                 val c = peek() ?: fail("unterminated string")
                 when {
                     c == '"' -> {
-                        i++
+                        at++
                         return out.toString()
                     }
                     c == '\\' -> {
-                        i++
-                        val e = peek() ?: fail("unterminated escape")
-                        i++
-                        when (e) {
+                        at++
+                        val escaped = peek() ?: fail("unterminated escape")
+                        at++
+                        when (escaped) {
                             '"' -> out.append('"')
                             '\\' -> out.append('\\')
                             '/' -> out.append('/')
@@ -170,9 +170,9 @@ internal object StrictJson {
                                 when (hi) {
                                     in 0xD800..0xDBFF -> {
                                         if (peek() != '\\') fail("unpaired high surrogate")
-                                        i++
+                                        at++
                                         if (peek() != 'u') fail("unpaired high surrogate")
-                                        i++
+                                        at++
                                         val lo = hex4()
                                         if (lo !in 0xDC00..0xDFFF) fail("invalid low surrogate")
                                         out.append(hi.toChar()).append(lo.toChar())
@@ -189,32 +189,32 @@ internal object StrictJson {
                         // Text decoded strictly from UTF-8 holds only whole
                         // surrogate pairs, so each char is copied as it is.
                         out.append(c)
-                        i++
+                        at++
                     }
                 }
             }
         }
 
         private fun number(): Double {
-            val start = i
-            if (peek() == '-') i++
+            val start = at
+            if (peek() == '-') at++
             when {
-                peek() == '0' -> i++
-                digit() -> while (digit()) i++
+                peek() == '0' -> at++
+                digit() -> while (digit()) at++
                 else -> fail("invalid number")
             }
             if (peek() == '.') {
-                i++
+                at++
                 if (!digit()) fail("expected digit after decimal point")
-                while (digit()) i++
+                while (digit()) at++
             }
             if (peek() == 'e' || peek() == 'E') {
-                i++
-                if (peek() == '+' || peek() == '-') i++
+                at++
+                if (peek() == '+' || peek() == '-') at++
                 if (!digit()) fail("expected digit in exponent")
-                while (digit()) i++
+                while (digit()) at++
             }
-            return s.substring(start, i).toDouble()
+            return text.substring(start, at).toDouble()
         }
     }
 }

@@ -143,12 +143,14 @@ fun PairScreen(container: AppContainer, onPaired: () -> Unit, onBack: () -> Unit
                         modifier = Modifier.testTag("pair_verification"),
                     )
                     Text(
-                        "On the PC, approve the pending device only if this code matches: run `lcl-remote pending`, " +
+                        "On the PC, approve the pending device only if this code matches: run " +
+                            "`lcl-remote pending`, " +
                             "or open Settings → Android devices in the LCL workspace."
                     )
                     val minutes = (pending.expires - System.currentTimeMillis() / 1000) / 60
                     Text(
-                        "Nothing is trusted until then. The request ends with the code, in about ${maxOf(minutes, 0) + 1} minute(s).",
+                        "Nothing is trusted until then. The request ends with the code, in about " +
+                            "${maxOf(minutes, 0) + 1} minute(s).",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -187,9 +189,12 @@ fun PairScreen(container: AppContainer, onPaired: () -> Unit, onBack: () -> Unit
             }
         } else {
             Text(
-                "On the PC, run `lcl-remote pair`, or open Settings → Android devices in the LCL workspace, " +
-                    "and scan the QR code. Scanning trusts nothing: after Pair, you approve this device on the PC. " +
-                    "Once paired, it reconnects by itself until you Forget the PC here or the PC revokes it."
+                "On the PC, run `lcl-remote pair`, or open Settings → Android devices in the LCL " +
+                    "workspace, " +
+                    "and scan the QR code. Scanning trusts nothing: after Pair, you approve this " +
+                    "device on the PC. " +
+                    "Once paired, it reconnects by itself until you Forget the PC here or the PC " +
+                    "revokes it."
             )
             OutlinedTextField(
                 value = deviceName,
@@ -252,7 +257,8 @@ fun PairScreen(container: AppContainer, onPaired: () -> Unit, onBack: () -> Unit
                             style = MaterialTheme.typography.bodySmall,
                         )
                         Text(
-                            "Pair only with a PC you control: the PC's screen shows the same fingerprint.",
+                            "Pair only with a PC you control: the PC's screen shows the same " +
+                                "fingerprint.",
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }

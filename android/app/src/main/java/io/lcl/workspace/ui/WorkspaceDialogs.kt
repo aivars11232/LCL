@@ -52,7 +52,8 @@ internal fun NewFolderDialog(inside: String, onCreate: (String) -> Unit, onDismi
         text = {
             Column {
                 Text(
-                    "A folder path inside the project. Its parent must exist; the folder can stay empty.",
+                    "A folder path inside the project. Its parent must exist; the folder can " +
+                        "stay empty.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 OutlinedTextField(
@@ -108,7 +109,9 @@ internal fun NewDocumentDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
             ) {
                 Text(
-                    "A path inside the project. A name without an ending is created as $ending, the PC's default. Type .lcl or .lcl.txt yourself to choose either; the ending you type is kept."
+                    "A path inside the project. A name without an ending is created as $ending, " +
+                        "the PC's default. Type .lcl or .lcl.txt yourself to choose either; the " +
+                        "ending you type is kept."
                 )
                 OutlinedTextField(
                     value = name,
@@ -140,14 +143,14 @@ internal fun NewDocumentDialog(
                                     picking = false
                                 },
                             )
-                            roles.forEach { r ->
+                            roles.forEach { option ->
                                 DropdownMenuItem(
-                                    text = { Text(r.label) },
+                                    text = { Text(option.label) },
                                     onClick = {
-                                        role = r.role
+                                        role = option.role
                                         picking = false
                                     },
-                                    modifier = Modifier.testTag("role_choice:${r.role}"),
+                                    modifier = Modifier.testTag("role_choice:${option.role}"),
                                 )
                             }
                         }
@@ -167,7 +170,8 @@ internal fun NewDocumentDialog(
                             )
                         }
                         Text(
-                            "The PC writes exactly this starting text (its scaffold, or your default template on the PC). Fill the empty fields, then Check.",
+                            "The PC writes exactly this starting text (its scaffold, or your " +
+                                "default template on the PC). Fill the empty fields, then Check.",
                             style = MaterialTheme.typography.bodySmall,
                         )
                         Text(
@@ -281,8 +285,10 @@ internal fun RunOptionsDialog(onRun: (RunGrants) -> Unit, onDismiss: () -> Unit)
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
-                    "The document runs on the PC, through its engine. An effect happens only if the document authorizes it, " +
-                        "the PC is granted it below, and you allow it when the run pauses to ask. Paths are the PC's.",
+                    "The document runs on the PC, through its engine. An effect happens only if " +
+                        "the document authorizes it, " +
+                        "the PC is granted it below, and you allow it when the run pauses to " +
+                        "ask. Paths are the PC's.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 OutlinedTextField(
@@ -397,7 +403,8 @@ internal fun ApprovalDialog(pause: JsonObject, controller: WorkspaceController) 
                     )
                 }
                 Text(
-                    "Allowing grants host permission for this one request. It does not change what the document authorizes.",
+                    "Allowing grants host permission for this one request. It does not change " +
+                        "what the document authorizes.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }

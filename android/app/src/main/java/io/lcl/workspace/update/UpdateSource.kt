@@ -47,16 +47,17 @@ fun copyBounded(
     val buffer = ByteArray(64 * 1024)
     var done = 0L
     while (true) {
-        val n =
+        val count =
             try {
                 input.read(buffer)
             } catch (e: IOException) {
                 throw UpdateRefused("download", "the download stopped: ${e.message}")
             }
-        if (n < 0) break
-        if (done + n > limit) throw UpdateRefused("invalid", "more than the $limit bytes expected")
-        into.write(buffer, 0, n)
-        done += n
+        if (count < 0) break
+        if (done + count > limit)
+            throw UpdateRefused("invalid", "more than the $limit bytes expected")
+        into.write(buffer, 0, count)
+        done += count
         progress(done, if (length > 0) length else limit)
     }
     if (length >= 0 && done != length) throw UpdateRefused("download", "the download was cut short")

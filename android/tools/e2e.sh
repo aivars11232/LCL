@@ -32,13 +32,16 @@ work=${E2E_DIR:-$(mktemp -d -t lcl-e2e.XXXXXX)}
 out=$work/out
 runner=io.lcl.workspace.test/androidx.test.runner.AndroidJUnitRunner
 
+# A run owns what it makes in its work directory and starts without it: the
+# service's identity and trust store, the project, the run's work folder and
+# an earlier run's evidence. On a reused E2E_DIR, the pairings an interrupted
+# run left fail "exactly one device", and its backup file makes the run's
+# core.create refuse.
+rm -rf "$work/config" "$work/state" "$work/data" "$work/todo" "$work/out" "$work/update-release"
 mkdir -p "$out"
 export XDG_CONFIG_HOME=$work/config XDG_STATE_HOME=$work/state XDG_DATA_HOME=$work/data
 project=$XDG_DATA_HOME/lcl/workspace
 todo=$work/todo
-# The run's work folder starts empty: a backup file left by an earlier run on
-# the same E2E_DIR makes the run's core.create refuse, and p1 fail.
-rm -rf "$todo"
 mkdir -p "$project" "$todo"
 printf 'Buy milk\n' >"$todo/todo.txt"
 # The manual's file example, pointed at this run's own folder.

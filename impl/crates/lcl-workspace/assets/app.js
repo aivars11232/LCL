@@ -1536,41 +1536,16 @@ function newDocument(inside) {
             "either one: the ending you type is kept, and existing documents keep their name.",
         ),
       );
-      const input = el("input", "field");
-      input.id = "new-path";
-      input.value = `${folder ? `${folder}/` : ""}untitled${ending}`;
-      const kindLabel = el("label", "", "Kind of file");
-      kindLabel.htmlFor = "new-kind";
-      const kind = el("select", "field");
-      kind.id = "new-kind";
-      for (const [value, label] of kinds) {
-        const option = el("option", "", label);
-        option.value = value;
-        kind.append(option);
-      }
-      const fromLabel = el("label", "", "Start from");
-      fromLabel.htmlFor = "new-from";
-      const from = el("select", "field");
-      from.id = "new-from";
-      const preview = el("pre", "scaffold-preview");
-      preview.id = "new-preview";
-      const note = el("p", "note");
+      const { input, kindLabel, kind, fromLabel, from, preview, note } = newDocumentFields(
+        `${folder ? `${folder}/` : ""}untitled${ending}`,
+        kinds,
+      );
       const refill = () => {
         from.replaceChildren();
         const role = kind.value;
         from.disabled = !role;
         if (!role) return;
-        const options = [
-          ["default:guided", "Default (Guided)"],
-          ["default:minimal", "Default (Minimal)"],
-          ["canonical:guided", "Canonical scaffold — Guided"],
-          ["canonical:minimal", "Canonical scaffold — Minimal"],
-        ].concat(
-          masters
-            .filter((m) => (m.type || m.role) === role && m.valid)
-            .map((m) => [`master:${m.id}`, `Master: ${m.name}`]),
-        );
-        for (const [value, label] of options) {
+        for (const [value, label] of startChoices(role, masters)) {
           const option = el("option", "", label);
           option.value = value;
           from.append(option);
@@ -1634,48 +1609,96 @@ function newDocument(inside) {
           const from = $("#new-from").value;
           close();
           if (!id) return;
-          try {
-            let created;
-            if (role) {
-              if (!previewed)
-                throw new Error(
-                  "wait for the preview: a file of a role is created only from the text shown.",
-                );
-              created = await api("POST", "/api/document", {
-                id,
-                role,
-                ...selectionParams(role, from),
-                scaffold_digest: previewed,
-              });
-            } else {
-              /* A blank document is the smallest thing the grammar accepts.
-               * 04_GRAMMAR/01: "Every document starts with LCL then SPECIFICATION."
-               * The values are placeholders; the engine judges them like any other. */
-              const seed =
-                'LCL:\n    VERSION: "0.1.0"\n\n' +
-                'SPECIFICATION:\n    ID: example.new\n    NAME: "New document"\n' +
-                '    VERSION: "1.0.0"\n    KIND: kind.task\n    DOMAIN: "general"\n';
-              created = await api("POST", "/api/document", { id }, seed);
-            }
-            /* Creating is its own route: it applies the .lcl default and
-             * refuses to overwrite. Saving stays exact, so an open document is
-             * never renamed under the person editing it. The server decides the
-             * final name, and the reply says what it chose. Opening it reads its
-             * folder again, so it is in the tree at once; nothing else is read. */
-            await openDocument(created.id, { created: created.digest });
-            toast(
-              created.id === created.requested
-                ? `Created ${created.id}`
-                : `Created ${created.id}, the default name for ${created.requested}`,
-              "good",
-            );
-          } catch (e) {
-            toast(`Not created. ${e.message}`, "bad");
-          }
+          await createDocument(id, role, from, previewed);
         },
       ],
     ],
   );
+}
+
+/* The fields of the New document dialog, not yet in it: the path, the kind of
+ * file with one choice per `kinds` pair, what to start from, and the preview
+ * with the note above it. */
+function newDocumentFields(path, kinds) {
+  const input = el("input", "field");
+  input.id = "new-path";
+  input.value = path;
+  const kindLabel = el("label", "", "Kind of file");
+  kindLabel.htmlFor = "new-kind";
+  const kind = el("select", "field");
+  kind.id = "new-kind";
+  for (const [value, label] of kinds) {
+    const option = el("option", "", label);
+    option.value = value;
+    kind.append(option);
+  }
+  const fromLabel = el("label", "", "Start from");
+  fromLabel.htmlFor = "new-from";
+  const from = el("select", "field");
+  from.id = "new-from";
+  const preview = el("pre", "scaffold-preview");
+  preview.id = "new-preview";
+  const note = el("p", "note");
+  return { input, kindLabel, kind, fromLabel, from, preview, note };
+}
+
+/* What a file of `role` can start from: the default and the canonical
+ * scaffold, each Guided or Minimal, and every valid Master of that role. */
+function startChoices(role, masters) {
+  return [
+    ["default:guided", "Default (Guided)"],
+    ["default:minimal", "Default (Minimal)"],
+    ["canonical:guided", "Canonical scaffold — Guided"],
+    ["canonical:minimal", "Canonical scaffold — Minimal"],
+  ].concat(
+    masters
+      .filter((m) => (m.type || m.role) === role && m.valid)
+      .map((m) => [`master:${m.id}`, `Master: ${m.name}`]),
+  );
+}
+
+/* A blank document is the smallest thing the grammar accepts.
+ * 04_GRAMMAR/01: "Every document starts with LCL then SPECIFICATION."
+ * The values are placeholders; the engine judges them like any other. */
+const BLANK_DOCUMENT =
+  'LCL:\n    VERSION: "0.1.0"\n\n' +
+  'SPECIFICATION:\n    ID: example.new\n    NAME: "New document"\n' +
+  '    VERSION: "1.0.0"\n    KIND: kind.task\n    DOMAIN: "general"\n';
+
+/* Create the document the New document dialog asked for, and open it: blank
+ * without a `role`, else from the text `previewed` is the digest of. */
+async function createDocument(id, role, from, previewed) {
+  try {
+    let created;
+    if (role) {
+      if (!previewed)
+        throw new Error(
+          "wait for the preview: a file of a role is created only from the text shown.",
+        );
+      created = await api("POST", "/api/document", {
+        id,
+        role,
+        ...selectionParams(role, from),
+        scaffold_digest: previewed,
+      });
+    } else {
+      created = await api("POST", "/api/document", { id }, BLANK_DOCUMENT);
+    }
+    /* Creating is its own route: it applies the .lcl default and
+     * refuses to overwrite. Saving stays exact, so an open document is
+     * never renamed under the person editing it. The server decides the
+     * final name, and the reply says what it chose. Opening it reads its
+     * folder again, so it is in the tree at once; nothing else is read. */
+    await openDocument(created.id, { created: created.digest });
+    toast(
+      created.id === created.requested
+        ? `Created ${created.id}`
+        : `Created ${created.id}, the default name for ${created.requested}`,
+      "good",
+    );
+  } catch (e) {
+    toast(`Not created. ${e.message}`, "bad");
+  }
 }
 
 /* ------------------------------------------------------------- settings */
@@ -1841,158 +1864,10 @@ function openSettings() {
     "Settings",
     (body) => {
       const form = el("div", "settings");
-
-      form.append(el("h3", "", "Appearance"));
-      const themeLabel = el("label", "", "Theme");
-      themeLabel.htmlFor = "setting-theme";
-      const theme = el("select");
-      theme.id = "setting-theme";
-      for (const [value, label] of [
-        ["system", "System"],
-        ["dark", "Dark"],
-        ["light", "Light"],
-      ]) {
-        const option = el("option", "", label);
-        option.value = value;
-        theme.append(option);
-      }
-      theme.value = now.theme;
-      form.append(themeLabel, theme);
-
-      form.append(el("h3", "", "Editor"));
-      const sizeLabel = el("label", "", "Font size (px)");
-      sizeLabel.htmlFor = "setting-font-size";
-      const size = el("input");
-      size.id = "setting-font-size";
-      size.type = "number";
-      size.min = String(FONT_MIN);
-      size.max = String(FONT_MAX);
-      size.step = "1";
-      size.value = String(now.fontSize);
-      form.append(sizeLabel, size);
-
-      const numbersLabel = el("label", "", "Show line numbers");
-      numbersLabel.htmlFor = "setting-line-numbers";
-      const numbers = el("input");
-      numbers.id = "setting-line-numbers";
-      numbers.type = "checkbox";
-      numbers.checked = now.lineNumbers;
-      form.append(numbersLabel, numbers);
-
-      form.append(
-        el(
-          "p",
-          "note",
-          `Appearance and Editor are saved in this browser only. Font size is ${FONT_MIN} to ` +
-            `${FONT_MAX} px. Documents are always indented with spaces; Tab inserts four.`,
-        ),
-      );
-
-      /* Files: kept by the workspace for this computer, not by the browser. */
-      form.append(el("h3", "", "Files"));
-      const typeLabel = el("label", "", "Default file type");
-      typeLabel.htmlFor = "setting-file-type";
-      const type = el("select");
-      type.id = "setting-file-type";
-      for (const [value, label] of [
-        [".lcl", "LCL (.lcl)"],
-        [".lcl.txt", "LCL Text (.lcl.txt)"],
-      ]) {
-        const option = el("option", "", label);
-        option.value = value;
-        type.append(option);
-      }
-      type.value = files.default_extension;
-      form.append(typeLabel, type);
-
-      const whereLabel = el("label", "", "Projects folder");
-      whereLabel.htmlFor = "setting-workspace";
-      const whereRow = el("div", "path-field");
-      const where = el("input");
-      where.id = "setting-workspace";
-      where.type = "text";
-      where.spellcheck = false;
-      where.value = files.default_workspace || "";
-      where.placeholder = files.builtin_default_workspace
-        ? `Empty: the built-in folder, ${files.builtin_default_workspace}`
-        : "Empty: the built-in folder";
-      const check = el("button", "", "Check");
-      check.type = "button";
-      const openHere = el("button", "", "Open folder");
-      openHere.type = "button";
-      openHere.id = "setting-workspace-open";
-      whereRow.append(where, check, openHere);
-      form.append(whereLabel, whereRow);
-      const status = el("p", "note folder-status");
-      status.id = "setting-workspace-status";
-      check.onclick = () => describeFolder(where.value.trim(), status);
-      /* Shows the saved Projects folder in this window, in place of the folder
-       * shown now; every tab closes, so none may hold unsaved work. */
-      openHere.onclick = async () => {
-        if (where.value.trim() !== (files.default_workspace || "")) {
-          status.replaceChildren(
-            el("span", "bad", "Save first: Open folder opens the saved Projects folder."),
-          );
-          return;
-        }
-        try {
-          await api("POST", "/api/projects/open");
-        } catch (e) {
-          status.replaceChildren(el("span", "bad", e.message));
-          return;
-        }
-        closeModal();
-        await showOpenedFolder();
-        toast("This window now shows the Projects home.", "good");
-      };
-      if (files.default_workspace && files.default_workspace_exists === false) {
-        status.append(
-          el(
-            "span",
-            "bad",
-            "This folder does not exist now: New Project refuses to create projects until it does, " +
-              "and a launch opens the built-in folder instead.",
-          ),
-        );
-      }
-      form.append(status);
-      form.append(
-        el(
-          "p",
-          "note",
-          `This window shows ${files.current_workspace || (state.session && state.session.root) || ""}. ` +
-            "New Project creates every new project in the Projects folder, each in a folder of its " +
-            "own, and LCL Workspace starts on the Projects home, the projects in that folder, when it " +
-            "starts from the desktop menu; a folder or document opened explicitly still wins. Leave it empty for the built-in " +
-            "folder. The default file type is the ending of a new document named without one and " +
-            "of every file a new project starts with.",
-        ),
-      );
-      if (files.problem) form.append(el("p", "note warning", files.problem));
-      if (!files.available) {
-        type.disabled = where.disabled = check.disabled = true;
-        form.append(
-          el(
-            "p",
-            "note warning",
-            "These cannot be saved: this workspace has no configuration folder (HOME or " +
-              "XDG_CONFIG_HOME is not set).",
-          ),
-        );
-      }
-      form.append(el("h3", "", "Templates"));
-      form.append(
-        el(
-          "p",
-          "note",
-          "Master templates: your own starting text for each kind of file and for new projects.",
-        ),
-      );
-      const templates = el("button", "", "Templates…");
-      templates.type = "button";
-      templates.id = "open-templates";
-      templates.onclick = () => openTemplates();
-      form.append(templates);
+      appearanceSection(form, now);
+      editorSection(form, now);
+      filesSection(form, files);
+      templatesSection(form);
       updatesSection(form);
       androidDevices(form);
       body.append(form);
@@ -2014,68 +1889,253 @@ function openSettings() {
           }
         },
       ],
-      [
-        "Save",
-        "primary",
-        async (close) => {
-          /* A number field reports text it cannot read as "", which Number()
-           * would take for 0 and clamp to the minimum. Unreadable is unreadable. */
-          const typed = $("#setting-font-size").value.trim();
-          const requested = typed === "" ? NaN : Number(typed);
-          const clamped = Math.min(
-            FONT_MAX,
-            Math.max(
-              FONT_MIN,
-              Number.isFinite(requested) ? Math.round(requested) : DEFAULT_SETTINGS.fontSize,
-            ),
-          );
-          const next = validSettings({
-            version: SETTINGS_VERSION,
-            theme: $("#setting-theme").value,
-            fontSize: clamped,
-            lineNumbers: Boolean($("#setting-line-numbers").checked),
-          });
-
-          /* The computer's settings first: a folder that is not there keeps the
-           * dialog open with the reason and, where it fits, a way to create it. */
-          const wanted = {
-            default_extension: $("#setting-file-type").value,
-            default_workspace: $("#setting-workspace").value.trim() || null,
-          };
-          const typeChanged = wanted.default_extension !== files.default_extension;
-          const whereChanged = wanted.default_workspace !== (files.default_workspace || null);
-          if (files.available && (typeChanged || whereChanged)) {
-            const status = $("#setting-workspace-status");
-            if (whereChanged && !(await describeFolder(wanted.default_workspace, status))) return;
-            try {
-              state.files = await api("PUT", "/api/settings", {}, JSON.stringify(wanted));
-            } catch (e) {
-              status.replaceChildren(el("span", "bad", `Not saved. ${e.message}`));
-              return;
-            }
-          }
-
-          close();
-          applySettings(next);
-          if (!saveSettings(next))
-            toast("Settings apply now but could not be stored in this browser.", "warn");
-          if (files.available && whereChanged) {
-            toast(
-              "Projects folder updated. New projects are created there, and LCL Workspace opens it " +
-                "the next time it starts from the menu.",
-              "good",
-            );
-          }
-          if (files.available && typeChanged) {
-            toast(
-              `New documents named without an ending are now created as ${wanted.default_extension}.`,
-              "good",
-            );
-          }
-        },
-      ],
+      ["Save", "primary", (close) => saveSettingsDialog(files, close)],
     ],
   );
+}
+
+/* Settings → Appearance: the theme, as `now` has it. */
+function appearanceSection(form, now) {
+  form.append(el("h3", "", "Appearance"));
+  const themeLabel = el("label", "", "Theme");
+  themeLabel.htmlFor = "setting-theme";
+  const theme = el("select");
+  theme.id = "setting-theme";
+  for (const [value, label] of [
+    ["system", "System"],
+    ["dark", "Dark"],
+    ["light", "Light"],
+  ]) {
+    const option = el("option", "", label);
+    option.value = value;
+    theme.append(option);
+  }
+  theme.value = now.theme;
+  form.append(themeLabel, theme);
+}
+
+/* Settings → Editor: the font size and the line numbers, as `now` has them. */
+function editorSection(form, now) {
+  form.append(el("h3", "", "Editor"));
+  const sizeLabel = el("label", "", "Font size (px)");
+  sizeLabel.htmlFor = "setting-font-size";
+  const size = el("input");
+  size.id = "setting-font-size";
+  size.type = "number";
+  size.min = String(FONT_MIN);
+  size.max = String(FONT_MAX);
+  size.step = "1";
+  size.value = String(now.fontSize);
+  form.append(sizeLabel, size);
+
+  const numbersLabel = el("label", "", "Show line numbers");
+  numbersLabel.htmlFor = "setting-line-numbers";
+  const numbers = el("input");
+  numbers.id = "setting-line-numbers";
+  numbers.type = "checkbox";
+  numbers.checked = now.lineNumbers;
+  form.append(numbersLabel, numbers);
+
+  form.append(
+    el(
+      "p",
+      "note",
+      `Appearance and Editor are saved in this browser only. Font size is ${FONT_MIN} to ` +
+        `${FONT_MAX} px. Documents are always indented with spaces; Tab inserts four.`,
+    ),
+  );
+}
+
+/* Settings → Files: the default file type and the Projects folder. They are
+ * kept by the workspace for this computer, not by the browser; `files` is what
+ * it holds now. */
+function filesSection(form, files) {
+  form.append(el("h3", "", "Files"));
+  const type = fileTypeField(form, files);
+  const { where, check } = projectsFolderField(form, files);
+  const shownNow = files.current_workspace || (state.session && state.session.root) || "";
+  form.append(
+    el(
+      "p",
+      "note",
+      `This window shows ${shownNow}. ` +
+        "New Project creates every new project in the Projects folder, each in a folder of its " +
+        "own, and LCL Workspace starts on the Projects home, the projects in that folder, when " +
+        "it starts from the desktop menu; a folder or document opened explicitly still wins. " +
+        "Leave it empty for the built-in folder. The default file type is the ending of a new " +
+        "document named without one and of every file a new project starts with.",
+    ),
+  );
+  if (files.problem) form.append(el("p", "note warning", files.problem));
+  if (!files.available) {
+    type.disabled = where.disabled = check.disabled = true;
+    form.append(
+      el(
+        "p",
+        "note warning",
+        "These cannot be saved: this workspace has no configuration folder (HOME or " +
+          "XDG_CONFIG_HOME is not set).",
+      ),
+    );
+  }
+}
+
+/* The default file type, added to `form`. */
+function fileTypeField(form, files) {
+  const typeLabel = el("label", "", "Default file type");
+  typeLabel.htmlFor = "setting-file-type";
+  const type = el("select");
+  type.id = "setting-file-type";
+  for (const [value, label] of [
+    [".lcl", "LCL (.lcl)"],
+    [".lcl.txt", "LCL Text (.lcl.txt)"],
+  ]) {
+    const option = el("option", "", label);
+    option.value = value;
+    type.append(option);
+  }
+  type.value = files.default_extension;
+  form.append(typeLabel, type);
+  return type;
+}
+
+/* The Projects folder, added to `form`: its path, Check, which says what the
+ * path typed is, Open folder, and the line below them that reports. */
+function projectsFolderField(form, files) {
+  const whereLabel = el("label", "", "Projects folder");
+  whereLabel.htmlFor = "setting-workspace";
+  const whereRow = el("div", "path-field");
+  const where = el("input");
+  where.id = "setting-workspace";
+  where.type = "text";
+  where.spellcheck = false;
+  where.value = files.default_workspace || "";
+  where.placeholder = files.builtin_default_workspace
+    ? `Empty: the built-in folder, ${files.builtin_default_workspace}`
+    : "Empty: the built-in folder";
+  const check = el("button", "", "Check");
+  check.type = "button";
+  const openHere = el("button", "", "Open folder");
+  openHere.type = "button";
+  openHere.id = "setting-workspace-open";
+  whereRow.append(where, check, openHere);
+  form.append(whereLabel, whereRow);
+  const status = el("p", "note folder-status");
+  status.id = "setting-workspace-status";
+  check.onclick = () => describeFolder(where.value.trim(), status);
+  /* Shows the saved Projects folder in this window, in place of the folder
+   * shown now; every tab closes, so none may hold unsaved work. */
+  openHere.onclick = async () => {
+    if (where.value.trim() !== (files.default_workspace || "")) {
+      status.replaceChildren(
+        el("span", "bad", "Save first: Open folder opens the saved Projects folder."),
+      );
+      return;
+    }
+    try {
+      await api("POST", "/api/projects/open");
+    } catch (e) {
+      status.replaceChildren(el("span", "bad", e.message));
+      return;
+    }
+    closeModal();
+    await showOpenedFolder();
+    toast("This window now shows the Projects home.", "good");
+  };
+  if (files.default_workspace && files.default_workspace_exists === false) {
+    status.append(
+      el(
+        "span",
+        "bad",
+        "This folder does not exist now: New Project refuses to create projects until it does, " +
+          "and a launch opens the built-in folder instead.",
+      ),
+    );
+  }
+  form.append(status);
+  return { where, check };
+}
+
+/* Settings → Templates: the way to the Master templates. */
+function templatesSection(form) {
+  form.append(el("h3", "", "Templates"));
+  form.append(
+    el(
+      "p",
+      "note",
+      "Master templates: your own starting text for each kind of file and for new projects.",
+    ),
+  );
+  const templates = el("button", "", "Templates…");
+  templates.type = "button";
+  templates.id = "open-templates";
+  templates.onclick = () => openTemplates();
+  form.append(templates);
+}
+
+/* The font size typed in Settings, as a whole number within range.
+ *
+ * A number field reports text it cannot read as "", which Number() would take
+ * for 0 and clamp to the minimum. Unreadable is unreadable: the default. */
+function typedFontSize() {
+  const typed = $("#setting-font-size").value.trim();
+  const requested = typed === "" ? NaN : Number(typed);
+  return Math.min(
+    FONT_MAX,
+    Math.max(
+      FONT_MIN,
+      Number.isFinite(requested) ? Math.round(requested) : DEFAULT_SETTINGS.fontSize,
+    ),
+  );
+}
+
+/* Save what the Settings dialog holds, and close it. `files` is what the
+ * computer's settings were when the dialog opened. */
+async function saveSettingsDialog(files, close) {
+  const fontSize = typedFontSize();
+  const next = validSettings({
+    version: SETTINGS_VERSION,
+    theme: $("#setting-theme").value,
+    fontSize,
+    lineNumbers: Boolean($("#setting-line-numbers").checked),
+  });
+
+  /* The computer's settings first: a folder that is not there keeps the
+   * dialog open with the reason and, where it fits, a way to create it. */
+  const wanted = {
+    default_extension: $("#setting-file-type").value,
+    default_workspace: $("#setting-workspace").value.trim() || null,
+  };
+  const typeChanged = wanted.default_extension !== files.default_extension;
+  const whereChanged = wanted.default_workspace !== (files.default_workspace || null);
+  if (files.available && (typeChanged || whereChanged)) {
+    const status = $("#setting-workspace-status");
+    if (whereChanged && !(await describeFolder(wanted.default_workspace, status))) return;
+    try {
+      state.files = await api("PUT", "/api/settings", {}, JSON.stringify(wanted));
+    } catch (e) {
+      status.replaceChildren(el("span", "bad", `Not saved. ${e.message}`));
+      return;
+    }
+  }
+
+  close();
+  applySettings(next);
+  if (!saveSettings(next))
+    toast("Settings apply now but could not be stored in this browser.", "warn");
+  if (files.available && whereChanged) {
+    toast(
+      "Projects folder updated. New projects are created there, and LCL Workspace opens it " +
+        "the next time it starts from the menu.",
+      "good",
+    );
+  }
+  if (files.available && typeChanged) {
+    toast(
+      `New documents named without an ending are now created as ${wanted.default_extension}.`,
+      "good",
+    );
+  }
 }
 
 /* ---------------------------------------------------------------- updates */
@@ -2371,17 +2431,6 @@ function androidDevices(form) {
   };
   /* Closed, or replaced by another dialog: nothing more to show or poll. */
   const showing = () => box.isConnected && !$("#modal-backdrop").hidden;
-  const when = (seconds) => (seconds ? new Date(seconds * 1000).toLocaleString() : "never");
-  const remaining = (expires) => {
-    const seconds = Math.max(0, Math.round(expires - Date.now() / 1000));
-    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-  };
-  const button = (label, onclick) => {
-    const node = el("button", "", label);
-    node.type = "button";
-    node.onclick = onclick;
-    return node;
-  };
 
   async function decide(r, decision) {
     confirming = null;
@@ -2399,7 +2448,21 @@ function androidDevices(form) {
     await refresh();
   }
 
-  /* The requests last reported, as rows. Every name and code is text. */
+  async function revoke(d) {
+    try {
+      await api("POST", "/api/remote/revoke", { id: d.id });
+      code.replaceChildren(); // an earlier "is paired" would now be wrong
+      toast(
+        `${d.name} is revoked. It is disconnected and must pair again with a new QR code.`,
+        "good",
+      );
+    } catch (e) {
+      toast(`Not revoked. ${e.message}`, "bad");
+    }
+    refresh();
+  }
+
+  /* The requests last reported, as rows. */
   function showRequests() {
     requests.replaceChildren(el("h4", "", "Pending pairing requests"));
     if (waiting.length === 0) {
@@ -2415,45 +2478,14 @@ function androidDevices(form) {
       ),
     );
     if (!waiting.some((r) => r.request === confirming)) confirming = null;
+    /* Approving asks first: the row of `request` shows the question, or none
+     * does once it is answered or cancelled. */
+    const confirm = (request) => {
+      confirming = request;
+      showRequests();
+    };
     for (const r of waiting) {
-      const row = el("div", "remote-request");
-      row.dataset.request = r.request;
-      row.append(
-        el("span", "remote-name", r.name),
-        el("span", "remote-verification mono", r.verification),
-        el("span", "note mono", `fingerprint ${r.fingerprint}`),
-        el(
-          "span",
-          "note",
-          r.status === "approved"
-            ? "approved; the phone finishes pairing by itself"
-            : `asked ${when(r.created)} · expires in ${remaining(r.expires)}`,
-        ),
-      );
-      if (r.status === "pending" && confirming === r.request) {
-        const confirm = el("div", "remote-confirm");
-        confirm.append(
-          el("p", "", "Approve this Android device?"),
-          el("p", "", `Verification code: ${r.verification}`),
-          el("p", "mono", `Fingerprint: ${r.fingerprint}`),
-          el("p", "note", "Approve only if the phone shows this same verification code."),
-          button("Approve device", () => decide(r, "approve")),
-          button("Cancel", () => {
-            confirming = null;
-            showRequests();
-          }),
-        );
-        row.append(confirm);
-      } else if (r.status === "pending") {
-        row.append(
-          button("Approve…", () => {
-            confirming = r.request;
-            showRequests();
-          }),
-          button("Deny", () => decide(r, "deny")),
-        );
-      }
-      requests.append(row);
+      requests.append(remoteRequestRow(r, confirming === r.request, { decide, confirm }));
     }
   }
 
@@ -2482,6 +2514,23 @@ function androidDevices(form) {
     }
   }
 
+  /* A device not known when the pairing code was shown is the one that just
+   * paired. Noticed on any refresh — the one after an approval, or a later
+   * one. */
+  function noticePaired() {
+    const fresh = shown && devices.find((d) => !shown.known.has(d.id));
+    if (!fresh) return;
+    shown = null;
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+    code.replaceChildren(
+      el("p", "good", `${fresh.name} is paired. It reconnects by itself from now on.`),
+    );
+    pair.disabled = false;
+  }
+
   async function refresh() {
     if (!showing()) {
       stop();
@@ -2504,78 +2553,14 @@ function androidDevices(form) {
       );
       return null;
     }
-    status.replaceChildren(
-      reply.service_running
-        ? el("span", "good", "The Android service is running; paired devices can connect.")
-        : el(
-            "span",
-            "bad",
-            "The Android service is not running, so paired devices cannot connect. Start it with " +
-              "`lcl-remote serve`, or `systemctl --user start lcl-remote`.",
-          ),
-    );
+    status.replaceChildren(remoteServiceStatus(reply.service_running));
     devices = reply.devices || [];
     list.replaceChildren();
     if (devices.length === 0) list.append(el("p", "note", "No Android device is paired."));
-    for (const d of devices) {
-      const row = el("div", "remote-device");
-      row.dataset.id = d.id;
-      const state = d.revoked_at
-        ? `revoked ${when(d.revoked_at)}`
-        : d.online
-          ? "online"
-          : "offline";
-      row.append(
-        el("span", "remote-name", d.name),
-        el("span", d.revoked_at ? "bad" : d.online ? "good" : "note", state),
-        el("span", "note", `last connected ${when(d.last_seen)} · paired ${when(d.paired_at)}`),
-      );
-      if (!d.revoked_at) {
-        const revoke = el("button", "", "Revoke");
-        revoke.type = "button";
-        /* Two steps: revoking ends the device's trust until it pairs again. */
-        revoke.onclick = async () => {
-          if (revoke.dataset.confirm !== "1") {
-            revoke.dataset.confirm = "1";
-            revoke.textContent = "Revoke — click again to confirm";
-            setTimeout(() => {
-              revoke.dataset.confirm = "";
-              revoke.textContent = "Revoke";
-            }, 5000);
-            return;
-          }
-          revoke.disabled = true;
-          try {
-            await api("POST", "/api/remote/revoke", { id: d.id });
-            code.replaceChildren(); // an earlier "is paired" would now be wrong
-            toast(
-              `${d.name} is revoked. It is disconnected and must pair again with a new QR code.`,
-              "good",
-            );
-          } catch (e) {
-            toast(`Not revoked. ${e.message}`, "bad");
-          }
-          refresh();
-        };
-        row.append(revoke);
-      }
-      list.append(row);
-    }
+    for (const d of devices) list.append(remoteDeviceRow(d, revoke));
     await refreshRequests();
     pair.hidden = false;
-    /* Noticed on any refresh — the one after an approval, or a later one. */
-    const fresh = shown && devices.find((d) => !shown.known.has(d.id));
-    if (fresh) {
-      shown = null;
-      if (timer) {
-        clearInterval(timer);
-        timer = null;
-      }
-      code.replaceChildren(
-        el("p", "good", `${fresh.name} is paired. It reconnects by itself from now on.`),
-      );
-      pair.disabled = false;
-    }
+    noticePaired();
     return reply;
   }
 
@@ -2591,42 +2576,7 @@ function androidDevices(form) {
       return;
     }
     shown = { known: new Set(devices.map((d) => d.id)), expires: issued.expires };
-    /* An image, not markup: nothing lcl-remote printed becomes part of the page. */
-    const qr = el("img", "qr");
-    qr.alt = "Pairing QR code";
-    qr.src = "data:image/svg+xml;base64," + btoa(issued.svg);
-    const fingerprint = (issued.fingerprint.match(/.{4}/g) || []).slice(0, 8).join(" ");
-    const left = el("p", "note");
-    const text = el("input");
-    text.id = "remote-link";
-    text.type = "text";
-    text.readOnly = true;
-    text.value = issued.payload;
-    const textLabel = el("label", "note", "Or paste this pairing text into the app:");
-    textLabel.htmlFor = "remote-link";
-    code.replaceChildren(
-      qr,
-      el(
-        "p",
-        "",
-        "On the phone: LCL → Pair a PC → Scan QR code. The phone shows this fingerprint before it asks to pair:",
-      ),
-      el("p", "mono", `${fingerprint} …`),
-      el(
-        "p",
-        "",
-        "Scanning does not trust the phone. After Pair is pressed on the phone, its request appears under " +
-          "Pending pairing requests: approve it only if its verification code is the one the phone shows.",
-      ),
-      el(
-        "p",
-        "note",
-        `The code pairs one device. Addresses in it: ${issued.addresses.join(", ")}.`,
-      ),
-      left,
-      textLabel,
-      text,
-    );
+    const left = showPairingCode(code, issued);
     const tick = async () => {
       const seconds = Math.round(issued.expires - Date.now() / 1000);
       await refresh();
@@ -2638,11 +2588,13 @@ function androidDevices(form) {
           el("p", "note", "The code expired. Pair Android device makes a new one."),
         );
         pair.disabled = false;
-      } else if (waiting.some((r) => r.status === "pending")) {
-        left.textContent = `A request is waiting below: compare its verification code with the phone. The code expires in ${remaining(issued.expires)}.`;
-      } else {
-        left.textContent = `Waiting for the phone… the code expires in ${remaining(issued.expires)}.`;
+        return;
       }
+      const remaining = remoteRemaining(issued.expires);
+      left.textContent = waiting.some((r) => r.status === "pending")
+        ? "A request is waiting below: compare its verification code with the phone. " +
+          `The code expires in ${remaining}.`
+        : `Waiting for the phone… the code expires in ${remaining}.`;
     };
     timer = setInterval(tick, 2000);
     tick();
@@ -2650,6 +2602,161 @@ function androidDevices(form) {
 
   /* After the dialog is on screen: this runs while it is still being built. */
   Promise.resolve().then(refresh);
+}
+
+/* A time lcl-remote reports, in seconds, as the person reads it. */
+function remoteWhen(seconds) {
+  return seconds ? new Date(seconds * 1000).toLocaleString() : "never";
+}
+
+/* How long is left until `expires`, as minutes:seconds. */
+function remoteRemaining(expires) {
+  const seconds = Math.max(0, Math.round(expires - Date.now() / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+/* A button of this section: it does `onclick`, and submits nothing. */
+function remoteButton(label, onclick) {
+  const node = el("button", "", label);
+  node.type = "button";
+  node.onclick = onclick;
+  return node;
+}
+
+/* Whether paired devices can connect now. */
+function remoteServiceStatus(running) {
+  return running
+    ? el("span", "good", "The Android service is running; paired devices can connect.")
+    : el(
+        "span",
+        "bad",
+        "The Android service is not running, so paired devices cannot connect. Start it with " +
+          "`lcl-remote serve`, or `systemctl --user start lcl-remote`.",
+      );
+}
+
+/* One trusted device as a row: its name, whether it is connected, and Revoke
+ * unless it is revoked already. `revoke(d)` does the revoking. */
+function remoteDeviceRow(d, revoke) {
+  const row = el("div", "remote-device");
+  row.dataset.id = d.id;
+  const state = d.revoked_at
+    ? `revoked ${remoteWhen(d.revoked_at)}`
+    : d.online
+      ? "online"
+      : "offline";
+  row.append(
+    el("span", "remote-name", d.name),
+    el("span", d.revoked_at ? "bad" : d.online ? "good" : "note", state),
+    el(
+      "span",
+      "note",
+      `last connected ${remoteWhen(d.last_seen)} · paired ${remoteWhen(d.paired_at)}`,
+    ),
+  );
+  if (d.revoked_at) return row;
+  const button = el("button", "", "Revoke");
+  button.type = "button";
+  /* Two steps: revoking ends the device's trust until it pairs again. */
+  button.onclick = async () => {
+    if (button.dataset.confirm !== "1") {
+      button.dataset.confirm = "1";
+      button.textContent = "Revoke — click again to confirm";
+      setTimeout(() => {
+        button.dataset.confirm = "";
+        button.textContent = "Revoke";
+      }, 5000);
+      return;
+    }
+    button.disabled = true;
+    await revoke(d);
+  };
+  row.append(button);
+  return row;
+}
+
+/* One pairing request as a row: who asks, the verification code to compare
+ * with the phone's, and Approve and Deny while it waits. Every name and code
+ * is text.
+ *
+ * Approving takes two steps. `confirming` is whether this row is at the
+ * second, the question; `confirm(request)` puts that request's row there, and
+ * `confirm(null)` none. `decide(r, "approve" | "deny")` does the deciding. */
+function remoteRequestRow(r, confirming, { decide, confirm }) {
+  const row = el("div", "remote-request");
+  row.dataset.request = r.request;
+  row.append(
+    el("span", "remote-name", r.name),
+    el("span", "remote-verification mono", r.verification),
+    el("span", "note mono", `fingerprint ${r.fingerprint}`),
+    el(
+      "span",
+      "note",
+      r.status === "approved"
+        ? "approved; the phone finishes pairing by itself"
+        : `asked ${remoteWhen(r.created)} · expires in ${remoteRemaining(r.expires)}`,
+    ),
+  );
+  if (r.status !== "pending") return row;
+  if (confirming) {
+    const question = el("div", "remote-confirm");
+    question.append(
+      el("p", "", "Approve this Android device?"),
+      el("p", "", `Verification code: ${r.verification}`),
+      el("p", "mono", `Fingerprint: ${r.fingerprint}`),
+      el("p", "note", "Approve only if the phone shows this same verification code."),
+      remoteButton("Approve device", () => decide(r, "approve")),
+      remoteButton("Cancel", () => confirm(null)),
+    );
+    row.append(question);
+  } else {
+    row.append(
+      remoteButton("Approve…", () => confirm(r.request)),
+      remoteButton("Deny", () => decide(r, "deny")),
+    );
+  }
+  return row;
+}
+
+/* Show the pairing code just `issued` in `code`: the QR code, how to use it,
+ * and the pairing text to paste instead. Returns the line that says how long
+ * the code has left, which is empty until the caller fills it. */
+function showPairingCode(code, issued) {
+  /* An image, not markup: nothing lcl-remote printed becomes part of the page. */
+  const qr = el("img", "qr");
+  qr.alt = "Pairing QR code";
+  qr.src = "data:image/svg+xml;base64," + btoa(issued.svg);
+  const fingerprint = (issued.fingerprint.match(/.{4}/g) || []).slice(0, 8).join(" ");
+  const left = el("p", "note");
+  const text = el("input");
+  text.id = "remote-link";
+  text.type = "text";
+  text.readOnly = true;
+  text.value = issued.payload;
+  const textLabel = el("label", "note", "Or paste this pairing text into the app:");
+  textLabel.htmlFor = "remote-link";
+  code.replaceChildren(
+    qr,
+    el(
+      "p",
+      "",
+      "On the phone: LCL → Pair a PC → Scan QR code. " +
+        "The phone shows this fingerprint before it asks to pair:",
+    ),
+    el("p", "mono", `${fingerprint} …`),
+    el(
+      "p",
+      "",
+      "Scanning does not trust the phone. After Pair is pressed on the phone, its request " +
+        "appears under Pending pairing requests: approve it only if its verification code is " +
+        "the one the phone shows.",
+    ),
+    el("p", "note", `The code pairs one device. Addresses in it: ${issued.addresses.join(", ")}.`),
+    left,
+    textLabel,
+    text,
+  );
+  return left;
 }
 
 /* --------------------------------------------------------------- render */

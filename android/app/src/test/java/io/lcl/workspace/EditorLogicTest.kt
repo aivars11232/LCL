@@ -39,7 +39,12 @@ class Utf8IndexTest {
 
 class CarryTest {
     private val text = "LCL:\n    VERSION: \"0.1.0\"\n"
-    private val spans = listOf(ByteSpan(0, 3, "block"), ByteSpan(3, 4, "symbol"), ByteSpan(9, 16, "keyword", line = 2))
+    private val spans =
+        listOf(
+            ByteSpan(0, 3, "block"),
+            ByteSpan(3, 4, "symbol"),
+            ByteSpan(9, 16, "keyword", line = 2),
+        )
 
     private fun edit(after: String) = carry(spans, editBetween(Utf8Index(text), Utf8Index(after)))
 
@@ -104,7 +109,8 @@ class OpenDocumentTest {
         val edited = first.edited("LCL:\nX\n")
         val stale = edited.withTokens(listOf(ByteSpan(0, 3, "block")), atRevision = first.revision)
         assertNull("tokens for older text were applied", stale.tokens)
-        val current = edited.withTokens(listOf(ByteSpan(0, 3, "block")), atRevision = edited.revision)
+        val current =
+            edited.withTokens(listOf(ByteSpan(0, 3, "block")), atRevision = edited.revision)
         assertEquals(1, current.tokens!!.size)
     }
 
@@ -113,7 +119,13 @@ class OpenDocumentTest {
         val start = doc().edited("first")
         val submittedAt = start.revision
         val typedMore = start.edited("first and more")
-        val acknowledged = typedMore.savedAs("first", "digest1", finalLineFeedAdded = true, atRevision = submittedAt)
+        val acknowledged =
+            typedMore.savedAs(
+                "first",
+                "digest1",
+                finalLineFeedAdded = true,
+                atRevision = submittedAt,
+            )
         assertEquals("first and more", acknowledged.text)
         assertEquals("first\n", acknowledged.saved)
         assertEquals("digest1", acknowledged.base)
@@ -151,7 +163,10 @@ class NamesAndStoresTest {
     fun only_the_two_lcl_endings_are_documents_and_explicit_endings_are_kept() {
         assertTrue(LclNames.isDocument("a.lcl"))
         assertTrue(LclNames.isDocument("a.lcl.txt"))
-        for (name in listOf("a.txt", ".lcl", ".lcl.txt", "a.LCL", "a.lcl.bak")) assertFalse(name, LclNames.isDocument(name))
+        for (name in listOf("a.txt", ".lcl", ".lcl.txt", "a.LCL", "a.lcl.bak")) assertFalse(
+            name,
+            LclNames.isDocument(name),
+        )
         assertEquals("test.lcl", LclNames.defaultName("test"))
         assertEquals("test.lcl.txt", LclNames.defaultName("test", LclNames.TEXT_SUFFIX))
         assertEquals("test.lcl", LclNames.defaultName("test.lcl", LclNames.TEXT_SUFFIX))
@@ -162,8 +177,22 @@ class NamesAndStoresTest {
     @Test
     fun paired_pcs_survive_a_restart_of_the_store() {
         val backing = MemoryStore()
-        val record = PcRecord("pc1", "Desk", "f".repeat(64), listOf("10.0.0.2:47300"), "dev1", "alias1", 100, 200, "10.0.0.2:47300")
-        PcStore(backing).apply { save(record); setActive("pc1") }
+        val record =
+            PcRecord(
+                "pc1",
+                "Desk",
+                "f".repeat(64),
+                listOf("10.0.0.2:47300"),
+                "dev1",
+                "alias1",
+                100,
+                200,
+                "10.0.0.2:47300",
+            )
+        PcStore(backing).apply {
+            save(record)
+            setActive("pc1")
+        }
         val reopened = PcStore(backing)
         assertEquals(record, reopened.get("pc1"))
         assertEquals("pc1", reopened.activeId())
@@ -181,7 +210,10 @@ class NamesAndStoresTest {
         assertEquals(AppSettings(Theme.DARK, AppSettings.MAX_FONT, false), store.load())
         backing.put("settings", "{not json")
         assertEquals(AppSettings(), store.load())
-        backing.put("settings", "{\"version\":1,\"theme\":\"NEON\",\"font_size\":3,\"line_numbers\":\"yes\"}")
+        backing.put(
+            "settings",
+            "{\"version\":1,\"theme\":\"NEON\",\"font_size\":3,\"line_numbers\":\"yes\"}",
+        )
         assertEquals(AppSettings(), store.load())
     }
 }

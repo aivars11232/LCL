@@ -8,7 +8,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NavigationTest {
-    private val screens = listOf(Screen.Home, Screen.Pair, Screen.Workspace, Screen.Settings, Screen.About, Screen.Updates)
+    private val screens =
+        listOf(
+            Screen.Home,
+            Screen.Pair,
+            Screen.Workspace,
+            Screen.Settings,
+            Screen.About,
+            Screen.Updates,
+        )
 
     @Test
     fun back_from_pairing_returns_to_the_dashboard_whether_or_not_a_pc_is_in_use() {
@@ -41,8 +49,10 @@ class NavigationTest {
         }
     }
 
-    /** Pressing Back again and again reaches the dashboard and then leaves,
-     *  never visiting a screen twice: nothing traps the person or reopens. */
+    /**
+     * Pressing Back again and again reaches the dashboard and then leaves, never visiting a screen
+     * twice: nothing traps the person or reopens.
+     */
     @Test
     fun every_back_chain_ends_at_the_dashboard_without_a_loop() {
         for (pcInUse in listOf(false, true)) {

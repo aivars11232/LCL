@@ -18,6 +18,7 @@ import kotlinx.serialization.json.put
 /** Plain key-value storage: SharedPreferences on a device, a map in tests. */
 interface KeyValueStore {
     fun get(key: String): String?
+
     fun put(key: String, value: String?)
 }
 
@@ -26,22 +27,26 @@ class PreferencesStore(private val preferences: SharedPreferences) : KeyValueSto
 
     /** Written before returning: a pairing record must be on disk before anything relies on it. */
     override fun put(key: String, value: String?) {
-        preferences.edit(commit = true) { if (value == null) remove(key) else putString(key, value) }
+        preferences.edit(commit = true) {
+            if (value == null) remove(key) else putString(key, value)
+        }
     }
 }
 
 class MemoryStore : KeyValueStore {
     private val values = mutableMapOf<String, String>()
+
     override fun get(key: String): String? = values[key]
+
     override fun put(key: String, value: String?) {
         if (value == null) values.remove(key) else values[key] = value
     }
 }
 
 /**
- * A PC this device is paired with. Nothing here is secret: the private key
- * stays in Android Keystore under [keyAlias], and the PC is identified by the
- * fingerprint of its certificate, never by an address.
+ * A PC this device is paired with. Nothing here is secret: the private key stays in Android
+ * Keystore under [keyAlias], and the PC is identified by the fingerprint of its certificate, never
+ * by an address.
  */
 data class PcRecord(
     val pcId: String,
@@ -83,17 +88,20 @@ data class PcRecord(
                 pairedAt = json.long("paired_at") ?: 0,
                 lastConnected = json.long("last_connected"),
                 lastAddress = json.str("last_address"),
-                retiring = json.arr("retiring")?.mapNotNull { (it as? JsonObject)?.let(RetiringKey::fromJson) } ?: emptyList(),
+                retiring =
+                    json.arr("retiring")?.mapNotNull {
+                        (it as? JsonObject)?.let(RetiringKey::fromJson)
+                    } ?: emptyList(),
             )
-        }.getOrNull()
+        }
+            .getOrNull()
     }
 }
 
 /**
- * A key this device used for a PC before it paired that PC again. Every
- * pairing makes a new key, so the PC holds a record for each, and it may
- * still trust this one: it is kept, with the id the PC gave it, until the PC
- * is shown to trust it no more. [problem] says why that has not happened yet.
+ * A key this device used for a PC before it paired that PC again. Every pairing makes a new key, so
+ * the PC holds a record for each, and it may still trust this one: it is kept, with the id the PC
+ * gave it, until the PC is shown to trust it no more. [problem] says why that has not happened yet.
  */
 data class RetiringKey(val keyAlias: String, val deviceId: String, val problem: String? = null) {
     fun toJson(): JsonObject = buildJsonObject {
@@ -105,7 +113,8 @@ data class RetiringKey(val keyAlias: String, val deviceId: String, val problem: 
     companion object {
         fun fromJson(json: JsonObject): RetiringKey? = runCatching {
             RetiringKey(json.str("key_alias")!!, json.str("device_id") ?: "", json.str("problem"))
-        }.getOrNull()
+        }
+            .getOrNull()
     }
 }
 
@@ -113,7 +122,9 @@ data class RetiringKey(val keyAlias: String, val deviceId: String, val problem: 
 class PcStore(private val store: KeyValueStore) {
     fun all(): List<PcRecord> {
         val text = store.get(KEY_PCS) ?: return emptyList()
-        val array = runCatching { Json.parseToJsonElement(text) as JsonArray }.getOrNull() ?: return emptyList()
+        val array =
+            runCatching { Json.parseToJsonElement(text) as JsonArray }.getOrNull()
+                ?: return emptyList()
         return array.mapNotNull { (it as? JsonObject)?.let(PcRecord::fromJson) }
     }
 
@@ -130,6 +141,7 @@ class PcStore(private val store: KeyValueStore) {
     }
 
     fun activeId(): String? = store.get(KEY_ACTIVE)
+
     fun setActive(pcId: String?) = store.put(KEY_ACTIVE, pcId)
 
     private fun write(records: List<PcRecord>) =
@@ -141,7 +153,11 @@ class PcStore(private val store: KeyValueStore) {
     }
 }
 
-enum class Theme { SYSTEM, DARK, LIGHT }
+enum class Theme {
+    SYSTEM,
+    DARK,
+    LIGHT,
+}
 
 /** Presentation only, and only on this device: nothing here reaches the PC. */
 data class AppSettings(
@@ -160,14 +176,20 @@ data class AppSettings(
 class SettingsStore(private val store: KeyValueStore) {
     fun load(): AppSettings {
         val text = store.get(KEY) ?: return AppSettings()
-        val json = runCatching { Json.parseToJsonElement(text) as JsonObject }.getOrNull() ?: return AppSettings()
+        val json =
+            runCatching { Json.parseToJsonElement(text) as JsonObject }.getOrNull()
+                ?: return AppSettings()
         if (json.long("version") != 1L) return AppSettings()
         val defaults = AppSettings()
         return AppSettings(
             theme = runCatching { Theme.valueOf(json.str("theme")!!) }.getOrDefault(defaults.theme),
-            fontSize = json.long("font_size")?.toInt()
-                ?.takeIf { it in AppSettings.MIN_FONT..AppSettings.MAX_FONT } ?: defaults.fontSize,
-            lineNumbers = (json["line_numbers"] as? JsonPrimitive)?.content?.toBooleanStrictOrNull() ?: defaults.lineNumbers,
+            fontSize =
+                json.long("font_size")?.toInt()?.takeIf {
+                    it in AppSettings.MIN_FONT..AppSettings.MAX_FONT
+                } ?: defaults.fontSize,
+            lineNumbers =
+                (json["line_numbers"] as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
+                    ?: defaults.lineNumbers,
         )
     }
 
@@ -177,9 +199,13 @@ class SettingsStore(private val store: KeyValueStore) {
             buildJsonObject {
                 put("version", 1)
                 put("theme", settings.theme.name)
-                put("font_size", settings.fontSize.coerceIn(AppSettings.MIN_FONT, AppSettings.MAX_FONT))
+                put(
+                    "font_size",
+                    settings.fontSize.coerceIn(AppSettings.MIN_FONT, AppSettings.MAX_FONT),
+                )
                 put("line_numbers", settings.lineNumbers)
-            }.toString(),
+            }
+                .toString(),
         )
     }
 

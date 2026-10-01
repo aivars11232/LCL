@@ -510,6 +510,15 @@ What is **not implemented**:
   request, so removing a project refuses it at once, without restarting the
   service.
 
+## Code style
+
+The Kotlin sources are kept in one format: ktfmt's Kotlin language guidelines
+style (4 spaces, 100 columns). `android/tools/format.sh` applies it, and
+`android/tools/format.sh --check` says whether anything is out of format;
+both need `KTFMT_JAR` pointing at ktfmt 0.64 (the script names the exact
+artifact and its checksum). The formatter is a developer tool, not part of
+the build.
+
 ## Testing
 
 - **JVM unit tests** (`./gradlew testDebugUnitTest`): the pairing text (and the

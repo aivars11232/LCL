@@ -8,11 +8,10 @@ import io.lcl.workspace.editor.editBetween
 /**
  * One document open on this device, and where it stands against the PC.
  *
- * The PC owns the file. This is a copy with a record of which revision of the
- * file it started from — [base], the SHA-256 of the bytes on the PC — so a
- * save can say "replace exactly this revision" and the PC can refuse it when
- * the file has moved on. Nothing here ever decides to overwrite newer content:
- * a conflict stops, and only the person resolves it.
+ * The PC owns the file. This is a copy with a record of which revision of the file it started from
+ * — [base], the SHA-256 of the bytes on the PC — so a save can say "replace exactly this revision"
+ * and the PC can refuse it when the file has moved on. Nothing here ever decides to overwrite newer
+ * content: a conflict stops, and only the person resolves it.
  */
 data class OpenDocument(
     val project: String,
@@ -33,8 +32,11 @@ data class OpenDocument(
     /** The file was deleted on the PC while open here. */
     val deletedOnPc: Boolean = false,
 ) {
-    val dirty: Boolean get() = text != saved
-    val name: String get() = id.substringAfterLast('/')
+    val dirty: Boolean
+        get() = text != saved
+
+    val name: String
+        get() = id.substringAfterLast('/')
 
     /** The person typed: the text changes at once, and every span moves with it. */
     fun edited(newText: String): OpenDocument {
@@ -55,45 +57,58 @@ data class OpenDocument(
         if (atRevision == revision) copy(marks = spans) else this
 
     /**
-     * The PC acknowledged a save of `submitted`. Only acknowledged bytes become
-     * the saved baseline; anything typed while the save was in flight stays an
-     * unsaved edit on top of it.
+     * The PC acknowledged a save of `submitted`. Only acknowledged bytes become the saved baseline;
+     * anything typed while the save was in flight stays an unsaved edit on top of it.
      */
-    fun savedAs(submitted: String, digest: String, finalLineFeedAdded: Boolean, atRevision: Long): OpenDocument {
+    fun savedAs(
+        submitted: String,
+        digest: String,
+        finalLineFeedAdded: Boolean,
+        atRevision: Long,
+    ): OpenDocument {
         val persisted = if (finalLineFeedAdded) submitted + "\n" else submitted
         return if (revision == atRevision && text == submitted) {
-            copy(text = persisted, saved = persisted, base = digest, conflict = null, deletedOnPc = false)
+            copy(
+                text = persisted,
+                saved = persisted,
+                base = digest,
+                conflict = null,
+                deletedOnPc = false,
+            )
         } else {
             copy(saved = persisted, base = digest, conflict = null, deletedOnPc = false)
         }
     }
 
     /** What to do about a change to this file on the PC. */
-    fun remoteChange(digest: String?): RemoteChange = when {
-        digest == base -> RemoteChange.SAME
-        digest == null -> RemoteChange.DELETED
-        !dirty -> RemoteChange.REFRESH
-        else -> RemoteChange.CONFLICT
-    }
+    fun remoteChange(digest: String?): RemoteChange =
+        when {
+            digest == base -> RemoteChange.SAME
+            digest == null -> RemoteChange.DELETED
+            !dirty -> RemoteChange.REFRESH
+            else -> RemoteChange.CONFLICT
+        }
 
     /** Take the PC's text, discarding nothing that was not already discarded. */
-    fun reloaded(pcText: String, digest: String): OpenDocument = copy(
-        text = pcText,
-        saved = pcText,
-        base = digest,
-        revision = revision + 1,
-        tokens = null,
-        marks = emptyList(),
-        conflict = null,
-        deletedOnPc = false,
-    )
+    fun reloaded(pcText: String, digest: String): OpenDocument =
+        copy(
+            text = pcText,
+            saved = pcText,
+            base = digest,
+            revision = revision + 1,
+            tokens = null,
+            marks = emptyList(),
+            conflict = null,
+            deletedOnPc = false,
+        )
 
-    fun inConflict(pcText: String?, pcDigest: String): OpenDocument = copy(conflict = Conflict(pcText, pcDigest))
+    fun inConflict(pcText: String?, pcDigest: String): OpenDocument =
+        copy(conflict = Conflict(pcText, pcDigest))
 
     /**
-     * The person chose to keep their version over the PC's newer one. Their
-     * text now counts as an edit of the PC's revision, so the next save is an
-     * ordinary save of it — decided by them, not by whoever wrote last.
+     * The person chose to keep their version over the PC's newer one. Their text now counts as an
+     * edit of the PC's revision, so the next save is an ordinary save of it — decided by them, not
+     * by whoever wrote last.
      */
     fun keepMine(): OpenDocument {
         val conflict = conflict ?: return this
@@ -103,7 +118,12 @@ data class OpenDocument(
 
 data class Conflict(val text: String?, val digest: String)
 
-enum class RemoteChange { SAME, REFRESH, CONFLICT, DELETED }
+enum class RemoteChange {
+    SAME,
+    REFRESH,
+    CONFLICT,
+    DELETED,
+}
 
 /** LCL document names, as the PC applies them: see `lcl_project::naming`. */
 object LclNames {

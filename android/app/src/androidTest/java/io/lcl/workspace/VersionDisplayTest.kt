@@ -17,20 +17,24 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The version people see, on the app built with this release's defaults
- * (versionName 0.9.1, versionCode 9001 derived from it): Updates and About
- * both say "LCL 0.9.1", and neither shows the versionCode. No PC is needed.
+ * The version people see, on the app built with this release's defaults (versionName 0.9.1,
+ * versionCode 9001 derived from it): Updates and About both say "LCL 0.9.1", and neither shows the
+ * versionCode. No PC is needed.
  */
 @RunWith(AndroidJUnit4::class)
 class VersionDisplayTest {
-    @get:Rule
-    val rule = createAndroidComposeRule<MainActivity>()
+    @get:Rule val rule = createAndroidComposeRule<MainActivity>()
 
-    private fun exists(tag: String) = rule.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+    private fun exists(tag: String) =
+        rule.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
 
     private fun textOf(tag: String): String =
-        rule.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode()
-            .config.getOrNull(SemanticsProperties.Text)?.joinToString("") { it.text } ?: ""
+        rule
+            .onNodeWithTag(tag, useUnmergedTree = true)
+            .fetchSemanticsNode()
+            .config
+            .getOrNull(SemanticsProperties.Text)
+            ?.joinToString("") { it.text } ?: ""
 
     private fun back() {
         rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }

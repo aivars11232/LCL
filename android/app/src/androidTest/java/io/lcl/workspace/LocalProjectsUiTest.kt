@@ -14,39 +14,59 @@ import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.io.File
 
 /**
- * A project on this phone, with no PC paired at all: made from the
- * dashboard, a folder and a document made in it, the document edited and
- * saved, the engine's actions unavailable, everything on the app's private
- * storage and still there after the activity is recreated.
+ * A project on this phone, with no PC paired at all: made from the dashboard, a folder and a
+ * document made in it, the document edited and saved, the engine's actions unavailable, everything
+ * on the app's private storage and still there after the activity is recreated.
  */
 @RunWith(AndroidJUnit4::class)
 class LocalProjectsUiTest {
-    @get:Rule
-    val rule = createAndroidComposeRule<MainActivity>()
+    @get:Rule val rule = createAndroidComposeRule<MainActivity>()
 
-    private fun exists(tag: String) = rule.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+    private fun exists(tag: String) =
+        rule.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+
     private fun waitFor(tag: String) = rule.waitUntil(tag, 15_000) { exists(tag) }
-    private fun textOf(tag: String): String =
-        rule.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().config.getOrNull(SemanticsProperties.Text)?.joinToString("") { it.text } ?: ""
-    private fun source(): String =
-        rule.onNodeWithTag("source", useUnmergedTree = true).fetchSemanticsNode().config.getOrNull(SemanticsProperties.EditableText)?.text ?: ""
 
-    /** A picture of the screen as it is now, kept with the run's evidence: how the phone-only screens look. */
+    private fun textOf(tag: String): String =
+        rule
+            .onNodeWithTag(tag, useUnmergedTree = true)
+            .fetchSemanticsNode()
+            .config
+            .getOrNull(SemanticsProperties.Text)
+            ?.joinToString("") { it.text } ?: ""
+
+    private fun source(): String =
+        rule
+            .onNodeWithTag("source", useUnmergedTree = true)
+            .fetchSemanticsNode()
+            .config
+            .getOrNull(SemanticsProperties.EditableText)
+            ?.text ?: ""
+
+    /**
+     * A picture of the screen as it is now, kept with the run's evidence: how the phone-only
+     * screens look.
+     */
     private fun shot(name: String) {
         rule.waitForIdle()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val bitmap = instrumentation.uiAutomation.takeScreenshot() ?: return
-        val dir = File(instrumentation.targetContext.getExternalFilesDir(null), "shots").apply { mkdirs() }
-        File(dir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        val dir =
+            File(instrumentation.targetContext.getExternalFilesDir(null), "shots").apply {
+                mkdirs()
+            }
+        File(dir, "$name.png").outputStream().use {
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+        }
     }
 
     @Test
@@ -83,11 +103,15 @@ class LocalProjectsUiTest {
         val onDisk = File(storage, "Offline/planning/phase_1.lcl").readText()
         assertEquals(source(), onDisk)
         assertTrue(onDisk.contains("PHONE"))
-        for (tag in listOf("action_check", "action_run", "action_inspect", "action_validate")) rule.onNodeWithTag(tag).assertIsNotEnabled()
+        for (tag in listOf("action_check", "action_run", "action_inspect", "action_validate")) rule
+            .onNodeWithTag(tag)
+            .assertIsNotEnabled()
         shot("local_05_editor_saved")
         // Recreated (rotation, memory pressure): the project and the document are still there.
         rule.activityRule.scenario.recreate()
-        rule.waitUntil("the app is back", 15_000) { exists("new_local_project") || exists("project_where") || exists("source") }
+        rule.waitUntil("the app is back", 15_000) {
+            exists("new_local_project") || exists("project_where") || exists("source")
+        }
         if (exists("new_local_project")) {
             rule.onNodeWithTag("open_local:Offline").performScrollTo().performClick()
             // The document is still open, so the editor shows it again.

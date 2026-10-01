@@ -62,15 +62,27 @@ private fun Title(text: String, onBack: () -> Unit) {
 /** Presentation on this device only. None of it reaches the PC or changes a document. */
 @Composable
 fun SettingsScreen(settings: AppSettings, onChange: (AppSettings) -> Unit, onBack: () -> Unit) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         Title("Settings", onBack)
         SectionLabel("Appearance")
-        for ((theme, label) in listOf(Theme.SYSTEM to "System", Theme.DARK to "Dark", Theme.LIGHT to "Light")) {
+        for ((theme, label) in
+            listOf(Theme.SYSTEM to "System", Theme.DARK to "Dark", Theme.LIGHT to "Light")) {
             Row(
-                Modifier.fillMaxWidth().selectable(selected = settings.theme == theme, onClick = { onChange(settings.copy(theme = theme)) }).testTag("theme_${label.lowercase()}"),
+                Modifier.fillMaxWidth()
+                    .selectable(
+                        selected = settings.theme == theme,
+                        onClick = { onChange(settings.copy(theme = theme)) },
+                    )
+                    .testTag("theme_${label.lowercase()}"),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                RadioButton(selected = settings.theme == theme, onClick = { onChange(settings.copy(theme = theme)) })
+                RadioButton(
+                    selected = settings.theme == theme,
+                    onClick = { onChange(settings.copy(theme = theme)) },
+                )
                 Text(label)
             }
         }
@@ -85,7 +97,11 @@ fun SettingsScreen(settings: AppSettings, onChange: (AppSettings) -> Unit, onBac
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Show line numbers", Modifier.weight(1f))
-            Switch(checked = settings.lineNumbers, onCheckedChange = { onChange(settings.copy(lineNumbers = it)) }, modifier = Modifier.testTag("line_numbers"))
+            Switch(
+                checked = settings.lineNumbers,
+                onCheckedChange = { onChange(settings.copy(lineNumbers = it)) },
+                modifier = Modifier.testTag("line_numbers"),
+            )
         }
         Text(
             "Documents are always indented with spaces: the Indent button and a keyboard's Tab key insert four. " +
@@ -100,18 +116,30 @@ fun AboutScreen(container: AppContainer, connection: ConnectionState, onBack: ()
     val ui by container.workspace.ui.collectAsState()
     val about: JsonObject? = ui.about
     val pc = connection.pcOrNull
-    val deviceFingerprint = remember(pc?.keyAlias) {
-        pc?.let { runCatching { container.identities.load(it.keyAlias)?.fingerprint }.getOrNull() }
-    }
-    val keyProtection = remember(pc?.keyAlias) {
-        pc?.let { runCatching { container.identities.protection(it.keyAlias) }.getOrNull() }
-    }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    val deviceFingerprint =
+        remember(pc?.keyAlias) {
+            pc?.let {
+                runCatching { container.identities.load(it.keyAlias)?.fingerprint }.getOrNull()
+            }
+        }
+    val keyProtection =
+        remember(pc?.keyAlias) {
+            pc?.let { runCatching { container.identities.protection(it.keyAlias) }.getOrNull() }
+        }
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
         Title("About", onBack)
         @Composable
         fun row(label: String, value: String?) {
             Text(label, style = MaterialTheme.typography.labelMedium)
-            Text(value ?: "—", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("about:$label"))
+            Text(
+                value ?: "—",
+                fontFamily = FontFamily.Monospace,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("about:$label"),
+            )
         }
         row("App", "LCL ${ProductVersion.shown(BuildConfig.VERSION_NAME)}")
         row("Remote protocol", Protocol.VERSION)
@@ -119,27 +147,48 @@ fun AboutScreen(container: AppContainer, connection: ConnectionState, onBack: ()
         row("PC", pc?.let { "${it.name} (${it.pcId})" })
         row("PC fingerprint", pc?.fingerprint)
         row("This device's fingerprint for it", deviceFingerprint)
-        row("This device's key", keyProtection?.let { "Android Keystore, not exportable · ${it.description}" })
+        row(
+            "This device's key",
+            keyProtection?.let { "Android Keystore, not exportable · ${it.description}" },
+        )
         row("PC service", about?.str("service")?.let(ProductVersion::shownService))
         row("PC engine protocol", about?.str("engine_protocol"))
         val core = about?.obj("core")
-        row("LCL Core 0.1", core?.let { "${it.str("formal_version")} · ${it.str("authority")}\n${it.str("identity_digest")}" })
+        row(
+            "LCL Core 0.1",
+            core?.let {
+                "${it.str("formal_version")} · ${it.str("authority")}\n${it.str("identity_digest")}"
+            },
+        )
         val localized = about?.obj("localized")
-        row("LCL Core 0.2", localized?.let { "${it.str("formal_version")} · ${it.str("authority")}\n${it.str("identity_digest")}" } ?: "not installed on this PC")
-        row("Android", "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}")
+        row(
+            "LCL Core 0.2",
+            localized?.let {
+                "${it.str("formal_version")} · ${it.str("authority")}\n${it.str("identity_digest")}"
+            } ?: "not installed on this PC",
+        )
+        row(
+            "Android",
+            "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}",
+        )
         row("ABIs", Build.SUPPORTED_ABIS.joinToString())
-        if (about == null) Text("PC details appear once connected.", style = MaterialTheme.typography.bodySmall)
+        if (about == null)
+            Text("PC details appear once connected.", style = MaterialTheme.typography.bodySmall)
     }
 }
 
 /**
- * A `.lcl` or `.lcl.txt` file opened from elsewhere on this phone. It is shown
- * as it is — nothing on the phone judges LCL — and the connected PC can check
- * or inspect it with its engine. A file that is not valid UTF-8 is refused
- * rather than shown or sent repaired (see [LocalText]).
+ * A `.lcl` or `.lcl.txt` file opened from elsewhere on this phone. It is shown as it is — nothing
+ * on the phone judges LCL — and the connected PC can check or inspect it with its engine. A file
+ * that is not valid UTF-8 is refused rather than shown or sent repaired (see [LocalText]).
  */
 @Composable
-fun LocalDocumentScreen(container: AppContainer, uri: Uri, settings: AppSettings, onBack: () -> Unit) {
+fun LocalDocumentScreen(
+    container: AppContainer,
+    uri: Uri,
+    settings: AppSettings,
+    onBack: () -> Unit,
+) {
     val context = LocalContext.current
     var text by remember { mutableStateOf<String?>(null) }
     var problem by remember { mutableStateOf<String?>(null) }
@@ -151,37 +200,58 @@ fun LocalDocumentScreen(container: AppContainer, uri: Uri, settings: AppSettings
             withContext(Dispatchers.IO) {
                 context.contentResolver.openInputStream(uri)!!.use(LocalText::read)
             }
-        }.onSuccess { text = it }.onFailure { problem = it.message }
+        }
+            .onSuccess { text = it }
+            .onFailure { problem = it.message }
     }
     Column(Modifier.fillMaxSize().padding(8.dp)) {
         Title(name, onBack)
-        problem?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("local_problem")) }
+        problem?.let {
+            Text(
+                it,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag("local_problem"),
+            )
+        }
         val loaded = text ?: return@Column
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (op in listOf("check", "inspect")) {
                 OutlinedButton(
                     onClick = {
                         scope.launch {
-                            val project = container.workspace.ui.value.project
-                                ?: return@launch run { verdict = "Connect to a PC to check this document." }
+                            val project =
+                                container.workspace.ui.value.project
+                                    ?: return@launch run {
+                                        verdict = "Connect to a PC to check this document."
+                                    }
                             val reply = runCatching {
-                                container.connection.request(op, buildJsonObject {
-                                    put("project", project.id)
-                                    put("document", name)
-                                    put("text", loaded)
-                                })
-                            }.getOrElse { return@launch run { verdict = it.message } }
-                            verdict = if (reply.ok) {
-                                val diagnostics = WorkspaceController.diagnosticSpans(reply.obj, name).size
-                                "${op.replaceFirstChar { it.uppercase() }} on the PC: ${reply.obj.str("outcome")} at ${reply.obj.str("reached")}, $diagnostics diagnostic(s)"
-                            } else {
-                                reply.error
+                                container.connection.request(
+                                    op,
+                                    buildJsonObject {
+                                        put("project", project.id)
+                                        put("document", name)
+                                        put("text", loaded)
+                                    },
+                                )
                             }
+                                .getOrElse {
+                                    return@launch run { verdict = it.message }
+                                }
+                            verdict =
+                                if (reply.ok) {
+                                    val diagnostics =
+                                        WorkspaceController.diagnosticSpans(reply.obj, name).size
+                                    "${op.replaceFirstChar { it.uppercase() }} on the PC: ${reply.obj.str("outcome")} at ${reply.obj.str("reached")}, $diagnostics diagnostic(s)"
+                                } else {
+                                    reply.error
+                                }
                         }
                     },
                     enabled = connection(container) is ConnectionState.Connected,
                     modifier = Modifier.testTag("local_$op"),
-                ) { Text("${op.replaceFirstChar { it.uppercase() }} on PC") }
+                ) {
+                    Text("${op.replaceFirstChar { it.uppercase() }} on PC")
+                }
             }
         }
         verdict?.let { Text(it, Modifier.padding(4.dp)) }
@@ -199,4 +269,5 @@ fun LocalDocumentScreen(container: AppContainer, uri: Uri, settings: AppSettings
 }
 
 @Composable
-private fun connection(container: AppContainer): ConnectionState = container.connection.state.collectAsState().value
+private fun connection(container: AppContainer): ConnectionState =
+    container.connection.state.collectAsState().value

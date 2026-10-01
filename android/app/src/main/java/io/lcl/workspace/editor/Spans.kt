@@ -3,11 +3,10 @@ package io.lcl.workspace.editor
 /**
  * Byte offsets and character offsets, and spans that move with an edit.
  *
- * The PC's engine speaks in UTF-8 byte offsets — `02_LEXICAL/01` makes source
- * bytes normative — and Compose in UTF-16 character offsets. Every conversion
- * goes through one [Utf8Index] per text, and nothing here counts characters to
- * find a line or decides anything about LCL: spans come from the engine and
- * are only moved or dropped, never made up.
+ * The PC's engine speaks in UTF-8 byte offsets — `02_LEXICAL/01` makes source bytes normative — and
+ * Compose in UTF-16 character offsets. Every conversion goes through one [Utf8Index] per text, and
+ * nothing here counts characters to find a line or decides anything about LCL: spans come from the
+ * engine and are only moved or dropped, never made up.
  */
 class Utf8Index(val text: String) {
     /** `byteAt[i]` is the UTF-8 offset of UTF-16 index `i`; one past the end too. */
@@ -20,12 +19,13 @@ class Utf8Index(val text: String) {
         while (i < text.length) {
             byteAt[i] = bytes
             val cp = text.codePointAt(i)
-            val size = when {
-                cp < 0x80 -> 1
-                cp < 0x800 -> 2
-                cp < 0x10000 -> 3
-                else -> 4
-            }
+            val size =
+                when {
+                    cp < 0x80 -> 1
+                    cp < 0x800 -> 2
+                    cp < 0x10000 -> 3
+                    else -> 4
+                }
             if (Character.charCount(cp) == 2) byteAt[i + 1] = bytes
             bytes += size
             i += Character.charCount(cp)
@@ -47,7 +47,11 @@ class Utf8Index(val text: String) {
             if (byteAt[mid] <= byte) lo = mid else hi = mid - 1
         }
         // Step back from the second unit of a surrogate pair to its start.
-        return if (lo > 0 && Character.isLowSurrogate(text[lo]) && Character.isHighSurrogate(text[lo - 1])) lo - 1 else lo
+        return if (
+            lo > 0 && Character.isLowSurrogate(text[lo]) && Character.isHighSurrogate(text[lo - 1])
+        )
+            lo - 1
+        else lo
     }
 }
 
@@ -78,20 +82,21 @@ fun editBetween(before: Utf8Index, after: Utf8Index): Edit {
 }
 
 /**
- * Carry spans across one edit. A span wholly ahead of it stays; one wholly
- * after it moves with its text; one the edit touched is dropped, and what it
- * covered is drawn plain until the engine describes the new text.
+ * Carry spans across one edit. A span wholly ahead of it stays; one wholly after it moves with its
+ * text; one the edit touched is dropped, and what it covered is drawn plain until the engine
+ * describes the new text.
  */
 fun carry(spans: List<ByteSpan>, edit: Edit): List<ByteSpan> {
     val shift = edit.newTo - edit.oldTo
     return spans.mapNotNull { span ->
         when {
             span.start < edit.from && span.end <= edit.from -> span
-            span.start >= edit.oldTo -> span.copy(
-                start = span.start + shift,
-                end = span.end + shift,
-                line = span.line?.plus(edit.lines),
-            )
+            span.start >= edit.oldTo ->
+                span.copy(
+                    start = span.start + shift,
+                    end = span.end + shift,
+                    line = span.line?.plus(edit.lines),
+                )
             else -> null
         }
     }
@@ -105,8 +110,11 @@ class EditHistory(private val limit: Int = 200, private val mergeWithinMs: Long 
 
     data class Snapshot(val text: String, val selectionStart: Int, val selectionEnd: Int)
 
-    val canUndo: Boolean get() = undo.isNotEmpty()
-    val canRedo: Boolean get() = redo.isNotEmpty()
+    val canUndo: Boolean
+        get() = undo.isNotEmpty()
+
+    val canRedo: Boolean
+        get() = redo.isNotEmpty()
 
     /** Record the state *before* an edit made at `atMs`. */
     fun record(before: Snapshot, atMs: Long) {

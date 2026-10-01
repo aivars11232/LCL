@@ -55,8 +55,17 @@ class EditorState {
     fun snapshot(text: String) = EditHistory.Snapshot(text, selection.start, selection.end)
 
     /** Undo: returns the text to show, having moved the cursor back where it was. */
-    fun undo(text: String): String? = history.undo(snapshot(text))?.also { selection = TextRange(it.selectionStart, it.selectionEnd) }?.text
-    fun redo(text: String): String? = history.redo(snapshot(text))?.also { selection = TextRange(it.selectionStart, it.selectionEnd) }?.text
+    fun undo(text: String): String? =
+        history
+            .undo(snapshot(text))
+            ?.also { selection = TextRange(it.selectionStart, it.selectionEnd) }
+            ?.text
+
+    fun redo(text: String): String? =
+        history
+            .redo(snapshot(text))
+            ?.also { selection = TextRange(it.selectionStart, it.selectionEnd) }
+            ?.text
 
     /** Replace the selection with `inserted`, for the indent key and button. */
     fun insert(text: String, inserted: String): String {
@@ -71,15 +80,14 @@ class EditorState {
 /**
  * The source editor.
  *
- * What is drawn is always the document's own text. Highlighting is a visual
- * transformation that only adds colour to it, from token spans the PC's lexer
- * produced and diagnostic spans its engine reported, both moved with the text
- * as it is edited; before the PC has answered, the text is simply plain.
- * Nothing about highlighting can hide a character.
+ * What is drawn is always the document's own text. Highlighting is a visual transformation that
+ * only adds colour to it, from token spans the PC's lexer produced and diagnostic spans its engine
+ * reported, both moved with the text as it is edited; before the PC has answered, the text is
+ * simply plain. Nothing about highlighting can hide a character.
  *
- * The line-number gutter and the text share one vertical scroll and one line
- * height, so they cannot drift apart, and lines never wrap: a long line
- * scrolls sideways instead, so line N is always row N.
+ * The line-number gutter and the text share one vertical scroll and one line height, so they cannot
+ * drift apart, and lines never wrap: a long line scrolls sideways instead, so line N is always row
+ * N.
  */
 @Composable
 fun CodeEditor(
@@ -93,16 +101,23 @@ fun CodeEditor(
 ) {
     val colors = LocalLclColors.current
     val ink = MaterialTheme.colorScheme.onSurface
-    val style = TextStyle(
-        fontFamily = FontFamily.Monospace,
-        fontSize = fontSize.sp,
-        lineHeight = (fontSize * 1.5).sp,
-        lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
-        color = ink,
-    )
+    val style =
+        TextStyle(
+            fontFamily = FontFamily.Monospace,
+            fontSize = fontSize.sp,
+            lineHeight = (fontSize * 1.5).sp,
+            lineHeightStyle =
+                LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
+            color = ink,
+        )
     val text = document.text
-    val selection = TextRange(state.selection.start.coerceIn(0, text.length), state.selection.end.coerceIn(0, text.length))
-    val highlight = remember(text, document.tokens, document.marks, colors) { Highlight(document, colors) }
+    val selection =
+        TextRange(
+            state.selection.start.coerceIn(0, text.length),
+            state.selection.end.coerceIn(0, text.length),
+        )
+    val highlight =
+        remember(text, document.tokens, document.marks, colors) { Highlight(document, colors) }
     val vertical = rememberScrollState()
     val horizontal = rememberScrollState()
 
@@ -111,10 +126,10 @@ fun CodeEditor(
             Text(
                 text = gutter(text, document, colors),
                 style = style.copy(color = colors.gutterText, textAlign = TextAlign.End),
-                modifier = Modifier
-                    .background(colors.gutter)
-                    .padding(horizontal = 8.dp, vertical = 8.dp)
-                    .testTag("gutter"),
+                modifier =
+                    Modifier.background(colors.gutter)
+                        .padding(horizontal = 8.dp, vertical = 8.dp)
+                        .testTag("gutter"),
             )
         }
         BoxWithConstraints(Modifier.weight(1f)) {
@@ -124,7 +139,10 @@ fun CodeEditor(
                     value = TextFieldValue(text, selection),
                     onValueChange = { value ->
                         if (value.text != text) {
-                            state.history.record(EditHistory.Snapshot(text, selection.start, selection.end), System.currentTimeMillis())
+                            state.history.record(
+                                EditHistory.Snapshot(text, selection.start, selection.end),
+                                System.currentTimeMillis(),
+                            )
                             state.selection = value.selection
                             onTextChange(value.text)
                         } else {
@@ -135,18 +153,22 @@ fun CodeEditor(
                     textStyle = style,
                     cursorBrush = SolidColor(ink),
                     visualTransformation = highlight,
-                    modifier = Modifier
-                        .widthIn(min = visible)
-                        .padding(8.dp)
-                        .testTag("source")
-                        .onPreviewKeyEvent { event ->
-                            if (!readOnly && event.key == Key.Tab && event.type == KeyEventType.KeyDown) {
-                                onTextChange(state.insert(text, INDENT))
-                                true
-                            } else {
-                                false
-                            }
-                        },
+                    modifier =
+                        Modifier.widthIn(min = visible)
+                            .padding(8.dp)
+                            .testTag("source")
+                            .onPreviewKeyEvent { event ->
+                                if (
+                                    !readOnly &&
+                                        event.key == Key.Tab &&
+                                        event.type == KeyEventType.KeyDown
+                                ) {
+                                    onTextChange(state.insert(text, INDENT))
+                                    true
+                                } else {
+                                    false
+                                }
+                            },
                 )
             }
         }
@@ -156,24 +178,35 @@ fun CodeEditor(
 /** Line numbers from the text itself, with the lines holding a diagnostic marked. */
 private fun gutter(text: String, document: OpenDocument, colors: LclColors): AnnotatedString {
     val count = lineCount(text)
-    val marked = document.marks.mapNotNull { m -> m.line?.let { it to m.kind } }.groupBy({ it.first }, { it.second })
-    return AnnotatedString.Builder().apply {
-        for (line in 1..count) {
-            val kinds = marked[line]
-            if (kinds != null) {
-                pushStyle(SpanStyle(color = if ("bad" in kinds) colors.bad else colors.warn, fontWeight = FontWeight.Bold))
-                append(line.toString())
-                pop()
-            } else {
-                append(line.toString())
+    val marked =
+        document.marks
+            .mapNotNull { m -> m.line?.let { it to m.kind } }
+            .groupBy({ it.first }, { it.second })
+    return AnnotatedString.Builder()
+        .apply {
+            for (line in 1..count) {
+                val kinds = marked[line]
+                if (kinds != null) {
+                    pushStyle(
+                        SpanStyle(
+                            color = if ("bad" in kinds) colors.bad else colors.warn,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    )
+                    append(line.toString())
+                    pop()
+                } else {
+                    append(line.toString())
+                }
+                if (line < count) append('\n')
             }
-            if (line < count) append('\n')
         }
-    }.toAnnotatedString()
+        .toAnnotatedString()
 }
 
 /** Colour from the PC's spans. The text itself is never changed, only styled. */
-class Highlight(private val document: OpenDocument, private val colors: LclColors) : VisualTransformation {
+class Highlight(private val document: OpenDocument, private val colors: LclColors) :
+    VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
         if (text.text != document.text) return TransformedText(text, OffsetMapping.Identity)
         val index = Utf8Index(document.text)
@@ -185,31 +218,39 @@ class Highlight(private val document: OpenDocument, private val colors: LclColor
             return if (to > from) from until to else null
         }
         document.tokens?.forEach { span ->
-            val color = when (span.kind) {
-                "keyword" -> colors.keyword
-                "block" -> colors.block
-                "type" -> colors.type
-                "literal" -> colors.literal
-                "string" -> colors.string
-                "symbol" -> colors.symbol
-                else -> null
-            } ?: return@forEach
+            val color =
+                when (span.kind) {
+                    "keyword" -> colors.keyword
+                    "block" -> colors.block
+                    "type" -> colors.type
+                    "literal" -> colors.literal
+                    "string" -> colors.string
+                    "symbol" -> colors.symbol
+                    else -> null
+                } ?: return@forEach
             val r = range(span.start, span.end) ?: return@forEach
             builder.addStyle(
-                SpanStyle(color = color, fontWeight = if (span.kind == "block") FontWeight.SemiBold else null),
+                SpanStyle(
+                    color = color,
+                    fontWeight = if (span.kind == "block") FontWeight.SemiBold else null,
+                ),
                 r.first,
                 r.last + 1,
             )
         }
         document.marks.forEach { mark ->
-            val color = when (mark.kind) {
-                "bad" -> colors.bad
-                "warn" -> colors.warn
-                else -> colors.info
-            }
+            val color =
+                when (mark.kind) {
+                    "bad" -> colors.bad
+                    "warn" -> colors.warn
+                    else -> colors.info
+                }
             val r = range(mark.start, maxOf(mark.end, mark.start + 1)) ?: return@forEach
             builder.addStyle(
-                SpanStyle(background = color.copy(alpha = 0.18f), textDecoration = TextDecoration.Underline),
+                SpanStyle(
+                    background = color.copy(alpha = 0.18f),
+                    textDecoration = TextDecoration.Underline,
+                ),
                 r.first,
                 r.last + 1,
             )

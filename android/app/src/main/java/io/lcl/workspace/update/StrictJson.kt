@@ -2,14 +2,12 @@ package io.lcl.workspace.update
 
 /**
  * A strict JSON reader (RFC 8259) with exactly the rules of the PC updater's
- * (impl/crates/lcl-spec/src/json.rs), so the phone and the PC read one update
- * manifest the same way: no duplicate keys, no leading zeros or `+`, no
- * unquoted words, no lone surrogates, no raw control characters in strings, no
- * trailing content, nesting at most [MAX_NESTING] deep. Numbers are read by
- * value, as doubles. Objects keep their order.
+ * (impl/crates/lcl-spec/src/json.rs), so the phone and the PC read one update manifest the same
+ * way: no duplicate keys, no leading zeros or `+`, no unquoted words, no lone surrogates, no raw
+ * control characters in strings, no trailing content, nesting at most [MAX_NESTING] deep. Numbers
+ * are read by value, as doubles. Objects keep their order.
  *
- * A value is a [Map] (String keys), a [List], a [String], a [Double], a
- * [Boolean] or [Null].
+ * A value is a [Map] (String keys), a [List], a [String], a [Double], a [Boolean] or [Null].
  */
 internal object StrictJson {
     /** JSON's `null`. */
@@ -47,16 +45,17 @@ internal object StrictJson {
             i++
         }
 
-        fun value(): Any = when (peek()) {
-            null -> fail("unexpected end of input")
-            '{' -> nested { members() }
-            '[' -> nested { items() }
-            '"' -> string()
-            't' -> literal("true", true)
-            'f' -> literal("false", false)
-            'n' -> literal("null", Null)
-            else -> number()
-        }
+        fun value(): Any =
+            when (peek()) {
+                null -> fail("unexpected end of input")
+                '{' -> nested { members() }
+                '[' -> nested { items() }
+                '"' -> string()
+                't' -> literal("true", true)
+                'f' -> literal("false", false)
+                'n' -> literal("null", Null)
+                else -> number()
+            }
 
         private fun literal(word: String, value: Any): Any {
             if (!s.startsWith(word, i)) fail("invalid literal, expected '$word'")
@@ -130,12 +129,13 @@ internal object StrictJson {
             var v = 0
             repeat(4) {
                 val c = s[i]
-                val d = when (c) {
-                    in '0'..'9' -> c - '0'
-                    in 'a'..'f' -> c - 'a' + 10
-                    in 'A'..'F' -> c - 'A' + 10
-                    else -> fail("invalid hex digit in \\u escape")
-                }
+                val d =
+                    when (c) {
+                        in '0'..'9' -> c - '0'
+                        in 'a'..'f' -> c - 'a' + 10
+                        in 'A'..'F' -> c - 'A' + 10
+                        else -> fail("invalid hex digit in \\u escape")
+                    }
                 v = (v shl 4) or d
                 i++
             }

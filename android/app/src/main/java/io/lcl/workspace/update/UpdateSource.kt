@@ -13,10 +13,16 @@ interface ReleaseSource {
     fun latest(): Release?
 
     /**
-     * Asset [name] of [release], written to [into] as it arrives, at most
-     * [limit] bytes; [progress] sees (done, total).
+     * Asset [name] of [release], written to [into] as it arrives, at most [limit] bytes; [progress]
+     * sees (done, total).
      */
-    fun fetch(release: Release, name: String, limit: Long, into: OutputStream, progress: (Long, Long) -> Unit = { _, _ -> })
+    fun fetch(
+        release: Release,
+        name: String,
+        limit: Long,
+        into: OutputStream,
+        progress: (Long, Long) -> Unit = { _, _ -> },
+    )
 }
 
 /** A small asset — a manifest, a signature — in memory. */
@@ -24,21 +30,29 @@ fun ReleaseSource.fetchBytes(release: Release, name: String, limit: Long): ByteA
     ByteArrayOutputStream().also { fetch(release, name, limit, it) }.toByteArray()
 
 /**
- * Copy [input] to [into], one buffer at a time: never more than [limit] bytes,
- * refused as soon as it would pass [limit] or as soon as the server announces
- * more ([length], -1 when it does not say), and a download that stops early or
- * comes up short of [length] is an error. The number of bytes copied.
+ * Copy [input] to [into], one buffer at a time: never more than [limit] bytes, refused as soon as
+ * it would pass [limit] or as soon as the server announces more ([length], -1 when it does not
+ * say), and a download that stops early or comes up short of [length] is an error. The number of
+ * bytes copied.
  */
-fun copyBounded(input: InputStream, into: OutputStream, length: Long, limit: Long, progress: (Long, Long) -> Unit = { _, _ -> }): Long {
-    if (length > limit) throw UpdateRefused("invalid", "$length bytes is more than the $limit expected")
+fun copyBounded(
+    input: InputStream,
+    into: OutputStream,
+    length: Long,
+    limit: Long,
+    progress: (Long, Long) -> Unit = { _, _ -> },
+): Long {
+    if (length > limit)
+        throw UpdateRefused("invalid", "$length bytes is more than the $limit expected")
     val buffer = ByteArray(64 * 1024)
     var done = 0L
     while (true) {
-        val n = try {
-            input.read(buffer)
-        } catch (e: IOException) {
-            throw UpdateRefused("download", "the download stopped: ${e.message}")
-        }
+        val n =
+            try {
+                input.read(buffer)
+            } catch (e: IOException) {
+                throw UpdateRefused("download", "the download stopped: ${e.message}")
+            }
         if (n < 0) break
         if (done + n > limit) throw UpdateRefused("invalid", "more than the $limit bytes expected")
         into.write(buffer, 0, n)
@@ -50,10 +64,9 @@ fun copyBounded(input: InputStream, into: OutputStream, length: Long, limit: Lon
 }
 
 /**
- * GitHub Releases of the official repository, pinned in the build. Assets are
- * fetched by name from the same release, at URLs built here, never from a URL
- * an answer supplies. Only a debug build may name a local test server
- * ([testEndpoint], `http://10.0.2.2:<port>`); a release build has none.
+ * GitHub Releases of the official repository, pinned in the build. Assets are fetched by name from
+ * the same release, at URLs built here, never from a URL an answer supplies. Only a debug build may
+ * name a local test server ([testEndpoint], `http://10.0.2.2:<port>`); a release build has none.
  */
 class GitHubReleases(testEndpoint: String = "") : ReleaseSource {
     private val api: String
@@ -64,7 +77,11 @@ class GitHubReleases(testEndpoint: String = "") : ReleaseSource {
             api = "https://api.github.com/repos/$REPOSITORY"
             download = "https://github.com/$REPOSITORY/releases/download"
         } else {
-            require(Regex("http://(10\\.0\\.2\\.2|127\\.0\\.0\\.1):[0-9]{1,5}").matches(testEndpoint)) { "not a local test server: $testEndpoint" }
+            require(
+                Regex("http://(10\\.0\\.2\\.2|127\\.0\\.0\\.1):[0-9]{1,5}").matches(testEndpoint)
+            ) {
+                "not a local test server: $testEndpoint"
+            }
             api = "$testEndpoint/api"
             download = "$testEndpoint/download"
         }
@@ -80,14 +97,27 @@ class GitHubReleases(testEndpoint: String = "") : ReleaseSource {
         return parseRelease(body.toString(Charsets.UTF_8.name()))
     }
 
-    override fun fetch(release: Release, name: String, limit: Long, into: OutputStream, progress: (Long, Long) -> Unit) {
-        if (name !in release.assets) throw UpdateRefused("invalid", "release ${release.tag} has no $name")
+    override fun fetch(
+        release: Release,
+        name: String,
+        limit: Long,
+        into: OutputStream,
+        progress: (Long, Long) -> Unit,
+    ) {
+        if (name !in release.assets)
+            throw UpdateRefused("invalid", "release ${release.tag} has no $name")
         get("$download/${release.tag}/$name", "application/octet-stream", limit, into, progress)
     }
 
     private class NotFound : IOException()
 
-    private fun get(url: String, accept: String, limit: Long, into: OutputStream, progress: (Long, Long) -> Unit) {
+    private fun get(
+        url: String,
+        accept: String,
+        limit: Long,
+        into: OutputStream,
+        progress: (Long, Long) -> Unit,
+    ) {
         var target = URL(url)
         repeat(6) {
             val connection = target.openConnection() as HttpURLConnection
@@ -97,23 +127,40 @@ class GitHubReleases(testEndpoint: String = "") : ReleaseSource {
                 connection.readTimeout = 30_000
                 connection.setRequestProperty("Accept", accept)
                 connection.setRequestProperty("User-Agent", "lcl-android-update")
-                val status = try {
-                    connection.responseCode
-                } catch (e: IOException) {
-                    throw Offline(e.message ?: "unreachable")
-                }
+                val status =
+                    try {
+                        connection.responseCode
+                    } catch (e: IOException) {
+                        throw Offline(e.message ?: "unreachable")
+                    }
                 when (status) {
                     200 -> {
-                        connection.inputStream.use { copyBounded(it, into, connection.contentLengthLong, limit, progress) }
+                        connection.inputStream.use {
+                            copyBounded(it, into, connection.contentLengthLong, limit, progress)
+                        }
                         return
                     }
-                    301, 302, 303, 307, 308 -> {
-                        val next = URL(target, connection.getHeaderField("Location") ?: throw UpdateRefused("invalid", "a redirect without a location"))
-                        if (next.protocol != "https" && next.protocol != target.protocol) throw UpdateRefused("invalid", "a redirect away from https")
+                    301,
+                    302,
+                    303,
+                    307,
+                    308 -> {
+                        val next =
+                            URL(
+                                target,
+                                connection.getHeaderField("Location")
+                                    ?: throw UpdateRefused(
+                                        "invalid",
+                                        "a redirect without a location",
+                                    ),
+                            )
+                        if (next.protocol != "https" && next.protocol != target.protocol)
+                            throw UpdateRefused("invalid", "a redirect away from https")
                         target = next
                     }
                     404 -> throw NotFound()
-                    else -> throw UpdateRefused("invalid", "the update server answered HTTP $status")
+                    else ->
+                        throw UpdateRefused("invalid", "the update server answered HTTP $status")
                 }
             } finally {
                 connection.disconnect()

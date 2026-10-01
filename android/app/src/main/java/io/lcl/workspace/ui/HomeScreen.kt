@@ -3,7 +3,6 @@ package io.lcl.workspace.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,13 +22,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import io.lcl.workspace.AppContainer
 import io.lcl.workspace.connection.ConnectionState
 import io.lcl.workspace.data.PcRecord
@@ -37,9 +36,9 @@ import java.text.DateFormat
 import java.util.Date
 
 /**
- * Said while a PC may still trust an earlier key of this device, one that
- * pairing again could not yet retire (see ConnectionManager.pair): which
- * device it is on the PC, why it is not retired yet, and what to do.
+ * Said while a PC may still trust an earlier key of this device, one that pairing again could not
+ * yet retire (see ConnectionManager.pair): which device it is on the PC, why it is not retired yet,
+ * and what to do.
  */
 fun retiringNotice(pc: PcRecord): String {
     val devices = pc.retiring.joinToString(", ") { it.deviceId.ifBlank { "id unknown" } }
@@ -70,11 +69,18 @@ fun HomeScreen(
     val localProjects = workspace.projects.filter { it.local }
     val active = state.pcOrNull
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
+        Modifier.fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("LCL", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Text(
+                "LCL",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
+            )
             ManualIcon(onManual)
         }
         Text(
@@ -89,16 +95,38 @@ fun HomeScreen(
                 Text("No projects on this phone yet.", style = MaterialTheme.typography.bodySmall)
             }
             for (project in localProjects) {
-                Row(Modifier.fillMaxWidth().listRow().padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("▣", color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 10.dp))
-                    Text(project.name, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(
+                    Modifier.fillMaxWidth().listRow().padding(start = 12.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "▣",
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(end = 10.dp),
+                    )
+                    Text(
+                        project.name,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     TextButton(
-                        onClick = { container.workspace.selectProject(project.id); onOpenWorkspace() },
+                        onClick = {
+                            container.workspace.selectProject(project.id)
+                            onOpenWorkspace()
+                        },
                         modifier = Modifier.testTag("open_local:${project.name}"),
-                    ) { Text("Open") }
+                    ) {
+                        Text("Open")
+                    }
                 }
             }
-            OutlinedButton(onClick = { makingLocal = true }, Modifier.testTag("new_local_project")) { Text("New project on this phone") }
+            OutlinedButton(
+                onClick = { makingLocal = true },
+                Modifier.testTag("new_local_project"),
+            ) {
+                Text("New project on this phone")
+            }
         }
         if (pcs.isEmpty()) {
             Section("On a PC") {
@@ -112,10 +140,15 @@ fun HomeScreen(
         for (pc in pcs) {
             val isActive = pc.pcId == active?.pcId
             Section("On ${pc.name}", Modifier.testTag("pc:${pc.pcId}")) {
-                Text(if (isActive) describe(state) else "Paired, not active", style = MaterialTheme.typography.bodySmall)
+                Text(
+                    if (isActive) describe(state) else "Paired, not active",
+                    style = MaterialTheme.typography.bodySmall,
+                )
                 Text(
                     "Fingerprint ${pc.fingerprint.take(16)}… · paired ${DateFormat.getDateInstance().format(Date(pc.pairedAt * 1000))}" +
-                        (pc.lastConnected?.let { " · last connected ${DateFormat.getDateTimeInstance().format(Date(it * 1000))}" } ?: ""),
+                        (pc.lastConnected?.let {
+                            " · last connected ${DateFormat.getDateTimeInstance().format(Date(it * 1000))}"
+                        } ?: ""),
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -130,31 +163,68 @@ fun HomeScreen(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (isActive && state is ConnectionState.Connected) {
-                        Button(onClick = onOpenWorkspace, Modifier.testTag("open_workspace")) { Text("Open workspace") }
-                        OutlinedButton(onClick = container.connection::disconnect, Modifier.testTag("disconnect")) { Text("Disconnect") }
-                    } else if (isActive && state !is ConnectionState.Revoked && state !is ConnectionState.NotPaired) {
-                        Button(onClick = container.connection::reconnectNow, Modifier.testTag("reconnect")) { Text("Reconnect") }
+                        Button(onClick = onOpenWorkspace, Modifier.testTag("open_workspace")) {
+                            Text("Open workspace")
+                        }
+                        OutlinedButton(
+                            onClick = container.connection::disconnect,
+                            Modifier.testTag("disconnect"),
+                        ) {
+                            Text("Disconnect")
+                        }
+                    } else if (
+                        isActive &&
+                            state !is ConnectionState.Revoked &&
+                            state !is ConnectionState.NotPaired
+                    ) {
+                        Button(
+                            onClick = container.connection::reconnectNow,
+                            Modifier.testTag("reconnect"),
+                        ) {
+                            Text("Reconnect")
+                        }
                     } else if (!isActive) {
-                        Button(onClick = { container.connection.connect(pc.pcId); onOpenWorkspace() }) { Text("Use this PC") }
+                        Button(
+                            onClick = {
+                                container.connection.connect(pc.pcId)
+                                onOpenWorkspace()
+                            }
+                        ) {
+                            Text("Use this PC")
+                        }
                     }
-                    TextButton(onClick = { forgetting = pc }, Modifier.testTag("forget:${pc.pcId}")) { Text("Forget PC") }
+                    TextButton(
+                        onClick = { forgetting = pc },
+                        Modifier.testTag("forget:${pc.pcId}"),
+                    ) {
+                        Text("Forget PC")
+                    }
                 }
             }
         }
         Button(onClick = onPair, Modifier.fillMaxWidth().testTag("pair_new")) { Text("Pair a PC") }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onSettings, Modifier.testTag("home_settings")) { Text("Settings") }
+            OutlinedButton(onClick = onSettings, Modifier.testTag("home_settings")) {
+                Text("Settings")
+            }
             OutlinedButton(onClick = onAbout, Modifier.testTag("home_about")) { Text("About") }
             // An update waiting is shown here, and nowhere does it interrupt.
             OutlinedButton(onClick = onUpdates, Modifier.testTag("home_updates")) {
-                Text(if (update.phase == io.lcl.workspace.update.Phase.Available) "Update available" else "Updates")
+                Text(
+                    if (update.phase == io.lcl.workspace.update.Phase.Available) "Update available"
+                    else "Updates"
+                )
             }
         }
         Spacer(Modifier.height(24.dp))
     }
     if (makingLocal) {
         NewLocalProjectDialog(
-            onCreate = { name -> container.workspace.createLocalProject(name); makingLocal = false; onOpenWorkspace() },
+            onCreate = { name ->
+                container.workspace.createLocalProject(name)
+                makingLocal = false
+                onOpenWorkspace()
+            },
             onDismiss = { makingLocal = false },
         )
     }
@@ -171,14 +241,21 @@ fun HomeScreen(
                             ""
                         } else {
                             " ${pc.name} may also still trust an earlier key of this device (device " +
-                                pc.retiring.joinToString(", ") { it.deviceId } + "): it asks the PC once more to " +
+                                pc.retiring.joinToString(", ") { it.deviceId } +
+                                "): it asks the PC once more to " +
                                 "stop trusting it, and is deleted too. If the PC cannot be reached, revoke that " +
                                 "device on the PC."
-                        },
+                        }
                 )
             },
             confirmButton = {
-                TextButton(onClick = { container.connection.forget(pc.pcId); forgetting = null }, Modifier.testTag("forget_confirm")) {
+                TextButton(
+                    onClick = {
+                        container.connection.forget(pc.pcId)
+                        forgetting = null
+                    },
+                    Modifier.testTag("forget_confirm"),
+                ) {
                     Text("Forget")
                 }
             },
@@ -187,9 +264,16 @@ fun HomeScreen(
     }
 }
 
-/** One section of the dashboard: a small label, a rule, its rows. Compact, as a workspace tool, not a card deck. */
+/**
+ * One section of the dashboard: a small label, a rule, its rows. Compact, as a workspace tool, not
+ * a card deck.
+ */
 @Composable
-private fun Section(label: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+private fun Section(
+    label: String,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SectionLabel(label)
         HorizontalDivider(color = LocalLclColors.current.line)
@@ -207,11 +291,28 @@ fun NewLocalProjectDialog(onCreate: (String) -> Unit, onDismiss: () -> Unit) {
         title = { Text("New project on this phone") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("A project kept in this app's private storage. It needs no PC; Sync sends it to one when you choose.", style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, label = { Text("Project name") }, modifier = Modifier.testTag("local_project_name"))
+                Text(
+                    "A project kept in this app's private storage. It needs no PC; Sync sends it to one when you choose.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    label = { Text("Project name") },
+                    modifier = Modifier.testTag("local_project_name"),
+                )
             }
         },
-        confirmButton = { TextButton(onClick = { onCreate(name.trim()) }, enabled = valid, modifier = Modifier.testTag("create_local_project")) { Text("Create") } },
+        confirmButton = {
+            TextButton(
+                onClick = { onCreate(name.trim()) },
+                enabled = valid,
+                modifier = Modifier.testTag("create_local_project"),
+            ) {
+                Text("Create")
+            }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

@@ -7,13 +7,13 @@ import java.nio.CharBuffer
 import java.nio.charset.CodingErrorAction
 
 /**
- * A `.lcl` or `.lcl.txt` file from elsewhere on this phone, read as exactly
- * the text its bytes are — or refused.
+ * A `.lcl` or `.lcl.txt` file from elsewhere on this phone, read as exactly the text its bytes are
+ * — or refused.
  *
- * LCL source is UTF-8, and nothing may repair it before it is judged
- * (`02_LEXICAL/01`). A lenient decoder turns each malformed byte into U+FFFD,
- * and the PC would then check text the file does not contain. So a file that
- * is not valid UTF-8 is not opened at all, and nothing of it reaches the PC.
+ * LCL source is UTF-8, and nothing may repair it before it is judged (`02_LEXICAL/01`). A lenient
+ * decoder turns each malformed byte into U+FFFD, and the PC would then check text the file does not
+ * contain. So a file that is not valid UTF-8 is not opened at all, and nothing of it reaches the
+ * PC.
  */
 object LocalText {
     /** The largest file opened. */
@@ -36,9 +36,10 @@ object LocalText {
 
     /** [bytes] as text, exactly, or [Refused] naming the first byte that is not UTF-8. */
     fun decode(bytes: ByteArray): String {
-        val decoder = Charsets.UTF_8.newDecoder()
-            .onMalformedInput(CodingErrorAction.REPORT)
-            .onUnmappableCharacter(CodingErrorAction.REPORT)
+        val decoder =
+            Charsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
         val input = ByteBuffer.wrap(bytes)
         // UTF-8 never decodes to more UTF-16 units than it has bytes.
         val output = CharBuffer.allocate(bytes.size)
@@ -47,7 +48,7 @@ object LocalText {
         if (result.isError || result.isOverflow) {
             throw Refused(
                 "This file is not valid UTF-8 (byte ${input.position()} is not), so it was not opened. " +
-                    "An LCL document is UTF-8, and this app does not repair one.",
+                    "An LCL document is UTF-8, and this app does not repair one."
             )
         }
         return String(output.array(), 0, output.position())

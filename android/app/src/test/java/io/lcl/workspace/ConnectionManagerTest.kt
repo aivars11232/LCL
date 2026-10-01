@@ -1,11 +1,11 @@
 package io.lcl.workspace
 
 import io.lcl.workspace.connection.ConnectionManager
-import io.lcl.workspace.connection.PairingState
-import io.lcl.workspace.connection.PairingController
-import io.lcl.workspace.connection.IdentityConflictException
 import io.lcl.workspace.connection.ConnectionState
+import io.lcl.workspace.connection.IdentityConflictException
 import io.lcl.workspace.connection.PAIRING_POLL_MS
+import io.lcl.workspace.connection.PairingController
+import io.lcl.workspace.connection.PairingState
 import io.lcl.workspace.connection.PendingPairing
 import io.lcl.workspace.data.MemoryStore
 import io.lcl.workspace.data.PcRecord
@@ -17,6 +17,8 @@ import io.lcl.workspace.remote.Transport
 import io.lcl.workspace.remote.long
 import io.lcl.workspace.remote.str
 import io.lcl.workspace.ui.retiringNotice
+import java.security.Signature
+import java.security.cert.X509Certificate
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -37,8 +39,6 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.security.Signature
-import java.security.cert.X509Certificate
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ConnectionManagerTest {
@@ -51,8 +51,19 @@ class ConnectionManagerTest {
     private val pc = FakePc(reachable = setOf(home))
     private var discovered: List<String> = emptyList()
 
-    private fun TestScope.manager(transport: Transport = pc, scope: CoroutineScope = backgroundScope): ConnectionManager =
-        ConnectionManager(store, identities, transport, network, scope, discover = { discovered }, now = { clock })
+    private fun TestScope.manager(
+        transport: Transport = pc,
+        scope: CoroutineScope = backgroundScope,
+    ): ConnectionManager =
+        ConnectionManager(
+                store,
+                identities,
+                transport,
+                network,
+                scope,
+                discover = { discovered },
+                now = { clock },
+            )
             .also { runCurrent() }
 
     private suspend fun TestScope.paired(transport: Transport = pc): ConnectionManager {
@@ -71,7 +82,8 @@ class ConnectionManagerTest {
         runCurrent()
     }
 
-    private val ConnectionManager.connected get() = state.value as ConnectionState.Connected
+    private val ConnectionManager.connected
+        get() = state.value as ConnectionState.Connected
 
     // ------------------------------------------------------------------ pairing
 
@@ -110,7 +122,10 @@ class ConnectionManagerTest {
         // Pending: the verification code is this device's own, and nothing
         // is saved, active or connected.
         val key = identities.keys.keys.single()
-        assertEquals(PairingVerification.of(pc.fingerprint, link.code, testIdentity().fingerprint), shown.last().verification)
+        assertEquals(
+            PairingVerification.of(pc.fingerprint, link.code, testIdentity().fingerprint),
+            shown.last().verification,
+        )
         assertEquals("Test PC", shown.last().pcName)
         assertTrue(store.all().isEmpty())
         assertNull(store.activeId())
@@ -283,7 +298,10 @@ class ConnectionManagerTest {
         runCurrent()
         assertEquals(first, store.get("pc1")!!.keyAlias)
         assertEquals(setOf(first), identities.keys.keys)
-        assertTrue("a failed pairing broke the working one", manager.state.value is ConnectionState.Connected)
+        assertTrue(
+            "a failed pairing broke the working one",
+            manager.state.value is ConnectionState.Connected,
+        )
         pc.decision = FakePc.Decision.APPROVE
         val second = manager.pair(pc.link(clock), "Pixel").getOrThrow().keyAlias
         runCurrent()
@@ -358,26 +376,36 @@ class ConnectionManagerTest {
     }
 
     @Test
-    fun c03_a_refused_or_conflicting_pairing_is_reported_as_failed_through_the_controller() = runTest {
-        val manager = manager(Lan(pc, impostor))
-        val pairing = PairingController(manager, backgroundScope)
-        pairing.start(pc.link(clock), "Pixel")
-        runCurrent()
-        advanceTimeBy(PAIRING_POLL_MS)
-        runCurrent()
-        assertTrue(pairing.state.value.toString(), pairing.state.value is PairingState.Paired)
-        pairing.reset()
-        // A13 unchanged: another fingerprint under the same PC id.
-        pairing.start(impostor.link(clock), "Pixel")
-        runCurrent()
-        val failed = pairing.state.value
-        assertTrue(failed.toString(), failed is PairingState.Failed && failed.message.startsWith("Identity conflict"))
-        assertEquals(0, impostor.attempts)
-    }
+    fun c03_a_refused_or_conflicting_pairing_is_reported_as_failed_through_the_controller() =
+        runTest {
+            val manager = manager(Lan(pc, impostor))
+            val pairing = PairingController(manager, backgroundScope)
+            pairing.start(pc.link(clock), "Pixel")
+            runCurrent()
+            advanceTimeBy(PAIRING_POLL_MS)
+            runCurrent()
+            assertTrue(pairing.state.value.toString(), pairing.state.value is PairingState.Paired)
+            pairing.reset()
+            // A13 unchanged: another fingerprint under the same PC id.
+            pairing.start(impostor.link(clock), "Pixel")
+            runCurrent()
+            val failed = pairing.state.value
+            assertTrue(
+                failed.toString(),
+                failed is PairingState.Failed && failed.message.startsWith("Identity conflict"),
+            )
+            assertEquals(0, impostor.attempts)
+        }
 
     // ------------------------------------------ identity collision (A13)
 
-    private val impostor = FakePc(pcId = "pc1", name = "Test PC", fingerprint = "c".repeat(64), reachable = setOf("192.168.1.66:47300"))
+    private val impostor =
+        FakePc(
+            pcId = "pc1",
+            name = "Test PC",
+            fingerprint = "c".repeat(64),
+            reachable = setOf("192.168.1.66:47300"),
+        )
 
     @Test
     fun a13_the_same_pc_id_and_fingerprint_pairs_again_normally() = runTest {
@@ -398,7 +426,10 @@ class ConnectionManagerTest {
         val keys = identities.keys.keys.toSet()
         val result = manager.pair(impostor.link(clock), "Pixel")
         runCurrent()
-        assertTrue(result.exceptionOrNull().toString(), result.exceptionOrNull() is IdentityConflictException)
+        assertTrue(
+            result.exceptionOrNull().toString(),
+            result.exceptionOrNull() is IdentityConflictException,
+        )
         assertTrue(result.exceptionOrNull()!!.message!!.contains("Forget"))
         assertEquals("the record was replaced", before, store.get("pc1"))
         assertEquals("a key was made or deleted", keys, identities.keys.keys.toSet())
@@ -416,7 +447,13 @@ class ConnectionManagerTest {
 
     @Test
     fun a13_another_pc_with_its_own_id_is_unaffected_by_a_refused_collision() = runTest {
-        val laptop = FakePc(pcId = "pc2", name = "Laptop", fingerprint = "b".repeat(64), reachable = setOf("192.168.1.30:47300"))
+        val laptop =
+            FakePc(
+                pcId = "pc2",
+                name = "Laptop",
+                fingerprint = "b".repeat(64),
+                reachable = setOf("192.168.1.30:47300"),
+            )
         val manager = manager(Lan(pc, impostor, laptop))
         manager.pair(pc.link(clock), "Pixel").getOrThrow()
         runCurrent()
@@ -447,9 +484,18 @@ class ConnectionManagerTest {
         assertFalse(a.certificate.publicKey.encoded.contentEquals(b.certificate.publicKey.encoded))
         // Each is a real key pair: a certificate verifies what its own key signs, and nothing else.
         val message = "lcl".toByteArray()
-        fun signed(by: DeviceIdentity) = Signature.getInstance("SHA256withECDSA").run { initSign(by.privateKey); update(message); sign() }
+        fun signed(by: DeviceIdentity) =
+            Signature.getInstance("SHA256withECDSA").run {
+                initSign(by.privateKey)
+                update(message)
+                sign()
+            }
         fun verifies(certificate: X509Certificate, signature: ByteArray) =
-            Signature.getInstance("SHA256withECDSA").run { initVerify(certificate); update(message); verify(signature) }
+            Signature.getInstance("SHA256withECDSA").run {
+                initVerify(certificate)
+                update(message)
+                verify(signature)
+            }
         assertTrue(verifies(a.certificate, signed(a)))
         assertTrue(verifies(b.certificate, signed(b)))
         assertFalse(verifies(a.certificate, signed(b)))
@@ -463,34 +509,47 @@ class ConnectionManagerTest {
     }
 
     /**
-     * Pairing a PC again while its pairing is still trusted makes a new key
-     * (R1), so the PC gains a second record. The first one must end before
-     * its key is deleted: afterwards the PC trusts exactly the new key, and
-     * the old key was deleted only once the PC no longer trusted it.
+     * Pairing a PC again while its pairing is still trusted makes a new key (R1), so the PC gains a
+     * second record. The first one must end before its key is deleted: afterwards the PC trusts
+     * exactly the new key, and the old key was deleted only once the PC no longer trusted it.
      */
     @Test
-    fun a12_r2_pairing_again_while_trusted_retires_the_old_credential_before_deleting_its_key() = runTest {
-        val manager = paired()
-        val old = store.get("pc1")!!
-        val oldKey = fingerprintOf(old.keyAlias)
-        // Whether the PC still trusted each key at the moment it was deleted.
-        val trustedWhenDeleted = mutableMapOf<String, Boolean>()
-        identities.onDelete = { alias -> trustedWhenDeleted[alias] = identities.keys.getValue(alias).fingerprint in pc.live() }
-        val record = manager.pair(pc.link(clock), "Pixel").getOrThrow()
-        runCurrent()
-        val newKey = fingerprintOf(record.keyAlias)
-        assertNotEquals(oldKey, newKey)
-        assertEquals("after pairing again, the PC must trust exactly the new key", setOf(newKey), pc.live())
-        assertTrue(oldKey in pc.revoked)
-        assertEquals("the old key itself ended its trust", listOf(oldKey), pc.unpaired)
-        assertEquals("a key was deleted while the PC still trusted it", mapOf(old.keyAlias to false), trustedWhenDeleted)
-        assertEquals(setOf(record.keyAlias), identities.keys.keys)
-        assertEquals(record, store.get("pc1"))
-        assertNotEquals(old.deviceId, record.deviceId)
-        assertEquals(record.keyAlias, manager.connected.pc.keyAlias)
-    }
+    fun a12_r2_pairing_again_while_trusted_retires_the_old_credential_before_deleting_its_key() =
+        runTest {
+            val manager = paired()
+            val old = store.get("pc1")!!
+            val oldKey = fingerprintOf(old.keyAlias)
+            // Whether the PC still trusted each key at the moment it was deleted.
+            val trustedWhenDeleted = mutableMapOf<String, Boolean>()
+            identities.onDelete = { alias ->
+                trustedWhenDeleted[alias] = identities.keys.getValue(alias).fingerprint in pc.live()
+            }
+            val record = manager.pair(pc.link(clock), "Pixel").getOrThrow()
+            runCurrent()
+            val newKey = fingerprintOf(record.keyAlias)
+            assertNotEquals(oldKey, newKey)
+            assertEquals(
+                "after pairing again, the PC must trust exactly the new key",
+                setOf(newKey),
+                pc.live(),
+            )
+            assertTrue(oldKey in pc.revoked)
+            assertEquals("the old key itself ended its trust", listOf(oldKey), pc.unpaired)
+            assertEquals(
+                "a key was deleted while the PC still trusted it",
+                mapOf(old.keyAlias to false),
+                trustedWhenDeleted,
+            )
+            assertEquals(setOf(record.keyAlias), identities.keys.keys)
+            assertEquals(record, store.get("pc1"))
+            assertNotEquals(old.deviceId, record.deviceId)
+            assertEquals(record.keyAlias, manager.connected.pc.keyAlias)
+        }
 
-    /** After pairing again, Forget leaves the PC trusting nothing of this device, and this device no key. */
+    /**
+     * After pairing again, Forget leaves the PC trusting nothing of this device, and this device no
+     * key.
+     */
     @Test
     fun a12_r3_forget_after_pairing_again_leaves_nothing_of_this_device_trusted() = runTest {
         val manager = paired()
@@ -503,15 +562,18 @@ class ConnectionManagerTest {
         assertTrue("Forget left a key", identities.keys.isEmpty())
         assertNull(store.get("pc1"))
         assertTrue("Forget did not end the new key's trust", newKey in pc.revoked)
-        assertEquals("after Forget, the PC must trust nothing of this device", emptySet<String>(), pc.live() intersect setOf(oldKey, newKey))
+        assertEquals(
+            "after Forget, the PC must trust nothing of this device",
+            emptySet<String>(),
+            pc.live() intersect setOf(oldKey, newKey),
+        )
     }
 
     /**
-     * When the PC cannot confirm that the old key's trust ended, pairing again
-     * is not reported finished: the new pairing is saved and works, and the old
-     * key — the only thing that can still end that trust — is kept and listed
-     * with why. The next time this PC is connected it is retired, and only then
-     * deleted.
+     * When the PC cannot confirm that the old key's trust ended, pairing again is not reported
+     * finished: the new pairing is saved and works, and the old key — the only thing that can still
+     * end that trust — is kept and listed with why. The next time this PC is connected it is
+     * retired, and only then deleted.
      */
     @Test
     fun a12_r4_a_retirement_the_pc_cannot_confirm_keeps_the_old_key_and_says_so() = runTest {
@@ -533,7 +595,14 @@ class ConnectionManagerTest {
         assertEquals(record.keyAlias, manager.connected.pc.keyAlias)
         // What the Pair screen and the PC's card say: which device, why, and what to do.
         val notice = retiringNotice(record)
-        for (said in listOf("may still trust", old.deviceId, "permission denied", "tries again", "revoke that device on the PC")) {
+        for (said in
+            listOf(
+                "may still trust",
+                old.deviceId,
+                "permission denied",
+                "tries again",
+                "revoke that device on the PC",
+            )) {
             assertTrue("the notice does not say \"$said\": $notice", notice.contains(said))
         }
 
@@ -553,35 +622,42 @@ class ConnectionManagerTest {
     }
 
     /**
-     * An old key the PC could not be reached with is not swept at the next app
-     * start: the restarted app retires it as soon as it connects.
+     * An old key the PC could not be reached with is not swept at the next app start: the restarted
+     * app retires it as soon as it connects.
      */
     @Test
-    fun a12_r4_an_unretired_key_survives_a_restart_and_is_retired_once_the_pc_is_reached() = runTest {
-        val process = CoroutineScope(backgroundScope.coroutineContext + Job(backgroundScope.coroutineContext[Job]))
-        val first = manager(scope = process)
-        first.pair(pc.link(clock), "Pixel").getOrThrow()
-        runCurrent()
-        val old = store.get("pc1")!!
-        val oldKey = fingerprintOf(old.keyAlias)
-        pc.unreachableFor += oldKey
-        val record = first.pair(pc.link(clock), "Pixel").getOrThrow()
-        runCurrent()
-        assertTrue(record.retiring.single().problem, record.retiring.single().problem!!.contains("Could not reach the PC"))
-        assertTrue(oldKey in pc.live())
-        process.cancel() // the app is closed, or the phone restarts
-        pc.sessions.last().drop()
-        runCurrent()
-        pc.unreachableFor.clear()
-        val again = manager()
-        again.start()
-        runCurrent()
-        assertTrue(again.state.value is ConnectionState.Connected)
-        assertEquals(listOf(oldKey), pc.unpaired)
-        assertEquals(setOf(fingerprintOf(record.keyAlias)), pc.live())
-        assertEquals(setOf(record.keyAlias), identities.keys.keys)
-        assertTrue(store.get("pc1")!!.retiring.isEmpty())
-    }
+    fun a12_r4_an_unretired_key_survives_a_restart_and_is_retired_once_the_pc_is_reached() =
+        runTest {
+            val process =
+                CoroutineScope(
+                    backgroundScope.coroutineContext + Job(backgroundScope.coroutineContext[Job])
+                )
+            val first = manager(scope = process)
+            first.pair(pc.link(clock), "Pixel").getOrThrow()
+            runCurrent()
+            val old = store.get("pc1")!!
+            val oldKey = fingerprintOf(old.keyAlias)
+            pc.unreachableFor += oldKey
+            val record = first.pair(pc.link(clock), "Pixel").getOrThrow()
+            runCurrent()
+            assertTrue(
+                record.retiring.single().problem,
+                record.retiring.single().problem!!.contains("Could not reach the PC"),
+            )
+            assertTrue(oldKey in pc.live())
+            process.cancel() // the app is closed, or the phone restarts
+            pc.sessions.last().drop()
+            runCurrent()
+            pc.unreachableFor.clear()
+            val again = manager()
+            again.start()
+            runCurrent()
+            assertTrue(again.state.value is ConnectionState.Connected)
+            assertEquals(listOf(oldKey), pc.unpaired)
+            assertEquals(setOf(fingerprintOf(record.keyAlias)), pc.live())
+            assertEquals(setOf(record.keyAlias), identities.keys.keys)
+            assertTrue(store.get("pc1")!!.retiring.isEmpty())
+        }
 
     /** Forget while an old key is still listed: it asks the PC once more, and every key is gone. */
     @Test
@@ -602,13 +678,22 @@ class ConnectionManagerTest {
     }
 
     /**
-     * Another phone paired with the same PC — even under the same name — is a
-     * separate device: this phone pairing again retires only its own old key.
+     * Another phone paired with the same PC — even under the same name — is a separate device: this
+     * phone pairing again retires only its own old key.
      */
     @Test
     fun a12_r5_pairing_again_leaves_another_phone_trusted() = runTest {
         val tabletKeys = FakeIdentities(first = 50)
-        val tablet = ConnectionManager(PcStore(MemoryStore()), tabletKeys, pc, network, backgroundScope, discover = { emptyList() }, now = { clock })
+        val tablet =
+            ConnectionManager(
+                PcStore(MemoryStore()),
+                tabletKeys,
+                pc,
+                network,
+                backgroundScope,
+                discover = { emptyList() },
+                now = { clock },
+            )
         tablet.pair(pc.link(clock), "Pixel").getOrThrow()
         runCurrent()
         val tabletKey = tabletKeys.keys.values.single().fingerprint
@@ -623,35 +708,38 @@ class ConnectionManagerTest {
     }
 
     /**
-     * An old key the PC already revoked, or no longer knows, is not trusted:
-     * the PC says so when it connects, and that is retirement enough — nothing
-     * is unpaired, and pairing again finishes.
+     * An old key the PC already revoked, or no longer knows, is not trusted: the PC says so when it
+     * connects, and that is retirement enough — nothing is unpaired, and pairing again finishes.
      */
     @Test
-    fun a12_r6_an_old_key_the_pc_already_revoked_or_forgot_is_retired_without_unpairing() = runTest {
-        val manager = paired()
-        val first = store.get("pc1")!!
-        pc.revoked += fingerprintOf(first.keyAlias)
-        dropAndWait()
-        assertTrue(manager.state.value is ConnectionState.Revoked)
-        val second = manager.pair(pc.link(clock), "Pixel").getOrThrow()
-        runCurrent()
-        assertTrue(second.retiring.isEmpty())
-        assertEquals(setOf(second.keyAlias), identities.keys.keys)
-        assertEquals(setOf(fingerprintOf(second.keyAlias)), pc.live())
-        // The PC's registry lost the second key (reset, say): it is told `not_paired`.
-        pc.devices.remove(fingerprintOf(second.keyAlias))
-        dropAndWait()
-        assertTrue(manager.state.value is ConnectionState.NotPaired)
-        val third = manager.pair(pc.link(clock), "Pixel").getOrThrow()
-        runCurrent()
-        assertTrue(third.retiring.isEmpty())
-        assertEquals(setOf(third.keyAlias), identities.keys.keys)
-        assertEquals(setOf(fingerprintOf(third.keyAlias)), pc.live())
-        assertTrue("a key the PC did not trust was asked to unpair", pc.unpaired.isEmpty())
-    }
+    fun a12_r6_an_old_key_the_pc_already_revoked_or_forgot_is_retired_without_unpairing() =
+        runTest {
+            val manager = paired()
+            val first = store.get("pc1")!!
+            pc.revoked += fingerprintOf(first.keyAlias)
+            dropAndWait()
+            assertTrue(manager.state.value is ConnectionState.Revoked)
+            val second = manager.pair(pc.link(clock), "Pixel").getOrThrow()
+            runCurrent()
+            assertTrue(second.retiring.isEmpty())
+            assertEquals(setOf(second.keyAlias), identities.keys.keys)
+            assertEquals(setOf(fingerprintOf(second.keyAlias)), pc.live())
+            // The PC's registry lost the second key (reset, say): it is told `not_paired`.
+            pc.devices.remove(fingerprintOf(second.keyAlias))
+            dropAndWait()
+            assertTrue(manager.state.value is ConnectionState.NotPaired)
+            val third = manager.pair(pc.link(clock), "Pixel").getOrThrow()
+            runCurrent()
+            assertTrue(third.retiring.isEmpty())
+            assertEquals(setOf(third.keyAlias), identities.keys.keys)
+            assertEquals(setOf(fingerprintOf(third.keyAlias)), pc.live())
+            assertTrue("a key the PC did not trust was asked to unpair", pc.unpaired.isEmpty())
+        }
 
-    /** A listed key with the certificate the pairing uses now never unpairs: that would end the pairing itself. */
+    /**
+     * A listed key with the certificate the pairing uses now never unpairs: that would end the
+     * pairing itself.
+     */
     @Test
     fun a_retiring_key_with_the_current_certificate_never_ends_the_pairing() = runTest {
         val manager = paired()
@@ -669,14 +757,30 @@ class ConnectionManagerTest {
     @Test
     fun the_keys_a_record_is_retiring_survive_a_restart_of_the_store() {
         val backing = MemoryStore()
-        val record = PcRecord(
-            "pc1", "Desk", "f".repeat(64), listOf("10.0.0.2:47300"), "dev2", "alias2", 100, 200, "10.0.0.2:47300",
-            retiring = listOf(RetiringKey("alias1", "dev1", "Could not reach the PC at 10.0.0.2:47300"), RetiringKey("alias0", "dev0")),
-        )
+        val record =
+            PcRecord(
+                "pc1",
+                "Desk",
+                "f".repeat(64),
+                listOf("10.0.0.2:47300"),
+                "dev2",
+                "alias2",
+                100,
+                200,
+                "10.0.0.2:47300",
+                retiring =
+                    listOf(
+                        RetiringKey("alias1", "dev1", "Could not reach the PC at 10.0.0.2:47300"),
+                        RetiringKey("alias0", "dev0"),
+                    ),
+            )
         PcStore(backing).save(record)
         assertEquals(record, PcStore(backing).get("pc1"))
         // A record saved before retiring existed has nothing to retire.
-        backing.put("pcs", """[{"pc_id":"pc1","name":"Desk","fingerprint":"${"f".repeat(64)}","addresses":[],"device_id":"dev1","key_alias":"alias1","paired_at":1}]""")
+        backing.put(
+            "pcs",
+            """[{"pc_id":"pc1","name":"Desk","fingerprint":"${"f".repeat(64)}","addresses":[],"device_id":"dev1","key_alias":"alias1","paired_at":1}]""",
+        )
         assertEquals(emptyList<RetiringKey>(), PcStore(backing).get("pc1")!!.retiring)
     }
 
@@ -684,7 +788,10 @@ class ConnectionManagerTest {
 
     @Test
     fun a_restarted_app_reconnects_without_a_qr_code() = runTest {
-        val process = CoroutineScope(backgroundScope.coroutineContext + Job(backgroundScope.coroutineContext[Job]))
+        val process =
+            CoroutineScope(
+                backgroundScope.coroutineContext + Job(backgroundScope.coroutineContext[Job])
+            )
         manager(scope = process).pair(pc.link(clock), "Pixel").getOrThrow()
         runCurrent()
         process.cancel() // the app is closed, or the phone restarts
@@ -788,7 +895,13 @@ class ConnectionManagerTest {
     fun a_different_machine_at_the_old_address_is_refused() = runTest {
         val lan = Lan(pc)
         val manager = paired(lan)
-        val impostor = FakePc(pcId = "pc1", name = "Test PC", fingerprint = "c".repeat(64), reachable = setOf(home))
+        val impostor =
+            FakePc(
+                pcId = "pc1",
+                name = "Test PC",
+                fingerprint = "c".repeat(64),
+                reachable = setOf(home),
+            )
         pc.reachable = emptySet()
         lan.machines = listOf(impostor, pc)
         dropAndWait()
@@ -831,7 +944,10 @@ class ConnectionManagerTest {
         pc.hold!!.complete(Unit)
         advanceTimeBy(600_000)
         runCurrent()
-        assertTrue(manager.state.value.toString(), manager.state.value is ConnectionState.Disconnected)
+        assertTrue(
+            manager.state.value.toString(),
+            manager.state.value is ConnectionState.Disconnected,
+        )
         assertEquals("a connection opened after Disconnect", 1, pc.sessions.size)
     }
 
@@ -890,7 +1006,12 @@ class ConnectionManagerTest {
         val manager = paired()
         val pairing = pc.attempts
         val session = pc.sessions.last()
-        session.emit(buildJsonObject { put("type", "event"); put("event", "revoked") })
+        session.emit(
+            buildJsonObject {
+                put("type", "event")
+                put("event", "revoked")
+            }
+        )
         runCurrent()
         assertTrue(manager.state.value is ConnectionState.Revoked)
         assertTrue(session.closed.isCompleted)
@@ -920,7 +1041,13 @@ class ConnectionManagerTest {
 
     @Test
     fun several_pcs_are_kept_apart() = runTest {
-        val laptop = FakePc(pcId = "pc2", name = "Laptop", fingerprint = "b".repeat(64), reachable = setOf("192.168.1.30:47300"))
+        val laptop =
+            FakePc(
+                pcId = "pc2",
+                name = "Laptop",
+                fingerprint = "b".repeat(64),
+                reachable = setOf("192.168.1.30:47300"),
+            )
         val manager = manager(Lan(pc, laptop))
         manager.pair(pc.link(clock), "Pixel").getOrThrow()
         runCurrent()
@@ -928,7 +1055,10 @@ class ConnectionManagerTest {
         runCurrent()
         assertEquals(setOf("pc1", "pc2"), manager.pcs().map { it.pcId }.toSet())
         assertEquals("pc2", manager.connected.pc.pcId)
-        assertTrue("switching PCs left the other connection open", pc.sessions.last().closed.isCompleted)
+        assertTrue(
+            "switching PCs left the other connection open",
+            pc.sessions.last().closed.isCompleted,
+        )
         manager.connect("pc1")
         runCurrent()
         assertEquals("pc1", manager.connected.pc.pcId)
@@ -936,7 +1066,11 @@ class ConnectionManagerTest {
         manager.forget("pc2")
         runCurrent()
         assertEquals(listOf("pc1"), manager.pcs().map { it.pcId })
-        assertEquals("forgetting another PC touched this connection", "pc1", manager.connected.pc.pcId)
+        assertEquals(
+            "forgetting another PC touched this connection",
+            "pc1",
+            manager.connected.pc.pcId,
+        )
         assertEquals(setOf(store.get("pc1")!!.keyAlias), identities.keys.keys)
     }
 }

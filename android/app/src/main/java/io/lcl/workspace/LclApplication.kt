@@ -51,14 +51,15 @@ class AppContainer(context: Context) {
     private val _settings = MutableStateFlow(settingsStore.load())
     val settings: StateFlow<AppSettings> = _settings
 
-    val connection = ConnectionManager(
-        store = pcs,
-        identities = identities,
-        transport = TlsTransport(),
-        network = AndroidNetwork(context),
-        scope = scope,
-        discover = { pcId -> withContext(Dispatchers.IO) { Discovery.find(pcId) } },
-    )
+    val connection =
+        ConnectionManager(
+            store = pcs,
+            identities = identities,
+            transport = TlsTransport(),
+            network = AndroidNetwork(context),
+            scope = scope,
+            discover = { pcId -> withContext(Dispatchers.IO) { Discovery.find(pcId) } },
+        )
     /** Projects on this phone: app-private files, never cache. */
     val localProjects = LocalProjects(java.io.File(context.filesDir, "local-projects"))
     val workspace = WorkspaceController(connection, scope, local = localProjects)
@@ -66,15 +67,20 @@ class AppContainer(context: Context) {
     val pairing = PairingController(connection, scope)
 
     /** Update System V1: the official releases, checked with the keys this build trusts. */
-    val updates = UpdateController(
-        store = store,
-        source = GitHubReleases(BuildConfig.UPDATE_TEST_ENDPOINT),
-        keys = { TrustedKey.parse(BuildConfig.UPDATE_TRUSTED_KEYS + "\n" + BuildConfig.UPDATE_TEST_KEYS) },
-        facts = AndroidPackageFacts(context),
-        installer = PackageInstallerApk(context),
-        cacheDir = context.cacheDir,
-        scope = scope,
-    )
+    val updates =
+        UpdateController(
+            store = store,
+            source = GitHubReleases(BuildConfig.UPDATE_TEST_ENDPOINT),
+            keys = {
+                TrustedKey.parse(
+                    BuildConfig.UPDATE_TRUSTED_KEYS + "\n" + BuildConfig.UPDATE_TEST_KEYS
+                )
+            },
+            facts = AndroidPackageFacts(context),
+            installer = PackageInstallerApk(context),
+            cacheDir = context.cacheDir,
+            scope = scope,
+        )
 
     fun updateSettings(settings: AppSettings) {
         settingsStore.save(settings)

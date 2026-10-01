@@ -7,15 +7,28 @@ import io.lcl.workspace.workspace.TreeEntry
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** The project tree shows what the PC listed for each unfolded folder, in its order, and nothing it did not list. */
+/**
+ * The project tree shows what the PC listed for each unfolded folder, in its order, and nothing it
+ * did not list.
+ */
 class FileTreeTest {
     // As the PC lists a project, one folder at a time: folders first.
-    private val listings = mapOf(
-        "" to LoadedFolder(listOf(TreeEntry("docs", true), TreeEntry("empty", true), TreeEntry("a.lcl", false), TreeEntry("z.lcl.txt", false, "kind.project"))),
-        "docs" to LoadedFolder(listOf(TreeEntry("docs/guide", true), TreeEntry("docs/x.lcl", false))),
-        "docs/guide" to LoadedFolder(listOf(TreeEntry("docs/guide/g.lcl", false))),
-        "empty" to LoadedFolder(emptyList()),
-    )
+    private val listings =
+        mapOf(
+            "" to
+                LoadedFolder(
+                    listOf(
+                        TreeEntry("docs", true),
+                        TreeEntry("empty", true),
+                        TreeEntry("a.lcl", false),
+                        TreeEntry("z.lcl.txt", false, "kind.project"),
+                    )
+                ),
+            "docs" to
+                LoadedFolder(listOf(TreeEntry("docs/guide", true), TreeEntry("docs/x.lcl", false))),
+            "docs/guide" to LoadedFolder(listOf(TreeEntry("docs/guide/g.lcl", false))),
+            "empty" to LoadedFolder(emptyList()),
+        )
     private val all = Explorer(listings, setOf("docs", "docs/guide", "empty"))
 
     private fun shown(explorer: Explorer) = FileTree.rows(explorer).map { it.entry.id }
@@ -23,9 +36,23 @@ class FileTreeTest {
     @Test
     fun every_unfolded_folders_entries_show_right_after_it_with_depth_and_name() {
         val rows = FileTree.rows(all)
-        assertEquals(listOf("docs", "docs/guide", "docs/guide/g.lcl", "docs/x.lcl", "empty", "a.lcl", "z.lcl.txt"), rows.map { it.entry.id })
+        assertEquals(
+            listOf(
+                "docs",
+                "docs/guide",
+                "docs/guide/g.lcl",
+                "docs/x.lcl",
+                "empty",
+                "a.lcl",
+                "z.lcl.txt",
+            ),
+            rows.map { it.entry.id },
+        )
         assertEquals(listOf(0, 1, 2, 1, 0, 0, 0), rows.map { it.depth })
-        assertEquals(listOf("docs", "guide", "g.lcl", "x.lcl", "empty", "a.lcl", "z.lcl.txt"), rows.map { it.name })
+        assertEquals(
+            listOf("docs", "guide", "g.lcl", "x.lcl", "empty", "a.lcl", "z.lcl.txt"),
+            rows.map { it.name },
+        )
         assertEquals(List(7) { false }, rows.map { it.folded })
     }
 
@@ -39,12 +66,16 @@ class FileTreeTest {
         val folded = all.copy(expanded = all.expanded - "docs")
         assertEquals(listOf("docs", "empty", "a.lcl", "z.lcl.txt"), shown(folded))
         assertEquals(shown(all), shown(folded.copy(expanded = folded.expanded + "docs")))
-        assertEquals(listOf("docs", "docs/guide", "docs/x.lcl", "empty", "a.lcl", "z.lcl.txt"), shown(all.copy(expanded = setOf("docs", "empty"))))
+        assertEquals(
+            listOf("docs", "docs/guide", "docs/x.lcl", "empty", "a.lcl", "z.lcl.txt"),
+            shown(all.copy(expanded = setOf("docs", "empty"))),
+        )
     }
 
     @Test
     fun a_folder_the_pc_cut_short_gets_a_note_under_its_entries() {
-        val cut = all.with("docs", LoadedFolder(listings.getValue("docs").entries, truncated = true))
+        val cut =
+            all.with("docs", LoadedFolder(listings.getValue("docs").entries, truncated = true))
         val rows = FileTree.rows(cut)
         val note = rows.single { it.note != null }
         assertEquals(FileTree.FOLDER_LIMITED, note.note)

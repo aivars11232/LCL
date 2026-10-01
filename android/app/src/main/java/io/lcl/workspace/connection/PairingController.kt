@@ -28,41 +28,57 @@ sealed interface PairingState {
     /** Paired and connected, but the PC may still trust the key this pairing replaced. */
     data class RetirementIncomplete(val record: PcRecord) : PairingState
 
-    /** Denied, expired, refused, failed or cancelled: nothing was paired and the attempt's key is deleted. */
+    /**
+     * Denied, expired, refused, failed or cancelled: nothing was paired and the attempt's key is
+     * deleted.
+     */
     data class Failed(val message: String) : PairingState
 }
 
 /**
- * The one pairing attempt of the app, owned for as long as the process lives
- * rather than by the Pair screen (C03-AUDIT-03). Leaving the screen — for the
- * Manual tab, or through activity recreation — therefore neither cancels the
- * attempt nor loses its state; only an explicit [cancel] does. Every rule of
- * the attempt itself (PC approval, verification code, pinning, A12
- * retirement, A13 identity) is [ConnectionManager.pair]'s, unchanged.
+ * The one pairing attempt of the app, owned for as long as the process lives rather than by the
+ * Pair screen (C03-AUDIT-03). Leaving the screen — for the Manual tab, or through activity
+ * recreation — therefore neither cancels the attempt nor loses its state; only an explicit [cancel]
+ * does. Every rule of the attempt itself (PC approval, verification code, pinning, A12 retirement,
+ * A13 identity) is [ConnectionManager.pair]'s, unchanged.
  */
-class PairingController(private val connection: ConnectionManager, private val scope: CoroutineScope) {
+class PairingController(
+    private val connection: ConnectionManager,
+    private val scope: CoroutineScope,
+) {
     private val _state = MutableStateFlow<PairingState>(PairingState.Idle)
     val state: StateFlow<PairingState> = _state
     private var attempt: Job? = null
 
     /** True while an attempt is running. */
-    val active: Boolean get() = attempt?.isActive == true
+    val active: Boolean
+        get() = attempt?.isActive == true
 
     /** Start pairing with [link], unless an attempt is already running. */
     fun start(link: PairingLink, deviceName: String): Boolean {
         if (active) return false
         _state.value = PairingState.Requesting
         val job = scope.launch {
-            val result = connection.pair(
-                link,
-                deviceName,
-                onApproved = { if (_state.value !is PairingState.Failed) _state.value = PairingState.Finishing },
-            ) { pending -> _state.value = PairingState.Pending(pending) }
+            val result =
+                connection.pair(
+                    link,
+                    deviceName,
+                    onApproved = {
+                        if (_state.value !is PairingState.Failed)
+                            _state.value = PairingState.Finishing
+                    },
+                ) { pending ->
+                    _state.value = PairingState.Pending(pending)
+                }
             // A cancelled attempt never returns here: cancel() already said so.
-            _state.value = result.fold(
-                onSuccess = { if (it.retiring.isEmpty()) PairingState.Paired(it) else PairingState.RetirementIncomplete(it) },
-                onFailure = { PairingState.Failed(it.message ?: "Pairing failed.") },
-            )
+            _state.value =
+                result.fold(
+                    onSuccess = {
+                        if (it.retiring.isEmpty()) PairingState.Paired(it)
+                        else PairingState.RetirementIncomplete(it)
+                    },
+                    onFailure = { PairingState.Failed(it.message ?: "Pairing failed.") },
+                )
         }
         attempt = job
         job.invokeOnCompletion { if (attempt === job) attempt = null }

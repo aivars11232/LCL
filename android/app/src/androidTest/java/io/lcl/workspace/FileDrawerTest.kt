@@ -40,30 +40,38 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The Workspace's project tree drawer, as the screen composes it, over an
- * explorer the test holds in place of a PC's: it opens from its button,
- * unfolds and folds folders (a folder's children appear only once it is
- * unfolded), opens a file and closes, marks the file being edited, follows a
- * newer listing, shows an empty folder, notes a folder the PC cut short, and
- * closes on a tap outside it or on Back. No PC is needed.
+ * The Workspace's project tree drawer, as the screen composes it, over an explorer the test holds
+ * in place of a PC's: it opens from its button, unfolds and folds folders (a folder's children
+ * appear only once it is unfolded), opens a file and closes, marks the file being edited, follows a
+ * newer listing, shows an empty folder, notes a folder the PC cut short, and closes on a tap
+ * outside it or on Back. No PC is needed.
  */
 @RunWith(AndroidJUnit4::class)
 class FileDrawerTest {
-    @get:Rule
-    val rule = createAndroidComposeRule<ComponentActivity>()
+    @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
     /** The PC's listings: the root and, once asked for, docs and the empty planning folder. */
-    private val listing = mapOf(
-        "" to LoadedFolder(listOf(TreeEntry("docs", true), TreeEntry("planning", true), TreeEntry("a.lcl", false))),
-        "docs" to LoadedFolder(listOf(TreeEntry("docs/g.lcl", false))),
-        "planning" to LoadedFolder(emptyList()),
-    )
+    private val listing =
+        mapOf(
+            "" to
+                LoadedFolder(
+                    listOf(
+                        TreeEntry("docs", true),
+                        TreeEntry("planning", true),
+                        TreeEntry("a.lcl", false),
+                    )
+                ),
+            "docs" to LoadedFolder(listOf(TreeEntry("docs/g.lcl", false))),
+            "planning" to LoadedFolder(emptyList()),
+        )
     private var explorer by mutableStateOf(Explorer(folders = mapOf("" to listing.getValue(""))))
     private var active by mutableStateOf<String?>(null)
     /** Which folders the tree asked the PC for, in order. */
     private val asked = mutableListOf<String>()
 
-    private fun exists(tag: String) = rule.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+    private fun exists(tag: String) =
+        rule.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+
     /** Whether the merged tree, the one accessibility services read, has the node. */
     private fun seen(tag: String) = rule.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
 
@@ -80,16 +88,28 @@ class FileDrawerTest {
                         dirty = emptySet(),
                         connected = true,
                         onToggle = { folder ->
-                            explorer = if (folder in explorer.expanded) explorer.copy(expanded = explorer.expanded - folder)
-                            else { asked += folder; explorer.with(folder, listing.getValue(folder)).copy(expanded = explorer.expanded + folder) }
+                            explorer =
+                                if (folder in explorer.expanded)
+                                    explorer.copy(expanded = explorer.expanded - folder)
+                                else {
+                                    asked += folder
+                                    explorer
+                                        .with(folder, listing.getValue(folder))
+                                        .copy(expanded = explorer.expanded + folder)
+                                }
                         },
-                        onOpen = { active = it; close() },
+                        onOpen = {
+                            active = it
+                            close()
+                        },
                         onReadiness = {},
                     )
                 },
             ) { open ->
                 Column {
-                    TextButton(onClick = open, modifier = Modifier.testTag("files")) { Text("Files") }
+                    TextButton(onClick = open, modifier = Modifier.testTag("files")) {
+                        Text("Files")
+                    }
                     Text(active ?: "nothing", Modifier.testTag("editing"))
                 }
             }
@@ -132,7 +152,11 @@ class FileDrawerTest {
         assertTrue(seen("files"))
 
         // Reopened: the file being edited is marked, and a newer listing shows.
-        explorer = explorer.with("", LoadedFolder(listing.getValue("").entries + TreeEntry("new.lcl", false)))
+        explorer =
+            explorer.with(
+                "",
+                LoadedFolder(listing.getValue("").entries + TreeEntry("new.lcl", false)),
+            )
         rule.onNodeWithTag("files").performClick()
         rule.onNodeWithTag("file:docs/g.lcl").assertIsSelected()
         rule.onNodeWithTag("file:a.lcl").assertIsNotSelected()
@@ -150,8 +174,14 @@ class FileDrawerTest {
         rule.onNodeWithTag("files").performClick()
         rule.onNodeWithTag("file:a.lcl").assertIsDisplayed()
         assertFalse(exists("limited:"))
-        explorer = explorer.with("docs", LoadedFolder(listing.getValue("docs").entries, truncated = true)).copy(expanded = setOf("docs"))
-        rule.onNodeWithTag("limited:docs").assertIsDisplayed().assertTextEquals(FileTree.FOLDER_LIMITED)
+        explorer =
+            explorer
+                .with("docs", LoadedFolder(listing.getValue("docs").entries, truncated = true))
+                .copy(expanded = setOf("docs"))
+        rule
+            .onNodeWithTag("limited:docs")
+            .assertIsDisplayed()
+            .assertTextEquals(FileTree.FOLDER_LIMITED)
         assertFalse(exists("limited:"))
         // What is listed still opens.
         rule.onNodeWithTag("file:docs/g.lcl").performClick()

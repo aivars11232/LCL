@@ -9,7 +9,10 @@ import io.lcl.workspace.ui.LclRoot
 import kotlinx.coroutines.flow.MutableStateFlow
 
 class MainActivity : ComponentActivity() {
-    /** The intent the app was opened with: perhaps a document to view (never a pairing link; see LclRoot). */
+    /**
+     * The intent the app was opened with: perhaps a document to view (never a pairing link; see
+     * LclRoot).
+     */
     private val incoming = MutableStateFlow<Intent?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {

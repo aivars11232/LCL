@@ -12,6 +12,9 @@ import io.lcl.workspace.workspace.SyncChoice
 import io.lcl.workspace.workspace.SyncPlan
 import io.lcl.workspace.workspace.SyncState
 import io.lcl.workspace.workspace.WorkspaceController
+import java.io.File
+import java.io.IOException
+import kotlin.time.Duration.Companion.minutes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -30,20 +33,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.io.File
-import java.io.IOException
-import kotlin.time.Duration.Companion.minutes
 
 /**
- * Projects on the phone, with and without a PC: made, edited and saved
- * offline, kept across a restart, listed beside the PC's once connected, and
- * synced to the PC only on request, with every conflict decided by the person
- * and every document confirmed by the PC before it counts as synced.
+ * Projects on the phone, with and without a PC: made, edited and saved offline, kept across a
+ * restart, listed beside the PC's once connected, and synced to the PC only on request, with every
+ * conflict decided by the person and every document confirmed by the PC before it counts as synced.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class LocalWorkspaceTest {
-    @get:Rule
-    val temp = TemporaryFolder()
+    @get:Rule val temp = TemporaryFolder()
 
     private val pc = FakePc()
     private val network = FakeNetwork()
@@ -52,11 +50,17 @@ class LocalWorkspaceTest {
     /** Folders the fake PC was asked to make. */
     private val pcFolders = mutableListOf<String>()
     private val said = mutableListOf<String>()
-    /** The digest the fake PC reports for a written file; a wrong one is a PC that did not keep the bytes. */
+    /**
+     * The digest the fake PC reports for a written file; a wrong one is a PC that did not keep the
+     * bytes.
+     */
     private var reportedDigest: (String) -> String = { LocalProjects.digest(it) }
     /** After this many writes the PC goes away. */
     private var writesBeforeLoss = Int.MAX_VALUE
-    /** Whether the fake PC has the explorer operations of LCL 0.5.1; without them it answers "unknown operation". */
+    /**
+     * Whether the fake PC has the explorer operations of LCL 0.5.1; without them it answers
+     * "unknown operation".
+     */
     private var pcSupportsExplorer = true
     /** Runs on the phone's side while the PC handles a `create`: a change made during the sync. */
     private var onCreate: (String) -> Unit = {}
@@ -68,53 +72,114 @@ class LocalWorkspaceTest {
 
     private fun digest(text: String) = LocalProjects.digest(text)
 
-    private suspend fun answer(op: String, f: JsonObject): Reply = when (op) {
-        "projects" -> reply(200, "projects" to JsonArray(listOf(buildJsonObject { put("id", "p1"); put("name", "Demo"); put("root", "/home/me/demo"); put("default", true) })))
-        "about" -> reply(200, "service" to "lcl-remote test")
-        "settings" -> reply(200, "default_extension" to ".lcl")
-        "roles" -> reply(200, "available" to false, "roles" to JsonArray(emptyList()))
-        "children" -> {
-            val parent = f.str("parent") ?: ""
-            when {
-                !pcSupportsExplorer -> reply(400, "error" to "unknown operation children")
-                parent.isNotEmpty() && parent !in pcFolders -> reply(404, "error" to "$parent does not exist")
-                else -> reply(200, "parent" to parent, "entries" to JsonArray(emptyList()), "truncated" to false)
+    private suspend fun answer(op: String, f: JsonObject): Reply =
+        when (op) {
+            "projects" ->
+                reply(
+                    200,
+                    "projects" to
+                        JsonArray(
+                            listOf(
+                                buildJsonObject {
+                                    put("id", "p1")
+                                    put("name", "Demo")
+                                    put("root", "/home/me/demo")
+                                    put("default", true)
+                                }
+                            )
+                        ),
+                )
+            "about" -> reply(200, "service" to "lcl-remote test")
+            "settings" -> reply(200, "default_extension" to ".lcl")
+            "roles" -> reply(200, "available" to false, "roles" to JsonArray(emptyList()))
+            "children" -> {
+                val parent = f.str("parent") ?: ""
+                when {
+                    !pcSupportsExplorer -> reply(400, "error" to "unknown operation children")
+                    parent.isNotEmpty() && parent !in pcFolders ->
+                        reply(404, "error" to "$parent does not exist")
+                    else ->
+                        reply(
+                            200,
+                            "parent" to parent,
+                            "entries" to JsonArray(emptyList()),
+                            "truncated" to false,
+                        )
+                }
             }
-        }
-        "open" -> {
-            val id = f.str("document")!!
-            pcFiles[id]?.let { reply(200, "id" to id, "text" to it, "digest" to digest(it)) } ?: reply(404, "error" to "$id does not exist")
-        }
-        "mkdir" -> {
-            val folder = f.str("folder")!!
-            if (folder in pcFolders) reply(409, "error" to "$folder already exists") else { pcFolders += folder; reply(200, "id" to folder, "directory" to true) }
-        }
-        "create" -> {
-            if (--writesBeforeLoss < 0) throw IOException("dropped")
-            val name = f.str("name")!!
-            if (name in pcFiles) reply(409, "error" to "$name already exists") else {
-                val text = f.str("text")!!
-                pcFiles[name] = text
-                onCreate(name)
-                reply(200, "id" to name, "requested" to name, "digest" to reportedDigest(text))
+            "open" -> {
+                val id = f.str("document")!!
+                pcFiles[id]?.let { reply(200, "id" to id, "text" to it, "digest" to digest(it)) }
+                    ?: reply(404, "error" to "$id does not exist")
             }
-        }
-        "save" -> {
-            if (--writesBeforeLoss < 0) throw IOException("dropped")
-            val id = f.str("document")!!
-            val current = pcFiles[id]
-            when {
-                current == null -> reply(404, "error" to "$id does not exist")
-                digest(current) != f.str("base") -> reply(409, "error" to "$id changed", "conflict" to true, "text" to current, "digest" to digest(current))
-                else -> { val text = f.str("text")!!; pcFiles[id] = text; reply(200, "id" to id, "digest" to reportedDigest(text), "final_line_feed_added" to false) }
+            "mkdir" -> {
+                val folder = f.str("folder")!!
+                if (folder in pcFolders) reply(409, "error" to "$folder already exists")
+                else {
+                    pcFolders += folder
+                    reply(200, "id" to folder, "directory" to true)
+                }
             }
+            "create" -> {
+                if (--writesBeforeLoss < 0) throw IOException("dropped")
+                val name = f.str("name")!!
+                if (name in pcFiles) reply(409, "error" to "$name already exists")
+                else {
+                    val text = f.str("text")!!
+                    pcFiles[name] = text
+                    onCreate(name)
+                    reply(200, "id" to name, "requested" to name, "digest" to reportedDigest(text))
+                }
+            }
+            "save" -> {
+                if (--writesBeforeLoss < 0) throw IOException("dropped")
+                val id = f.str("document")!!
+                val current = pcFiles[id]
+                when {
+                    current == null -> reply(404, "error" to "$id does not exist")
+                    digest(current) != f.str("base") ->
+                        reply(
+                            409,
+                            "error" to "$id changed",
+                            "conflict" to true,
+                            "text" to current,
+                            "digest" to digest(current),
+                        )
+                    else -> {
+                        val text = f.str("text")!!
+                        pcFiles[id] = text
+                        reply(
+                            200,
+                            "id" to id,
+                            "digest" to reportedDigest(text),
+                            "final_line_feed_added" to false,
+                        )
+                    }
+                }
+            }
+            else -> reply(400, "error" to "unknown operation $op")
         }
-        else -> reply(400, "error" to "unknown operation $op")
-    }
 
     private fun TestScope.controller(): Pair<ConnectionManager, WorkspaceController> {
-        val connection = ConnectionManager(PcStore(MemoryStore()), FakeIdentities(), pc, network, backgroundScope, discover = { emptyList() }, now = { 1_000L })
-        val workspace = WorkspaceController(connection, backgroundScope, analysisDelayMs = 400, local = local, io = Dispatchers.Unconfined, now = { 42L })
+        val connection =
+            ConnectionManager(
+                PcStore(MemoryStore()),
+                FakeIdentities(),
+                pc,
+                network,
+                backgroundScope,
+                discover = { emptyList() },
+                now = { 1_000L },
+            )
+        val workspace =
+            WorkspaceController(
+                connection,
+                backgroundScope,
+                analysisDelayMs = 400,
+                local = local,
+                io = Dispatchers.Unconfined,
+                now = { 42L },
+            )
         backgroundScope.launch { workspace.messages.collect { said += it } }
         runCurrent()
         return connection to workspace
@@ -171,8 +236,17 @@ class LocalWorkspaceTest {
         workspace.edit(key, "typed but not saved\n")
         workspace.reload(key)
         runCurrent()
-        assertEquals("LCL:\n    VERSION: \"0.1.0\"\nedited\n", workspace.ui.value.activeDocument!!.text)
-        workspace.deleteLocal("local:Alpha/planning/phase_1.lcl.txt".let { k -> workspace.activate(k); k })
+        assertEquals(
+            "LCL:\n    VERSION: \"0.1.0\"\nedited\n",
+            workspace.ui.value.activeDocument!!.text,
+        )
+        workspace.deleteLocal(
+            "local:Alpha/planning/phase_1.lcl.txt"
+                .let { k ->
+                    workspace.activate(k)
+                    k
+                }
+        )
         runCurrent()
         assertFalse(File(temp.root, "local-projects/Alpha/planning/phase_1.lcl.txt").exists())
         assertEquals(listOf("planning", "main.lcl"), workspace.shown())
@@ -184,37 +258,50 @@ class LocalWorkspaceTest {
         assertEquals(listOf("planning", "main.lcl"), restarted.shown())
         restarted.open("main.lcl")
         runCurrent()
-        assertEquals("LCL:\n    VERSION: \"0.1.0\"\nedited\n", restarted.ui.value.activeDocument!!.text)
+        assertEquals(
+            "LCL:\n    VERSION: \"0.1.0\"\nedited\n",
+            restarted.ui.value.activeDocument!!.text,
+        )
     }
 
     @Test
-    fun connecting_later_lists_the_pc_beside_the_phone_and_leaving_the_pc_keeps_the_phone() = runTest {
-        local.create("Alpha")
-        local.createFile("Alpha", "main.lcl", "LCL:\n")
-        val (connection, workspace) = controller()
-        workspace.selectProject("local:Alpha")
-        workspace.open("main.lcl")
-        runCurrent()
-        workspace.edit("local:Alpha/main.lcl", "LCL:\nunsaved\n")
-        connection.pair(pc.link(1_000L), "Pixel").getOrThrow()
-        runCurrent()
-        assertEquals(listOf("p1", "local:Alpha"), workspace.ui.value.projects.map { it.id })
-        // The local project stayed chosen, its unsaved edit untouched, and nothing was synced by connecting.
-        assertEquals("local:Alpha", workspace.ui.value.project!!.id)
-        assertEquals("LCL:\nunsaved\n", workspace.ui.value.activeDocument!!.text)
-        assertTrue(pcFiles.isEmpty())
-        assertTrue(pc.sessions.flatMap { it.requests }.none { it.first in setOf("create", "save", "mkdir") })
-        // The PC's project can be worked in, and the phone's is still there.
-        workspace.selectProject("p1")
-        runCurrent()
-        assertFalse(workspace.ui.value.project!!.local)
-        connection.forget("pc1")
-        runCurrent()
-        assertEquals(listOf("local:Alpha"), workspace.ui.value.projects.map { it.id })
-        assertEquals("LCL:\nunsaved\n", workspace.ui.value.documents.single().text)
-    }
+    fun connecting_later_lists_the_pc_beside_the_phone_and_leaving_the_pc_keeps_the_phone() =
+        runTest {
+            local.create("Alpha")
+            local.createFile("Alpha", "main.lcl", "LCL:\n")
+            val (connection, workspace) = controller()
+            workspace.selectProject("local:Alpha")
+            workspace.open("main.lcl")
+            runCurrent()
+            workspace.edit("local:Alpha/main.lcl", "LCL:\nunsaved\n")
+            connection.pair(pc.link(1_000L), "Pixel").getOrThrow()
+            runCurrent()
+            assertEquals(listOf("p1", "local:Alpha"), workspace.ui.value.projects.map { it.id })
+            // The local project stayed chosen, its unsaved edit untouched, and nothing was synced
+            // by connecting.
+            assertEquals("local:Alpha", workspace.ui.value.project!!.id)
+            assertEquals("LCL:\nunsaved\n", workspace.ui.value.activeDocument!!.text)
+            assertTrue(pcFiles.isEmpty())
+            assertTrue(
+                pc.sessions
+                    .flatMap { it.requests }
+                    .none { it.first in setOf("create", "save", "mkdir") }
+            )
+            // The PC's project can be worked in, and the phone's is still there.
+            workspace.selectProject("p1")
+            runCurrent()
+            assertFalse(workspace.ui.value.project!!.local)
+            connection.forget("pc1")
+            runCurrent()
+            assertEquals(listOf("local:Alpha"), workspace.ui.value.projects.map { it.id })
+            assertEquals("LCL:\nunsaved\n", workspace.ui.value.documents.single().text)
+        }
 
-    private suspend fun TestScope.planned(workspace: WorkspaceController, folder: String = "Alpha", ids: List<String>? = null): SyncPlan {
+    private suspend fun TestScope.planned(
+        workspace: WorkspaceController,
+        folder: String = "Alpha",
+        ids: List<String>? = null,
+    ): SyncPlan {
         val alpha = workspace.ui.value.projects.first { it.id == "local:Alpha" }
         val p1 = workspace.ui.value.projects.first { it.id == "p1" }
         return workspace.planSync(alpha, p1, folder, ids).getOrThrow()
@@ -233,16 +320,25 @@ class LocalWorkspaceTest {
         // Offline, a plan is refused before anything is read from the PC.
         val plan = planned(workspace)
         assertEquals(
-            mapOf("differs.lcl" to SyncState.DIFFERENT, "main.lcl" to SyncState.ABSENT, "rules/security.lcl.txt" to SyncState.ABSENT, "same.lcl" to SyncState.IDENTICAL),
+            mapOf(
+                "differs.lcl" to SyncState.DIFFERENT,
+                "main.lcl" to SyncState.ABSENT,
+                "rules/security.lcl.txt" to SyncState.ABSENT,
+                "same.lcl" to SyncState.IDENTICAL,
+            ),
             plan.items.associate { it.id to it.state },
         )
-        assertEquals("Alpha/rules/security.lcl.txt", plan.items.first { it.id == "rules/security.lcl.txt" }.destination)
+        assertEquals(
+            "Alpha/rules/security.lcl.txt",
+            plan.items.first { it.id == "rules/security.lcl.txt" }.destination,
+        )
         assertEquals("LCL:\npc\n", plan.conflicts.single().pcText)
         // Planning wrote nothing.
         assertEquals(setOf("Alpha/same.lcl", "Alpha/differs.lcl"), pcFiles.keys)
         assertTrue(pcFolders.isEmpty())
         // Cancelled: nothing more happens. Then done, keeping the PC's version of the conflict.
-        val result = workspace.runSync(plan, mapOf("differs.lcl" to SyncChoice.KEEP_PC), removeAfter = false)
+        val result =
+            workspace.runSync(plan, mapOf("differs.lcl" to SyncChoice.KEEP_PC), removeAfter = false)
         assertEquals(listOf("Alpha", "Alpha/rules"), pcFolders)
         assertEquals("LCL:\nmain\n", pcFiles["Alpha/main.lcl"])
         assertEquals("LCL:\nrules\n", pcFiles["Alpha/rules/security.lcl.txt"])
@@ -255,11 +351,15 @@ class LocalWorkspaceTest {
         assertFalse(local.fullySynced("Alpha"))
         // Replace and rename resolve the conflict, each confirmed by the PC.
         val again = planned(workspace, ids = listOf("differs.lcl"))
-        val renamed = workspace.runSync(again, mapOf("differs.lcl" to SyncChoice.RENAME), removeAfter = false)
+        val renamed =
+            workspace.runSync(again, mapOf("differs.lcl" to SyncChoice.RENAME), removeAfter = false)
         assertTrue(renamed.complete)
         assertEquals("LCL:\nphone\n", pcFiles["Alpha/differs-phone.lcl"])
         assertEquals("LCL:\npc\n", pcFiles["Alpha/differs.lcl"])
-        assertEquals("Alpha/differs-phone.lcl", local.syncRecords("Alpha").getValue("differs.lcl").pcPath)
+        assertEquals(
+            "Alpha/differs-phone.lcl",
+            local.syncRecords("Alpha").getValue("differs.lcl").pcPath,
+        )
         // Edited again on the phone: the copy beside is where the last sync put
         // it, and while the PC still holds exactly what it confirmed, the
         // phone's newer text goes there without a question; the PC's own file
@@ -276,75 +376,112 @@ class LocalWorkspaceTest {
         assertEquals("LCL:\npc\n", pcFiles["Alpha/differs.lcl"])
         assertTrue(local.fullySynced("Alpha"))
         assertTrue(workspace.localProjectSynced("local:Alpha"))
-        // The copy beside changed on the PC since: the usual destination is judged again, as a conflict.
+        // The copy beside changed on the PC since: the usual destination is judged again, as a
+        // conflict.
         pcFiles["Alpha/differs-phone.lcl"] = "LCL:\nsomeone else\n"
         val judged = planned(workspace, ids = listOf("differs.lcl"))
         assertEquals("Alpha/differs.lcl", judged.items.single().destination)
         assertEquals(SyncState.DIFFERENT, judged.items.single().state)
-        val replaced = workspace.runSync(judged, mapOf("differs.lcl" to SyncChoice.REPLACE), removeAfter = false)
+        val replaced =
+            workspace.runSync(
+                judged,
+                mapOf("differs.lcl" to SyncChoice.REPLACE),
+                removeAfter = false,
+            )
         assertTrue(replaced.complete)
         assertEquals("LCL:\nphone 2\n", pcFiles["Alpha/differs.lcl"])
     }
 
     @Test
-    fun a_pc_that_did_not_keep_the_bytes_and_a_lost_connection_leave_the_phone_unchanged_and_unsynced() = runTest {
-        local.create("Alpha")
-        local.createFile("Alpha", "a.lcl", "LCL:\na\n")
-        local.createFile("Alpha", "b.lcl", "LCL:\nb\n")
-        local.createFile("Alpha", "c.lcl", "LCL:\nc\n")
-        val (_, workspace) = connected()
-        // The PC answers with another digest: not confirmed, not synced.
-        reportedDigest = { "0".repeat(64) }
-        val wrong = workspace.runSync(planned(workspace, ids = listOf("a.lcl")), emptyMap(), removeAfter = true)
-        assertFalse(wrong.complete)
-        assertFalse(wrong.removed)
-        assertTrue(wrong.failures.single().detail.contains("other bytes"))
-        assertFalse(local.isSynced("Alpha", "a.lcl"))
-        assertTrue(File(temp.root, "local-projects/Alpha/a.lcl").exists())
-        reportedDigest = { digest(it) }
-        // The connection drops after the first write: the rest is not attempted, nothing local goes.
-        pcFiles.remove("Alpha/a.lcl")
-        writesBeforeLoss = 1
-        val lost = workspace.runSync(planned(workspace), emptyMap(), removeAfter = true)
-        assertFalse(lost.complete)
-        assertFalse(lost.removed)
-        assertTrue(lost.outcomes.first { it.id == "a.lcl" }.ok)
-        assertTrue(lost.outcomes.filter { it.id != "a.lcl" }.all { !it.ok && it.detail.startsWith("not") })
-        assertTrue(local.isSynced("Alpha", "a.lcl"))
-        assertFalse(local.isSynced("Alpha", "b.lcl"))
-        assertTrue(File(temp.root, "local-projects/Alpha").isDirectory)
-        assertEquals(3, local.documents("Alpha").size)
-        // Remove is refused while anything is unsynced.
-        workspace.removeLocalProject("local:Alpha")
-        runCurrent()
-        assertTrue(File(temp.root, "local-projects/Alpha").isDirectory)
-        assertTrue(said.last(), said.any { it.contains("stays on this phone") || it.startsWith("Connect to the PC") })
-    }
+    fun a_pc_that_did_not_keep_the_bytes_and_a_lost_connection_leave_the_phone_unchanged_and_unsynced() =
+        runTest {
+            local.create("Alpha")
+            local.createFile("Alpha", "a.lcl", "LCL:\na\n")
+            local.createFile("Alpha", "b.lcl", "LCL:\nb\n")
+            local.createFile("Alpha", "c.lcl", "LCL:\nc\n")
+            val (_, workspace) = connected()
+            // The PC answers with another digest: not confirmed, not synced.
+            reportedDigest = { "0".repeat(64) }
+            val wrong =
+                workspace.runSync(
+                    planned(workspace, ids = listOf("a.lcl")),
+                    emptyMap(),
+                    removeAfter = true,
+                )
+            assertFalse(wrong.complete)
+            assertFalse(wrong.removed)
+            assertTrue(wrong.failures.single().detail.contains("other bytes"))
+            assertFalse(local.isSynced("Alpha", "a.lcl"))
+            assertTrue(File(temp.root, "local-projects/Alpha/a.lcl").exists())
+            reportedDigest = { digest(it) }
+            // The connection drops after the first write: the rest is not attempted, nothing local
+            // goes.
+            pcFiles.remove("Alpha/a.lcl")
+            writesBeforeLoss = 1
+            val lost = workspace.runSync(planned(workspace), emptyMap(), removeAfter = true)
+            assertFalse(lost.complete)
+            assertFalse(lost.removed)
+            assertTrue(lost.outcomes.first { it.id == "a.lcl" }.ok)
+            assertTrue(
+                lost.outcomes
+                    .filter { it.id != "a.lcl" }
+                    .all { !it.ok && it.detail.startsWith("not") }
+            )
+            assertTrue(local.isSynced("Alpha", "a.lcl"))
+            assertFalse(local.isSynced("Alpha", "b.lcl"))
+            assertTrue(File(temp.root, "local-projects/Alpha").isDirectory)
+            assertEquals(3, local.documents("Alpha").size)
+            // Remove is refused while anything is unsynced.
+            workspace.removeLocalProject("local:Alpha")
+            runCurrent()
+            assertTrue(File(temp.root, "local-projects/Alpha").isDirectory)
+            assertTrue(
+                said.last(),
+                said.any {
+                    it.contains("stays on this phone") || it.startsWith("Connect to the PC")
+                },
+            )
+        }
 
     @Test
-    fun a_whole_project_syncs_with_its_structure_and_then_may_be_removed_from_the_phone() = runTest {
-        local.create("Alpha")
-        local.mkdir("Alpha", "empty")
-        local.createFile("Alpha", "main.lcl.txt", "LCL:\nmain")
-        local.createFile("Alpha", "tasks/deep/inner.lcl", "LCL:\ninner\n")
-        val (_, workspace) = connected()
-        workspace.selectProject("local:Alpha")
-        workspace.open("main.lcl.txt")
-        runCurrent()
-        val result = workspace.runSync(planned(workspace, folder = "phone/Alpha"), emptyMap(), removeAfter = true)
-        runCurrent()
-        assertTrue(result.complete)
-        assertTrue(result.removed)
-        assertEquals(listOf("phone", "phone/Alpha", "phone/Alpha/empty", "phone/Alpha/tasks", "phone/Alpha/tasks/deep"), pcFolders)
-        assertEquals("made on the PC", result.outcomes.first { it.id == "empty/" }.detail)
-        assertEquals("LCL:\nmain", pcFiles["phone/Alpha/main.lcl.txt"])
-        assertEquals("LCL:\ninner\n", pcFiles["phone/Alpha/tasks/deep/inner.lcl"])
-        // Gone from the phone, from the list, and from the tabs, only now.
-        assertFalse(File(temp.root, "local-projects/Alpha").exists())
-        assertEquals(listOf("p1"), workspace.ui.value.projects.map { it.id })
-        assertTrue(workspace.ui.value.documents.isEmpty())
-        assertNull(workspace.ui.value.explorers["local:Alpha"])
-    }
+    fun a_whole_project_syncs_with_its_structure_and_then_may_be_removed_from_the_phone() =
+        runTest {
+            local.create("Alpha")
+            local.mkdir("Alpha", "empty")
+            local.createFile("Alpha", "main.lcl.txt", "LCL:\nmain")
+            local.createFile("Alpha", "tasks/deep/inner.lcl", "LCL:\ninner\n")
+            val (_, workspace) = connected()
+            workspace.selectProject("local:Alpha")
+            workspace.open("main.lcl.txt")
+            runCurrent()
+            val result =
+                workspace.runSync(
+                    planned(workspace, folder = "phone/Alpha"),
+                    emptyMap(),
+                    removeAfter = true,
+                )
+            runCurrent()
+            assertTrue(result.complete)
+            assertTrue(result.removed)
+            assertEquals(
+                listOf(
+                    "phone",
+                    "phone/Alpha",
+                    "phone/Alpha/empty",
+                    "phone/Alpha/tasks",
+                    "phone/Alpha/tasks/deep",
+                ),
+                pcFolders,
+            )
+            assertEquals("made on the PC", result.outcomes.first { it.id == "empty/" }.detail)
+            assertEquals("LCL:\nmain", pcFiles["phone/Alpha/main.lcl.txt"])
+            assertEquals("LCL:\ninner\n", pcFiles["phone/Alpha/tasks/deep/inner.lcl"])
+            // Gone from the phone, from the list, and from the tabs, only now.
+            assertFalse(File(temp.root, "local-projects/Alpha").exists())
+            assertEquals(listOf("p1"), workspace.ui.value.projects.map { it.id })
+            assertTrue(workspace.ui.value.documents.isEmpty())
+            assertNull(workspace.ui.value.explorers["local:Alpha"])
+        }
 
     @Test
     fun unsaved_edits_block_sync_and_removal_until_they_are_saved() = runTest {
@@ -368,7 +505,13 @@ class LocalWorkspaceTest {
         assertFalse(stale.removed)
         assertEquals(refusal, stale.problem)
         assertTrue("the disk's stale bytes were sent", pcFiles.isEmpty())
-        assertTrue(workspace.verifyRemovable("local:Alpha").exceptionOrNull()!!.message!!.startsWith("Save these documents before removing"))
+        assertTrue(
+            workspace
+                .verifyRemovable("local:Alpha")
+                .exceptionOrNull()!!
+                .message!!
+                .startsWith("Save these documents before removing")
+        )
         workspace.removeLocalProject("local:Alpha")
         runCurrent()
         assertTrue(File(temp.root, "local-projects/Alpha").isDirectory)
@@ -386,44 +529,57 @@ class LocalWorkspaceTest {
     }
 
     @Test
-    fun every_document_beyond_what_the_explorer_shows_is_synced_and_nothing_goes_before_all_are_confirmed() = runTest(timeout = 5.minutes) {
-        local.create("Alpha")
-        val many = File(temp.root, "local-projects/Alpha/many")
-        many.mkdirs()
-        for (i in 0..LocalProjects.MAX_CHILDREN) File(many, "d${i.toString().padStart(5, '0')}.lcl").writeText("LCL:\n$i\n")
-        // The explorer shows the first 4096 and says so; the sync inventory has every one.
-        val shown = local.children("Alpha", "many")
-        assertTrue(shown.truncated)
-        assertEquals(LocalProjects.MAX_CHILDREN, shown.entries.size)
-        assertEquals(LocalProjects.MAX_CHILDREN + 1, local.inventory("Alpha").documents.size)
-        val (_, workspace) = connected()
-        val plan = planned(workspace)
-        assertEquals(LocalProjects.MAX_CHILDREN + 1, plan.items.size)
-        // The PC does not confirm the last one: a partial sync, and the project stays whole.
-        reportedDigest = { text -> if (text == "LCL:\n${LocalProjects.MAX_CHILDREN}\n") "0".repeat(64) else digest(text) }
-        val cut = workspace.runSync(plan, emptyMap(), removeAfter = true)
-        assertFalse(cut.complete)
-        assertTrue(cut.partial)
-        assertFalse(cut.removed)
-        assertEquals(listOf("many/d04096.lcl"), cut.failures.map { it.id })
-        assertTrue(File(temp.root, "local-projects/Alpha").isDirectory)
-        assertEquals(LocalProjects.MAX_CHILDREN + 1, local.inventory("Alpha").documents.size)
-        assertFalse(local.fullySynced("Alpha"))
-        // Again: the confirmed ones are found on the PC, the last is confirmed now, and only now may the project go.
-        reportedDigest = { digest(it) }
-        val done = workspace.runSync(planned(workspace), emptyMap(), removeAfter = true)
-        assertTrue(done.problem ?: "", done.complete)
-        assertTrue(done.removed)
-        assertEquals(LocalProjects.MAX_CHILDREN + 1, pcFiles.size)
-        assertFalse(File(temp.root, "local-projects/Alpha").exists())
-        // Beyond the sync bound of its own, a project is not inventoried at all: nothing is planned, marked or removed.
-        val small = LocalProjects(File(temp.root, "local-projects"), maxSyncItems = 3)
-        small.create("Beta")
-        for (i in 1..4) small.createFile("Beta", "d$i.lcl", "LCL:\n")
-        val bounded = assertThrows(io.lcl.workspace.local.LocalRefused::class.java) { small.inventory("Beta") }
-        assertTrue(bounded.message!!, bounded.message!!.contains("more than 3"))
-        assertFalse(small.fullySynced("Beta"))
-    }
+    fun every_document_beyond_what_the_explorer_shows_is_synced_and_nothing_goes_before_all_are_confirmed() =
+        runTest(timeout = 5.minutes) {
+            local.create("Alpha")
+            val many = File(temp.root, "local-projects/Alpha/many")
+            many.mkdirs()
+            for (i in 0..LocalProjects.MAX_CHILDREN) File(
+                    many,
+                    "d${i.toString().padStart(5, '0')}.lcl",
+                )
+                .writeText("LCL:\n$i\n")
+            // The explorer shows the first 4096 and says so; the sync inventory has every one.
+            val shown = local.children("Alpha", "many")
+            assertTrue(shown.truncated)
+            assertEquals(LocalProjects.MAX_CHILDREN, shown.entries.size)
+            assertEquals(LocalProjects.MAX_CHILDREN + 1, local.inventory("Alpha").documents.size)
+            val (_, workspace) = connected()
+            val plan = planned(workspace)
+            assertEquals(LocalProjects.MAX_CHILDREN + 1, plan.items.size)
+            // The PC does not confirm the last one: a partial sync, and the project stays whole.
+            reportedDigest = { text ->
+                if (text == "LCL:\n${LocalProjects.MAX_CHILDREN}\n") "0".repeat(64)
+                else digest(text)
+            }
+            val cut = workspace.runSync(plan, emptyMap(), removeAfter = true)
+            assertFalse(cut.complete)
+            assertTrue(cut.partial)
+            assertFalse(cut.removed)
+            assertEquals(listOf("many/d04096.lcl"), cut.failures.map { it.id })
+            assertTrue(File(temp.root, "local-projects/Alpha").isDirectory)
+            assertEquals(LocalProjects.MAX_CHILDREN + 1, local.inventory("Alpha").documents.size)
+            assertFalse(local.fullySynced("Alpha"))
+            // Again: the confirmed ones are found on the PC, the last is confirmed now, and only
+            // now may the project go.
+            reportedDigest = { digest(it) }
+            val done = workspace.runSync(planned(workspace), emptyMap(), removeAfter = true)
+            assertTrue(done.problem ?: "", done.complete)
+            assertTrue(done.removed)
+            assertEquals(LocalProjects.MAX_CHILDREN + 1, pcFiles.size)
+            assertFalse(File(temp.root, "local-projects/Alpha").exists())
+            // Beyond the sync bound of its own, a project is not inventoried at all: nothing is
+            // planned, marked or removed.
+            val small = LocalProjects(File(temp.root, "local-projects"), maxSyncItems = 3)
+            small.create("Beta")
+            for (i in 1..4) small.createFile("Beta", "d$i.lcl", "LCL:\n")
+            val bounded =
+                assertThrows(io.lcl.workspace.local.LocalRefused::class.java) {
+                    small.inventory("Beta")
+                }
+            assertTrue(bounded.message!!, bounded.message!!.contains("more than 3"))
+            assertFalse(small.fullySynced("Beta"))
+        }
 
     @Test
     fun removal_asks_the_pc_again_and_is_refused_when_it_no_longer_holds_everything() = runTest {
@@ -436,7 +592,8 @@ class LocalWorkspaceTest {
         assertTrue(local.fullySynced("Alpha"))
         assertTrue(workspace.verifyRemovable("local:Alpha").isSuccess)
         assertTrue(workspace.localStatus("local:Alpha").startsWith("Synced"))
-        suspend fun refusal() = workspace.verifyRemovable("local:Alpha").exceptionOrNull()!!.message!!
+        suspend fun refusal() =
+            workspace.verifyRemovable("local:Alpha").exceptionOrNull()!!.message!!
         // Deleted on the PC since: refused, and the file is named.
         val kept = pcFiles.remove("Alpha/b.lcl")!!
         assertTrue(refusal(), refusal().startsWith("b.lcl is no longer on the PC"))
@@ -494,7 +651,10 @@ class LocalWorkspaceTest {
         assertEquals("LCL:\nb\n", pcFiles["Alpha/b.lcl"])
         assertFalse(result.complete)
         assertFalse(result.removed)
-        assertTrue(result.problem!!, result.problem!!.contains("b.lcl (edited)") && result.problem!!.contains("late/ (new)"))
+        assertTrue(
+            result.problem!!,
+            result.problem!!.contains("b.lcl (edited)") && result.problem!!.contains("late/ (new)"),
+        )
         assertTrue(local.isSynced("Alpha", "a.lcl"))
         assertFalse(local.isSynced("Alpha", "b.lcl"))
         assertEquals("LCL:\nb, newer\n", local.read("Alpha", "b.lcl").text)
@@ -504,7 +664,10 @@ class LocalWorkspaceTest {
 
     @Test
     fun a_removal_the_disk_refuses_leaves_the_project_listed_and_is_not_claimed() = runTest {
-        org.junit.Assume.assumeFalse("permissions do not bind root", System.getProperty("user.name") == "root")
+        org.junit.Assume.assumeFalse(
+            "permissions do not bind root",
+            System.getProperty("user.name") == "root",
+        )
         local.create("Alpha")
         local.createFile("Alpha", "a.lcl", "LCL:\na\n")
         local.createFile("Alpha", "locked/b.lcl", "LCL:\nb\n")
@@ -530,16 +693,24 @@ class LocalWorkspaceTest {
     }
 
     @Test
-    fun a_pc_without_the_explorer_operations_is_named_as_too_old_and_nothing_is_attempted() = runTest {
-        local.create("Alpha")
-        local.mkdir("Alpha", "planning")
-        local.createFile("Alpha", "main.lcl", "LCL:\n")
-        val (_, workspace) = connected()
-        pcSupportsExplorer = false
-        val alpha = workspace.ui.value.projects.first { it.id == "local:Alpha" }
-        val p1 = workspace.ui.value.projects.first { it.id == "p1" }
-        assertEquals("Syncing local projects requires LCL 0.5.1 or newer on the PC.", workspace.planSync(alpha, p1, "Alpha").exceptionOrNull()!!.message)
-        assertTrue(pcFiles.isEmpty() && pcFolders.isEmpty())
-        assertTrue(pc.sessions.flatMap { it.requests }.none { it.first in setOf("open", "create", "save", "mkdir") })
-    }
+    fun a_pc_without_the_explorer_operations_is_named_as_too_old_and_nothing_is_attempted() =
+        runTest {
+            local.create("Alpha")
+            local.mkdir("Alpha", "planning")
+            local.createFile("Alpha", "main.lcl", "LCL:\n")
+            val (_, workspace) = connected()
+            pcSupportsExplorer = false
+            val alpha = workspace.ui.value.projects.first { it.id == "local:Alpha" }
+            val p1 = workspace.ui.value.projects.first { it.id == "p1" }
+            assertEquals(
+                "Syncing local projects requires LCL 0.5.1 or newer on the PC.",
+                workspace.planSync(alpha, p1, "Alpha").exceptionOrNull()!!.message,
+            )
+            assertTrue(pcFiles.isEmpty() && pcFolders.isEmpty())
+            assertTrue(
+                pc.sessions
+                    .flatMap { it.requests }
+                    .none { it.first in setOf("open", "create", "save", "mkdir") }
+            )
+        }
 }

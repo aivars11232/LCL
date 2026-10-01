@@ -1,14 +1,14 @@
 package io.lcl.workspace.ui
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.layout.fillMaxHeight
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -40,15 +40,24 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 
 /** The app's two top-level tabs. */
-enum class Tab { Workspace, Manual }
+enum class Tab {
+    Workspace,
+    Manual,
+}
 
 sealed interface Screen {
     data object Home : Screen
+
     data object Pair : Screen
+
     data object Workspace : Screen
+
     data object Settings : Screen
+
     data object About : Screen
+
     data object Updates : Screen
+
     data class LocalDocument(val uri: Uri) : Screen
 }
 
@@ -64,7 +73,7 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
                 container.pairing.active -> Screen.Pair
                 container.pcs.activeId() != null -> Screen.Workspace
                 else -> Screen.Home
-            },
+            }
         )
     }
     val snackbar = remember { SnackbarHostState() }
@@ -86,7 +95,8 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
         // exported, so an app can still name it; a link sent so is ignored.
         if (opened.action == Intent.ACTION_VIEW) {
             val name = data.lastPathSegment?.substringAfterLast('/') ?: ""
-            if (LclNames.isDocument(name) || data.scheme == "content") screen = Screen.LocalDocument(data)
+            if (LclNames.isDocument(name) || data.scheme == "content")
+                screen = Screen.LocalDocument(data)
         }
     }
     LaunchedEffect(Unit) {
@@ -98,58 +108,96 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Box(Modifier.fillMaxSize().safeDrawingPadding()) {
                 Column(Modifier.fillMaxSize()) {
-                    ConnectionBanner(connection, onReconnect = container.connection::reconnectNow, onOpenPcs = { screen = Screen.Home })
+                    ConnectionBanner(
+                        connection,
+                        onReconnect = container.connection::reconnectNow,
+                        onOpenPcs = { screen = Screen.Home },
+                    )
                     // A workspace is in use with a PC, or with a project on this phone.
                     val workspaceUi by container.workspace.ui.collectAsState()
-                    val back: () -> Unit = { backFrom(screen, container.pcs.activeId() != null || workspaceUi.project?.local == true)?.let { screen = it } }
+                    val back: () -> Unit = {
+                        backFrom(
+                                screen,
+                                container.pcs.activeId() != null ||
+                                    workspaceUi.project?.local == true,
+                            )
+                            ?.let { screen = it }
+                    }
                     BackHandler(enabled = tab == Tab.Manual) { tab = Tab.Workspace }
                     // Only the dashboard lets system Back leave the app.
                     BackHandler(enabled = tab == Tab.Workspace && screen != Screen.Home) { back() }
                     Box(Modifier.weight(1f)) {
-                    if (tab == Tab.Manual) ManualScreen() else when (val current = screen) {
-                        Screen.Home -> HomeScreen(
-                            container = container,
-                            state = connection,
-                            onPair = { screen = Screen.Pair },
-                            onOpenWorkspace = { screen = Screen.Workspace },
-                            onSettings = { screen = Screen.Settings },
-                            onAbout = { screen = Screen.About },
-                            onUpdates = { screen = Screen.Updates },
-                            onManual = openManual,
-                        )
-                        Screen.Pair -> PairScreen(
-                            container = container,
-                            onPaired = { screen = Screen.Workspace },
-                            onBack = back,
-                        )
-                        Screen.Workspace -> WorkspaceScreen(
-                            container = container,
-                            connection = connection,
-                            settings = settings,
-                            onHome = { screen = Screen.Home },
-                            onManual = openManual,
-                            editors = editors,
-                        )
-                        Screen.Settings -> SettingsScreen(settings, container::updateSettings, back)
-                        Screen.About -> AboutScreen(container, connection, back)
-                        Screen.Updates -> UpdatesScreen(container, back)
-                        is Screen.LocalDocument -> LocalDocumentScreen(container, current.uri, settings, back)
-                    }
+                        if (tab == Tab.Manual) ManualScreen()
+                        else
+                            when (val current = screen) {
+                                Screen.Home ->
+                                    HomeScreen(
+                                        container = container,
+                                        state = connection,
+                                        onPair = { screen = Screen.Pair },
+                                        onOpenWorkspace = { screen = Screen.Workspace },
+                                        onSettings = { screen = Screen.Settings },
+                                        onAbout = { screen = Screen.About },
+                                        onUpdates = { screen = Screen.Updates },
+                                        onManual = openManual,
+                                    )
+                                Screen.Pair ->
+                                    PairScreen(
+                                        container = container,
+                                        onPaired = { screen = Screen.Workspace },
+                                        onBack = back,
+                                    )
+                                Screen.Workspace ->
+                                    WorkspaceScreen(
+                                        container = container,
+                                        connection = connection,
+                                        settings = settings,
+                                        onHome = { screen = Screen.Home },
+                                        onManual = openManual,
+                                        editors = editors,
+                                    )
+                                Screen.Settings ->
+                                    SettingsScreen(settings, container::updateSettings, back)
+                                Screen.About -> AboutScreen(container, connection, back)
+                                Screen.Updates -> UpdatesScreen(container, back)
+                                is Screen.LocalDocument ->
+                                    LocalDocumentScreen(container, current.uri, settings, back)
+                            }
                     }
                     // The two top-level tabs, as the desktop's tab strips: text,
                     // and the accent along the edge of the one shown.
                     val lcl = LocalLclColors.current
-                    Row(Modifier.fillMaxWidth().height(52.dp).background(lcl.raised).hairline(lcl.line, top = true)) {
-                        LclTab(tab == Tab.Workspace, { tab = Tab.Workspace }, Modifier.weight(1f).fillMaxHeight().testTag("tab_workspace"), barOnTop = true) {
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .height(52.dp)
+                            .background(lcl.raised)
+                            .hairline(lcl.line, top = true)
+                    ) {
+                        LclTab(
+                            tab == Tab.Workspace,
+                            { tab = Tab.Workspace },
+                            Modifier.weight(1f).fillMaxHeight().testTag("tab_workspace"),
+                            barOnTop = true,
+                        ) {
                             Text("▤  Workspace")
                         }
-                        LclTab(tab == Tab.Manual, { tab = Tab.Manual }, Modifier.weight(1f).fillMaxHeight().testTag("tab_manual"), barOnTop = true) {
+                        LclTab(
+                            tab == Tab.Manual,
+                            { tab = Tab.Manual },
+                            Modifier.weight(1f).fillMaxHeight().testTag("tab_manual"),
+                            barOnTop = true,
+                        ) {
                             Text("?  Manual")
                         }
                     }
                 }
-                // A message, as the desktop's toast: raised, a hairline around it, above the bottom tabs and the inspector's.
-                SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(start = 12.dp, end = 12.dp, bottom = 104.dp)) { data ->
+                // A message, as the desktop's toast: raised, a hairline around it, above the bottom
+                // tabs and the inspector's.
+                SnackbarHost(
+                    snackbar,
+                    Modifier.align(Alignment.BottomCenter)
+                        .padding(start = 12.dp, end = 12.dp, bottom = 104.dp),
+                ) { data ->
                     val lcl = LocalLclColors.current
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
@@ -159,7 +207,11 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
                         border = BorderStroke(1.dp, lcl.line),
                         shadowElevation = 6.dp,
                     ) {
-                        Text(data.visuals.message, Modifier.padding(horizontal = 14.dp, vertical = 10.dp), style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            data.visuals.message,
+                            Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
                     }
                 }
             }
@@ -168,49 +220,57 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
 }
 
 /**
- * Where Back leads from [screen], the system's and a screen's own: `null` on
- * the dashboard (Home), the one screen Back leaves the app from. Pairing is
- * reached from the dashboard and returns there; the workspace returns there
- * too, so a person who connected is never one Back away from closing the
- * app. Settings, About and a document another app opened return to the
- * workspace while a PC is in use, and to the dashboard otherwise.
+ * Where Back leads from [screen], the system's and a screen's own: `null` on the dashboard (Home),
+ * the one screen Back leaves the app from. Pairing is reached from the dashboard and returns there;
+ * the workspace returns there too, so a person who connected is never one Back away from closing
+ * the app. Settings, About and a document another app opened return to the workspace while a PC is
+ * in use, and to the dashboard otherwise.
  */
-fun backFrom(screen: Screen, pcInUse: Boolean): Screen? = when (screen) {
-    Screen.Home -> null
-    Screen.Pair, Screen.Workspace, Screen.Updates -> Screen.Home
-    Screen.Settings, Screen.About, is Screen.LocalDocument ->
-        if (pcInUse) Screen.Workspace else Screen.Home
-}
+fun backFrom(screen: Screen, pcInUse: Boolean): Screen? =
+    when (screen) {
+        Screen.Home -> null
+        Screen.Pair,
+        Screen.Workspace,
+        Screen.Updates -> Screen.Home
+        Screen.Settings,
+        Screen.About,
+        is Screen.LocalDocument -> if (pcInUse) Screen.Workspace else Screen.Home
+    }
 
 /** One line of text for where the connection stands. */
-fun describe(state: ConnectionState): String = when (state) {
-    ConnectionState.NoPc -> "No PC paired"
-    is ConnectionState.Connecting -> "Connecting to ${state.pc.name}…"
-    is ConnectionState.Connected -> "Connected to ${state.pc.name}"
-    is ConnectionState.Reconnecting -> "Reconnecting to ${state.pc.name}" +
-        (if (state.retryInSeconds > 0) " in ${state.retryInSeconds} s" else "") +
-        (if (state.reason.isNotBlank()) " — ${state.reason}" else "")
-    is ConnectionState.Offline -> "Offline — no network. ${state.pc.name} stays paired."
-    is ConnectionState.Disconnected -> "Disconnected from ${state.pc.name}. Still paired."
-    is ConnectionState.Revoked -> state.message
-    is ConnectionState.NotPaired -> state.message
-}
+fun describe(state: ConnectionState): String =
+    when (state) {
+        ConnectionState.NoPc -> "No PC paired"
+        is ConnectionState.Connecting -> "Connecting to ${state.pc.name}…"
+        is ConnectionState.Connected -> "Connected to ${state.pc.name}"
+        is ConnectionState.Reconnecting ->
+            "Reconnecting to ${state.pc.name}" +
+                (if (state.retryInSeconds > 0) " in ${state.retryInSeconds} s" else "") +
+                (if (state.reason.isNotBlank()) " — ${state.reason}" else "")
+        is ConnectionState.Offline -> "Offline — no network. ${state.pc.name} stays paired."
+        is ConnectionState.Disconnected -> "Disconnected from ${state.pc.name}. Still paired."
+        is ConnectionState.Revoked -> state.message
+        is ConnectionState.NotPaired -> state.message
+    }
 
 @Composable
 fun ConnectionBanner(state: ConnectionState, onReconnect: () -> Unit, onOpenPcs: () -> Unit) {
     val colors = LocalLclColors.current
-    val (tint, label) = when (state) {
-        is ConnectionState.Connected -> colors.good to "Connected"
-        is ConnectionState.Connecting, is ConnectionState.Reconnecting -> colors.warn to "Reconnecting"
-        is ConnectionState.Offline, is ConnectionState.Disconnected -> colors.symbol to "Offline"
-        is ConnectionState.Revoked, is ConnectionState.NotPaired -> colors.bad to "Not trusted"
-        ConnectionState.NoPc -> colors.symbol to "No PC"
-    }
+    val (tint, label) =
+        when (state) {
+            is ConnectionState.Connected -> colors.good to "Connected"
+            is ConnectionState.Connecting,
+            is ConnectionState.Reconnecting -> colors.warn to "Reconnecting"
+            is ConnectionState.Offline,
+            is ConnectionState.Disconnected -> colors.symbol to "Offline"
+            is ConnectionState.Revoked,
+            is ConnectionState.NotPaired -> colors.bad to "Not trusted"
+            ConnectionState.NoPc -> colors.symbol to "No PC"
+        }
     // The desktop's status strip: sunk into the page, a hairline under it,
     // the state as a coloured dot and word, the detail in dim ink.
     Row(
-        Modifier
-            .fillMaxWidth()
+        Modifier.fillMaxWidth()
             .background(colors.sunken)
             .hairline(colors.line, top = false)
             .padding(horizontal = 12.dp, vertical = 3.dp)
@@ -218,15 +278,28 @@ fun ConnectionBanner(state: ConnectionState, onReconnect: () -> Unit, onOpenPcs:
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("● ", color = tint, style = MaterialTheme.typography.labelSmall)
-        Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = tint, modifier = Modifier.testTag("connection_label"))
-        Text("  " + describe(state), style = MaterialTheme.typography.bodySmall, color = colors.inkDim, modifier = Modifier.weight(1f), maxLines = 2)
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = tint,
+            modifier = Modifier.testTag("connection_label"),
+        )
+        Text(
+            "  " + describe(state),
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.inkDim,
+            modifier = Modifier.weight(1f),
+            maxLines = 2,
+        )
         when (state) {
-            is ConnectionState.Reconnecting, is ConnectionState.Disconnected, is ConnectionState.Offline ->
-                TextButton(onClick = onReconnect) { Text("Reconnect") }
-            is ConnectionState.Revoked, is ConnectionState.NotPaired, ConnectionState.NoPc ->
-                TextButton(onClick = onOpenPcs) { Text("Home") }
+            is ConnectionState.Reconnecting,
+            is ConnectionState.Disconnected,
+            is ConnectionState.Offline -> TextButton(onClick = onReconnect) { Text("Reconnect") }
+            is ConnectionState.Revoked,
+            is ConnectionState.NotPaired,
+            ConnectionState.NoPc -> TextButton(onClick = onOpenPcs) { Text("Home") }
             else -> Unit
         }
     }
 }
-

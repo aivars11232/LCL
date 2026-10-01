@@ -16,39 +16,55 @@ val releaseStore = secret("lclReleaseStoreFile", "LCL_RELEASE_STORE_FILE")
 // list the PC updater is built with. Only public keys are there. Update System
 // V1 has exactly one production key: none means updates are not configured,
 // and a list with more than one is refused here, in every build.
-fun keyList(text: String) = text.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
+fun keyList(text: String) =
+    text.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
+
 fun keyLines(text: String) = keyList(text).joinToString("\\n")
+
 val productionUpdateKeys = keyList(rootProject.file("../update/trusted_keys.txt").readText())
+
 check(productionUpdateKeys.size <= 1) {
     "update/trusted_keys.txt lists ${productionUpdateKeys.size} production update keys; Update System V1 has exactly one"
 }
+
 val trustedUpdateKeys = productionUpdateKeys.joinToString("\\n")
 // A debug build may name a local test release server and test keys, for the
 // end-to-end update test; a release build never has either.
 val updateTestEndpoint = providers.gradleProperty("lclUpdateTestEndpoint").orNull ?: ""
-val updateTestKeys = providers.gradleProperty("lclUpdateTestKeys").orNull?.let { keyLines(file(it).readText()) } ?: ""
+val updateTestKeys =
+    providers.gradleProperty("lclUpdateTestKeys").orNull?.let { keyLines(file(it).readText()) }
+        ?: ""
 
 val manualAssets: File = layout.buildDirectory.dir("generated/manual-assets").get().asFile
-val syncManual by tasks.registering(Sync::class) {
-    from(rootProject.file("../users_manual")) { include("*.md", "MANIFEST.json") }
-    from(rootProject.file("../impl/crates/lcl-workspace/assets/manual")) { include("manual.html", "manual.js", "manual.css") }
-    into(manualAssets.resolve("manual"))
-}
+val syncManual by
+    tasks.registering(Sync::class) {
+        from(rootProject.file("../users_manual")) { include("*.md", "MANIFEST.json") }
+        from(rootProject.file("../impl/crates/lcl-workspace/assets/manual")) {
+            include("manual.html", "manual.js", "manual.css")
+        }
+        into(manualAssets.resolve("manual"))
+    }
 
 /**
- * Android's versionCode for a product version: MAJOR * 1 000 000 + MINOR * 1 000 + PATCH
- * (0.9.0 is 9000), so it grows with the version. The version must be exactly
- * MAJOR.MINOR.PATCH, MINOR and PATCH at most 999 (0.5.999 is 5999 and 0.6.0 is 6000:
- * no two versions share a code), and the code within Android's range (at most
- * 2 100 000 000). The release builder applies the same rule.
+ * Android's versionCode for a product version: MAJOR * 1 000 000 + MINOR * 1 000 + PATCH (0.9.0 is
+ * 9000), so it grows with the version. The version must be exactly MAJOR.MINOR.PATCH, MINOR and
+ * PATCH at most 999 (0.5.999 is 5999 and 0.6.0 is 6000: no two versions share a code), and the code
+ * within Android's range (at most 2 100 000 000). The release builder applies the same rule.
  */
 fun versionCodeOf(version: String): Int {
-    val m = Regex("^(\\d+)\\.(\\d+)\\.(\\d+)$").matchEntire(version)
-        ?: error("versionName $version is not exactly MAJOR.MINOR.PATCH, so no versionCode follows from it")
+    val m =
+        Regex("^(\\d+)\\.(\\d+)\\.(\\d+)$").matchEntire(version)
+            ?: error(
+                "versionName $version is not exactly MAJOR.MINOR.PATCH, so no versionCode follows from it"
+            )
     val (major, minor, patch) = m.destructured.toList().map { it.toLong() }
-    require(minor <= 999 && patch <= 999) { "versionName $version: MINOR and PATCH must be at most 999 for a versionCode to follow" }
+    require(minor <= 999 && patch <= 999) {
+        "versionName $version: MINOR and PATCH must be at most 999 for a versionCode to follow"
+    }
     val code = major * 1_000_000 + minor * 1_000 + patch
-    require(code in 1..2_100_000_000) { "versionName $version gives versionCode $code, outside Android's range" }
+    require(code in 1..2_100_000_000) {
+        "versionName $version gives versionCode $code, outside Android's range"
+    }
     return code.toInt()
 }
 
@@ -69,7 +85,9 @@ android {
         // The properties let a build (or the update test in tools/e2e.sh)
         // set both without editing this file.
         versionName = providers.gradleProperty("lclVersionName").orNull ?: "0.9.1"
-        versionCode = providers.gradleProperty("lclVersionCode").orNull?.toInt() ?: versionCodeOf(versionName!!)
+        versionCode =
+            providers.gradleProperty("lclVersionCode").orNull?.toInt()
+                ?: versionCodeOf(versionName!!)
         buildConfigField("String", "UPDATE_TRUSTED_KEYS", "\"$trustedUpdateKeys\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -1,31 +1,35 @@
 package io.lcl.workspace
 
+import java.io.File
+import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.w3c.dom.Element
-import java.io.File
-import javax.xml.parsers.DocumentBuilderFactory
 
 /**
- * What the app's manifest lets other apps hand it. A pairing link carries a
- * one-time code, and any app can register a custom scheme. The code alone
- * trusts no device — holding it only lets a device make a pending request,
- * and the PC must approve that request's certificate — but pairing starts
- * only from the app's own scanner or the Pair screen, so no filter takes
- * `lclpair://` links and none is BROWSABLE: a camera app, a browser or a
- * message cannot pass one to this app. The launcher and `.lcl` / `.lcl.txt`
- * documents still open it. The instrumented IncomingIntentsTest checks the
+ * What the app's manifest lets other apps hand it. A pairing link carries a one-time code, and any
+ * app can register a custom scheme. The code alone trusts no device — holding it only lets a device
+ * make a pending request, and the PC must approve that request's certificate — but pairing starts
+ * only from the app's own scanner or the Pair screen, so no filter takes `lclpair://` links and
+ * none is BROWSABLE: a camera app, a browser or a message cannot pass one to this app. The launcher
+ * and `.lcl` / `.lcl.txt` documents still open it. The instrumented IncomingIntentsTest checks the
  * same against the installed app.
  */
 class ManifestTest {
     private val android = "http://schemas.android.com/apk/res/android"
 
     private val manifest: Element by lazy {
-        val file = listOf("src/main/AndroidManifest.xml", "app/src/main/AndroidManifest.xml").map(::File).first { it.isFile }
-        DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
-            .newDocumentBuilder().parse(file).documentElement
+        val file =
+            listOf("src/main/AndroidManifest.xml", "app/src/main/AndroidManifest.xml")
+                .map(::File)
+                .first { it.isFile }
+        DocumentBuilderFactory.newInstance()
+            .apply { isNamespaceAware = true }
+            .newDocumentBuilder()
+            .parse(file)
+            .documentElement
     }
 
     private fun Element.all(tag: String): List<Element> =
@@ -42,13 +46,19 @@ class ManifestTest {
             val schemes = filter.values("data", "scheme")
             assertFalse("a filter takes pairing links: $schemes", "lclpair" in schemes)
             val categories = filter.values("category", "name")
-            assertFalse("a filter can be opened from a browser or a link: $schemes", "android.intent.category.BROWSABLE" in categories)
+            assertFalse(
+                "a filter can be opened from a browser or a link: $schemes",
+                "android.intent.category.BROWSABLE" in categories,
+            )
         }
     }
 
     @Test
     fun the_launcher_and_lcl_documents_still_open_the_app() {
-        val main = manifest.all("activity").single { it.getAttributeNS(android, "name") == ".MainActivity" }
+        val main =
+            manifest.all("activity").single {
+                it.getAttributeNS(android, "name") == ".MainActivity"
+            }
         val filters = main.all("intent-filter")
         assertTrue(
             "the launcher entry is gone",
@@ -63,7 +73,12 @@ class ManifestTest {
         assertEquals(setOf("file", "content"), documents.values("data", "scheme"))
         // Exactly .lcl and .lcl.txt, as the manifest writes them; no plain .txt.
         assertEquals(
-            setOf(""".*\\.lcl""", """.*\\..*\\.lcl""", """.*\\.lcl\\.txt""", """.*\\..*\\.lcl\\.txt"""),
+            setOf(
+                """.*\\.lcl""",
+                """.*\\..*\\.lcl""",
+                """.*\\.lcl\\.txt""",
+                """.*\\..*\\.lcl\\.txt""",
+            ),
             documents.values("data", "pathPattern"),
         )
     }

@@ -58,8 +58,24 @@ check() {
 }
 absent() { ! grep -q "$1" "$2"; }
 
+# json_field FILE KEY: one top-level field of a JSON file, as text.
+json_field() {
+    python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]], end="")' "$1" "$2"
+}
+
+# no_request_waiting FILE: the PC's `pending --json` answer in FILE lists no
+# request that is still pending.
+no_request_waiting() {
+    python3 - "$1" <<'PY'
+import json, sys
+waiting = [r for r in json.load(open(sys.argv[1]))["requests"] if r.get("status") == "pending"]
+assert waiting == [], waiting
+PY
+}
+
 serve() {
-    "$remote" serve --spec "$spec" --localized-spec "$localized" --project-spec "$projects" --port "$port" >>"$out/serve.log" 2>&1 &
+    "$remote" serve --spec "$spec" --localized-spec "$localized" --project-spec "$projects" \
+        --port "$port" >>"$out/serve.log" 2>&1 &
     echo $! >"$work/serve.pid"
     for _ in $(seq 100); do
         "$remote" status --json | grep -q '"running": true' && return 0
@@ -111,9 +127,9 @@ phase() {
     local target=io.lcl.workspace.RemoteEndToEndTest#$name
     case $name in *'#'*) target=io.lcl.workspace.$name ;; esac
     # Counted from the records on disk: phases also run in the background.
-    local done record
-    done=$(find "$out" -maxdepth 1 -name '[0-9][0-9]_*.txt' | wc -l)
-    record="$out/$(printf %02d $((done + 1)))_${name//#/_}"
+    local ran record
+    ran=$(find "$out" -maxdepth 1 -name '[0-9][0-9]_*.txt' | wc -l)
+    record="$out/$(printf %02d $((ran + 1)))_${name//#/_}"
     "$adb" logcat -c
     "$adb" shell am instrument -w "$@" -e class "$target" "$runner" >"$record.txt" 2>&1 || true
     "$adb" logcat -d -s LclE2E:I >"$record.log" 2>&1 || true
@@ -151,7 +167,9 @@ wake() {
 # does not erase.
 no_lcl_failures() {
     local found
-    found=$("$adb" shell 'for t in data_app_anr data_app_crash data_app_native_crash; do dumpsys dropbox --print $t; done' | grep -E '^Process: io\.lcl\.workspace' || true)
+    found=$("$adb" shell \
+        'for t in data_app_anr data_app_crash data_app_native_crash; do dumpsys dropbox --print $t; done' |
+        grep -E '^Process: io\.lcl\.workspace' || true)
     if [ -n "$found" ]; then
         log "FAIL: the system recorded an ANR or crash of LCL"
         echo "$found"
@@ -162,7 +180,9 @@ no_lcl_failures() {
 
 # The devices the PC trusts now (not revoked).
 live_devices() {
-    "$remote" devices --json | python3 -c 'import json,sys; print(sum(1 for d in json.load(sys.stdin)["devices"] if not d["revoked_at"]))'
+    "$remote" devices --json | python3 -c '
+import json, sys
+print(sum(1 for d in json.load(sys.stdin)["devices"] if not d["revoked_at"]))'
 }
 
 # decide_on_pc approve|deny MARKER: the phone pressed Pair and logged its
@@ -194,7 +214,7 @@ PYDECIDE
 }
 
 # The pairing text in a `pair --json` answer.
-payload() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["payload"])' "$1"; }
+payload() { json_field "$1" payload; }
 
 log "work directory $work; service on port $port; device reaches it at $address"
 "$adb" wait-for-device
@@ -229,9 +249,10 @@ phase LocalDocumentScreenTest#a_file_that_is_not_utf8_is_refused_and_never_shown
 phase LocalDocumentScreenTest#a_utf8_file_is_shown_exactly_and_can_be_checked
 # The Users Manual tab, with no PC at all: offline, and exactly the snapshot
 # the desktop workspace serves (the digest its manifest names).
-manual_digest=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["digest"])' "$repo/users_manual/MANIFEST.json")
+manual_digest=$(json_field "$repo/users_manual/MANIFEST.json" digest)
 phase ManualTabTest#the_manual_opens_offline_is_the_packaged_snapshot_and_survives_recreation -e digest "$manual_digest"
-check "the APK packages the manual the desktop serves (digest $manual_digest)" python3 - "$android/app/build/outputs/apk/debug/app-debug.apk" "$manual_digest" <<'PYM'
+check "the APK packages the manual the desktop serves (digest $manual_digest)" \
+    python3 - "$android/app/build/outputs/apk/debug/app-debug.apk" "$manual_digest" <<'PYM'
 import hashlib, sys, zipfile
 apk, expected = sys.argv[1], sys.argv[2]
 with zipfile.ZipFile(apk) as z:
@@ -255,7 +276,7 @@ serve
 "$remote" identity --json >"$out/identity.json"
 "$remote" pair --address "$address" --json >"$out/pair.json"
 link=$(payload "$out/pair.json")
-fingerprint=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["fingerprint"])' "$out/pair.json")
+fingerprint=$(json_field "$out/pair.json" fingerprint)
 check "the pairing code is plain pairing text, not a link" python3 - "$link" <<'PY0'
 import sys
 text = sys.argv[1]
@@ -277,7 +298,8 @@ device=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1]))["devices"];
 log "PC lists device $device"
 # The one-time code is spent by the approved phone, and the PC never stored
 # the code itself.
-check "the pairing code is spent by the approved phone and was never stored" python3 - "$XDG_STATE_HOME/lcl/remote/pairing.json" "$link" <<'PY'
+check "the pairing code is spent by the approved phone and was never stored" \
+    python3 - "$XDG_STATE_HOME/lcl/remote/pairing.json" "$link" <<'PY'
 import json, re, sys
 path, text = sys.argv[1], sys.argv[2]
 code = re.search(r"[|&]c=([^&]+)", text).group(1)
@@ -292,7 +314,7 @@ PY
 # built on, reads exactly the pairing text out of the SVG the PC drew.
 java=${JAVA_HOME:+$JAVA_HOME/bin/}java
 zxing=$(find "${GRADLE_USER_HOME:-$HOME/.gradle}/caches" -name 'core-3.5.4.jar' | head -1)
-python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["svg"], end="")' "$out/pair.json" >"$out/pair.svg"
+json_field "$out/pair.json" svg >"$out/pair.svg"
 check "the pairing QR code reads back as exactly the pairing text" \
     test "$("$java" -cp "$zxing" "$android/tools/QrDecode.java" "$out/pair.svg")" = "$link"
 
@@ -310,7 +332,8 @@ phase p12_core03_roles_manual_readiness_and_identity_conflict -e link "'$core03'
 # adds), and the phone's copy is removed only after the PC confirmed them.
 rm -rf "$project/Phone"
 phase p17_a_project_made_on_the_phone_syncs_to_the_pc_and_leaves_the_phone
-check "the phone's document is on the PC exactly, with the PC's final line feed" python3 - "$project/Phone/notes.lcl" <<'PY17'
+check "the phone's document is on the PC exactly, with the PC's final line feed" \
+    python3 - "$project/Phone/notes.lcl" <<'PY17'
 import sys
 seed = 'LCL:\n    VERSION: "0.1.0"\n\nSPECIFICATION:\n    ID: example.new\n    NAME: "New document"\n    VERSION: "1.0.0"\n    KIND: kind.task\n    DOMAIN: "general"\n'
 got = open(sys.argv[1], encoding="utf-8").read()
@@ -318,21 +341,24 @@ assert "SYNCED FROM PHONE" in got, got
 assert got.startswith("LCL:") and got.endswith("\n"), repr(got[-40:])
 assert got.replace(" SYNCED FROM PHONE", "") == seed, repr(got)
 PY17
-check "the phone's Rules file is the PC's scaffold" grep -q 'KIND: kind.part.rules' "$project/house_rules.lcl"
+check "the phone's Rules file is the PC's scaffold" \
+    grep -q 'KIND: kind.part.rules' "$project/house_rules.lcl"
 check "the unsaved phone edit stayed on the phone" absent 'KEPT' "$project/house_rules.lcl"
 "$remote" devices --json >"$out/devices-after-core03.json"
-check "the refused identity changed nothing the PC trusts" python3 - "$out/devices-before-core03.json" "$out/devices-after-core03.json" <<'PYD'
+check "the refused identity changed nothing the PC trusts" \
+    python3 - "$out/devices-before-core03.json" "$out/devices-after-core03.json" <<'PYD'
 import json, sys
 trust = lambda path: sorted((d["id"], d["fingerprint"], d["revoked_at"]) for d in json.load(open(path))["devices"])
 assert trust(sys.argv[1]) == trust(sys.argv[2]), (trust(sys.argv[1]), trust(sys.argv[2]))
 PYD
 "$remote" pending --json >"$out/pending-core03.json"
-check "the refused identity asked the PC for nothing" python3 -c 'import json,sys; assert [r for r in json.load(open(sys.argv[1]))["requests"] if r.get("status") == "pending"] == []' "$out/pending-core03.json"
+check "the refused identity asked the PC for nothing" no_request_waiting "$out/pending-core03.json"
 
 # An update, as a person installs one: a newer build signed with the same key,
 # installed over the paired app. Phase 2 then proves the pairing and the key
 # survived it.
-(cd "$android" && ./gradlew --console=plain -q assembleDebug -PlclVersionCode=2 -PlclVersionName=0.1.0-update $update_props)
+(cd "$android" && ./gradlew --console=plain -q assembleDebug \
+    -PlclVersionCode=2 -PlclVersionName=0.1.0-update $update_props)
 "$adb" install -r "$android/app/build/outputs/apk/debug/app-debug.apk" >/dev/null
 check "a same-signed update (versionCode 2) installed over the paired app" \
     sh -c "'$adb' shell dumpsys package io.lcl.workspace | grep -q 'versionCode=2 '"
@@ -381,7 +407,8 @@ wait_log READY_FOR_CONFLICT 90
 sed -i 's/to-do list (phone, pc)"/to-do list (phone, pc, pc2)"/' "$project/todo.lcl"
 log "PC: edited todo.lcl again while the phone had unsaved edits"
 wait "$waiting"
-check "the phone's text was saved only after the person chose Keep mine" grep -q 'to-do list (phone, pc) \[phone2\]"' "$project/todo.lcl"
+check "the phone's text was saved only after the person chose Keep mine" \
+    grep -q 'to-do list (phone, pc) \[phone2\]"' "$project/todo.lcl"
 check "nothing was merged silently" absent 'pc2' "$project/todo.lcl"
 
 # 7. The PC revokes the device.
@@ -402,7 +429,8 @@ waiting=$!
 decide_on_pc approve PENDING_P7
 wait "$waiting"
 "$remote" devices --json >"$out/devices-final.json"
-check "the revoked device stays revoked; the new pairing is a new device" python3 - "$out/devices-final.json" "$device" <<'PY2'
+check "the revoked device stays revoked; the new pairing is a new device" \
+    python3 - "$out/devices-final.json" "$device" <<'PY2'
 import json, sys
 devices = {d["id"]: d for d in json.load(open(sys.argv[1]))["devices"]}
 old = devices[sys.argv[2]]
@@ -420,7 +448,8 @@ waiting=$!
 decide_on_pc approve PENDING_P8
 wait "$waiting"
 "$remote" devices --json >"$out/devices-scan.json"
-check "the scanned code paired one new device, once Pair was pressed and the PC approved" python3 - "$out/devices-scan.json" <<'PY3'
+check "the scanned code paired one new device, once Pair was pressed and the PC approved" \
+    python3 - "$out/devices-scan.json" <<'PY3'
 import json, sys
 devices = json.load(open(sys.argv[1]))["devices"]
 assert len(devices) == 3, devices
@@ -443,7 +472,8 @@ devices = json.load(open(sys.argv[1]))["devices"]
 assert len(devices) == 3, devices
 assert sum(1 for d in devices if not d["revoked_at"]) == 1, devices
 PY5
-check "codes that paired are spent, the denied one is not, the refused identity's never reached the PC, and no code is stored" python3 - "$XDG_STATE_HOME/lcl/remote/pairing.json" "$link" "$again" "$scanned" "$denied" "$core03" <<'PY4'
+check "codes that paired are spent, the denied one is not, the refused identity's never reached the PC, and no code is stored" \
+    python3 - "$XDG_STATE_HOME/lcl/remote/pairing.json" "$link" "$again" "$scanned" "$denied" "$core03" <<'PY4'
 import hashlib, json, re, sys
 stored = open(sys.argv[1]).read()
 link, again, scanned, denied, refused = [re.search(r"[|&]c=([^&]+)", t).group(1) for t in sys.argv[2:]]
@@ -464,7 +494,7 @@ assert requests(denied) == ["denied"], requests(denied)
 assert requests(refused) == [], requests(refused)
 PY4
 "$remote" pending --json >"$out/pending-final.json"
-check "no pairing request is left waiting" python3 -c 'import json,sys; assert [r for r in json.load(open(sys.argv[1]))["requests"] if r.get("status") == "pending"] == []' "$out/pending-final.json"
+check "no pairing request is left waiting" no_request_waiting "$out/pending-final.json"
 
 # 11. The same PC paired again while it still trusts this phone (A12). Android
 # Keystore makes a new key, so the PC sees a second certificate; once the PC
@@ -480,7 +510,8 @@ decide_on_pc approve PENDING_P10
 wait "$waiting"
 replaced=$(cat "$out"/*_p10_pair_again_while_trusted_retires_the_old_key.log | grep -o 'REPLACED [0-9a-f]* [0-9a-f]*' | tail -1)
 "$remote" devices --json >"$out/devices-replaced.json"
-check "pairing again while trusted revoked the old key and trusts exactly the new one" python3 - "$out/devices-replaced.json" "$old" "$replaced" <<'PY6'
+check "pairing again while trusted revoked the old key and trusts exactly the new one" \
+    python3 - "$out/devices-replaced.json" "$old" "$replaced" <<'PY6'
 import json, sys
 devices = {d["id"]: d for d in json.load(open(sys.argv[1]))["devices"]}
 old = sys.argv[2]
@@ -500,7 +531,8 @@ for _ in $(seq 30); do
     sleep 0.5
 done
 "$remote" devices --json >"$out/devices-forgotten.json"
-check "after Forget the PC trusts nothing of this phone, the replaced key included" python3 - "$out/devices-forgotten.json" "$replaced" <<'PY7'
+check "after Forget the PC trusts nothing of this phone, the replaced key included" \
+    python3 - "$out/devices-forgotten.json" "$replaced" <<'PY7'
 import json, sys
 devices = {d["id"]: d for d in json.load(open(sys.argv[1]))["devices"]}
 _, old, new = sys.argv[2].split()
@@ -508,7 +540,8 @@ assert devices[old]["revoked_at"] and devices[new]["revoked_at"], (devices[old],
 assert not [d for d in devices.values() if not d["revoked_at"]], devices
 PY7
 "$remote" pending --json >"$out/pending-after-a12.json"
-check "no pairing request is left waiting after pairing again" python3 -c 'import json,sys; assert [r for r in json.load(open(sys.argv[1]))["requests"] if r.get("status") == "pending"] == []' "$out/pending-after-a12.json"
+check "no pairing request is left waiting after pairing again" \
+    python3 -c 'import json,sys; assert [r for r in json.load(open(sys.argv[1]))["requests"] if r.get("status") == "pending"] == []' "$out/pending-after-a12.json"
 
 # 12. C03-AUDIT-03: a pairing continues while the Manual tab is open — the PC
 # approves while the phone shows the Manual, and the pairing completes.
@@ -518,13 +551,15 @@ waiting=$!
 decide_on_pc approve PENDING_P13
 wait "$waiting"
 "$remote" devices --json >"$out/devices-after-p13.json"
-check "the pairing approved while the Manual was open is the one trusted device" python3 -c 'import json,sys; assert len([d for d in json.load(open(sys.argv[1]))["devices"] if not d["revoked_at"]]) == 1' "$out/devices-after-p13.json"
+check "the pairing approved while the Manual was open is the one trusted device" \
+    python3 -c 'import json,sys; assert len([d for d in json.load(open(sys.argv[1]))["devices"] if not d["revoked_at"]]) == 1' "$out/devices-after-p13.json"
 
 # 13. The workspace correction (K, L): Back from Pair a PC, and from the
 # connected workspace, is the dashboard; the pairing is not touched.
 phase p14_back_from_pairing_and_from_the_connected_workspace_is_the_dashboard
 "$remote" devices --json >"$out/devices-after-p14.json"
-check "navigating changed nothing the PC trusts" python3 - "$out/devices-after-p13.json" "$out/devices-after-p14.json" <<'PYN'
+check "navigating changed nothing the PC trusts" \
+    python3 - "$out/devices-after-p13.json" "$out/devices-after-p14.json" <<'PYN'
 import json, sys
 trust = lambda path: sorted((d["id"], d["fingerprint"], d["revoked_at"]) for d in json.load(open(path))["devices"])
 assert trust(sys.argv[1]) == trust(sys.argv[2]), (trust(sys.argv[1]), trust(sys.argv[2]))
@@ -536,7 +571,8 @@ PYN
 # it, and — once allowed to install apps — hands it to Android, whose own
 # confirmation is pressed here. The updated app keeps its pairing and keys.
 log "building the update: LCL 0.2.0 (3), same signing key"
-(cd "$android" && ./gradlew --console=plain -q assembleDebug -PlclVersionCode=3 -PlclVersionName=0.2.0 $update_props)
+(cd "$android" && ./gradlew --console=plain -q assembleDebug \
+    -PlclVersionCode=3 -PlclVersionName=0.2.0 $update_props)
 build_tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
 update_apk=$update_root/download/v0.2.0/lcl-android-0.2.0-3.apk
 cp "$android/app/build/outputs/apk/debug/app-debug.apk" "$update_apk"
@@ -592,7 +628,8 @@ check "the app was updated in place to LCL 0.2.0 (3)" \
     sh -c "'$adb' shell dumpsys package io.lcl.workspace | grep -q 'versionCode=3 '"
 phase p16_the_update_installed_in_place_and_kept_the_pairing -e pcs "$update_pcs" -e keys "$update_keys"
 "$remote" devices --json >"$out/devices-after-update.json"
-check "the update changed nothing the PC trusts" python3 - "$out/devices-after-p14.json" "$out/devices-after-update.json" <<'PYU'
+check "the update changed nothing the PC trusts" \
+    python3 - "$out/devices-after-p14.json" "$out/devices-after-update.json" <<'PYU'
 import json, sys
 trust = lambda path: sorted((d["id"], d["fingerprint"], d["revoked_at"]) for d in json.load(open(path))["devices"])
 assert trust(sys.argv[1]) == trust(sys.argv[2]), (trust(sys.argv[1]), trust(sys.argv[2]))

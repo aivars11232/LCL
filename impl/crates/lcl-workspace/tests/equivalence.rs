@@ -162,7 +162,7 @@ fn no_route_reshapes_a_report() {
     // of them ever grew a field of its own, the byte comparisons above would
     // fail; this states the rule they are checking.
     let source = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/routes.rs"),
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/routes/mod.rs"),
     )
     .expect("the route table is readable");
 

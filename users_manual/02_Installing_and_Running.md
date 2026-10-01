@@ -18,12 +18,12 @@
 * The LCL release archive, `lcl-<version>-linux-x86_64.tar.gz`, from the
   latest stable release on GitHub:
   <https://github.com/aivars11232/LCL/releases/latest>. File names carry the
-  full version number (for LCL 0.9, the version this manual describes, that is
-  `lcl-0.9.0-linux-x86_64.tar.gz`), and LCL itself shows a release ending in
+  full version number (for LCL 0.9.1, the version this manual describes, that
+  is `lcl-0.9.1-linux-x86_64.tar.gz`), and LCL itself shows a release ending in
   `.0` without that `.0` (LCL 0.5 is release 0.5.0). The release also lists the
   archive's SHA-256 fingerprint, in `lcl-<version>-linux-x86_64.sha256`.
 
-This manual describes LCL 0.9, the version of the *product*: the programs and the
+This manual describes LCL 0.9.1, the version of the *product*: the programs and the
 app. The language has versions of its own, Core 0.1.0 to 0.3.0, which the
 rest of this chapter names where they matter.
 
@@ -33,7 +33,7 @@ Unpack the archive and run its installer:
 
 ```
 $ mkdir lcl-install
-$ tar -xzf lcl-0.9.0-linux-x86_64.tar.gz -C lcl-install
+$ tar -xzf lcl-0.9.1-linux-x86_64.tar.gz -C lcl-install
 $ cd lcl-install/*/
 $ ./install.sh
 ```
@@ -84,7 +84,7 @@ Check that everything works:
 
 ```
 $ lcl version
-lcl 0.9.0
+lcl 0.9.1
 protocol lcl.engine/1
 language 0.1.0
 

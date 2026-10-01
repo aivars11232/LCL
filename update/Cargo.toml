@@ -12,7 +12,7 @@
 # builder refuses a release whose binaries do not all report the same one.
 [package]
 name = "lcl-update"
-version = "0.9.0"
+version = "0.9.1"
 edition = "2021"
 rust-version = "1.89"
 publish = false

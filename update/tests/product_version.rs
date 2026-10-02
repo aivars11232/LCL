@@ -96,15 +96,15 @@ fn the_android_version_code_follows_from_the_version_and_is_past_every_published
     assert!(gradle.contains("code in 1..2_100_000_000"));
     assert_eq!(version_code_of("0.9.0"), Some(9000));
     // v0.1.1 was published with versionCode 7, v0.5.0 with 8, v0.5.2 with
-    // 5002, v0.9.0 with 9000; a build of this version must never look older
-    // than a release a phone may have.
+    // 5002, v0.9.0 with 9000, v0.9.1 with 9001; a build of this version must
+    // never look older than a release a phone may have.
     let code = version_code_of(lcl_update::PRODUCT_VERSION).expect("a code follows");
-    assert!(code > 9000, "versionCode {code}");
+    assert!(code > 9001, "versionCode {code}");
     // And it grows with the version, so a later release always installs.
     assert!(
-        version_code_of("0.9.2") > Some(code)
-            && version_code_of("0.10.0") > Some(code)
-            && version_code_of("1.0.0") > Some(code)
+        version_code_of("1.0.1") > Some(code)
+            && version_code_of("1.1.0") > Some(code)
+            && version_code_of("2.0.0") > Some(code)
     );
     // The boundary of a part: 0.5.999 and 0.6.0 are neighbours, never equal.
     assert_eq!(version_code_of("0.5.999"), Some(5999));

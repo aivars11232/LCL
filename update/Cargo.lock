@@ -59,11 +59,11 @@ dependencies = [
 
 [[package]]
 name = "lcl-spec"
-version = "0.9.1"
+version = "1.0.0"
 
 [[package]]
 name = "lcl-update"
-version = "0.9.1"
+version = "1.0.0"
 dependencies = [
  "lcl-spec",
  "ring",

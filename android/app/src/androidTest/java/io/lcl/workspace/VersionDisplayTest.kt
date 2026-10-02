@@ -17,9 +17,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The version people see, on the app built with this release's defaults (versionName 0.9.1,
- * versionCode 9001 derived from it): Updates and About both say "LCL 0.9.1", and neither shows the
- * versionCode. No PC is needed.
+ * The version people see, on the app built with this release's defaults (versionName 1.0.0,
+ * versionCode 1000000 derived from it): Updates and About both say "LCL 1.0" (a release's one
+ * trailing ".0" is dropped), and neither shows the versionCode. No PC is needed.
  */
 @RunWith(AndroidJUnit4::class)
 class VersionDisplayTest {
@@ -45,23 +45,23 @@ class VersionDisplayTest {
     fun updates_and_about_show_lcl_0_5_and_never_the_package_numbers() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val info = context.packageManager.getPackageInfo(context.packageName, 0)
-        assertEquals("0.9.1", info.versionName)
-        assertEquals(9001L, info.longVersionCode)
+        assertEquals("1.0.0", info.versionName)
+        assertEquals(1000000L, info.longVersionCode)
 
         rule.waitUntil("the app is up", 30_000) { exists("home_updates") }
         rule.onNodeWithTag("home_updates").performScrollTo().performClick()
         rule.waitUntil("Updates", 10_000) { exists("update_installed") }
-        rule.onNodeWithTag("update_installed").assertTextEquals("Installed version: LCL 0.9.1")
+        rule.onNodeWithTag("update_installed").assertTextEquals("Installed version: LCL 1.0")
         back()
 
         rule.waitUntil("home", 10_000) { exists("home_about") }
         rule.onNodeWithTag("home_about").performScrollTo().performClick()
         rule.waitUntil("About", 10_000) { exists("about:App") }
-        rule.onNodeWithTag("about:App").assertTextEquals("LCL 0.9.1")
+        rule.onNodeWithTag("about:App").assertTextEquals("LCL 1.0")
         for (tag in listOf("about:App", "about:PC service")) {
             if (!exists(tag)) continue
             val shown = textOf(tag)
-            assertFalse(shown, shown.contains("9001"))
+            assertFalse(shown, shown.contains("1000000"))
         }
     }
 }

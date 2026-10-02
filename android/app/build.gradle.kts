@@ -84,7 +84,7 @@ android {
         // PATCH, so 0.9.0 is 9000), which grows whenever the version does.
         // The properties let a build (or the update test in tools/e2e.sh)
         // set both without editing this file.
-        versionName = providers.gradleProperty("lclVersionName").orNull ?: "0.9.1"
+        versionName = providers.gradleProperty("lclVersionName").orNull ?: "1.0.0"
         versionCode =
             providers.gradleProperty("lclVersionCode").orNull?.toInt()
                 ?: versionCodeOf(versionName!!)

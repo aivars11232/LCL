@@ -88,31 +88,31 @@ private val LightLcl =
 
 private val DarkLcl =
     LclColors(
-        page = Color(0xFF14171C),
-        ink = Color(0xFFDDE2EA),
-        accent = Color(0xFF63B0EE),
-        onAccent = Color(0xFF0B1117),
-        keyword = Color(0xFF7FBBEE),
-        block = Color(0xFFA496F2),
-        type = Color(0xFF5BC3A9),
-        literal = Color(0xFFDFAB48),
-        string = Color(0xFFCF9F72),
-        symbol = Color(0xFF97A0B0),
-        ref = Color(0xFFE4A6CC),
-        bad = Color(0xFFE46A64),
-        warn = Color(0xFFDFAB48),
-        info = Color(0xFF948ADE),
-        good = Color(0xFF5CC48F),
-        gutter = Color(0xFF0F1216),
-        gutterText = Color(0xFF636C7C),
-        raised = Color(0xFF1B1F26),
-        sunken = Color(0xFF0F1216),
-        hover = Color(0xFF232830),
-        line = Color(0xFF2A2F39),
-        lineSoft = Color(0xFF20242C),
-        inkDim = Color(0xFF97A0B0),
-        inkFaint = Color(0xFF636C7C),
-        accentSoft = Color(0xFF1F2C39),
+        page = Color(0xFF04111F),
+        ink = Color(0xFFE3EDFF),
+        accent = Color(0xFF00C8F8),
+        onAccent = Color(0xFF002032),
+        keyword = Color(0xFF33CDFF),
+        block = Color(0xFFC98AFF),
+        type = Color(0xFF43DEC9),
+        literal = Color(0xFFFFC65C),
+        string = Color(0xFFF3B779),
+        symbol = Color(0xFFA1BEE3),
+        ref = Color(0xFFDAA0EE),
+        bad = Color(0xFFFF637B),
+        warn = Color(0xFFFFC65C),
+        info = Color(0xFFAA98EF),
+        good = Color(0xFF00DDB0),
+        gutter = Color(0xFF030E19),
+        gutterText = Color(0xFF7897B7),
+        raised = Color(0xFF081C2E),
+        sunken = Color(0xFF030E19),
+        hover = Color(0xFF102B43),
+        line = Color(0xFF185071),
+        lineSoft = Color(0xFF12334B),
+        inkDim = Color(0xFFA1BEE3),
+        inkFaint = Color(0xFF7897B7),
+        accentSoft = Color(0xFF052739),
     )
 
 val LocalLclColors = staticCompositionLocalOf { LightLcl }
@@ -150,7 +150,7 @@ private fun scheme(c: LclColors, dark: Boolean): ColorScheme =
         onError = c.onAccent,
         errorContainer = if (dark) Color(0xFF3A2022) else Color(0xFFF6DEDD),
         onErrorContainer = c.bad,
-        outline = if (dark) Color(0xFF394050) else Color(0xFFBAC2CE),
+        outline = if (dark) c.line else Color(0xFFBAC2CE),
         outlineVariant = c.line,
         scrim = Color.Black,
         surfaceBright = c.hover,
@@ -162,7 +162,7 @@ private fun scheme(c: LclColors, dark: Boolean): ColorScheme =
         surfaceContainerHighest = c.hover,
     )
 
-/** Corners stay small, as on the desktop: a workspace tool, not a card deck. */
+/** Rounded, bordered surfaces shared with the desktop reference identity. */
 private val LclShapes =
     Shapes(
         extraSmall = RoundedCornerShape(6.dp),

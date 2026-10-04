@@ -85,8 +85,8 @@ installer. A clean, exact source snapshot of the implementation commit produced
 All four installed binaries (CLI, workspace, updater and previously installed
 remote service) match the packaged binaries byte for byte. Installer and digest
 evidence is retained. Existing user sessions were preserved and show the new UI
-after reopening LCL. This is a local PC installation; no GitHub release or
-Android APK has been published for 1.0.0. Existing update signing material and
+after reopening LCL. At this PC checkpoint, 1.0.0 was locally installed before the combined
+PC/Android publication. Existing update signing material and
 Android signer continuity were verified for the eventual combined release.
 
 Cleanup removed the owned MSRV build, disposable test fixtures and extracted
@@ -102,7 +102,8 @@ in `launcher-fixture-coredumps.txt` and `cleanup.tsv`; removal needs a sudo
 password unavailable to this session. These are LCL fixture entries. The gate's
 expected launcher refusal assertions passed; no LCL application crash was found.
 
-TASK-002 and Android release remain pending owner review of TASK-001. The pack
-requires explicit PC approval and CONTINUE ANDROID before Android implementation.
-The user's commit, sync, installation and release authorization is retained;
-no renewed authorization for those already-requested operations is needed.
+The owner approved TASK-001 and explicitly instructed completion of Android,
+commit/sync, release publication and the final PC update on 2026-10-04.
+TASK-002 verification and combined delivery are recorded in
+`reports/tasks/LCL_ANDROID_UI_REDESIGN_RESULT.md`. Existing commit, sync,
+installation and release authorization remains in force.

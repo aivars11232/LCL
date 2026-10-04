@@ -3,6 +3,7 @@ package io.lcl.workspace
 import android.graphics.Bitmap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -98,6 +99,24 @@ class LocalProjectsUiTest {
         rule.onNodeWithTag("source").performTextInput("PHONE")
         rule.waitUntil("unsaved", 5_000) { textOf("doc_state").startsWith("Unsaved") }
         shot("local_04_editor_unsaved")
+        val pending = source()
+        // Every new destination keeps the document and its unsaved text in the app container.
+        rule.onNodeWithTag("tab_manual").performClick()
+        rule.onNodeWithTag("tab_workspace").performClick()
+        waitFor("source")
+        assertEquals(pending, source())
+        rule.onNodeWithTag("tab_settings").performClick()
+        rule.onNodeWithTag("theme_system").performScrollTo().performClick()
+        rule.onNodeWithTag("font_size").performScrollTo().assertIsDisplayed()
+        shot("local_06_settings")
+        rule.onNodeWithTag("tab_workspace").performClick()
+        waitFor("source")
+        assertEquals(pending, source())
+        rule.onNodeWithTag("tab_home").performClick()
+        rule.onNodeWithTag("open_local:Offline").performScrollTo().performClick()
+        waitFor("source")
+        assertEquals(pending, source())
+        assertTrue(textOf("doc_state"), textOf("doc_state").startsWith("Unsaved"))
         rule.onNodeWithTag("action_save").assertIsEnabled().performClick()
         rule.waitUntil("saved", 10_000) { textOf("doc_state").startsWith("Saved") }
         val onDisk = File(storage, "Offline/planning/phase_1.lcl").readText()

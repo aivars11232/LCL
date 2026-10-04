@@ -81,19 +81,25 @@ fun UpdatesScreen(container: AppContainer, onBack: () -> Unit) {
                 fontWeight = FontWeight.Bold,
             )
         }
-        Text(
-            "Installed version: LCL ${ProductVersion.shown(BuildConfig.VERSION_NAME)}",
-            Modifier.testTag("update_installed"),
-        )
-        Text(
-            "Last update check: " +
-                (ui.lastCheck?.let { DateFormat.getDateTimeInstance().format(Date(it)) } ?: "never")
-        )
-        Text(
-            "State: ${stateLabel(ui)}",
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.testTag("update_state"),
-        )
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SectionLabel("App version")
+                Text(
+                    "Installed version: LCL ${ProductVersion.shown(BuildConfig.VERSION_NAME)}",
+                    Modifier.testTag("update_installed"),
+                )
+                Text(
+                    "Last update check: " +
+                        (ui.lastCheck?.let { DateFormat.getDateTimeInstance().format(Date(it)) }
+                            ?: "never")
+                )
+                Text(
+                    "State: ${stateLabel(ui)}",
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.testTag("update_state"),
+                )
+            }
+        }
         ui.problem?.let { (kind, message) ->
             Text(
                 "${problemLabel(kind)}: $message",

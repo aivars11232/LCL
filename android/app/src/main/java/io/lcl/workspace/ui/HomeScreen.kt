@@ -3,6 +3,7 @@ package io.lcl.workspace.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -83,12 +83,10 @@ fun HomeScreen(
             )
             ManualIcon(onManual)
         }
-        Text(
-            "Your PC's LCL on this screen: the PC keeps its projects, runs the engine and " +
-                "decides every " +
-                "effect. Projects on this phone need no PC, and go to one only when you sync them.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        IntroCard(
+            "Ideas to Impact with LCL",
+            "Create and edit projects on this phone. Connect to your PC to check, " +
+                "validate, inspect and run. Sync your work when you choose.",
         )
         // Projects on this phone: usable with no PC at all.
         Section("On this phone", Modifier.testTag("local_projects")) {
@@ -166,7 +164,7 @@ fun HomeScreen(
                         modifier = Modifier.testTag("retiring:${pc.pcId}"),
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (isActive && state is ConnectionState.Connected) {
                         Button(onClick = onOpenWorkspace, Modifier.testTag("open_workspace")) {
                             Text("Open workspace")
@@ -208,7 +206,7 @@ fun HomeScreen(
             }
         }
         Button(onClick = onPair, Modifier.fillMaxWidth().testTag("pair_new")) { Text("Pair a PC") }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = onSettings, Modifier.testTag("home_settings")) {
                 Text("Settings")
             }
@@ -273,20 +271,18 @@ fun HomeScreen(
     }
 }
 
-/**
- * One section of the dashboard: a small label, a rule, its rows. Compact, as a workspace tool, not
- * a card deck.
- */
+/** One reusable dashboard card containing real projects or paired PCs. */
 @Composable
 private fun Section(
     label: String,
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        SectionLabel(label)
-        HorizontalDivider(color = LocalLclColors.current.line)
-        content()
+    Card(modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            SectionLabel(label)
+            content()
+        }
     }
 }
 
@@ -299,7 +295,10 @@ fun NewLocalProjectDialog(onCreate: (String) -> Unit, onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = { Text("New project on this phone") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Text(
                     "A project kept in this app's private storage. It needs no PC; Sync sends it " +
                         "to one when you choose.",
@@ -312,6 +311,23 @@ fun NewLocalProjectDialog(onCreate: (String) -> Unit, onDismiss: () -> Unit) {
                     label = { Text("Project name") },
                     modifier = Modifier.testTag("local_project_name"),
                 )
+                Card(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        SectionLabel("Project location")
+                        Text(
+                            "On this phone / " + name.trim().ifBlank { "Project name" },
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                        Text(
+                            "Starts with an empty folder. Add files in the workspace.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
             }
         },
         confirmButton = {

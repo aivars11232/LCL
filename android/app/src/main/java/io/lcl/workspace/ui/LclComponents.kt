@@ -4,10 +4,12 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -28,7 +30,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -39,8 +43,8 @@ import androidx.compose.ui.unit.sp
 /*
  * The desktop workspace's controls, on the phone. Every screen of the app
  * uses these instead of Material's own of the same names, so LCL looks like
- * LCL on both screens: squared corners, a hairline border on what is raised,
- * one accent, tabs marked by a bar rather than a pill. Sizes keep Material's
+ * LCL on both screens: navy surfaces, cyan borders, rounded cards and
+ * clear selected tabs. Sizes keep Material's
  * minimum touch targets.
  */
 
@@ -153,7 +157,7 @@ fun Switch(checked: Boolean, onCheckedChange: ((Boolean) -> Unit)?, modifier: Mo
             ),
     )
 
-/** A block set apart: raised, with a hairline border and no shadow. */
+/** A reusable raised card with the reference's restrained accent edge. */
 @Composable
 fun Card(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) =
     androidx.compose.material3.Card(
@@ -164,7 +168,7 @@ fun Card(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> U
                 containerColor = LocalLclColors.current.raised,
                 contentColor = MaterialTheme.colorScheme.onSurface,
             ),
-        border = BorderStroke(1.dp, LocalLclColors.current.line),
+        border = BorderStroke(1.dp, LocalLclColors.current.accent.copy(alpha = 0.35f)),
         content = content,
     )
 
@@ -182,9 +186,12 @@ fun LclTab(
     content: @Composable RowScope.() -> Unit,
 ) {
     val accent = MaterialTheme.colorScheme.primary
+    val colors = LocalLclColors.current
     Row(
         modifier
-            .heightIn(min = 44.dp)
+            .heightIn(min = 48.dp)
+            .clip(MaterialTheme.shapes.small)
+            .background(if (selected && barOnTop) colors.accentSoft else Color.Transparent)
             .selectable(selected = selected, onClick = onClick, role = Role.Tab)
             .drawBehind {
                 if (selected) {
@@ -210,6 +217,31 @@ fun LclTab(
                 ),
         ) {
             content()
+        }
+    }
+}
+
+/** A quiet atmospheric introduction, drawn natively without reference image assets. */
+@Composable
+fun IntroCard(title: String, description: String, modifier: Modifier = Modifier) {
+    val colors = LocalLclColors.current
+    Card(modifier.fillMaxWidth()) {
+        Column(
+            Modifier.fillMaxWidth()
+                .background(Brush.linearGradient(listOf(colors.raised, colors.accentSoft)))
+                .drawBehind {
+                    drawOval(
+                        colors.accent.copy(alpha = 0.16f),
+                        topLeft = Offset(size.width * 0.25f, size.height * 0.68f),
+                        size = Size(size.width * 1.3f, size.height * 1.3f),
+                        style = Stroke(2.dp.toPx()),
+                    )
+                }
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.headlineMedium)
+            Text(description, style = MaterialTheme.typography.bodyMedium, color = colors.inkDim)
         }
     }
 }

@@ -67,41 +67,54 @@ fun SettingsScreen(settings: AppSettings, onChange: (AppSettings) -> Unit, onBac
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Title("Settings", onBack)
-        SectionLabel("Appearance")
-        for ((theme, label) in
-            listOf(Theme.SYSTEM to "System", Theme.DARK to "Dark", Theme.LIGHT to "Light")) {
-            Row(
-                Modifier.fillMaxWidth()
-                    .selectable(
-                        selected = settings.theme == theme,
-                        onClick = { onChange(settings.copy(theme = theme)) },
-                    )
-                    .testTag("theme_${label.lowercase()}"),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                RadioButton(
-                    selected = settings.theme == theme,
-                    onClick = { onChange(settings.copy(theme = theme)) },
-                )
-                Text(label)
+        IntroCard("Your tools. Your universe.", "Customize how LCL looks and how you edit.")
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SectionLabel("Appearance")
+                for ((theme, label) in
+                    listOf(
+                        Theme.SYSTEM to "System",
+                        Theme.DARK to "Dark",
+                        Theme.LIGHT to "Light",
+                    )) {
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .selectable(
+                                selected = settings.theme == theme,
+                                onClick = { onChange(settings.copy(theme = theme)) },
+                            )
+                            .testTag("theme_${label.lowercase()}"),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = settings.theme == theme,
+                            onClick = { onChange(settings.copy(theme = theme)) },
+                        )
+                        Text(label)
+                    }
+                }
             }
         }
-        SectionLabel("Editor")
-        Text("Font size: ${settings.fontSize} sp")
-        Slider(
-            value = settings.fontSize.toFloat(),
-            onValueChange = { onChange(settings.copy(fontSize = it.toInt())) },
-            valueRange = AppSettings.MIN_FONT.toFloat()..AppSettings.MAX_FONT.toFloat(),
-            steps = AppSettings.MAX_FONT - AppSettings.MIN_FONT - 1,
-            modifier = Modifier.testTag("font_size"),
-        )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Show line numbers", Modifier.weight(1f))
-            Switch(
-                checked = settings.lineNumbers,
-                onCheckedChange = { onChange(settings.copy(lineNumbers = it)) },
-                modifier = Modifier.testTag("line_numbers"),
-            )
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SectionLabel("Editor")
+                Text("Font size: ${settings.fontSize} sp")
+                Slider(
+                    value = settings.fontSize.toFloat(),
+                    onValueChange = { onChange(settings.copy(fontSize = it.toInt())) },
+                    valueRange = AppSettings.MIN_FONT.toFloat()..AppSettings.MAX_FONT.toFloat(),
+                    steps = AppSettings.MAX_FONT - AppSettings.MIN_FONT - 1,
+                    modifier = Modifier.testTag("font_size"),
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Show line numbers", Modifier.weight(1f))
+                    Switch(
+                        checked = settings.lineNumbers,
+                        onCheckedChange = { onChange(settings.copy(lineNumbers = it)) },
+                        modifier = Modifier.testTag("line_numbers"),
+                    )
+                }
+            }
         }
         Text(
             "Documents are always indented with spaces: the Indent button and a keyboard's Tab " +

@@ -147,7 +147,7 @@ class RemoteEndToEndTest {
 
     private fun pairWith(link: String) {
         goHome()
-        rule.onNodeWithTag("pair_new").performClick()
+        rule.onNodeWithTag("pair_new").performScrollTo().performClick()
         rule.onNodeWithTag("pair_link").performTextClearance()
         rule.onNodeWithTag("pair_link").performTextInput(link)
         waitFor("pair_preview")
@@ -699,14 +699,15 @@ class RemoteEndToEndTest {
         when (args.getString("settings")) {
             "set" -> {
                 openSettings()
-                rule.onNodeWithTag("theme_dark").performClick()
-                rule.onNodeWithTag("font_size").performSemanticsAction(
+                rule.onNodeWithTag("theme_dark").performScrollTo().performClick()
+                rule.onNodeWithTag("font_size").performScrollTo().performSemanticsAction(
                     SemanticsActions.SetProgress
                 ) {
                     it(18f)
                 }
-                rule.onNodeWithTag("line_numbers").performClick()
+                rule.onNodeWithTag("line_numbers").performScrollTo().performClick()
                 shot("p2_03_settings")
+                rule.onNodeWithTag("back").performScrollTo()
                 back()
                 openTodo()
                 assertFalse("line numbers still shown after turning them off", exists("gutter"))
@@ -716,13 +717,14 @@ class RemoteEndToEndTest {
                 openTodo()
                 assertFalse("the line-number setting did not survive", exists("gutter"))
                 openSettings()
-                rule.onNodeWithTag("theme_system").performClick()
-                rule.onNodeWithTag("font_size").performSemanticsAction(
+                rule.onNodeWithTag("theme_system").performScrollTo().performClick()
+                rule.onNodeWithTag("font_size").performScrollTo().performSemanticsAction(
                     SemanticsActions.SetProgress
                 ) {
                     it(14f)
                 }
-                rule.onNodeWithTag("line_numbers").performClick()
+                rule.onNodeWithTag("line_numbers").performScrollTo().performClick()
+                rule.onNodeWithTag("back").performScrollTo()
                 back()
                 openTodo()
                 assertTrue("line numbers did not come back", exists("gutter"))
@@ -731,12 +733,12 @@ class RemoteEndToEndTest {
 
         goHome()
         waitFor("disconnect")
-        rule.onNodeWithTag("disconnect").performClick()
+        rule.onNodeWithTag("disconnect").performScrollTo().performClick()
         waitForLabel("Offline", 10_000)
         shot("p2_05_disconnected")
         Thread.sleep(5_000)
         assertEquals("Disconnect did not hold", "Offline", label())
-        rule.onNodeWithTag("reconnect").performClick()
+        rule.onNodeWithTag("reconnect").performScrollTo().performClick()
         waitForLabel("Connected")
         shot("p2_06_reconnected")
     }
@@ -874,7 +876,7 @@ class RemoteEndToEndTest {
         }
         val labelBefore = label()
         goHome()
-        rule.onNodeWithTag("pair_new").performClick()
+        rule.onNodeWithTag("pair_new").performScrollTo().performClick()
         val keysBefore = deviceKeys()
         val pcsBefore = pairedPcs()
 
@@ -916,7 +918,7 @@ class RemoteEndToEndTest {
         val keysBefore = deviceKeys()
         val pcsBefore = pairedPcs()
         goHome()
-        rule.onNodeWithTag("pair_new").performClick()
+        rule.onNodeWithTag("pair_new").performScrollTo().performClick()
         val older = arg("link").replace("LCLPAIR|", "lclpair://pair?").replace("v=2", "v=1")
         rule.onNodeWithTag("pair_link").performTextInput(older)
         rule.onNodeWithTag("pair_button").performScrollTo().performClick()

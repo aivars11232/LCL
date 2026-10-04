@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.lcl.workspace.AppContainer
@@ -108,6 +109,21 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Box(Modifier.fillMaxSize().safeDrawingPadding()) {
                 Column(Modifier.fillMaxSize()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "LCL",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            "  Build. Define. Realize.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LocalLclColors.current.inkDim,
+                        )
+                    }
                     ConnectionBanner(
                         connection,
                         onReconnect = container.connection::reconnectNow,
@@ -164,22 +180,36 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
                                     LocalDocumentScreen(container, current.uri, settings, back)
                             }
                     }
-                    // The two top-level tabs, as the desktop's tab strips: text,
-                    // and the accent along the edge of the one shown.
+                    // Touch-first destinations. The manual remains a tab so returning from it
+                    // preserves the current screen and the open editor's state.
                     val lcl = LocalLclColors.current
                     Row(
                         Modifier.fillMaxWidth()
-                            .height(52.dp)
+                            .height(64.dp)
                             .background(lcl.raised)
                             .hairline(lcl.line, top = true)
                     ) {
                         LclTab(
-                            tab == Tab.Workspace,
-                            { tab = Tab.Workspace },
+                            tab == Tab.Workspace && screen == Screen.Home,
+                            {
+                                tab = Tab.Workspace
+                                screen = Screen.Home
+                            },
+                            Modifier.weight(1f).fillMaxHeight().testTag("tab_home"),
+                            barOnTop = true,
+                        ) {
+                            NavigationLabel("⌂", "Home")
+                        }
+                        LclTab(
+                            tab == Tab.Workspace && screen == Screen.Workspace,
+                            {
+                                if (tab != Tab.Manual) screen = Screen.Workspace
+                                tab = Tab.Workspace
+                            },
                             Modifier.weight(1f).fillMaxHeight().testTag("tab_workspace"),
                             barOnTop = true,
                         ) {
-                            Text("▤  Workspace")
+                            NavigationLabel("▤", "Workspace")
                         }
                         LclTab(
                             tab == Tab.Manual,
@@ -187,7 +217,18 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
                             Modifier.weight(1f).fillMaxHeight().testTag("tab_manual"),
                             barOnTop = true,
                         ) {
-                            Text("?  Manual")
+                            NavigationLabel("?", "Manual")
+                        }
+                        LclTab(
+                            tab == Tab.Workspace && screen == Screen.Settings,
+                            {
+                                tab = Tab.Workspace
+                                screen = Screen.Settings
+                            },
+                            Modifier.weight(1f).fillMaxHeight().testTag("tab_settings"),
+                            barOnTop = true,
+                        ) {
+                            NavigationLabel("⚙", "Settings")
                         }
                     }
                 }
@@ -216,6 +257,14 @@ fun LclRoot(container: AppContainer, incoming: MutableStateFlow<Intent?>) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun NavigationLabel(glyph: String, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(glyph, Modifier.clearAndSetSemantics {}, style = MaterialTheme.typography.titleLarge)
+        Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
     }
 }
 

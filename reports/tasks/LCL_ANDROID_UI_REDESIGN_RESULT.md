@@ -72,5 +72,42 @@ instance, emulator-5580, and private PC runtime fixtures.
 
 Fresh evidence is under `/mnt/F/.lcl-ui-redesign-20261004/evidence/` and the
 separate E2E output directories. Final release provenance records the exact
-source commit, signer and authenticated predecessor. Publication and final PC
-installation are recorded after the verified combined release is produced.
+source commit, signer and authenticated predecessor. Publication and final PC installation are recorded below.
+
+## Final delivery
+
+Both tasks are complete. Release source commit:
+`bdbcdfaf77985024e378aabbd350aab32bcf4f69`, committed and pushed from a clean tree.
+The signed combined release is published as the latest stable
+[LCL 1.0.0](https://github.com/aivars11232/LCL/releases/tag/v1.0.0).
+All nine uploaded assets were downloaded and matched byte for byte before
+publication. The public tag points to that exact verified source commit.
+The builder authenticated the 0.9.1 predecessor and verified signer continuity,
+version advance, manifest signatures and every artifact checksum.
+
+The PC is installed from the final published payload; all four installed
+binaries match it byte for byte. The already-active remote service was refreshed
+with device records and enabled state preserved. Existing editor windows remain
+available and use the new interface when reopened. The installed production
+updater successfully checked the published release and reports 1.0.0 up to date.
+
+Android product version is 1.0.0 (shown as LCL 1.0); versionCode 1000000 remains
+package metadata. The signed APK and its checksum are available at
+`/home/aivars/Downloads/LCL-1.0.0-phone.apk` and `.apk.sha256`.
+APK SHA-256: `4ee61e0efde56d2bfb7ace0513e2f3a9df577c30c05da672f0ff594f69466a34`.
+The previous APKs were preserved. No physical phone was connected or modified;
+PHYSICAL_PHONE_UI_TEST_PENDING remains an explicit optional smoke-test boundary.
+
+Total disposable cleanup removed 19,218,677,760 allocated bytes
+(19.22 GB / 17.90 GiB), plus builder-owned scratch removed
+on success. Logs, harnesses, screenshots, signed release and shared build caches
+are retained. No owned emulator, E2E service or release build remains running;
+the normal updated PC service and pre-existing user editor sessions remain.
+Two LCL launcher-test KDialog dumps (1,802,240 allocated bytes) remain under
+system coredump storage because sudo requires an unavailable password. Their
+exact provenance and paths are recorded in the PC report and cleanup evidence.
+Arch Dock files and processes were not touched.
+
+Publication, installation, live updater, checksum and Git closure evidence:
+`/mnt/F/.lcl-ui-redesign-20261004/evidence/`. Final Git parity is recorded in
+`git-delivery-final.txt` after this report-only closure commit.

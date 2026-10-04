@@ -341,6 +341,12 @@ function modal(title, build, actions) {
   /* Recorded once: a modal that replaces an open one keeps the first one's. */
   if ($("#modal-backdrop").hidden) modalOpener = document.activeElement;
   $("#modal-title").textContent = title;
+  $("#modal-backdrop").dataset.layout =
+    title === "New project"
+      ? "project"
+      : title === "Settings" || title === "Updates & devices"
+        ? "wide"
+        : "";
   const body = $("#modal-body");
   body.replaceChildren();
   /* The body is shared: a new dialog starts at its top, not where the last
@@ -616,6 +622,9 @@ function renderTree() {
   const list = $("#tree");
   list.replaceChildren();
   const home = Boolean(state.session && state.session.home);
+  $("#shell").classList.toggle("is-home", home);
+  $("#nav-home").setAttribute("aria-current", home ? "page" : "false");
+  $("#nav-project").disabled = !state.roles.available;
   $("#home").hidden = !home;
   $("#tree").hidden = home;
   $("#sidebar-title").textContent = home ? "Projects" : "Project";
@@ -711,9 +720,19 @@ async function loadHome() {
     return;
   }
   state.home = home;
+  const hero = el("section", "home-hero");
+  hero.append(
+    el("p", "eyebrow", "YOUR PROJECTS. YOUR POSSIBILITIES."),
+    el("h1", "", "Welcome to LCL"),
+    el("p", "home-tagline", "Build. Define. Realize."),
+    el("p", "note", "Create a project, open a folder, or continue your work below."),
+  );
+  box.append(hero);
   const where = el("p", "note home-folder", home.folder);
   where.title = home.folder;
-  box.append(where);
+  const heading = el("div", "home-heading");
+  heading.append(el("h2", "", "Projects"), where);
+  box.append(heading);
   const list = el("ul", "projects");
   list.id = "projects";
   for (const project of home.projects) {
@@ -731,6 +750,7 @@ async function loadHome() {
       item.append(dot);
     }
     item.append(el("span", "glyph", "▣"), el("span", "name", project.name));
+    item.append(el("span", "project-path", project.path));
     if (!project.manifest) {
       const role = el("span", "role", "Rootless");
       role.title = "No lcl.project.json: opened as a rootless project";
@@ -759,7 +779,7 @@ async function loadHome() {
   if (!home.projects.length) list.append(el("li", "empty", "No projects here yet."));
   box.append(list);
   const actions = el("div", "home-actions");
-  const create = el("button", "", "+ New project");
+  const create = el("button", "primary", "+ New project");
   create.type = "button";
   create.id = "home-new-project";
   create.disabled = !state.roles.available;
@@ -769,7 +789,11 @@ async function loadHome() {
   open.id = "home-open-folder";
   open.onclick = openFolderDialog;
   actions.append(create, open);
-  box.append(actions);
+  const manual = el("button", "", "Users Manual →");
+  manual.type = "button";
+  manual.onclick = openManual;
+  actions.append(manual);
+  hero.append(actions);
   renderTree();
 }
 
@@ -1863,13 +1887,19 @@ function openSettings() {
   modal(
     "Settings",
     (body) => {
-      const form = el("div", "settings");
-      appearanceSection(form, now);
-      editorSection(form, now);
-      filesSection(form, files);
-      templatesSection(form);
-      updatesSection(form);
-      androidDevices(form);
+      const form = el("div", "settings-overview");
+      for (const build of [
+        (card) => appearanceSection(card, now),
+        (card) => editorSection(card, now),
+        (card) => filesSection(card, files),
+        templatesSection,
+        updatesSection,
+        androidDevices,
+      ]) {
+        const card = el("section", "settings settings-card");
+        build(card);
+        form.append(card);
+      }
       body.append(form);
     },
     [
@@ -2799,6 +2829,7 @@ function syncDocumentUI(doc) {
   if (!open && code.value !== "") code.value = "";
   emptyState.hidden = open;
   for (const selector of DOCUMENT_ACTIONS) $(selector).disabled = !open;
+  $("#nav-run").disabled = !open;
   /* A report describes one document. With none open, the analysis panels go
    * back to their empty state instead of describing a closed tab. */
   if (!open) {
@@ -4101,6 +4132,26 @@ $("#act-home").onclick = goHome;
 $("#act-new-project").onclick = newProject;
 $("#act-settings").onclick = openSettings;
 $("#act-manual").onclick = openManual;
+$("#nav-home").onclick = goHome;
+$("#nav-project").onclick = newProject;
+$("#nav-run").onclick = () => $("#act-run").click();
+$("#nav-manual").onclick = openManual;
+$("#nav-settings").onclick = openSettings;
+$("#nav-devices").onclick = () => {
+  modal(
+    "Updates & devices",
+    (body) => {
+      const cards = el("div", "settings-overview");
+      for (const build of [updatesSection, androidDevices]) {
+        const card = el("section", "settings settings-card");
+        build(card);
+        cards.append(card);
+      }
+      body.append(cards);
+    },
+    [["Close", "", (close) => close()]],
+  );
+};
 $("#readiness-refresh").onclick = () => refreshReadiness();
 
 function showView(name) {
@@ -4603,6 +4654,7 @@ function renderReadiness() {
    * says so first. */
   if (doc && doc.id === r.entry) {
     $("#act-run").disabled = status !== "ready" && status !== "running";
+    $("#nav-run").disabled = $("#act-run").disabled;
     $("#act-run").title =
       status === "ready" ? "Steps 1 to 13." : "The project is not ready: see Project readiness.";
   }

@@ -4,9 +4,9 @@
    stylesheet fetched from anywhere else would not load even if it were asked
    for. Everything here is a system face and a local rule.
 
-   The look: graphite surfaces with a little blue in them, one accent, soft
-   rounded rows and cards, and monospace where something is a path, a digest
-   or source. Motion is short (120 ms) and only for hover, focus and folds. */
+   The reference identity: navy surfaces, cyan edges, quiet atmospheric
+   gradients and readable cards. Paths and source stay monospace; motion is
+   short (120 ms) and respects the reader's reduced-motion preference. */
 
 :root {
   /* One palette, two schemes. `light-dark()` picks by the element's
@@ -14,41 +14,41 @@
      `data-theme` on the root narrows the scheme, and nothing is duplicated. */
   color-scheme: light dark;
 
-  --bg: light-dark(#f4f6f9, #14171c);
-  --bg-raised: light-dark(#ffffff, #1b1f26);
-  --bg-sunken: light-dark(#eaedf2, #0f1216);
-  --bg-hover: light-dark(#e3e7ee, #232830);
-  --line: light-dark(#d5dae2, #2a2f39);
-  --line-soft: light-dark(#e5e8ee, #20242c);
+  --bg: light-dark(#f4f6f9, #04111f);
+  --bg-raised: light-dark(#ffffff, #081c2e);
+  --bg-sunken: light-dark(#eaedf2, #030e19);
+  --bg-hover: light-dark(#e3e7ee, #102b43);
+  --line: light-dark(#d5dae2, #185071);
+  --line-soft: light-dark(#e5e8ee, #12334b);
 
-  --ink: light-dark(#1f242c, #dde2ea);
-  --ink-dim: light-dark(#5b6370, #97a0b0);
-  --ink-faint: light-dark(#8a92a1, #636c7c);
+  --ink: light-dark(#1f242c, #e3edff);
+  --ink-dim: light-dark(#5b6370, #a1bee3);
+  --ink-faint: light-dark(#8a92a1, #7897b7);
 
-  --accent: light-dark(#1d6fb8, #63b0ee);
-  --accent-ink: light-dark(#ffffff, #0b1117);
-  --accent-soft: light-dark(rgba(29, 111, 184, 0.11), rgba(99, 176, 238, 0.14));
-  --accent-ring: light-dark(rgba(29, 111, 184, 0.35), rgba(99, 176, 238, 0.4));
-  --good: light-dark(#1f7a4d, #5cc48f);
-  --warn: light-dark(#8a5d00, #dfab48);
-  --bad: light-dark(#b3312c, #e46a64);
-  --info: light-dark(#5546a8, #948ade);
+  --accent: light-dark(#1d6fb8, #00c8f8);
+  --accent-ink: light-dark(#ffffff, #002032);
+  --accent-soft: light-dark(rgba(29, 111, 184, 0.11), rgba(0, 200, 248, 0.12));
+  --accent-ring: light-dark(rgba(29, 111, 184, 0.35), rgba(0, 200, 248, 0.3));
+  --good: light-dark(#1f7a4d, #00ddb0);
+  --warn: light-dark(#8a5d00, #ffc65c);
+  --bad: light-dark(#b3312c, #ff637b);
+  --info: light-dark(#5546a8, #aa98ef);
 
-  --tok-keyword: light-dark(#1d6fb8, #7fbbee);
-  --tok-block: light-dark(#5546a8, #a496f2);
-  --tok-type: light-dark(#0f6f5c, #5bc3a9);
-  --tok-literal: light-dark(#8a5d00, #dfab48);
-  --tok-string: light-dark(#8a4b1f, #cf9f72);
-  --tok-symbol: light-dark(#5b6370, #97a0b0);
-  --tok-ref: light-dark(#9b2f70, #e4a6cc);
+  --tok-keyword: light-dark(#1d6fb8, #33cdff);
+  --tok-block: light-dark(#5546a8, #c98aff);
+  --tok-type: light-dark(#0f6f5c, #43dec9);
+  --tok-literal: light-dark(#8a5d00, #ffc65c);
+  --tok-string: light-dark(#8a4b1f, #f3b779);
+  --tok-symbol: light-dark(#5b6370, #a1bee3);
+  --tok-ref: light-dark(#9b2f70, #daa0ee);
 
   --mono:
     ui-monospace, "JetBrains Mono", "Fira Code", "Cascadia Mono", "DejaVu Sans Mono", Menlo,
     Consolas, monospace;
   --ui: "Inter", system-ui, "Noto Sans", "Segoe UI", Roboto, sans-serif;
 
-  --radius: 8px;
-  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-sm: 7px;
   --shadow: light-dark(0 12px 32px rgba(20, 30, 45, 0.16), 0 14px 36px rgba(0, 0, 0, 0.5));
   --shadow-soft: light-dark(0 4px 14px rgba(20, 30, 45, 0.1), 0 6px 18px rgba(0, 0, 0, 0.4));
   --ease: 120ms ease;
@@ -79,6 +79,11 @@ body {
   overflow: hidden;
   scrollbar-color: var(--line) transparent;
   scrollbar-width: thin;
+}
+body {
+  padding: 12px;
+  background:
+    radial-gradient(ellipse at 85% 0, var(--accent-soft), transparent 65%), var(--bg-sunken);
 }
 *::-webkit-scrollbar {
   width: 9px;
@@ -162,12 +167,16 @@ button.danger:hover:not(:disabled) {
 
 #shell {
   display: grid;
-  grid-template-columns: var(--sidebar, 240px) minmax(0, 1fr) 360px;
-  grid-template-rows: 48px minmax(0, 1fr);
+  grid-template-columns: 104px var(--sidebar, 240px) minmax(0, 1fr) 360px;
+  grid-template-rows: 68px minmax(0, 1fr);
   grid-template-areas:
-    "title  title    title"
-    "side   editor   inspect";
+    "title title title title"
+    "nav side editor inspect";
   height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 0 24px var(--accent-soft);
 }
 
 #titlebar {
@@ -190,7 +199,7 @@ button.danger:hover:not(:disabled) {
      supplied artwork is never stretched by a layout rule, and `flex: none`
      keeps a long project path from squeezing it. The intrinsic size is larger
      than this, which is what keeps it sharp on a high-density screen. */
-  height: 26px;
+  height: 38px;
   width: auto;
   display: block;
   flex: none;
@@ -201,7 +210,7 @@ button.danger:hover:not(:disabled) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 42ch;
+  max-width: 32ch;
   direction: rtl;
   text-align: left;
   padding: 3px 9px;
@@ -242,6 +251,9 @@ button.danger:hover:not(:disabled) {
   font-size: 10.5px;
   color: var(--ink-faint);
   white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 3px 8px;
   border-radius: 999px;
   background: var(--bg-sunken);
@@ -313,7 +325,8 @@ button.danger:hover:not(:disabled) {
 .home {
   overflow: auto;
   flex: 1;
-  padding: 0 8px 12px;
+  padding: 28px;
+  background: radial-gradient(ellipse at 80% 0, var(--accent-soft), transparent 55%), var(--bg);
 }
 .home[hidden] {
   display: none;
@@ -330,15 +343,17 @@ button.danger:hover:not(:disabled) {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 16px;
 }
 .home .projects li {
-  display: flex;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 9px;
-  padding: 8px 10px;
+  gap: 12px;
+  min-height: 132px;
+  padding: 20px;
   cursor: pointer;
   font-size: 12.5px;
   white-space: nowrap;
@@ -368,7 +383,7 @@ button.danger:hover:not(:disabled) {
 }
 .home .projects li .glyph {
   color: var(--accent);
-  font-size: 14px;
+  font-size: 28px;
   flex: none;
 }
 .home .projects li .name {
@@ -404,12 +419,13 @@ button.danger:hover:not(:disabled) {
 }
 .home .home-actions {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 12px 4px 0;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 18px 0 0;
 }
 .home .home-actions button {
-  padding: 7px 12px;
+  padding: 14px 22px;
+  font-size: 14px;
 }
 .tree li {
   padding: 4px 8px 4px 0;
@@ -741,7 +757,7 @@ button.danger:hover:not(:disabled) {
 
 #inspector {
   grid-area: inspect;
-  background: var(--bg-sunken);
+  background: var(--bg);
   border-left: 1px solid var(--line);
   display: flex;
   flex-direction: column;
@@ -802,7 +818,7 @@ button.danger:hover:not(:disabled) {
   padding: 8px 10px;
   margin-bottom: 7px;
   background: var(--bg-raised);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition:
     border-color var(--ease),
@@ -1206,7 +1222,7 @@ button.danger:hover:not(:disabled) {
 
 @media (max-width: 1100px) {
   #shell {
-    grid-template-columns: var(--sidebar, 190px) minmax(0, 1fr) 300px;
+    grid-template-columns: 68px min(var(--sidebar, 190px), 25vw) minmax(0, 1fr) 300px;
   }
 }
 
@@ -1433,4 +1449,279 @@ ul.templates li .role {
 }
 .gutter .ln.slot-generated_id {
   color: var(--accent);
+}
+
+/* Shared product navigation and the reference-driven Projects home. */
+.brand-name {
+  font-size: 20px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.brand-name small {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink-dim);
+}
+#navigation {
+  grid-area: nav;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 8px;
+  background: var(--bg-sunken);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+#navigation button {
+  padding: 12px 4px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 11px;
+}
+#navigation button span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--accent);
+  font-size: 25px;
+  line-height: 1;
+}
+#navigation button[aria-current="page"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.navigation-note {
+  margin-top: auto;
+  padding-top: 18px;
+  color: var(--ink-faint);
+  font-size: 10px;
+  text-align: center;
+  letter-spacing: 0.08em;
+}
+#shell.is-home {
+  grid-template-areas: "title title title title" "nav side side side";
+}
+.is-home #editor-pane,
+.is-home #inspector,
+.is-home #readiness-panel,
+.is-home #sidebar-resize {
+  display: none;
+}
+.is-home #titlebar .actions {
+  visibility: hidden;
+}
+.is-home #sidebar {
+  border-right: 0;
+}
+.home-hero {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 32px;
+  margin-bottom: 28px;
+  background: linear-gradient(115deg, var(--bg-raised), var(--bg));
+}
+.home-hero::before {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  width: 460px;
+  height: 460px;
+  right: -90px;
+  top: 60px;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  background: radial-gradient(ellipse at 30% 10%, var(--accent-soft), transparent 60%);
+  box-shadow:
+    0 0 45px var(--accent-soft),
+    inset 0 0 45px var(--accent-soft);
+  opacity: 0.45;
+}
+.home-hero > * {
+  position: relative;
+}
+.home-hero h1 {
+  font-size: clamp(28px, 3vw, 46px);
+  letter-spacing: -0.03em;
+  margin: 8px 0;
+}
+.eyebrow {
+  color: var(--accent);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+}
+.home-tagline {
+  font-size: 20px;
+  color: var(--ink-dim);
+  margin: 0 0 14px;
+}
+.home-hero .note {
+  font-size: 14px;
+  color: var(--ink-dim);
+}
+.home-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.home-heading h2 {
+  font-size: 18px;
+  margin: 0 0 16px;
+}
+.home .project-path {
+  grid-column: 1 / -1;
+  font: 11px var(--mono);
+  color: var(--ink-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home .projects li .menu {
+  visibility: visible;
+  grid-column: 3;
+  grid-row: 1;
+}
+.home .projects li .role {
+  grid-column: 2;
+  grid-row: 3;
+  margin-left: 0;
+  justify-self: start;
+}
+.home .projects li .dot {
+  grid-column: 3;
+  grid-row: 3;
+}
+.backdrop[data-layout="wide"] .modal {
+  width: 1080px;
+  max-width: 100%;
+}
+.backdrop[data-layout="project"] .modal {
+  width: 940px;
+  max-width: 100%;
+}
+.backdrop[data-layout="project"] #modal-body {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 8px 20px;
+  align-content: start;
+}
+.backdrop[data-layout="project"] #modal-body > p:first-child {
+  grid-column: 1 / -1;
+}
+.backdrop[data-layout="project"] #modal-body > label,
+.backdrop[data-layout="project"] .field,
+#project-where {
+  grid-column: 1;
+}
+.backdrop[data-layout="project"] #project-plan {
+  grid-column: 2;
+  grid-row: 2 / span 8;
+  min-width: 0;
+}
+.settings-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.modal .settings-card {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  align-content: start;
+  min-width: 0;
+}
+.modal .settings-card h3 {
+  margin-top: 0;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--accent);
+}
+.settings-card > .updates,
+.settings-card > .remote,
+.settings-card > .path-field {
+  grid-column: 1 / -1;
+}
+.settings-card .path-field {
+  flex-wrap: wrap;
+}
+.settings-card .path-field input {
+  min-width: 150px;
+}
+.settings-card select,
+.settings-card input {
+  min-width: 0;
+  max-width: 100%;
+}
+.settings-card .note {
+  line-height: 1.6;
+}
+@media (max-width: 1350px) {
+  .brand-name {
+    display: none;
+  }
+  .brand .where {
+    max-width: 26ch;
+  }
+  #titlebar {
+    gap: 8px;
+  }
+}
+@media (max-width: 1100px) {
+  .settings-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  #navigation {
+    padding-inline: 4px;
+  }
+  #navigation button {
+    font-size: 10px;
+  }
+  #titlebar .spec {
+    display: none;
+  }
+}
+@media (max-width: 850px) {
+  body {
+    padding: 4px;
+  }
+  #shell {
+    grid-template-rows: 96px minmax(0, 1fr);
+  }
+  #titlebar {
+    flex-wrap: wrap;
+    align-content: center;
+    gap: 6px;
+  }
+  #titlebar .actions {
+    order: 4;
+    width: 100%;
+    margin-left: 0;
+  }
+  #titlebar .actions button {
+    flex: 1;
+    padding-inline: 5px;
+  }
+  #titlebar #act-manual {
+    margin-left: auto;
+  }
+  .settings-overview {
+    grid-template-columns: 1fr;
+  }
+  .home {
+    padding: 16px;
+  }
+  .home-hero {
+    padding: 20px;
+  }
+  .backdrop[data-layout="project"] #modal-body {
+    grid-template-columns: 1fr;
+  }
+  .backdrop[data-layout="project"] #project-plan {
+    grid-column: 1;
+    grid-row: auto;
+  }
 }

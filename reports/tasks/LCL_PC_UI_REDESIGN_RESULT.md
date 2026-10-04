@@ -74,11 +74,33 @@ references, never application assets or staged source.
 
 ## Delivery state
 
-PC verification is complete. Installation and Git delivery follow this verified
-source checkpoint. Installed
-version before this task: 0.9.1. Product version in source: 1.0.0, not yet
-published. Existing update and Android signer continuity was located; retained
-for the eventual combined release.
+Implementation commit: `1cadb6bbd1fc1973dc6d1e7cc2f2d04ecd78010c`, followed by
+this report-only delivery completion. The owner authorized commit and main sync;
+fresh remote parity and clean-tree evidence is recorded in
+`/mnt/F/.lcl-ui-redesign-20261004/evidence/git-delivery.txt` at delivery.
+
+Installed PC version updated from 0.9.1 to 1.0.0 using the existing packaged
+installer. A clean, exact source snapshot of the implementation commit produced
+`/mnt/F/.lcl-ui-redesign-20261004/pc-package/`; both archive checksums passed.
+All four installed binaries (CLI, workspace, updater and previously installed
+remote service) match the packaged binaries byte for byte. Installer and digest
+evidence is retained. Existing user sessions were preserved and show the new UI
+after reopening LCL. This is a local PC installation; no GitHub release or
+Android APK has been published for 1.0.0. Existing update signing material and
+Android signer continuity were verified for the eventual combined release.
+
+Cleanup removed the owned MSRV build, disposable test fixtures and extracted
+installation payload: 19,108,052,992 allocated bytes (19.11 GB / 17.80 GiB).
+The package builder removed its private scratch directory on success. Shared
+build caches remain available for Android/release reuse; logs, harnesses, actual
+rendered screenshots, package and excluded input references are retained.
+No task-owned workspace fixture, headless Firefox or package-build process
+remains. Two KDialog dumps from deliberate missing-file launcher fixtures
+(PIDs 1190666 and 1241889) remain under `/var/lib/systemd/coredump`, totaling
+1,802,240 allocated bytes. Exact command lines and cleanup attempts are recorded
+in `launcher-fixture-coredumps.txt` and `cleanup.tsv`; removal needs a sudo
+password unavailable to this session. These are LCL fixture entries. The gate's
+expected launcher refusal assertions passed; no LCL application crash was found.
 
 TASK-002 and Android release remain pending owner review of TASK-001. The pack
 requires explicit PC approval and CONTINUE ANDROID before Android implementation.
